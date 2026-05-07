@@ -1044,6 +1044,9 @@ export type Database = {
           landing_id: string
           referrer: string | null
           user_agent: string | null
+          country: string | null
+          city: string | null
+          region: string | null
           occurred_at: string
         }
         Insert: {
@@ -1051,6 +1054,9 @@ export type Database = {
           landing_id: string
           referrer?: string | null
           user_agent?: string | null
+          country?: string | null
+          city?: string | null
+          region?: string | null
           occurred_at?: string
         }
         Update: {
@@ -1058,6 +1064,9 @@ export type Database = {
           landing_id?: string
           referrer?: string | null
           user_agent?: string | null
+          country?: string | null
+          city?: string | null
+          region?: string | null
           occurred_at?: string
         }
         Relationships: []

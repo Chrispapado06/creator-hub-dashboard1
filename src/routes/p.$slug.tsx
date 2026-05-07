@@ -208,12 +208,33 @@ function LandingPage() {
 
       // Fire-and-forget view tracking. Skip when the admin is just previewing
       // a draft — those aren't real visits and would pollute the analytics.
+      // Best-effort geo enrichment from ipapi.co (free, no key, ~1k/day).
+      // If the lookup fails the view still records, just without geo.
       if (!allowDraft) {
-        void supabase.from("landing_views").insert({
-          landing_id: row.id,
-          referrer: typeof document !== "undefined" ? document.referrer.slice(0, 200) || null : null,
-          user_agent: typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 200) : null,
-        });
+        void (async () => {
+          let geo: { country?: string; city?: string; region?: string } = {};
+          try {
+            const r = await fetch("https://ipapi.co/json/");
+            if (r.ok) {
+              const j = await r.json();
+              geo = {
+                country: (j.country_code || j.country) ?? undefined,
+                city: j.city ?? undefined,
+                region: j.region ?? undefined,
+              };
+            }
+          } catch {
+            // Network blocked / rate-limited — record the view without geo.
+          }
+          await supabase.from("landing_views").insert({
+            landing_id: row.id,
+            referrer: typeof document !== "undefined" ? document.referrer.slice(0, 200) || null : null,
+            user_agent: typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 200) : null,
+            country: geo.country ?? null,
+            city: geo.city ?? null,
+            region: geo.region ?? null,
+          });
+        })();
       }
       setLoading(false);
 

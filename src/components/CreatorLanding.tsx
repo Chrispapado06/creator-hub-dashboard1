@@ -14,11 +14,9 @@ import {
   Pencil,
 } from "lucide-react";
 import { detectPlatform } from "@/lib/landing-platforms";
-import {
-  Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis,
-} from "recharts";
-import { eachDayOfInterval, format, startOfDay, subDays } from "date-fns";
+import { subDays } from "date-fns";
 import { logAudit } from "@/lib/audit";
+import { LandingAnalytics } from "@/components/LandingAnalytics";
 
 const LANDING_BUCKET = "landing-assets";
 
@@ -79,11 +77,16 @@ const isValidSlug = (s: string): boolean => /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/.
 
 type PageWithStats = Landing & { _views30d: number; _clicks30d: number };
 
+type View =
+  | { kind: "list" }
+  | { kind: "edit"; pageId: string }
+  | { kind: "analytics"; pageId: string };
+
 export function CreatorLanding({ creatorId, creatorName }: { creatorId: string; creatorName?: string }) {
   const [pages, setPages] = useState<PageWithStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
-  const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
+  const [view, setView] = useState<View>({ kind: "list" });
 
   const loadPages = async () => {
     setLoading(true);
@@ -166,7 +169,7 @@ export function CreatorLanding({ creatorId, creatorName }: { creatorId: string; 
         setCreating(false);
         await loadPages();
         // Drill straight into the new page so the admin can polish it
-        setSelectedPageId(data.id as string);
+        setView({ kind: "edit", pageId: data.id as string });
         return;
       }
       if (error && (error.message.includes("unique") || error.code === "23505")) {
@@ -196,13 +199,25 @@ export function CreatorLanding({ creatorId, creatorName }: { creatorId: string; 
     await loadPages();
   };
 
-  if (selectedPageId) {
+  if (view.kind === "edit") {
     return (
       <LandingPageEditor
-        key={selectedPageId}
-        pageId={selectedPageId}
+        key={view.pageId}
+        pageId={view.pageId}
         creatorName={creatorName}
-        onBack={() => { setSelectedPageId(null); void loadPages(); }}
+        onBack={() => { setView({ kind: "list" }); void loadPages(); }}
+      />
+    );
+  }
+  if (view.kind === "analytics") {
+    const page = pages.find((p) => p.id === view.pageId);
+    return (
+      <LandingAnalytics
+        key={view.pageId}
+        pageId={view.pageId}
+        pageSlug={page?.slug ?? ""}
+        pageName={page?.display_name || page?.slug || "Landing page"}
+        onBack={() => { setView({ kind: "list" }); void loadPages(); }}
       />
     );
   }
@@ -242,7 +257,8 @@ export function CreatorLanding({ creatorId, creatorName }: { creatorId: string; 
             <PageCard
               key={p.id}
               page={p}
-              onOpen={() => setSelectedPageId(p.id)}
+              onEdit={() => setView({ kind: "edit", pageId: p.id })}
+              onAnalytics={() => setView({ kind: "analytics", pageId: p.id })}
               onDelete={() => void onDeletePage(p)}
             />
           ))}
@@ -252,24 +268,28 @@ export function CreatorLanding({ creatorId, creatorName }: { creatorId: string; 
   );
 }
 
-function PageCard({ page, onOpen, onDelete }: { page: PageWithStats; onOpen: () => void; onDelete: () => void }) {
+function PageCard({
+  page, onEdit, onAnalytics, onDelete,
+}: {
+  page: PageWithStats;
+  onEdit: () => void;
+  onAnalytics: () => void;
+  onDelete: () => void;
+}) {
   const ctr = page._views30d > 0 ? Math.round((page._clicks30d / page._views30d) * 100) : 0;
   const publicUrl = typeof window !== "undefined" ? `${window.location.origin}/p/${page.slug}` : `/p/${page.slug}`;
   const [copied, setCopied] = useState(false);
-  const onCopy = async (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const onCopy = async () => {
     await navigator.clipboard.writeText(publicUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
   return (
-    <button
-      onClick={onOpen}
-      className="group text-left rounded-xl border border-border bg-card hover:border-primary/40 hover:shadow-sm transition-all overflow-hidden"
-    >
+    <div className="rounded-xl border border-border bg-card hover:border-primary/40 hover:shadow-sm transition-all overflow-hidden">
       {/* Cover strip — falls back to a theme gradient if no cover */}
       <div
-        className="h-20 w-full relative"
+        className="h-20 w-full relative cursor-pointer"
+        onClick={onEdit}
         style={{
           backgroundImage: page.cover_url ? `url(${page.cover_url})` : undefined,
           backgroundColor: page.cover_url ? undefined : "#1a1410",
@@ -290,7 +310,7 @@ function PageCard({ page, onOpen, onDelete }: { page: PageWithStats; onOpen: () 
         </div>
       </div>
       <div className="p-3 space-y-2">
-        <div className="flex items-start gap-2">
+        <div className="flex items-start gap-2 cursor-pointer" onClick={onEdit}>
           {page.avatar_url ? (
             <img src={page.avatar_url} alt="" className="h-9 w-9 rounded-full object-cover border-2 border-card -mt-7 shrink-0" />
           ) : (
@@ -313,6 +333,17 @@ function PageCard({ page, onOpen, onDelete }: { page: PageWithStats; onOpen: () 
           <Stat label="CTR" value={`${ctr}%`} icon={<BarChart3 className="h-3 w-3" />} />
         </div>
 
+        {/* Primary actions — Edit + Analytics, side by side */}
+        <div className="grid grid-cols-2 gap-1.5 pt-1">
+          <Button size="sm" variant="outline" onClick={onEdit} className="h-8">
+            <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
+          </Button>
+          <Button size="sm" variant="outline" onClick={onAnalytics} className="h-8">
+            <BarChart3 className="h-3.5 w-3.5 mr-1" /> Analytics
+          </Button>
+        </div>
+
+        {/* Secondary actions — utilities */}
         <div className="flex items-center gap-1.5 pt-1 border-t border-border">
           <span className="text-[10px] text-muted-foreground mr-auto">Last 30 days</span>
           <button
@@ -326,25 +357,21 @@ function PageCard({ page, onOpen, onDelete }: { page: PageWithStats; onOpen: () 
             href={publicUrl}
             target="_blank"
             rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
             className="text-[10px] text-muted-foreground hover:text-primary inline-flex items-center gap-0.5 px-1.5 py-1 rounded hover:bg-secondary"
             title="Open public page"
           >
             <ExternalLink className="h-3 w-3" />
           </a>
           <button
-            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+            onClick={onDelete}
             className="text-[10px] text-muted-foreground hover:text-destructive inline-flex items-center gap-0.5 px-1.5 py-1 rounded hover:bg-secondary"
             title="Delete page"
           >
             <Trash2 className="h-3 w-3" />
           </button>
-          <span className="text-[10px] text-primary font-medium inline-flex items-center gap-0.5 ml-1 group-hover:translate-x-0.5 transition-transform">
-            <Pencil className="h-3 w-3" /> Edit
-          </span>
         </div>
       </div>
-    </button>
+    </div>
   );
 }
 
@@ -377,14 +404,6 @@ function LandingPageEditor({
   // Local form state — synced with landing on save
   const [form, setForm] = useState<Landing | null>(null);
 
-  // Click analytics for the last 30 days (per link)
-  const [clicks, setClicks] = useState<{ link_url: string; link_label: string | null; count: number }[]>([]);
-  const [totalClicks, setTotalClicks] = useState(0);
-  // View analytics — daily series + top referrers
-  const [dailyViews, setDailyViews] = useState<{ date: string; views: number }[]>([]);
-  const [totalViews, setTotalViews] = useState(0);
-  const [topReferrers, setTopReferrers] = useState<{ host: string; count: number }[]>([]);
-
   const load = async () => {
     setLoading(true);
     const { data, error } = await supabase
@@ -401,71 +420,10 @@ function LandingPageEditor({
       if (typeof row.is_verified !== "boolean") row.is_verified = false;
       setLanding(row);
       setForm(row);
-      void loadAnalytics(row.id);
     } else {
       setLanding(null);
       setForm(null);
     }
-  };
-
-  const loadAnalytics = async (landingId: string) => {
-    const sinceDate = subDays(new Date(), 30);
-    const sinceISO = sinceDate.toISOString();
-
-    // Pull clicks (per-link) and views (with referrer/timestamp) in parallel
-    const [{ data: clickRows }, { data: viewRows }] = await Promise.all([
-      supabase
-        .from("landing_clicks")
-        .select("link_url, link_label")
-        .eq("landing_id", landingId)
-        .gte("occurred_at", sinceISO),
-      supabase
-        .from("landing_views")
-        .select("referrer, occurred_at")
-        .eq("landing_id", landingId)
-        .gte("occurred_at", sinceISO),
-    ]);
-
-    // ── Clicks aggregated by link
-    const clickList = (clickRows ?? []) as { link_url: string; link_label: string | null }[];
-    setTotalClicks(clickList.length);
-    const byLink = new Map<string, { link_url: string; link_label: string | null; count: number }>();
-    for (const r of clickList) {
-      const key = r.link_url;
-      if (!byLink.has(key)) byLink.set(key, { link_url: r.link_url, link_label: r.link_label, count: 0 });
-      byLink.get(key)!.count++;
-    }
-    setClicks([...byLink.values()].sort((a, b) => b.count - a.count));
-
-    // ── Views: daily series + top referrers
-    const views = (viewRows ?? []) as { referrer: string | null; occurred_at: string }[];
-    setTotalViews(views.length);
-
-    const days = eachDayOfInterval({ start: startOfDay(sinceDate), end: startOfDay(new Date()) });
-    const dailyMap = new Map<string, number>();
-    for (const d of days) dailyMap.set(format(d, "yyyy-MM-dd"), 0);
-    for (const v of views) {
-      const k = format(startOfDay(new Date(v.occurred_at)), "yyyy-MM-dd");
-      if (dailyMap.has(k)) dailyMap.set(k, (dailyMap.get(k) ?? 0) + 1);
-    }
-    setDailyViews([...dailyMap.entries()].map(([date, views]) => ({ date, views })));
-
-    // Group referrers by hostname — direct visits collapse into "Direct"
-    const refMap = new Map<string, number>();
-    for (const v of views) {
-      let host = "Direct";
-      if (v.referrer) {
-        try { host = new URL(v.referrer).hostname.replace(/^www\./, ""); }
-        catch { host = "Direct"; }
-      }
-      refMap.set(host, (refMap.get(host) ?? 0) + 1);
-    }
-    setTopReferrers(
-      [...refMap.entries()]
-        .map(([host, count]) => ({ host, count }))
-        .sort((a, b) => b.count - a.count)
-        .slice(0, 8)
-    );
   };
 
   useEffect(() => { void load(); }, [pageId]);
@@ -626,11 +584,6 @@ function LandingPageEditor({
     setTimeout(() => setCopied(false), 1500);
   };
 
-  // ── Derived analytics ─────────────────────────────────────────────────
-
-  const ctr = totalViews > 0 ? Math.round((totalClicks / totalViews) * 100) : 0;
-  const topLinkLabel = clicks[0]?.link_label || clicks[0]?.link_url || "—";
-
   // ── Render ────────────────────────────────────────────────────────────
 
   if (loading) return (
@@ -697,115 +650,6 @@ function LandingPageEditor({
           </Button>
         </div>
       </div>
-
-      {/* Analytics top strip — visible at a glance */}
-      <section className="rounded-xl border border-border bg-card p-5 space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="text-sm font-semibold flex items-center gap-1.5">
-            <BarChart3 className="h-4 w-4 text-primary" /> Analytics
-          </div>
-          <span className="text-[11px] text-muted-foreground">Last 30 days</span>
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <BigStat icon={<Eye className="h-3.5 w-3.5" />} label="Views" value={totalViews} />
-          <BigStat icon={<MousePointerClick className="h-3.5 w-3.5" />} label="Clicks" value={totalClicks} />
-          <BigStat icon={<BarChart3 className="h-3.5 w-3.5" />} label="CTR" value={`${ctr}%`} hint={totalViews === 0 ? "no views yet" : undefined} />
-          <BigStat icon={<LinkIcon className="h-3.5 w-3.5" />} label="Top link" value={topLinkLabel} small />
-        </div>
-
-        {/* Daily views chart */}
-        {totalViews > 0 ? (
-          <div className="h-44">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={dailyViews} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
-                <CartesianGrid stroke="rgba(255,255,255,0.05)" vertical={false} />
-                <XAxis
-                  dataKey="date"
-                  tick={{ fontSize: 10, fill: "var(--muted-foreground)" }}
-                  tickFormatter={(v) => format(new Date(v), "MMM d")}
-                  interval="preserveStartEnd"
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <YAxis
-                  tick={{ fontSize: 10, fill: "var(--muted-foreground)" }}
-                  axisLine={false}
-                  tickLine={false}
-                  allowDecimals={false}
-                  width={28}
-                />
-                <Tooltip
-                  cursor={{ fill: "rgba(255,255,255,0.04)" }}
-                  contentStyle={{
-                    background: "var(--card)",
-                    border: "1px solid var(--border)",
-                    borderRadius: 8,
-                    fontSize: 11,
-                  }}
-                  labelFormatter={(v) => format(new Date(v as string), "MMM d, yyyy")}
-                  formatter={(v) => [`${v} views`, ""]}
-                />
-                <Bar dataKey="views" fill="var(--primary)" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        ) : (
-          <div className="text-xs text-muted-foreground italic py-6 text-center border border-dashed border-border rounded-lg">
-            No views yet. Share the public URL above to start collecting data.
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Top referrers */}
-          <div className="space-y-2">
-            <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Top sources</div>
-            {topReferrers.length === 0 ? (
-              <div className="text-xs text-muted-foreground italic">No traffic yet.</div>
-            ) : (
-              <div className="space-y-1.5">
-                {topReferrers.map((r) => {
-                  const pct = totalViews > 0 ? (r.count / totalViews) * 100 : 0;
-                  return (
-                    <div key={r.host} className="flex items-center gap-3 text-xs">
-                      <div className="w-24 truncate text-muted-foreground" title={r.host}>{r.host}</div>
-                      <div className="flex-1 h-1.5 rounded-full bg-secondary overflow-hidden">
-                        <div className="h-full bg-gradient-to-r from-primary/60 to-primary" style={{ width: `${pct}%` }} />
-                      </div>
-                      <div className="w-10 text-right font-medium tabular-nums">{r.count}</div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Per-link clicks */}
-          <div className="space-y-2">
-            <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Clicks by link</div>
-            {clicks.length === 0 ? (
-              <div className="text-xs text-muted-foreground italic">No clicks yet.</div>
-            ) : (
-              <div className="space-y-1.5">
-                {clicks.map((c) => {
-                  const pct = totalClicks > 0 ? (c.count / totalClicks) * 100 : 0;
-                  return (
-                    <div key={c.link_url} className="flex items-center gap-3 text-xs">
-                      <div className="w-24 truncate text-muted-foreground" title={c.link_label ?? c.link_url}>
-                        {c.link_label || c.link_url}
-                      </div>
-                      <div className="flex-1 h-1.5 rounded-full bg-secondary overflow-hidden">
-                        <div className="h-full bg-gradient-to-r from-primary to-primary-glow" style={{ width: `${pct}%` }} />
-                      </div>
-                      <div className="w-10 text-right font-medium tabular-nums">{c.count}</div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
 
       {/* Top: published switch + slug + custom domain */}
       <section className="rounded-xl border border-border bg-card p-5 space-y-4">
@@ -1143,28 +987,6 @@ function BackBar({ onBack }: { onBack: () => void }) {
     >
       <ArrowLeft className="h-3.5 w-3.5" /> Back to landing pages
     </button>
-  );
-}
-
-function BigStat({
-  icon, label, value, hint, small,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: number | string;
-  hint?: string;
-  small?: boolean;
-}) {
-  return (
-    <div className="rounded-lg border border-border bg-secondary/30 p-3">
-      <div className="text-[10px] text-muted-foreground uppercase tracking-wide flex items-center gap-1">
-        {icon} {label}
-      </div>
-      <div className={`font-semibold tabular-nums mt-1 ${small ? "text-sm truncate" : "text-xl"}`} title={small && typeof value === "string" ? value : undefined}>
-        {typeof value === "number" ? value.toLocaleString() : value}
-      </div>
-      {hint && <div className="text-[10px] text-muted-foreground mt-0.5">{hint}</div>}
-    </div>
   );
 }
 
