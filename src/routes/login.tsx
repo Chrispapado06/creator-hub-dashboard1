@@ -43,7 +43,7 @@ function LoginPage() {
     setLoading(true);
     const { data, error } = await supabase
       .from("access_codes")
-      .select("id, username, password, active, account_type, chatter_id")
+      .select("id, username, password, active, account_type, chatter_id, allowed_pages")
       .eq("username", u)
       .eq("password", p)
       .eq("active", true)
@@ -53,10 +53,14 @@ function LoginPage() {
       toast.error("Invalid username or password.");
       return;
     }
+    // allowed_pages is null/undefined for super admins (full access) and
+    // a non-empty array for restricted admins. The sidebar + route
+    // guards in __root.tsx read this off the session.
     const session = JSON.stringify({
       username: data.username,
       type: data.account_type ?? "admin",
       chatter_id: data.chatter_id ?? null,
+      allowed_pages: (data as { allowed_pages?: string[] | null }).allowed_pages ?? null,
     });
     localStorage.setItem("agency_session", session);
     void logAudit({

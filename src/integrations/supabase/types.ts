@@ -2189,6 +2189,7 @@ export type Database = {
           active: boolean
           account_type: "admin" | "staff"
           chatter_id: string | null
+          allowed_pages: string[] | null
           created_at: string
         }
         Insert: {
@@ -2199,6 +2200,7 @@ export type Database = {
           active?: boolean
           account_type?: "admin" | "staff"
           chatter_id?: string | null
+          allowed_pages?: string[] | null
           created_at?: string
         }
         Update: {
@@ -2209,6 +2211,7 @@ export type Database = {
           active?: boolean
           account_type?: "admin" | "staff"
           chatter_id?: string | null
+          allowed_pages?: string[] | null
           created_at?: string
         }
         Relationships: [

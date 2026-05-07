@@ -13,7 +13,9 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
-import { Plus, Trash2, Copy, Check, Eye, EyeOff, Shield, MessageCircle, Sparkles, ExternalLink } from "lucide-react";
+import { Plus, Trash2, Copy, Check, Eye, EyeOff, Shield, MessageCircle, Sparkles, ExternalLink, Lock, ShieldCheck, Save, X as XIcon } from "lucide-react";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { groupedAdminPages, ADMIN_PAGES, ADMIN_PAGE_GROUPS } from "@/lib/admin-pages";
 import { AgencyLogoUpload } from "@/components/AgencyLogoUpload";
 import { FormTemplatesManager } from "@/components/CreatorForms";
 import { ClipboardList } from "lucide-react";
@@ -34,6 +36,9 @@ type AgencySettings = {
 };
 
 type AccountType = "admin" | "staff";
+// allowed_pages convention:
+//   null / empty array → super admin (full access, can manage other admins)
+//   non-empty array     → restricted admin, only sees those page slugs
 type TeamUser = {
   id: string;
   username: string;
@@ -42,6 +47,7 @@ type TeamUser = {
   active: boolean;
   account_type: AccountType;
   chatter_id: string | null;
+  allowed_pages: string[] | null;
   created_at: string;
 };
 type StaffMember = { id: string; name: string; role: string };
@@ -57,7 +63,12 @@ function SettingsPage() {
     username: "", password: "", label: "",
     account_type: "admin" as AccountType,
     chatter_id: "",
+    // "all" = full-access super admin, "restricted" = only the picked pages
+    access_mode: "all" as "all" | "restricted",
+    allowed_pages: [] as string[],
   });
+  // Edit-access dialog for an existing admin
+  const [editAccessFor, setEditAccessFor] = useState<TeamUser | null>(null);
   const [saving, setSaving] = useState(false);
   const [addingUser, setAddingUser] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
@@ -144,17 +155,37 @@ function SettingsPage() {
     if (newUser.account_type === "staff" && !newUser.chatter_id) {
       return toast.error("Pick which staff member this account is for");
     }
+    // Page access only matters for admin accounts. Staff always go to /clock.
+    // For "all" → null (super admin); "restricted" → the picked slugs
+    // (we send the array even if empty to mean "no pages" — a bit weird
+    // but explicit; the UI prevents saving an empty restricted list).
+    let allowedPages: string[] | null = null;
+    if (newUser.account_type === "admin" && newUser.access_mode === "restricted") {
+      if (newUser.allowed_pages.length === 0) {
+        return toast.error("Pick at least one page for the restricted admin");
+      }
+      allowedPages = newUser.allowed_pages;
+    }
     const { error } = await supabase.from("access_codes").insert({
       username,
       password,
       label: newUser.label.trim(),
       account_type: newUser.account_type,
       chatter_id: newUser.account_type === "staff" ? newUser.chatter_id : null,
+      allowed_pages: allowedPages,
     });
     if (error) return toast.error(error.message);
     toast.success("Team member added");
-    setNewUser({ username: "", password: "", label: "", account_type: "admin", chatter_id: "" });
+    setNewUser({ username: "", password: "", label: "", account_type: "admin", chatter_id: "", access_mode: "all", allowed_pages: [] });
     setAddingUser(false);
+    load();
+  };
+
+  const onSaveAccess = async (id: string, allowedPages: string[] | null) => {
+    const { error } = await supabase.from("access_codes").update({ allowed_pages: allowedPages }).eq("id", id);
+    if (error) return toast.error(error.message);
+    toast.success("Page access updated");
+    setEditAccessFor(null);
     load();
   };
 
@@ -427,6 +458,53 @@ function SettingsPage() {
                 />
               </div>
             </div>
+            {/* Page access picker — only meaningful for admin accounts.
+                Staff users always go to /clock regardless. */}
+            {newUser.account_type === "admin" && (
+              <div className="rounded-lg border border-border bg-secondary/30 p-3 space-y-3">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div>
+                    <Label className="text-xs flex items-center gap-1.5">
+                      <Lock className="h-3.5 w-3.5 text-primary" /> Page access
+                    </Label>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">
+                      Pick which pages this admin can see.
+                    </p>
+                  </div>
+                  <div className="inline-flex items-center rounded-md bg-card border border-border p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setNewUser({ ...newUser, access_mode: "all", allowed_pages: [] })}
+                      className={`text-[11px] px-2.5 py-1 rounded font-medium ${
+                        newUser.access_mode === "all" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      Full access
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNewUser({ ...newUser, access_mode: "restricted" })}
+                      className={`text-[11px] px-2.5 py-1 rounded font-medium ${
+                        newUser.access_mode === "restricted" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      Restricted
+                    </button>
+                  </div>
+                </div>
+                {newUser.access_mode === "restricted" ? (
+                  <PagePicker
+                    value={newUser.allowed_pages}
+                    onChange={(next) => setNewUser({ ...newUser, allowed_pages: next })}
+                  />
+                ) : (
+                  <div className="text-[11px] text-muted-foreground italic flex items-center gap-1.5">
+                    <ShieldCheck className="h-3 w-3 text-emerald-400" />
+                    Sees the entire console — including Settings (can manage other admins).
+                  </div>
+                )}
+              </div>
+            )}
             <div className="flex gap-2">
               <Button size="sm" onClick={onAddUser}>Add user</Button>
               <Button size="sm" variant="ghost" onClick={() => setAddingUser(false)}>Cancel</Button>
@@ -479,11 +557,24 @@ function SettingsPage() {
                             <MessageCircle className="h-3 w-3" />
                             Staff
                           </span>
+                        ) : !u.allowed_pages || u.allowed_pages.length === 0 ? (
+                          <button
+                            onClick={() => setEditAccessFor(u)}
+                            className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors"
+                            title="Click to restrict page access"
+                          >
+                            <ShieldCheck className="h-3 w-3" />
+                            Super admin
+                          </button>
                         ) : (
-                          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded border border-primary/30 bg-primary/10 text-primary">
-                            <Shield className="h-3 w-3" />
-                            Admin
-                          </span>
+                          <button
+                            onClick={() => setEditAccessFor(u)}
+                            className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded border border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                            title={`Sees ${u.allowed_pages.length} of ${ADMIN_PAGES.length} pages — click to edit`}
+                          >
+                            <Lock className="h-3 w-3" />
+                            {u.allowed_pages.length} / {ADMIN_PAGES.length} pages
+                          </button>
                         )}
                       </td>
                       <td className="px-4 py-3">
@@ -548,6 +639,191 @@ function SettingsPage() {
           )}
         </div>
       </section>
+
+      {/* Edit-access dialog for an existing admin */}
+      {editAccessFor && (
+        <EditAccessDialog
+          user={editAccessFor}
+          onClose={() => setEditAccessFor(null)}
+          onSave={(allowedPages) => onSaveAccess(editAccessFor.id, allowedPages)}
+        />
+      )}
     </div>
+  );
+}
+
+// ── Page-permission picker (shared between Add User + Edit dialog) ──────
+
+function PagePicker({
+  value, onChange,
+}: {
+  value: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const grouped = groupedAdminPages();
+  const allSlugs = ADMIN_PAGES.map((p) => p.slug);
+
+  const toggle = (slug: string) => {
+    if (value.includes(slug)) onChange(value.filter((s) => s !== slug));
+    else onChange([...value, slug]);
+  };
+
+  const toggleGroup = (groupSlugs: string[]) => {
+    const allSelected = groupSlugs.every((s) => value.includes(s));
+    if (allSelected) {
+      onChange(value.filter((s) => !groupSlugs.includes(s)));
+    } else {
+      const next = new Set(value);
+      groupSlugs.forEach((s) => next.add(s));
+      onChange([...next]);
+    }
+  };
+
+  return (
+    <div className="space-y-2.5">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] text-muted-foreground">
+          {value.length} of {allSlugs.length} pages selected
+        </span>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => onChange(allSlugs)}
+            className="text-[10px] px-1.5 py-0.5 rounded bg-secondary/60 hover:bg-secondary text-muted-foreground hover:text-foreground"
+          >
+            Select all
+          </button>
+          <button
+            type="button"
+            onClick={() => onChange([])}
+            className="text-[10px] px-1.5 py-0.5 rounded bg-secondary/60 hover:bg-secondary text-muted-foreground hover:text-foreground"
+          >
+            Clear
+          </button>
+        </div>
+      </div>
+      <div className="space-y-3">
+        {ADMIN_PAGE_GROUPS.map((group) => {
+          const pages = grouped[group];
+          const groupSlugs = pages.map((p) => p.slug);
+          const allInGroup = groupSlugs.every((s) => value.includes(s));
+          const someInGroup = groupSlugs.some((s) => value.includes(s));
+          return (
+            <div key={group} className="rounded-md bg-card border border-border p-2.5 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  {group}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(groupSlugs)}
+                  className="text-[10px] text-primary hover:underline"
+                >
+                  {allInGroup ? "Deselect group" : someInGroup ? "Select all" : "Select group"}
+                </button>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                {pages.map((p) => {
+                  const checked = value.includes(p.slug);
+                  return (
+                    <label
+                      key={p.slug}
+                      className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer text-xs transition-colors ${
+                        checked
+                          ? "bg-primary/10 text-foreground border border-primary/30"
+                          : "bg-secondary/30 text-muted-foreground hover:bg-secondary border border-transparent"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggle(p.slug)}
+                        className="h-3.5 w-3.5 rounded border-border accent-primary"
+                      />
+                      <span className="truncate">{p.label}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Edit access dialog ──────────────────────────────────────────────────
+
+function EditAccessDialog({
+  user, onClose, onSave,
+}: {
+  user: TeamUser;
+  onClose: () => void;
+  onSave: (allowedPages: string[] | null) => void;
+}) {
+  const [accessMode, setAccessMode] = useState<"all" | "restricted">(
+    !user.allowed_pages || user.allowed_pages.length === 0 ? "all" : "restricted",
+  );
+  const [allowedPages, setAllowedPages] = useState<string[]>(user.allowed_pages ?? []);
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    if (accessMode === "restricted" && allowedPages.length === 0) {
+      toast.error("Pick at least one page or switch to Full access");
+      return;
+    }
+    setSaving(true);
+    await onSave(accessMode === "all" ? null : allowedPages);
+    setSaving(false);
+  };
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Lock className="h-4 w-4 text-primary" />
+            Page access — {user.username}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="inline-flex items-center rounded-md bg-secondary p-0.5">
+            <button
+              onClick={() => { setAccessMode("all"); setAllowedPages([]); }}
+              className={`text-xs px-3 py-1.5 rounded font-medium ${
+                accessMode === "all" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <ShieldCheck className="h-3.5 w-3.5 inline mr-1" /> Full access
+            </button>
+            <button
+              onClick={() => setAccessMode("restricted")}
+              className={`text-xs px-3 py-1.5 rounded font-medium ${
+                accessMode === "restricted" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Lock className="h-3.5 w-3.5 inline mr-1" /> Restricted
+            </button>
+          </div>
+          {accessMode === "all" ? (
+            <div className="text-xs text-muted-foreground italic flex items-center gap-1.5 p-3 rounded-lg border border-emerald-500/20 bg-emerald-500/5">
+              <ShieldCheck className="h-4 w-4 text-emerald-400 shrink-0" />
+              <span>This admin will see the entire console — including Settings, where they can manage other admins.</span>
+            </div>
+          ) : (
+            <PagePicker value={allowedPages} onChange={setAllowedPages} />
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose}>
+            <XIcon className="h-3.5 w-3.5 mr-1" /> Cancel
+          </Button>
+          <Button onClick={handleSave} disabled={saving}>
+            <Save className="h-3.5 w-3.5 mr-1" /> {saving ? "Saving…" : "Save access"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

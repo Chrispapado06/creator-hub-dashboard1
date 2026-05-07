@@ -1,6 +1,7 @@
 import { Outlet, Link, createRootRoute, useNavigate, useLocation } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { canAccessPage, isSuperAdmin } from "@/lib/admin-pages";
 import {
   Settings, LogOut, Sun, Moon, Users, DollarSign,
   CalendarDays, LayoutDashboard, ChevronDown, ChevronRight,
@@ -18,7 +19,12 @@ type AgencySettings = {
   theme: string;
 };
 
-type SessionData = { username: string; type: "admin" | "staff"; chatter_id: string | null };
+type SessionData = {
+  username: string;
+  type: "admin" | "staff";
+  chatter_id: string | null;
+  allowed_pages: string[] | null;
+};
 
 function AgencyLogoBadge({ url, name }: { url: string | null; name: string }) {
   const [errored, setErrored] = useState(false);
@@ -47,11 +53,13 @@ const parseSession = (raw: string | null): SessionData | null => {
         username: obj.username,
         type: obj.type === "staff" ? "staff" : "admin",
         chatter_id: obj.chatter_id ?? null,
+        // null = unrestricted (super admin); array = restricted to those page slugs
+        allowed_pages: Array.isArray(obj.allowed_pages) ? obj.allowed_pages : null,
       };
     }
   } catch {
-    // Legacy: plain-string session = admin
-    return { username: raw, type: "admin", chatter_id: null };
+    // Legacy: plain-string session = admin with full access
+    return { username: raw, type: "admin", chatter_id: null, allowed_pages: null };
   }
   return null;
 };
@@ -83,17 +91,28 @@ export const Route = createRootRoute({
   notFoundComponent: NotFoundComponent,
 });
 
+// Context carries the active admin's allowed_pages so SideNavLink can
+// hide entries the admin doesn't have permission to see. null means
+// "no restrictions" (super admin) and every link renders.
+const AllowedPagesCtx = createContext<string[] | null>(null);
+
 function SideNavLink({
   to,
   icon,
   label,
   exact,
+  slug,
 }: {
   to: string;
   icon: React.ReactNode;
   label: string;
   exact?: boolean;
+  /** Optional permission slug. If set and the admin doesn't have it,
+      this link is hidden. Omit to always render (settings, profile, etc). */
+  slug?: string;
 }) {
+  const allowedPages = useContext(AllowedPagesCtx);
+  if (slug && !canAccessPage(slug, allowedPages)) return null;
   return (
     <Link
       to={to}
@@ -138,8 +157,8 @@ function RedditNavGroup() {
       </button>
       {open && (
         <div className="ml-4 mt-0.5 space-y-0.5 border-l border-border pl-3">
-          <SideNavLink to="/reddit" icon={<SiReddit className="h-4 w-4" />} label="Posts" />
-          <SideNavLink to="/reddit-airtable" icon={<SiAirtable className="h-4 w-4" />} label="Airtable" />
+          <SideNavLink to="/reddit" slug="reddit" icon={<SiReddit className="h-4 w-4" />} label="Posts" />
+          <SideNavLink to="/reddit-airtable" slug="reddit-airtable" icon={<SiAirtable className="h-4 w-4" />} label="Airtable" />
         </div>
       )}
     </div>
@@ -176,9 +195,9 @@ function MetaNavGroup() {
       </button>
       {open && (
         <div className="ml-4 mt-0.5 space-y-0.5 border-l border-border pl-3">
-          <SideNavLink to="/instagram" icon={<SiInstagram className="h-4 w-4" />} label="Instagram" />
-          <SideNavLink to="/facebook" icon={<SiFacebook className="h-4 w-4" />} label="Facebook" />
-          <SideNavLink to="/ads" icon={<DollarSign className="h-4 w-4" />} label="Ads" />
+          <SideNavLink to="/instagram" slug="instagram" icon={<SiInstagram className="h-4 w-4" />} label="Instagram" />
+          <SideNavLink to="/facebook" slug="facebook" icon={<SiFacebook className="h-4 w-4" />} label="Facebook" />
+          <SideNavLink to="/ads" slug="ads" icon={<DollarSign className="h-4 w-4" />} label="Ads" />
         </div>
       )}
     </div>
@@ -338,6 +357,7 @@ function RootComponent() {
   }
 
   return (
+    <AllowedPagesCtx.Provider value={session?.allowed_pages ?? null}>
     <div className="flex min-h-screen bg-background">
       {/* Sidebar */}
       <aside className="fixed inset-y-0 left-0 z-40 flex w-60 flex-col border-r border-border bg-card/30 backdrop-blur-sm">
@@ -354,10 +374,10 @@ function RootComponent() {
         <nav className="flex-1 overflow-y-auto py-5 px-3 space-y-6">
           {/* Main */}
           <div className="space-y-0.5">
-            <SideNavLink to="/daily" icon={<LayoutDashboard className="h-4 w-4" />} label="Daily Dashboard" />
-            <SideNavLink to="/" icon={<Users className="h-4 w-4" />} label="Creators" exact />
-            <SideNavLink to="/revenue" icon={<DollarSign className="h-4 w-4" />} label="Revenue" />
-            <SideNavLink to="/weekly" icon={<CalendarDays className="h-4 w-4" />} label="Weekly" />
+            <SideNavLink to="/daily" slug="daily" icon={<LayoutDashboard className="h-4 w-4" />} label="Daily Dashboard" />
+            <SideNavLink to="/" slug="creators" icon={<Users className="h-4 w-4" />} label="Creators" exact />
+            <SideNavLink to="/revenue" slug="revenue" icon={<DollarSign className="h-4 w-4" />} label="Revenue" />
+            <SideNavLink to="/weekly" slug="weekly" icon={<CalendarDays className="h-4 w-4" />} label="Weekly" />
           </div>
 
           {/* Operations */}
@@ -370,11 +390,11 @@ function RootComponent() {
               <div className="h-px flex-1 bg-border/60" />
             </div>
             <div className="space-y-0.5">
-              <SideNavLink to="/chatters" icon={<MessageCircle className="h-4 w-4" />} label="Staff" />
-              <SideNavLink to="/leads" icon={<UserPlus className="h-4 w-4" />} label="Client Acquisition" />
-              <SideNavLink to="/automation" icon={<Zap className="h-4 w-4" />} label="Automation" />
-              <SideNavLink to="/financials" icon={<PiggyBank className="h-4 w-4" />} label="Financials" />
-              <SideNavLink to="/audit" icon={<ScrollText className="h-4 w-4" />} label="Audit Log" />
+              <SideNavLink to="/chatters" slug="chatters" icon={<MessageCircle className="h-4 w-4" />} label="Staff" />
+              <SideNavLink to="/leads" slug="leads" icon={<UserPlus className="h-4 w-4" />} label="Client Acquisition" />
+              <SideNavLink to="/automation" slug="automation" icon={<Zap className="h-4 w-4" />} label="Automation" />
+              <SideNavLink to="/financials" slug="financials" icon={<PiggyBank className="h-4 w-4" />} label="Financials" />
+              <SideNavLink to="/audit" slug="audit" icon={<ScrollText className="h-4 w-4" />} label="Audit Log" />
             </div>
           </div>
 
@@ -388,10 +408,10 @@ function RootComponent() {
               <div className="h-px flex-1 bg-border/60" />
             </div>
             <div className="space-y-0.5">
-              <SideNavLink to="/onlyfans" icon={<SiOnlyfans className="h-4 w-4" />} label="OnlyFans" />
+              <SideNavLink to="/onlyfans" slug="onlyfans" icon={<SiOnlyfans className="h-4 w-4" />} label="OnlyFans" />
               <RedditNavGroup />
-              <SideNavLink to="/x" icon={<SiX className="h-4 w-4" />} label="X" />
-              <SideNavLink to="/tiktok" icon={<SiTiktok className="h-4 w-4" />} label="TikTok" />
+              <SideNavLink to="/x" slug="x" icon={<SiX className="h-4 w-4" />} label="X" />
+              <SideNavLink to="/tiktok" slug="tiktok" icon={<SiTiktok className="h-4 w-4" />} label="TikTok" />
               <MetaNavGroup />
             </div>
           </div>
@@ -406,14 +426,18 @@ function RootComponent() {
               <div className="h-px flex-1 bg-border/60" />
             </div>
             <div className="space-y-0.5">
-              <SideNavLink to="/bernard" icon={<Sparkles className="h-4 w-4" />} label="Bernard" />
+              <SideNavLink to="/bernard" slug="bernard" icon={<Sparkles className="h-4 w-4" />} label="Bernard" />
             </div>
           </div>
         </nav>
 
         {/* Bottom */}
         <div className="border-t border-border px-3 py-3 space-y-0.5">
-          <SideNavLink to="/settings" icon={<Settings className="h-4 w-4" />} label="Settings" />
+          {/* Settings is super-admin-only — restricted admins shouldn't be able
+              to manage other admins or change agency-wide settings. */}
+          {isSuperAdmin(session?.allowed_pages) && (
+            <SideNavLink to="/settings" icon={<Settings className="h-4 w-4" />} label="Settings" />
+          )}
           <button
             onClick={onToggleTheme}
             className="flex w-full items-center gap-3 rounded-lg pl-4 pr-3 py-2 text-sm text-muted-foreground transition-all duration-150 ease-out hover:bg-secondary/60 hover:text-foreground hover:translate-x-px"
@@ -447,5 +471,6 @@ function RootComponent() {
       </main>
       <InstallPromptBanner />
     </div>
+    </AllowedPagesCtx.Provider>
   );
 }
