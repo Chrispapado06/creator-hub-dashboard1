@@ -507,7 +507,9 @@ function BernardPage() {
               const result = await tool.handler(block.input);
               const isError = result.startsWith("Error:");
               setToolStatus(block.id, isError ? "error" : "done", result);
-              results.push({ type: "tool_result", tool_use_id: block.id, content: result, is_error: isError });
+              // Anthropic rejects user messages with empty content, so guard
+              // against a tool returning "" — surface "(no output)" instead.
+              results.push({ type: "tool_result", tool_use_id: block.id, content: result || "(no output)", is_error: isError });
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err);
               setToolStatus(block.id, "error", msg);
@@ -517,8 +519,31 @@ function BernardPage() {
             // Write / destructive — surface an approval card
             setToolStatus(block.id, "pending_approval");
             const result = await askApproval(block.id, block.name, block.input);
-            results.push(result);
+            // Same guard as the read branch — never let an empty content
+            // string leak through.
+            results.push({ ...result, content: result.content || "(no output)" });
           }
+        }
+
+        // Defensive: if the assistant's stopReason was tool_use but we
+        // ended up with no tool_results (e.g. all blocks were already
+        // handled in a prior round, or a streaming race left blocks
+        // unparsed), DON'T send an empty user message — the Anthropic
+        // API 400s on `messages.N: user messages must have non-empty
+        // content`. Bail out and surface what we have.
+        if (results.length === 0) {
+          console.warn("Bernard agentic loop: no tool_results to send back, ending turn early", {
+            toolBlocks: toolUseBlocks.length,
+          });
+          break;
+        }
+        // Same guard for the assistant side — the fallback used to
+        // substitute `{ role: "assistant", content: "" }` which would
+        // also 400 the API. If we somehow lost the assistant message,
+        // bail rather than send garbage.
+        if (!latestAssistant) {
+          console.warn("Bernard agentic loop: lost reference to latest assistant message, ending turn early");
+          break;
         }
 
         // Continue: append a user message with the tool_results + a fresh assistant placeholder
@@ -527,7 +552,7 @@ function BernardPage() {
         // Update local history to include what just happened, for the next iteration
         history = [
           ...history,
-          (latestAssistant ?? { role: "assistant", content: "" }),
+          latestAssistant,
           { role: "user", content: results },
         ];
       }
