@@ -217,6 +217,38 @@ function RootComponent() {
     applyTheme(savedTheme);
   }, []);
 
+  // Custom domain support: if a visitor hits a hostname that's been registered
+  // as a creator's landing-page custom_domain, route them straight to that
+  // landing page. This makes URLs like `creatorname.com` behave like a
+  // Linktree — clean, no /p/<slug> in the URL.
+  //
+  // Skips when:
+  //   - we're already on /p/<slug> (the redirect already happened or the URL
+  //     is being typed by an admin)
+  //   - the host is localhost / vercel.app (those are dashboard hosts)
+  //   - the user is logged in (admins/staff visiting a custom domain shouldn't
+  //     be hijacked away from the dashboard)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (location.pathname.startsWith("/p/")) return;
+    if (authed === true) return;
+    const host = window.location.hostname;
+    if (host === "localhost" || host === "127.0.0.1") return;
+    if (host.endsWith(".vercel.app")) return;
+    let cancelled = false;
+    void supabase
+      .from("creator_landing_pages")
+      .select("slug, is_published")
+      .eq("custom_domain", host)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (cancelled || !data || !data.is_published) return;
+        navigate({ to: `/p/${data.slug}` });
+      });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authed, location.pathname]);
+
   useEffect(() => {
     const raw = localStorage.getItem("agency_session");
     const parsed = parseSession(raw);
@@ -247,6 +279,11 @@ function RootComponent() {
   }, []);
 
   useEffect(() => {
+    // /p/<slug> is the public landing-page namespace and must work for anonymous
+    // visitors regardless of auth state.
+    const isPublic = location.pathname.startsWith("/p/") || location.pathname === "/p";
+    if (isPublic) return;
+
     if (authed === false && location.pathname !== "/login") {
       navigate({ to: "/login" });
     }
@@ -272,6 +309,14 @@ function RootComponent() {
     setSettings((s) => ({ ...s, theme: newTheme }));
     await supabase.from("agency_settings").update({ theme: newTheme });
   };
+
+  // Public landing pages bypass auth entirely — they're meant to be hit by
+  // anonymous visitors. They render outside the dashboard chrome too.
+  const isPublicLanding =
+    location.pathname.startsWith("/p/") || location.pathname === "/p";
+  if (isPublicLanding) {
+    return <Outlet />;
+  }
 
   if (authed === null) return null;
 

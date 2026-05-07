@@ -789,6 +789,99 @@ export type Database = {
           }
         ]
       }
+      creator_landing_pages: {
+        Row: {
+          id: string
+          creator_id: string
+          slug: string
+          custom_domain: string | null
+          is_published: boolean
+          display_name: string | null
+          tagline: string | null
+          bio: string | null
+          avatar_url: string | null
+          cover_url: string | null
+          theme: string
+          accent_color: string | null
+          font: string
+          links: unknown
+          seo_title: string | null
+          seo_description: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          creator_id: string
+          slug: string
+          custom_domain?: string | null
+          is_published?: boolean
+          display_name?: string | null
+          tagline?: string | null
+          bio?: string | null
+          avatar_url?: string | null
+          cover_url?: string | null
+          theme?: string
+          accent_color?: string | null
+          font?: string
+          links?: unknown
+          seo_title?: string | null
+          seo_description?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          creator_id?: string
+          slug?: string
+          custom_domain?: string | null
+          is_published?: boolean
+          display_name?: string | null
+          tagline?: string | null
+          bio?: string | null
+          avatar_url?: string | null
+          cover_url?: string | null
+          theme?: string
+          accent_color?: string | null
+          font?: string
+          links?: unknown
+          seo_title?: string | null
+          seo_description?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      landing_clicks: {
+        Row: {
+          id: string
+          landing_id: string
+          link_url: string
+          link_label: string | null
+          referrer: string | null
+          user_agent: string | null
+          occurred_at: string
+        }
+        Insert: {
+          id?: string
+          landing_id: string
+          link_url: string
+          link_label?: string | null
+          referrer?: string | null
+          user_agent?: string | null
+          occurred_at?: string
+        }
+        Update: {
+          id?: string
+          landing_id?: string
+          link_url?: string
+          link_label?: string | null
+          referrer?: string | null
+          user_agent?: string | null
+          occurred_at?: string
+        }
+        Relationships: []
+      }
       creator_documents: {
         Row: {
           id: string

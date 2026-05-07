@@ -60,6 +60,7 @@ import { isMissingCreatorAvatarColumnError, normalizeCreatorFromDb } from "@/lib
 import { OnboardingChecklist } from "@/components/OnboardingChecklist";
 import { CreatorGoals } from "@/components/CreatorGoals";
 import { CreatorDocuments } from "@/components/CreatorDocuments";
+import { CreatorLanding } from "@/components/CreatorLanding";
 import { logAudit } from "@/lib/audit";
 
 export const Route = createFileRoute("/creators/$creatorId")({
@@ -988,6 +989,7 @@ function CreatorDetailPage() {
           <TabsTrigger value="platforms">Platforms</TabsTrigger>
           <TabsTrigger value="staff">Staff</TabsTrigger>
           <TabsTrigger value="documents">Documents</TabsTrigger>
+          <TabsTrigger value="landing">Landing page</TabsTrigger>
           <TabsTrigger value="organic">Organic</TabsTrigger>
           <TabsTrigger value="internal">Internal</TabsTrigger>
           <TabsTrigger value="ads">Ads</TabsTrigger>
@@ -1044,6 +1046,10 @@ function CreatorDetailPage() {
 
         <TabsContent value="documents">
           <CreatorDocuments creatorId={creatorId} creatorName={creator?.name} />
+        </TabsContent>
+
+        <TabsContent value="landing">
+          <CreatorLanding creatorId={creatorId} creatorName={creator?.name} />
         </TabsContent>
 
         <TabsContent value="organic">
