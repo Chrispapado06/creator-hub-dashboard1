@@ -151,11 +151,20 @@ function LandingPage() {
   const [landing, setLanding] = useState<Landing | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [previewMode, setPreviewMode] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
+      // Preview mode bypasses is_published — admins use it to preview a draft
+      // before flipping the switch. Triggered by ?preview=1 in the URL AND
+      // an active dashboard session (so the draft isn't world-visible).
+      const url = typeof window !== "undefined" ? new URL(window.location.href) : null;
+      const isPreviewParam = url?.searchParams.get("preview") === "1";
+      const hasSession = typeof window !== "undefined" && !!localStorage.getItem("agency_session");
+      const allowDraft = isPreviewParam && hasSession;
+
       // Try slug first — most common path. If the visitor's actually on a
       // custom domain we'll fall back to that lookup.
       let row: Landing | null = null;
@@ -181,11 +190,17 @@ function LandingPage() {
         }
       }
       if (cancelled) return;
-      if (!row || !row.is_published) {
+      if (!row) {
         setNotFound(true);
         setLoading(false);
         return;
       }
+      if (!row.is_published && !allowDraft) {
+        setNotFound(true);
+        setLoading(false);
+        return;
+      }
+      setPreviewMode(allowDraft && !row.is_published);
       // Normalize JSONB columns to arrays even if the DB returned null/object
       if (!Array.isArray(row.links)) row.links = [];
       if (!Array.isArray(row.media)) row.media = [];
@@ -228,6 +243,13 @@ function LandingPage() {
       className="min-h-screen w-full overflow-x-hidden flex flex-col items-center"
       style={{ ...theme.page, fontFamily }}
     >
+      {/* Preview banner — shows only when an admin is viewing an unpublished draft */}
+      {previewMode && (
+        <div className="w-full sticky top-0 z-50 bg-warning text-warning-foreground text-center text-xs font-semibold py-1.5 px-3" style={{ background: "#f59e0b", color: "#1a1a1a" }}>
+          ⚠ Preview mode — this page is a draft. Toggle "Published" in the editor to make it live.
+        </div>
+      )}
+
       {/* Cover image (optional) */}
       {landing.cover_url && (
         <div className="w-full h-40 sm:h-56 relative overflow-hidden">

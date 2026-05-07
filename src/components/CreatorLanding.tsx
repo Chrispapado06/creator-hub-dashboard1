@@ -374,7 +374,13 @@ export function CreatorLanding({ creatorId, creatorName }: { creatorId: string; 
           <Button
             size="sm"
             variant="outline"
-            onClick={() => window.open(publicUrl, "_blank")}
+            onClick={() => {
+              // ?preview=1 lets admins see drafts without flipping the published switch.
+              // The public landing page checks for a session before allowing it, so the
+              // URL itself is safe to share — anonymous visitors still get a 404.
+              const previewUrl = form.is_published ? publicUrl : `${publicUrl}?preview=1`;
+              window.open(previewUrl, "_blank");
+            }}
           >
             <Eye className="h-3.5 w-3.5 mr-1" /> Preview
           </Button>
