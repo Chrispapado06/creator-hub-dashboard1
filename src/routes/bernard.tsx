@@ -12,7 +12,7 @@ import {
   Sparkles, RefreshCw, Copy, Check, AlertCircle,
   TrendingUp, TrendingDown, Megaphone, ListChecks, MessageCircle,
   Lightbulb, Send, Trash2, Plus, X, Target, BarChart3,
-  Users as UsersIcon, ChevronRight, History, LineChart,
+  Users as UsersIcon, ChevronRight, ChevronDown, History, LineChart,
 } from "lucide-react";
 import {
   Popover, PopoverContent, PopoverTrigger,
@@ -277,20 +277,29 @@ function BernardPage() {
   // We populate the history sidebar but DON'T auto-open the most recent one —
   // every visit lands on the fresh preset picker. Old conversations are still
   // a click away in the sidebar.
-  // Agency name powers the greeting — pulled from agency_settings, with
-  // a friendly fallback if the row hasn't been seeded yet.
-  const [agencyName, setAgencyName] = useState<string>("Boss");
+  // Greeting personalisation — uses the logged-in admin's username from
+  // the agency_session localStorage record (set by /login). Falls back
+  // to a generic "there" if no session is found.
+  const [userName, setUserName] = useState<string>("there");
 
   useEffect(() => {
     getAnthropicKey().then((k) => setHasKey(!!k));
     setConversations(loadConversations());
-    void supabase
-      .from("agency_settings")
-      .select("agency_name")
-      .maybeSingle()
-      .then(({ data }) => {
-        if (data?.agency_name) setAgencyName(data.agency_name);
-      });
+    try {
+      const raw = localStorage.getItem("agency_session");
+      if (raw) {
+        // Session can be a JSON blob {username, type, ...} or a legacy
+        // plain string (admin username).
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed?.username) setUserName(String(parsed.username));
+        } catch {
+          if (raw) setUserName(raw);
+        }
+      }
+    } catch {
+      // localStorage blocked / disabled — keep the default
+    }
   }, []);
 
   // Auto-scroll the chat to bottom on new content
@@ -791,7 +800,7 @@ function BernardPage() {
             <PresetGrid
               disabled={hasKey === false || streaming}
               onPick={(p) => startConversation(p)}
-              agencyName={agencyName}
+              userName={userName}
             />
           )}
           {activeConvo && (
@@ -995,11 +1004,11 @@ function ConversationsPopover({
 const FEATURED_PRESET_IDS = ["weekly_digest", "monthly_review", "top_performers", "revenue_forecast"];
 
 function PresetGrid({
-  disabled, onPick, agencyName,
+  disabled, onPick, userName,
 }: {
   disabled: boolean;
   onPick: (p: Preset) => void;
-  agencyName: string;
+  userName: string;
 }) {
   const [showAll, setShowAll] = useState(false);
   const featured = PRESETS.filter((p) => FEATURED_PRESET_IDS.includes(p.id));
@@ -1013,10 +1022,10 @@ function PresetGrid({
           <Sparkles className="h-6 w-6 text-primary-foreground" />
         </div>
         <h2 className="text-2xl font-bold tracking-tight">
-          Hey {agencyName}<span className="text-muted-foreground/70">, CEO</span>
+          Hey {userName}, what can I help you with?
         </h2>
         <p className="text-sm text-muted-foreground">
-          What do you want to dig into? Pick a shortcut or just ask.
+          Pick a shortcut or just type a question.
         </p>
       </div>
 
