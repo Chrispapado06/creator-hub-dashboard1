@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   Plus, Trash2, Link2, DollarSign, Image, Video, FileText, Globe,
   AlertTriangle, Upload, Play, X, ArrowUp, MessageCircle,
-  ExternalLink, RefreshCw,
+  ExternalLink, RefreshCw, MessageSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -124,14 +124,28 @@ function RedditPage() {
     if (accounts.length === 0) return toast.error("No Reddit accounts to sync");
     setSyncingReddit(true);
     let totalNew = 0;
-    let errors = 0;
+    let empty = 0;
+    const failures: { username: string; reason: string }[] = [];
     for (const account of accounts) {
       try {
         const res = await fetch(`/reddit-api/user/${account.username}/submitted.json?limit=100&sort=new`);
-        if (!res.ok) { console.error(`u/${account.username}: HTTP ${res.status}`); errors++; continue; }
+        if (!res.ok) {
+          let reason = `HTTP ${res.status}`;
+          if (res.status === 404) reason = "404 — proxy not found (is the Vite dev server running?)";
+          else if (res.status === 403) reason = "403 — Reddit blocked the request (rate-limited or account private)";
+          else if (res.status === 429) reason = "429 — Reddit rate-limit hit, slow down and retry";
+          else if (res.status >= 500) reason = `${res.status} — Reddit upstream error`;
+          console.error(`Reddit sync failed for u/${account.username}:`, reason);
+          failures.push({ username: account.username, reason });
+          continue;
+        }
         const json = await res.json() as { data?: { children?: { data: { id: string; title: string; subreddit: string; created_utc: number; score: number; num_comments: number; url: string; permalink: string } }[] } };
         const children = json.data?.children ?? [];
-        if (children.length === 0) continue;
+        if (children.length === 0) {
+          console.warn(`Reddit sync: u/${account.username} returned 0 posts (suspended, private, or genuinely empty)`);
+          empty++;
+          continue;
+        }
         const upserts = children.map((child) => ({
           reddit_account_id: account.id,
           post_id: child.data.id,
@@ -143,14 +157,34 @@ function RedditPage() {
           url: `https://reddit.com${child.data.permalink}`,
         }));
         const { error } = await supabase.from("posts").upsert(upserts, { onConflict: "post_id" });
-        if (error) { errors++; } else { totalNew += upserts.length; }
-      } catch { errors++; }
+        if (error) {
+          console.error(`Supabase upsert failed for u/${account.username}:`, error);
+          failures.push({ username: account.username, reason: `DB error: ${error.message}` });
+        } else {
+          totalNew += upserts.length;
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        const reason = msg.toLowerCase().includes("failed to fetch")
+          ? "Network/proxy unreachable — Vite dev server may be stopped"
+          : msg;
+        console.error(`Reddit sync threw for u/${account.username}:`, err);
+        failures.push({ username: account.username, reason });
+      }
     }
     setSyncingReddit(false);
-    if (totalNew === 0 && errors > 0) {
-      toast.error(`Sync failed for all ${errors} account${errors !== 1 ? "s" : ""} — check console for details`);
+
+    const succeeded = accounts.length - failures.length - empty;
+    if (failures.length === accounts.length) {
+      const sample = failures[0];
+      toast.error(`All ${accounts.length} account${accounts.length !== 1 ? "s" : ""} failed — first error: ${sample.reason}`);
+    } else if (failures.length > 0) {
+      toast.error(`Synced ${totalNew} posts · ${failures.length} failed (${failures[0].username}: ${failures[0].reason})`);
+      refresh();
+    } else if (empty === accounts.length) {
+      toast.info(`All ${accounts.length} account${accounts.length !== 1 ? "s" : ""} returned 0 posts — accounts may be private, suspended, or empty`);
     } else {
-      toast.success(`Synced ${totalNew} posts across ${accounts.length - errors} account${accounts.length !== 1 ? "s" : ""}${errors > 0 ? ` (${errors} failed)` : ""}`);
+      toast.success(`Synced ${totalNew} posts across ${succeeded} account${succeeded !== 1 ? "s" : ""}${empty > 0 ? ` · ${empty} empty` : ""}`);
       refresh();
     }
   };
@@ -240,7 +274,7 @@ function RedditPage() {
           </TabsList>
 
           <TabsContent value="overview" className="mt-6">
-            <OverviewTab accounts={accounts} posts={posts} subreddits={subreddits} inflowwStats={inflowwStats} syncing={syncing} syncingReddit={syncingReddit} onSyncInfloww={syncInfloww} onSyncReddit={syncRedditPosts} />
+            <OverviewTab creatorId={selectedCreatorId} accounts={accounts} posts={posts} subreddits={subreddits} trackingLinks={trackingLinks} inflowwStats={inflowwStats} syncing={syncing} syncingReddit={syncingReddit} onSyncInfloww={syncInfloww} onSyncReddit={syncRedditPosts} onRefresh={refresh} />
           </TabsContent>
           <TabsContent value="accounts" className="mt-6">
             <AccountsTab creatorId={selectedCreatorId} accounts={accounts} onRefresh={refresh} />
@@ -267,14 +301,76 @@ function RedditPage() {
 }
 
 // ── Overview Tab ───────────────────────────────────────────────────────────────
-function OverviewTab({ accounts, posts, subreddits, inflowwStats, syncing, syncingReddit, onSyncInfloww, onSyncReddit }: {
-  accounts: RedditAccount[]; posts: Post[]; subreddits: Subreddit[]; inflowwStats: InflowwStat[];
-  syncing: boolean; syncingReddit: boolean; onSyncInfloww: () => void; onSyncReddit: () => void;
+function OverviewTab({ creatorId, accounts, posts, subreddits, trackingLinks, inflowwStats, syncing, syncingReddit, onSyncInfloww, onSyncReddit, onRefresh }: {
+  creatorId: string;
+  accounts: RedditAccount[]; posts: Post[]; subreddits: Subreddit[]; trackingLinks: TrackingLink[]; inflowwStats: InflowwStat[];
+  syncing: boolean; syncingReddit: boolean; onSyncInfloww: () => void; onSyncReddit: () => void; onRefresh: () => void;
 }) {
   const totalRevenue = inflowwStats.reduce((s, i) => s + i.revenue_total, 0);
   const activeSubs = subreddits.filter((s) => s.status === "active").length;
   const posts30d = posts.filter((p) => Date.now() - new Date(p.posted_at).getTime() < 30 * 24 * 3600_000).length;
   const topPost = posts.length > 0 ? posts.reduce((a, b) => (a.upvotes > b.upvotes ? a : b)) : null;
+
+  // ── Add-account / add-link / inline-note state for the cards grid ──
+  const [addAccOpen, setAddAccOpen] = useState(false);
+  const [accForm, setAccForm] = useState({ username: "", status: "active" });
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [linkForm, setLinkForm] = useState({ reddit_account_id: "", label: "", url: "" });
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [noteValue, setNoteValue] = useState("");
+
+  const onAddAccount = async () => {
+    if (!accForm.username.trim()) return toast.error("Username is required");
+    const { error } = await supabase.from("reddit_accounts").insert({
+      creator_id: creatorId,
+      username: accForm.username.trim(),
+      status: accForm.status as "active" | "shadowbanned" | "suspended" | "inactive",
+    });
+    if (error) return toast.error(error.message);
+    toast.success("Reddit account added");
+    setAccForm({ username: "", status: "active" });
+    setAddAccOpen(false);
+    onRefresh();
+  };
+
+  const onDeleteAccount = async (id: string) => {
+    const { error } = await supabase.from("reddit_accounts").delete().eq("id", id);
+    if (error) return toast.error(error.message);
+    toast.success("Account removed");
+    onRefresh();
+  };
+
+  const onAddLink = async () => {
+    if (!linkForm.reddit_account_id) return toast.error("Pick an account");
+    if (!linkForm.label.trim()) return toast.error("Label is required");
+    if (!linkForm.url.trim()) return toast.error("URL is required");
+    const { error } = await supabase.from("tracking_links").insert({
+      reddit_account_id: linkForm.reddit_account_id,
+      label: linkForm.label.trim(),
+      url: linkForm.url.trim(),
+    });
+    if (error) return toast.error(error.message);
+    toast.success("Tracking link added");
+    setLinkForm({ reddit_account_id: "", label: "", url: "" });
+    setLinkOpen(false);
+    onRefresh();
+  };
+
+  const onDeleteLink = async (id: string) => {
+    const { error } = await supabase.from("tracking_links").delete().eq("id", id);
+    if (error) return toast.error(error.message);
+    toast.success("Link removed");
+    onRefresh();
+  };
+
+  const saveAccountNote = async (accId: string, note: string) => {
+    const { error } = await supabase
+      .from("reddit_accounts")
+      .update({ notes: note.trim() || null })
+      .eq("id", accId);
+    if (error) return toast.error(error.message);
+    onRefresh();
+  };
 
   return (
     <div className="space-y-6">
@@ -339,6 +435,218 @@ function OverviewTab({ accounts, posts, subreddits, inflowwStats, syncing, synci
       )}
 
       <HealthWarnings accounts={accounts} posts={posts} />
+
+      {/* Reddit Accounts cards */}
+      <section>
+        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+          <h2 className="text-lg font-semibold">Reddit accounts</h2>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={onSyncInfloww} disabled={syncing}>
+              <Upload className={`h-3.5 w-3.5 mr-1.5 ${syncing ? "animate-pulse" : ""}`} />
+              {syncing ? "Syncing…" : "Sync Infloww"}
+            </Button>
+            <Dialog open={linkOpen} onOpenChange={setLinkOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm" variant="outline">
+                  <Link2 className="h-4 w-4 mr-1.5" />Add tracking link
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader><DialogTitle>Add tracking link</DialogTitle></DialogHeader>
+                <div className="space-y-4 py-2">
+                  <div className="space-y-1.5">
+                    <Label>Account</Label>
+                    <Select value={linkForm.reddit_account_id} onValueChange={(v) => setLinkForm({ ...linkForm, reddit_account_id: v })}>
+                      <SelectTrigger><SelectValue placeholder="Select account" /></SelectTrigger>
+                      <SelectContent>
+                        {accounts.map((a) => (
+                          <SelectItem key={a.id} value={a.id}>u/{a.username}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Label</Label>
+                    <Input placeholder="e.g. Bio link" value={linkForm.label} onChange={(e) => setLinkForm({ ...linkForm, label: e.target.value })} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>URL</Label>
+                    <Input placeholder="https://infloww.me/..." value={linkForm.url} onChange={(e) => setLinkForm({ ...linkForm, url: e.target.value })} />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="ghost" onClick={() => setLinkOpen(false)}>Cancel</Button>
+                  <Button onClick={onAddLink}>Add</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+            <Dialog open={addAccOpen} onOpenChange={setAddAccOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm">
+                  <Plus className="h-4 w-4 mr-1.5" />Add account
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader><DialogTitle>Add Reddit account</DialogTitle></DialogHeader>
+                <div className="space-y-4 py-2">
+                  <div className="space-y-1.5">
+                    <Label>Username</Label>
+                    <Input value={accForm.username} onChange={(e) => setAccForm({ ...accForm, username: e.target.value })} placeholder="luna_xo" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Status</Label>
+                    <Select value={accForm.status} onValueChange={(v) => setAccForm({ ...accForm, status: v })}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="active">Active</SelectItem>
+                        <SelectItem value="shadowbanned">Shadowbanned</SelectItem>
+                        <SelectItem value="suspended">Suspended</SelectItem>
+                        <SelectItem value="inactive">Inactive</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="ghost" onClick={() => setAddAccOpen(false)}>Cancel</Button>
+                  <Button onClick={onAddAccount}>Add</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
+        </div>
+
+        {accounts.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border bg-card/40 p-8 text-center text-sm text-muted-foreground">
+            No Reddit accounts linked yet.
+          </div>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {accounts.map((a) => {
+              const acctLinks = trackingLinks.filter((l) => l.reddit_account_id === a.id);
+              const acctPosts = posts.filter((p) => p.reddit_account_id === a.id);
+              const acctStat = a.infloww_campaign_code != null
+                ? inflowwStats.find((s) => s.campaign_code === a.infloww_campaign_code) ?? null
+                : null;
+              return (
+                <div key={a.id} className="rounded-xl border border-border bg-card p-4 hover:border-primary/40 transition-colors">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="font-medium">u/{a.username}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5">{acctPosts.length} posts</div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${accountStatusStyles[a.status]}`}>
+                        {a.status}
+                      </span>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <button className="text-muted-foreground hover:text-destructive transition-colors">
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Remove u/{a.username}?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This will also delete all posts, subreddits, and tracking links for this account.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => onDeleteAccount(a.id)}>Remove</AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
+                  </div>
+
+                  {acctLinks.length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-border space-y-1.5">
+                      <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Tracking links</div>
+                      {acctLinks.map((l) => (
+                        <div key={l.id} className="flex items-center justify-between gap-2">
+                          <a href={l.url} target="_blank" rel="noreferrer" className="text-xs text-primary hover:underline truncate flex items-center gap-1">
+                            <Link2 className="h-3 w-3 shrink-0" />
+                            {l.label}
+                          </a>
+                          <button onClick={() => onDeleteLink(l.id)} className="text-muted-foreground hover:text-destructive transition-colors shrink-0">
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="mt-3 pt-3 border-t border-border space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Infloww</span>
+                      {acctStat && (
+                        <span className="text-[10px] text-muted-foreground">
+                          synced {new Date(acctStat.synced_at).toLocaleDateString()}
+                        </span>
+                      )}
+                    </div>
+                    {acctStat ? (
+                      <div className="grid grid-cols-3 gap-1.5 text-center">
+                        <div className="rounded-lg bg-secondary/60 px-2 py-1.5">
+                          <div className="text-sm font-semibold">{acctStat.clicks_count.toLocaleString()}</div>
+                          <div className="text-[10px] text-muted-foreground">Clicks</div>
+                        </div>
+                        <div className="rounded-lg bg-secondary/60 px-2 py-1.5">
+                          <div className="text-sm font-semibold">{acctStat.subscribers_count.toLocaleString()}</div>
+                          <div className="text-[10px] text-muted-foreground">Subs</div>
+                        </div>
+                        <div className="rounded-lg bg-success/15 px-2 py-1.5">
+                          <div className="text-sm font-semibold text-success">${acctStat.revenue_total.toFixed(0)}</div>
+                          <div className="text-[10px] text-muted-foreground">Earned</div>
+                        </div>
+                        {acctStat.spenders_count > 0 && (
+                          <div className="col-span-3 flex justify-between text-[11px] text-muted-foreground px-1">
+                            <span>{acctStat.spenders_count} spenders</span>
+                            {acctStat.subscribers_count > 0 && (
+                              <span>${acctStat.revenue_per_sub.toFixed(2)}/sub</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-[11px] text-muted-foreground italic">
+                        {a.infloww_campaign_code != null ? `c${a.infloww_campaign_code} — not synced yet` : "No campaign code set"}
+                      </div>
+                    )}
+                    <InflowwCodeInput accountId={a.id} currentCode={a.infloww_campaign_code} onRefresh={onRefresh} />
+                  </div>
+
+                  <div className="mt-2 pt-2 border-t border-border/50">
+                    {editingNoteId === a.id ? (
+                      <input
+                        autoFocus
+                        className="w-full rounded border border-border bg-secondary/40 px-2 py-1 text-xs outline-none focus:border-primary"
+                        value={noteValue}
+                        onChange={(e) => setNoteValue(e.target.value)}
+                        onBlur={() => { saveAccountNote(a.id, noteValue); setEditingNoteId(null); }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") { saveAccountNote(a.id, noteValue); setEditingNoteId(null); }
+                          if (e.key === "Escape") setEditingNoteId(null);
+                        }}
+                        placeholder="Add a note…"
+                      />
+                    ) : (
+                      <button
+                        onClick={() => { setEditingNoteId(a.id); setNoteValue(a.notes ?? ""); }}
+                        className="flex w-full items-center gap-1.5 text-left text-xs text-muted-foreground transition-colors hover:text-foreground"
+                      >
+                        <MessageSquare className="h-3 w-3 shrink-0" />
+                        <span className={a.notes ? "" : "italic"}>{a.notes || "Add note…"}</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
     </div>
   );
 }

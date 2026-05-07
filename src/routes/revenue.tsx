@@ -90,12 +90,16 @@ const emptyForm = {
   notes: "",
 };
 
+// Revenue is grouped into three rollup buckets:
+//   • Organic = social posts (Reddit, IG, FB, X, TikTok) — from organic_revenue_entries
+//   • Internal = internal tracking links — from internal_revenue_entries
+//   • Ads = Meta ad campaigns + OnlyFinder paid traffic (revenue_entries from Infloww sync)
 const STAT_OPTIONS = [
   { value: "total_revenue", label: "Total Revenue", color: "oklch(0.72 0.18 30)" },
-  { value: "reddit_rev",    label: "Reddit Revenue", color: "oklch(0.72 0.18 30)" },
-  { value: "organic_rev",   label: "Organic Revenue", color: "oklch(0.7 0.16 155)" },
-  { value: "internal_rev",  label: "Internal Revenue", color: "oklch(0.78 0.16 75)" },
-  { value: "ads_net",       label: "Ads Net (Rev − Spend)", color: "oklch(0.7 0.18 250)" },
+  { value: "organic_rev",   label: "Organic (Reddit / IG / FB / X / TikTok)", color: "oklch(0.7 0.16 155)" },
+  { value: "internal_rev",  label: "Internal (tracking links)", color: "oklch(0.78 0.16 75)" },
+  { value: "ads_revenue",   label: "Ads Revenue (Meta + OnlyFinder)", color: "oklch(0.7 0.18 250)" },
+  { value: "ads_net",       label: "Ads Net (Rev − Spend)", color: "oklch(0.6 0.18 250)" },
   { value: "posts",         label: "Posts Count", color: "oklch(0.72 0.18 30)" },
   { value: "upvotes",       label: "Total Upvotes", color: "oklch(0.7 0.16 155)" },
 ];
@@ -257,28 +261,34 @@ function RevenuePage() {
       return cid ? matchCreator(cid) : false;
     };
 
-    if (chartStat === "reddit_rev" || chartStat === "total_revenue") {
-      for (const e of entries) {
-        if (!matchCreator(e.creator_id)) continue;
-        if (valueMap[e.entry_date] !== undefined) valueMap[e.entry_date] += e.amount;
-      }
-    }
+    // Organic bucket — social posts (Reddit / IG / FB / X / TikTok)
     if (chartStat === "organic_rev" || chartStat === "total_revenue") {
       for (const e of organicEntries) {
         if (!matchCreator(e.creator_id)) continue;
         if (valueMap[e.entry_date] !== undefined) valueMap[e.entry_date] += e.amount;
       }
     }
+    // Internal bucket — internal tracking links
     if (chartStat === "internal_rev" || chartStat === "total_revenue") {
       for (const e of internalEntries) {
         if (!matchCreator(e.creator_id)) continue;
         if (valueMap[e.entry_date] !== undefined) valueMap[e.entry_date] += e.amount;
       }
     }
-    if (chartStat === "ads_net" || chartStat === "total_revenue") {
+    // Ads bucket — OnlyFinder paid traffic (revenue_entries) + Meta ad campaigns
+    if (chartStat === "ads_revenue" || chartStat === "ads_net" || chartStat === "total_revenue") {
+      // OnlyFinder/Infloww-synced revenue (paid traffic, no separate spend column here)
+      for (const e of entries) {
+        if (!matchCreator(e.creator_id)) continue;
+        if (valueMap[e.entry_date] !== undefined) valueMap[e.entry_date] += e.amount;
+      }
+      // Meta ad campaigns
       for (const c of adCampaigns) {
         if (!matchCreator(c.creator_id)) continue;
-        if (valueMap[c.start_date] !== undefined) valueMap[c.start_date] += (c.revenue_generated - c.amount_spent);
+        if (valueMap[c.start_date] === undefined) continue;
+        valueMap[c.start_date] += chartStat === "ads_net" || chartStat === "total_revenue"
+          ? (c.revenue_generated - c.amount_spent)
+          : c.revenue_generated;
       }
     }
     if (chartStat === "posts") {
@@ -597,7 +607,7 @@ function RevenuePage() {
         )}
       </div>
 
-      {/* ── Existing Reddit revenue table ────────────────────────────────────── */}
+      {/* ── OnlyFinder-attributed revenue (the Ads bucket's main feed) ────── */}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div className="rounded-xl border border-border bg-card p-5">
@@ -636,7 +646,7 @@ function RevenuePage() {
 
       {byAccount.length > 1 && (
         <div className="rounded-xl border border-border bg-card p-5">
-          <div className="text-sm font-semibold mb-3">Reddit revenue by account</div>
+          <div className="text-sm font-semibold mb-3">OnlyFinder revenue by account</div>
           <div className="space-y-2">
             {byAccount.map(([id, total]) => {
               const pct = totalRevenue > 0 ? (total / totalRevenue) * 100 : 0;

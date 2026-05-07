@@ -1,0 +1,555 @@
+import { supabase } from "@/integrations/supabase/client";
+import { format, subDays } from "date-fns";
+
+const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
+const MODEL = "claude-sonnet-4-6";
+
+/**
+ * Bernard's system prompt. Deliberately long — encodes the operator-level
+ * domain knowledge of an OnlyFans Management (OFM) agency so Bernard reads as
+ * a senior in-house consultant, not a generic analyst.
+ */
+export const BERNARD_SYSTEM = `You are Bernard, the in-house AI analyst and strategist for an OnlyFans Management (OFM) agency. You have years of operator-level experience: you've grown rosters, run paid traffic, managed chatter teams, and recovered creators from churn. You speak the agency's language — not corporate-speak.
+
+# Identity & voice
+- Direct. Confident. Specific. Lead with the answer, then the reasoning.
+- Use the agency's own data — actual creator names, dollar amounts, dates, link names, account handles. Never invent numbers or facts.
+- If data is sparse, say so plainly: "we don't have enough data on X yet — log a few weeks of Y and come back."
+- Avoid generic advice ("post more often", "engage your audience"). Replace it with concrete moves: "test r/UWomen at 2pm EST Tuesday" / "drop sub price to $6.99 for Q4".
+- Format with plain markdown (#, ##, ###, **bold**, bullets, occasional tables). Skip code blocks unless quoting raw data.
+- When a question implies an action, end with a numbered "Next moves" list — 2-4 concrete steps the operator can run this week.
+
+# OFM domain knowledge
+
+## Reddit & traffic
+- Posting cadence: 3-5 posts/account/day, varied subreddits. Same content within a single subreddit gets shadowbanned fast.
+- Best times (EST): weekday lunch (12-2pm), evening (8-11pm), weekend mornings. Niche subs vary.
+- Karma + age gating: many big subs require 100+ karma and 30+ day-old accounts. Build filler accounts in advance.
+- Tag etiquette: [F], [OC], age verification when required. Missing tags = removal.
+- Shadowban detection: posts that vanish, stuck at 0 upvotes for 30+ min, or only visible to OP.
+- Niche fit drives CVR. A vanilla account in r/altgonewild will underperform a fitting niche account 5-10x.
+- Title formula: question or descriptor > generic. "First time on Reddit, be gentle?" > "23 [F]".
+- The "OnlyFinder" link in the bio captures attribution; CVR <8% means the content's mismatched to the sub.
+
+## OnlyFinder / paid traffic (the Ads bucket)
+- Tracking-link CVR benchmarks: 5% baseline (acceptable), 10-15% solid, 20%+ exceptional. Below 3% = kill the link.
+- Conversion windows: most subs convert within 24h of click; revenue logged later (renewals/PPV) is downstream LTV, not first-day attribution.
+- Cost-per-sub math: promo cost / new subs. Sustainable if CPS < (sub price × 1.5) given typical retention curves.
+- Campaign code organization: never reuse codes across creators or platforms — kills attribution.
+- OnlyFinder paid placements often outperform pure organic for cold traffic but underperform Reddit for niche audiences.
+
+## Meta Ads
+- Allowed: foot, fitness, lifestyle, cosplay (with workarounds and tasteful creatives). Banned: explicit, "OF" or "OnlyFans" in copy/landing.
+- Funnel: ad → linktree/Instafluencer-style landing → OnlyFinder/Beacons → OF. Direct OF links get accounts banned.
+- ROAS targets: 1.5x = breakeven (paying for awareness), 2x = sustainable, 3x+ = scale.
+- Creative cadence: refresh every 7-14 days; ad fatigue is real on small audiences.
+- Lookalike audiences off existing top-spender lists outperform interest-based for warm traffic.
+
+## Chatter operations (Infloww)
+- PPV pricing tiers: $5-9 mass blast (low-friction), $15-25 mid (custom-feeling), $50+ VIP (premium / personalized).
+- Tagging system: VIP, regular, churned, ghosted, payment-issue. Tags drive segmentation; untagged fans are dead weight.
+- Mass DM cadence: max 1-2/day. Repeated same-content blasts fatigue lists.
+- Custom workflow: greet → qualify → tease → soft pitch → close. Time-to-close on warm fans should be 24-48h.
+- "Date night" / event-driven sales spikes (Friday eve, payday Mon, holidays) are 3-5x normal volume.
+- Tip bait: "what would you do tonight if I let you?" outperforms direct "tip me $20".
+
+## OF economics
+- Sub price tiers: $4.99 (high-volume entry), $9.99 (sweet spot), $14.99+ (premium positioning).
+- Churn: typical monthly is ~30%; <20% is great. Day-3, day-14, day-28 inactivity DMs reduce churn.
+- Bundle promos: 3-mo @ 20% off, 6-mo @ 30% off — boost LTV but cap re-engagement opportunities.
+- Trial pricing (free/discounted week) works for new accounts but trains low-price expectation.
+- Top 1% earner makes $50k+/mo, top 10% $5-15k/mo, median is well below $500/mo. Roster strategy should target the top-10% tier minimum.
+
+## Niches & positioning
+- Major niches: vanilla, BBW, alt/goth, fitness, cosplay, milf, latina, asian, foot, fetish-specific. Each has different audience price tolerance and competitive density.
+- Underserved niches (alt, BBW, foot) often outperform vanilla on CVR because audience is hungrier.
+- Niche fit drives everything downstream: subreddit choice, ad creative, chatter scripts, PPV positioning.
+
+## Lead acquisition / new creators
+- Cold DM → signed conversion: 1-2% if list is targeted, lower if mass-blasted.
+- Paid lead lists: average quality, mostly already managed. Sourced direct from new accounts is better.
+- Onboarding red flags: no ID/DMCA, refusing 2FA share, vague answers about goals.
+
+## What "good" looks like
+- Active creators logging $5k+/mo, ROAS >2x on ads, churn <25%, 5+ posts/day organic across platforms, fresh content uploaded weekly.
+- Underperformers: dormant (no revenue 14+ days), declining trend, ROAS <1.5x sustained, single-channel reliance.
+
+# How you operate
+- When asked about a creator, look at their channel mix (Organic / Internal / Ads), recent revenue trend, and dormancy. Cite the actual numbers from the snapshot.
+- When suggesting tactics, reference the niche, the platform mechanics, and the specific accounts involved.
+- When data is missing, ask what to log — but only if the question can't be answered at all without it. Otherwise answer with what's there.
+- Length: most answers fit in 300-500 words. Deep analyses (preset prompts that ask for full reviews) can go longer. Quick questions get quick answers.`;
+
+/** Optional helper string for callers that want to inject the same OFM context separately. */
+export const OFM_GLOSSARY = `Key OFM terms: PPV (pay-per-view DM), CVR (click-to-sub conversion rate), ROAS (return on ad spend), LTV (lifetime value), churn (% of subs who cancel monthly), OnlyFinder (paid placement directory), Infloww (chatter management tool), Beacons/Linktree (link aggregator landing).`;
+
+export async function getAnthropicKey(): Promise<string | null> {
+  const { data } = await supabase
+    .from("agency_settings")
+    .select("anthropic_api_key")
+    .maybeSingle();
+  return data?.anthropic_api_key?.trim() || null;
+}
+
+export type ChatMessage = { role: "user" | "assistant"; content: string };
+
+const CLAUDE_HEADERS = (apiKey: string) => ({
+  "Content-Type": "application/json",
+  "x-api-key": apiKey,
+  "anthropic-version": "2023-06-01",
+  "anthropic-dangerous-direct-browser-access": "true",
+});
+
+/** One-shot non-streaming call. Used by preset analyses where we just want the final markdown. */
+export async function callClaude(
+  apiKey: string,
+  userPrompt: string,
+  opts?: { maxTokens?: number; messages?: ChatMessage[] }
+): Promise<string> {
+  const messages: ChatMessage[] = opts?.messages
+    ? [...opts.messages, { role: "user", content: userPrompt }]
+    : [{ role: "user", content: userPrompt }];
+  const res = await fetch(ANTHROPIC_API_URL, {
+    method: "POST",
+    headers: CLAUDE_HEADERS(apiKey),
+    body: JSON.stringify({
+      model: MODEL,
+      max_tokens: opts?.maxTokens ?? 2000,
+      system: BERNARD_SYSTEM,
+      messages,
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Claude API ${res.status}: ${body.slice(0, 300)}`);
+  }
+  const json = (await res.json()) as { content?: Array<{ type: string; text?: string }> };
+  const text = json.content?.find((c) => c.type === "text")?.text ?? "";
+  if (!text) throw new Error("Empty response from Claude");
+  return text;
+}
+
+/**
+ * Streaming chat. Yields the assistant's response in chunks as the model
+ * generates it. Pass the full conversation history so multi-turn works.
+ *
+ * Usage:
+ *   for await (const chunk of streamClaude(apiKey, history)) {
+ *     setText((t) => t + chunk);
+ *   }
+ */
+export async function* streamClaude(
+  apiKey: string,
+  messages: ChatMessage[],
+  opts?: { maxTokens?: number; signal?: AbortSignal }
+): AsyncGenerator<string, void, unknown> {
+  const res = await fetch(ANTHROPIC_API_URL, {
+    method: "POST",
+    headers: CLAUDE_HEADERS(apiKey),
+    signal: opts?.signal,
+    body: JSON.stringify({
+      model: MODEL,
+      max_tokens: opts?.maxTokens ?? 3000,
+      system: BERNARD_SYSTEM,
+      messages,
+      stream: true,
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Claude API ${res.status}: ${body.slice(0, 300)}`);
+  }
+  if (!res.body) throw new Error("Streaming response has no body");
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    // SSE events are delimited by blank lines. Each event has data: {...}\n
+    const events = buffer.split("\n\n");
+    buffer = events.pop() ?? ""; // last (possibly incomplete) event stays in buffer
+    for (const evt of events) {
+      for (const line of evt.split("\n")) {
+        if (!line.startsWith("data: ")) continue;
+        const payload = line.slice(6).trim();
+        if (!payload || payload === "[DONE]") continue;
+        try {
+          const json = JSON.parse(payload) as {
+            type?: string;
+            delta?: { type?: string; text?: string };
+          };
+          if (json.type === "content_block_delta" && json.delta?.type === "text_delta" && json.delta.text) {
+            yield json.delta.text;
+          }
+        } catch {
+          // Ignore malformed event lines — Anthropic occasionally emits keepalives
+        }
+      }
+    }
+  }
+}
+
+// ── Business snapshot ─────────────────────────────────────────────────────────
+
+export type BusinessSnapshot = {
+  range: { start: string; end: string; days: number };
+  generated_at: string;
+  // Three rollup buckets:
+  //   • organic = social posts (Reddit, IG, FB, X, TikTok) — organic_revenue_entries
+  //   • internal = internal tracking links — internal_revenue_entries
+  //   • ads = Meta ad campaigns + OnlyFinder paid traffic (revenue_entries from Infloww sync)
+  totals: {
+    revenue_organic: number;
+    revenue_internal: number;
+    revenue_total: number;
+    ads_spend: number;
+    ads_revenue: number;
+    ads_revenue_meta: number;
+    ads_revenue_onlyfinder: number;
+    ads_net: number;
+    ads_roas: number;
+    new_leads: number;
+    leads_converted: number;
+    new_creators: number;
+    shifts_logged: number;
+    payouts_paid: number;
+  };
+  creators: Array<{
+    id: string;
+    name: string;
+    status: string;
+    revenue: number;
+    revenue_organic: number;
+    revenue_internal: number;
+    ads_net: number;
+    ads_revenue_meta: number;
+    ads_revenue_onlyfinder: number;
+    days_since_last_revenue: number | null;
+  }>;
+  links: Array<{
+    code: number;
+    name: string;
+    creator_id: string | null;
+    revenue: number;
+    clicks: number;
+    subscribers: number;
+    cvr: number;
+  }>;
+  reddit_accounts: Array<{ username: string; status: string; creator_id: string }>;
+  staff: Array<{
+    name: string;
+    role: string;
+    shifts: number;
+    hours: number;
+    revenue_logged: number;
+  }>;
+  leads: {
+    by_status: Record<string, number>;
+    stale: Array<{ name: string; status: string; days_stale: number }>;
+  };
+  alerts: string[];
+};
+
+const num = (v: unknown) => (typeof v === "number" ? v : 0);
+const str = (v: unknown) => (typeof v === "string" ? v : "");
+
+async function fetchAll(table: string, columns: string = "*"): Promise<Record<string, unknown>[]> {
+  const q = (supabase as unknown as { from: (t: string) => { select: (c: string) => Promise<{ data: Record<string, unknown>[] | null }> } })
+    .from(table).select(columns);
+  const res = await q;
+  return res.data ?? [];
+}
+
+async function fetchRange(table: string, columns: string, dateKey: string, start: string, end: string): Promise<Record<string, unknown>[]> {
+  const q = (supabase as unknown as { from: (t: string) => { select: (c: string) => unknown } })
+    .from(table).select(columns) as unknown as {
+      gte: (k: string, v: string) => { lte: (k: string, v: string) => Promise<{ data: Record<string, unknown>[] | null }> };
+    };
+  const res = await q.gte(dateKey, start).lte(dateKey, end);
+  return res.data ?? [];
+}
+
+export async function gatherBusinessSnapshot(days: number): Promise<BusinessSnapshot> {
+  const end = new Date();
+  const start = subDays(end, days);
+  const startISO = format(start, "yyyy-MM-dd");
+  const endISO = format(end, "yyyy-MM-dd");
+
+  const [
+    revenue,
+    organic,
+    internal,
+    ads,
+    leadsAll,
+    creatorsAll,
+    snaps,
+    accounts,
+    chatters,
+    shifts,
+    payouts,
+    leadActivities,
+  ] = await Promise.all([
+    fetchRange("revenue_entries", "creator_id, amount, entry_date", "entry_date", startISO, endISO),
+    fetchRange("organic_revenue_entries", "creator_id, amount, entry_date", "entry_date", startISO, endISO),
+    fetchRange("internal_revenue_entries", "creator_id, amount, entry_date", "entry_date", startISO, endISO),
+    fetchRange("ad_campaigns", "creator_id, amount_spent, revenue_generated, start_date", "start_date", startISO, endISO),
+    fetchAll("creator_leads", "id, name, status, source, created_at, signed_at, last_contact_at"),
+    fetchAll("creators", "id, name, status, created_at"),
+    fetchRange("daily_link_snapshots", "campaign_code, link_name, clicks_count, subscribers_count, revenue_total, snapshot_date", "snapshot_date", startISO, endISO),
+    fetchAll("reddit_accounts", "username, status, creator_id"),
+    fetchAll("chatters", "id, name, role, status"),
+    fetchRange("shifts", "chatter_id, start_at, end_at, total_revenue, creator_id", "start_at", start.toISOString(), end.toISOString()),
+    fetchRange("staff_payouts", "amount, period_start, paid_at", "period_start", startISO, endISO),
+    fetchAll("lead_activities", "lead_id, occurred_at"),
+  ]);
+
+  // Three rollup buckets:
+  //   • organic = social posts (Reddit, IG, FB, X, TikTok) — organic_revenue_entries
+  //   • internal = internal tracking links — internal_revenue_entries
+  //   • ads = Meta ads (ad_campaigns) + OnlyFinder paid traffic (revenue_entries from Infloww sync)
+  const totalOnlyFinder = revenue.reduce((s, r) => s + num(r.amount), 0);
+  const totalOrganic = organic.reduce((s, r) => s + num(r.amount), 0);
+  const totalInternal = internal.reduce((s, r) => s + num(r.amount), 0);
+  const adsSpend = ads.reduce((s, r) => s + num(r.amount_spent), 0);
+  const totalMetaAds = ads.reduce((s, r) => s + num(r.revenue_generated), 0);
+  const adsRevenue = totalOnlyFinder + totalMetaAds;
+
+  // Per-creator revenue rollup
+  type CR = { organic: number; internal: number; ads_meta_net: number; ads_onlyfinder: number; lastRevenueDate?: string };
+  const perCreator = new Map<string, CR>();
+  const ensure = (id: string): CR => {
+    let cur = perCreator.get(id);
+    if (!cur) { cur = { organic: 0, internal: 0, ads_meta_net: 0, ads_onlyfinder: 0 }; perCreator.set(id, cur); }
+    return cur;
+  };
+  const touchDate = (cur: CR, date?: string) => {
+    if (date && (!cur.lastRevenueDate || date > cur.lastRevenueDate)) cur.lastRevenueDate = date;
+  };
+  for (const r of organic)  { const c = ensure(str(r.creator_id)); c.organic += num(r.amount); touchDate(c, str(r.entry_date)); }
+  for (const r of internal) { const c = ensure(str(r.creator_id)); c.internal += num(r.amount); touchDate(c, str(r.entry_date)); }
+  for (const r of revenue)  { const c = ensure(str(r.creator_id)); c.ads_onlyfinder += num(r.amount); touchDate(c, str(r.entry_date)); }
+  for (const r of ads)      { const c = ensure(str(r.creator_id)); c.ads_meta_net += num(r.revenue_generated) - num(r.amount_spent); touchDate(c, str(r.start_date)); }
+
+  const today = new Date();
+  const creators = creatorsAll
+    .map((c) => {
+      const id = str(c.id);
+      const stats = perCreator.get(id) ?? { organic: 0, internal: 0, ads_meta_net: 0, ads_onlyfinder: 0 };
+      const adsNet = stats.ads_meta_net + stats.ads_onlyfinder;
+      const total = stats.organic + stats.internal + adsNet;
+      const lastDate = stats.lastRevenueDate;
+      const days_since = lastDate
+        ? Math.max(0, Math.floor((today.getTime() - new Date(lastDate).getTime()) / 86400000))
+        : null;
+      return {
+        id,
+        name: str(c.name),
+        status: str(c.status),
+        revenue: total,
+        revenue_organic: stats.organic,
+        revenue_internal: stats.internal,
+        ads_net: adsNet,
+        ads_revenue_meta: stats.ads_meta_net,
+        ads_revenue_onlyfinder: stats.ads_onlyfinder,
+        days_since_last_revenue: days_since,
+      };
+    })
+    .sort((a, b) => b.revenue - a.revenue);
+
+  // Links
+  const linkAgg = new Map<number, { name: string; revenue: number; clicks: number; subs: number }>();
+  for (const s of snaps) {
+    const code = num(s.campaign_code);
+    const cur = linkAgg.get(code) ?? { name: str(s.link_name) || `Code ${code}`, revenue: 0, clicks: 0, subs: 0 };
+    cur.revenue += num(s.revenue_total);
+    cur.clicks += num(s.clicks_count);
+    cur.subs += num(s.subscribers_count);
+    linkAgg.set(code, cur);
+  }
+  const links = [...linkAgg.entries()]
+    .map(([code, v]) => ({
+      code,
+      name: v.name,
+      creator_id: null as string | null,
+      revenue: v.revenue,
+      clicks: v.clicks,
+      subscribers: v.subs,
+      cvr: v.clicks > 0 ? v.subs / v.clicks : 0,
+    }))
+    .sort((a, b) => b.revenue - a.revenue);
+
+  // Staff
+  const staffAgg = new Map<string, { shifts: number; hoursMs: number; revenue: number }>();
+  for (const s of shifts) {
+    const cid = str(s.chatter_id);
+    const cur = staffAgg.get(cid) ?? { shifts: 0, hoursMs: 0, revenue: 0 };
+    cur.shifts += 1;
+    cur.revenue += num(s.total_revenue);
+    if (s.end_at && s.start_at) {
+      cur.hoursMs += new Date(str(s.end_at)).getTime() - new Date(str(s.start_at)).getTime();
+    }
+    staffAgg.set(cid, cur);
+  }
+  const staff = chatters
+    .map((c) => {
+      const cid = str(c.id);
+      const stats = staffAgg.get(cid) ?? { shifts: 0, hoursMs: 0, revenue: 0 };
+      return {
+        name: str(c.name),
+        role: str(c.role),
+        shifts: stats.shifts,
+        hours: Math.round((stats.hoursMs / 3600000) * 10) / 10,
+        revenue_logged: stats.revenue,
+      };
+    })
+    .filter((s) => s.shifts > 0 || s.role)
+    .sort((a, b) => b.revenue_logged - a.revenue_logged);
+
+  // Leads
+  const leadsByStatus: Record<string, number> = {};
+  for (const l of leadsAll) {
+    const s = str(l.status) || "unknown";
+    leadsByStatus[s] = (leadsByStatus[s] ?? 0) + 1;
+  }
+  const lastActivity = new Map<string, string>();
+  for (const a of leadActivities) {
+    const id = str(a.lead_id);
+    const occ = str(a.occurred_at);
+    if (!lastActivity.has(id) || occ > (lastActivity.get(id) ?? "")) lastActivity.set(id, occ);
+  }
+  const stale = leadsAll
+    .filter((l) => {
+      const status = str(l.status);
+      if (status === "signed" || status === "lost") return false;
+      const last = lastActivity.get(str(l.id)) ?? str(l.last_contact_at) ?? str(l.created_at);
+      const days = (today.getTime() - new Date(last).getTime()) / 86400000;
+      return days > 7;
+    })
+    .map((l) => {
+      const last = lastActivity.get(str(l.id)) ?? str(l.last_contact_at) ?? str(l.created_at);
+      return {
+        name: str(l.name),
+        status: str(l.status),
+        days_stale: Math.floor((today.getTime() - new Date(last).getTime()) / 86400000),
+      };
+    })
+    .sort((a, b) => b.days_stale - a.days_stale)
+    .slice(0, 15);
+
+  // Alerts
+  const alerts: string[] = [];
+  const banned = accounts.filter((a) => str(a.status) === "shadowbanned" || str(a.status) === "suspended");
+  if (banned.length > 0) alerts.push(`${banned.length} Reddit account(s) shadowbanned/suspended`);
+  const paused = creatorsAll.filter((c) => str(c.status) === "paused");
+  if (paused.length > 0) alerts.push(`${paused.length} creator(s) currently paused`);
+  const dormant = creators.filter((c) => c.status === "active" && (c.days_since_last_revenue ?? 999) > 14);
+  if (dormant.length > 0) alerts.push(`${dormant.length} active creator(s) with no revenue in 14+ days: ${dormant.slice(0, 5).map((c) => c.name).join(", ")}`);
+  if (stale.length > 0) alerts.push(`${stale.length} lead(s) stale (no activity in 7+ days)`);
+
+  const leadsConverted = leadsAll.filter((l) => {
+    const signed = str(l.signed_at);
+    return signed && signed >= startISO && signed <= endISO;
+  }).length;
+
+  const adsRoas = adsSpend > 0 ? adsRevenue / adsSpend : 0;
+
+  const adsNet = adsRevenue - adsSpend;
+  return {
+    range: { start: startISO, end: endISO, days },
+    generated_at: new Date().toISOString(),
+    totals: {
+      revenue_organic: totalOrganic,
+      revenue_internal: totalInternal,
+      revenue_total: totalOrganic + totalInternal + adsNet,
+      ads_spend: adsSpend,
+      ads_revenue: adsRevenue,
+      ads_revenue_meta: totalMetaAds,
+      ads_revenue_onlyfinder: totalOnlyFinder,
+      ads_net: adsNet,
+      ads_roas: adsRoas,
+      new_leads: leadsAll.filter((l) => {
+        const c = str(l.created_at);
+        return c >= start.toISOString() && c <= end.toISOString();
+      }).length,
+      leads_converted: leadsConverted,
+      new_creators: creatorsAll.filter((c) => {
+        const cd = str(c.created_at);
+        return cd >= start.toISOString();
+      }).length,
+      shifts_logged: shifts.length,
+      payouts_paid: payouts.reduce((s, p) => s + num(p.amount), 0),
+    },
+    creators,
+    links: links.slice(0, 15),
+    reddit_accounts: accounts.map((a) => ({
+      username: str(a.username),
+      status: str(a.status),
+      creator_id: str(a.creator_id),
+    })),
+    staff,
+    leads: { by_status: leadsByStatus, stale },
+    alerts,
+  };
+}
+
+// ── Prompt builders ───────────────────────────────────────────────────────────
+
+const fmt = (n: number) => `$${Math.round(n).toLocaleString()}`;
+
+export function snapshotToContext(s: BusinessSnapshot): string {
+  const lines: string[] = [];
+  lines.push(`# Business snapshot`);
+  lines.push(`Window: ${s.range.start} → ${s.range.end} (${s.range.days} days)`);
+  lines.push(``);
+  lines.push(`## Totals`);
+  lines.push(`Revenue is grouped into three buckets:`);
+  lines.push(`  • Organic = social posts on Reddit / IG / FB / X / TikTok`);
+  lines.push(`  • Internal = internal tracking links`);
+  lines.push(`  • Ads = Meta ad campaigns + OnlyFinder paid traffic`);
+  lines.push(``);
+  lines.push(`- Total revenue (organic + internal + ads-net): ${fmt(s.totals.revenue_total)}`);
+  lines.push(`- Organic revenue: ${fmt(s.totals.revenue_organic)}`);
+  lines.push(`- Internal revenue: ${fmt(s.totals.revenue_internal)}`);
+  lines.push(`- Ads: spend ${fmt(s.totals.ads_spend)} · revenue ${fmt(s.totals.ads_revenue)} (Meta ${fmt(s.totals.ads_revenue_meta)} + OnlyFinder ${fmt(s.totals.ads_revenue_onlyfinder)}) · net ${fmt(s.totals.ads_net)} · ROAS ${s.totals.ads_roas.toFixed(2)}x`);
+  lines.push(`- Leads: ${s.totals.new_leads} new · ${s.totals.leads_converted} converted to creators`);
+  lines.push(`- New creators onboarded: ${s.totals.new_creators}`);
+  lines.push(`- Staff: ${s.totals.shifts_logged} shifts logged · ${fmt(s.totals.payouts_paid)} paid out in period`);
+  lines.push(``);
+  lines.push(`## Creators (top by revenue)`);
+  for (const c of s.creators.slice(0, 15)) {
+    const dormant = c.days_since_last_revenue !== null && c.days_since_last_revenue > 14 ? ` ⚠ ${c.days_since_last_revenue}d since last revenue` : "";
+    lines.push(`- ${c.name} (${c.status}): ${fmt(c.revenue)} total — organic ${fmt(c.revenue_organic)}, internal ${fmt(c.revenue_internal)}, ads-net ${fmt(c.ads_net)} (Meta ${fmt(c.ads_revenue_meta)} + OnlyFinder ${fmt(c.ads_revenue_onlyfinder)})${dormant}`);
+  }
+  lines.push(``);
+  lines.push(`## Top tracking links`);
+  for (const l of s.links.slice(0, 10)) {
+    lines.push(`- ${l.name} (code ${l.code}): ${fmt(l.revenue)} from ${l.clicks.toLocaleString()} clicks → ${l.subscribers} subs (${(l.cvr * 100).toFixed(1)}% CVR)`);
+  }
+  lines.push(``);
+  if (s.staff.length > 0) {
+    lines.push(`## Staff activity`);
+    for (const m of s.staff.slice(0, 10)) {
+      lines.push(`- ${m.name} (${m.role}): ${m.shifts} shifts · ${m.hours}h · ${fmt(m.revenue_logged)} logged`);
+    }
+    lines.push(``);
+  }
+  lines.push(`## Lead pipeline`);
+  for (const [status, count] of Object.entries(s.leads.by_status)) {
+    lines.push(`- ${status}: ${count}`);
+  }
+  if (s.leads.stale.length > 0) {
+    lines.push(``);
+    lines.push(`Stale leads (no activity 7+ days):`);
+    for (const l of s.leads.stale.slice(0, 8)) {
+      lines.push(`- ${l.name} (${l.status}) — ${l.days_stale}d stale`);
+    }
+  }
+  lines.push(``);
+  lines.push(`## Operational alerts`);
+  if (s.alerts.length === 0) lines.push(`(none)`);
+  else for (const a of s.alerts) lines.push(`- ${a}`);
+  return lines.join("\n");
+}

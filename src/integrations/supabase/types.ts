@@ -409,34 +409,64 @@ export type Database = {
         Row: {
           id: string
           creator_id: string
+          name: string | null
           platform: string
+          status: "active" | "paused" | "completed" | "cancelled"
           amount_spent: number
           revenue_generated: number
           start_date: string
           end_date: string | null
           notes: string | null
+          infloww_campaign_code: number | null
+          meta_campaign_id: string | null
+          impressions: number
+          clicks: number
+          ctr: number | null
+          cpc: number | null
+          cpm: number | null
+          meta_synced_at: string | null
           created_at: string
         }
         Insert: {
           id?: string
           creator_id: string
+          name?: string | null
           platform?: string
+          status?: "active" | "paused" | "completed" | "cancelled"
           amount_spent: number
           revenue_generated?: number
           start_date?: string
           end_date?: string | null
           notes?: string | null
+          infloww_campaign_code?: number | null
+          meta_campaign_id?: string | null
+          impressions?: number
+          clicks?: number
+          ctr?: number | null
+          cpc?: number | null
+          cpm?: number | null
+          meta_synced_at?: string | null
           created_at?: string
         }
         Update: {
           id?: string
           creator_id?: string
+          name?: string | null
           platform?: string
+          status?: "active" | "paused" | "completed" | "cancelled"
           amount_spent?: number
           revenue_generated?: number
           start_date?: string
           end_date?: string | null
           notes?: string | null
+          infloww_campaign_code?: number | null
+          meta_campaign_id?: string | null
+          impressions?: number
+          clicks?: number
+          ctr?: number | null
+          cpc?: number | null
+          cpm?: number | null
+          meta_synced_at?: string | null
           created_at?: string
         }
         Relationships: [
@@ -493,6 +523,11 @@ export type Database = {
           agency_name: string
           logo_url: string | null
           theme: string
+          meta_ads_access_token: string | null
+          meta_ad_account_id: string | null
+          meta_ads_connected_at: string | null
+          scrapecreators_api_key: string | null
+          anthropic_api_key: string | null
           updated_at: string
         }
         Insert: {
@@ -500,6 +535,11 @@ export type Database = {
           agency_name?: string
           logo_url?: string | null
           theme?: string
+          meta_ads_access_token?: string | null
+          meta_ad_account_id?: string | null
+          meta_ads_connected_at?: string | null
+          scrapecreators_api_key?: string | null
+          anthropic_api_key?: string | null
           updated_at?: string
         }
         Update: {
@@ -507,6 +547,857 @@ export type Database = {
           agency_name?: string
           logo_url?: string | null
           theme?: string
+          meta_ads_access_token?: string | null
+          meta_ad_account_id?: string | null
+          meta_ads_connected_at?: string | null
+          scrapecreators_api_key?: string | null
+          anthropic_api_key?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      chatters: {
+        Row: {
+          id: string
+          name: string
+          email: string | null
+          role: "chatter" | "reddit_va" | "instagram_va" | "facebook_va" | "x_va" | "tiktok_va" | "social_media_va" | "content_editor" | "recruiter" | "manager" | "other"
+          status: "active" | "paused" | "inactive"
+          commission_pct: number
+          hourly_rate: number | null
+          languages: string | null
+          hire_date: string | null
+          notes: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          email?: string | null
+          role?: "chatter" | "reddit_va" | "instagram_va" | "facebook_va" | "x_va" | "tiktok_va" | "social_media_va" | "content_editor" | "recruiter" | "manager" | "other"
+          status?: "active" | "paused" | "inactive"
+          commission_pct?: number
+          hourly_rate?: number | null
+          languages?: string | null
+          hire_date?: string | null
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          email?: string | null
+          role?: "chatter" | "reddit_va" | "instagram_va" | "facebook_va" | "x_va" | "tiktok_va" | "social_media_va" | "content_editor" | "recruiter" | "manager" | "other"
+          status?: "active" | "paused" | "inactive"
+          commission_pct?: number
+          hourly_rate?: number | null
+          languages?: string | null
+          hire_date?: string | null
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      chatter_assignments: {
+        Row: {
+          id: string
+          chatter_id: string
+          creator_id: string
+          active: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          chatter_id: string
+          creator_id: string
+          active?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          chatter_id?: string
+          creator_id?: string
+          active?: boolean
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chatter_assignments_chatter_id_fkey"
+            columns: ["chatter_id"]
+            isOneToOne: false
+            referencedRelation: "chatters"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chatter_assignments_creator_id_fkey"
+            columns: ["creator_id"]
+            isOneToOne: false
+            referencedRelation: "creators"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      shifts: {
+        Row: {
+          id: string
+          chatter_id: string
+          creator_id: string
+          start_at: string
+          end_at: string | null
+          ppv_count: number
+          ppv_revenue: number
+          tips_revenue: number
+          custom_revenue: number
+          total_revenue: number
+          message_count: number
+          avg_response_seconds: number | null
+          quality_flag: "off_brand" | "missed_ppv" | "inappropriate" | "late" | "other" | null
+          notes: string | null
+          posts_count: number
+          upvotes_count: number
+          comments_received: number
+          dms_handled: number
+          target_platform: string | null
+          target_account_id: string | null
+          target_account_name: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          chatter_id: string
+          creator_id: string
+          start_at: string
+          end_at?: string | null
+          ppv_count?: number
+          ppv_revenue?: number
+          tips_revenue?: number
+          custom_revenue?: number
+          total_revenue?: number
+          message_count?: number
+          avg_response_seconds?: number | null
+          quality_flag?: "off_brand" | "missed_ppv" | "inappropriate" | "late" | "other" | null
+          notes?: string | null
+          posts_count?: number
+          upvotes_count?: number
+          comments_received?: number
+          dms_handled?: number
+          target_platform?: string | null
+          target_account_id?: string | null
+          target_account_name?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          chatter_id?: string
+          creator_id?: string
+          start_at?: string
+          end_at?: string | null
+          ppv_count?: number
+          ppv_revenue?: number
+          tips_revenue?: number
+          custom_revenue?: number
+          total_revenue?: number
+          message_count?: number
+          avg_response_seconds?: number | null
+          quality_flag?: "off_brand" | "missed_ppv" | "inappropriate" | "late" | "other" | null
+          notes?: string | null
+          posts_count?: number
+          upvotes_count?: number
+          comments_received?: number
+          dms_handled?: number
+          target_platform?: string | null
+          target_account_id?: string | null
+          target_account_name?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shifts_chatter_id_fkey"
+            columns: ["chatter_id"]
+            isOneToOne: false
+            referencedRelation: "chatters"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shifts_creator_id_fkey"
+            columns: ["creator_id"]
+            isOneToOne: false
+            referencedRelation: "creators"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      creator_leads: {
+        Row: {
+          id: string
+          name: string
+          handle: string | null
+          status: "new" | "outreach" | "replied" | "negotiating" | "signed" | "lost"
+          source_platform: string | null
+          contact_method: string | null
+          contact_value: string | null
+          follower_estimate: number | null
+          notes: string | null
+          signed_at: string | null
+          lost_reason: string | null
+          creator_id: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          handle?: string | null
+          status?: "new" | "outreach" | "replied" | "negotiating" | "signed" | "lost"
+          source_platform?: string | null
+          contact_method?: string | null
+          contact_value?: string | null
+          follower_estimate?: number | null
+          notes?: string | null
+          signed_at?: string | null
+          lost_reason?: string | null
+          creator_id?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          handle?: string | null
+          status?: "new" | "outreach" | "replied" | "negotiating" | "signed" | "lost"
+          source_platform?: string | null
+          contact_method?: string | null
+          contact_value?: string | null
+          follower_estimate?: number | null
+          notes?: string | null
+          signed_at?: string | null
+          lost_reason?: string | null
+          creator_id?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "creator_leads_creator_id_fkey"
+            columns: ["creator_id"]
+            isOneToOne: false
+            referencedRelation: "creators"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      airtable_embeds: {
+        Row: {
+          id: string
+          scope: string
+          label: string
+          url: string
+          description: string | null
+          display_order: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          scope?: string
+          label: string
+          url: string
+          description?: string | null
+          display_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          scope?: string
+          label?: string
+          url?: string
+          description?: string | null
+          display_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      sync_status: {
+        Row: {
+          id: string
+          last_synced_at: string | null
+          last_status: string | null
+          last_message: string | null
+          last_actor: string | null
+          items_processed: number
+          errors_count: number
+          locked_until: string | null
+          locked_by: string | null
+          auto_enabled: boolean
+          interval_minutes: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id: string
+          last_synced_at?: string | null
+          last_status?: string | null
+          last_message?: string | null
+          last_actor?: string | null
+          items_processed?: number
+          errors_count?: number
+          locked_until?: string | null
+          locked_by?: string | null
+          auto_enabled?: boolean
+          interval_minutes?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          last_synced_at?: string | null
+          last_status?: string | null
+          last_message?: string | null
+          last_actor?: string | null
+          items_processed?: number
+          errors_count?: number
+          locked_until?: string | null
+          locked_by?: string | null
+          auto_enabled?: boolean
+          interval_minutes?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      audit_log: {
+        Row: {
+          id: string
+          actor_username: string | null
+          action: string
+          entity_type: string
+          entity_id: string | null
+          entity_name: string | null
+          details: string | null
+          metadata: Record<string, unknown> | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          actor_username?: string | null
+          action: string
+          entity_type: string
+          entity_id?: string | null
+          entity_name?: string | null
+          details?: string | null
+          metadata?: Record<string, unknown> | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          actor_username?: string | null
+          action?: string
+          entity_type?: string
+          entity_id?: string | null
+          entity_name?: string | null
+          details?: string | null
+          metadata?: Record<string, unknown> | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      onboarding_tasks: {
+        Row: {
+          id: string
+          creator_id: string
+          task_key: string
+          label: string
+          description: string | null
+          completed_at: string | null
+          completed_by: string | null
+          notes: string | null
+          display_order: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          creator_id: string
+          task_key: string
+          label: string
+          description?: string | null
+          completed_at?: string | null
+          completed_by?: string | null
+          notes?: string | null
+          display_order?: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          creator_id?: string
+          task_key?: string
+          label?: string
+          description?: string | null
+          completed_at?: string | null
+          completed_by?: string | null
+          notes?: string | null
+          display_order?: number
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "onboarding_tasks_creator_id_fkey"
+            columns: ["creator_id"]
+            isOneToOne: false
+            referencedRelation: "creators"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      of_creator_stats: {
+        Row: {
+          creator_id: string
+          username: string | null
+          display_name: string | null
+          avatar_url: string | null
+          bio: string | null
+          followers_count: number
+          posts_count: number
+          active_subscribers: number
+          expired_subscribers: number
+          sub_price: number | null
+          total_earnings: number
+          earnings_subs: number
+          earnings_tips: number
+          earnings_ppv: number
+          earnings_messages: number
+          earnings_streams: number
+          earnings_referrals: number
+          synced_at: string
+          created_at: string
+        }
+        Insert: {
+          creator_id: string
+          username?: string | null
+          display_name?: string | null
+          avatar_url?: string | null
+          bio?: string | null
+          followers_count?: number
+          posts_count?: number
+          active_subscribers?: number
+          expired_subscribers?: number
+          sub_price?: number | null
+          total_earnings?: number
+          earnings_subs?: number
+          earnings_tips?: number
+          earnings_ppv?: number
+          earnings_messages?: number
+          earnings_streams?: number
+          earnings_referrals?: number
+          synced_at?: string
+          created_at?: string
+        }
+        Update: {
+          creator_id?: string
+          username?: string | null
+          display_name?: string | null
+          avatar_url?: string | null
+          bio?: string | null
+          followers_count?: number
+          posts_count?: number
+          active_subscribers?: number
+          expired_subscribers?: number
+          sub_price?: number | null
+          total_earnings?: number
+          earnings_subs?: number
+          earnings_tips?: number
+          earnings_ppv?: number
+          earnings_messages?: number
+          earnings_streams?: number
+          earnings_referrals?: number
+          synced_at?: string
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "of_creator_stats_creator_id_fkey"
+            columns: ["creator_id"]
+            isOneToOne: true
+            referencedRelation: "creators"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      of_earnings_daily: {
+        Row: {
+          id: string
+          creator_id: string
+          entry_date: string
+          earnings_subs: number
+          earnings_tips: number
+          earnings_ppv: number
+          earnings_messages: number
+          earnings_streams: number
+          earnings_referrals: number
+          total: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          creator_id: string
+          entry_date: string
+          earnings_subs?: number
+          earnings_tips?: number
+          earnings_ppv?: number
+          earnings_messages?: number
+          earnings_streams?: number
+          earnings_referrals?: number
+          total?: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          creator_id?: string
+          entry_date?: string
+          earnings_subs?: number
+          earnings_tips?: number
+          earnings_ppv?: number
+          earnings_messages?: number
+          earnings_streams?: number
+          earnings_referrals?: number
+          total?: number
+          created_at?: string
+        }
+        Relationships: []
+      }
+      of_subscribers: {
+        Row: {
+          id: string
+          creator_id: string
+          fan_id: string
+          username: string | null
+          display_name: string | null
+          avatar_url: string | null
+          total_spent: number
+          tips_total: number
+          ppv_total: number
+          messages_total: number
+          subscribed_at: string | null
+          expires_at: string | null
+          is_active: boolean
+          last_seen_at: string | null
+          notes: string | null
+          synced_at: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          creator_id: string
+          fan_id: string
+          username?: string | null
+          display_name?: string | null
+          avatar_url?: string | null
+          total_spent?: number
+          tips_total?: number
+          ppv_total?: number
+          messages_total?: number
+          subscribed_at?: string | null
+          expires_at?: string | null
+          is_active?: boolean
+          last_seen_at?: string | null
+          notes?: string | null
+          synced_at?: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          creator_id?: string
+          fan_id?: string
+          username?: string | null
+          display_name?: string | null
+          avatar_url?: string | null
+          total_spent?: number
+          tips_total?: number
+          ppv_total?: number
+          messages_total?: number
+          subscribed_at?: string | null
+          expires_at?: string | null
+          is_active?: boolean
+          last_seen_at?: string | null
+          notes?: string | null
+          synced_at?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
+      of_subscriber_metrics_daily: {
+        Row: {
+          id: string
+          creator_id: string
+          entry_date: string
+          active_count: number
+          new_count: number
+          lost_count: number
+          expired_count: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          creator_id: string
+          entry_date: string
+          active_count?: number
+          new_count?: number
+          lost_count?: number
+          expired_count?: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          creator_id?: string
+          entry_date?: string
+          active_count?: number
+          new_count?: number
+          lost_count?: number
+          expired_count?: number
+          created_at?: string
+        }
+        Relationships: []
+      }
+      of_ppv_messages: {
+        Row: {
+          id: string
+          creator_id: string
+          message_id: string | null
+          sent_at: string | null
+          price: number | null
+          recipients_count: number
+          unlocks_count: number
+          revenue: number
+          preview: string | null
+          notes: string | null
+          synced_at: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          creator_id: string
+          message_id?: string | null
+          sent_at?: string | null
+          price?: number | null
+          recipients_count?: number
+          unlocks_count?: number
+          revenue?: number
+          preview?: string | null
+          notes?: string | null
+          synced_at?: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          creator_id?: string
+          message_id?: string | null
+          sent_at?: string | null
+          price?: number | null
+          recipients_count?: number
+          unlocks_count?: number
+          revenue?: number
+          preview?: string | null
+          notes?: string | null
+          synced_at?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
+      of_promotions: {
+        Row: {
+          id: string
+          creator_id: string
+          name: string
+          promo_type: "discount" | "free_trial" | "bundle" | "price_change" | "other"
+          discount_pct: number | null
+          trial_days: number | null
+          starts_at: string
+          ends_at: string | null
+          notes: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          creator_id: string
+          name: string
+          promo_type?: "discount" | "free_trial" | "bundle" | "price_change" | "other"
+          discount_pct?: number | null
+          trial_days?: number | null
+          starts_at: string
+          ends_at?: string | null
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          creator_id?: string
+          name?: string
+          promo_type?: "discount" | "free_trial" | "bundle" | "price_change" | "other"
+          discount_pct?: number | null
+          trial_days?: number | null
+          starts_at?: string
+          ends_at?: string | null
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      staff_payouts: {
+        Row: {
+          id: string
+          chatter_id: string
+          period_start: string
+          period_end: string
+          amount: number
+          hours: number | null
+          commission_amount: number | null
+          hourly_amount: number | null
+          shifts_count: number | null
+          paid_at: string
+          paid_by: string | null
+          notes: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          chatter_id: string
+          period_start: string
+          period_end: string
+          amount: number
+          hours?: number | null
+          commission_amount?: number | null
+          hourly_amount?: number | null
+          shifts_count?: number | null
+          paid_at?: string
+          paid_by?: string | null
+          notes?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          chatter_id?: string
+          period_start?: string
+          period_end?: string
+          amount?: number
+          hours?: number | null
+          commission_amount?: number | null
+          hourly_amount?: number | null
+          shifts_count?: number | null
+          paid_at?: string
+          paid_by?: string | null
+          notes?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "staff_payouts_chatter_id_fkey"
+            columns: ["chatter_id"]
+            isOneToOne: false
+            referencedRelation: "chatters"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      lead_activities: {
+        Row: {
+          id: string
+          lead_id: string
+          activity_type: "dm_sent" | "reply_received" | "call" | "meeting" | "contract_sent" | "follow_up" | "note" | "status_change" | "other"
+          description: string | null
+          occurred_at: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          lead_id: string
+          activity_type: "dm_sent" | "reply_received" | "call" | "meeting" | "contract_sent" | "follow_up" | "note" | "status_change" | "other"
+          description?: string | null
+          occurred_at?: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          lead_id?: string
+          activity_type?: "dm_sent" | "reply_received" | "call" | "meeting" | "contract_sent" | "follow_up" | "note" | "status_change" | "other"
+          description?: string | null
+          occurred_at?: string
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_activities_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "creator_leads"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      lead_tasks: {
+        Row: {
+          id: string
+          lead_id: string | null
+          description: string
+          due_at: string | null
+          completed_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          lead_id?: string | null
+          description: string
+          due_at?: string | null
+          completed_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          lead_id?: string | null
+          description?: string
+          due_at?: string | null
+          completed_at?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_tasks_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "creator_leads"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      lead_templates: {
+        Row: {
+          id: string
+          name: string
+          body: string
+          category: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          body: string
+          category?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          body?: string
+          category?: string | null
+          created_at?: string
           updated_at?: string
         }
         Relationships: []
@@ -514,26 +1405,43 @@ export type Database = {
       access_codes: {
         Row: {
           id: string
-          code: string
+          username: string
+          password: string
           label: string
           active: boolean
+          account_type: "admin" | "staff"
+          chatter_id: string | null
           created_at: string
         }
         Insert: {
           id?: string
-          code: string
+          username: string
+          password: string
           label?: string
           active?: boolean
+          account_type?: "admin" | "staff"
+          chatter_id?: string | null
           created_at?: string
         }
         Update: {
           id?: string
-          code?: string
+          username?: string
+          password?: string
           label?: string
           active?: boolean
+          account_type?: "admin" | "staff"
+          chatter_id?: string | null
           created_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "access_codes_chatter_id_fkey"
+            columns: ["chatter_id"]
+            isOneToOne: false
+            referencedRelation: "chatters"
+            referencedColumns: ["id"]
+          }
+        ]
       }
       social_accounts: {
         Row: {
@@ -579,11 +1487,392 @@ export type Database = {
           }
         ]
       }
+      instagram_accounts: {
+        Row: {
+          id: string
+          creator_id: string
+          username: string
+          status: "active" | "warm_up" | "shadowbanned" | "banned" | "inactive"
+          followers_count: number
+          following_count: number
+          posts_count: number
+          bio_link: string | null
+          notes: string | null
+          infloww_campaign_code: number | null
+          last_synced_at: string | null
+          meta_access_token: string | null
+          meta_ig_user_id: string | null
+          meta_connected_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          creator_id: string
+          username: string
+          status?: "active" | "warm_up" | "shadowbanned" | "banned" | "inactive"
+          followers_count?: number
+          following_count?: number
+          posts_count?: number
+          bio_link?: string | null
+          notes?: string | null
+          infloww_campaign_code?: number | null
+          last_synced_at?: string | null
+          meta_access_token?: string | null
+          meta_ig_user_id?: string | null
+          meta_connected_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          creator_id?: string
+          username?: string
+          status?: "active" | "warm_up" | "shadowbanned" | "banned" | "inactive"
+          followers_count?: number
+          following_count?: number
+          posts_count?: number
+          bio_link?: string | null
+          notes?: string | null
+          infloww_campaign_code?: number | null
+          last_synced_at?: string | null
+          meta_access_token?: string | null
+          meta_ig_user_id?: string | null
+          meta_connected_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "instagram_accounts_creator_id_fkey"
+            columns: ["creator_id"]
+            isOneToOne: false
+            referencedRelation: "creators"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      instagram_posts: {
+        Row: {
+          id: string
+          instagram_account_id: string
+          post_id: string | null
+          caption: string | null
+          media_type: "image" | "video" | "reel" | "carousel" | "story"
+          posted_at: string
+          likes_count: number
+          comments_count: number
+          saves_count: number
+          shares_count: number
+          reach_count: number
+          url: string | null
+          notes: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          instagram_account_id: string
+          post_id?: string | null
+          caption?: string | null
+          media_type?: "image" | "video" | "reel" | "carousel" | "story"
+          posted_at?: string
+          likes_count?: number
+          comments_count?: number
+          saves_count?: number
+          shares_count?: number
+          reach_count?: number
+          url?: string | null
+          notes?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          instagram_account_id?: string
+          post_id?: string | null
+          caption?: string | null
+          media_type?: "image" | "video" | "reel" | "carousel" | "story"
+          posted_at?: string
+          likes_count?: number
+          comments_count?: number
+          saves_count?: number
+          shares_count?: number
+          reach_count?: number
+          url?: string | null
+          notes?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "instagram_posts_instagram_account_id_fkey"
+            columns: ["instagram_account_id"]
+            isOneToOne: false
+            referencedRelation: "instagram_accounts"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      tiktok_accounts: {
+        Row: {
+          id: string
+          creator_id: string
+          username: string
+          status: "active" | "warm_up" | "shadowbanned" | "banned" | "inactive"
+          followers_count: number
+          following_count: number
+          posts_count: number
+          total_likes: number
+          bio_link: string | null
+          notes: string | null
+          infloww_campaign_code: number | null
+          last_synced_at: string | null
+          api_provider: "scrapecreators" | "apify" | "tikapi" | null
+          api_key: string | null
+          api_connected_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          creator_id: string
+          username: string
+          status?: "active" | "warm_up" | "shadowbanned" | "banned" | "inactive"
+          followers_count?: number
+          following_count?: number
+          posts_count?: number
+          total_likes?: number
+          bio_link?: string | null
+          notes?: string | null
+          infloww_campaign_code?: number | null
+          last_synced_at?: string | null
+          api_provider?: "scrapecreators" | "apify" | "tikapi" | null
+          api_key?: string | null
+          api_connected_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          creator_id?: string
+          username?: string
+          status?: "active" | "warm_up" | "shadowbanned" | "banned" | "inactive"
+          followers_count?: number
+          following_count?: number
+          posts_count?: number
+          total_likes?: number
+          bio_link?: string | null
+          notes?: string | null
+          infloww_campaign_code?: number | null
+          last_synced_at?: string | null
+          api_provider?: "scrapecreators" | "apify" | "tikapi" | null
+          api_key?: string | null
+          api_connected_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tiktok_accounts_creator_id_fkey"
+            columns: ["creator_id"]
+            isOneToOne: false
+            referencedRelation: "creators"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      tiktok_posts: {
+        Row: {
+          id: string
+          tiktok_account_id: string
+          post_id: string | null
+          caption: string | null
+          media_type: "video" | "photo" | "live"
+          posted_at: string
+          views_count: number
+          likes_count: number
+          comments_count: number
+          shares_count: number
+          saves_count: number
+          url: string | null
+          notes: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          tiktok_account_id: string
+          post_id?: string | null
+          caption?: string | null
+          media_type?: "video" | "photo" | "live"
+          posted_at?: string
+          views_count?: number
+          likes_count?: number
+          comments_count?: number
+          shares_count?: number
+          saves_count?: number
+          url?: string | null
+          notes?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          tiktok_account_id?: string
+          post_id?: string | null
+          caption?: string | null
+          media_type?: "video" | "photo" | "live"
+          posted_at?: string
+          views_count?: number
+          likes_count?: number
+          comments_count?: number
+          shares_count?: number
+          saves_count?: number
+          url?: string | null
+          notes?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tiktok_posts_tiktok_account_id_fkey"
+            columns: ["tiktok_account_id"]
+            isOneToOne: false
+            referencedRelation: "tiktok_accounts"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      facebook_accounts: {
+        Row: {
+          id: string
+          creator_id: string
+          name: string
+          page_url: string | null
+          status: "active" | "warm_up" | "shadowbanned" | "banned" | "inactive"
+          followers_count: number
+          likes_count: number
+          posts_count: number
+          about_link: string | null
+          notes: string | null
+          infloww_campaign_code: number | null
+          last_synced_at: string | null
+          meta_access_token: string | null
+          meta_page_id: string | null
+          meta_connected_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          creator_id: string
+          name: string
+          page_url?: string | null
+          status?: "active" | "warm_up" | "shadowbanned" | "banned" | "inactive"
+          followers_count?: number
+          likes_count?: number
+          posts_count?: number
+          about_link?: string | null
+          notes?: string | null
+          infloww_campaign_code?: number | null
+          last_synced_at?: string | null
+          meta_access_token?: string | null
+          meta_page_id?: string | null
+          meta_connected_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          creator_id?: string
+          name?: string
+          page_url?: string | null
+          status?: "active" | "warm_up" | "shadowbanned" | "banned" | "inactive"
+          followers_count?: number
+          likes_count?: number
+          posts_count?: number
+          about_link?: string | null
+          notes?: string | null
+          infloww_campaign_code?: number | null
+          last_synced_at?: string | null
+          meta_access_token?: string | null
+          meta_page_id?: string | null
+          meta_connected_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "facebook_accounts_creator_id_fkey"
+            columns: ["creator_id"]
+            isOneToOne: false
+            referencedRelation: "creators"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      facebook_posts: {
+        Row: {
+          id: string
+          facebook_account_id: string
+          post_id: string | null
+          message: string | null
+          media_type: "photo" | "video" | "reel" | "link" | "status"
+          posted_at: string
+          reactions_count: number
+          comments_count: number
+          shares_count: number
+          reach_count: number
+          video_views: number
+          url: string | null
+          notes: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          facebook_account_id: string
+          post_id?: string | null
+          message?: string | null
+          media_type?: "photo" | "video" | "reel" | "link" | "status"
+          posted_at?: string
+          reactions_count?: number
+          comments_count?: number
+          shares_count?: number
+          reach_count?: number
+          video_views?: number
+          url?: string | null
+          notes?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          facebook_account_id?: string
+          post_id?: string | null
+          message?: string | null
+          media_type?: "photo" | "video" | "reel" | "link" | "status"
+          posted_at?: string
+          reactions_count?: number
+          comments_count?: number
+          shares_count?: number
+          reach_count?: number
+          video_views?: number
+          url?: string | null
+          notes?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "facebook_posts_facebook_account_id_fkey"
+            columns: ["facebook_account_id"]
+            isOneToOne: false
+            referencedRelation: "facebook_accounts"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
       revenue_entries: {
         Row: {
           id: string
           creator_id: string
           reddit_account_id: string | null
+          instagram_account_id: string | null
+          facebook_account_id: string | null
+          tiktok_account_id: string | null
           tracking_link_id: string | null
           amount: number
           currency: string
@@ -596,6 +1885,9 @@ export type Database = {
           id?: string
           creator_id: string
           reddit_account_id?: string | null
+          instagram_account_id?: string | null
+          facebook_account_id?: string | null
+          tiktok_account_id?: string | null
           tracking_link_id?: string | null
           amount: number
           currency?: string
@@ -608,6 +1900,9 @@ export type Database = {
           id?: string
           creator_id?: string
           reddit_account_id?: string | null
+          instagram_account_id?: string | null
+          facebook_account_id?: string | null
+          tiktok_account_id?: string | null
           tracking_link_id?: string | null
           amount?: number
           currency?: string
@@ -632,6 +1927,27 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "revenue_entries_instagram_account_id_fkey"
+            columns: ["instagram_account_id"]
+            isOneToOne: false
+            referencedRelation: "instagram_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "revenue_entries_facebook_account_id_fkey"
+            columns: ["facebook_account_id"]
+            isOneToOne: false
+            referencedRelation: "facebook_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "revenue_entries_tiktok_account_id_fkey"
+            columns: ["tiktok_account_id"]
+            isOneToOne: false
+            referencedRelation: "tiktok_accounts"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "revenue_entries_tracking_link_id_fkey"
             columns: ["tracking_link_id"]
             isOneToOne: false
@@ -653,6 +1969,24 @@ export type Database = {
         | "active"
         | "shadowbanned"
         | "suspended"
+        | "inactive"
+      instagram_account_status:
+        | "active"
+        | "warm_up"
+        | "shadowbanned"
+        | "banned"
+        | "inactive"
+      facebook_account_status:
+        | "active"
+        | "warm_up"
+        | "shadowbanned"
+        | "banned"
+        | "inactive"
+      tiktok_account_status:
+        | "active"
+        | "warm_up"
+        | "shadowbanned"
+        | "banned"
         | "inactive"
     }
     CompositeTypes: {

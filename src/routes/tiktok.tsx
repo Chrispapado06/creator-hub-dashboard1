@@ -3,11 +3,10 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import {
   Plus, Trash2, Edit2, Check, X, ExternalLink, RefreshCw, Upload,
-  ThumbsUp, MessageCircle, Eye, Image as ImageIcon, Video, Film,
-  Link as LinkIcon, FileText, AlertTriangle, Link2, ArrowLeft, Unlink,
-  Share2,
+  Heart, MessageCircle, Eye, Video, Image as ImageIcon, Radio,
+  AlertTriangle, Link2, ArrowLeft, Share2, Bookmark, Unlink, Zap,
 } from "lucide-react";
-import { SiFacebook, SiMeta } from "react-icons/si";
+import { SiTiktok } from "react-icons/si";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,9 +25,10 @@ import {
   Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Cell,
 } from "recharts";
 
-export const Route = createFileRoute("/facebook")({ component: FacebookPage });
+export const Route = createFileRoute("/tiktok")({ component: TikTokPage });
 
-const FB_BLUE = "#1877F2";
+const TT_PINK = "#FE2C55";
+const TT_CYAN = "#25F4EE";
 const fmtMoney0 = (n: number) =>
   n.toLocaleString("en-US", { maximumFractionDigits: 0 });
 const fmtMoney2 = (n: number) =>
@@ -36,37 +36,38 @@ const fmtMoney2 = (n: number) =>
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type Creator = { id: string; name: string; of_username: string | null; onlyfansapi_acct_id: string | null };
-type FBAccountStatus = "active" | "warm_up" | "shadowbanned" | "banned" | "inactive";
-type FBAccount = {
+type TTAccountStatus = "active" | "warm_up" | "shadowbanned" | "banned" | "inactive";
+type APIProvider = "scrapecreators" | "apify" | "tikapi";
+type TTAccount = {
   id: string;
   creator_id: string;
-  name: string;
-  page_url: string | null;
-  status: FBAccountStatus;
+  username: string;
+  status: TTAccountStatus;
   followers_count: number;
-  likes_count: number;
+  following_count: number;
   posts_count: number;
-  about_link: string | null;
+  total_likes: number;
+  bio_link: string | null;
   notes: string | null;
   infloww_campaign_code: number | null;
   last_synced_at: string | null;
-  meta_access_token: string | null;
-  meta_page_id: string | null;
-  meta_connected_at: string | null;
+  api_provider: APIProvider | null;
+  api_key: string | null;
+  api_connected_at: string | null;
 };
-type FBMediaType = "photo" | "video" | "reel" | "link" | "status";
-type FBPost = {
+type TTMediaType = "video" | "photo" | "live";
+type TTPost = {
   id: string;
-  facebook_account_id: string;
+  tiktok_account_id: string;
   post_id: string | null;
-  message: string | null;
-  media_type: FBMediaType;
+  caption: string | null;
+  media_type: TTMediaType;
   posted_at: string;
-  reactions_count: number;
+  views_count: number;
+  likes_count: number;
   comments_count: number;
   shares_count: number;
-  reach_count: number;
-  video_views: number;
+  saves_count: number;
   url: string | null;
   notes: string | null;
 };
@@ -85,35 +86,33 @@ type InflowwStat = {
 };
 
 // ── Style constants ────────────────────────────────────────────────────────────
-const accountStatusStyles: Record<FBAccountStatus, string> = {
+const accountStatusStyles: Record<TTAccountStatus, string> = {
   active: "bg-success/15 text-success border-success/30",
   warm_up: "bg-primary/15 text-primary border-primary/30",
   shadowbanned: "bg-warning/15 text-warning border-warning/30",
   banned: "bg-destructive/15 text-destructive border-destructive/30",
   inactive: "bg-muted text-muted-foreground border-border",
 };
-const statusLabels: Record<FBAccountStatus, string> = {
+const statusLabels: Record<TTAccountStatus, string> = {
   active: "Active",
   warm_up: "Warm Up",
   shadowbanned: "Shadowbanned",
   banned: "Banned",
   inactive: "Inactive",
 };
-const mediaTypeIcon: Record<FBMediaType, React.ReactNode> = {
-  photo: <ImageIcon className="h-3.5 w-3.5" />,
+const mediaTypeIcon: Record<TTMediaType, React.ReactNode> = {
   video: <Video className="h-3.5 w-3.5" />,
-  reel: <Film className="h-3.5 w-3.5" />,
-  link: <LinkIcon className="h-3.5 w-3.5" />,
-  status: <FileText className="h-3.5 w-3.5" />,
+  photo: <ImageIcon className="h-3.5 w-3.5" />,
+  live: <Radio className="h-3.5 w-3.5" />,
 };
 
 // ── Main component ─────────────────────────────────────────────────────────────
-function FacebookPage() {
+function TikTokPage() {
   const [creators, setCreators] = useState<Creator[]>([]);
   const [selectedCreatorId, setSelectedCreatorId] = useState<string>("");
   const [selectedCreator, setSelectedCreator] = useState<Creator | null>(null);
-  const [accounts, setAccounts] = useState<FBAccount[]>([]);
-  const [posts, setPosts] = useState<FBPost[]>([]);
+  const [accounts, setAccounts] = useState<TTAccount[]>([]);
+  const [posts, setPosts] = useState<TTPost[]>([]);
   const [inflowwStats, setInflowwStats] = useState<InflowwStat[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -121,21 +120,21 @@ function FacebookPage() {
   const loadCreatorData = async (creatorId: string, silent = false) => {
     if (!creatorId) return;
     if (!silent) setLoading(true);
-    const { data: ias } = await supabase
-      .from("facebook_accounts")
+    const { data: tas } = await supabase
+      .from("tiktok_accounts")
       .select("*")
       .eq("creator_id", creatorId)
       .order("created_at");
-    const accList = (ias ?? []) as FBAccount[];
+    const accList = (tas ?? []) as TTAccount[];
     setAccounts(accList);
     const accIds = accList.map((a) => a.id);
     if (accIds.length) {
       const { data: ps } = await supabase
-        .from("facebook_posts")
+        .from("tiktok_posts")
         .select("*")
-        .in("facebook_account_id", accIds)
+        .in("tiktok_account_id", accIds)
         .order("posted_at", { ascending: false });
-      setPosts((ps ?? []) as FBPost[]);
+      setPosts((ps ?? []) as TTPost[]);
     } else {
       setPosts([]);
     }
@@ -238,7 +237,7 @@ function FacebookPage() {
       .from("revenue_entries")
       .delete()
       .eq("creator_id", selectedCreatorId)
-      .eq("source", "infloww-facebook");
+      .eq("source", "infloww-tiktok");
     const today = new Date().toISOString().slice(0, 10);
     const assignedLinks = allLinks.filter((l) =>
       accounts.some((a) => a.infloww_campaign_code === l.campaignCode)
@@ -249,11 +248,11 @@ function FacebookPage() {
         const matched = accounts.find((a) => a.infloww_campaign_code === l.campaignCode)!;
         return {
           creator_id: selectedCreatorId,
-          facebook_account_id: matched.id,
+          tiktok_account_id: matched.id,
           amount: l.revenue.total,
           currency: "USD",
           entry_date: today,
-          source: "infloww-facebook",
+          source: "infloww-tiktok",
           notes: `c${l.campaignCode} — ${l.subscribersCount} subs, ${l.clicksCount} clicks`,
         };
       });
@@ -275,11 +274,11 @@ function FacebookPage() {
       <Toaster />
       <div>
         <div className="flex items-center gap-2.5 mb-1">
-          <SiFacebook className="h-6 w-6" style={{ color: FB_BLUE }} />
-          <h1 className="text-3xl font-bold tracking-tight">Facebook</h1>
+          <SiTiktok className="h-6 w-6" style={{ color: TT_PINK }} />
+          <h1 className="text-3xl font-bold tracking-tight">TikTok</h1>
         </div>
         <p className="text-sm text-muted-foreground">
-          Manage Facebook Pages, posts, and revenue per creator.
+          Manage TikTok accounts, videos, and revenue per creator.
         </p>
       </div>
 
@@ -301,7 +300,7 @@ function FacebookPage() {
         <div className="h-64 animate-pulse rounded-xl bg-card/60 border border-border" />
       ) : !selectedCreatorId ? (
         <div className="rounded-xl border border-dashed border-border bg-card/40 p-12 text-center text-sm text-muted-foreground">
-          Select a creator above to manage their Facebook presence.
+          Select a creator above to manage their TikTok presence.
         </div>
       ) : loading ? (
         <div className="h-64 animate-pulse rounded-xl bg-card/60 border border-border" />
@@ -309,8 +308,8 @@ function FacebookPage() {
         <Tabs defaultValue="overview">
           <TabsList>
             <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="accounts">Pages</TabsTrigger>
-            <TabsTrigger value="posts">Posts</TabsTrigger>
+            <TabsTrigger value="accounts">Accounts</TabsTrigger>
+            <TabsTrigger value="posts">Videos</TabsTrigger>
             <TabsTrigger value="revenue">Revenue</TabsTrigger>
             <TabsTrigger value="analytics">Analytics</TabsTrigger>
           </TabsList>
@@ -358,23 +357,22 @@ function FacebookPage() {
 function OverviewTab({
   accounts, posts, inflowwStats, syncing, onSyncInfloww,
 }: {
-  accounts: FBAccount[];
-  posts: FBPost[];
+  accounts: TTAccount[];
+  posts: TTPost[];
   inflowwStats: InflowwStat[];
   syncing: boolean;
   onSyncInfloww: () => void;
 }) {
   const totalFollowers = accounts.reduce((s, a) => s + a.followers_count, 0);
+  const totalViews = posts.reduce((s, p) => s + p.views_count, 0);
   const totalRevenue = inflowwStats
     .filter((s) => accounts.some((a) => a.infloww_campaign_code === s.campaign_code))
     .reduce((s, i) => s + i.revenue_total, 0);
   const posts30d = posts.filter(
     (p) => Date.now() - new Date(p.posted_at).getTime() < 30 * 24 * 3600_000
   ).length;
-  const topPost = posts.length > 0
-    ? posts.reduce((a, b) => (a.reactions_count > b.reactions_count ? a : b))
-    : null;
-  const topPostAccount = topPost ? accounts.find((a) => a.id === topPost.facebook_account_id) : null;
+  const topPost = posts.length > 0 ? posts.reduce((a, b) => (a.views_count > b.views_count ? a : b)) : null;
+  const topPostAccount = topPost ? accounts.find((a) => a.id === topPost.tiktok_account_id) : null;
 
   return (
     <div className="space-y-6">
@@ -387,16 +385,16 @@ function OverviewTab({
       </div>
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <StatCard label="FB Pages" value={accounts.length} sub="linked" />
-        <StatCard label="Total followers" value={totalFollowers.toLocaleString()} sub={`across ${accounts.length} page${accounts.length === 1 ? "" : "s"}`} />
-        <StatCard label="Posts (30d)" value={posts30d} sub={`${posts.length} total tracked`} />
+        <StatCard label="TT accounts" value={accounts.length} sub="linked" />
+        <StatCard label="Total followers" value={totalFollowers.toLocaleString()} sub={`across ${accounts.length} account${accounts.length === 1 ? "" : "s"}`} />
+        <StatCard label="Total views" value={totalViews.toLocaleString()} sub={`${posts30d} videos in 30d`} valueClass="text-primary" />
         <StatCard label="Infloww revenue" value={`$${fmtMoney0(totalRevenue)}`} sub="from assigned codes" valueClass="text-success" />
       </div>
 
       {topPost && (
         <div className="rounded-xl border border-border bg-card p-5">
           <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-            Best performing post
+            Best performing video
           </div>
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
@@ -405,20 +403,20 @@ function OverviewTab({
                   {mediaTypeIcon[topPost.media_type]}
                   {topPost.media_type}
                 </span>
-                <span className="truncate">{topPost.message ?? "(no message)"}</span>
+                <span className="truncate">{topPost.caption ?? "(no caption)"}</span>
               </div>
               <div className="text-xs text-muted-foreground mt-0.5">
-                {topPostAccount ? `${topPostAccount.name} · ` : ""}
+                {topPostAccount ? `@${topPostAccount.username} · ` : ""}
                 {formatDistanceToNow(new Date(topPost.posted_at), { addSuffix: true })}
               </div>
             </div>
             <div className="flex items-center gap-4 shrink-0">
               <div className="text-right">
                 <div className="font-semibold flex items-center gap-1 justify-end">
-                  <ThumbsUp className="h-3.5 w-3.5" style={{ color: FB_BLUE }} />
-                  {topPost.reactions_count.toLocaleString()}
+                  <Eye className="h-3.5 w-3.5" style={{ color: TT_CYAN }} />
+                  {topPost.views_count.toLocaleString()}
                 </div>
-                <div className="text-xs text-muted-foreground">reactions</div>
+                <div className="text-xs text-muted-foreground">views</div>
               </div>
               {topPost.url && (
                 <a href={topPost.url} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-primary">
@@ -470,28 +468,28 @@ function ChartCard({
   );
 }
 
-function HealthWarnings({ accounts, posts }: { accounts: FBAccount[]; posts: FBPost[] }) {
+function HealthWarnings({ accounts, posts }: { accounts: TTAccount[]; posts: TTPost[] }) {
   const flagged = accounts.filter((a) => a.status === "shadowbanned" || a.status === "banned" || a.status === "inactive");
   const inactiveAccounts = accounts.filter((a) => {
     if (a.status !== "active") return false;
-    const accountPosts = posts.filter((p) => p.facebook_account_id === a.id);
+    const accountPosts = posts.filter((p) => p.tiktok_account_id === a.id);
     if (accountPosts.length === 0) return false;
     const lastPost = accountPosts.reduce((latest, p) =>
       new Date(p.posted_at) > new Date(latest.posted_at) ? p : latest
     );
-    return Date.now() - new Date(lastPost.posted_at).getTime() > 14 * 24 * 3600_000;
+    return Date.now() - new Date(lastPost.posted_at).getTime() > 7 * 24 * 3600_000;
   });
   if (flagged.length === 0 && inactiveAccounts.length === 0) return null;
   return (
     <div className="rounded-xl border border-warning/30 bg-warning/5 p-5">
       <div className="flex items-center gap-2 text-warning mb-3">
         <AlertTriangle className="h-4 w-4" />
-        <div className="text-sm font-semibold">Page health</div>
+        <div className="text-sm font-semibold">Account health</div>
       </div>
       <div className="space-y-2 text-sm">
         {flagged.map((a) => (
           <div key={a.id} className="flex items-center justify-between">
-            <span>{a.name}</span>
+            <span>@{a.username}</span>
             <span className={`text-xs px-2 py-0.5 rounded border ${accountStatusStyles[a.status]}`}>
               {statusLabels[a.status]}
             </span>
@@ -499,8 +497,8 @@ function HealthWarnings({ accounts, posts }: { accounts: FBAccount[]; posts: FBP
         ))}
         {inactiveAccounts.map((a) => (
           <div key={a.id} className="flex items-center justify-between text-muted-foreground">
-            <span>{a.name}</span>
-            <span className="text-xs">No posts in 14+ days</span>
+            <span>@{a.username}</span>
+            <span className="text-xs">No videos in 7+ days</span>
           </div>
         ))}
       </div>
@@ -508,68 +506,67 @@ function HealthWarnings({ accounts, posts }: { accounts: FBAccount[]; posts: FBP
   );
 }
 
-// ── Accounts (Pages) Tab ───────────────────────────────────────────────────────
+// ── Accounts Tab ───────────────────────────────────────────────────────────────
 function AccountsTab({
   creatorId, accounts, posts, inflowwStats, onRefresh,
 }: {
   creatorId: string;
-  accounts: FBAccount[];
-  posts: FBPost[];
+  accounts: TTAccount[];
+  posts: TTPost[];
   inflowwStats: InflowwStat[];
   onRefresh: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [accForm, setAccForm] = useState({ name: "", status: "active" as FBAccountStatus, page_url: "", about_link: "" });
+  const [accForm, setAccForm] = useState({ username: "", status: "active" as TTAccountStatus, bio_link: "" });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({
-    name: "",
-    page_url: "",
+    username: "",
     followers_count: "",
-    likes_count: "",
+    following_count: "",
     posts_count: "",
-    about_link: "",
+    total_likes: "",
+    bio_link: "",
     notes: "",
     infloww_campaign_code: "",
   });
-  const [detailAccount, setDetailAccount] = useState<FBAccount | null>(null);
+  const [detailAccount, setDetailAccount] = useState<TTAccount | null>(null);
 
   const onAddAccount = async () => {
-    if (!accForm.name.trim()) return toast.error("Page name is required");
-    const { error } = await supabase.from("facebook_accounts").insert({
+    if (!accForm.username.trim()) return toast.error("Username is required");
+    const { error } = await supabase.from("tiktok_accounts").insert({
       creator_id: creatorId,
-      name: accForm.name.trim(),
+      username: accForm.username.trim().replace(/^@/, ""),
       status: accForm.status,
-      page_url: accForm.page_url.trim() || null,
-      about_link: accForm.about_link.trim() || null,
+      bio_link: accForm.bio_link.trim() || null,
     });
     if (error) return toast.error(error.message);
-    toast.success("Facebook page added");
-    setAccForm({ name: "", status: "active", page_url: "", about_link: "" });
+    toast.success("TikTok account added");
+    setAccForm({ username: "", status: "active", bio_link: "" });
     setOpen(false);
     onRefresh();
   };
 
   const onDeleteAccount = async (id: string) => {
-    const { error } = await supabase.from("facebook_accounts").delete().eq("id", id);
+    const { error } = await supabase.from("tiktok_accounts").delete().eq("id", id);
     if (error) return toast.error(error.message);
-    toast.success("Page removed");
+    toast.success("Account removed");
     onRefresh();
   };
 
-  const onUpdateStatus = async (id: string, status: FBAccountStatus) => {
-    const { error } = await supabase.from("facebook_accounts").update({ status }).eq("id", id);
+  const onUpdateStatus = async (id: string, status: TTAccountStatus) => {
+    const { error } = await supabase.from("tiktok_accounts").update({ status }).eq("id", id);
     if (error) return toast.error(error.message);
     onRefresh();
   };
 
-  const startEdit = (a: FBAccount) => {
+  const startEdit = (a: TTAccount) => {
     setEditForm({
-      name: a.name,
-      page_url: a.page_url ?? "",
+      username: a.username,
       followers_count: a.followers_count.toString(),
-      likes_count: a.likes_count.toString(),
+      following_count: a.following_count.toString(),
       posts_count: a.posts_count.toString(),
-      about_link: a.about_link ?? "",
+      total_likes: a.total_likes.toString(),
+      bio_link: a.bio_link ?? "",
       notes: a.notes ?? "",
       infloww_campaign_code: a.infloww_campaign_code?.toString() ?? "",
     });
@@ -579,17 +576,17 @@ function AccountsTab({
   const saveEdit = async (id: string) => {
     const code = editForm.infloww_campaign_code.trim();
     const payload = {
-      name: editForm.name.trim(),
-      page_url: editForm.page_url.trim() || null,
+      username: editForm.username.trim().replace(/^@/, ""),
       followers_count: parseInt(editForm.followers_count) || 0,
-      likes_count: parseInt(editForm.likes_count) || 0,
+      following_count: parseInt(editForm.following_count) || 0,
       posts_count: parseInt(editForm.posts_count) || 0,
-      about_link: editForm.about_link.trim() || null,
+      total_likes: parseInt(editForm.total_likes) || 0,
+      bio_link: editForm.bio_link.trim() || null,
       notes: editForm.notes.trim() || null,
       infloww_campaign_code: code ? parseInt(code) : null,
       last_synced_at: new Date().toISOString(),
     };
-    const { error } = await supabase.from("facebook_accounts").update(payload).eq("id", id);
+    const { error } = await supabase.from("tiktok_accounts").update(payload).eq("id", id);
     if (error) return toast.error(error.message);
     toast.success("Saved");
     setEditingId(null);
@@ -613,28 +610,28 @@ function AccountsTab({
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          {accounts.length} page{accounts.length !== 1 ? "s" : ""} linked.
+          {accounts.length} account{accounts.length !== 1 ? "s" : ""} linked.
         </p>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button size="sm">
-              <Plus className="h-4 w-4 mr-1.5" />Add page
+              <Plus className="h-4 w-4 mr-1.5" />Add account
             </Button>
           </DialogTrigger>
           <DialogContent>
-            <DialogHeader><DialogTitle>Add Facebook page</DialogTitle></DialogHeader>
+            <DialogHeader><DialogTitle>Add TikTok account</DialogTitle></DialogHeader>
             <div className="space-y-4 py-2">
               <div className="space-y-1.5">
-                <Label>Page name</Label>
+                <Label>Username</Label>
                 <Input
-                  value={accForm.name}
-                  onChange={(e) => setAccForm({ ...accForm, name: e.target.value })}
-                  placeholder="Luna XO Official"
+                  value={accForm.username}
+                  onChange={(e) => setAccForm({ ...accForm, username: e.target.value })}
+                  placeholder="luna_xo"
                 />
               </div>
               <div className="space-y-1.5">
                 <Label>Status</Label>
-                <Select value={accForm.status} onValueChange={(v) => setAccForm({ ...accForm, status: v as FBAccountStatus })}>
+                <Select value={accForm.status} onValueChange={(v) => setAccForm({ ...accForm, status: v as TTAccountStatus })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="active">Active</SelectItem>
@@ -646,18 +643,10 @@ function AccountsTab({
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label>Page URL <span className="text-muted-foreground text-xs">(optional)</span></Label>
+                <Label>Bio link <span className="text-muted-foreground text-xs">(optional)</span></Label>
                 <Input
-                  value={accForm.page_url}
-                  onChange={(e) => setAccForm({ ...accForm, page_url: e.target.value })}
-                  placeholder="https://facebook.com/lunaxoofficial"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>About link <span className="text-muted-foreground text-xs">(optional)</span></Label>
-                <Input
-                  value={accForm.about_link}
-                  onChange={(e) => setAccForm({ ...accForm, about_link: e.target.value })}
+                  value={accForm.bio_link}
+                  onChange={(e) => setAccForm({ ...accForm, bio_link: e.target.value })}
                   placeholder="https://onlyfans.com/luna_xo"
                 />
               </div>
@@ -672,19 +661,20 @@ function AccountsTab({
 
       {accounts.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border bg-card/40 p-12 text-center text-sm text-muted-foreground">
-          No Facebook pages linked yet.
+          No TikTok accounts linked yet.
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl border border-border">
           <table className="w-full text-sm">
             <thead className="bg-secondary/40 text-xs uppercase tracking-wide text-muted-foreground">
               <tr>
-                <th className="text-left font-medium px-4 py-3">Page</th>
+                <th className="text-left font-medium px-4 py-3">Username</th>
                 <th className="text-left font-medium px-4 py-3">Status</th>
                 <th className="text-right font-medium px-4 py-3">Followers</th>
-                <th className="text-right font-medium px-4 py-3">Likes</th>
-                <th className="text-right font-medium px-4 py-3">Posts</th>
-                <th className="text-left font-medium px-4 py-3">About link</th>
+                <th className="text-right font-medium px-4 py-3">Following</th>
+                <th className="text-right font-medium px-4 py-3">Videos</th>
+                <th className="text-right font-medium px-4 py-3">Total likes</th>
+                <th className="text-left font-medium px-4 py-3">Bio link</th>
                 <th className="text-right font-medium px-4 py-3">Campaign</th>
                 <th className="text-left font-medium px-4 py-3">Notes</th>
                 <th className="px-4 py-3" />
@@ -698,20 +688,11 @@ function AccountsTab({
                     {isEdit ? (
                       <>
                         <td className="px-4 py-2">
-                          <div className="space-y-1">
-                            <Input
-                              className="h-7 text-xs w-40"
-                              value={editForm.name}
-                              onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                              placeholder="Page name"
-                            />
-                            <Input
-                              className="h-7 text-xs w-40"
-                              value={editForm.page_url}
-                              onChange={(e) => setEditForm({ ...editForm, page_url: e.target.value })}
-                              placeholder="Page URL"
-                            />
-                          </div>
+                          <Input
+                            className="h-7 text-xs w-32"
+                            value={editForm.username}
+                            onChange={(e) => setEditForm({ ...editForm, username: e.target.value })}
+                          />
                         </td>
                         <td className="px-4 py-2">
                           <span className="text-xs text-muted-foreground italic">use status pill →</span>
@@ -728,8 +709,8 @@ function AccountsTab({
                           <Input
                             className="h-7 text-xs w-24 text-right ml-auto"
                             type="number"
-                            value={editForm.likes_count}
-                            onChange={(e) => setEditForm({ ...editForm, likes_count: e.target.value })}
+                            value={editForm.following_count}
+                            onChange={(e) => setEditForm({ ...editForm, following_count: e.target.value })}
                           />
                         </td>
                         <td className="px-4 py-2 text-right">
@@ -740,12 +721,20 @@ function AccountsTab({
                             onChange={(e) => setEditForm({ ...editForm, posts_count: e.target.value })}
                           />
                         </td>
+                        <td className="px-4 py-2 text-right">
+                          <Input
+                            className="h-7 text-xs w-24 text-right ml-auto"
+                            type="number"
+                            value={editForm.total_likes}
+                            onChange={(e) => setEditForm({ ...editForm, total_likes: e.target.value })}
+                          />
+                        </td>
                         <td className="px-4 py-2">
                           <Input
                             className="h-7 text-xs w-40"
                             placeholder="https://…"
-                            value={editForm.about_link}
-                            onChange={(e) => setEditForm({ ...editForm, about_link: e.target.value })}
+                            value={editForm.bio_link}
+                            onChange={(e) => setEditForm({ ...editForm, bio_link: e.target.value })}
                           />
                         </td>
                         <td className="px-4 py-2 text-right">
@@ -791,23 +780,21 @@ function AccountsTab({
                               className="font-medium hover:text-primary text-left"
                               title="View analytics"
                             >
-                              {a.name}
+                              @{a.username}
                             </button>
-                            {a.page_url && (
-                              <a
-                                href={a.page_url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-muted-foreground/60 hover:text-primary"
-                                title="Open on Facebook"
-                              >
-                                <ExternalLink className="h-3 w-3" />
-                              </a>
-                            )}
+                            <a
+                              href={`https://tiktok.com/@${a.username}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-muted-foreground/60 hover:text-primary"
+                              title="Open on TikTok"
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
                           </div>
                         </td>
                         <td className="px-4 py-3">
-                          <Select value={a.status} onValueChange={(v) => onUpdateStatus(a.id, v as FBAccountStatus)}>
+                          <Select value={a.status} onValueChange={(v) => onUpdateStatus(a.id, v as TTAccountStatus)}>
                             <SelectTrigger className={`h-6 w-32 text-xs px-2 border ${accountStatusStyles[a.status]}`}>
                               <SelectValue>{statusLabels[a.status]}</SelectValue>
                             </SelectTrigger>
@@ -821,13 +808,14 @@ function AccountsTab({
                           </Select>
                         </td>
                         <td className="px-4 py-3 text-right font-medium">{a.followers_count.toLocaleString()}</td>
-                        <td className="px-4 py-3 text-right text-muted-foreground">{a.likes_count.toLocaleString()}</td>
+                        <td className="px-4 py-3 text-right text-muted-foreground">{a.following_count.toLocaleString()}</td>
                         <td className="px-4 py-3 text-right text-muted-foreground">{a.posts_count.toLocaleString()}</td>
+                        <td className="px-4 py-3 text-right text-muted-foreground">{a.total_likes.toLocaleString()}</td>
                         <td className="px-4 py-3 text-muted-foreground max-w-[200px] truncate">
-                          {a.about_link ? (
-                            <a href={a.about_link} target="_blank" rel="noreferrer" className="hover:text-primary inline-flex items-center gap-1">
+                          {a.bio_link ? (
+                            <a href={a.bio_link} target="_blank" rel="noreferrer" className="hover:text-primary inline-flex items-center gap-1">
                               <Link2 className="h-3 w-3" />
-                              <span className="truncate">{a.about_link.replace(/^https?:\/\//, "")}</span>
+                              <span className="truncate">{a.bio_link.replace(/^https?:\/\//, "")}</span>
                             </a>
                           ) : (
                             <span className="text-muted-foreground/40">—</span>
@@ -855,9 +843,9 @@ function AccountsTab({
                               </AlertDialogTrigger>
                               <AlertDialogContent>
                                 <AlertDialogHeader>
-                                  <AlertDialogTitle>Remove {a.name}?</AlertDialogTitle>
+                                  <AlertDialogTitle>Remove @{a.username}?</AlertDialogTitle>
                                   <AlertDialogDescription>
-                                    This will also delete all posts tracked under this page.
+                                    This will also delete all videos tracked under this account.
                                   </AlertDialogDescription>
                                 </AlertDialogHeader>
                                 <AlertDialogFooter>
@@ -885,55 +873,207 @@ function AccountsTab({
 function AccountDetailView({
   account, posts, inflowwStats, onBack, onRefresh,
 }: {
-  account: FBAccount;
-  posts: FBPost[];
+  account: TTAccount;
+  posts: TTPost[];
   inflowwStats: InflowwStat[];
   onBack: () => void;
   onRefresh: () => void;
 }) {
   const accountPosts = useMemo(
-    () => posts.filter((p) => p.facebook_account_id === account.id),
+    () => posts.filter((p) => p.tiktok_account_id === account.id),
     [account, posts]
   );
 
-  const [metaDialogOpen, setMetaDialogOpen] = useState(false);
-  const [metaForm, setMetaForm] = useState({ page_id: "", access_token: "" });
-  const [metaSyncing, setMetaSyncing] = useState(false);
+  // ── TikTok API connection state + sync ────────────────────────────────────
+  const [apiDialogOpen, setApiDialogOpen] = useState(false);
+  const [apiForm, setApiForm] = useState<{ provider: APIProvider; key: string }>({
+    provider: "scrapecreators",
+    key: "",
+  });
+  const [apiSyncing, setApiSyncing] = useState(false);
+  const isApiConnected = !!(account.api_provider && account.api_key);
 
-  const isConnected = !!(account.meta_access_token && account.meta_page_id);
+  const runTikTokSync = async (
+    provider: APIProvider,
+    key: string,
+    username: string
+  ): Promise<{ ok: true; profile: { followers: number; following: number; posts: number; totalLikes: number; bio: string | null }; videos: { id: string; caption: string | null; postedAt: string; views: number; likes: number; comments: number; shares: number; saves: number; url: string | null }[] } | { ok: false; error: string }> => {
+    try {
+      if (provider === "scrapecreators") {
+        const base = "https://api.scrapecreators.com/v1";
+        const headers = { "x-api-key": key };
+        const profRes = await fetch(`${base}/tiktok/profile?handle=${encodeURIComponent(username)}`, { headers });
+        if (!profRes.ok) {
+          return { ok: false, error: `ScrapeCreators profile request failed: ${profRes.status}` };
+        }
+        const profJson = (await profRes.json()) as {
+          user?: { uniqueId?: string; nickname?: string; signature?: string; followerCount?: number; followingCount?: number; videoCount?: number; heartCount?: number };
+          stats?: { followerCount?: number; followingCount?: number; videoCount?: number; heartCount?: number };
+          error?: string;
+        };
+        if (profJson.error) return { ok: false, error: profJson.error };
+        const stats = profJson.stats ?? {};
+        const user = profJson.user ?? {};
+        const profile = {
+          followers: stats.followerCount ?? user.followerCount ?? account.followers_count,
+          following: stats.followingCount ?? user.followingCount ?? account.following_count,
+          posts: stats.videoCount ?? user.videoCount ?? account.posts_count,
+          totalLikes: stats.heartCount ?? user.heartCount ?? account.total_likes,
+          bio: user.signature ?? null,
+        };
+        const vidRes = await fetch(
+          `${base}/tiktok/profile/videos?handle=${encodeURIComponent(username)}&trim=true`,
+          { headers }
+        );
+        if (!vidRes.ok) {
+          return { ok: false, error: `ScrapeCreators videos request failed: ${vidRes.status}` };
+        }
+        const vidJson = (await vidRes.json()) as {
+          videos?: {
+            id?: string;
+            desc?: string;
+            createTime?: number;
+            stats?: { playCount?: number; diggCount?: number; commentCount?: number; shareCount?: number; collectCount?: number };
+          }[];
+          error?: string;
+        };
+        if (vidJson.error) return { ok: false, error: vidJson.error };
+        const videos = (vidJson.videos ?? []).slice(0, 25).map((v) => ({
+          id: v.id ?? "",
+          caption: v.desc ?? null,
+          postedAt: v.createTime
+            ? new Date(v.createTime * 1000).toISOString()
+            : new Date().toISOString(),
+          views: v.stats?.playCount ?? 0,
+          likes: v.stats?.diggCount ?? 0,
+          comments: v.stats?.commentCount ?? 0,
+          shares: v.stats?.shareCount ?? 0,
+          saves: v.stats?.collectCount ?? 0,
+          url: v.id ? `https://tiktok.com/@${username}/video/${v.id}` : null,
+        }));
+        return { ok: true, profile, videos };
+      }
+      // Future providers go here
+      return { ok: false, error: `Provider "${provider}" is recognized but not yet implemented. Use ScrapeCreators for v1.` };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Network error" };
+    }
+  };
+
+  const applySync = async (provider: APIProvider, key: string) => {
+    const result = await runTikTokSync(provider, key, account.username);
+    if (!result.ok) return result;
+    const { profile, videos } = result;
+    const updatePayload = {
+      followers_count: profile.followers,
+      following_count: profile.following,
+      posts_count: profile.posts,
+      total_likes: profile.totalLikes,
+      bio_link: account.bio_link ?? profile.bio ?? null,
+      api_provider: provider,
+      api_key: key,
+      api_connected_at: account.api_connected_at ?? new Date().toISOString(),
+      last_synced_at: new Date().toISOString(),
+    };
+    const { error: updErr } = await supabase
+      .from("tiktok_accounts")
+      .update(updatePayload)
+      .eq("id", account.id);
+    if (updErr) return { ok: false as const, error: updErr.message };
+    const validVideos = videos.filter((v) => v.id);
+    if (validVideos.length > 0) {
+      const upserts = validVideos.map((v) => ({
+        tiktok_account_id: account.id,
+        post_id: v.id,
+        caption: v.caption,
+        media_type: "video" as const,
+        posted_at: v.postedAt,
+        views_count: v.views,
+        likes_count: v.likes,
+        comments_count: v.comments,
+        shares_count: v.shares,
+        saves_count: v.saves,
+        url: v.url,
+      }));
+      const { error: postErr } = await supabase
+        .from("tiktok_posts")
+        .upsert(upserts, { onConflict: "tiktok_account_id,post_id" });
+      if (postErr) return { ok: false as const, error: postErr.message };
+    }
+    return { ok: true as const, videoCount: validVideos.length };
+  };
+
+  const onConnectAPI = async () => {
+    if (!apiForm.key.trim()) {
+      toast.error("API key is required.");
+      return;
+    }
+    setApiSyncing(true);
+    const result = await applySync(apiForm.provider, apiForm.key.trim());
+    setApiSyncing(false);
+    if (!result.ok) {
+      toast.error(`API sync failed: ${result.error}`);
+      return;
+    }
+    toast.success(`Connected — ${result.videoCount} video${result.videoCount === 1 ? "" : "s"} synced`);
+    setApiDialogOpen(false);
+    setApiForm({ provider: "scrapecreators", key: "" });
+    onRefresh();
+  };
+
+  const onRefreshAPI = async () => {
+    if (!account.api_provider || !account.api_key) return;
+    setApiSyncing(true);
+    const result = await applySync(account.api_provider, account.api_key);
+    setApiSyncing(false);
+    if (!result.ok) {
+      toast.error(`Sync failed: ${result.error}`);
+      return;
+    }
+    toast.success(`Synced — ${result.videoCount} video${result.videoCount === 1 ? "" : "s"} refreshed`);
+    onRefresh();
+  };
+
+  const onDisconnectAPI = async () => {
+    const { error } = await supabase
+      .from("tiktok_accounts")
+      .update({ api_provider: null, api_key: null, api_connected_at: null })
+      .eq("id", account.id);
+    if (error) return toast.error(error.message);
+    toast.success("API disconnected");
+    onRefresh();
+  };
 
   const stats = useMemo(() => {
     if (accountPosts.length === 0) return null;
-    const totalReactions = accountPosts.reduce((s, p) => s + p.reactions_count, 0);
+    const totalViews = accountPosts.reduce((s, p) => s + p.views_count, 0);
+    const totalLikes = accountPosts.reduce((s, p) => s + p.likes_count, 0);
     const totalComments = accountPosts.reduce((s, p) => s + p.comments_count, 0);
     const totalShares = accountPosts.reduce((s, p) => s + p.shares_count, 0);
-    const totalReach = accountPosts.reduce((s, p) => s + p.reach_count, 0);
-    const totalVideoViews = accountPosts.reduce((s, p) => s + p.video_views, 0);
-    const avgReactions = totalReactions / accountPosts.length;
+    const totalSaves = accountPosts.reduce((s, p) => s + p.saves_count, 0);
+    const avgViews = totalViews / accountPosts.length;
+    const avgLikes = totalLikes / accountPosts.length;
     const avgComments = totalComments / accountPosts.length;
-    const avgReach = totalReach / accountPosts.length;
     const engagement =
-      totalReach > 0 ? ((totalReactions + totalComments + totalShares) / totalReach) * 100 : null;
+      totalViews > 0 ? ((totalLikes + totalComments + totalShares + totalSaves) / totalViews) * 100 : null;
     const last30d = accountPosts.filter(
       (p) => Date.now() - new Date(p.posted_at).getTime() < 30 * 24 * 3600_000
     ).length;
-    return { totalReactions, totalComments, totalShares, totalReach, totalVideoViews, avgReactions, avgComments, avgReach, engagement, last30d };
+    return { totalViews, totalLikes, totalComments, totalShares, totalSaves, avgViews, avgLikes, avgComments, engagement, last30d };
   }, [accountPosts]);
 
   const byMediaType = useMemo(() => {
-    const groups: Record<FBMediaType, { count: number; reactions: number; comments: number; reach: number }> = {
-      photo: { count: 0, reactions: 0, comments: 0, reach: 0 },
-      video: { count: 0, reactions: 0, comments: 0, reach: 0 },
-      reel: { count: 0, reactions: 0, comments: 0, reach: 0 },
-      link: { count: 0, reactions: 0, comments: 0, reach: 0 },
-      status: { count: 0, reactions: 0, comments: 0, reach: 0 },
+    const groups: Record<TTMediaType, { count: number; views: number; likes: number; comments: number }> = {
+      video: { count: 0, views: 0, likes: 0, comments: 0 },
+      photo: { count: 0, views: 0, likes: 0, comments: 0 },
+      live: { count: 0, views: 0, likes: 0, comments: 0 },
     };
     for (const p of accountPosts) {
       const g = groups[p.media_type];
       g.count++;
-      g.reactions += p.reactions_count;
+      g.views += p.views_count;
+      g.likes += p.likes_count;
       g.comments += p.comments_count;
-      g.reach += p.reach_count;
     }
     return groups;
   }, [accountPosts]);
@@ -952,8 +1092,9 @@ function AccountDetailView({
     [account, inflowwStats]
   );
 
+  // Posting cadence: posts per week, last 12 weeks
   const cadenceData = useMemo(() => {
-    const weeks: { label: string; posts: number; avgReactions: number; weekStart: number }[] = [];
+    const weeks: { label: string; posts: number; avgViews: number }[] = [];
     const now = new Date();
     now.setHours(0, 0, 0, 0);
     const dow = now.getDay();
@@ -968,72 +1109,73 @@ function AccountDetailView({
         const t = new Date(p.posted_at).getTime();
         return t >= start.getTime() && t < end.getTime();
       });
-      const totalReactions = weekPosts.reduce((s, p) => s + p.reactions_count, 0);
+      const totalViews = weekPosts.reduce((s, p) => s + p.views_count, 0);
       weeks.push({
         label: format(start, "MMM d"),
         posts: weekPosts.length,
-        avgReactions: weekPosts.length > 0 ? Math.round(totalReactions / weekPosts.length) : 0,
-        weekStart: start.getTime(),
+        avgViews: weekPosts.length > 0 ? Math.round(totalViews / weekPosts.length) : 0,
       });
     }
     return weeks;
   }, [accountPosts]);
 
+  // Avg engagement by day of week
   const dayOfWeekData = useMemo(() => {
     const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-    const buckets = days.map((d) => ({ day: d, totalReactions: 0, totalComments: 0, count: 0 }));
+    const buckets = days.map((d) => ({ day: d, totalViews: 0, count: 0 }));
     for (const p of accountPosts) {
       const dow = new Date(p.posted_at).getDay();
-      buckets[dow].totalReactions += p.reactions_count;
-      buckets[dow].totalComments += p.comments_count;
+      buckets[dow].totalViews += p.views_count;
       buckets[dow].count++;
     }
     return buckets.map((b) => ({
       day: b.day,
-      avgEngagement: b.count > 0 ? Math.round((b.totalReactions + b.totalComments) / b.count) : 0,
+      avgViews: b.count > 0 ? Math.round(b.totalViews / b.count) : 0,
       posts: b.count,
     }));
   }, [accountPosts]);
 
+  // By media type chart-friendly
   const mediaTypeChart = useMemo(() => {
-    return (Object.entries(byMediaType) as [FBMediaType, { count: number; reactions: number; comments: number; reach: number }][])
+    return (Object.entries(byMediaType) as [TTMediaType, { count: number; views: number; likes: number; comments: number }][])
       .filter(([, g]) => g.count > 0)
       .map(([type, g]) => ({
         type: type[0].toUpperCase() + type.slice(1),
-        avgReactions: Math.round(g.reactions / g.count),
-        avgComments: Math.round(g.comments / g.count),
+        avgViews: Math.round(g.views / g.count),
+        avgLikes: Math.round(g.likes / g.count),
         count: g.count,
       }))
-      .sort((a, b) => b.avgReactions - a.avgReactions);
+      .sort((a, b) => b.avgViews - a.avgViews);
   }, [byMediaType]);
 
+  // Top posts by total engagement (views weighted heavy)
   const topPosts = useMemo(() => {
     return [...accountPosts]
       .sort(
         (a, b) =>
-          b.reactions_count + b.comments_count + b.shares_count -
-          (a.reactions_count + a.comments_count + a.shares_count)
+          b.views_count - a.views_count
       )
       .slice(0, 10);
   }, [accountPosts]);
 
+  // Auto-generated insights
   const insights = useMemo(() => {
     const out: string[] = [];
     if (mediaTypeChart.length >= 2) {
       const best = mediaTypeChart[0];
       const worst = mediaTypeChart[mediaTypeChart.length - 1];
-      if (best.avgReactions > 0 && worst.avgReactions > 0 && best.avgReactions >= worst.avgReactions * 1.5) {
-        const ratio = (best.avgReactions / worst.avgReactions).toFixed(1);
-        out.push(`${best.type}s get ${ratio}× more reactions on average than ${worst.type}s — lean into ${best.type}s.`);
+      if (best.avgViews > 0 && worst.avgViews > 0 && best.avgViews >= worst.avgViews * 1.5) {
+        const ratio = (best.avgViews / worst.avgViews).toFixed(1);
+        out.push(`${best.type}s get ${ratio}× more views on average than ${worst.type}s — lean into ${best.type}s.`);
       }
     }
-    const dowSorted = [...dayOfWeekData].filter((d) => d.posts > 0).sort((a, b) => b.avgEngagement - a.avgEngagement);
+    const dowSorted = [...dayOfWeekData].filter((d) => d.posts > 0).sort((a, b) => b.avgViews - a.avgViews);
     if (dowSorted.length >= 2) {
       const best = dowSorted[0];
-      const overallAvg = dowSorted.reduce((s, d) => s + d.avgEngagement, 0) / dowSorted.length;
-      if (best.avgEngagement > overallAvg * 1.25) {
-        const pct = Math.round(((best.avgEngagement - overallAvg) / overallAvg) * 100);
-        out.push(`Posts on ${best.day} perform ${pct}% above your average — schedule peak content for ${best.day}s.`);
+      const overallAvg = dowSorted.reduce((s, d) => s + d.avgViews, 0) / dowSorted.length;
+      if (best.avgViews > overallAvg * 1.25) {
+        const pct = Math.round(((best.avgViews - overallAvg) / overallAvg) * 100);
+        out.push(`Posts on ${best.day} average ${pct}% more views — schedule peak content for ${best.day}s.`);
       }
     }
     const recent4 = cadenceData.slice(-4).reduce((s, w) => s + w.posts, 0);
@@ -1041,204 +1183,62 @@ function AccountDetailView({
     const recentRate = recent4 / 4;
     const previousRate = previous8 / 8;
     if (previousRate > 0 && recentRate < previousRate * 0.7) {
-      out.push(`Posting frequency dropped to ${recentRate.toFixed(1)}/week (was ${previousRate.toFixed(1)}/week) — risk of audience drift.`);
-    } else if (recentRate >= 4) {
-      out.push(`Strong cadence: ${recentRate.toFixed(1)} posts/week over the last 4 weeks. Keep it up.`);
-    } else if (recentRate < 1 && accountPosts.length > 0) {
-      out.push(`Only ${recentRate.toFixed(1)} posts/week recently — Facebook penalizes inactive Pages. Aim for 3–5/week.`);
+      out.push(`Posting frequency dropped to ${recentRate.toFixed(1)}/week (was ${previousRate.toFixed(1)}/week) — TikTok algo punishes inconsistency.`);
+    } else if (recentRate >= 7) {
+      out.push(`Strong cadence: ${recentRate.toFixed(1)} posts/week. Keep it daily.`);
+    } else if (recentRate < 3 && accountPosts.length > 0) {
+      out.push(`Only ${recentRate.toFixed(1)} posts/week recently — TikTok favors daily posting. Aim for 1–3/day.`);
     }
     if (stats?.engagement != null) {
-      if (stats.engagement >= 5) {
-        out.push(`Engagement rate of ${stats.engagement.toFixed(1)}% is excellent (FB Pages average ~0.5–2%).`);
-      } else if (stats.engagement < 0.5) {
-        out.push(`Engagement rate of ${stats.engagement.toFixed(2)}% is below the ~0.5–2% FB Pages benchmark — consider stronger hooks or video content.`);
+      if (stats.engagement >= 10) {
+        out.push(`Engagement rate of ${stats.engagement.toFixed(1)}% is exceptional (TikTok average ~5–9%).`);
+      } else if (stats.engagement < 4) {
+        out.push(`Engagement rate of ${stats.engagement.toFixed(2)}% is below the ~5–9% TikTok benchmark — try stronger hooks in the first 3 seconds.`);
       }
     }
     return out;
   }, [mediaTypeChart, dayOfWeekData, cadenceData, accountPosts.length, stats]);
-
-  const runMetaSync = async (
-    pageId: string,
-    accessToken: string
-  ): Promise<{ ok: true } | { ok: false; error: string }> => {
-    const base = "https://graph.facebook.com/v21.0";
-    try {
-      const profileFields = "name,about,fan_count,followers_count,link,website";
-      const profileRes = await fetch(
-        `${base}/${encodeURIComponent(pageId)}?fields=${profileFields}&access_token=${encodeURIComponent(accessToken)}`
-      );
-      const profile = (await profileRes.json()) as {
-        name?: string;
-        about?: string;
-        fan_count?: number;
-        followers_count?: number;
-        link?: string;
-        website?: string;
-        error?: { message?: string; type?: string; code?: number };
-      };
-      if (profile.error) {
-        return { ok: false, error: profile.error.message ?? "Graph API rejected the request" };
-      }
-
-      const mediaFields =
-        "id,message,created_time,permalink_url,attachments{media_type,type},reactions.summary(total_count),comments.summary(total_count),shares";
-      const mediaRes = await fetch(
-        `${base}/${encodeURIComponent(pageId)}/posts?fields=${mediaFields}&limit=25&access_token=${encodeURIComponent(accessToken)}`
-      );
-      const mediaJson = (await mediaRes.json()) as {
-        data?: {
-          id: string;
-          message?: string;
-          created_time: string;
-          permalink_url?: string;
-          attachments?: { data?: { media_type?: string; type?: string }[] };
-          reactions?: { summary?: { total_count?: number } };
-          comments?: { summary?: { total_count?: number } };
-          shares?: { count?: number };
-        }[];
-        error?: { message?: string };
-      };
-      if (mediaJson.error) {
-        return { ok: false, error: mediaJson.error.message ?? "Failed to fetch posts" };
-      }
-
-      const mapMediaType = (att?: { media_type?: string; type?: string }[]): FBMediaType => {
-        if (!att || att.length === 0) return "status";
-        const first = att[0];
-        const t = first.type ?? "";
-        const mt = first.media_type ?? "";
-        if (t === "video_inline" || t === "video_autoplay" || mt === "video") return "video";
-        if (t === "share" || t === "link" || mt === "link") return "link";
-        if (mt === "photo" || t === "photo") return "photo";
-        return "status";
-      };
-
-      const updatePayload = {
-        followers_count: profile.followers_count ?? account.followers_count,
-        likes_count: profile.fan_count ?? account.likes_count,
-        about_link: profile.website ?? account.about_link,
-        page_url: profile.link ?? account.page_url,
-        meta_access_token: accessToken,
-        meta_page_id: pageId,
-        meta_connected_at: account.meta_connected_at ?? new Date().toISOString(),
-        last_synced_at: new Date().toISOString(),
-      };
-      const { error: updErr } = await supabase
-        .from("facebook_accounts")
-        .update(updatePayload)
-        .eq("id", account.id);
-      if (updErr) return { ok: false, error: updErr.message };
-
-      const mediaItems = mediaJson.data ?? [];
-      if (mediaItems.length > 0) {
-        const upserts = mediaItems.map((m) => ({
-          facebook_account_id: account.id,
-          post_id: m.id,
-          message: m.message ?? null,
-          media_type: mapMediaType(m.attachments?.data),
-          posted_at: m.created_time,
-          reactions_count: m.reactions?.summary?.total_count ?? 0,
-          comments_count: m.comments?.summary?.total_count ?? 0,
-          shares_count: m.shares?.count ?? 0,
-          url: m.permalink_url ?? null,
-        }));
-        const { error: postErr } = await supabase
-          .from("facebook_posts")
-          .upsert(upserts, { onConflict: "facebook_account_id,post_id" });
-        if (postErr) return { ok: false, error: postErr.message };
-      }
-
-      return { ok: true };
-    } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : "Network error" };
-    }
-  };
-
-  const onConnectMeta = async () => {
-    const pageId = metaForm.page_id.trim();
-    const accessToken = metaForm.access_token.trim();
-    if (!pageId || !accessToken) {
-      toast.error("Both Page ID and access token are required.");
-      return;
-    }
-    setMetaSyncing(true);
-    const result = await runMetaSync(pageId, accessToken);
-    setMetaSyncing(false);
-    if (!result.ok) {
-      toast.error(`Meta connect failed: ${result.error}`);
-      return;
-    }
-    toast.success("Connected to Meta — page data and recent posts synced");
-    setMetaDialogOpen(false);
-    setMetaForm({ page_id: "", access_token: "" });
-    onRefresh();
-  };
-
-  const onRefreshFromMeta = async () => {
-    if (!account.meta_access_token || !account.meta_page_id) return;
-    setMetaSyncing(true);
-    const result = await runMetaSync(account.meta_page_id, account.meta_access_token);
-    setMetaSyncing(false);
-    if (!result.ok) {
-      toast.error(`Meta sync failed: ${result.error}`);
-      return;
-    }
-    toast.success("Synced from Meta");
-    onRefresh();
-  };
-
-  const onDisconnectMeta = async () => {
-    const { error } = await supabase
-      .from("facebook_accounts")
-      .update({ meta_access_token: null, meta_page_id: null, meta_connected_at: null })
-      .eq("id", account.id);
-    if (error) return toast.error(error.message);
-    toast.success("Disconnected from Meta");
-    onRefresh();
-  };
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <Button variant="ghost" size="sm" onClick={onBack} className="-ml-2">
           <ArrowLeft className="h-4 w-4 mr-1.5" />
-          Back to pages
+          Back to accounts
         </Button>
-        {account.page_url && (
-          <a
-            href={account.page_url}
-            target="_blank"
-            rel="noreferrer"
-            className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1"
-          >
-            Open on Facebook
-            <ExternalLink className="h-3.5 w-3.5" />
-          </a>
-        )}
+        <a
+          href={`https://tiktok.com/@${account.username}`}
+          target="_blank"
+          rel="noreferrer"
+          className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1"
+        >
+          Open on TikTok
+          <ExternalLink className="h-3.5 w-3.5" />
+        </a>
       </div>
 
       <div className="flex items-center gap-3 pb-4 border-b border-border flex-wrap">
-        <SiFacebook className="h-7 w-7" style={{ color: FB_BLUE }} />
-        <h2 className="text-2xl font-bold tracking-tight">{account.name}</h2>
+        <SiTiktok className="h-7 w-7" style={{ color: TT_PINK }} />
+        <h2 className="text-2xl font-bold tracking-tight">@{account.username}</h2>
         <span className={`text-xs px-2 py-0.5 rounded border ${accountStatusStyles[account.status]}`}>
           {statusLabels[account.status]}
         </span>
 
         <div className="ml-auto flex items-center gap-2">
-          {isConnected ? (
+          {isApiConnected ? (
             <>
               <span className="text-xs text-muted-foreground inline-flex items-center gap-1.5">
                 <span className="h-1.5 w-1.5 rounded-full bg-success" />
-                Connected to Meta
-                {account.meta_connected_at && (
+                Connected via {account.api_provider}
+                {account.api_connected_at && (
                   <span className="text-muted-foreground/60">
-                    · {formatDistanceToNow(new Date(account.meta_connected_at), { addSuffix: true })}
+                    · {formatDistanceToNow(new Date(account.api_connected_at), { addSuffix: true })}
                   </span>
                 )}
               </span>
-              <Button variant="outline" size="sm" onClick={onRefreshFromMeta} disabled={metaSyncing}>
-                <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${metaSyncing ? "animate-spin" : ""}`} />
-                {metaSyncing ? "Syncing…" : "Refresh from Meta"}
+              <Button variant="outline" size="sm" onClick={onRefreshAPI} disabled={apiSyncing}>
+                <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${apiSyncing ? "animate-spin" : ""}`} />
+                {apiSyncing ? "Syncing…" : "Refresh from API"}
               </Button>
               <AlertDialog>
                 <AlertDialogTrigger asChild>
@@ -1248,78 +1248,81 @@ function AccountDetailView({
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
-                    <AlertDialogTitle>Disconnect from Meta?</AlertDialogTitle>
+                    <AlertDialogTitle>Disconnect API?</AlertDialogTitle>
                     <AlertDialogDescription>
-                      We'll clear the saved Page Access Token and Page ID. Synced posts and follower counts stay; auto-refresh stops working.
+                      We'll clear the saved API key. Synced videos and follower counts stay; auto-refresh stops working.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={onDisconnectMeta}>Disconnect</AlertDialogAction>
+                    <AlertDialogAction onClick={onDisconnectAPI}>Disconnect</AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
             </>
           ) : (
-            <Button size="sm" onClick={() => setMetaDialogOpen(true)}>
-              <SiMeta className="h-3.5 w-3.5 mr-1.5" />
-              Connect with Meta
+            <Button size="sm" onClick={() => setApiDialogOpen(true)}>
+              <Zap className="h-3.5 w-3.5 mr-1.5" />
+              Connect API
             </Button>
           )}
         </div>
       </div>
 
-      <Dialog open={metaDialogOpen} onOpenChange={setMetaDialogOpen}>
+      <Dialog open={apiDialogOpen} onOpenChange={setApiDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <SiMeta className="h-5 w-5" />
-              Connect {account.name} to Meta
+              <Zap className="h-5 w-5" />
+              Connect API for @{account.username}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2 text-sm">
             <div className="rounded-lg border border-border bg-secondary/40 p-3 text-xs text-muted-foreground space-y-2">
-              <div>This pulls page name, follower / like counts, and the last 25 posts (reactions, comments, shares, captions, type) directly from Meta's Graph API.</div>
-              <div className="font-medium text-foreground">Requirements:</div>
-              <ul className="list-disc pl-4 space-y-0.5">
-                <li>You must be an admin of the Facebook Page.</li>
-                <li>You need a <strong>long-lived Page Access Token</strong> with <code className="bg-card px-1 rounded">pages_show_list</code>, <code className="bg-card px-1 rounded">pages_read_engagement</code>, <code className="bg-card px-1 rounded">pages_read_user_content</code> scopes.</li>
-              </ul>
-              <div className="font-medium text-foreground pt-1">Where to get them:</div>
-              <ul className="list-disc pl-4 space-y-0.5">
-                <li>Open <a className="text-primary hover:underline" href="https://developers.facebook.com/tools/explorer" target="_blank" rel="noreferrer">Graph API Explorer</a>, pick your app, generate a User Access Token with the scopes above.</li>
-                <li>Call <code className="bg-card px-1 rounded">/me/accounts</code> — returns your pages with each page's <code className="bg-card px-1 rounded">id</code> and <code className="bg-card px-1 rounded">access_token</code>.</li>
-                <li>Page Access Tokens generated this way from a long-lived User Token don't expire as long as you remain an admin.</li>
-              </ul>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Page ID</Label>
-              <Input
-                placeholder="102876543210987"
-                value={metaForm.page_id}
-                onChange={(e) => setMetaForm({ ...metaForm, page_id: e.target.value })}
-              />
-              <div className="text-xs text-muted-foreground">
-                Numeric Facebook Page ID — visible in <code className="bg-card px-1 rounded">/me/accounts</code> response.
+              <div>
+                Auto-pulls follower count, total likes, and the last 25 videos (views, likes, comments, shares, saves) from a third-party scraper API.
               </div>
+              <div className="font-medium text-foreground">Pick a provider:</div>
+              <ul className="list-disc pl-4 space-y-0.5">
+                <li>
+                  <strong>ScrapeCreators</strong> (recommended for v1) — pay per request, ~$0.001/profile, ~$0.001/video.
+                  Sign up at <a className="text-primary hover:underline" href="https://scrapecreators.com" target="_blank" rel="noreferrer">scrapecreators.com</a>, copy your API key from the dashboard.
+                </li>
+                <li>
+                  <strong>Apify</strong> & <strong>TikAPI</strong> — credentials saved but sync isn't wired yet. ScrapeCreators is the only end-to-end option in v1.
+                </li>
+              </ul>
+              <div className="text-foreground font-medium pt-1">No TikTok app review needed</div>
+              <div>The third-party API does the scraping. You only need their API key.</div>
             </div>
             <div className="space-y-1.5">
-              <Label>Page Access Token</Label>
+              <Label>Provider</Label>
+              <Select value={apiForm.provider} onValueChange={(v) => setApiForm({ ...apiForm, provider: v as APIProvider })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="scrapecreators">ScrapeCreators</SelectItem>
+                  <SelectItem value="apify">Apify (saves key only — manual sync)</SelectItem>
+                  <SelectItem value="tikapi">TikAPI (saves key only — manual sync)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>API key</Label>
               <Input
                 type="password"
-                placeholder="EAAB..."
-                value={metaForm.access_token}
-                onChange={(e) => setMetaForm({ ...metaForm, access_token: e.target.value })}
+                placeholder="sk-..."
+                value={apiForm.key}
+                onChange={(e) => setApiForm({ ...apiForm, key: e.target.value })}
               />
               <div className="text-xs text-muted-foreground">
-                Stored in your Supabase DB. Treat this like a password — rotate if it leaks.
+                Stored in your Supabase DB. Treat like a password.
               </div>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setMetaDialogOpen(false)}>Cancel</Button>
-            <Button onClick={onConnectMeta} disabled={metaSyncing}>
-              {metaSyncing ? "Connecting…" : "Connect & sync"}
+            <Button variant="ghost" onClick={() => setApiDialogOpen(false)}>Cancel</Button>
+            <Button onClick={onConnectAPI} disabled={apiSyncing}>
+              {apiSyncing ? "Connecting…" : "Connect & sync"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1327,19 +1330,15 @@ function AccountDetailView({
 
       {/* Headline stats */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <StatCard label="Followers" value={account.followers_count.toLocaleString()} sub="page followers" />
-        <StatCard label="Page likes" value={account.likes_count.toLocaleString()} sub="fan count" />
-        <StatCard label="Posts on FB" value={account.posts_count.toLocaleString()} sub="reported count" />
-        <StatCard
-          label="Tracked posts"
-          value={accountPosts.length}
-          sub={stats ? `${stats.last30d} in last 30d` : "none yet"}
-        />
+        <StatCard label="Followers" value={account.followers_count.toLocaleString()} sub="current count" />
+        <StatCard label="Following" value={account.following_count.toLocaleString()} sub="" />
+        <StatCard label="Videos" value={account.posts_count.toLocaleString()} sub="reported count" />
+        <StatCard label="Total likes" value={account.total_likes.toLocaleString()} sub="profile lifetime" valueClass="text-primary" />
       </div>
 
       {accountPosts.length === 0 && (
         <div className="rounded-xl border border-dashed border-border bg-card/40 p-4 text-center text-sm text-muted-foreground">
-          No posts tracked yet — charts and insights below will populate as soon as you add posts on the <strong>Posts</strong> tab or sync from Meta.
+          No videos tracked yet — charts and insights below will populate as soon as you add videos on the <strong>Videos</strong> tab.
         </div>
       )}
 
@@ -1347,13 +1346,13 @@ function AccountDetailView({
       <div>
         <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Performance</div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <StatCard label="Avg reactions" value={stats ? Math.round(stats.avgReactions).toLocaleString() : "—"} sub={stats ? `${stats.totalReactions.toLocaleString()} total` : "no posts yet"} />
+          <StatCard label="Avg views" value={stats ? Math.round(stats.avgViews).toLocaleString() : "—"} sub={stats ? `${stats.totalViews.toLocaleString()} total` : "no posts yet"} />
+          <StatCard label="Avg likes" value={stats ? Math.round(stats.avgLikes).toLocaleString() : "—"} sub={stats ? `${stats.totalLikes.toLocaleString()} total` : ""} />
           <StatCard label="Avg comments" value={stats ? Math.round(stats.avgComments).toLocaleString() : "—"} sub={stats ? `${stats.totalComments.toLocaleString()} total` : ""} />
-          <StatCard label="Avg reach" value={stats ? Math.round(stats.avgReach).toLocaleString() : "—"} sub={stats ? `${stats.totalReach.toLocaleString()} total` : ""} />
           <StatCard
             label="Engagement"
             value={stats?.engagement != null ? `${stats.engagement.toFixed(2)}%` : "—"}
-            sub="(reactions+comments+shares)/reach"
+            sub="(L+C+S+Sv)/views"
           />
         </div>
       </div>
@@ -1375,7 +1374,7 @@ function AccountDetailView({
 
       {/* Charts grid */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <ChartCard title="Posting cadence" sub="posts per week, last 12 weeks">
+        <ChartCard title="Posting cadence" sub="videos per week, last 12 weeks">
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={cadenceData} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
@@ -1385,12 +1384,12 @@ function AccountDetailView({
                 contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
                 labelStyle={{ color: "hsl(var(--foreground))" }}
               />
-              <Bar dataKey="posts" fill={FB_BLUE} radius={[3, 3, 0, 0]} />
+              <Bar dataKey="posts" fill={TT_PINK} radius={[3, 3, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="Avg reactions per week" sub="momentum check, last 12 weeks">
+        <ChartCard title="Avg views per week" sub="momentum check, last 12 weeks">
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={cadenceData} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
@@ -1399,14 +1398,14 @@ function AccountDetailView({
               <Tooltip
                 contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
                 labelStyle={{ color: "hsl(var(--foreground))" }}
-                formatter={(v: number) => [v.toLocaleString(), "Avg reactions"]}
+                formatter={(v: number) => [v.toLocaleString(), "Avg views"]}
               />
-              <Bar dataKey="avgReactions" fill="#42A5F5" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="avgViews" fill={TT_CYAN} radius={[3, 3, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="Best day to post" sub="avg engagement (reactions + comments) by day of week">
+        <ChartCard title="Best day to post" sub="avg views by day of week">
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={dayOfWeekData} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
@@ -1415,23 +1414,23 @@ function AccountDetailView({
               <Tooltip
                 contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
                 labelStyle={{ color: "hsl(var(--foreground))" }}
-                formatter={(v: number) => [v.toLocaleString(), "Avg engagement"]}
+                formatter={(v: number) => [v.toLocaleString(), "Avg views"]}
               />
-              <Bar dataKey="avgEngagement" radius={[3, 3, 0, 0]}>
+              <Bar dataKey="avgViews" radius={[3, 3, 0, 0]}>
                 {dayOfWeekData.map((d, i) => {
-                  const max = Math.max(...dayOfWeekData.map((x) => x.avgEngagement));
-                  const isMax = d.avgEngagement > 0 && d.avgEngagement === max;
-                  return <Cell key={i} fill={isMax ? FB_BLUE : "#42A5F580"} />;
+                  const max = Math.max(...dayOfWeekData.map((x) => x.avgViews));
+                  const isMax = d.avgViews > 0 && d.avgViews === max;
+                  return <Cell key={i} fill={isMax ? TT_PINK : `${TT_CYAN}80`} />;
                 })}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="Performance by media type" sub="avg reactions per post (best at top)">
+        <ChartCard title="Performance by type" sub="avg views per video (best at top)">
           {mediaTypeChart.length === 0 ? (
             <div className="h-[200px] flex items-center justify-center text-xs text-muted-foreground">
-              No posts yet
+              No videos yet
             </div>
           ) : (
             <ResponsiveContainer width="100%" height={200}>
@@ -1442,9 +1441,9 @@ function AccountDetailView({
                 <Tooltip
                   contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
                   labelStyle={{ color: "hsl(var(--foreground))" }}
-                  formatter={(v: number) => [v.toLocaleString(), "Avg reactions"]}
+                  formatter={(v: number) => [v.toLocaleString(), "Avg views"]}
                 />
-                <Bar dataKey="avgReactions" fill={FB_BLUE} radius={[0, 3, 3, 0]} />
+                <Bar dataKey="avgViews" fill={TT_PINK} radius={[0, 3, 3, 0]} />
               </BarChart>
             </ResponsiveContainer>
           )}
@@ -1455,19 +1454,20 @@ function AccountDetailView({
       {topPosts.length > 0 && (
         <div>
           <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-            Top performing posts <span className="text-muted-foreground/60 normal-case font-normal">(by total engagement)</span>
+            Top performing videos <span className="text-muted-foreground/60 normal-case font-normal">(by views)</span>
           </div>
           <div className="overflow-hidden rounded-xl border border-border">
             <table className="w-full text-sm">
               <thead className="bg-secondary/40 text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
                   <th className="text-left font-medium px-3 py-2">#</th>
-                  <th className="text-left font-medium px-3 py-2">Message</th>
+                  <th className="text-left font-medium px-3 py-2">Caption</th>
                   <th className="text-left font-medium px-3 py-2">Type</th>
-                  <th className="text-right font-medium px-3 py-2">Reactions</th>
+                  <th className="text-right font-medium px-3 py-2">Views</th>
+                  <th className="text-right font-medium px-3 py-2">Likes</th>
                   <th className="text-right font-medium px-3 py-2">Comments</th>
                   <th className="text-right font-medium px-3 py-2">Shares</th>
-                  <th className="text-right font-medium px-3 py-2">Reach</th>
+                  <th className="text-right font-medium px-3 py-2">Saves</th>
                   <th className="text-right font-medium px-3 py-2">Eng %</th>
                   <th className="px-3 py-2" />
                 </tr>
@@ -1475,14 +1475,14 @@ function AccountDetailView({
               <tbody>
                 {topPosts.map((p, i) => {
                   const eng =
-                    p.reach_count > 0
-                      ? ((p.reactions_count + p.comments_count + p.shares_count) / p.reach_count) * 100
+                    p.views_count > 0
+                      ? ((p.likes_count + p.comments_count + p.shares_count + p.saves_count) / p.views_count) * 100
                       : null;
                   return (
                     <tr key={p.id} className="border-t border-border bg-card hover:bg-secondary/20 transition-colors">
                       <td className="px-3 py-2 text-muted-foreground font-mono text-xs">{i + 1}</td>
                       <td className="px-3 py-2 max-w-[260px]">
-                        <div className="truncate">{p.message ?? <span className="italic text-muted-foreground">(no message)</span>}</div>
+                        <div className="truncate">{p.caption ?? <span className="italic text-muted-foreground">(no caption)</span>}</div>
                         <div className="text-xs text-muted-foreground">{format(new Date(p.posted_at), "MMM d, yyyy")}</div>
                       </td>
                       <td className="px-3 py-2">
@@ -1491,10 +1491,11 @@ function AccountDetailView({
                           {p.media_type}
                         </span>
                       </td>
-                      <td className="px-3 py-2 text-right font-medium">{p.reactions_count.toLocaleString()}</td>
+                      <td className="px-3 py-2 text-right font-medium">{p.views_count.toLocaleString()}</td>
+                      <td className="px-3 py-2 text-right text-muted-foreground">{p.likes_count.toLocaleString()}</td>
                       <td className="px-3 py-2 text-right text-muted-foreground">{p.comments_count.toLocaleString()}</td>
                       <td className="px-3 py-2 text-right text-muted-foreground">{p.shares_count.toLocaleString()}</td>
-                      <td className="px-3 py-2 text-right text-muted-foreground">{p.reach_count.toLocaleString()}</td>
+                      <td className="px-3 py-2 text-right text-muted-foreground">{p.saves_count.toLocaleString()}</td>
                       <td className="px-3 py-2 text-right text-muted-foreground">
                         {eng != null ? `${eng.toFixed(1)}%` : "—"}
                       </td>
@@ -1517,20 +1518,20 @@ function AccountDetailView({
       {/* By media type */}
       {mediaTypeChart.length > 0 && (
         <div>
-          <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">By media type</div>
+          <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">By type</div>
           <div className="overflow-hidden rounded-xl border border-border">
             <table className="w-full text-sm">
               <thead className="bg-secondary/40 text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
                   <th className="text-left font-medium px-3 py-2">Type</th>
                   <th className="text-right font-medium px-3 py-2">Posts</th>
-                  <th className="text-right font-medium px-3 py-2">Avg reactions</th>
+                  <th className="text-right font-medium px-3 py-2">Avg views</th>
+                  <th className="text-right font-medium px-3 py-2">Avg likes</th>
                   <th className="text-right font-medium px-3 py-2">Avg comments</th>
-                  <th className="text-right font-medium px-3 py-2">Avg reach</th>
                 </tr>
               </thead>
               <tbody>
-                {(Object.keys(byMediaType) as FBMediaType[])
+                {(Object.keys(byMediaType) as TTMediaType[])
                   .filter((mt) => byMediaType[mt].count > 0)
                   .map((mt) => {
                     const g = byMediaType[mt];
@@ -1544,9 +1545,9 @@ function AccountDetailView({
                           </span>
                         </td>
                         <td className="px-3 py-2 text-right text-muted-foreground">{g.count}</td>
-                        <td className="px-3 py-2 text-right">{safe(g.reactions)}</td>
+                        <td className="px-3 py-2 text-right">{safe(g.views)}</td>
+                        <td className="px-3 py-2 text-right text-muted-foreground">{safe(g.likes)}</td>
                         <td className="px-3 py-2 text-right text-muted-foreground">{safe(g.comments)}</td>
-                        <td className="px-3 py-2 text-right text-muted-foreground">{safe(g.reach)}</td>
                       </tr>
                     );
                   })}
@@ -1559,24 +1560,24 @@ function AccountDetailView({
       {/* Recent posts */}
       {recentPosts.length > 0 && (
         <div>
-          <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Latest activity <span className="text-muted-foreground/60 normal-case font-normal">(5 most recent posts)</span></div>
+          <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Latest activity <span className="text-muted-foreground/60 normal-case font-normal">(5 most recent videos)</span></div>
           <div className="space-y-1.5">
             {recentPosts.map((p) => (
               <div key={p.id} className="flex items-center justify-between rounded-lg border border-border bg-card px-3 py-2">
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm truncate">{p.message ?? <span className="italic text-muted-foreground">(no message)</span>}</div>
+                  <div className="text-sm truncate">{p.caption ?? <span className="italic text-muted-foreground">(no caption)</span>}</div>
                   <div className="text-xs text-muted-foreground capitalize">
                     {p.media_type} · {format(new Date(p.posted_at), "MMM d, yyyy")}
                   </div>
                 </div>
                 <div className="flex items-center gap-3 shrink-0 text-xs ml-3">
                   <span className="inline-flex items-center gap-1">
-                    <ThumbsUp className="h-3 w-3" style={{ color: FB_BLUE }} />
-                    {p.reactions_count.toLocaleString()}
+                    <Eye className="h-3 w-3" style={{ color: TT_CYAN }} />
+                    {p.views_count.toLocaleString()}
                   </span>
                   <span className="inline-flex items-center gap-1 text-muted-foreground">
-                    <MessageCircle className="h-3 w-3" />
-                    {p.comments_count.toLocaleString()}
+                    <Heart className="h-3 w-3" />
+                    {p.likes_count.toLocaleString()}
                   </span>
                   <span className="inline-flex items-center gap-1 text-muted-foreground">
                     <Share2 className="h-3 w-3" />
@@ -1656,61 +1657,61 @@ function AccountDetailView({
   );
 }
 
-// ── Posts Tab ──────────────────────────────────────────────────────────────────
+// ── Posts (Videos) Tab ─────────────────────────────────────────────────────────
 const emptyPostForm = {
-  facebook_account_id: "",
-  message: "",
-  media_type: "photo" as FBMediaType,
+  tiktok_account_id: "",
+  caption: "",
+  media_type: "video" as TTMediaType,
   posted_at: "",
-  reactions_count: "",
+  views_count: "",
+  likes_count: "",
   comments_count: "",
   shares_count: "",
-  reach_count: "",
-  video_views: "",
+  saves_count: "",
   url: "",
   notes: "",
 };
 
 function PostsTab({
   accounts, posts, onRefresh,
-}: { accounts: FBAccount[]; posts: FBPost[]; onRefresh: () => void }) {
+}: { accounts: TTAccount[]; posts: TTPost[]; onRefresh: () => void }) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(emptyPostForm);
   const [filterAccount, setFilterAccount] = useState<string>("all");
   const [filterMedia, setFilterMedia] = useState<string>("all");
 
   const onAddPost = async () => {
-    if (!form.facebook_account_id) return toast.error("Pick a page");
+    if (!form.tiktok_account_id) return toast.error("Pick an account");
     const payload = {
-      facebook_account_id: form.facebook_account_id,
-      message: form.message.trim() || null,
+      tiktok_account_id: form.tiktok_account_id,
+      caption: form.caption.trim() || null,
       media_type: form.media_type,
       posted_at: form.posted_at ? new Date(form.posted_at).toISOString() : new Date().toISOString(),
-      reactions_count: parseInt(form.reactions_count) || 0,
+      views_count: parseInt(form.views_count) || 0,
+      likes_count: parseInt(form.likes_count) || 0,
       comments_count: parseInt(form.comments_count) || 0,
       shares_count: parseInt(form.shares_count) || 0,
-      reach_count: parseInt(form.reach_count) || 0,
-      video_views: parseInt(form.video_views) || 0,
+      saves_count: parseInt(form.saves_count) || 0,
       url: form.url.trim() || null,
       notes: form.notes.trim() || null,
     };
-    const { error } = await supabase.from("facebook_posts").insert(payload);
+    const { error } = await supabase.from("tiktok_posts").insert(payload);
     if (error) return toast.error(error.message);
-    toast.success("Post added");
+    toast.success("Video added");
     setForm(emptyPostForm);
     setOpen(false);
     onRefresh();
   };
 
   const onDeletePost = async (id: string) => {
-    const { error } = await supabase.from("facebook_posts").delete().eq("id", id);
+    const { error } = await supabase.from("tiktok_posts").delete().eq("id", id);
     if (error) return toast.error(error.message);
-    toast.success("Post deleted");
+    toast.success("Video deleted");
     onRefresh();
   };
 
   const filtered = posts.filter((p) => {
-    if (filterAccount !== "all" && p.facebook_account_id !== filterAccount) return false;
+    if (filterAccount !== "all" && p.tiktok_account_id !== filterAccount) return false;
     if (filterMedia !== "all" && p.media_type !== filterMedia) return false;
     return true;
   });
@@ -1718,7 +1719,7 @@ function PostsTab({
   if (accounts.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-border bg-card/40 p-12 text-center text-sm text-muted-foreground">
-        Add a Facebook page first before tracking posts.
+        Add a TikTok account first before tracking videos.
       </div>
     );
   }
@@ -1728,67 +1729,63 @@ function PostsTab({
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">
           <Select value={filterAccount} onValueChange={setFilterAccount}>
-            <SelectTrigger className="h-8 w-[180px] text-xs"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="h-8 w-[160px] text-xs"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All pages</SelectItem>
+              <SelectItem value="all">All accounts</SelectItem>
               {accounts.map((a) => (
-                <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                <SelectItem key={a.id} value={a.id}>@{a.username}</SelectItem>
               ))}
             </SelectContent>
           </Select>
           <Select value={filterMedia} onValueChange={setFilterMedia}>
             <SelectTrigger className="h-8 w-[140px] text-xs"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All media types</SelectItem>
-              <SelectItem value="photo">Photo</SelectItem>
+              <SelectItem value="all">All types</SelectItem>
               <SelectItem value="video">Video</SelectItem>
-              <SelectItem value="reel">Reel</SelectItem>
-              <SelectItem value="link">Link</SelectItem>
-              <SelectItem value="status">Status</SelectItem>
+              <SelectItem value="photo">Photo</SelectItem>
+              <SelectItem value="live">Live</SelectItem>
             </SelectContent>
           </Select>
-          <span className="text-xs text-muted-foreground">{filtered.length} post{filtered.length !== 1 ? "s" : ""}</span>
+          <span className="text-xs text-muted-foreground">{filtered.length} video{filtered.length !== 1 ? "s" : ""}</span>
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
-            <Button size="sm"><Plus className="h-4 w-4 mr-1.5" />Add post</Button>
+            <Button size="sm"><Plus className="h-4 w-4 mr-1.5" />Add video</Button>
           </DialogTrigger>
           <DialogContent className="max-w-lg">
-            <DialogHeader><DialogTitle>Track a new Facebook post</DialogTitle></DialogHeader>
+            <DialogHeader><DialogTitle>Track a new TikTok</DialogTitle></DialogHeader>
             <div className="space-y-3 py-2">
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label>Page</Label>
-                  <Select value={form.facebook_account_id} onValueChange={(v) => setForm({ ...form, facebook_account_id: v })}>
+                  <Label>Account</Label>
+                  <Select value={form.tiktok_account_id} onValueChange={(v) => setForm({ ...form, tiktok_account_id: v })}>
                     <SelectTrigger><SelectValue placeholder="Pick" /></SelectTrigger>
                     <SelectContent>
                       {accounts.map((a) => (
-                        <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                        <SelectItem key={a.id} value={a.id}>@{a.username}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Media type</Label>
-                  <Select value={form.media_type} onValueChange={(v) => setForm({ ...form, media_type: v as FBMediaType })}>
+                  <Label>Type</Label>
+                  <Select value={form.media_type} onValueChange={(v) => setForm({ ...form, media_type: v as TTMediaType })}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="photo">Photo</SelectItem>
                       <SelectItem value="video">Video</SelectItem>
-                      <SelectItem value="reel">Reel</SelectItem>
-                      <SelectItem value="link">Link</SelectItem>
-                      <SelectItem value="status">Status</SelectItem>
+                      <SelectItem value="photo">Photo</SelectItem>
+                      <SelectItem value="live">Live</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
               </div>
               <div className="space-y-1.5">
-                <Label>Message</Label>
-                <Input value={form.message} onChange={(e) => setForm({ ...form, message: e.target.value })} placeholder="Post text" />
+                <Label>Caption</Label>
+                <Input value={form.caption} onChange={(e) => setForm({ ...form, caption: e.target.value })} placeholder="Caption text" />
               </div>
               <div className="space-y-1.5">
-                <Label>Post URL <span className="text-muted-foreground text-xs">(optional)</span></Label>
-                <Input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="https://facebook.com/…/posts/…" />
+                <Label>Video URL <span className="text-muted-foreground text-xs">(optional)</span></Label>
+                <Input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="https://tiktok.com/@…/video/…" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
@@ -1800,14 +1797,14 @@ function PostsTab({
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Reach</Label>
-                  <Input type="number" value={form.reach_count} onChange={(e) => setForm({ ...form, reach_count: e.target.value })} placeholder="0" />
+                  <Label>Views</Label>
+                  <Input type="number" value={form.views_count} onChange={(e) => setForm({ ...form, views_count: e.target.value })} placeholder="0" />
                 </div>
               </div>
               <div className="grid grid-cols-4 gap-3">
                 <div className="space-y-1.5">
-                  <Label>Reactions</Label>
-                  <Input type="number" value={form.reactions_count} onChange={(e) => setForm({ ...form, reactions_count: e.target.value })} placeholder="0" />
+                  <Label>Likes</Label>
+                  <Input type="number" value={form.likes_count} onChange={(e) => setForm({ ...form, likes_count: e.target.value })} placeholder="0" />
                 </div>
                 <div className="space-y-1.5">
                   <Label>Comments</Label>
@@ -1818,8 +1815,8 @@ function PostsTab({
                   <Input type="number" value={form.shares_count} onChange={(e) => setForm({ ...form, shares_count: e.target.value })} placeholder="0" />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Video views</Label>
-                  <Input type="number" value={form.video_views} onChange={(e) => setForm({ ...form, video_views: e.target.value })} placeholder="0" />
+                  <Label>Saves</Label>
+                  <Input type="number" value={form.saves_count} onChange={(e) => setForm({ ...form, saves_count: e.target.value })} placeholder="0" />
                 </div>
               </div>
               <div className="space-y-1.5">
@@ -1829,7 +1826,7 @@ function PostsTab({
             </div>
             <DialogFooter>
               <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-              <Button onClick={onAddPost}>Add post</Button>
+              <Button onClick={onAddPost}>Add video</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -1837,34 +1834,34 @@ function PostsTab({
 
       {filtered.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border bg-card/40 p-12 text-center text-sm text-muted-foreground">
-          No posts tracked yet for this filter.
+          No videos tracked yet for this filter.
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl border border-border">
           <table className="w-full text-sm">
             <thead className="bg-secondary/40 text-xs uppercase tracking-wide text-muted-foreground">
               <tr>
-                <th className="text-left font-medium px-4 py-3">Message</th>
-                <th className="text-left font-medium px-4 py-3">Page</th>
+                <th className="text-left font-medium px-4 py-3">Caption</th>
+                <th className="text-left font-medium px-4 py-3">Account</th>
                 <th className="text-left font-medium px-4 py-3">Type</th>
                 <th className="text-left font-medium px-4 py-3">Posted</th>
-                <th className="text-right font-medium px-4 py-3">Reactions</th>
-                <th className="text-right font-medium px-4 py-3">Comments</th>
+                <th className="text-right font-medium px-4 py-3">Views</th>
+                <th className="text-right font-medium px-4 py-3">Likes</th>
                 <th className="text-right font-medium px-4 py-3">Shares</th>
-                <th className="text-right font-medium px-4 py-3">Reach</th>
+                <th className="text-right font-medium px-4 py-3">Saves</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody>
               {filtered.map((p) => {
-                const acct = accounts.find((a) => a.id === p.facebook_account_id);
+                const acct = accounts.find((a) => a.id === p.tiktok_account_id);
                 return (
                   <tr key={p.id} className="border-t border-border bg-card hover:bg-secondary/20 transition-colors">
                     <td className="px-4 py-3 max-w-[280px]">
-                      <div className="font-medium truncate">{p.message ?? <span className="text-muted-foreground italic">(no message)</span>}</div>
+                      <div className="font-medium truncate">{p.caption ?? <span className="text-muted-foreground italic">(no caption)</span>}</div>
                       {p.notes && <div className="text-xs text-muted-foreground truncate">{p.notes}</div>}
                     </td>
-                    <td className="px-4 py-3 text-muted-foreground">{acct ? acct.name : "—"}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{acct ? `@${acct.username}` : "—"}</td>
                     <td className="px-4 py-3">
                       <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded border border-border bg-secondary/40 text-muted-foreground capitalize">
                         {mediaTypeIcon[p.media_type]}
@@ -1876,14 +1873,14 @@ function PostsTab({
                     </td>
                     <td className="px-4 py-3 text-right font-medium">
                       <span className="inline-flex items-center gap-1 justify-end">
-                        <ThumbsUp className="h-3 w-3" style={{ color: FB_BLUE }} />
-                        {p.reactions_count.toLocaleString()}
+                        <Eye className="h-3 w-3" style={{ color: TT_CYAN }} />
+                        {p.views_count.toLocaleString()}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right text-muted-foreground">
                       <span className="inline-flex items-center gap-1 justify-end">
-                        <MessageCircle className="h-3 w-3" />
-                        {p.comments_count.toLocaleString()}
+                        <Heart className="h-3 w-3" />
+                        {p.likes_count.toLocaleString()}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right text-muted-foreground">
@@ -1894,8 +1891,8 @@ function PostsTab({
                     </td>
                     <td className="px-4 py-3 text-right text-muted-foreground">
                       <span className="inline-flex items-center gap-1 justify-end">
-                        <Eye className="h-3 w-3" />
-                        {p.reach_count.toLocaleString()}
+                        <Bookmark className="h-3 w-3" />
+                        {p.saves_count.toLocaleString()}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right">
@@ -1913,7 +1910,7 @@ function PostsTab({
                           </AlertDialogTrigger>
                           <AlertDialogContent>
                             <AlertDialogHeader>
-                              <AlertDialogTitle>Delete this post?</AlertDialogTitle>
+                              <AlertDialogTitle>Delete this video?</AlertDialogTitle>
                               <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
@@ -1939,7 +1936,7 @@ function PostsTab({
 function RevenueTab({
   accounts, inflowwStats, syncing, onSyncInfloww, onRefresh,
 }: {
-  accounts: FBAccount[];
+  accounts: TTAccount[];
   inflowwStats: InflowwStat[];
   syncing: boolean;
   onSyncInfloww: () => void;
@@ -1947,7 +1944,7 @@ function RevenueTab({
 }) {
   const assignAccount = async (accountId: string, code: number | null) => {
     const { error } = await supabase
-      .from("facebook_accounts")
+      .from("tiktok_accounts")
       .update({ infloww_campaign_code: code })
       .eq("id", accountId);
     if (error) return toast.error(error.message);
@@ -1968,17 +1965,17 @@ function RevenueTab({
       </div>
 
       <div>
-        <h3 className="text-sm font-semibold mb-3">Assign campaign codes to pages</h3>
+        <h3 className="text-sm font-semibold mb-3">Assign campaign codes to accounts</h3>
         {accounts.length === 0 ? (
           <div className="rounded-xl border border-dashed border-border bg-card/40 p-8 text-center text-sm text-muted-foreground">
-            Add a Facebook page first.
+            Add a TikTok account first.
           </div>
         ) : (
           <div className="overflow-hidden rounded-xl border border-border">
             <table className="w-full text-sm">
               <thead className="bg-secondary/40 text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
-                  <th className="text-left font-medium px-4 py-3">Page</th>
+                  <th className="text-left font-medium px-4 py-3">Account</th>
                   <th className="text-left font-medium px-4 py-3">Campaign code</th>
                   <th className="text-right font-medium px-4 py-3">Clicks</th>
                   <th className="text-right font-medium px-4 py-3">Subs</th>
@@ -1990,7 +1987,7 @@ function RevenueTab({
                   const stat = inflowwStats.find((s) => s.campaign_code === a.infloww_campaign_code);
                   return (
                     <tr key={a.id} className="border-t border-border bg-card">
-                      <td className="px-4 py-3 font-medium align-top">{a.name}</td>
+                      <td className="px-4 py-3 font-medium align-top">@{a.username}</td>
                       <td className="px-4 py-3 align-top">
                         <div className="flex flex-col gap-1">
                           <Input
@@ -2035,82 +2032,81 @@ function RevenueTab({
 }
 
 // ── Analytics Tab ──────────────────────────────────────────────────────────────
-function AnalyticsTab({ accounts, posts }: { accounts: FBAccount[]; posts: FBPost[] }) {
+function AnalyticsTab({ accounts, posts }: { accounts: TTAccount[]; posts: TTPost[] }) {
   const stats = useMemo(() => {
     const total = posts.length;
-    const totalReactions = posts.reduce((s, p) => s + p.reactions_count, 0);
+    const totalViews = posts.reduce((s, p) => s + p.views_count, 0);
+    const totalLikes = posts.reduce((s, p) => s + p.likes_count, 0);
     const totalComments = posts.reduce((s, p) => s + p.comments_count, 0);
     const totalShares = posts.reduce((s, p) => s + p.shares_count, 0);
-    const totalReach = posts.reduce((s, p) => s + p.reach_count, 0);
-    const avgEngagement = totalReach > 0
-      ? ((totalReactions + totalComments + totalShares) / totalReach) * 100
+    const totalSaves = posts.reduce((s, p) => s + p.saves_count, 0);
+    const avgEngagement = totalViews > 0
+      ? ((totalLikes + totalComments + totalShares + totalSaves) / totalViews) * 100
       : null;
-    return { total, totalReactions, totalComments, totalShares, totalReach, avgEngagement };
+    return { total, totalViews, totalLikes, totalComments, totalShares, totalSaves, avgEngagement };
   }, [posts]);
 
   const byMediaType = useMemo(() => {
-    const groups: Record<FBMediaType, { count: number; reactions: number; comments: number; reach: number }> = {
-      photo: { count: 0, reactions: 0, comments: 0, reach: 0 },
-      video: { count: 0, reactions: 0, comments: 0, reach: 0 },
-      reel: { count: 0, reactions: 0, comments: 0, reach: 0 },
-      link: { count: 0, reactions: 0, comments: 0, reach: 0 },
-      status: { count: 0, reactions: 0, comments: 0, reach: 0 },
+    const groups: Record<TTMediaType, { count: number; views: number; likes: number; comments: number }> = {
+      video: { count: 0, views: 0, likes: 0, comments: 0 },
+      photo: { count: 0, views: 0, likes: 0, comments: 0 },
+      live: { count: 0, views: 0, likes: 0, comments: 0 },
     };
     for (const p of posts) {
       const g = groups[p.media_type];
       g.count++;
-      g.reactions += p.reactions_count;
+      g.views += p.views_count;
+      g.likes += p.likes_count;
       g.comments += p.comments_count;
-      g.reach += p.reach_count;
     }
     return groups;
   }, [posts]);
 
   const topPosts = useMemo(() => {
     return [...posts]
-      .sort((a, b) => b.reactions_count + b.comments_count + b.shares_count - (a.reactions_count + a.comments_count + a.shares_count))
+      .sort((a, b) => b.views_count - a.views_count)
       .slice(0, 5);
   }, [posts]);
 
   const accountLeaderboard = useMemo(() => {
     return [...accounts]
       .map((a) => {
-        const accPosts = posts.filter((p) => p.facebook_account_id === a.id);
-        const reactions = accPosts.reduce((s, p) => s + p.reactions_count, 0);
-        const reach = accPosts.reduce((s, p) => s + p.reach_count, 0);
-        return { account: a, postCount: accPosts.length, reactions, reach };
+        const accPosts = posts.filter((p) => p.tiktok_account_id === a.id);
+        const views = accPosts.reduce((s, p) => s + p.views_count, 0);
+        const likes = accPosts.reduce((s, p) => s + p.likes_count, 0);
+        return { account: a, postCount: accPosts.length, views, likes };
       })
-      .sort((x, y) => y.reactions - x.reactions);
+      .sort((x, y) => y.views - x.views);
   }, [accounts, posts]);
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <StatCard label="Total posts" value={stats.total} sub="tracked" />
-        <StatCard label="Total reactions" value={stats.totalReactions.toLocaleString()} sub="across posts" />
-        <StatCard label="Total reach" value={stats.totalReach.toLocaleString()} sub="impressions" />
+        <StatCard label="Total videos" value={stats.total} sub="tracked" />
+        <StatCard label="Total views" value={stats.totalViews.toLocaleString()} sub="across videos" valueClass="text-primary" />
+        <StatCard label="Total likes" value={stats.totalLikes.toLocaleString()} sub="across videos" />
         <StatCard
           label="Avg engagement"
           value={stats.avgEngagement != null ? `${stats.avgEngagement.toFixed(2)}%` : "—"}
-          sub="(reactions+comments+shares)/reach"
+          sub="(L+C+S+Sv)/views"
         />
       </div>
 
       <div>
-        <h3 className="text-sm font-semibold mb-3">Performance by media type</h3>
+        <h3 className="text-sm font-semibold mb-3">Performance by type</h3>
         <div className="overflow-hidden rounded-xl border border-border">
           <table className="w-full text-sm">
             <thead className="bg-secondary/40 text-xs uppercase tracking-wide text-muted-foreground">
               <tr>
                 <th className="text-left font-medium px-4 py-3">Type</th>
-                <th className="text-right font-medium px-4 py-3">Posts</th>
-                <th className="text-right font-medium px-4 py-3">Avg reactions</th>
+                <th className="text-right font-medium px-4 py-3">Videos</th>
+                <th className="text-right font-medium px-4 py-3">Avg views</th>
+                <th className="text-right font-medium px-4 py-3">Avg likes</th>
                 <th className="text-right font-medium px-4 py-3">Avg comments</th>
-                <th className="text-right font-medium px-4 py-3">Avg reach</th>
               </tr>
             </thead>
             <tbody>
-              {(Object.keys(byMediaType) as FBMediaType[]).map((mt) => {
+              {(Object.keys(byMediaType) as TTMediaType[]).map((mt) => {
                 const g = byMediaType[mt];
                 const safe = (n: number) => (g.count > 0 ? Math.round(n / g.count).toLocaleString() : "—");
                 return (
@@ -2122,9 +2118,9 @@ function AnalyticsTab({ accounts, posts }: { accounts: FBAccount[]; posts: FBPos
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right text-muted-foreground">{g.count}</td>
-                    <td className="px-4 py-3 text-right">{safe(g.reactions)}</td>
+                    <td className="px-4 py-3 text-right">{safe(g.views)}</td>
+                    <td className="px-4 py-3 text-right text-muted-foreground">{safe(g.likes)}</td>
                     <td className="px-4 py-3 text-right text-muted-foreground">{safe(g.comments)}</td>
-                    <td className="px-4 py-3 text-right text-muted-foreground">{safe(g.reach)}</td>
                   </tr>
                 );
               })}
@@ -2134,34 +2130,34 @@ function AnalyticsTab({ accounts, posts }: { accounts: FBAccount[]; posts: FBPos
       </div>
 
       <div>
-        <h3 className="text-sm font-semibold mb-3">Page leaderboard</h3>
+        <h3 className="text-sm font-semibold mb-3">Account leaderboard</h3>
         {accountLeaderboard.length === 0 ? (
           <div className="rounded-xl border border-dashed border-border bg-card/40 p-8 text-center text-sm text-muted-foreground">
-            No pages yet.
+            No accounts yet.
           </div>
         ) : (
           <div className="overflow-hidden rounded-xl border border-border">
             <table className="w-full text-sm">
               <thead className="bg-secondary/40 text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
-                  <th className="text-left font-medium px-4 py-3">Page</th>
+                  <th className="text-left font-medium px-4 py-3">Account</th>
                   <th className="text-right font-medium px-4 py-3">Followers</th>
-                  <th className="text-right font-medium px-4 py-3">Posts tracked</th>
-                  <th className="text-right font-medium px-4 py-3">Total reactions</th>
-                  <th className="text-right font-medium px-4 py-3">Total reach</th>
+                  <th className="text-right font-medium px-4 py-3">Videos tracked</th>
+                  <th className="text-right font-medium px-4 py-3">Total views</th>
+                  <th className="text-right font-medium px-4 py-3">Total likes</th>
                 </tr>
               </thead>
               <tbody>
-                {accountLeaderboard.map(({ account, postCount, reactions, reach }) => (
+                {accountLeaderboard.map(({ account, postCount, views, likes }) => (
                   <tr key={account.id} className="border-t border-border bg-card">
                     <td className="px-4 py-3">
-                      <div className="font-medium">{account.name}</div>
+                      <div className="font-medium">@{account.username}</div>
                       <div className="text-xs text-muted-foreground capitalize">{statusLabels[account.status]}</div>
                     </td>
                     <td className="px-4 py-3 text-right">{account.followers_count.toLocaleString()}</td>
                     <td className="px-4 py-3 text-right text-muted-foreground">{postCount}</td>
-                    <td className="px-4 py-3 text-right">{reactions.toLocaleString()}</td>
-                    <td className="px-4 py-3 text-right text-muted-foreground">{reach.toLocaleString()}</td>
+                    <td className="px-4 py-3 text-right">{views.toLocaleString()}</td>
+                    <td className="px-4 py-3 text-right text-muted-foreground">{likes.toLocaleString()}</td>
                   </tr>
                 ))}
               </tbody>
@@ -2171,21 +2167,21 @@ function AnalyticsTab({ accounts, posts }: { accounts: FBAccount[]; posts: FBPos
       </div>
 
       <div>
-        <h3 className="text-sm font-semibold mb-3">Top posts by engagement</h3>
+        <h3 className="text-sm font-semibold mb-3">Top videos by views</h3>
         {topPosts.length === 0 ? (
           <div className="rounded-xl border border-dashed border-border bg-card/40 p-8 text-center text-sm text-muted-foreground">
-            No posts yet.
+            No videos yet.
           </div>
         ) : (
           <div className="space-y-2">
             {topPosts.map((p) => {
-              const acct = accounts.find((a) => a.id === p.facebook_account_id);
+              const acct = accounts.find((a) => a.id === p.tiktok_account_id);
               return (
                 <div key={p.id} className="flex items-center justify-between rounded-xl border border-border bg-card p-4">
                   <div className="min-w-0">
-                    <div className="font-medium truncate">{p.message ?? <span className="italic text-muted-foreground">(no message)</span>}</div>
+                    <div className="font-medium truncate">{p.caption ?? <span className="italic text-muted-foreground">(no caption)</span>}</div>
                     <div className="text-xs text-muted-foreground mt-0.5">
-                      {acct ? `${acct.name} · ` : ""}
+                      {acct ? `@${acct.username} · ` : ""}
                       <span className="capitalize">{p.media_type}</span>
                       {" · "}
                       {format(new Date(p.posted_at), "MMM d")}
@@ -2193,16 +2189,12 @@ function AnalyticsTab({ accounts, posts }: { accounts: FBAccount[]; posts: FBPos
                   </div>
                   <div className="flex items-center gap-4 shrink-0 text-sm">
                     <span className="inline-flex items-center gap-1">
-                      <ThumbsUp className="h-3 w-3" style={{ color: FB_BLUE }} />
-                      {p.reactions_count.toLocaleString()}
+                      <Eye className="h-3 w-3" style={{ color: TT_CYAN }} />
+                      {p.views_count.toLocaleString()}
                     </span>
                     <span className="inline-flex items-center gap-1 text-muted-foreground">
-                      <MessageCircle className="h-3 w-3" />
-                      {p.comments_count.toLocaleString()}
-                    </span>
-                    <span className="inline-flex items-center gap-1 text-muted-foreground">
-                      <Share2 className="h-3 w-3" />
-                      {p.shares_count.toLocaleString()}
+                      <Heart className="h-3 w-3" />
+                      {p.likes_count.toLocaleString()}
                     </span>
                     {p.url && (
                       <a href={p.url} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-primary">

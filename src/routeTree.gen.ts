@@ -18,9 +18,16 @@ import { Route as OnlyFansRouteImport } from './routes/onlyfans'
 import { Route as InstagramRouteImport } from './routes/instagram'
 import { Route as RedditRouteImport } from './routes/reddit'
 import { Route as XRouteImport } from './routes/x'
+import { Route as TiktokRouteImport } from './routes/tiktok'
 import { Route as AdsRouteImport } from './routes/ads'
 import { Route as DailyRouteImport } from './routes/daily'
 import { Route as FacebookRouteImport } from './routes/facebook'
+import { Route as ChattersRouteImport } from './routes/chatters'
+import { Route as LeadsRouteImport } from './routes/leads'
+import { Route as ClockRouteImport } from './routes/clock'
+import { Route as AuditRouteImport } from './routes/audit'
+import { Route as BernardRouteImport } from './routes/bernard'
+import { Route as RedditAirtableRouteImport } from './routes/reddit-airtable'
 import { Route as CreatorsCreatorIdRouteImport } from './routes/creators.$creatorId'
 
 const DailyRoute = DailyRouteImport.update({
@@ -31,6 +38,36 @@ const DailyRoute = DailyRouteImport.update({
 const FacebookRoute = FacebookRouteImport.update({
   id: '/facebook',
   path: '/facebook',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ChattersRoute = ChattersRouteImport.update({
+  id: '/chatters',
+  path: '/chatters',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LeadsRoute = LeadsRouteImport.update({
+  id: '/leads',
+  path: '/leads',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ClockRoute = ClockRouteImport.update({
+  id: '/clock',
+  path: '/clock',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuditRoute = AuditRouteImport.update({
+  id: '/audit',
+  path: '/audit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BernardRoute = BernardRouteImport.update({
+  id: '/bernard',
+  path: '/bernard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RedditAirtableRoute = RedditAirtableRouteImport.update({
+  id: '/reddit-airtable',
+  path: '/reddit-airtable',
   getParentRoute: () => rootRouteImport,
 } as any)
 const WeeklyRoute = WeeklyRouteImport.update({
@@ -78,6 +115,11 @@ const XRoute = XRouteImport.update({
   path: '/x',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TiktokRoute = TiktokRouteImport.update({
+  id: '/tiktok',
+  path: '/tiktok',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdsRoute = AdsRouteImport.update({
   id: '/ads',
   path: '/ads',
@@ -99,9 +141,16 @@ export interface FileRoutesByFullPath {
   '/instagram': typeof InstagramRoute
   '/reddit': typeof RedditRoute
   '/x': typeof XRoute
+  '/tiktok': typeof TiktokRoute
   '/ads': typeof AdsRoute
   '/daily': typeof DailyRoute
   '/facebook': typeof FacebookRoute
+  '/chatters': typeof ChattersRoute
+  '/leads': typeof LeadsRoute
+  '/clock': typeof ClockRoute
+  '/audit': typeof AuditRoute
+  '/bernard': typeof BernardRoute
+  '/reddit-airtable': typeof RedditAirtableRoute
   '/creators/$creatorId': typeof CreatorsCreatorIdRoute
 }
 export interface FileRoutesByTo {
@@ -114,9 +163,16 @@ export interface FileRoutesByTo {
   '/instagram': typeof InstagramRoute
   '/reddit': typeof RedditRoute
   '/x': typeof XRoute
+  '/tiktok': typeof TiktokRoute
   '/ads': typeof AdsRoute
   '/daily': typeof DailyRoute
   '/facebook': typeof FacebookRoute
+  '/chatters': typeof ChattersRoute
+  '/leads': typeof LeadsRoute
+  '/clock': typeof ClockRoute
+  '/audit': typeof AuditRoute
+  '/bernard': typeof BernardRoute
+  '/reddit-airtable': typeof RedditAirtableRoute
   '/creators/$creatorId': typeof CreatorsCreatorIdRoute
 }
 export interface FileRoutesById {
@@ -130,9 +186,16 @@ export interface FileRoutesById {
   '/instagram': typeof InstagramRoute
   '/reddit': typeof RedditRoute
   '/x': typeof XRoute
+  '/tiktok': typeof TiktokRoute
   '/ads': typeof AdsRoute
   '/daily': typeof DailyRoute
   '/facebook': typeof FacebookRoute
+  '/chatters': typeof ChattersRoute
+  '/leads': typeof LeadsRoute
+  '/clock': typeof ClockRoute
+  '/audit': typeof AuditRoute
+  '/bernard': typeof BernardRoute
+  '/reddit-airtable': typeof RedditAirtableRoute
   '/creators/$creatorId': typeof CreatorsCreatorIdRoute
 }
 export interface FileRouteTypes {
@@ -147,9 +210,16 @@ export interface FileRouteTypes {
     | '/instagram'
     | '/reddit'
     | '/x'
+    | '/tiktok'
     | '/ads'
     | '/daily'
     | '/facebook'
+    | '/chatters'
+    | '/leads'
+    | '/clock'
+    | '/audit'
+    | '/bernard'
+    | '/reddit-airtable'
     | '/creators/$creatorId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -162,9 +232,16 @@ export interface FileRouteTypes {
     | '/instagram'
     | '/reddit'
     | '/x'
+    | '/tiktok'
     | '/ads'
     | '/daily'
     | '/facebook'
+    | '/chatters'
+    | '/leads'
+    | '/clock'
+    | '/audit'
+    | '/bernard'
+    | '/reddit-airtable'
     | '/creators/$creatorId'
   id:
     | '__root__'
@@ -177,9 +254,16 @@ export interface FileRouteTypes {
     | '/instagram'
     | '/reddit'
     | '/x'
+    | '/tiktok'
     | '/ads'
     | '/daily'
     | '/facebook'
+    | '/chatters'
+    | '/leads'
+    | '/clock'
+    | '/audit'
+    | '/bernard'
+    | '/reddit-airtable'
     | '/creators/$creatorId'
   fileRoutesById: FileRoutesById
 }
@@ -193,9 +277,16 @@ export interface RootRouteChildren {
   InstagramRoute: typeof InstagramRoute
   RedditRoute: typeof RedditRoute
   XRoute: typeof XRoute
+  TiktokRoute: typeof TiktokRoute
   AdsRoute: typeof AdsRoute
   DailyRoute: typeof DailyRoute
   FacebookRoute: typeof FacebookRoute
+  ChattersRoute: typeof ChattersRoute
+  LeadsRoute: typeof LeadsRoute
+  ClockRoute: typeof ClockRoute
+  AuditRoute: typeof AuditRoute
+  BernardRoute: typeof BernardRoute
+  RedditAirtableRoute: typeof RedditAirtableRoute
   CreatorsCreatorIdRoute: typeof CreatorsCreatorIdRoute
 }
 
@@ -264,6 +355,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof XRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/tiktok': {
+      id: '/tiktok'
+      path: '/tiktok'
+      fullPath: '/tiktok'
+      preLoaderRoute: typeof TiktokRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/ads': {
       id: '/ads'
       path: '/ads'
@@ -283,6 +381,48 @@ declare module '@tanstack/react-router' {
       path: '/facebook'
       fullPath: '/facebook'
       preLoaderRoute: typeof FacebookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/chatters': {
+      id: '/chatters'
+      path: '/chatters'
+      fullPath: '/chatters'
+      preLoaderRoute: typeof ChattersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/leads': {
+      id: '/leads'
+      path: '/leads'
+      fullPath: '/leads'
+      preLoaderRoute: typeof LeadsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/clock': {
+      id: '/clock'
+      path: '/clock'
+      fullPath: '/clock'
+      preLoaderRoute: typeof ClockRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/audit': {
+      id: '/audit'
+      path: '/audit'
+      fullPath: '/audit'
+      preLoaderRoute: typeof AuditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/bernard': {
+      id: '/bernard'
+      path: '/bernard'
+      fullPath: '/bernard'
+      preLoaderRoute: typeof BernardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reddit-airtable': {
+      id: '/reddit-airtable'
+      path: '/reddit-airtable'
+      fullPath: '/reddit-airtable'
+      preLoaderRoute: typeof RedditAirtableRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/creators/$creatorId': {
@@ -305,9 +445,16 @@ const rootRouteChildren: RootRouteChildren = {
   InstagramRoute: InstagramRoute,
   RedditRoute: RedditRoute,
   XRoute: XRoute,
+  TiktokRoute: TiktokRoute,
   AdsRoute: AdsRoute,
   DailyRoute: DailyRoute,
   FacebookRoute: FacebookRoute,
+  ChattersRoute: ChattersRoute,
+  LeadsRoute: LeadsRoute,
+  ClockRoute: ClockRoute,
+  AuditRoute: AuditRoute,
+  BernardRoute: BernardRoute,
+  RedditAirtableRoute: RedditAirtableRoute,
   CreatorsCreatorIdRoute: CreatorsCreatorIdRoute,
 }
 export const routeTree = rootRouteImport

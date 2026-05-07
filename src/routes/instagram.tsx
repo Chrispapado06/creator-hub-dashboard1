@@ -1,241 +1,758 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Users, TrendingUp, Edit2, Check, X } from "lucide-react";
+import {
+  Plus, Trash2, Edit2, Check, X, ExternalLink, RefreshCw, Upload,
+  Heart, MessageCircle, Eye, Image as ImageIcon, Video, Film, Layers,
+  Camera, AlertTriangle, Link2, ArrowLeft, Link as LinkIcon, Unlink,
+} from "lucide-react";
+import { SiMeta } from "react-icons/si";
 import { SiInstagram } from "react-icons/si";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader,
+  AlertDialogTitle, AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
-import { format } from "date-fns";
+import { format, formatDistanceToNow } from "date-fns";
+import {
+  Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Cell,
+} from "recharts";
 
-export const Route = createFileRoute("/instagram")({
-  component: InstagramPage,
-});
+export const Route = createFileRoute("/instagram")({ component: InstagramPage });
 
-type Creator = { id: string; name: string; avatar_url: string | null };
-type SocialAccount = {
+const IG_PINK = "#E1306C";
+const fmtMoney0 = (n: number) =>
+  n.toLocaleString("en-US", { maximumFractionDigits: 0 });
+const fmtMoney2 = (n: number) =>
+  n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+type Creator = { id: string; name: string; of_username: string | null; onlyfansapi_acct_id: string | null };
+type IGAccountStatus = "active" | "warm_up" | "shadowbanned" | "banned" | "inactive";
+type IGAccount = {
   id: string;
   creator_id: string;
-  platform: string;
-  username: string | null;
+  username: string;
+  status: IGAccountStatus;
   followers_count: number;
   following_count: number;
   posts_count: number;
+  bio_link: string | null;
   notes: string | null;
-  updated_at: string;
+  infloww_campaign_code: number | null;
+  last_synced_at: string | null;
+  meta_access_token: string | null;
+  meta_ig_user_id: string | null;
+  meta_connected_at: string | null;
+};
+type IGMediaType = "image" | "video" | "reel" | "carousel" | "story";
+type IGPost = {
+  id: string;
+  instagram_account_id: string;
+  post_id: string | null;
+  caption: string | null;
+  media_type: IGMediaType;
+  posted_at: string;
+  likes_count: number;
+  comments_count: number;
+  saves_count: number;
+  shares_count: number;
+  reach_count: number;
+  url: string | null;
+  notes: string | null;
+};
+type InflowwStat = {
+  id: string;
+  creator_id: string;
+  reddit_account_id: string | null;
+  campaign_code: number;
+  campaign_url: string | null;
+  clicks_count: number;
+  subscribers_count: number;
+  revenue_total: number;
+  revenue_per_sub: number;
+  spenders_count: number;
+  synced_at: string;
 };
 
-type EditState = {
-  username: string;
-  followers_count: string;
-  following_count: string;
-  posts_count: string;
-  notes: string;
+// ── Style constants ────────────────────────────────────────────────────────────
+const accountStatusStyles: Record<IGAccountStatus, string> = {
+  active: "bg-success/15 text-success border-success/30",
+  warm_up: "bg-primary/15 text-primary border-primary/30",
+  shadowbanned: "bg-warning/15 text-warning border-warning/30",
+  banned: "bg-destructive/15 text-destructive border-destructive/30",
+  inactive: "bg-muted text-muted-foreground border-border",
+};
+const statusLabels: Record<IGAccountStatus, string> = {
+  active: "Active",
+  warm_up: "Warm Up",
+  shadowbanned: "Shadowbanned",
+  banned: "Banned",
+  inactive: "Inactive",
+};
+const mediaTypeIcon: Record<IGMediaType, React.ReactNode> = {
+  image: <ImageIcon className="h-3.5 w-3.5" />,
+  video: <Video className="h-3.5 w-3.5" />,
+  reel: <Film className="h-3.5 w-3.5" />,
+  carousel: <Layers className="h-3.5 w-3.5" />,
+  story: <Camera className="h-3.5 w-3.5" />,
 };
 
+// ── Main component ─────────────────────────────────────────────────────────────
 function InstagramPage() {
   const [creators, setCreators] = useState<Creator[]>([]);
-  const [accounts, setAccounts] = useState<SocialAccount[]>([]);
+  const [selectedCreatorId, setSelectedCreatorId] = useState<string>("");
+  const [selectedCreator, setSelectedCreator] = useState<Creator | null>(null);
+  const [accounts, setAccounts] = useState<IGAccount[]>([]);
+  const [posts, setPosts] = useState<IGPost[]>([]);
+  const [inflowwStats, setInflowwStats] = useState<InflowwStat[]>([]);
   const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState<string | null>(null);
-  const [editState, setEditState] = useState<EditState>({
-    username: "", followers_count: "", following_count: "", posts_count: "", notes: "",
-  });
+  const [syncing, setSyncing] = useState(false);
 
-  const load = async () => {
-    setLoading(true);
-    const [{ data: cs }, { data: sas }] = await Promise.all([
-      supabase.from("creators").select("id, name, avatar_url").order("name"),
-      supabase.from("social_accounts").select("*").eq("platform", "instagram"),
-    ]);
-    setCreators((cs ?? []) as Creator[]);
-    setAccounts((sas ?? []) as SocialAccount[]);
-    setLoading(false);
-  };
-
-  useEffect(() => { load(); }, []);
-
-  const accountFor = (cid: string) => accounts.find((a) => a.creator_id === cid) ?? null;
-
-  const startEdit = (cid: string) => {
-    const acct = accountFor(cid);
-    setEditState({
-      username: acct?.username ?? "",
-      followers_count: acct?.followers_count?.toString() ?? "0",
-      following_count: acct?.following_count?.toString() ?? "0",
-      posts_count: acct?.posts_count?.toString() ?? "0",
-      notes: acct?.notes ?? "",
-    });
-    setEditing(cid);
-  };
-
-  const saveEdit = async (cid: string) => {
-    const existing = accountFor(cid);
-    const payload = {
-      creator_id: cid,
-      platform: "instagram",
-      username: editState.username.trim() || null,
-      followers_count: parseInt(editState.followers_count) || 0,
-      following_count: parseInt(editState.following_count) || 0,
-      posts_count: parseInt(editState.posts_count) || 0,
-      notes: editState.notes.trim() || null,
-      updated_at: new Date().toISOString(),
-    };
-    if (existing) {
-      const { error } = await supabase.from("social_accounts").update(payload).eq("id", existing.id);
-      if (error) return toast.error(error.message);
+  const loadCreatorData = async (creatorId: string, silent = false) => {
+    if (!creatorId) return;
+    if (!silent) setLoading(true);
+    const { data: ias } = await supabase
+      .from("instagram_accounts")
+      .select("*")
+      .eq("creator_id", creatorId)
+      .order("created_at");
+    const accList = (ias ?? []) as IGAccount[];
+    setAccounts(accList);
+    const accIds = accList.map((a) => a.id);
+    if (accIds.length) {
+      const { data: ps } = await supabase
+        .from("instagram_posts")
+        .select("*")
+        .in("instagram_account_id", accIds)
+        .order("posted_at", { ascending: false });
+      setPosts((ps ?? []) as IGPost[]);
     } else {
-      const { error } = await supabase.from("social_accounts").insert(payload);
-      if (error) return toast.error(error.message);
+      setPosts([]);
     }
-    toast.success("Saved");
-    setEditing(null);
-    load();
+    const { data: stats } = await supabase
+      .from("infloww_tracking_stats")
+      .select("*")
+      .eq("creator_id", creatorId);
+    setInflowwStats((stats ?? []) as InflowwStat[]);
+    if (!silent) setLoading(false);
   };
 
-  const totalFollowers = accounts.reduce((s, a) => s + a.followers_count, 0);
-  const connectedCount = creators.filter((c) => accountFor(c.id)).length;
+  const loadCreators = async () => {
+    const { data, error } = await supabase
+      .from("creators")
+      .select("id, name, of_username, onlyfansapi_acct_id")
+      .order("name");
+    if (error) {
+      toast.error(`Failed to load creators: ${error.message}`);
+      setLoading(false);
+      return;
+    }
+    const cs = (data ?? []) as Creator[];
+    setCreators(cs);
+    if (cs.length > 0) {
+      const first = cs[0];
+      setSelectedCreatorId(first.id);
+      setSelectedCreator(first);
+      await loadCreatorData(first.id);
+    } else {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { loadCreators(); }, []);
+
+  const handleCreatorChange = (id: string) => {
+    const creator = creators.find((c) => c.id === id) ?? null;
+    setSelectedCreatorId(id);
+    setSelectedCreator(creator);
+    loadCreatorData(id);
+  };
+
+  const refresh = () => loadCreatorData(selectedCreatorId, true);
+
+  const syncInfloww = async () => {
+    if (!selectedCreator) return;
+    const key = import.meta.env.VITE_ONLYFANSAPI_KEY as string | undefined;
+    if (!key) return toast.error("VITE_ONLYFANSAPI_KEY not set in .env");
+    let acctId = selectedCreator.onlyfansapi_acct_id;
+    if (!acctId) {
+      if (!selectedCreator.of_username) return toast.error("Set the OnlyFans username first on the creator page");
+      const res = await fetch("https://app.onlyfansapi.com/api/accounts", { headers: { Authorization: `Bearer ${key}` } });
+      const accounts_list = (await res.json()) as { id: string; onlyfans_username: string }[];
+      const match = accounts_list.find(
+        (a) => a.onlyfans_username?.toLowerCase() === selectedCreator.of_username!.toLowerCase()
+      );
+      if (!match) return toast.error("Creator not found in OnlyFans API accounts");
+      acctId = match.id;
+      await supabase.from("creators").update({ onlyfansapi_acct_id: acctId }).eq("id", selectedCreatorId);
+    }
+    setSyncing(true);
+    type OFLink = {
+      campaignCode: number;
+      campaignUrl: string;
+      clicksCount: number;
+      subscribersCount: number;
+      revenue: { total: number; revenuePerSubscriber: number; spendersCount: number };
+    };
+    const allLinks: OFLink[] = [];
+    let nextUrl: string | null = `https://app.onlyfansapi.com/api/${acctId}/tracking-links`;
+    while (nextUrl) {
+      const resp = await fetch(nextUrl, { headers: { Authorization: `Bearer ${key}` } });
+      const json = (await resp.json()) as { data?: { list?: OFLink[] }; _pagination?: { next_page?: string } };
+      allLinks.push(...(json.data?.list ?? []));
+      nextUrl = json._pagination?.next_page ?? null;
+    }
+    if (allLinks.length === 0) {
+      setSyncing(false);
+      return toast.info("No tracking links found");
+    }
+    const upserts = allLinks.map((l) => ({
+      creator_id: selectedCreatorId,
+      campaign_code: l.campaignCode,
+      campaign_url: l.campaignUrl,
+      clicks_count: l.clicksCount,
+      subscribers_count: l.subscribersCount,
+      revenue_total: l.revenue.total,
+      revenue_per_sub: l.revenue.revenuePerSubscriber,
+      spenders_count: l.revenue.spendersCount,
+      synced_at: new Date().toISOString(),
+    }));
+    const { error } = await supabase
+      .from("infloww_tracking_stats")
+      .upsert(upserts, { onConflict: "creator_id,campaign_code" });
+    if (error) {
+      setSyncing(false);
+      return toast.error(error.message);
+    }
+    // Push Instagram-attributed revenue rows
+    await supabase
+      .from("revenue_entries")
+      .delete()
+      .eq("creator_id", selectedCreatorId)
+      .eq("source", "infloww-instagram");
+    const today = new Date().toISOString().slice(0, 10);
+    const assignedLinks = allLinks.filter((l) =>
+      accounts.some((a) => a.infloww_campaign_code === l.campaignCode)
+    );
+    const revenueRows = assignedLinks
+      .filter((l) => l.revenue.total > 0)
+      .map((l) => {
+        const matched = accounts.find((a) => a.infloww_campaign_code === l.campaignCode)!;
+        return {
+          creator_id: selectedCreatorId,
+          instagram_account_id: matched.id,
+          amount: l.revenue.total,
+          currency: "USD",
+          entry_date: today,
+          source: "infloww-instagram",
+          notes: `c${l.campaignCode} — ${l.subscribersCount} subs, ${l.clicksCount} clicks`,
+        };
+      });
+    if (revenueRows.length > 0) {
+      const { error: revErr } = await supabase.from("revenue_entries").insert(revenueRows);
+      if (revErr) {
+        setSyncing(false);
+        return toast.error(revErr.message);
+      }
+    }
+    setSyncing(false);
+    const assignedRevenue = assignedLinks.reduce((s, l) => s + l.revenue.total, 0);
+    toast.success(`Synced ${assignedLinks.length} assigned links · $${assignedRevenue.toFixed(2)} revenue`);
+    refresh();
+  };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <Toaster />
-
       <div>
         <div className="flex items-center gap-2.5 mb-1">
-          <SiInstagram className="h-6 w-6" style={{ color: "#E1306C" }} />
+          <SiInstagram className="h-6 w-6" style={{ color: IG_PINK }} />
           <h1 className="text-3xl font-bold tracking-tight">Instagram</h1>
         </div>
         <p className="text-sm text-muted-foreground">
-          Track Instagram accounts and follower growth per creator. Update stats manually.
+          Manage Instagram accounts, posts, and revenue per creator.
         </p>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div className="rounded-xl border border-border bg-card p-5">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
-            <Users className="h-4 w-4 text-primary" /> Total followers
-          </div>
-          <div className="text-2xl font-bold">{totalFollowers.toLocaleString()}</div>
-          <div className="text-xs text-muted-foreground mt-1">across all connected accounts</div>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-5">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
-            <SiInstagram className="h-4 w-4" style={{ color: "#E1306C" }} /> Connected
-          </div>
-          <div className="text-2xl font-bold">{connectedCount}</div>
-          <div className="text-xs text-muted-foreground mt-1">of {creators.length} creators</div>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-5">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
-            <TrendingUp className="h-4 w-4 text-primary" /> Avg followers
-          </div>
-          <div className="text-2xl font-bold">
-            {connectedCount > 0
-              ? Math.round(totalFollowers / connectedCount).toLocaleString()
-              : "—"}
-          </div>
-          <div className="text-xs text-muted-foreground mt-1">per account</div>
-        </div>
+      <div className="flex items-center gap-3">
+        <span className="text-sm font-medium text-muted-foreground">Creator:</span>
+        <Select value={selectedCreatorId} onValueChange={handleCreatorChange}>
+          <SelectTrigger className="w-[220px]">
+            <SelectValue placeholder="Select creator" />
+          </SelectTrigger>
+          <SelectContent>
+            {creators.map((c) => (
+              <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
-      {loading ? (
+      {loading && !selectedCreatorId ? (
         <div className="h-64 animate-pulse rounded-xl bg-card/60 border border-border" />
+      ) : !selectedCreatorId ? (
+        <div className="rounded-xl border border-dashed border-border bg-card/40 p-12 text-center text-sm text-muted-foreground">
+          Select a creator above to manage their Instagram presence.
+        </div>
+      ) : loading ? (
+        <div className="h-64 animate-pulse rounded-xl bg-card/60 border border-border" />
+      ) : (
+        <Tabs defaultValue="overview">
+          <TabsList>
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="accounts">Accounts</TabsTrigger>
+            <TabsTrigger value="posts">Posts</TabsTrigger>
+            <TabsTrigger value="revenue">Revenue</TabsTrigger>
+            <TabsTrigger value="analytics">Analytics</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="overview" className="mt-6">
+            <OverviewTab
+              accounts={accounts}
+              posts={posts}
+              inflowwStats={inflowwStats}
+              syncing={syncing}
+              onSyncInfloww={syncInfloww}
+            />
+          </TabsContent>
+          <TabsContent value="accounts" className="mt-6">
+            <AccountsTab
+              creatorId={selectedCreatorId}
+              accounts={accounts}
+              posts={posts}
+              inflowwStats={inflowwStats}
+              onRefresh={refresh}
+            />
+          </TabsContent>
+          <TabsContent value="posts" className="mt-6">
+            <PostsTab accounts={accounts} posts={posts} onRefresh={refresh} />
+          </TabsContent>
+          <TabsContent value="revenue" className="mt-6">
+            <RevenueTab
+              accounts={accounts}
+              inflowwStats={inflowwStats}
+              syncing={syncing}
+              onSyncInfloww={syncInfloww}
+              onRefresh={refresh}
+            />
+          </TabsContent>
+          <TabsContent value="analytics" className="mt-6">
+            <AnalyticsTab accounts={accounts} posts={posts} />
+          </TabsContent>
+        </Tabs>
+      )}
+    </div>
+  );
+}
+
+// ── Overview Tab ───────────────────────────────────────────────────────────────
+function OverviewTab({
+  accounts, posts, inflowwStats, syncing, onSyncInfloww,
+}: {
+  accounts: IGAccount[];
+  posts: IGPost[];
+  inflowwStats: InflowwStat[];
+  syncing: boolean;
+  onSyncInfloww: () => void;
+}) {
+  const totalFollowers = accounts.reduce((s, a) => s + a.followers_count, 0);
+  const totalRevenue = inflowwStats
+    .filter((s) => accounts.some((a) => a.infloww_campaign_code === s.campaign_code))
+    .reduce((s, i) => s + i.revenue_total, 0);
+  const posts30d = posts.filter(
+    (p) => Date.now() - new Date(p.posted_at).getTime() < 30 * 24 * 3600_000
+  ).length;
+  const topPost = posts.length > 0 ? posts.reduce((a, b) => (a.likes_count > b.likes_count ? a : b)) : null;
+  const topPostAccount = topPost ? accounts.find((a) => a.id === topPost.instagram_account_id) : null;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-3 p-4 rounded-xl border border-border bg-card">
+        <span className="text-sm font-medium text-muted-foreground">Sync:</span>
+        <Button variant="outline" size="sm" onClick={onSyncInfloww} disabled={syncing}>
+          <Upload className={`h-3.5 w-3.5 mr-1.5 ${syncing ? "animate-pulse" : ""}`} />
+          {syncing ? "Syncing…" : "Sync Infloww"}
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <StatCard label="IG accounts" value={accounts.length} sub="linked" />
+        <StatCard label="Total followers" value={totalFollowers.toLocaleString()} sub={`across ${accounts.length} account${accounts.length === 1 ? "" : "s"}`} />
+        <StatCard label="Posts (30d)" value={posts30d} sub={`${posts.length} total tracked`} />
+        <StatCard label="Infloww revenue" value={`$${fmtMoney0(totalRevenue)}`} sub="from assigned codes" valueClass="text-success" />
+      </div>
+
+      {topPost && (
+        <div className="rounded-xl border border-border bg-card p-5">
+          <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+            Best performing post
+          </div>
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="font-medium truncate flex items-center gap-2">
+                <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded border border-border bg-secondary/40 text-muted-foreground capitalize">
+                  {mediaTypeIcon[topPost.media_type]}
+                  {topPost.media_type}
+                </span>
+                <span className="truncate">{topPost.caption ?? "(no caption)"}</span>
+              </div>
+              <div className="text-xs text-muted-foreground mt-0.5">
+                {topPostAccount ? `@${topPostAccount.username} · ` : ""}
+                {formatDistanceToNow(new Date(topPost.posted_at), { addSuffix: true })}
+              </div>
+            </div>
+            <div className="flex items-center gap-4 shrink-0">
+              <div className="text-right">
+                <div className="font-semibold flex items-center gap-1 justify-end">
+                  <Heart className="h-3.5 w-3.5" style={{ color: IG_PINK }} />
+                  {topPost.likes_count.toLocaleString()}
+                </div>
+                <div className="text-xs text-muted-foreground">likes</div>
+              </div>
+              {topPost.url && (
+                <a href={topPost.url} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-primary">
+                  <ExternalLink className="h-4 w-4" />
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <HealthWarnings accounts={accounts} posts={posts} />
+    </div>
+  );
+}
+
+function StatCard({
+  label, value, sub, valueClass,
+}: {
+  label: string;
+  value: string | number;
+  sub: string;
+  valueClass?: string;
+}) {
+  return (
+    <div className="rounded-xl border border-border bg-card p-5">
+      <div className="text-xs text-muted-foreground mb-2">{label}</div>
+      <div className={`text-2xl font-bold ${valueClass ?? ""}`}>{value}</div>
+      <div className="text-xs text-muted-foreground mt-1">{sub}</div>
+    </div>
+  );
+}
+
+function ChartCard({
+  title, sub, children,
+}: {
+  title: string;
+  sub?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-xl border border-border bg-card p-4">
+      <div className="mb-3">
+        <div className="text-sm font-semibold">{title}</div>
+        {sub && <div className="text-xs text-muted-foreground">{sub}</div>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function HealthWarnings({ accounts, posts }: { accounts: IGAccount[]; posts: IGPost[] }) {
+  const flagged = accounts.filter((a) => a.status === "shadowbanned" || a.status === "banned" || a.status === "inactive");
+  const inactiveAccounts = accounts.filter((a) => {
+    if (a.status !== "active") return false;
+    const accountPosts = posts.filter((p) => p.instagram_account_id === a.id);
+    if (accountPosts.length === 0) return false;
+    const lastPost = accountPosts.reduce((latest, p) =>
+      new Date(p.posted_at) > new Date(latest.posted_at) ? p : latest
+    );
+    return Date.now() - new Date(lastPost.posted_at).getTime() > 14 * 24 * 3600_000;
+  });
+  if (flagged.length === 0 && inactiveAccounts.length === 0) return null;
+  return (
+    <div className="rounded-xl border border-warning/30 bg-warning/5 p-5">
+      <div className="flex items-center gap-2 text-warning mb-3">
+        <AlertTriangle className="h-4 w-4" />
+        <div className="text-sm font-semibold">Account health</div>
+      </div>
+      <div className="space-y-2 text-sm">
+        {flagged.map((a) => (
+          <div key={a.id} className="flex items-center justify-between">
+            <span>@{a.username}</span>
+            <span className={`text-xs px-2 py-0.5 rounded border ${accountStatusStyles[a.status]}`}>
+              {statusLabels[a.status]}
+            </span>
+          </div>
+        ))}
+        {inactiveAccounts.map((a) => (
+          <div key={a.id} className="flex items-center justify-between text-muted-foreground">
+            <span>@{a.username}</span>
+            <span className="text-xs">No posts in 14+ days</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Accounts Tab ───────────────────────────────────────────────────────────────
+function AccountsTab({
+  creatorId, accounts, posts, inflowwStats, onRefresh,
+}: {
+  creatorId: string;
+  accounts: IGAccount[];
+  posts: IGPost[];
+  inflowwStats: InflowwStat[];
+  onRefresh: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [accForm, setAccForm] = useState({ username: "", status: "active" as IGAccountStatus, bio_link: "" });
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [detailAccount, setDetailAccount] = useState<IGAccount | null>(null);
+  const [editForm, setEditForm] = useState({
+    username: "",
+    followers_count: "",
+    following_count: "",
+    posts_count: "",
+    bio_link: "",
+    notes: "",
+    infloww_campaign_code: "",
+  });
+
+  const onAddAccount = async () => {
+    if (!accForm.username.trim()) return toast.error("Username is required");
+    const { error } = await supabase.from("instagram_accounts").insert({
+      creator_id: creatorId,
+      username: accForm.username.trim().replace(/^@/, ""),
+      status: accForm.status,
+      bio_link: accForm.bio_link.trim() || null,
+    });
+    if (error) return toast.error(error.message);
+    toast.success("Instagram account added");
+    setAccForm({ username: "", status: "active", bio_link: "" });
+    setOpen(false);
+    onRefresh();
+  };
+
+  const onDeleteAccount = async (id: string) => {
+    const { error } = await supabase.from("instagram_accounts").delete().eq("id", id);
+    if (error) return toast.error(error.message);
+    toast.success("Account removed");
+    onRefresh();
+  };
+
+  const onUpdateStatus = async (id: string, status: IGAccountStatus) => {
+    const { error } = await supabase.from("instagram_accounts").update({ status }).eq("id", id);
+    if (error) return toast.error(error.message);
+    onRefresh();
+  };
+
+  const startEdit = (a: IGAccount) => {
+    setEditForm({
+      username: a.username,
+      followers_count: a.followers_count.toString(),
+      following_count: a.following_count.toString(),
+      posts_count: a.posts_count.toString(),
+      bio_link: a.bio_link ?? "",
+      notes: a.notes ?? "",
+      infloww_campaign_code: a.infloww_campaign_code?.toString() ?? "",
+    });
+    setEditingId(a.id);
+  };
+
+  const saveEdit = async (id: string) => {
+    const code = editForm.infloww_campaign_code.trim();
+    const payload = {
+      username: editForm.username.trim().replace(/^@/, ""),
+      followers_count: parseInt(editForm.followers_count) || 0,
+      following_count: parseInt(editForm.following_count) || 0,
+      posts_count: parseInt(editForm.posts_count) || 0,
+      bio_link: editForm.bio_link.trim() || null,
+      notes: editForm.notes.trim() || null,
+      infloww_campaign_code: code ? parseInt(code) : null,
+      last_synced_at: new Date().toISOString(),
+    };
+    const { error } = await supabase.from("instagram_accounts").update(payload).eq("id", id);
+    if (error) return toast.error(error.message);
+    toast.success("Saved");
+    setEditingId(null);
+    onRefresh();
+  };
+
+  if (detailAccount) {
+    // Re-derive from the live accounts array so edits made elsewhere reflect immediately
+    const live = accounts.find((a) => a.id === detailAccount.id) ?? detailAccount;
+    return (
+      <AccountDetailView
+        account={live}
+        posts={posts}
+        inflowwStats={inflowwStats}
+        onBack={() => setDetailAccount(null)}
+        onRefresh={onRefresh}
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">
+          {accounts.length} account{accounts.length !== 1 ? "s" : ""} linked.
+        </p>
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogTrigger asChild>
+            <Button size="sm">
+              <Plus className="h-4 w-4 mr-1.5" />Add account
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader><DialogTitle>Add Instagram account</DialogTitle></DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="space-y-1.5">
+                <Label>Username</Label>
+                <Input
+                  value={accForm.username}
+                  onChange={(e) => setAccForm({ ...accForm, username: e.target.value })}
+                  placeholder="luna_xo"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Status</Label>
+                <Select value={accForm.status} onValueChange={(v) => setAccForm({ ...accForm, status: v as IGAccountStatus })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="warm_up">Warm Up</SelectItem>
+                    <SelectItem value="shadowbanned">Shadowbanned</SelectItem>
+                    <SelectItem value="banned">Banned</SelectItem>
+                    <SelectItem value="inactive">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Bio link <span className="text-muted-foreground text-xs">(optional)</span></Label>
+                <Input
+                  value={accForm.bio_link}
+                  onChange={(e) => setAccForm({ ...accForm, bio_link: e.target.value })}
+                  placeholder="https://onlyfans.com/luna_xo"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+              <Button onClick={onAddAccount}>Add</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {accounts.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-border bg-card/40 p-12 text-center text-sm text-muted-foreground">
+          No Instagram accounts linked yet.
+        </div>
       ) : (
         <div className="overflow-hidden rounded-xl border border-border">
           <table className="w-full text-sm">
             <thead className="bg-secondary/40 text-xs uppercase tracking-wide text-muted-foreground">
               <tr>
-                <th className="text-left font-medium px-4 py-3">Creator</th>
                 <th className="text-left font-medium px-4 py-3">Username</th>
+                <th className="text-left font-medium px-4 py-3">Status</th>
                 <th className="text-right font-medium px-4 py-3">Followers</th>
                 <th className="text-right font-medium px-4 py-3">Following</th>
                 <th className="text-right font-medium px-4 py-3">Posts</th>
+                <th className="text-left font-medium px-4 py-3">Bio link</th>
+                <th className="text-right font-medium px-4 py-3">Campaign</th>
                 <th className="text-left font-medium px-4 py-3">Notes</th>
-                <th className="text-left font-medium px-4 py-3">Updated</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody>
-              {creators.map((c) => {
-                const acct = accountFor(c.id);
-                const isEditing = editing === c.id;
+              {accounts.map((a) => {
+                const isEdit = editingId === a.id;
                 return (
-                  <tr key={c.id} className="border-t border-border bg-card hover:bg-secondary/20 transition-colors">
-                    <td className="px-4 py-3">
-                      <Link
-                        to="/creators/$creatorId"
-                        params={{ creatorId: c.id }}
-                        className="flex items-center gap-2 hover:text-primary transition-colors"
-                      >
-                        {c.avatar_url ? (
-                          <img src={c.avatar_url} className="h-6 w-6 rounded-full object-cover border border-border" alt={c.name} />
-                        ) : (
-                          <div className="h-6 w-6 rounded-full bg-secondary flex items-center justify-center text-xs font-semibold">
-                            {c.name[0]}
-                          </div>
-                        )}
-                        <span className="font-medium">{c.name}</span>
-                      </Link>
-                    </td>
-
-                    {isEditing ? (
+                  <tr key={a.id} className="border-t border-border bg-card hover:bg-secondary/20 transition-colors">
+                    {isEdit ? (
                       <>
                         <td className="px-4 py-2">
                           <Input
                             className="h-7 text-xs w-32"
-                            placeholder="@username"
-                            value={editState.username}
-                            onChange={(e) => setEditState({ ...editState, username: e.target.value })}
+                            value={editForm.username}
+                            onChange={(e) => setEditForm({ ...editForm, username: e.target.value })}
+                          />
+                        </td>
+                        <td className="px-4 py-2">
+                          <span className="text-xs text-muted-foreground italic">use status pill →</span>
+                        </td>
+                        <td className="px-4 py-2 text-right">
+                          <Input
+                            className="h-7 text-xs w-24 text-right ml-auto"
+                            type="number"
+                            value={editForm.followers_count}
+                            onChange={(e) => setEditForm({ ...editForm, followers_count: e.target.value })}
                           />
                         </td>
                         <td className="px-4 py-2 text-right">
                           <Input
                             className="h-7 text-xs w-24 text-right ml-auto"
                             type="number"
-                            placeholder="0"
-                            value={editState.followers_count}
-                            onChange={(e) => setEditState({ ...editState, followers_count: e.target.value })}
-                          />
-                        </td>
-                        <td className="px-4 py-2 text-right">
-                          <Input
-                            className="h-7 text-xs w-24 text-right ml-auto"
-                            type="number"
-                            placeholder="0"
-                            value={editState.following_count}
-                            onChange={(e) => setEditState({ ...editState, following_count: e.target.value })}
+                            value={editForm.following_count}
+                            onChange={(e) => setEditForm({ ...editForm, following_count: e.target.value })}
                           />
                         </td>
                         <td className="px-4 py-2 text-right">
                           <Input
                             className="h-7 text-xs w-20 text-right ml-auto"
                             type="number"
-                            placeholder="0"
-                            value={editState.posts_count}
-                            onChange={(e) => setEditState({ ...editState, posts_count: e.target.value })}
+                            value={editForm.posts_count}
+                            onChange={(e) => setEditForm({ ...editForm, posts_count: e.target.value })}
+                          />
+                        </td>
+                        <td className="px-4 py-2">
+                          <Input
+                            className="h-7 text-xs w-40"
+                            placeholder="https://…"
+                            value={editForm.bio_link}
+                            onChange={(e) => setEditForm({ ...editForm, bio_link: e.target.value })}
+                          />
+                        </td>
+                        <td className="px-4 py-2 text-right">
+                          <Input
+                            className="h-7 text-xs w-20 text-right ml-auto"
+                            type="number"
+                            placeholder="69"
+                            value={editForm.infloww_campaign_code}
+                            onChange={(e) => setEditForm({ ...editForm, infloww_campaign_code: e.target.value })}
                           />
                         </td>
                         <td className="px-4 py-2">
                           <Input
                             className="h-7 text-xs w-36"
                             placeholder="Notes"
-                            value={editState.notes}
-                            onChange={(e) => setEditState({ ...editState, notes: e.target.value })}
+                            value={editForm.notes}
+                            onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
                           />
                         </td>
-                        <td className="px-4 py-2" />
                         <td className="px-4 py-2 text-right">
                           <div className="flex items-center justify-end gap-1">
                             <button
-                              onClick={() => saveEdit(c.id)}
+                              onClick={() => saveEdit(a.id)}
                               className="rounded p-1 hover:bg-success/20 text-success transition-colors"
                             >
                               <Check className="h-4 w-4" />
                             </button>
                             <button
-                              onClick={() => setEditing(null)}
+                              onClick={() => setEditingId(null)}
                               className="rounded p-1 hover:bg-secondary text-muted-foreground transition-colors"
                             >
                               <X className="h-4 w-4" />
@@ -245,31 +762,87 @@ function InstagramPage() {
                       </>
                     ) : (
                       <>
-                        <td className="px-4 py-3 text-muted-foreground">
-                          {acct?.username ? `@${acct.username}` : <span className="text-muted-foreground/40 italic">—</span>}
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={() => setDetailAccount(a)}
+                              className="font-medium hover:text-primary text-left"
+                              title="View analytics"
+                            >
+                              @{a.username}
+                            </button>
+                            <a
+                              href={`https://instagram.com/${a.username}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-muted-foreground/60 hover:text-primary"
+                              title="Open on Instagram"
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                          </div>
                         </td>
-                        <td className="px-4 py-3 text-right">
-                          {acct ? acct.followers_count.toLocaleString() : <span className="text-muted-foreground/40">—</span>}
+                        <td className="px-4 py-3">
+                          <Select value={a.status} onValueChange={(v) => onUpdateStatus(a.id, v as IGAccountStatus)}>
+                            <SelectTrigger className={`h-6 w-32 text-xs px-2 border ${accountStatusStyles[a.status]}`}>
+                              <SelectValue>{statusLabels[a.status]}</SelectValue>
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="active">Active</SelectItem>
+                              <SelectItem value="warm_up">Warm Up</SelectItem>
+                              <SelectItem value="shadowbanned">Shadowbanned</SelectItem>
+                              <SelectItem value="banned">Banned</SelectItem>
+                              <SelectItem value="inactive">Inactive</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </td>
+                        <td className="px-4 py-3 text-right font-medium">{a.followers_count.toLocaleString()}</td>
+                        <td className="px-4 py-3 text-right text-muted-foreground">{a.following_count.toLocaleString()}</td>
+                        <td className="px-4 py-3 text-right text-muted-foreground">{a.posts_count.toLocaleString()}</td>
+                        <td className="px-4 py-3 text-muted-foreground max-w-[200px] truncate">
+                          {a.bio_link ? (
+                            <a href={a.bio_link} target="_blank" rel="noreferrer" className="hover:text-primary inline-flex items-center gap-1">
+                              <Link2 className="h-3 w-3" />
+                              <span className="truncate">{a.bio_link.replace(/^https?:\/\//, "")}</span>
+                            </a>
+                          ) : (
+                            <span className="text-muted-foreground/40">—</span>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-right text-muted-foreground">
-                          {acct ? acct.following_count.toLocaleString() : <span className="text-muted-foreground/40">—</span>}
+                          {a.infloww_campaign_code != null ? `c${a.infloww_campaign_code}` : <span className="text-muted-foreground/40">—</span>}
                         </td>
-                        <td className="px-4 py-3 text-right text-muted-foreground">
-                          {acct ? acct.posts_count.toLocaleString() : <span className="text-muted-foreground/40">—</span>}
-                        </td>
-                        <td className="px-4 py-3 text-muted-foreground max-w-[160px] truncate">
-                          {acct?.notes ?? <span className="text-muted-foreground/40">—</span>}
-                        </td>
-                        <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">
-                          {acct ? format(new Date(acct.updated_at), "MMM d, yyyy") : <span className="text-muted-foreground/40">—</span>}
+                        <td className="px-4 py-3 text-muted-foreground max-w-[180px] truncate">
+                          {a.notes ?? <span className="text-muted-foreground/40">—</span>}
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <button
-                            onClick={() => startEdit(c.id)}
-                            className="rounded p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-                          >
-                            <Edit2 className="h-3.5 w-3.5" />
-                          </button>
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              onClick={() => startEdit(a)}
+                              className="rounded p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                            >
+                              <Edit2 className="h-3.5 w-3.5" />
+                            </button>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <button className="rounded p-1.5 text-muted-foreground hover:text-destructive hover:bg-secondary transition-colors">
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Remove @{a.username}?</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    This will also delete all posts tracked under this account.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => onDeleteAccount(a.id)}>Delete</AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </div>
                         </td>
                       </>
                     )}
@@ -281,9 +854,1336 @@ function InstagramPage() {
         </div>
       )}
 
-      <p className="text-xs text-muted-foreground">
-        Stats are updated manually. Click the edit icon on any row to update follower counts and username.
-      </p>
+    </div>
+  );
+}
+
+// ── Account Detail View (full-page) ────────────────────────────────────────────
+function AccountDetailView({
+  account, posts, inflowwStats, onBack, onRefresh,
+}: {
+  account: IGAccount;
+  posts: IGPost[];
+  inflowwStats: InflowwStat[];
+  onBack: () => void;
+  onRefresh: () => void;
+}) {
+  const accountPosts = useMemo(
+    () => posts.filter((p) => p.instagram_account_id === account.id),
+    [account, posts]
+  );
+
+  const [metaDialogOpen, setMetaDialogOpen] = useState(false);
+  const [metaForm, setMetaForm] = useState({ ig_user_id: "", access_token: "" });
+  const [metaSyncing, setMetaSyncing] = useState(false);
+
+  const isConnected = !!(account.meta_access_token && account.meta_ig_user_id);
+
+  const runMetaSync = async (
+    igUserId: string,
+    accessToken: string
+  ): Promise<{ ok: true } | { ok: false; error: string }> => {
+    const base = "https://graph.facebook.com/v21.0";
+    try {
+      const profileFields = "username,biography,followers_count,follows_count,media_count,profile_picture_url,website";
+      const profileRes = await fetch(
+        `${base}/${encodeURIComponent(igUserId)}?fields=${profileFields}&access_token=${encodeURIComponent(accessToken)}`
+      );
+      const profile = (await profileRes.json()) as {
+        username?: string;
+        biography?: string;
+        followers_count?: number;
+        follows_count?: number;
+        media_count?: number;
+        website?: string;
+        error?: { message?: string; type?: string; code?: number };
+      };
+      if (profile.error) {
+        return { ok: false, error: profile.error.message ?? "Graph API rejected the request" };
+      }
+
+      const mediaFields = "id,caption,media_type,media_product_type,timestamp,like_count,comments_count,permalink";
+      const mediaRes = await fetch(
+        `${base}/${encodeURIComponent(igUserId)}/media?fields=${mediaFields}&limit=25&access_token=${encodeURIComponent(accessToken)}`
+      );
+      const mediaJson = (await mediaRes.json()) as {
+        data?: {
+          id: string;
+          caption?: string;
+          media_type?: string;
+          media_product_type?: string;
+          timestamp: string;
+          like_count?: number;
+          comments_count?: number;
+          permalink?: string;
+        }[];
+        error?: { message?: string };
+      };
+      if (mediaJson.error) {
+        return { ok: false, error: mediaJson.error.message ?? "Failed to fetch media" };
+      }
+
+      const mapMediaType = (mt?: string, pt?: string): IGMediaType => {
+        if (pt === "REELS") return "reel";
+        if (pt === "STORY") return "story";
+        if (mt === "VIDEO") return "video";
+        if (mt === "CAROUSEL_ALBUM") return "carousel";
+        if (mt === "IMAGE") return "image";
+        return "image";
+      };
+
+      const updatePayload = {
+        followers_count: profile.followers_count ?? account.followers_count,
+        following_count: profile.follows_count ?? account.following_count,
+        posts_count: profile.media_count ?? account.posts_count,
+        bio_link: profile.website ?? account.bio_link,
+        meta_access_token: accessToken,
+        meta_ig_user_id: igUserId,
+        meta_connected_at: account.meta_connected_at ?? new Date().toISOString(),
+        last_synced_at: new Date().toISOString(),
+      };
+      const { error: updErr } = await supabase
+        .from("instagram_accounts")
+        .update(updatePayload)
+        .eq("id", account.id);
+      if (updErr) return { ok: false, error: updErr.message };
+
+      const mediaItems = mediaJson.data ?? [];
+      if (mediaItems.length > 0) {
+        const upserts = mediaItems.map((m) => ({
+          instagram_account_id: account.id,
+          post_id: m.id,
+          caption: m.caption ?? null,
+          media_type: mapMediaType(m.media_type, m.media_product_type),
+          posted_at: m.timestamp,
+          likes_count: m.like_count ?? 0,
+          comments_count: m.comments_count ?? 0,
+          url: m.permalink ?? null,
+        }));
+        const { error: postErr } = await supabase
+          .from("instagram_posts")
+          .upsert(upserts, { onConflict: "instagram_account_id,post_id" });
+        if (postErr) return { ok: false, error: postErr.message };
+      }
+
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Network error" };
+    }
+  };
+
+  const onConnectMeta = async () => {
+    const igUserId = metaForm.ig_user_id.trim();
+    const accessToken = metaForm.access_token.trim();
+    if (!igUserId || !accessToken) {
+      toast.error("Both IG User ID and access token are required.");
+      return;
+    }
+    setMetaSyncing(true);
+    const result = await runMetaSync(igUserId, accessToken);
+    setMetaSyncing(false);
+    if (!result.ok) {
+      toast.error(`Meta connect failed: ${result.error}`);
+      return;
+    }
+    toast.success("Connected to Meta — profile and recent posts synced");
+    setMetaDialogOpen(false);
+    setMetaForm({ ig_user_id: "", access_token: "" });
+    onRefresh();
+  };
+
+  const onRefreshFromMeta = async () => {
+    if (!account.meta_access_token || !account.meta_ig_user_id) return;
+    setMetaSyncing(true);
+    const result = await runMetaSync(account.meta_ig_user_id, account.meta_access_token);
+    setMetaSyncing(false);
+    if (!result.ok) {
+      toast.error(`Meta sync failed: ${result.error}`);
+      return;
+    }
+    toast.success("Synced from Meta");
+    onRefresh();
+  };
+
+  const onDisconnectMeta = async () => {
+    const { error } = await supabase
+      .from("instagram_accounts")
+      .update({ meta_access_token: null, meta_ig_user_id: null, meta_connected_at: null })
+      .eq("id", account.id);
+    if (error) return toast.error(error.message);
+    toast.success("Disconnected from Meta");
+    onRefresh();
+  };
+
+  const stats = useMemo(() => {
+    if (accountPosts.length === 0) return null;
+    const totalLikes = accountPosts.reduce((s, p) => s + p.likes_count, 0);
+    const totalComments = accountPosts.reduce((s, p) => s + p.comments_count, 0);
+    const totalSaves = accountPosts.reduce((s, p) => s + p.saves_count, 0);
+    const totalShares = accountPosts.reduce((s, p) => s + p.shares_count, 0);
+    const totalReach = accountPosts.reduce((s, p) => s + p.reach_count, 0);
+    const avgLikes = totalLikes / accountPosts.length;
+    const avgComments = totalComments / accountPosts.length;
+    const avgReach = totalReach / accountPosts.length;
+    const engagement =
+      totalReach > 0 ? ((totalLikes + totalComments) / totalReach) * 100 : null;
+    const last30d = accountPosts.filter(
+      (p) => Date.now() - new Date(p.posted_at).getTime() < 30 * 24 * 3600_000
+    ).length;
+    return { totalLikes, totalComments, totalSaves, totalShares, totalReach, avgLikes, avgComments, avgReach, engagement, last30d };
+  }, [accountPosts]);
+
+  const byMediaType = useMemo(() => {
+    const groups: Record<IGMediaType, { count: number; likes: number; comments: number; reach: number }> = {
+      image: { count: 0, likes: 0, comments: 0, reach: 0 },
+      video: { count: 0, likes: 0, comments: 0, reach: 0 },
+      reel: { count: 0, likes: 0, comments: 0, reach: 0 },
+      carousel: { count: 0, likes: 0, comments: 0, reach: 0 },
+      story: { count: 0, likes: 0, comments: 0, reach: 0 },
+    };
+    for (const p of accountPosts) {
+      const g = groups[p.media_type];
+      g.count++;
+      g.likes += p.likes_count;
+      g.comments += p.comments_count;
+      g.reach += p.reach_count;
+    }
+    return groups;
+  }, [accountPosts]);
+
+  const recentPosts = useMemo(
+    () => [...accountPosts]
+      .sort((a, b) => new Date(b.posted_at).getTime() - new Date(a.posted_at).getTime())
+      .slice(0, 5),
+    [accountPosts]
+  );
+
+  const revenueStat = useMemo(
+    () => account?.infloww_campaign_code != null
+      ? inflowwStats.find((s) => s.campaign_code === account.infloww_campaign_code) ?? null
+      : null,
+    [account, inflowwStats]
+  );
+
+  // Posting cadence: posts per week, last 12 weeks
+  const cadenceData = useMemo(() => {
+    const weeks: { label: string; posts: number; avgLikes: number; weekStart: number }[] = [];
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    // Anchor to start of current week (Sunday)
+    const dow = now.getDay();
+    const thisWeekStart = new Date(now);
+    thisWeekStart.setDate(now.getDate() - dow);
+    for (let i = 11; i >= 0; i--) {
+      const start = new Date(thisWeekStart);
+      start.setDate(thisWeekStart.getDate() - i * 7);
+      const end = new Date(start);
+      end.setDate(end.getDate() + 7);
+      const weekPosts = accountPosts.filter((p) => {
+        const t = new Date(p.posted_at).getTime();
+        return t >= start.getTime() && t < end.getTime();
+      });
+      const totalLikes = weekPosts.reduce((s, p) => s + p.likes_count, 0);
+      weeks.push({
+        label: format(start, "MMM d"),
+        posts: weekPosts.length,
+        avgLikes: weekPosts.length > 0 ? Math.round(totalLikes / weekPosts.length) : 0,
+        weekStart: start.getTime(),
+      });
+    }
+    return weeks;
+  }, [accountPosts]);
+
+  // Avg engagement by day of week
+  const dayOfWeekData = useMemo(() => {
+    const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const buckets = days.map((d) => ({ day: d, totalLikes: 0, totalComments: 0, count: 0 }));
+    for (const p of accountPosts) {
+      const dow = new Date(p.posted_at).getDay();
+      buckets[dow].totalLikes += p.likes_count;
+      buckets[dow].totalComments += p.comments_count;
+      buckets[dow].count++;
+    }
+    return buckets.map((b) => ({
+      day: b.day,
+      avgEngagement: b.count > 0 ? Math.round((b.totalLikes + b.totalComments) / b.count) : 0,
+      posts: b.count,
+    }));
+  }, [accountPosts]);
+
+  // Avg engagement by media type (chart-friendly)
+  const mediaTypeChart = useMemo(() => {
+    return (Object.entries(byMediaType) as [IGMediaType, { count: number; likes: number; comments: number; reach: number }][])
+      .filter(([, g]) => g.count > 0)
+      .map(([type, g]) => ({
+        type: type === "carousel" ? "Carousel" : type[0].toUpperCase() + type.slice(1),
+        avgLikes: Math.round(g.likes / g.count),
+        avgComments: Math.round(g.comments / g.count),
+        count: g.count,
+      }))
+      .sort((a, b) => b.avgLikes - a.avgLikes);
+  }, [byMediaType]);
+
+  // Top 10 posts by engagement
+  const topPosts = useMemo(() => {
+    return [...accountPosts]
+      .sort(
+        (a, b) =>
+          b.likes_count + b.comments_count + b.saves_count + b.shares_count -
+          (a.likes_count + a.comments_count + a.saves_count + a.shares_count)
+      )
+      .slice(0, 10);
+  }, [accountPosts]);
+
+  // Auto-generated insights
+  const insights = useMemo(() => {
+    const out: string[] = [];
+    if (mediaTypeChart.length >= 2) {
+      const best = mediaTypeChart[0];
+      const worst = mediaTypeChart[mediaTypeChart.length - 1];
+      if (best.avgLikes > 0 && worst.avgLikes > 0 && best.avgLikes >= worst.avgLikes * 1.5) {
+        const ratio = (best.avgLikes / worst.avgLikes).toFixed(1);
+        out.push(`${best.type}s get ${ratio}× more likes on average than ${worst.type}s — lean into ${best.type}s.`);
+      }
+    }
+    const dowSorted = [...dayOfWeekData].filter((d) => d.posts > 0).sort((a, b) => b.avgEngagement - a.avgEngagement);
+    if (dowSorted.length >= 2) {
+      const best = dowSorted[0];
+      const overallAvg = dowSorted.reduce((s, d) => s + d.avgEngagement, 0) / dowSorted.length;
+      if (best.avgEngagement > overallAvg * 1.25) {
+        const pct = Math.round(((best.avgEngagement - overallAvg) / overallAvg) * 100);
+        out.push(`Posts on ${best.day} perform ${pct}% above your average — schedule peak content for ${best.day}s.`);
+      }
+    }
+    const recent4 = cadenceData.slice(-4).reduce((s, w) => s + w.posts, 0);
+    const previous8 = cadenceData.slice(0, 8).reduce((s, w) => s + w.posts, 0);
+    const recentRate = recent4 / 4;
+    const previousRate = previous8 / 8;
+    if (previousRate > 0 && recentRate < previousRate * 0.7) {
+      out.push(`Posting frequency dropped to ${recentRate.toFixed(1)}/week (was ${previousRate.toFixed(1)}/week) — risk of audience drift.`);
+    } else if (recentRate >= 4) {
+      out.push(`Strong cadence: ${recentRate.toFixed(1)} posts/week over the last 4 weeks. Keep it up.`);
+    } else if (recentRate < 1 && accountPosts.length > 0) {
+      out.push(`Only ${recentRate.toFixed(1)} posts/week recently — IG penalizes inactive accounts. Aim for 3–5/week.`);
+    }
+    if (stats?.engagement != null) {
+      if (stats.engagement >= 5) {
+        out.push(`Engagement rate of ${stats.engagement.toFixed(1)}% is excellent (IG average ~1–3%).`);
+      } else if (stats.engagement < 1) {
+        out.push(`Engagement rate of ${stats.engagement.toFixed(2)}% is below the ~1–3% IG benchmark — try stronger hooks or more reels.`);
+      }
+    }
+    return out;
+  }, [mediaTypeChart, dayOfWeekData, cadenceData, accountPosts.length, stats]);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <Button variant="ghost" size="sm" onClick={onBack} className="-ml-2">
+          <ArrowLeft className="h-4 w-4 mr-1.5" />
+          Back to accounts
+        </Button>
+        <a
+          href={`https://instagram.com/${account.username}`}
+          target="_blank"
+          rel="noreferrer"
+          className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1"
+        >
+          Open on Instagram
+          <ExternalLink className="h-3.5 w-3.5" />
+        </a>
+      </div>
+
+      <div className="flex items-center gap-3 pb-4 border-b border-border flex-wrap">
+        <SiInstagram className="h-7 w-7" style={{ color: IG_PINK }} />
+        <h2 className="text-2xl font-bold tracking-tight">@{account.username}</h2>
+        <span className={`text-xs px-2 py-0.5 rounded border ${accountStatusStyles[account.status]}`}>
+          {statusLabels[account.status]}
+        </span>
+
+        <div className="ml-auto flex items-center gap-2">
+          {isConnected ? (
+            <>
+              <span className="text-xs text-muted-foreground inline-flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-success" />
+                Connected to Meta
+                {account.meta_connected_at && (
+                  <span className="text-muted-foreground/60">
+                    · {formatDistanceToNow(new Date(account.meta_connected_at), { addSuffix: true })}
+                  </span>
+                )}
+              </span>
+              <Button variant="outline" size="sm" onClick={onRefreshFromMeta} disabled={metaSyncing}>
+                <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${metaSyncing ? "animate-spin" : ""}`} />
+                {metaSyncing ? "Syncing…" : "Refresh from Meta"}
+              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive">
+                    <Unlink className="h-3.5 w-3.5" />
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Disconnect from Meta?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      We'll clear the saved access token and IG User ID. Synced posts and follower counts stay; auto-refresh stops working.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={onDisconnectMeta}>Disconnect</AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </>
+          ) : (
+            <Button size="sm" onClick={() => setMetaDialogOpen(true)}>
+              <SiMeta className="h-3.5 w-3.5 mr-1.5" />
+              Connect with Meta
+            </Button>
+          )}
+        </div>
+      </div>
+
+      <Dialog open={metaDialogOpen} onOpenChange={setMetaDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <SiMeta className="h-5 w-5" />
+              Connect @{account.username} to Meta
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2 text-sm">
+            <div className="rounded-lg border border-border bg-secondary/40 p-3 text-xs text-muted-foreground space-y-2">
+              <div>This pulls follower count, profile data, and the last 25 posts (likes, comments, captions, type) directly from Meta's Instagram Graph API.</div>
+              <div className="font-medium text-foreground">Requirements:</div>
+              <ul className="list-disc pl-4 space-y-0.5">
+                <li>The IG account must be a <strong>Business or Creator</strong> account.</li>
+                <li>It must be linked to a Facebook page you control.</li>
+                <li>You need a <strong>long-lived access token</strong> with <code className="bg-card px-1 rounded">instagram_basic</code> + <code className="bg-card px-1 rounded">pages_show_list</code> + <code className="bg-card px-1 rounded">instagram_manage_insights</code> scopes.</li>
+              </ul>
+              <div className="font-medium text-foreground pt-1">Where to get them:</div>
+              <ul className="list-disc pl-4 space-y-0.5">
+                <li>Open <a className="text-primary hover:underline" href="https://developers.facebook.com/tools/explorer" target="_blank" rel="noreferrer">Graph API Explorer</a>, pick your app, generate a User Access Token with the scopes above.</li>
+                <li>Then call <code className="bg-card px-1 rounded">/me/accounts</code> to get your page → call <code className="bg-card px-1 rounded">/&lt;page_id&gt;?fields=instagram_business_account</code> to get the IG User ID.</li>
+                <li>Exchange short-lived for long-lived token (~60 days) via <code className="bg-card px-1 rounded">/oauth/access_token</code>.</li>
+              </ul>
+            </div>
+            <div className="space-y-1.5">
+              <Label>IG User ID</Label>
+              <Input
+                placeholder="17841405822304914"
+                value={metaForm.ig_user_id}
+                onChange={(e) => setMetaForm({ ...metaForm, ig_user_id: e.target.value })}
+              />
+              <div className="text-xs text-muted-foreground">
+                Numeric Instagram Business account ID — not your username.
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Long-lived access token</Label>
+              <Input
+                type="password"
+                placeholder="EAAB..."
+                value={metaForm.access_token}
+                onChange={(e) => setMetaForm({ ...metaForm, access_token: e.target.value })}
+              />
+              <div className="text-xs text-muted-foreground">
+                Stored in your Supabase DB. Treat this like a password — keep it long-lived but rotate if it leaks.
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setMetaDialogOpen(false)}>Cancel</Button>
+            <Button onClick={onConnectMeta} disabled={metaSyncing}>
+              {metaSyncing ? "Connecting…" : "Connect & sync"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Headline stats */}
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <StatCard label="Followers" value={account.followers_count.toLocaleString()} sub="current count" />
+            <StatCard label="Following" value={account.following_count.toLocaleString()} sub="" />
+            <StatCard label="Posts on IG" value={account.posts_count.toLocaleString()} sub="reported count" />
+            <StatCard
+              label="Tracked posts"
+              value={accountPosts.length}
+              sub={stats ? `${stats.last30d} in last 30d` : "none yet"}
+            />
+          </div>
+
+          {accountPosts.length === 0 && (
+            <div className="rounded-xl border border-dashed border-border bg-card/40 p-4 text-center text-sm text-muted-foreground">
+              No posts tracked yet — charts and insights below will populate as soon as you add posts on the <strong>Posts</strong> tab.
+            </div>
+          )}
+
+          {/* Performance */}
+          <div>
+            <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Performance</div>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <StatCard label="Avg likes" value={stats ? Math.round(stats.avgLikes).toLocaleString() : "—"} sub={stats ? `${stats.totalLikes.toLocaleString()} total` : "no posts yet"} />
+              <StatCard label="Avg comments" value={stats ? Math.round(stats.avgComments).toLocaleString() : "—"} sub={stats ? `${stats.totalComments.toLocaleString()} total` : ""} />
+              <StatCard label="Avg reach" value={stats ? Math.round(stats.avgReach).toLocaleString() : "—"} sub={stats ? `${stats.totalReach.toLocaleString()} total` : ""} />
+              <StatCard
+                label="Engagement"
+                value={stats?.engagement != null ? `${stats.engagement.toFixed(2)}%` : "—"}
+                sub="(likes+comments)/reach"
+              />
+            </div>
+          </div>
+
+              {/* Insights */}
+              {insights.length > 0 && (
+                <div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
+                  <div className="text-[10px] font-semibold uppercase tracking-wider mb-2 text-primary">Insights</div>
+                  <ul className="space-y-1.5 text-sm">
+                    {insights.map((line, i) => (
+                      <li key={i} className="flex items-start gap-2">
+                        <span className="text-primary mt-1.5 h-1 w-1 rounded-full bg-primary shrink-0" />
+                        <span>{line}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Charts grid */}
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <ChartCard title="Posting cadence" sub="posts per week, last 12 weeks">
+                  <ResponsiveContainer width="100%" height={200}>
+                    <BarChart data={cadenceData} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                      <XAxis dataKey="label" stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={false} />
+                      <YAxis stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={false} allowDecimals={false} />
+                      <Tooltip
+                        contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
+                        labelStyle={{ color: "hsl(var(--foreground))" }}
+                      />
+                      <Bar dataKey="posts" fill={IG_PINK} radius={[3, 3, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </ChartCard>
+
+                <ChartCard title="Avg likes per week" sub="momentum check, last 12 weeks">
+                  <ResponsiveContainer width="100%" height={200}>
+                    <BarChart data={cadenceData} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                      <XAxis dataKey="label" stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={false} />
+                      <YAxis stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={false} />
+                      <Tooltip
+                        contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
+                        labelStyle={{ color: "hsl(var(--foreground))" }}
+                        formatter={(v: number) => [v.toLocaleString(), "Avg likes"]}
+                      />
+                      <Bar dataKey="avgLikes" fill="#F77737" radius={[3, 3, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </ChartCard>
+
+                <ChartCard title="Best day to post" sub="avg engagement (likes + comments) by day of week">
+                  <ResponsiveContainer width="100%" height={200}>
+                    <BarChart data={dayOfWeekData} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                      <XAxis dataKey="day" stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={false} />
+                      <YAxis stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={false} />
+                      <Tooltip
+                        contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
+                        labelStyle={{ color: "hsl(var(--foreground))" }}
+                        formatter={(v: number) => [v.toLocaleString(), "Avg engagement"]}
+                      />
+                      <Bar dataKey="avgEngagement" radius={[3, 3, 0, 0]}>
+                        {dayOfWeekData.map((d, i) => {
+                          const max = Math.max(...dayOfWeekData.map((x) => x.avgEngagement));
+                          const isMax = d.avgEngagement > 0 && d.avgEngagement === max;
+                          return <Cell key={i} fill={isMax ? IG_PINK : "#F7773780"} />;
+                        })}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </ChartCard>
+
+                <ChartCard title="Performance by media type" sub="avg likes per post (best at top)">
+                  {mediaTypeChart.length === 0 ? (
+                    <div className="h-[200px] flex items-center justify-center text-xs text-muted-foreground">
+                      No posts yet
+                    </div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={200}>
+                      <BarChart data={mediaTypeChart} layout="vertical" margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
+                        <XAxis type="number" stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={false} />
+                        <YAxis type="category" dataKey="type" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} width={70} />
+                        <Tooltip
+                          contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
+                          labelStyle={{ color: "hsl(var(--foreground))" }}
+                          formatter={(v: number, name: string) => [v.toLocaleString(), name === "avgLikes" ? "Avg likes" : "Avg comments"]}
+                        />
+                        <Bar dataKey="avgLikes" fill={IG_PINK} radius={[0, 3, 3, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
+                </ChartCard>
+              </div>
+
+              {/* Top performing posts */}
+              {topPosts.length > 0 && (
+                <div>
+                  <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                    Top performing posts <span className="text-muted-foreground/60 normal-case font-normal">(by total engagement)</span>
+                  </div>
+                  <div className="overflow-hidden rounded-xl border border-border">
+                    <table className="w-full text-sm">
+                      <thead className="bg-secondary/40 text-xs uppercase tracking-wide text-muted-foreground">
+                        <tr>
+                          <th className="text-left font-medium px-3 py-2">#</th>
+                          <th className="text-left font-medium px-3 py-2">Caption</th>
+                          <th className="text-left font-medium px-3 py-2">Type</th>
+                          <th className="text-right font-medium px-3 py-2">Likes</th>
+                          <th className="text-right font-medium px-3 py-2">Comments</th>
+                          <th className="text-right font-medium px-3 py-2">Saves</th>
+                          <th className="text-right font-medium px-3 py-2">Shares</th>
+                          <th className="text-right font-medium px-3 py-2">Reach</th>
+                          <th className="text-right font-medium px-3 py-2">Eng %</th>
+                          <th className="px-3 py-2" />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {topPosts.map((p, i) => {
+                          const eng =
+                            p.reach_count > 0
+                              ? ((p.likes_count + p.comments_count + p.saves_count + p.shares_count) / p.reach_count) * 100
+                              : null;
+                          return (
+                            <tr key={p.id} className="border-t border-border bg-card hover:bg-secondary/20 transition-colors">
+                              <td className="px-3 py-2 text-muted-foreground font-mono text-xs">{i + 1}</td>
+                              <td className="px-3 py-2 max-w-[260px]">
+                                <div className="truncate">{p.caption ?? <span className="italic text-muted-foreground">(no caption)</span>}</div>
+                                <div className="text-xs text-muted-foreground">{format(new Date(p.posted_at), "MMM d, yyyy")}</div>
+                              </td>
+                              <td className="px-3 py-2">
+                                <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded border border-border bg-secondary/40 text-muted-foreground capitalize">
+                                  {mediaTypeIcon[p.media_type]}
+                                  {p.media_type}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2 text-right font-medium">{p.likes_count.toLocaleString()}</td>
+                              <td className="px-3 py-2 text-right text-muted-foreground">{p.comments_count.toLocaleString()}</td>
+                              <td className="px-3 py-2 text-right text-muted-foreground">{p.saves_count.toLocaleString()}</td>
+                              <td className="px-3 py-2 text-right text-muted-foreground">{p.shares_count.toLocaleString()}</td>
+                              <td className="px-3 py-2 text-right text-muted-foreground">{p.reach_count.toLocaleString()}</td>
+                              <td className="px-3 py-2 text-right text-muted-foreground">
+                                {eng != null ? `${eng.toFixed(1)}%` : "—"}
+                              </td>
+                              <td className="px-3 py-2 text-right">
+                                {p.url && (
+                                  <a href={p.url} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-primary">
+                                    <ExternalLink className="h-3.5 w-3.5" />
+                                  </a>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* By media type */}
+              {mediaTypeChart.length > 0 && (
+                <div>
+                  <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">By media type</div>
+                  <div className="overflow-hidden rounded-xl border border-border">
+                    <table className="w-full text-sm">
+                      <thead className="bg-secondary/40 text-xs uppercase tracking-wide text-muted-foreground">
+                        <tr>
+                          <th className="text-left font-medium px-3 py-2">Type</th>
+                          <th className="text-right font-medium px-3 py-2">Posts</th>
+                          <th className="text-right font-medium px-3 py-2">Avg likes</th>
+                          <th className="text-right font-medium px-3 py-2">Avg comments</th>
+                          <th className="text-right font-medium px-3 py-2">Avg reach</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(Object.keys(byMediaType) as IGMediaType[])
+                          .filter((mt) => byMediaType[mt].count > 0)
+                          .map((mt) => {
+                            const g = byMediaType[mt];
+                            const safe = (n: number) => Math.round(n / g.count).toLocaleString();
+                            return (
+                              <tr key={mt} className="border-t border-border bg-card">
+                                <td className="px-3 py-2 capitalize">
+                                  <span className="inline-flex items-center gap-1.5">
+                                    {mediaTypeIcon[mt]}
+                                    {mt}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-2 text-right text-muted-foreground">{g.count}</td>
+                                <td className="px-3 py-2 text-right">{safe(g.likes)}</td>
+                                <td className="px-3 py-2 text-right text-muted-foreground">{safe(g.comments)}</td>
+                                <td className="px-3 py-2 text-right text-muted-foreground">{safe(g.reach)}</td>
+                              </tr>
+                            );
+                          })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Recent posts */}
+              {recentPosts.length > 0 && (
+                <div>
+                  <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Latest activity <span className="text-muted-foreground/60 normal-case font-normal">(5 most recent posts)</span></div>
+                  <div className="space-y-1.5">
+                    {recentPosts.map((p) => (
+                      <div key={p.id} className="flex items-center justify-between rounded-lg border border-border bg-card px-3 py-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm truncate">{p.caption ?? <span className="italic text-muted-foreground">(no caption)</span>}</div>
+                          <div className="text-xs text-muted-foreground capitalize">
+                            {p.media_type} · {format(new Date(p.posted_at), "MMM d, yyyy")}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0 text-xs ml-3">
+                          <span className="inline-flex items-center gap-1">
+                            <Heart className="h-3 w-3" style={{ color: IG_PINK }} />
+                            {p.likes_count.toLocaleString()}
+                          </span>
+                          <span className="inline-flex items-center gap-1 text-muted-foreground">
+                            <MessageCircle className="h-3 w-3" />
+                            {p.comments_count.toLocaleString()}
+                          </span>
+                          <span className="inline-flex items-center gap-1 text-muted-foreground">
+                            <Eye className="h-3 w-3" />
+                            {p.reach_count.toLocaleString()}
+                          </span>
+                          {p.url && (
+                            <a href={p.url} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-primary">
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+          {/* Revenue */}
+          {account.infloww_campaign_code != null && (
+            <div>
+              <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Infloww revenue</div>
+              <div className="rounded-xl border border-border bg-card p-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <div className="text-xs text-muted-foreground">Campaign code</div>
+                    <div className="font-mono font-semibold">c{account.infloww_campaign_code}</div>
+                    {revenueStat?.campaign_url && (
+                      <a
+                        href={revenueStat.campaign_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1 mt-1"
+                      >
+                        <Link2 className="h-3 w-3" />
+                        {revenueStat.campaign_url.replace(/^https?:\/\//, "")}
+                      </a>
+                    )}
+                  </div>
+                  {revenueStat ? (
+                    <div className="grid grid-cols-3 gap-4 text-right">
+                      <div>
+                        <div className="text-xs text-muted-foreground">Clicks</div>
+                        <div className="font-semibold">{revenueStat.clicks_count.toLocaleString()}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-muted-foreground">Subs</div>
+                        <div className="font-semibold">{revenueStat.subscribers_count.toLocaleString()}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-muted-foreground">Revenue</div>
+                        <div className="font-semibold text-success">${fmtMoney2(revenueStat.revenue_total)}</div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-xs text-muted-foreground italic">Sync Infloww to load stats</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {account.notes && (
+            <div>
+              <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Notes</div>
+              <div className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground whitespace-pre-wrap">
+                {account.notes}
+              </div>
+            </div>
+          )}
+
+      {account.last_synced_at && (
+        <div className="text-xs text-muted-foreground/60">
+          Last edit/sync: {format(new Date(account.last_synced_at), "MMM d, yyyy 'at' h:mm a")}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Posts Tab ──────────────────────────────────────────────────────────────────
+const emptyPostForm = {
+  instagram_account_id: "",
+  caption: "",
+  media_type: "image" as IGMediaType,
+  posted_at: "",
+  likes_count: "",
+  comments_count: "",
+  saves_count: "",
+  shares_count: "",
+  reach_count: "",
+  url: "",
+  notes: "",
+};
+
+function PostsTab({
+  accounts, posts, onRefresh,
+}: { accounts: IGAccount[]; posts: IGPost[]; onRefresh: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState(emptyPostForm);
+  const [filterAccount, setFilterAccount] = useState<string>("all");
+  const [filterMedia, setFilterMedia] = useState<string>("all");
+
+  const onAddPost = async () => {
+    if (!form.instagram_account_id) return toast.error("Pick an account");
+    const payload = {
+      instagram_account_id: form.instagram_account_id,
+      caption: form.caption.trim() || null,
+      media_type: form.media_type,
+      posted_at: form.posted_at ? new Date(form.posted_at).toISOString() : new Date().toISOString(),
+      likes_count: parseInt(form.likes_count) || 0,
+      comments_count: parseInt(form.comments_count) || 0,
+      saves_count: parseInt(form.saves_count) || 0,
+      shares_count: parseInt(form.shares_count) || 0,
+      reach_count: parseInt(form.reach_count) || 0,
+      url: form.url.trim() || null,
+      notes: form.notes.trim() || null,
+    };
+    const { error } = await supabase.from("instagram_posts").insert(payload);
+    if (error) return toast.error(error.message);
+    toast.success("Post added");
+    setForm(emptyPostForm);
+    setOpen(false);
+    onRefresh();
+  };
+
+  const onDeletePost = async (id: string) => {
+    const { error } = await supabase.from("instagram_posts").delete().eq("id", id);
+    if (error) return toast.error(error.message);
+    toast.success("Post deleted");
+    onRefresh();
+  };
+
+  const filtered = posts.filter((p) => {
+    if (filterAccount !== "all" && p.instagram_account_id !== filterAccount) return false;
+    if (filterMedia !== "all" && p.media_type !== filterMedia) return false;
+    return true;
+  });
+
+  if (accounts.length === 0) {
+    return (
+      <div className="rounded-xl border border-dashed border-border bg-card/40 p-12 text-center text-sm text-muted-foreground">
+        Add an Instagram account first before tracking posts.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-3">
+          <Select value={filterAccount} onValueChange={setFilterAccount}>
+            <SelectTrigger className="h-8 w-[160px] text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All accounts</SelectItem>
+              {accounts.map((a) => (
+                <SelectItem key={a.id} value={a.id}>@{a.username}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={filterMedia} onValueChange={setFilterMedia}>
+            <SelectTrigger className="h-8 w-[140px] text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All media types</SelectItem>
+              <SelectItem value="image">Image</SelectItem>
+              <SelectItem value="video">Video</SelectItem>
+              <SelectItem value="reel">Reel</SelectItem>
+              <SelectItem value="carousel">Carousel</SelectItem>
+              <SelectItem value="story">Story</SelectItem>
+            </SelectContent>
+          </Select>
+          <span className="text-xs text-muted-foreground">{filtered.length} post{filtered.length !== 1 ? "s" : ""}</span>
+        </div>
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogTrigger asChild>
+            <Button size="sm"><Plus className="h-4 w-4 mr-1.5" />Add post</Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-lg">
+            <DialogHeader><DialogTitle>Track a new Instagram post</DialogTitle></DialogHeader>
+            <div className="space-y-3 py-2">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Account</Label>
+                  <Select value={form.instagram_account_id} onValueChange={(v) => setForm({ ...form, instagram_account_id: v })}>
+                    <SelectTrigger><SelectValue placeholder="Pick" /></SelectTrigger>
+                    <SelectContent>
+                      {accounts.map((a) => (
+                        <SelectItem key={a.id} value={a.id}>@{a.username}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Media type</Label>
+                  <Select value={form.media_type} onValueChange={(v) => setForm({ ...form, media_type: v as IGMediaType })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="image">Image</SelectItem>
+                      <SelectItem value="video">Video</SelectItem>
+                      <SelectItem value="reel">Reel</SelectItem>
+                      <SelectItem value="carousel">Carousel</SelectItem>
+                      <SelectItem value="story">Story</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Caption</Label>
+                <Input value={form.caption} onChange={(e) => setForm({ ...form, caption: e.target.value })} placeholder="Caption text" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Post URL <span className="text-muted-foreground text-xs">(optional)</span></Label>
+                <Input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="https://instagram.com/p/…" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Posted at</Label>
+                  <Input
+                    type="datetime-local"
+                    value={form.posted_at}
+                    onChange={(e) => setForm({ ...form, posted_at: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Reach</Label>
+                  <Input type="number" value={form.reach_count} onChange={(e) => setForm({ ...form, reach_count: e.target.value })} placeholder="0" />
+                </div>
+              </div>
+              <div className="grid grid-cols-4 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Likes</Label>
+                  <Input type="number" value={form.likes_count} onChange={(e) => setForm({ ...form, likes_count: e.target.value })} placeholder="0" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Comments</Label>
+                  <Input type="number" value={form.comments_count} onChange={(e) => setForm({ ...form, comments_count: e.target.value })} placeholder="0" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Saves</Label>
+                  <Input type="number" value={form.saves_count} onChange={(e) => setForm({ ...form, saves_count: e.target.value })} placeholder="0" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Shares</Label>
+                  <Input type="number" value={form.shares_count} onChange={(e) => setForm({ ...form, shares_count: e.target.value })} placeholder="0" />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Notes</Label>
+                <Input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Any context" />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+              <Button onClick={onAddPost}>Add post</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-border bg-card/40 p-12 text-center text-sm text-muted-foreground">
+          No posts tracked yet for this filter.
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-xl border border-border">
+          <table className="w-full text-sm">
+            <thead className="bg-secondary/40 text-xs uppercase tracking-wide text-muted-foreground">
+              <tr>
+                <th className="text-left font-medium px-4 py-3">Caption</th>
+                <th className="text-left font-medium px-4 py-3">Account</th>
+                <th className="text-left font-medium px-4 py-3">Type</th>
+                <th className="text-left font-medium px-4 py-3">Posted</th>
+                <th className="text-right font-medium px-4 py-3">Likes</th>
+                <th className="text-right font-medium px-4 py-3">Comments</th>
+                <th className="text-right font-medium px-4 py-3">Reach</th>
+                <th className="px-4 py-3" />
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((p) => {
+                const acct = accounts.find((a) => a.id === p.instagram_account_id);
+                return (
+                  <tr key={p.id} className="border-t border-border bg-card hover:bg-secondary/20 transition-colors">
+                    <td className="px-4 py-3 max-w-[280px]">
+                      <div className="font-medium truncate">{p.caption ?? <span className="text-muted-foreground italic">(no caption)</span>}</div>
+                      {p.notes && <div className="text-xs text-muted-foreground truncate">{p.notes}</div>}
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">{acct ? `@${acct.username}` : "—"}</td>
+                    <td className="px-4 py-3">
+                      <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded border border-border bg-secondary/40 text-muted-foreground capitalize">
+                        {mediaTypeIcon[p.media_type]}
+                        {p.media_type}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">
+                      {format(new Date(p.posted_at), "MMM d, yyyy")}
+                    </td>
+                    <td className="px-4 py-3 text-right font-medium">
+                      <span className="inline-flex items-center gap-1 justify-end">
+                        <Heart className="h-3 w-3" style={{ color: IG_PINK }} />
+                        {p.likes_count.toLocaleString()}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right text-muted-foreground">
+                      <span className="inline-flex items-center gap-1 justify-end">
+                        <MessageCircle className="h-3 w-3" />
+                        {p.comments_count.toLocaleString()}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right text-muted-foreground">
+                      <span className="inline-flex items-center gap-1 justify-end">
+                        <Eye className="h-3 w-3" />
+                        {p.reach_count.toLocaleString()}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        {p.url && (
+                          <a href={p.url} target="_blank" rel="noreferrer" className="rounded p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+                            <ExternalLink className="h-3.5 w-3.5" />
+                          </a>
+                        )}
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <button className="rounded p-1.5 text-muted-foreground hover:text-destructive hover:bg-secondary transition-colors">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete this post?</AlertDialogTitle>
+                              <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction onClick={() => onDeletePost(p.id)}>Delete</AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Revenue Tab ────────────────────────────────────────────────────────────────
+function RevenueTab({
+  accounts, inflowwStats, syncing, onSyncInfloww, onRefresh,
+}: {
+  accounts: IGAccount[];
+  inflowwStats: InflowwStat[];
+  syncing: boolean;
+  onSyncInfloww: () => void;
+  onRefresh: () => void;
+}) {
+  const assignAccount = async (accountId: string, code: number | null) => {
+    const { error } = await supabase
+      .from("instagram_accounts")
+      .update({ infloww_campaign_code: code })
+      .eq("id", accountId);
+    if (error) return toast.error(error.message);
+    onRefresh();
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-3 p-4 rounded-xl border border-border bg-card">
+        <span className="text-sm font-medium text-muted-foreground">Pull latest Infloww data:</span>
+        <Button variant="outline" size="sm" onClick={onSyncInfloww} disabled={syncing}>
+          <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${syncing ? "animate-spin" : ""}`} />
+          {syncing ? "Syncing…" : "Sync Infloww"}
+        </Button>
+        <span className="text-xs text-muted-foreground ml-auto">
+          {inflowwStats.length} campaign{inflowwStats.length === 1 ? "" : "s"} cached
+        </span>
+      </div>
+
+      <div>
+        <h3 className="text-sm font-semibold mb-3">Assign campaign codes to accounts</h3>
+        {accounts.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border bg-card/40 p-8 text-center text-sm text-muted-foreground">
+            Add an Instagram account first.
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-xl border border-border">
+            <table className="w-full text-sm">
+              <thead className="bg-secondary/40 text-xs uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="text-left font-medium px-4 py-3">Account</th>
+                  <th className="text-left font-medium px-4 py-3">Campaign code</th>
+                  <th className="text-right font-medium px-4 py-3">Clicks</th>
+                  <th className="text-right font-medium px-4 py-3">Subs</th>
+                  <th className="text-right font-medium px-4 py-3">Revenue</th>
+                </tr>
+              </thead>
+              <tbody>
+                {accounts.map((a) => {
+                  const stat = inflowwStats.find((s) => s.campaign_code === a.infloww_campaign_code);
+                  return (
+                    <tr key={a.id} className="border-t border-border bg-card">
+                      <td className="px-4 py-3 font-medium align-top">@{a.username}</td>
+                      <td className="px-4 py-3 align-top">
+                        <div className="flex flex-col gap-1">
+                          <Input
+                            type="number"
+                            className="h-7 text-xs w-24"
+                            placeholder="69"
+                            value={a.infloww_campaign_code ?? ""}
+                            onChange={(e) => {
+                              const v = e.target.value.trim();
+                              assignAccount(a.id, v ? parseInt(v) : null);
+                            }}
+                          />
+                          {stat?.campaign_url ? (
+                            <a
+                              href={stat.campaign_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-[11px] text-muted-foreground hover:text-primary inline-flex items-center gap-1 max-w-[220px] truncate"
+                              title={stat.campaign_url}
+                            >
+                              <ExternalLink className="h-2.5 w-2.5 shrink-0" />
+                              <span className="truncate">{stat.campaign_url.replace(/^https?:\/\//, "")}</span>
+                            </a>
+                          ) : a.infloww_campaign_code != null ? (
+                            <span className="text-[11px] text-muted-foreground/60 italic">no synced URL</span>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-right text-muted-foreground align-top">{stat ? stat.clicks_count.toLocaleString() : "—"}</td>
+                      <td className="px-4 py-3 text-right text-muted-foreground align-top">{stat ? stat.subscribers_count.toLocaleString() : "—"}</td>
+                      <td className="px-4 py-3 text-right font-medium text-success align-top">{stat ? `$${fmtMoney2(stat.revenue_total)}` : "—"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Analytics Tab ──────────────────────────────────────────────────────────────
+function AnalyticsTab({ accounts, posts }: { accounts: IGAccount[]; posts: IGPost[] }) {
+  const stats = useMemo(() => {
+    const total = posts.length;
+    const totalLikes = posts.reduce((s, p) => s + p.likes_count, 0);
+    const totalComments = posts.reduce((s, p) => s + p.comments_count, 0);
+    const totalReach = posts.reduce((s, p) => s + p.reach_count, 0);
+    const avgEngagement = totalReach > 0
+      ? ((totalLikes + totalComments) / totalReach) * 100
+      : null;
+    return { total, totalLikes, totalComments, totalReach, avgEngagement };
+  }, [posts]);
+
+  const byMediaType = useMemo(() => {
+    const groups: Record<IGMediaType, { count: number; likes: number; comments: number; reach: number }> = {
+      image: { count: 0, likes: 0, comments: 0, reach: 0 },
+      video: { count: 0, likes: 0, comments: 0, reach: 0 },
+      reel: { count: 0, likes: 0, comments: 0, reach: 0 },
+      carousel: { count: 0, likes: 0, comments: 0, reach: 0 },
+      story: { count: 0, likes: 0, comments: 0, reach: 0 },
+    };
+    for (const p of posts) {
+      const g = groups[p.media_type];
+      g.count++;
+      g.likes += p.likes_count;
+      g.comments += p.comments_count;
+      g.reach += p.reach_count;
+    }
+    return groups;
+  }, [posts]);
+
+  const topPosts = useMemo(() => {
+    return [...posts]
+      .sort((a, b) => b.likes_count + b.comments_count - (a.likes_count + a.comments_count))
+      .slice(0, 5);
+  }, [posts]);
+
+  const accountLeaderboard = useMemo(() => {
+    return [...accounts]
+      .map((a) => {
+        const accPosts = posts.filter((p) => p.instagram_account_id === a.id);
+        const likes = accPosts.reduce((s, p) => s + p.likes_count, 0);
+        const reach = accPosts.reduce((s, p) => s + p.reach_count, 0);
+        return { account: a, postCount: accPosts.length, likes, reach };
+      })
+      .sort((x, y) => y.likes - x.likes);
+  }, [accounts, posts]);
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <StatCard label="Total posts" value={stats.total} sub="tracked" />
+        <StatCard label="Total likes" value={stats.totalLikes.toLocaleString()} sub="across posts" />
+        <StatCard label="Total reach" value={stats.totalReach.toLocaleString()} sub="impressions" />
+        <StatCard
+          label="Avg engagement"
+          value={stats.avgEngagement != null ? `${stats.avgEngagement.toFixed(2)}%` : "—"}
+          sub="(likes+comments)/reach"
+        />
+      </div>
+
+      <div>
+        <h3 className="text-sm font-semibold mb-3">Performance by media type</h3>
+        <div className="overflow-hidden rounded-xl border border-border">
+          <table className="w-full text-sm">
+            <thead className="bg-secondary/40 text-xs uppercase tracking-wide text-muted-foreground">
+              <tr>
+                <th className="text-left font-medium px-4 py-3">Type</th>
+                <th className="text-right font-medium px-4 py-3">Posts</th>
+                <th className="text-right font-medium px-4 py-3">Avg likes</th>
+                <th className="text-right font-medium px-4 py-3">Avg comments</th>
+                <th className="text-right font-medium px-4 py-3">Avg reach</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(Object.keys(byMediaType) as IGMediaType[]).map((mt) => {
+                const g = byMediaType[mt];
+                const safe = (n: number) => (g.count > 0 ? Math.round(n / g.count).toLocaleString() : "—");
+                return (
+                  <tr key={mt} className="border-t border-border bg-card">
+                    <td className="px-4 py-3 capitalize">
+                      <span className="inline-flex items-center gap-1.5">
+                        {mediaTypeIcon[mt]}
+                        {mt}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right text-muted-foreground">{g.count}</td>
+                    <td className="px-4 py-3 text-right">{safe(g.likes)}</td>
+                    <td className="px-4 py-3 text-right text-muted-foreground">{safe(g.comments)}</td>
+                    <td className="px-4 py-3 text-right text-muted-foreground">{safe(g.reach)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div>
+        <h3 className="text-sm font-semibold mb-3">Account leaderboard</h3>
+        {accountLeaderboard.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border bg-card/40 p-8 text-center text-sm text-muted-foreground">
+            No accounts yet.
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-xl border border-border">
+            <table className="w-full text-sm">
+              <thead className="bg-secondary/40 text-xs uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="text-left font-medium px-4 py-3">Account</th>
+                  <th className="text-right font-medium px-4 py-3">Followers</th>
+                  <th className="text-right font-medium px-4 py-3">Posts tracked</th>
+                  <th className="text-right font-medium px-4 py-3">Total likes</th>
+                  <th className="text-right font-medium px-4 py-3">Total reach</th>
+                </tr>
+              </thead>
+              <tbody>
+                {accountLeaderboard.map(({ account, postCount, likes, reach }) => (
+                  <tr key={account.id} className="border-t border-border bg-card">
+                    <td className="px-4 py-3">
+                      <div className="font-medium">@{account.username}</div>
+                      <div className="text-xs text-muted-foreground capitalize">{account.status}</div>
+                    </td>
+                    <td className="px-4 py-3 text-right">{account.followers_count.toLocaleString()}</td>
+                    <td className="px-4 py-3 text-right text-muted-foreground">{postCount}</td>
+                    <td className="px-4 py-3 text-right">{likes.toLocaleString()}</td>
+                    <td className="px-4 py-3 text-right text-muted-foreground">{reach.toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div>
+        <h3 className="text-sm font-semibold mb-3">Top posts by engagement</h3>
+        {topPosts.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border bg-card/40 p-8 text-center text-sm text-muted-foreground">
+            No posts yet.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {topPosts.map((p) => {
+              const acct = accounts.find((a) => a.id === p.instagram_account_id);
+              return (
+                <div key={p.id} className="flex items-center justify-between rounded-xl border border-border bg-card p-4">
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">{p.caption ?? <span className="italic text-muted-foreground">(no caption)</span>}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      {acct ? `@${acct.username} · ` : ""}
+                      <span className="capitalize">{p.media_type}</span>
+                      {" · "}
+                      {format(new Date(p.posted_at), "MMM d")}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4 shrink-0 text-sm">
+                    <span className="inline-flex items-center gap-1">
+                      <Heart className="h-3 w-3" style={{ color: IG_PINK }} />
+                      {p.likes_count.toLocaleString()}
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-muted-foreground">
+                      <MessageCircle className="h-3 w-3" />
+                      {p.comments_count.toLocaleString()}
+                    </span>
+                    {p.url && (
+                      <a href={p.url} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-primary">
+                        <ExternalLink className="h-4 w-4" />
+                      </a>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

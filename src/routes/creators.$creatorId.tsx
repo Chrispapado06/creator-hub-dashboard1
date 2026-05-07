@@ -57,6 +57,9 @@ import { Toaster } from "@/components/ui/sonner";
 import { format, formatDistanceToNow } from "date-fns";
 import { CreatorAvatarUpload } from "@/components/CreatorAvatarUpload";
 import { isMissingCreatorAvatarColumnError, normalizeCreatorFromDb } from "@/lib/creator-db";
+import { OnboardingChecklist } from "@/components/OnboardingChecklist";
+import { CreatorGoals } from "@/components/CreatorGoals";
+import { logAudit } from "@/lib/audit";
 
 export const Route = createFileRoute("/creators/$creatorId")({
   head: () => ({ meta: [{ title: "Creator — Agency Console" }] }),
@@ -277,58 +280,57 @@ function CreatorDetailPage() {
   const [loading, setLoading] = useState(true);
   const [creatorLoadError, setCreatorLoadError] = useState<string | null>(null);
 
-  const headerSubDots = useMemo(() => {
-    const since7d = Date.now() - 7 * 24 * 3600_000;
-    const stats: Record<string, { sum: number; count: number }> = {};
-    for (const p of posts) {
-      if (new Date(p.posted_at).getTime() < since7d) continue;
-      if (!stats[p.subreddit]) stats[p.subreddit] = { sum: 0, count: 0 };
-      stats[p.subreddit].sum += p.upvotes;
-      stats[p.subreddit].count++;
-    }
-    const subList = Object.entries(stats).map(([name, { sum, count }]) => ({
-      name,
-      avg: sum / count,
-    }));
-    if (subList.length === 0) return [];
-    const creatorAvg = subList.reduce((s, x) => s + x.avg, 0) / subList.length;
-    return subList
-      .sort((a, b) => b.avg - a.avg)
-      .slice(0, 12)
-      .map((d) => ({
-        name: d.name,
-        color:
-          d.avg >= creatorAvg
-            ? ("success" as const)
-            : d.avg >= creatorAvg * 0.5
-              ? ("warning" as const)
-              : ("destructive" as const),
-      }));
-  }, [posts]);
+  // Cross-platform accounts + staff data
+  type CrossAccount = { id: string; label: string; status: string; followers: number };
+  const [igAccounts, setIgAccounts] = useState<CrossAccount[]>([]);
+  const [fbAccounts, setFbAccounts] = useState<CrossAccount[]>([]);
+  const [ttAccounts, setTtAccounts] = useState<CrossAccount[]>([]);
+  type AssignedStaff = { id: string; name: string; role: string; status: string; commission_pct: number };
+  const [assignedStaff, setAssignedStaff] = useState<AssignedStaff[]>([]);
+  type CreatorShift = {
+    id: string;
+    chatter_id: string;
+    chatter_name: string;
+    start_at: string;
+    end_at: string | null;
+    total_revenue: number;
+    target_account_name: string | null;
+    notes: string | null;
+  };
+  const [creatorShifts, setCreatorShifts] = useState<CreatorShift[]>([]);
 
   const headerMtd = useMemo(() => {
+    // Three rollup buckets:
+    //   • Organic = social posts (Reddit, IG, FB, X, TikTok) — organic_revenue_entries
+    //   • Internal = internal tracking links — internal_revenue_entries
+    //   • Ads = Meta ads (ad_campaigns) + OnlyFinder paid traffic (revenue_entries from Infloww sync)
     const mtdStart = new Date();
     mtdStart.setDate(1);
     mtdStart.setHours(0, 0, 0, 0);
     const mtdStartStr = mtdStart.toISOString().slice(0, 10);
-    let mtdReddit = 0;
     let mtdOrganic = 0;
     let mtdInternal = 0;
-    let mtdAdsNet = 0;
-    for (const e of revenueEntries) {
-      if (e.entry_date >= mtdStartStr) mtdReddit += e.amount;
-    }
+    let mtdAdsRevenue = 0;
+    let mtdAdsSpend = 0;
     for (const e of organicEntries) {
       if (e.entry_date >= mtdStartStr) mtdOrganic += e.amount;
     }
     for (const e of internalEntries) {
       if (e.entry_date >= mtdStartStr) mtdInternal += e.amount;
     }
-    for (const e of adCampaigns) {
-      if (e.start_date >= mtdStartStr) mtdAdsNet += e.revenue_generated - e.amount_spent;
+    for (const e of revenueEntries) {
+      // OnlyFinder/Infloww-synced revenue counts as Ads (paid traffic)
+      if (e.entry_date >= mtdStartStr) mtdAdsRevenue += e.amount;
     }
-    const total = mtdReddit + mtdOrganic + mtdInternal + mtdAdsNet;
-    return { mtdReddit, mtdOrganic, mtdInternal, mtdAdsNet, total };
+    for (const e of adCampaigns) {
+      if (e.start_date >= mtdStartStr) {
+        mtdAdsRevenue += e.revenue_generated;
+        mtdAdsSpend += e.amount_spent;
+      }
+    }
+    const mtdAdsNet = mtdAdsRevenue - mtdAdsSpend;
+    const total = mtdOrganic + mtdInternal + mtdAdsNet;
+    return { mtdOrganic, mtdInternal, mtdAdsNet, mtdAdsRevenue, mtdAdsSpend, total };
   }, [revenueEntries, organicEntries, internalEntries, adCampaigns]);
 
   const load = async () => {
@@ -344,6 +346,11 @@ function CreatorDetailPage() {
       { data: int_ },
       { data: ads },
       { data: goals },
+      { data: igAccs },
+      { data: fbAccs },
+      { data: ttAccs },
+      { data: assignmentsRaw },
+      { data: shiftsRaw },
     ] = await Promise.all([
       supabase.from("creators").select("*").eq("id", creatorId).maybeSingle(),
       supabase
@@ -384,6 +391,32 @@ function CreatorDetailPage() {
         .select("*")
         .eq("creator_id", creatorId)
         .order("period_start", { ascending: false }),
+      supabase
+        .from("instagram_accounts")
+        .select("id, username, status, followers_count")
+        .eq("creator_id", creatorId)
+        .order("followers_count", { ascending: false }),
+      supabase
+        .from("facebook_accounts")
+        .select("id, name, status, followers_count")
+        .eq("creator_id", creatorId)
+        .order("followers_count", { ascending: false }),
+      supabase
+        .from("tiktok_accounts")
+        .select("id, username, status, followers_count")
+        .eq("creator_id", creatorId)
+        .order("followers_count", { ascending: false }),
+      supabase
+        .from("chatter_assignments")
+        .select("chatter_id, active, chatters(id, name, role, status, commission_pct)")
+        .eq("creator_id", creatorId)
+        .eq("active", true),
+      supabase
+        .from("shifts")
+        .select("id, chatter_id, start_at, end_at, total_revenue, target_account_name, notes, chatters(name)")
+        .eq("creator_id", creatorId)
+        .order("start_at", { ascending: false })
+        .limit(50),
     ]);
     const { data: c, error: creatorErr } = cr;
     if (creatorErr) {
@@ -421,6 +454,59 @@ function CreatorDetailPage() {
     setInternalEntries((int_ ?? []) as InternalEntry[]);
     setAdCampaigns((ads ?? []) as AdCampaign[]);
     setRevenueGoals((goals ?? []) as RevenueGoal[]);
+
+    // Cross-platform account snapshots
+    setIgAccounts(
+      ((igAccs ?? []) as { id: string; username: string; status: string; followers_count: number }[])
+        .map((a) => ({ id: a.id, label: `@${a.username}`, status: a.status, followers: a.followers_count }))
+    );
+    setFbAccounts(
+      ((fbAccs ?? []) as { id: string; name: string; status: string; followers_count: number }[])
+        .map((a) => ({ id: a.id, label: a.name, status: a.status, followers: a.followers_count }))
+    );
+    setTtAccounts(
+      ((ttAccs ?? []) as { id: string; username: string; status: string; followers_count: number }[])
+        .map((a) => ({ id: a.id, label: `@${a.username}`, status: a.status, followers: a.followers_count }))
+    );
+
+    // Assigned staff (chatter_assignments where creator_id matches, joined to chatters)
+    type AssignmentRow = {
+      chatter_id: string;
+      active: boolean;
+      chatters: { id: string; name: string; role: string; status: string; commission_pct: number } | null;
+    };
+    const assigns = (assignmentsRaw ?? []) as AssignmentRow[];
+    setAssignedStaff(
+      assigns
+        .map((a) => a.chatters)
+        .filter((c): c is NonNullable<typeof c> => c !== null)
+    );
+
+    // Recent shifts for this creator (with chatter name)
+    type ShiftRow = {
+      id: string;
+      chatter_id: string;
+      start_at: string;
+      end_at: string | null;
+      total_revenue: number;
+      target_account_name: string | null;
+      notes: string | null;
+      chatters: { name: string } | null;
+    };
+    const shifts = (shiftsRaw ?? []) as ShiftRow[];
+    setCreatorShifts(
+      shifts.map((s) => ({
+        id: s.id,
+        chatter_id: s.chatter_id,
+        chatter_name: s.chatters?.name ?? "—",
+        start_at: s.start_at,
+        end_at: s.end_at,
+        total_revenue: s.total_revenue,
+        target_account_name: s.target_account_name,
+        notes: s.notes,
+      }))
+    );
+
     const { data: inflowwData } = await supabase
       .from("infloww_tracking_stats")
       .select("*")
@@ -453,6 +539,14 @@ function CreatorDetailPage() {
     }
     if (error) return toast.error(error.message);
     toast.success("Creator updated");
+    const statusChanged = creator?.status !== base.status;
+    void logAudit({
+      action: statusChanged ? "creator_status_changed" : "creator_updated",
+      entity_type: "creator",
+      entity_id: creatorId,
+      entity_name: base.name,
+      details: statusChanged ? `${creator?.status ?? "?"} → ${base.status}` : null,
+    });
     if (missingAvatarFallback && editForm.avatar_url) {
       toast.info("Photos need the creators avatar migration in Supabase (`avatar_url` column + storage).");
     }
@@ -463,6 +557,12 @@ function CreatorDetailPage() {
   const onDeleteCreator = async () => {
     const { error } = await supabase.from("creators").delete().eq("id", creatorId);
     if (error) return toast.error(error.message);
+    void logAudit({
+      action: "creator_deleted",
+      entity_type: "creator",
+      entity_id: creatorId,
+      entity_name: creator?.name,
+    });
     toast.success("Creator deleted");
     navigate({ to: "/" });
   };
@@ -613,12 +713,17 @@ function CreatorDetailPage() {
   }
 
   const totalUpvotes = posts.reduce((s, p) => s + p.upvotes, 0);
-  const totalRedditRev = revenueEntries.reduce((s, e) => s + e.amount, 0);
+  // Three rollup buckets (lifetime):
+  //   • Organic = social posts (Reddit, IG, FB, X, TikTok) → organic_revenue_entries
+  //   • Internal = internal tracking links → internal_revenue_entries
+  //   • Ads = Meta ad campaigns + OnlyFinder paid traffic (revenue_entries from Infloww sync)
   const totalOrganicRev = organicEntries.reduce((s, e) => s + e.amount, 0);
   const totalInternalRev = internalEntries.reduce((s, e) => s + e.amount, 0);
+  const totalOnlyFinderRev = revenueEntries.reduce((s, e) => s + e.amount, 0);
+  const totalMetaAdsRev = adCampaigns.reduce((s, c) => s + c.revenue_generated, 0);
   const totalAdsSpend = adCampaigns.reduce((s, c) => s + c.amount_spent, 0);
-  const totalAdsRevenue = adCampaigns.reduce((s, c) => s + c.revenue_generated, 0);
-  const totalRevenue = totalRedditRev + totalOrganicRev + totalInternalRev + totalAdsRevenue;
+  const totalAdsRevenue = totalOnlyFinderRev + totalMetaAdsRev;
+  const totalRevenue = totalOrganicRev + totalInternalRev + totalAdsRevenue;
 
   return (
     <div className="space-y-8">
@@ -818,7 +923,7 @@ function CreatorDetailPage() {
           </div>
         </div>
 
-        {(headerMtd.total > 0 || headerSubDots.length > 0) && (
+        {headerMtd.total > 0 && (
           <div className="mt-6 space-y-4 border-t border-border pt-6">
             {headerMtd.total > 0 && (
               <div>
@@ -835,18 +940,11 @@ function CreatorDetailPage() {
                   </span>
                 </div>
                 <div className="h-2 rounded-full overflow-hidden flex bg-secondary">
-                  {headerMtd.mtdReddit > 0 && (
-                    <div
-                      className="h-full bg-primary"
-                      style={{ width: `${(headerMtd.mtdReddit / headerMtd.total) * 100}%` }}
-                      title={`Reddit $${headerMtd.mtdReddit.toFixed(0)}`}
-                    />
-                  )}
                   {headerMtd.mtdOrganic > 0 && (
                     <div
                       className="h-full bg-success"
                       style={{ width: `${(headerMtd.mtdOrganic / headerMtd.total) * 100}%` }}
-                      title={`Organic $${headerMtd.mtdOrganic.toFixed(0)}`}
+                      title={`Organic (Reddit / IG / FB / X / TikTok) $${headerMtd.mtdOrganic.toFixed(0)}`}
                     />
                   )}
                   {headerMtd.mtdInternal > 0 && (
@@ -860,31 +958,20 @@ function CreatorDetailPage() {
                     <div
                       className="h-full bg-ads"
                       style={{ width: `${(headerMtd.mtdAdsNet / headerMtd.total) * 100}%` }}
-                      title={`Ads net $${headerMtd.mtdAdsNet.toFixed(0)}`}
+                      title={`Ads net (Meta + OnlyFinder) $${headerMtd.mtdAdsNet.toFixed(0)}`}
                     />
                   )}
                 </div>
-              </div>
-            )}
-            {headerSubDots.length > 0 && (
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[10px] text-muted-foreground uppercase tracking-wide shrink-0">
-                  Subreddit health (7d)
-                </span>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {headerSubDots.map((d, i) => (
-                    <span
-                      key={i}
-                      title={`r/${d.name}`}
-                      className={`h-2.5 w-2.5 rounded-full shrink-0 ${
-                        d.color === "success"
-                          ? "bg-success"
-                          : d.color === "warning"
-                            ? "bg-warning"
-                            : "bg-destructive"
-                      }`}
-                    />
-                  ))}
+                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+                  {headerMtd.mtdOrganic > 0 && (
+                    <span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-success" />Organic ${headerMtd.mtdOrganic.toFixed(0)}</span>
+                  )}
+                  {headerMtd.mtdInternal > 0 && (
+                    <span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-warning" />Internal ${headerMtd.mtdInternal.toFixed(0)}</span>
+                  )}
+                  {headerMtd.mtdAdsNet !== 0 && (
+                    <span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-ads" />Ads net ${headerMtd.mtdAdsNet.toFixed(0)}</span>
+                  )}
                 </div>
               </div>
             )}
@@ -896,10 +983,9 @@ function CreatorDetailPage() {
       <Tabs defaultValue="overview">
         <TabsList className="mb-6 flex-wrap h-auto gap-1 overflow-x-auto max-w-full min-h-10">
           <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="subreddits">Subreddits</TabsTrigger>
-          <TabsTrigger value="content">Content</TabsTrigger>
-          <TabsTrigger value="revenue">Reddit Rev</TabsTrigger>
-          <TabsTrigger value="analytics">Analytics</TabsTrigger>
+          <TabsTrigger value="plan">Plan</TabsTrigger>
+          <TabsTrigger value="platforms">Platforms</TabsTrigger>
+          <TabsTrigger value="staff">Staff</TabsTrigger>
           <TabsTrigger value="organic">Organic</TabsTrigger>
           <TabsTrigger value="internal">Internal</TabsTrigger>
           <TabsTrigger value="ads">Ads</TabsTrigger>
@@ -913,45 +999,45 @@ function CreatorDetailPage() {
             trackingLinks={trackingLinks}
             creatorId={creatorId}
             onRefresh={load}
-            redditRev={totalRedditRev}
             organicRev={totalOrganicRev}
             internalRev={totalInternalRev}
             adsRev={totalAdsRevenue}
             adsSpend={totalAdsSpend}
+            adsBreakdown={{ onlyfinder: totalOnlyFinderRev, meta: totalMetaAdsRev }}
             inflowwStats={inflowwStats}
             syncing={syncing}
             onSyncInfloww={syncInfloww}
           />
         </TabsContent>
 
-        <TabsContent value="subreddits">
-          <SubredditsTab accounts={accounts} subreddits={subreddits} onRefresh={load} />
-        </TabsContent>
-
-        <TabsContent value="content">
-          <ContentTab
+        <TabsContent value="plan">
+          <PlanTab
             creatorId={creatorId}
-            accounts={accounts}
-            subreddits={subreddits}
-            trackingLinks={trackingLinks}
-            contentItems={contentItems}
-            onRefresh={load}
+            creatorName={creator?.name}
+            revenueEntries={revenueEntries}
+            organicEntries={organicEntries}
+            internalEntries={internalEntries}
+            adCampaigns={adCampaigns}
           />
         </TabsContent>
 
-        <TabsContent value="revenue">
-          <RevenueTab
+        <TabsContent value="platforms">
+          <PlatformsTab
             creatorId={creatorId}
-            accounts={accounts}
-            trackingLinks={trackingLinks}
-            entries={revenueEntries}
-            inflowwStats={inflowwStats.filter((s) => s.reddit_account_id !== null)}
-            onRefresh={load}
+            redditAccounts={accounts}
+            igAccounts={igAccounts}
+            fbAccounts={fbAccounts}
+            ttAccounts={ttAccounts}
+            ofUsername={creator?.of_username ?? null}
           />
         </TabsContent>
 
-        <TabsContent value="analytics">
-          <AnalyticsTab accounts={accounts} posts={posts} />
+        <TabsContent value="staff">
+          <StaffTab
+            creatorId={creatorId}
+            assignedStaff={assignedStaff}
+            shifts={creatorShifts}
+          />
         </TabsContent>
 
         <TabsContent value="organic">
@@ -975,6 +1061,60 @@ function CreatorDetailPage() {
   );
 }
 
+// ── Plan Tab (onboarding + goals) ─────────────────────────────────────────────
+
+function PlanTab({
+  creatorId,
+  creatorName,
+  revenueEntries,
+  organicEntries,
+  internalEntries,
+  adCampaigns,
+}: {
+  creatorId: string;
+  creatorName?: string;
+  revenueEntries: RevenueEntry[];
+  organicEntries: OrganicEntry[];
+  internalEntries: InternalEntry[];
+  adCampaigns: AdCampaign[];
+}) {
+  const actuals = useMemo(() => {
+    const monthOf = (iso: string) => iso.slice(0, 7);
+    const bucket = (rows: { entry_date?: string; start_date?: string; amount: number }[], dateKey: "entry_date" | "start_date") => {
+      const m: Record<string, number> = {};
+      for (const r of rows) {
+        const d = r[dateKey];
+        if (!d) continue;
+        const k = monthOf(d);
+        m[k] = (m[k] ?? 0) + (r.amount ?? 0);
+      }
+      return m;
+    };
+    const adsNetByMonth: Record<string, number> = {};
+    for (const c of adCampaigns) {
+      const k = c.start_date.slice(0, 7);
+      adsNetByMonth[k] = (adsNetByMonth[k] ?? 0) + (c.revenue_generated - c.amount_spent);
+    }
+    return {
+      redditByMonth: bucket(revenueEntries, "entry_date"),
+      organicByMonth: bucket(organicEntries, "entry_date"),
+      internalByMonth: bucket(internalEntries, "entry_date"),
+      adsNetByMonth,
+    };
+  }, [revenueEntries, organicEntries, internalEntries, adCampaigns]);
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <section className="rounded-xl border border-border bg-card/30 p-5">
+        <CreatorGoals creatorId={creatorId} creatorName={creatorName} actuals={actuals} />
+      </section>
+      <section className="rounded-xl border border-border bg-card/30 p-5">
+        <OnboardingChecklist creatorId={creatorId} creatorName={creatorName} />
+      </section>
+    </div>
+  );
+}
+
 // ── Overview Tab ──────────────────────────────────────────────────────────────
 
 function OverviewTab({
@@ -984,11 +1124,11 @@ function OverviewTab({
   trackingLinks,
   creatorId,
   onRefresh,
-  redditRev,
   organicRev,
   internalRev,
   adsRev,
   adsSpend,
+  adsBreakdown,
   inflowwStats,
   syncing,
   onSyncInfloww,
@@ -999,11 +1139,11 @@ function OverviewTab({
   trackingLinks: TrackingLink[];
   creatorId: string;
   onRefresh: () => void;
-  redditRev: number;
   organicRev: number;
   internalRev: number;
   adsRev: number;
   adsSpend: number;
+  adsBreakdown: { onlyfinder: number; meta: number };
   inflowwStats: InflowwStat[];
   syncing: boolean;
   onSyncInfloww: () => void;
@@ -1023,32 +1163,6 @@ function OverviewTab({
     if (error) toast.error(error.message);
     else onRefresh();
   };
-
-  // Subreddit scorecard dots for the header strip
-  const subScorecard = useMemo(() => {
-    const since7d = Date.now() - 7 * 24 * 3600_000;
-    const stats: Record<string, { sum: number; count: number }> = {};
-    for (const p of posts) {
-      if (new Date(p.posted_at).getTime() < since7d) continue;
-      if (!stats[p.subreddit]) stats[p.subreddit] = { sum: 0, count: 0 };
-      stats[p.subreddit].sum += p.upvotes;
-      stats[p.subreddit].count++;
-    }
-    const subList = Object.entries(stats).map(([name, { sum, count }]) => ({
-      name,
-      avg: sum / count,
-    }));
-    if (subList.length === 0) return [];
-    const creatorAvg = subList.reduce((s, x) => s + x.avg, 0) / subList.length;
-    return subList
-      .sort((a, b) => b.avg - a.avg)
-      .map((d) => ({
-        name: d.name,
-        avg: Math.round(d.avg),
-        color:
-          d.avg >= creatorAvg ? "success" : d.avg >= creatorAvg * 0.5 ? "warning" : "destructive",
-      }));
-  }, [posts]);
 
   const [subFilter, setSubFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState("all");
@@ -1123,7 +1237,8 @@ function OverviewTab({
     onRefresh();
   };
 
-  const channelTotal = redditRev + organicRev + internalRev + adsRev;
+  const channelTotal = organicRev + internalRev + adsRev;
+  const adsTooltip = `Ads $${adsRev.toFixed(2)} — Meta $${adsBreakdown.meta.toFixed(2)} · OnlyFinder $${adsBreakdown.onlyfinder.toFixed(2)}`;
 
   return (
     <div className="space-y-8">
@@ -1144,18 +1259,11 @@ function OverviewTab({
             </div>
           </div>
           <div className="h-3 rounded-full overflow-hidden flex gap-px bg-secondary">
-            {redditRev > 0 && (
-              <div
-                className="h-full bg-primary"
-                style={{ width: `${(redditRev / channelTotal) * 100}%` }}
-                title={`Reddit $${redditRev.toFixed(2)}`}
-              />
-            )}
             {organicRev > 0 && (
               <div
                 className="h-full bg-success"
                 style={{ width: `${(organicRev / channelTotal) * 100}%` }}
-                title={`Organic $${organicRev.toFixed(2)}`}
+                title={`Organic (Reddit / IG / FB / X / TikTok) $${organicRev.toFixed(2)}`}
               />
             )}
             {internalRev > 0 && (
@@ -1169,32 +1277,36 @@ function OverviewTab({
               <div
                 className="h-full bg-ads"
                 style={{ width: `${(adsRev / channelTotal) * 100}%` }}
-                title={`Ads $${adsRev.toFixed(2)}`}
+                title={adsTooltip}
               />
             )}
           </div>
-          <div className="mt-3 flex flex-wrap gap-4 text-xs">
+          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5 text-xs">
             {[
-              { label: "Reddit", value: redditRev, cls: "bg-primary" },
-              { label: "Organic", value: organicRev, cls: "bg-success" },
-              { label: "Internal", value: internalRev, cls: "bg-warning" },
-              { label: "Ads rev", value: adsRev, cls: "bg-ads" },
+              { label: "Organic", sublabel: "Reddit · IG · FB · X · TikTok", value: organicRev, cls: "bg-success" },
+              { label: "Internal", sublabel: "Tracking links", value: internalRev, cls: "bg-warning" },
+              { label: "Ads", sublabel: `Meta $${adsBreakdown.meta.toFixed(0)} · OnlyFinder $${adsBreakdown.onlyfinder.toFixed(0)}`, value: adsRev, cls: "bg-ads" },
             ].map((ch) => (
-              <div key={ch.label} className="flex items-center gap-1.5">
-                <span className={`h-2.5 w-2.5 rounded-full ${ch.cls}`} />
-                <span className="text-muted-foreground">{ch.label}</span>
-                <span className="font-semibold">
-                  $
-                  {ch.value.toLocaleString("en-US", {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
-                </span>
-                {channelTotal > 0 && (
-                  <span className="text-muted-foreground">
-                    ({Math.round((ch.value / channelTotal) * 100)}%)
-                  </span>
-                )}
+              <div key={ch.label} className="flex items-baseline gap-1.5">
+                <span className={`h-2.5 w-2.5 rounded-full ${ch.cls} translate-y-px`} />
+                <div>
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-muted-foreground">{ch.label}</span>
+                    <span className="font-semibold">
+                      $
+                      {ch.value.toLocaleString("en-US", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </span>
+                    {channelTotal > 0 && (
+                      <span className="text-muted-foreground">
+                        ({Math.round((ch.value / channelTotal) * 100)}%)
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground/70">{ch.sublabel}</div>
+                </div>
               </div>
             ))}
             {adsSpend > 0 && (
@@ -1213,35 +1325,6 @@ function OverviewTab({
         </div>
       )}
 
-      {/* Subreddit scorecard dots */}
-      {subScorecard.length > 0 && (
-        <div className="rounded-xl border border-border bg-card p-4">
-          <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-            Subreddit health — last 7 days
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {subScorecard.map((d, i) => (
-              <span
-                key={i}
-                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-secondary/40 px-2.5 py-1 text-xs"
-                title={`avg ${d.avg} upvotes`}
-              >
-                <span
-                  className={`h-2 w-2 rounded-full shrink-0 ${
-                    d.color === "success"
-                      ? "bg-success"
-                      : d.color === "warning"
-                        ? "bg-warning"
-                        : "bg-destructive"
-                  }`}
-                />
-                r/{d.name}
-                <span className="text-muted-foreground">{d.avg}</span>
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Reddit Accounts */}
       <section>
@@ -3996,5 +4079,371 @@ function InflowwCodeInput({
       <DollarSign className="h-3 w-3" />
       {currentCode != null ? `Campaign c${currentCode}` : "Set campaign code…"}
     </button>
+  );
+}
+
+// ── Platforms Tab ─────────────────────────────────────────────────────────────
+function PlatformsTab({
+  redditAccounts, igAccounts, fbAccounts, ttAccounts, ofUsername,
+}: {
+  creatorId: string;
+  redditAccounts: RedditAccount[];
+  igAccounts: { id: string; label: string; status: string; followers: number }[];
+  fbAccounts: { id: string; label: string; status: string; followers: number }[];
+  ttAccounts: { id: string; label: string; status: string; followers: number }[];
+  ofUsername: string | null;
+}) {
+  type CrossAccount = { id: string; label: string; status: string; followers: number };
+  const platforms: { name: string; route: string; color: string; accounts: CrossAccount[]; openHandle?: (label: string) => string }[] = [
+    {
+      name: "Reddit",
+      route: "/reddit",
+      color: "#FF4500",
+      accounts: redditAccounts.map((a) => ({ id: a.id, label: `u/${a.username}`, status: a.status, followers: 0 })),
+      openHandle: (label) => `https://reddit.com/${label}`,
+    },
+    {
+      name: "Instagram",
+      route: "/instagram",
+      color: "#E1306C",
+      accounts: igAccounts,
+      openHandle: (label) => `https://instagram.com/${label.replace(/^@/, "")}`,
+    },
+    {
+      name: "Facebook",
+      route: "/facebook",
+      color: "#1877F2",
+      accounts: fbAccounts,
+    },
+    {
+      name: "TikTok",
+      route: "/tiktok",
+      color: "#FE2C55",
+      accounts: ttAccounts,
+      openHandle: (label) => `https://tiktok.com/${label}`,
+    },
+  ];
+
+  const totalAccounts = platforms.reduce((s, p) => s + p.accounts.length, 0);
+  const totalFollowers = platforms.reduce((s, p) => s + p.accounts.reduce((x, a) => x + a.followers, 0), 0);
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <div className="rounded-xl border border-border bg-card p-5">
+          <div className="text-xs text-muted-foreground mb-2">Linked accounts</div>
+          <div className="text-2xl font-bold">{totalAccounts}</div>
+          <div className="text-xs text-muted-foreground mt-1">across {platforms.filter((p) => p.accounts.length > 0).length} platforms</div>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-5">
+          <div className="text-xs text-muted-foreground mb-2">Total followers</div>
+          <div className="text-2xl font-bold">{totalFollowers.toLocaleString()}</div>
+          <div className="text-xs text-muted-foreground mt-1">IG + FB + TikTok</div>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-5">
+          <div className="text-xs text-muted-foreground mb-2">OnlyFans handle</div>
+          <div className="text-2xl font-bold truncate">
+            {ofUsername ? <a href={`https://onlyfans.com/${ofUsername}`} target="_blank" rel="noreferrer" className="hover:text-primary">@{ofUsername}</a> : "—"}
+          </div>
+          <div className="text-xs text-muted-foreground mt-1">primary destination</div>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-5">
+          <div className="text-xs text-muted-foreground mb-2">Active accounts</div>
+          <div className="text-2xl font-bold text-success">
+            {platforms.reduce((s, p) => s + p.accounts.filter((a) => a.status === "active").length, 0)}
+          </div>
+          <div className="text-xs text-muted-foreground mt-1">healthy + posting</div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {platforms.map((p) => (
+          <div key={p.name} className="rounded-xl border border-border bg-card p-5">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full" style={{ background: p.color }} />
+                <h3 className="text-sm font-semibold">{p.name}</h3>
+                <span className="text-xs text-muted-foreground">
+                  ({p.accounts.length} {p.accounts.length === 1 ? "account" : "accounts"})
+                </span>
+              </div>
+              <Link to={p.route} className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1">
+                Manage <ExternalLink className="h-3 w-3" />
+              </Link>
+            </div>
+            {p.accounts.length === 0 ? (
+              <div className="text-xs text-muted-foreground italic py-3">
+                No {p.name} accounts linked yet. Add one on the {p.name} page.
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                {p.accounts.map((a) => (
+                  <div key={a.id} className="flex items-center justify-between gap-2 rounded-lg bg-secondary/30 px-3 py-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="font-medium text-sm truncate">{a.label}</span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded border capitalize ${statusPill(a.status)}`}>
+                        {a.status.replace("_", " ")}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {a.followers > 0 && (
+                        <span className="text-xs text-muted-foreground">{a.followers.toLocaleString()} followers</span>
+                      )}
+                      {p.openHandle && (
+                        <a
+                          href={p.openHandle(a.label)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-muted-foreground/60 hover:text-primary"
+                        >
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function statusPill(status: string): string {
+  switch (status) {
+    case "active": return "bg-success/15 text-success border-success/30";
+    case "warm_up": return "bg-primary/15 text-primary border-primary/30";
+    case "shadowbanned": return "bg-warning/15 text-warning border-warning/30";
+    case "banned":
+    case "suspended": return "bg-destructive/15 text-destructive border-destructive/30";
+    case "inactive": return "bg-muted text-muted-foreground border-border";
+    default: return "bg-muted text-muted-foreground border-border";
+  }
+}
+
+// ── Staff Tab ─────────────────────────────────────────────────────────────────
+const roleLabelsCD: Record<string, string> = {
+  chatter: "Chatter",
+  reddit_va: "Reddit VA",
+  instagram_va: "Instagram VA",
+  facebook_va: "Facebook VA",
+  x_va: "X VA",
+  tiktok_va: "TikTok VA",
+  social_media_va: "Social Media VA",
+  content_editor: "Content Editor",
+  recruiter: "Recruiter",
+  manager: "Manager",
+  other: "Staff",
+};
+
+function StaffTab({
+  assignedStaff, shifts,
+}: {
+  creatorId: string;
+  assignedStaff: { id: string; name: string; role: string; status: string; commission_pct: number }[];
+  shifts: {
+    id: string;
+    chatter_id: string;
+    chatter_name: string;
+    start_at: string;
+    end_at: string | null;
+    total_revenue: number;
+    target_account_name: string | null;
+    notes: string | null;
+  }[];
+}) {
+  const now = Date.now();
+  const activeShifts = shifts.filter((s) => !s.end_at && new Date(s.start_at).getTime() <= now);
+  const upcoming = shifts
+    .filter((s) => !s.end_at && new Date(s.start_at).getTime() > now)
+    .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime());
+  const completed = shifts.filter((s) => s.end_at).slice(0, 15);
+
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayShifts = shifts.filter((s) => new Date(s.start_at).getTime() >= todayStart.getTime());
+  const todayHours = todayShifts.reduce((sum, s) => {
+    if (!s.end_at) return sum + (now - new Date(s.start_at).getTime()) / 3600_000;
+    return sum + (new Date(s.end_at).getTime() - new Date(s.start_at).getTime()) / 3600_000;
+  }, 0);
+  const todayRevenue = todayShifts.reduce((s, sh) => s + sh.total_revenue, 0);
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <div className="rounded-xl border border-border bg-card p-5">
+          <div className="text-xs text-muted-foreground mb-2">Assigned staff</div>
+          <div className="text-2xl font-bold">{assignedStaff.length}</div>
+          <div className="text-xs text-muted-foreground mt-1">{assignedStaff.filter((s) => s.status === "active").length} active</div>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-5">
+          <div className="text-xs text-muted-foreground mb-2">Clocked in now</div>
+          <div className={`text-2xl font-bold ${activeShifts.length > 0 ? "text-success" : ""}`}>{activeShifts.length}</div>
+          <div className="text-xs text-muted-foreground mt-1">{activeShifts.length === 1 ? "person working" : "people working"}</div>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-5">
+          <div className="text-xs text-muted-foreground mb-2">Hours today</div>
+          <div className="text-2xl font-bold">{todayHours.toFixed(1)}</div>
+          <div className="text-xs text-muted-foreground mt-1">{todayShifts.length} shifts logged</div>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-5">
+          <div className="text-xs text-muted-foreground mb-2">Revenue today</div>
+          <div className="text-2xl font-bold text-success">
+            ${todayRevenue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </div>
+          <div className="text-xs text-muted-foreground mt-1">from logged shifts</div>
+        </div>
+      </div>
+
+      {activeShifts.length > 0 && (
+        <div>
+          <h3 className="text-sm font-semibold mb-3 inline-flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-success animate-pulse" />
+            Working right now
+          </h3>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            {activeShifts.map((s) => {
+              const elapsedMs = now - new Date(s.start_at).getTime();
+              const h = Math.floor(elapsedMs / 3600_000);
+              const m = Math.floor((elapsedMs % 3600_000) / 60_000);
+              return (
+                <div key={s.id} className="rounded-xl border-2 border-success/40 bg-success/5 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-semibold">{s.chatter_name}</div>
+                      {s.target_account_name && (
+                        <div className="text-xs text-primary mt-0.5">on {s.target_account_name}</div>
+                      )}
+                      <div className="text-[11px] text-muted-foreground mt-0.5">
+                        Started {format(new Date(s.start_at), "h:mm a")}
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-lg font-mono font-bold tabular-nums">{h}:{m.toString().padStart(2, "0")}</div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <div>
+        <h3 className="text-sm font-semibold mb-3">Assigned staff</h3>
+        {assignedStaff.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border bg-card/40 p-6 text-center text-sm text-muted-foreground">
+            No staff assigned to this creator yet. Assign staff on the <Link to="/chatters" className="text-primary hover:underline">Staff page</Link>.
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-xl border border-border">
+            <table className="w-full text-sm">
+              <thead className="bg-secondary/40 text-xs uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="text-left font-medium px-4 py-3">Name</th>
+                  <th className="text-left font-medium px-4 py-3">Role</th>
+                  <th className="text-left font-medium px-4 py-3">Status</th>
+                  <th className="text-right font-medium px-4 py-3">Commission</th>
+                </tr>
+              </thead>
+              <tbody>
+                {assignedStaff.map((s) => (
+                  <tr key={s.id} className="border-t border-border bg-card">
+                    <td className="px-4 py-3 font-medium">{s.name}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{roleLabelsCD[s.role] ?? s.role}</td>
+                    <td className="px-4 py-3">
+                      <span className={`text-xs px-2 py-0.5 rounded border capitalize ${statusPill(s.status)}`}>
+                        {s.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right">{s.commission_pct.toFixed(1)}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div>
+        <h3 className="text-sm font-semibold mb-3">Upcoming schedule</h3>
+        {upcoming.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border bg-card/40 p-6 text-center text-sm text-muted-foreground">
+            No upcoming shifts scheduled. Schedule shifts on the <Link to="/chatters" className="text-primary hover:underline">Staff → Shifts</Link> tab.
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            {upcoming.slice(0, 10).map((s) => {
+              const start = new Date(s.start_at);
+              const end = s.end_at ? new Date(s.end_at) : null;
+              return (
+                <div key={s.id} className="rounded-lg border border-border bg-card p-3 flex items-center justify-between gap-3 flex-wrap">
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold">
+                      {format(start, "EEE, MMM d")} · {format(start, "h:mm a")}
+                      {end && <> – {format(end, "h:mm a")}</>}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {s.chatter_name}
+                      {s.target_account_name && <> · on {s.target_account_name}</>}
+                    </div>
+                  </div>
+                  <div className="text-[11px] text-muted-foreground">
+                    in {formatDistanceToNow(start)}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div>
+        <h3 className="text-sm font-semibold mb-3">Recent shifts</h3>
+        {completed.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border bg-card/40 p-6 text-center text-sm text-muted-foreground">
+            No completed shifts yet for this creator.
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-xl border border-border">
+            <table className="w-full text-sm">
+              <thead className="bg-secondary/40 text-xs uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="text-left font-medium px-4 py-3">Staff</th>
+                  <th className="text-left font-medium px-4 py-3">When</th>
+                  <th className="text-right font-medium px-4 py-3">Duration</th>
+                  <th className="text-right font-medium px-4 py-3">Revenue</th>
+                  <th className="text-left font-medium px-4 py-3">Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {completed.map((s) => {
+                  const hours = s.end_at ? (new Date(s.end_at).getTime() - new Date(s.start_at).getTime()) / 3600_000 : 0;
+                  return (
+                    <tr key={s.id} className="border-t border-border bg-card">
+                      <td className="px-4 py-3 font-medium">{s.chatter_name}</td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
+                        {format(new Date(s.start_at), "MMM d, h:mm a")}
+                      </td>
+                      <td className="px-4 py-3 text-right text-muted-foreground">{hours.toFixed(1)}h</td>
+                      <td className="px-4 py-3 text-right font-medium text-success">
+                        {s.total_revenue > 0
+                          ? `$${s.total_revenue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                          : "—"}
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground max-w-[240px] truncate">
+                        {s.notes ?? <span className="text-muted-foreground/40">—</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
