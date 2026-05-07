@@ -586,6 +586,151 @@ export type Database = {
           },
         ]
       }
+      meta_campaigns_catalog: {
+        Row: {
+          meta_campaign_id: string
+          account_id: string
+          name: string | null
+          status: string | null
+          effective_status: string | null
+          objective: string | null
+          daily_budget_cents: number | null
+          lifetime_budget_cents: number | null
+          start_time: string | null
+          stop_time: string | null
+          created_time: string | null
+          updated_time: string | null
+          spend: number
+          impressions: number
+          reach: number
+          clicks: number
+          ctr: number | null
+          cpc: number | null
+          cpm: number | null
+          frequency: number | null
+          deleted_at: string | null
+          synced_at: string
+        }
+        Insert: Partial<Database["public"]["Tables"]["meta_campaigns_catalog"]["Row"]> & {
+          meta_campaign_id: string
+          account_id: string
+        }
+        Update: Partial<Database["public"]["Tables"]["meta_campaigns_catalog"]["Row"]>
+        Relationships: []
+      }
+      meta_adsets: {
+        Row: {
+          meta_adset_id: string
+          meta_campaign_id: string
+          name: string | null
+          status: string | null
+          effective_status: string | null
+          daily_budget_cents: number | null
+          lifetime_budget_cents: number | null
+          optimization_goal: string | null
+          billing_event: string | null
+          targeting: Record<string, unknown> | null
+          created_time: string | null
+          updated_time: string | null
+          spend: number
+          impressions: number
+          reach: number
+          clicks: number
+          ctr: number | null
+          cpc: number | null
+          cpm: number | null
+          frequency: number | null
+          deleted_at: string | null
+          synced_at: string
+        }
+        Insert: Partial<Database["public"]["Tables"]["meta_adsets"]["Row"]> & {
+          meta_adset_id: string
+          meta_campaign_id: string
+        }
+        Update: Partial<Database["public"]["Tables"]["meta_adsets"]["Row"]>
+        Relationships: []
+      }
+      meta_ads: {
+        Row: {
+          meta_ad_id: string
+          meta_adset_id: string
+          meta_campaign_id: string
+          name: string | null
+          status: string | null
+          effective_status: string | null
+          creative_id: string | null
+          thumbnail_url: string | null
+          image_url: string | null
+          video_id: string | null
+          permalink_url: string | null
+          headline: string | null
+          body: string | null
+          call_to_action_type: string | null
+          created_time: string | null
+          updated_time: string | null
+          spend: number
+          impressions: number
+          reach: number
+          clicks: number
+          ctr: number | null
+          cpc: number | null
+          cpm: number | null
+          frequency: number | null
+          deleted_at: string | null
+          synced_at: string
+        }
+        Insert: Partial<Database["public"]["Tables"]["meta_ads"]["Row"]> & {
+          meta_ad_id: string
+          meta_adset_id: string
+          meta_campaign_id: string
+        }
+        Update: Partial<Database["public"]["Tables"]["meta_ads"]["Row"]>
+        Relationships: []
+      }
+      meta_insights_daily: {
+        Row: {
+          level: "account" | "campaign" | "adset" | "ad"
+          object_id: string
+          date_start: string
+          breakdown_key: string
+          breakdown_value: string
+          spend: number
+          impressions: number
+          reach: number
+          clicks: number
+          ctr: number | null
+          cpc: number | null
+          cpm: number | null
+          frequency: number | null
+          synced_at: string
+        }
+        Insert: Partial<Database["public"]["Tables"]["meta_insights_daily"]["Row"]> & {
+          level: "account" | "campaign" | "adset" | "ad"
+          object_id: string
+          date_start: string
+        }
+        Update: Partial<Database["public"]["Tables"]["meta_insights_daily"]["Row"]>
+        Relationships: []
+      }
+      meta_account_snapshots: {
+        Row: {
+          account_id: string
+          account_name: string | null
+          account_status: number | null
+          currency: string | null
+          timezone_name: string | null
+          spend_30d: number
+          spend_7d: number
+          active_campaigns: number
+          paused_campaigns: number
+          synced_at: string
+        }
+        Insert: Partial<Database["public"]["Tables"]["meta_account_snapshots"]["Row"]> & {
+          account_id: string
+        }
+        Update: Partial<Database["public"]["Tables"]["meta_account_snapshots"]["Row"]>
+        Relationships: []
+      }
       agency_expenses: {
         Row: {
           id: string

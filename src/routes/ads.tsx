@@ -6,6 +6,7 @@ import {
   ExternalLink, RefreshCw, Unlink, Megaphone,
 } from "lucide-react";
 import { SiMeta } from "react-icons/si";
+import { MetaAccountView } from "@/components/MetaAccountView";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -158,12 +159,31 @@ function AdsPage() {
         <Tabs defaultValue="overview">
           <TabsList>
             <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="meta" disabled={!isMetaConnected}>Meta Account</TabsTrigger>
             <TabsTrigger value="campaigns">Campaigns</TabsTrigger>
             <TabsTrigger value="analytics">Analytics</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="mt-6">
             <OverviewTab creators={creators} campaigns={campaigns} inflowwStats={inflowwStats} />
+          </TabsContent>
+          <TabsContent value="meta" className="mt-6">
+            {/* Meta Account view — auto-listed campaigns, daily charts,
+                adset/creative/placement/demographics drill-down, plus
+                pause/resume/budget controls. Disabled tab if Meta isn't
+                connected yet (the connection panel above is the entry point). */}
+            {isMetaConnected && settings?.meta_ads_access_token && settings.meta_ad_account_id ? (
+              <MetaAccountView
+                accessToken={settings.meta_ads_access_token}
+                accountId={settings.meta_ad_account_id}
+              />
+            ) : (
+              <div className="rounded-xl border border-dashed border-border bg-card/40 p-10 text-center">
+                <SiMeta className="h-7 w-7 mx-auto mb-2" style={{ color: "#0866FF", opacity: 0.5 }} />
+                <div className="text-sm font-medium">Connect Meta Ads to use this view</div>
+                <p className="text-xs text-muted-foreground mt-1">Use the connection panel above.</p>
+              </div>
+            )}
           </TabsContent>
           <TabsContent value="campaigns" className="mt-6">
             <CampaignsTab
