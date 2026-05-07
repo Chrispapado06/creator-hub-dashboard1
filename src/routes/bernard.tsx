@@ -719,29 +719,35 @@ function BernardPage() {
   };
 
   return (
-    <div className="flex flex-col gap-4 min-h-[calc(100vh-5rem)]">
+    <div className="flex flex-col h-[calc(100vh-5rem)] -mx-2 sm:-mx-4 -mt-4">
       <Toaster />
 
       {/* ── Header ─────────────────────────────────────────────────────── */}
-      {/* pr-44 leaves room for the absolute-positioned sync + notif badges in __root.tsx */}
-      <div className="flex items-center justify-between gap-4 flex-wrap pr-44">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="h-11 w-11 rounded-xl bg-gradient-to-br from-primary to-primary-glow flex items-center justify-center shadow-[0_4px_20px_-4px_oklch(0.6_0.15_35/0.5)] shrink-0">
-            <Sparkles className="h-5 w-5 text-primary-foreground" />
+      {/* Compact, ChatGPT/Claude-style — small avatar + name + actions on the right.
+          pr-44 leaves room for the absolute-positioned sync + notif badges in __root.tsx */}
+      <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-3 border-b border-border/60 bg-card/40 backdrop-blur-md pr-44">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary to-primary-glow flex items-center justify-center shadow-[0_2px_12px_-3px_oklch(0.6_0.15_35/0.5)] shrink-0">
+            <Sparkles className="h-4 w-4 text-primary-foreground" />
           </div>
           <div className="min-w-0">
-            <h1 className="text-2xl font-bold tracking-tight leading-tight">Bernard</h1>
-            <p className="text-xs text-muted-foreground">
-              OFM strategist · sees your live data · ask anything
-            </p>
+            <h1 className="text-base font-semibold tracking-tight leading-tight">Bernard</h1>
+            <div className="flex items-center gap-2 text-[10px] text-muted-foreground -mt-0.5">
+              {snapshotInfo ? (
+                <>
+                  <span className="inline-block h-1 w-1 rounded-full bg-success" />
+                  <span>{snapshotInfo.range.start} → {snapshotInfo.range.end}</span>
+                </>
+              ) : (
+                <span>OFM strategist · live data</span>
+              )}
+            </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          {activeConvo && (
-            <Button size="sm" variant="ghost" onClick={newChat} className="text-xs">
-              <Plus className="h-3.5 w-3.5 mr-1" /> New chat
-            </Button>
-          )}
+        <div className="flex items-center gap-1.5">
+          <Button size="sm" variant="ghost" onClick={newChat} className="text-xs h-8">
+            <Plus className="h-3.5 w-3.5 mr-1" /> New chat
+          </Button>
           <ConversationsPopover
             conversations={conversations}
             activeId={activeId}
@@ -752,16 +758,9 @@ function BernardPage() {
         </div>
       </div>
 
-      {snapshotInfo && (
-        <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-          <span className="inline-block h-1.5 w-1.5 rounded-full bg-success" />
-          Data window: <span className="font-medium text-foreground">{snapshotInfo.range.start} → {snapshotInfo.range.end}</span>
-        </div>
-      )}
-
       {/* ── API key warning ────────────────────────────────────────────── */}
       {hasKey === false && (
-        <div className="rounded-xl border border-warning/30 bg-warning/10 p-3 flex items-start gap-3">
+        <div className="mx-4 mt-3 rounded-xl border border-warning/30 bg-warning/10 p-3 flex items-start gap-3">
           <AlertCircle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
           <div className="flex-1 text-sm">
             <span className="font-medium">Bernard needs an Anthropic API key.</span>{" "}
@@ -773,93 +772,117 @@ function BernardPage() {
       )}
 
       {/* ── Conversation area ──────────────────────────────────────────── */}
-      <div
-        ref={scrollRef}
-        className="flex-1 overflow-y-auto rounded-xl border border-border bg-card/30 p-5 min-h-[400px]"
-      >
-        {!activeConvo && showPresets && (
-          <PresetGrid disabled={hasKey === false || streaming} onPick={(p) => startConversation(p)} />
-        )}
-        {activeConvo && (
-          <div className="space-y-5 max-w-3xl mx-auto">
-            {activeConvo.messages.map((msg, i) => (
-              <ChatBubble
-                key={i}
-                message={msg}
-                isStreaming={streaming && i === activeConvo.messages.length - 1 && msg.role === "assistant"}
-                toolCallStates={toolCallStates}
-                onApproveTool={onApproveTool}
-                onRejectTool={onRejectTool}
-              />
-            ))}
-          </div>
-        )}
-        {error && !streaming && (
-          <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 flex items-start gap-2 mt-4">
-            <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
-            <div className="text-xs text-destructive break-words">{error}</div>
-          </div>
-        )}
+      {/* Borderless flow column — content breathes against the page bg the
+          way Claude / ChatGPT do, instead of being trapped inside a card. */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto">
+        <div className="max-w-3xl mx-auto w-full px-4 sm:px-6 py-6">
+          {!activeConvo && showPresets && (
+            <PresetGrid disabled={hasKey === false || streaming} onPick={(p) => startConversation(p)} />
+          )}
+          {activeConvo && (
+            <div className="space-y-6">
+              {activeConvo.messages.map((msg, i) => (
+                <ChatBubble
+                  key={i}
+                  message={msg}
+                  isStreaming={streaming && i === activeConvo.messages.length - 1 && msg.role === "assistant"}
+                  toolCallStates={toolCallStates}
+                  onApproveTool={onApproveTool}
+                  onRejectTool={onRejectTool}
+                />
+              ))}
+            </div>
+          )}
+          {error && !streaming && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 flex items-start gap-2 mt-4">
+              <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+              <div className="text-xs text-destructive break-words">{error}</div>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* ── Input ──────────────────────────────────────────────────────── */}
-      <div className="rounded-xl border border-border bg-card p-3 space-y-2">
-        <Textarea
-          placeholder={
-            activeConvo
-              ? "Ask a follow-up… (Cmd/Ctrl+Enter to send)"
-              : "Ask Bernard anything about the business… (Cmd/Ctrl+Enter to send)"
-          }
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-              e.preventDefault();
-              if (activeConvo) sendFollowup();
-              else startConversation(null, input);
-            }
-          }}
-          rows={2}
-          disabled={hasKey === false}
-          className="resize-none border-0 focus-visible:ring-0 px-1 py-0 shadow-none"
-        />
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-3">
-            {!activeConvo ? (
-              <div className="flex items-center gap-2">
-                <Label className="text-[11px] text-muted-foreground">Window</Label>
-                <Select value={String(dataWindow)} onValueChange={(v) => setDataWindow(Number(v) as 7 | 30 | 90)}>
-                  <SelectTrigger className="w-32 h-7 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="7">Last 7 days</SelectItem>
-                    <SelectItem value="30">Last 30 days</SelectItem>
-                    <SelectItem value="90">Last 90 days</SelectItem>
-                  </SelectContent>
-                </Select>
+      {/* ── Composer ───────────────────────────────────────────────────── */}
+      {/* Sticky composer at the bottom of the chat column, soft shadow and
+          rounded-2xl to match Claude/ChatGPT. The textarea has no inner
+          border — the wrapper carries the visuals. */}
+      <div className="border-t border-border/40 bg-gradient-to-b from-background/0 via-background/80 to-background pt-3 pb-4">
+        <div className="max-w-3xl mx-auto w-full px-4 sm:px-6">
+          <div className="rounded-2xl border border-border bg-card shadow-[0_8px_24px_-12px_rgba(0,0,0,0.4)] focus-within:border-primary/40 focus-within:shadow-[0_8px_28px_-10px_oklch(0.6_0.15_35/0.25)] transition-all">
+            <Textarea
+              placeholder={
+                activeConvo
+                  ? "Reply to Bernard…"
+                  : "Ask Bernard about the business…"
+              }
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                // Enter to send (Shift+Enter for newline) — matches Claude.
+                // Cmd/Ctrl+Enter still works as a power-user fallback.
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  if (activeConvo) sendFollowup();
+                  else startConversation(null, input);
+                }
+              }}
+              rows={1}
+              disabled={hasKey === false}
+              className="resize-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 px-4 pt-3.5 pb-1 shadow-none text-[15px] leading-6 max-h-48 overflow-y-auto bg-transparent"
+            />
+            <div className="flex items-center justify-between gap-3 px-3 pb-2.5 pt-1">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                {!activeConvo ? (
+                  <div className="flex items-center gap-1.5">
+                    <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">Window</Label>
+                    <Select value={String(dataWindow)} onValueChange={(v) => setDataWindow(Number(v) as 7 | 30 | 90)}>
+                      <SelectTrigger className="w-28 h-7 text-[11px] border-border/60">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="7">Last 7 days</SelectItem>
+                        <SelectItem value="30">Last 30 days</SelectItem>
+                        <SelectItem value="90">Last 90 days</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : (
+                  <div className="text-[10px] text-muted-foreground truncate">
+                    Continuing chat ·{" "}
+                    <button onClick={newChat} className="text-primary hover:underline">new chat</button>
+                  </div>
+                )}
               </div>
-            ) : (
-              <div className="text-[11px] text-muted-foreground">
-                Continuing chat ·{" "}
-                <button onClick={newChat} className="text-primary hover:underline">start new</button>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-[10px] text-muted-foreground hidden sm:inline">
+                  <kbd className="font-mono text-[9px] bg-secondary/60 px-1 py-0.5 rounded">↵</kbd> send · <kbd className="font-mono text-[9px] bg-secondary/60 px-1 py-0.5 rounded">⇧↵</kbd> newline
+                </span>
+                {streaming ? (
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    onClick={cancelStreaming}
+                    className="h-8 w-8 rounded-full"
+                    aria-label="Stop"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                ) : (
+                  <Button
+                    size="icon"
+                    onClick={() => activeConvo ? sendFollowup() : startConversation(null, input)}
+                    disabled={hasKey === false || !input.trim()}
+                    className="h-8 w-8 rounded-full"
+                    aria-label="Send"
+                  >
+                    <Send className="h-3.5 w-3.5" />
+                  </Button>
+                )}
               </div>
-            )}
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            {streaming ? (
-              <Button size="sm" variant="outline" onClick={cancelStreaming}>
-                <X className="h-4 w-4 mr-1" /> Stop
-              </Button>
-            ) : (
-              <Button
-                size="sm"
-                onClick={() => activeConvo ? sendFollowup() : startConversation(null, input)}
-                disabled={hasKey === false || !input.trim()}
-              >
-                <Send className="h-4 w-4 mr-1" /> Send
-              </Button>
-            )}
+          <div className="text-[10px] text-muted-foreground/70 text-center mt-1.5">
+            Bernard sees your live agency data — verify before acting on financial decisions.
           </div>
         </div>
       </div>
@@ -1006,6 +1029,8 @@ function ChatBubble({
   const [copied, setCopied] = useState(false);
 
   // ── User bubble ─────────────────────────────────────────────────────
+  // Right-aligned soft pill, capped width so long messages wrap. Matches
+  // Claude.ai's user bubble — content-first, no avatar clutter.
   if (message.role === "user") {
     // Tool-result-only user messages are rendered as compact "Bernard ran X" notes,
     // since they're system-generated bridges in the agentic loop, not real user input.
@@ -1013,13 +1038,9 @@ function ChatBubble({
       return null; // tool results are surfaced inside the ToolCallCard above; no separate bubble
     }
     return (
-      <div className="flex gap-3 group">
-        <div className="h-8 w-8 rounded-lg bg-secondary flex items-center justify-center shrink-0 mt-0.5">
-          <UsersIcon className="h-4 w-4 text-muted-foreground" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">You</div>
-          <div className="text-sm whitespace-pre-wrap text-foreground/90 leading-relaxed">{message.content}</div>
+      <div className="flex justify-end">
+        <div className="max-w-[85%] rounded-2xl rounded-tr-sm bg-secondary/70 border border-border/40 px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap text-foreground/95">
+          {message.content}
         </div>
       </div>
     );
@@ -1040,24 +1061,25 @@ function ChatBubble({
     setTimeout(() => setCopied(false), 1500);
   };
 
+  // Assistant flows in the column without a containing bubble — same as
+  // Claude.ai. Small avatar pin to the left, content takes the full width.
   return (
     <div className="flex gap-3 group">
-      <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary to-primary-glow flex items-center justify-center shrink-0 mt-0.5 shadow-sm">
-        <Sparkles className="h-4 w-4 text-primary-foreground" />
+      <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-primary to-primary-glow flex items-center justify-center shrink-0 mt-1 shadow-[0_2px_8px_-2px_oklch(0.6_0.15_35/0.4)]">
+        <Sparkles className="h-3.5 w-3.5 text-primary-foreground" />
       </div>
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-1">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-primary">Bernard</span>
-          {!isStreaming && allText && (
+        {!isStreaming && allText && (
+          <div className="flex items-center justify-end mb-1">
             <button
               onClick={onCopy}
-              className="opacity-0 group-hover:opacity-100 text-[10px] text-muted-foreground hover:text-foreground transition-opacity inline-flex items-center gap-1"
+              className="opacity-0 group-hover:opacity-100 text-[11px] text-muted-foreground hover:text-foreground transition-opacity inline-flex items-center gap-1 px-2 py-0.5 rounded hover:bg-secondary/50"
             >
               {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
               {copied ? "Copied" : "Copy"}
             </button>
-          )}
-        </div>
+          </div>
+        )}
 
         {blocks.length === 0 ? (
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
