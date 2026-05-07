@@ -789,6 +789,90 @@ export type Database = {
           }
         ]
       }
+      automation_rules: {
+        Row: {
+          id: string
+          label: string
+          description: string | null
+          enabled: boolean
+          trigger: string
+          trigger_params: unknown
+          action: string
+          action_params: unknown
+          cooldown_hours: number
+          fire_count: number
+          last_fired_at: string | null
+          last_evaluated_at: string | null
+          last_eval_message: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          label: string
+          description?: string | null
+          enabled?: boolean
+          trigger: string
+          trigger_params?: unknown
+          action: string
+          action_params?: unknown
+          cooldown_hours?: number
+          fire_count?: number
+          last_fired_at?: string | null
+          last_evaluated_at?: string | null
+          last_eval_message?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          label?: string
+          description?: string | null
+          enabled?: boolean
+          trigger?: string
+          trigger_params?: unknown
+          action?: string
+          action_params?: unknown
+          cooldown_hours?: number
+          fire_count?: number
+          last_fired_at?: string | null
+          last_evaluated_at?: string | null
+          last_eval_message?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      rule_fires: {
+        Row: {
+          id: string
+          rule_id: string
+          entity_type: string
+          entity_id: string
+          details: string | null
+          fired_at: string
+        }
+        Insert: {
+          id?: string
+          rule_id: string
+          entity_type: string
+          entity_id: string
+          details?: string | null
+          fired_at?: string
+        }
+        Update: {
+          id?: string
+          rule_id?: string
+          entity_type?: string
+          entity_id?: string
+          details?: string | null
+          fired_at?: string
+        }
+        Relationships: []
+      }
       creator_landing_pages: {
         Row: {
           id: string

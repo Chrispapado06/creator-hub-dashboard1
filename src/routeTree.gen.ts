@@ -26,6 +26,7 @@ import { Route as ChattersRouteImport } from './routes/chatters'
 import { Route as LeadsRouteImport } from './routes/leads'
 import { Route as ClockRouteImport } from './routes/clock'
 import { Route as AuditRouteImport } from './routes/audit'
+import { Route as AutomationRouteImport } from './routes/automation'
 import { Route as BernardRouteImport } from './routes/bernard'
 import { Route as RedditAirtableRouteImport } from './routes/reddit-airtable'
 import { Route as PSlugRouteImport } from './routes/p.$slug'
@@ -59,6 +60,11 @@ const ClockRoute = ClockRouteImport.update({
 const AuditRoute = AuditRouteImport.update({
   id: '/audit',
   path: '/audit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AutomationRoute = AutomationRouteImport.update({
+  id: '/automation',
+  path: '/automation',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BernardRoute = BernardRouteImport.update({
@@ -155,6 +161,7 @@ export interface FileRoutesByFullPath {
   '/leads': typeof LeadsRoute
   '/clock': typeof ClockRoute
   '/audit': typeof AuditRoute
+  '/automation': typeof AutomationRoute
   '/bernard': typeof BernardRoute
   '/reddit-airtable': typeof RedditAirtableRoute
   '/p/$slug': typeof PSlugRoute
@@ -178,6 +185,7 @@ export interface FileRoutesByTo {
   '/leads': typeof LeadsRoute
   '/clock': typeof ClockRoute
   '/audit': typeof AuditRoute
+  '/automation': typeof AutomationRoute
   '/bernard': typeof BernardRoute
   '/reddit-airtable': typeof RedditAirtableRoute
   '/p/$slug': typeof PSlugRoute
@@ -202,6 +210,7 @@ export interface FileRoutesById {
   '/leads': typeof LeadsRoute
   '/clock': typeof ClockRoute
   '/audit': typeof AuditRoute
+  '/automation': typeof AutomationRoute
   '/bernard': typeof BernardRoute
   '/reddit-airtable': typeof RedditAirtableRoute
   '/p/$slug': typeof PSlugRoute
@@ -227,6 +236,7 @@ export interface FileRouteTypes {
     | '/leads'
     | '/clock'
     | '/audit'
+    | '/automation'
     | '/bernard'
     | '/reddit-airtable'
     | '/p/$slug'
@@ -250,6 +260,7 @@ export interface FileRouteTypes {
     | '/leads'
     | '/clock'
     | '/audit'
+    | '/automation'
     | '/bernard'
     | '/reddit-airtable'
     | '/p/$slug'
@@ -273,6 +284,7 @@ export interface FileRouteTypes {
     | '/leads'
     | '/clock'
     | '/audit'
+    | '/automation'
     | '/bernard'
     | '/reddit-airtable'
     | '/p/$slug'
@@ -297,6 +309,7 @@ export interface RootRouteChildren {
   LeadsRoute: typeof LeadsRoute
   ClockRoute: typeof ClockRoute
   AuditRoute: typeof AuditRoute
+  AutomationRoute: typeof AutomationRoute
   BernardRoute: typeof BernardRoute
   RedditAirtableRoute: typeof RedditAirtableRoute
   PSlugRoute: typeof PSlugRoute
@@ -424,6 +437,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuditRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/automation': {
+      id: '/automation'
+      path: '/automation'
+      fullPath: '/automation'
+      preLoaderRoute: typeof AutomationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/bernard': {
       id: '/bernard'
       path: '/bernard'
@@ -473,6 +493,7 @@ const rootRouteChildren: RootRouteChildren = {
   LeadsRoute: LeadsRoute,
   ClockRoute: ClockRoute,
   AuditRoute: AuditRoute,
+  AutomationRoute: AutomationRoute,
   BernardRoute: BernardRoute,
   RedditAirtableRoute: RedditAirtableRoute,
   PSlugRoute: PSlugRoute,

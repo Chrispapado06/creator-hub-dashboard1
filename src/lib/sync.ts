@@ -9,7 +9,8 @@ export type SyncJobId =
   | "instagram"
   | "facebook"
   | "tiktok"
-  | "onlyfans";
+  | "onlyfans"
+  | "automation_rules";
 
 export type SyncStatusRow = {
   id: SyncJobId;
@@ -411,24 +412,46 @@ async function syncOnlyFansDashboard(): Promise<SyncResult> {
   return { status: "ok", message: "OnlyFans dashboard sync not yet wired into auto-sync — use the manual button on the OnlyFans page for now.", itemsProcessed: 0, errorsCount: 0 };
 }
 
+async function syncAutomationRules(): Promise<SyncResult> {
+  // Imported lazily so the rule engine doesn't load when sync runs without rules.
+  const { evaluateRules } = await import("@/lib/automation");
+  const r = await evaluateRules();
+  if (r.errors > 0 && r.matchesFired === 0) {
+    return {
+      status: "failed",
+      message: `${r.errors} rule error${r.errors === 1 ? "" : "s"} — see console`,
+      itemsProcessed: 0,
+      errorsCount: r.errors,
+    };
+  }
+  return {
+    status: r.errors > 0 ? "partial" : "ok",
+    message: `${r.matchesEvaluated} matches · ${r.matchesFired} fired · ${r.matchesSkippedByCooldown} on cooldown${r.errors > 0 ? ` · ${r.errors} errors` : ""}`,
+    itemsProcessed: r.matchesFired,
+    errorsCount: r.errors,
+  };
+}
+
 // ── Job registry ─────────────────────────────────────────────────────────────
 
 const JOBS: Record<SyncJobId, () => Promise<SyncResult>> = {
-  reddit_posts:    syncRedditPosts,
-  infloww_revenue: syncInflowwRevenue,
-  instagram:       syncInstagramPosts,
-  facebook:        syncFacebookPosts,
-  tiktok:          syncTikTokPosts,
-  onlyfans:        syncOnlyFansDashboard,
+  reddit_posts:     syncRedditPosts,
+  infloww_revenue:  syncInflowwRevenue,
+  instagram:        syncInstagramPosts,
+  facebook:         syncFacebookPosts,
+  tiktok:           syncTikTokPosts,
+  onlyfans:         syncOnlyFansDashboard,
+  automation_rules: syncAutomationRules,
 };
 
 export const SYNC_JOB_LABELS: Record<SyncJobId, string> = {
-  reddit_posts:    "Reddit posts",
-  infloww_revenue: "Tracking links & revenue (Infloww/OnlyFinder)",
-  instagram:       "Instagram",
-  facebook:        "Facebook",
-  tiktok:          "TikTok",
-  onlyfans:        "OnlyFans dashboard",
+  reddit_posts:     "Reddit posts",
+  infloww_revenue:  "Tracking links & revenue (Infloww/OnlyFinder)",
+  instagram:        "Instagram",
+  facebook:         "Facebook",
+  tiktok:           "TikTok",
+  onlyfans:         "OnlyFans dashboard",
+  automation_rules: "Automation rules",
 };
 
 // ── Public entry points ──────────────────────────────────────────────────────

@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   Settings, LogOut, Sun, Moon, Users, DollarSign,
   CalendarDays, LayoutDashboard, ChevronDown, ChevronRight,
-  MessageCircle, UserPlus, ScrollText, Sparkles,
+  MessageCircle, UserPlus, ScrollText, Sparkles, Zap,
 } from "lucide-react";
 import { NotificationsBell } from "@/components/NotificationsBell";
 import { SyncStatusBadge } from "@/components/SyncStatusBadge";
@@ -371,6 +371,7 @@ function RootComponent() {
             <div className="space-y-0.5">
               <SideNavLink to="/chatters" icon={<MessageCircle className="h-4 w-4" />} label="Staff" />
               <SideNavLink to="/leads" icon={<UserPlus className="h-4 w-4" />} label="Client Acquisition" />
+              <SideNavLink to="/automation" icon={<Zap className="h-4 w-4" />} label="Automation" />
               <SideNavLink to="/audit" icon={<ScrollText className="h-4 w-4" />} label="Audit Log" />
             </div>
           </div>
