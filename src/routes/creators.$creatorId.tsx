@@ -59,6 +59,7 @@ import { CreatorAvatarUpload } from "@/components/CreatorAvatarUpload";
 import { isMissingCreatorAvatarColumnError, normalizeCreatorFromDb } from "@/lib/creator-db";
 import { OnboardingChecklist } from "@/components/OnboardingChecklist";
 import { CreatorGoals } from "@/components/CreatorGoals";
+import { CreatorDocuments } from "@/components/CreatorDocuments";
 import { logAudit } from "@/lib/audit";
 
 export const Route = createFileRoute("/creators/$creatorId")({
@@ -986,6 +987,7 @@ function CreatorDetailPage() {
           <TabsTrigger value="plan">Plan</TabsTrigger>
           <TabsTrigger value="platforms">Platforms</TabsTrigger>
           <TabsTrigger value="staff">Staff</TabsTrigger>
+          <TabsTrigger value="documents">Documents</TabsTrigger>
           <TabsTrigger value="organic">Organic</TabsTrigger>
           <TabsTrigger value="internal">Internal</TabsTrigger>
           <TabsTrigger value="ads">Ads</TabsTrigger>
@@ -1038,6 +1040,10 @@ function CreatorDetailPage() {
             assignedStaff={assignedStaff}
             shifts={creatorShifts}
           />
+        </TabsContent>
+
+        <TabsContent value="documents">
+          <CreatorDocuments creatorId={creatorId} creatorName={creator?.name} />
         </TabsContent>
 
         <TabsContent value="organic">

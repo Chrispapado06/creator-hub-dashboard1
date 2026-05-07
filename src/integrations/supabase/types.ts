@@ -789,6 +789,54 @@ export type Database = {
           }
         ]
       }
+      creator_documents: {
+        Row: {
+          id: string
+          creator_id: string
+          label: string
+          category: string
+          file_path: string
+          file_size_bytes: number | null
+          mime_type: string | null
+          notes: string | null
+          expires_at: string | null
+          supersedes_id: string | null
+          uploaded_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          creator_id: string
+          label: string
+          category?: string
+          file_path: string
+          file_size_bytes?: number | null
+          mime_type?: string | null
+          notes?: string | null
+          expires_at?: string | null
+          supersedes_id?: string | null
+          uploaded_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          creator_id?: string
+          label?: string
+          category?: string
+          file_path?: string
+          file_size_bytes?: number | null
+          mime_type?: string | null
+          notes?: string | null
+          expires_at?: string | null
+          supersedes_id?: string | null
+          uploaded_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       staff_announcements: {
         Row: {
           id: string
