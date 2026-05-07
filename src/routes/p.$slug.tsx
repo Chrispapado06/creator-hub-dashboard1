@@ -250,64 +250,18 @@ function LandingPage() {
         </div>
       )}
 
-      {/* Cover image (optional) */}
-      {landing.cover_url && (
-        <div className="w-full h-40 sm:h-56 relative overflow-hidden">
-          <img
-            src={landing.cover_url}
-            alt=""
-            className="w-full h-full object-cover"
-            loading="eager"
-          />
-          <div
-            className="absolute inset-0"
-            style={{
-              background: `linear-gradient(180deg, transparent 50%, ${(theme.page.background as string) || "#fcf9ee"} 100%)`,
-            }}
-          />
-        </div>
+      {/* Hero: cover photo as a full-width hero with name + tagline overlaid.
+          Falls back to a centered avatar+name layout when there's no cover. */}
+      {landing.cover_url ? (
+        <HeroWithCover landing={landing} themeBg={(theme.page.background as string) || "#fcf9ee"} />
+      ) : (
+        <HeroAvatarOnly landing={landing} theme={theme} />
       )}
 
-      <div
-        className={`w-full max-w-md px-5 ${landing.cover_url ? "-mt-16" : "pt-12 sm:pt-16"} pb-20 flex flex-col items-center`}
-      >
-        {/* Avatar */}
-        <div
-          className="h-28 w-28 rounded-full overflow-hidden border-4 mb-5 shadow-xl"
-          style={{
-            borderColor: (theme.card.background as string) || "#fff",
-            boxShadow: "0 8px 32px -8px rgba(0,0,0,0.2)",
-          }}
-        >
-          {landing.avatar_url ? (
-            <img src={landing.avatar_url} alt={landing.display_name ?? landing.slug} className="w-full h-full object-cover" />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-3xl font-semibold" style={{ background: "linear-gradient(135deg, #e87852, #f4a374)", color: "#fff" }}>
-              {(landing.display_name ?? landing.slug)[0].toUpperCase()}
-            </div>
-          )}
-        </div>
-
-        {/* Name + tagline */}
-        <h1 className="text-2xl font-bold tracking-tight text-center inline-flex items-center gap-1.5" style={{ color: theme.primaryText }}>
-          {landing.display_name ?? landing.slug}
-          {landing.is_verified && (
-            <BadgeCheck
-              className="h-5 w-5"
-              style={{ color: "#1d9bf0", fill: "currentColor", strokeWidth: 0 }}
-              aria-label="Verified"
-            >
-              <title>Verified</title>
-            </BadgeCheck>
-          )}
-        </h1>
-        {landing.tagline && (
-          <p className="text-sm mt-1 text-center" style={{ color: theme.mutedText }}>
-            {landing.tagline}
-          </p>
-        )}
+      <div className={`w-full max-w-md px-5 pb-20 flex flex-col items-center ${landing.cover_url ? "pt-2" : "pt-2"}`}>
+        {/* Bio (longer description, sits below the hero) */}
         {landing.bio && (
-          <p className="text-sm mt-4 text-center max-w-xs leading-relaxed whitespace-pre-wrap" style={{ color: theme.mutedText }}>
+          <p className="text-sm text-center max-w-xs leading-relaxed whitespace-pre-wrap mb-2" style={{ color: theme.mutedText }}>
             {landing.bio}
           </p>
         )}
@@ -350,6 +304,133 @@ function LandingPage() {
           @{landing.slug}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Hero variants ───────────────────────────────────────────────────────
+
+/**
+ * Cover-first hero: the cover photo fills a tall block at the top of the page,
+ * with a dark gradient at the bottom so the overlaid name + tagline stay
+ * readable. The optional avatar appears as a small inline circle next to the
+ * name (vs the big standalone circle in the no-cover variant).
+ */
+function HeroWithCover({ landing, themeBg }: { landing: Landing; themeBg: string }) {
+  return (
+    <div className="relative w-full" style={{ height: "min(60vh, 540px)" }}>
+      <img
+        src={landing.cover_url ?? ""}
+        alt={landing.display_name ?? landing.slug}
+        className="w-full h-full object-cover"
+        loading="eager"
+        // Center the subject so portraits crop nicely on wider viewports
+        style={{ objectPosition: "center 25%" }}
+      />
+      {/* Dark gradient fade at the bottom for text readability */}
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          background:
+            "linear-gradient(180deg, transparent 0%, transparent 40%, rgba(0,0,0,0.55) 75%, rgba(0,0,0,0.85) 100%)",
+        }}
+      />
+      {/* Bottom-fade into the page background so the hero doesn't end with a hard edge */}
+      <div
+        className="absolute inset-x-0 bottom-0 h-12 pointer-events-none"
+        style={{ background: `linear-gradient(180deg, transparent 0%, ${themeBg} 100%)` }}
+      />
+      {/* Name + tagline overlaid on the bottom of the cover */}
+      <div className="absolute inset-x-0 bottom-0 px-5 pb-8 flex flex-col items-center text-center">
+        <div className="flex items-center gap-3">
+          {landing.avatar_url && (
+            <img
+              src={landing.avatar_url}
+              alt=""
+              className="h-14 w-14 rounded-full object-cover border-2"
+              style={{ borderColor: "rgba(255,255,255,0.85)", boxShadow: "0 4px 16px -4px rgba(0,0,0,0.6)" }}
+            />
+          )}
+          <div className="flex flex-col items-start">
+            <h1
+              className="text-2xl sm:text-3xl font-bold tracking-tight inline-flex items-center gap-1.5"
+              style={{ color: "#fff", textShadow: "0 2px 16px rgba(0,0,0,0.7)" }}
+            >
+              {landing.display_name ?? landing.slug}
+              {landing.is_verified && (
+                <BadgeCheck
+                  className="h-5 w-5 sm:h-6 sm:w-6"
+                  style={{ color: "#1d9bf0", fill: "currentColor", strokeWidth: 0 }}
+                  aria-label="Verified"
+                >
+                  <title>Verified</title>
+                </BadgeCheck>
+              )}
+            </h1>
+            {landing.tagline && (
+              <p
+                className="text-sm sm:text-base mt-0.5"
+                style={{ color: "rgba(255,255,255,0.92)", textShadow: "0 2px 12px rgba(0,0,0,0.7)" }}
+              >
+                {landing.tagline}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Avatar-first hero (fallback when there's no cover photo). Uses the
+ * traditional Linktree-style centered circle + name layout.
+ */
+function HeroAvatarOnly({ landing, theme }: { landing: Landing; theme: ThemeStyles }) {
+  return (
+    <div className="w-full max-w-md px-5 pt-12 sm:pt-16 flex flex-col items-center">
+      <div
+        className="h-28 w-28 rounded-full overflow-hidden border-4 mb-5 shadow-xl"
+        style={{
+          borderColor: (theme.card.background as string) || "#fff",
+          boxShadow: "0 8px 32px -8px rgba(0,0,0,0.2)",
+        }}
+      >
+        {landing.avatar_url ? (
+          <img
+            src={landing.avatar_url}
+            alt={landing.display_name ?? landing.slug}
+            className="w-full h-full object-cover"
+          />
+        ) : (
+          <div
+            className="w-full h-full flex items-center justify-center text-3xl font-semibold"
+            style={{ background: "linear-gradient(135deg, #e87852, #f4a374)", color: "#fff" }}
+          >
+            {(landing.display_name ?? landing.slug)[0].toUpperCase()}
+          </div>
+        )}
+      </div>
+      <h1
+        className="text-2xl font-bold tracking-tight text-center inline-flex items-center gap-1.5"
+        style={{ color: theme.primaryText }}
+      >
+        {landing.display_name ?? landing.slug}
+        {landing.is_verified && (
+          <BadgeCheck
+            className="h-5 w-5"
+            style={{ color: "#1d9bf0", fill: "currentColor", strokeWidth: 0 }}
+            aria-label="Verified"
+          >
+            <title>Verified</title>
+          </BadgeCheck>
+        )}
+      </h1>
+      {landing.tagline && (
+        <p className="text-sm mt-1 text-center" style={{ color: theme.mutedText }}>
+          {landing.tagline}
+        </p>
+      )}
     </div>
   );
 }
