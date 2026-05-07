@@ -1038,6 +1038,30 @@ export type Database = {
         }
         Relationships: []
       }
+      landing_views: {
+        Row: {
+          id: string
+          landing_id: string
+          referrer: string | null
+          user_agent: string | null
+          occurred_at: string
+        }
+        Insert: {
+          id?: string
+          landing_id: string
+          referrer?: string | null
+          user_agent?: string | null
+          occurred_at?: string
+        }
+        Update: {
+          id?: string
+          landing_id?: string
+          referrer?: string | null
+          user_agent?: string | null
+          occurred_at?: string
+        }
+        Relationships: []
+      }
       landing_clicks: {
         Row: {
           id: string

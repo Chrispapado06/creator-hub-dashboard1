@@ -205,6 +205,16 @@ function LandingPage() {
       if (!Array.isArray(row.links)) row.links = [];
       if (!Array.isArray(row.media)) row.media = [];
       setLanding(row);
+
+      // Fire-and-forget view tracking. Skip when the admin is just previewing
+      // a draft — those aren't real visits and would pollute the analytics.
+      if (!allowDraft) {
+        void supabase.from("landing_views").insert({
+          landing_id: row.id,
+          referrer: typeof document !== "undefined" ? document.referrer.slice(0, 200) || null : null,
+          user_agent: typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 200) : null,
+        });
+      }
       setLoading(false);
 
       // Update document head for SEO + sharing
