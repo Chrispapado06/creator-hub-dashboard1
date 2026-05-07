@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel, SelectSeparator } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -46,6 +46,16 @@ type StaffRole =
   | "social_media_va"
   | "content_editor"
   | "recruiter"
+  // Specialized managers
+  | "chatter_manager"
+  | "reddit_manager"
+  | "instagram_manager"
+  | "facebook_manager"
+  | "x_manager"
+  | "tiktok_manager"
+  | "social_media_manager"
+  | "content_manager"
+  // Catch-alls
   | "manager"
   | "other";
 type Chatter = {
@@ -122,7 +132,15 @@ const roleLabels: Record<StaffRole, string> = {
   social_media_va: "Social Media VA",
   content_editor: "Content Editor",
   recruiter: "Recruiter",
-  manager: "Manager",
+  chatter_manager: "Chatting Manager",
+  reddit_manager: "Reddit Manager",
+  instagram_manager: "Instagram Manager",
+  facebook_manager: "Facebook Manager",
+  x_manager: "X Manager",
+  tiktok_manager: "TikTok Manager",
+  social_media_manager: "Social Media Manager",
+  content_manager: "Content Manager",
+  manager: "Manager (general)",
   other: "Other",
 };
 const roleStyles: Record<StaffRole, string> = {
@@ -135,6 +153,15 @@ const roleStyles: Record<StaffRole, string> = {
   social_media_va: "bg-blue-500/10 text-blue-500 border-blue-500/30",
   content_editor: "bg-purple-500/10 text-purple-500 border-purple-500/30",
   recruiter: "bg-warning/10 text-warning border-warning/30",
+  // Managers — same color family as their domain but slightly stronger / saturated
+  chatter_manager:      "bg-primary/15 text-primary border-primary/40 ring-1 ring-primary/20",
+  reddit_manager:       "bg-orange-500/15 text-orange-500 border-orange-500/40 ring-1 ring-orange-500/20",
+  instagram_manager:    "bg-pink-500/15 text-pink-500 border-pink-500/40 ring-1 ring-pink-500/20",
+  facebook_manager:     "bg-blue-600/15 text-blue-600 border-blue-600/40 ring-1 ring-blue-600/20",
+  x_manager:            "bg-foreground/15 text-foreground border-foreground/40 ring-1 ring-foreground/20",
+  tiktok_manager:       "bg-cyan-500/15 text-cyan-500 border-cyan-500/40 ring-1 ring-cyan-500/20",
+  social_media_manager: "bg-blue-500/15 text-blue-500 border-blue-500/40 ring-1 ring-blue-500/20",
+  content_manager:      "bg-purple-500/15 text-purple-500 border-purple-500/40 ring-1 ring-purple-500/20",
   manager: "bg-success/10 text-success border-success/30",
   other: "bg-muted text-muted-foreground border-border",
 };
@@ -417,19 +444,36 @@ function RosterTab({
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3 flex-wrap">
           <Select value={filterRole} onValueChange={setFilterRole}>
-            <SelectTrigger className="h-8 w-[180px] text-xs"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="h-8 w-[200px] text-xs"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All roles</SelectItem>
-              <SelectItem value="chatter">Chatter</SelectItem>
-              <SelectItem value="reddit_va">Reddit VA</SelectItem>
-              <SelectItem value="instagram_va">Instagram VA</SelectItem>
-              <SelectItem value="facebook_va">Facebook VA</SelectItem>
-              <SelectItem value="x_va">X VA</SelectItem>
-              <SelectItem value="tiktok_va">TikTok VA</SelectItem>
-              <SelectItem value="social_media_va">Social Media VA (generic)</SelectItem>
-              <SelectItem value="content_editor">Content Editor</SelectItem>
-              <SelectItem value="recruiter">Recruiter</SelectItem>
-              <SelectItem value="manager">Manager</SelectItem>
+              <SelectSeparator />
+              <SelectGroup>
+                <SelectLabel className="text-[10px] uppercase tracking-wider">Operations (IC)</SelectLabel>
+                <SelectItem value="chatter">Chatter</SelectItem>
+                <SelectItem value="reddit_va">Reddit VA</SelectItem>
+                <SelectItem value="instagram_va">Instagram VA</SelectItem>
+                <SelectItem value="facebook_va">Facebook VA</SelectItem>
+                <SelectItem value="x_va">X VA</SelectItem>
+                <SelectItem value="tiktok_va">TikTok VA</SelectItem>
+                <SelectItem value="social_media_va">Social Media VA (generic)</SelectItem>
+                <SelectItem value="content_editor">Content Editor</SelectItem>
+                <SelectItem value="recruiter">Recruiter</SelectItem>
+              </SelectGroup>
+              <SelectSeparator />
+              <SelectGroup>
+                <SelectLabel className="text-[10px] uppercase tracking-wider">Managers</SelectLabel>
+                <SelectItem value="chatter_manager">Chatting Manager</SelectItem>
+                <SelectItem value="reddit_manager">Reddit Manager</SelectItem>
+                <SelectItem value="instagram_manager">Instagram Manager</SelectItem>
+                <SelectItem value="facebook_manager">Facebook Manager</SelectItem>
+                <SelectItem value="x_manager">X Manager</SelectItem>
+                <SelectItem value="tiktok_manager">TikTok Manager</SelectItem>
+                <SelectItem value="social_media_manager">Social Media Manager</SelectItem>
+                <SelectItem value="content_manager">Content Manager</SelectItem>
+                <SelectItem value="manager">Manager (general)</SelectItem>
+              </SelectGroup>
+              <SelectSeparator />
               <SelectItem value="other">Other</SelectItem>
             </SelectContent>
           </Select>
@@ -454,11 +498,32 @@ function RosterTab({
                   <Select value={form.role} onValueChange={(v) => setForm({ ...form, role: v as StaffRole })}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="chatter">Chatter</SelectItem>
-                      <SelectItem value="social_media_va">Social Media VA</SelectItem>
-                      <SelectItem value="content_editor">Content Editor</SelectItem>
-                      <SelectItem value="recruiter">Recruiter</SelectItem>
-                      <SelectItem value="manager">Manager</SelectItem>
+                      <SelectGroup>
+                        <SelectLabel className="text-[10px] uppercase tracking-wider">Operations (IC)</SelectLabel>
+                        <SelectItem value="chatter">Chatter</SelectItem>
+                        <SelectItem value="reddit_va">Reddit VA</SelectItem>
+                        <SelectItem value="instagram_va">Instagram VA</SelectItem>
+                        <SelectItem value="facebook_va">Facebook VA</SelectItem>
+                        <SelectItem value="x_va">X VA</SelectItem>
+                        <SelectItem value="tiktok_va">TikTok VA</SelectItem>
+                        <SelectItem value="social_media_va">Social Media VA (generic)</SelectItem>
+                        <SelectItem value="content_editor">Content Editor</SelectItem>
+                        <SelectItem value="recruiter">Recruiter</SelectItem>
+                      </SelectGroup>
+                      <SelectSeparator />
+                      <SelectGroup>
+                        <SelectLabel className="text-[10px] uppercase tracking-wider">Managers</SelectLabel>
+                        <SelectItem value="chatter_manager">Chatting Manager</SelectItem>
+                        <SelectItem value="reddit_manager">Reddit Manager</SelectItem>
+                        <SelectItem value="instagram_manager">Instagram Manager</SelectItem>
+                        <SelectItem value="facebook_manager">Facebook Manager</SelectItem>
+                        <SelectItem value="x_manager">X Manager</SelectItem>
+                        <SelectItem value="tiktok_manager">TikTok Manager</SelectItem>
+                        <SelectItem value="social_media_manager">Social Media Manager</SelectItem>
+                        <SelectItem value="content_manager">Content Manager</SelectItem>
+                        <SelectItem value="manager">Manager (general)</SelectItem>
+                      </SelectGroup>
+                      <SelectSeparator />
                       <SelectItem value="other">Other</SelectItem>
                     </SelectContent>
                   </Select>

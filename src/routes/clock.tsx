@@ -132,6 +132,15 @@ const roleLabels: Record<string, string> = {
   social_media_va: "Social Media VA",
   content_editor: "Content Editor",
   recruiter: "Recruiter",
+  // Specialized managers
+  chatter_manager: "Chatting Manager",
+  reddit_manager: "Reddit Manager",
+  instagram_manager: "Instagram Manager",
+  facebook_manager: "Facebook Manager",
+  x_manager: "X Manager",
+  tiktok_manager: "TikTok Manager",
+  social_media_manager: "Social Media Manager",
+  content_manager: "Content Manager",
   manager: "Manager",
   other: "Staff",
 };

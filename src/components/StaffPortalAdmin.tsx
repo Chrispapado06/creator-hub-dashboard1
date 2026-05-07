@@ -20,16 +20,26 @@ type Creator = { id: string; name: string };
 type Chatter = { id: string; name: string; role: string };
 
 const ROLE_SCOPES = [
-  { value: "all",            label: "All staff" },
-  { value: "chatter",        label: "Chatters only" },
-  { value: "reddit_va",      label: "Reddit VAs" },
-  { value: "instagram_va",   label: "Instagram VAs" },
-  { value: "facebook_va",    label: "Facebook VAs" },
-  { value: "tiktok_va",      label: "TikTok VAs" },
-  { value: "x_va",           label: "X VAs" },
-  { value: "social_media_va", label: "Social media VAs" },
-  { value: "content_editor", label: "Content editors" },
-  { value: "manager",        label: "Managers" },
+  { value: "all",                  label: "All staff" },
+  // Operations
+  { value: "chatter",              label: "Chatters" },
+  { value: "reddit_va",            label: "Reddit VAs" },
+  { value: "instagram_va",         label: "Instagram VAs" },
+  { value: "facebook_va",          label: "Facebook VAs" },
+  { value: "tiktok_va",            label: "TikTok VAs" },
+  { value: "x_va",                 label: "X VAs" },
+  { value: "social_media_va",      label: "Social Media VAs (generic)" },
+  { value: "content_editor",       label: "Content editors" },
+  // Specialized managers
+  { value: "chatter_manager",      label: "Chatting Managers" },
+  { value: "reddit_manager",       label: "Reddit Managers" },
+  { value: "instagram_manager",    label: "Instagram Managers" },
+  { value: "facebook_manager",     label: "Facebook Managers" },
+  { value: "tiktok_manager",       label: "TikTok Managers" },
+  { value: "x_manager",            label: "X Managers" },
+  { value: "social_media_manager", label: "Social Media Managers" },
+  { value: "content_manager",      label: "Content Managers" },
+  { value: "manager",              label: "Managers (general)" },
 ];
 
 const TRAINING_CATEGORIES = [
