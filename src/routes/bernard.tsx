@@ -901,30 +901,35 @@ function ConversationsPopover({
               No chats yet. Pick a preset or type a question to start.
             </div>
           ) : (
+            // Row is a flex container with two siblings — a clickable
+            // body and a delete button. Previously we wrapped the whole
+            // row in a <button> with the delete <button> nested inside,
+            // which is invalid HTML and triggered a React hydration
+            // warning.
             conversations.map((c) => (
-              <button
+              <div
                 key={c.id}
-                onClick={() => { onPick(c.id); setOpen(false); }}
-                className={`group w-full text-left p-3 border-b border-border last:border-0 transition-colors ${
+                className={`group flex items-start gap-2 border-b border-border last:border-0 transition-colors ${
                   activeId === c.id ? "bg-primary/5" : "hover:bg-secondary/40"
                 }`}
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xs font-medium truncate">{c.title}</div>
-                    <div className="text-[10px] text-muted-foreground mt-0.5">
-                      {c.messages.filter((m) => m.role === "user").length} turn{c.messages.filter((m) => m.role === "user").length === 1 ? "" : "s"} · {formatDistanceToNow(new Date(c.updated_at), { addSuffix: true })}
-                    </div>
+                <button
+                  onClick={() => { onPick(c.id); setOpen(false); }}
+                  className="flex-1 min-w-0 text-left p-3"
+                >
+                  <div className="text-xs font-medium truncate">{c.title}</div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">
+                    {c.messages.filter((m) => m.role === "user").length} turn{c.messages.filter((m) => m.role === "user").length === 1 ? "" : "s"} · {formatDistanceToNow(new Date(c.updated_at), { addSuffix: true })}
                   </div>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onDelete(c.id); }}
-                    className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
-                    aria-label="Delete conversation"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </div>
-              </button>
+                </button>
+                <button
+                  onClick={() => onDelete(c.id)}
+                  className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity p-3 -ml-2"
+                  aria-label="Delete conversation"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
             ))
           )}
         </div>
