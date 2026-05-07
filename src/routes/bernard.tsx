@@ -273,14 +273,13 @@ function BernardPage() {
   const setToolStatus = (id: string, status: ToolCallStatus, result?: string) =>
     setToolCallStates((prev) => ({ ...prev, [id]: { status, result } }));
 
-  // Load conversations + API key state on mount
+  // Load conversations + API key state on mount.
+  // We populate the history sidebar but DON'T auto-open the most recent one —
+  // every visit lands on the fresh preset picker. Old conversations are still
+  // a click away in the sidebar.
   useEffect(() => {
     getAnthropicKey().then((k) => setHasKey(!!k));
-    const saved = loadConversations();
-    setConversations(saved);
-    if (saved.length > 0) {
-      setActiveId(saved[0].id);
-    }
+    setConversations(loadConversations());
   }, []);
 
   // Auto-scroll the chat to bottom on new content
