@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { toast } from "sonner";
 import {
   Plus, Trash2, Pencil, Megaphone, GraduationCap, MessageSquare, Pin, PinOff,
-  Target, Save,
+  Target, Save, ChevronUp, ChevronDown, Users as UsersIcon,
 } from "lucide-react";
 import { format, formatDistanceToNow, parseISO, addMonths } from "date-fns";
 import { logAudit } from "@/lib/audit";
@@ -275,14 +275,37 @@ function TrainingManager({ creators }: { creators: Creator[] }) {
   const [form, setForm] = useState({ label: "", body: "", video_url: "", category: "onboarding", creator_id: "", scope: "all" });
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState<TrainingMaterial | null>(null);
+  const [roleFilter, setRoleFilter] = useState<string>("__all_roles");
 
   const load = async () => {
+    // Sort by scope so the role groups are stable, then by display_order within each group
     const { data } = await supabase
       .from("staff_training_materials")
       .select("*")
-      .order("category")
+      .order("scope")
       .order("display_order");
     setItems((data ?? []) as TrainingMaterial[]);
+  };
+
+  // Swap display_order with the adjacent item in the SAME role group.
+  // Up = move toward 0; down = move away from 0.
+  const onReorder = async (m: TrainingMaterial, direction: "up" | "down") => {
+    const sameRole = items
+      .filter((i) => i.scope === m.scope)
+      .sort((a, b) => a.display_order - b.display_order);
+    const idx = sameRole.findIndex((i) => i.id === m.id);
+    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= sameRole.length) return; // already at edge
+    const other = sameRole[swapIdx];
+    // Swap display_order between the two rows
+    const myOrder = m.display_order;
+    const otherOrder = other.display_order;
+    const [{ error: e1 }, { error: e2 }] = await Promise.all([
+      supabase.from("staff_training_materials").update({ display_order: otherOrder }).eq("id", m.id),
+      supabase.from("staff_training_materials").update({ display_order: myOrder }).eq("id", other.id),
+    ]);
+    if (e1 || e2) return toast.error((e1 ?? e2)!.message);
+    void load();
   };
 
   useEffect(() => { void load(); }, []);
@@ -401,39 +424,120 @@ function TrainingManager({ creators }: { creators: Creator[] }) {
         </div>
       </div>
 
-      <div className="space-y-2">
-        <div className="text-xs uppercase tracking-wider text-muted-foreground">Library · {items.length} item{items.length === 1 ? "" : "s"}</div>
+      {/* Filter + library */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="text-xs uppercase tracking-wider text-muted-foreground">
+            Library · {items.length} item{items.length === 1 ? "" : "s"}
+          </div>
+          <div className="flex items-center gap-2">
+            <Label className="text-[11px] text-muted-foreground">Show training for</Label>
+            <Select value={roleFilter} onValueChange={setRoleFilter}>
+              <SelectTrigger className="h-8 w-[180px] text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all_roles">All roles</SelectItem>
+                {ROLE_SCOPES.map((s) => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
         {items.length === 0 ? (
           <div className="rounded-xl border border-dashed border-border bg-card/40 p-8 text-center text-sm text-muted-foreground">
             No materials yet. Add your first one above.
           </div>
         ) : (
-          items.map((m) => (
-            <div key={m.id} className="group rounded-xl border border-border bg-card p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold">{m.label}</div>
-                  <div className="text-[11px] text-muted-foreground mt-0.5 space-x-2">
-                    <span>{TRAINING_CATEGORIES.find((c) => c.value === m.category)?.label ?? "—"}</span>
-                    {m.creator_id && (
-                      <>
-                        <span>·</span>
-                        <span>{creators.find((c) => c.id === m.creator_id)?.name ?? "—"}</span>
-                      </>
-                    )}
-                    <span>·</span>
-                    <span>{ROLE_SCOPES.find((s) => s.value === m.scope)?.label ?? m.scope}</span>
-                    {m.video_url && <><span>·</span><span className="text-primary">video attached</span></>}
+          // Group by scope (role). Render one section per role with its own ordering.
+          (() => {
+            const visible = roleFilter === "__all_roles"
+              ? items
+              : items.filter((i) => i.scope === roleFilter);
+            if (visible.length === 0) {
+              return (
+                <div className="rounded-xl border border-dashed border-border bg-card/40 p-8 text-center text-sm text-muted-foreground">
+                  No training material targeted at {ROLE_SCOPES.find((s) => s.value === roleFilter)?.label ?? roleFilter} yet.
+                </div>
+              );
+            }
+            const groups = new Map<string, TrainingMaterial[]>();
+            for (const m of visible) {
+              const k = m.scope;
+              if (!groups.has(k)) groups.set(k, []);
+              groups.get(k)!.push(m);
+            }
+            // Sort each group's items by display_order
+            for (const [, list] of groups) {
+              list.sort((a, b) => a.display_order - b.display_order);
+            }
+            return (
+              <div className="space-y-5">
+                {[...groups.entries()].map(([scope, list]) => (
+                  <div key={scope} className="space-y-1.5">
+                    <div className="flex items-center gap-2 px-1">
+                      <UsersIcon className="h-3.5 w-3.5 text-primary" />
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                        {ROLE_SCOPES.find((s) => s.value === scope)?.label ?? scope}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground/60">
+                        · {list.length} item{list.length === 1 ? "" : "s"}
+                      </span>
+                    </div>
+                    {list.map((m, idx) => (
+                      <div key={m.id} className="group rounded-xl border border-border bg-card p-3 hover:bg-secondary/20 transition-colors">
+                        <div className="flex items-start gap-3">
+                          {/* Reorder buttons */}
+                          <div className="flex flex-col -space-y-0.5 shrink-0">
+                            <button
+                              onClick={() => onReorder(m, "up")}
+                              disabled={idx === 0}
+                              className="text-muted-foreground hover:text-primary disabled:opacity-20 disabled:cursor-not-allowed transition-colors p-0.5"
+                              title="Move up (rank higher)"
+                            >
+                              <ChevronUp className="h-3.5 w-3.5" />
+                            </button>
+                            <span className="text-[9px] text-muted-foreground/60 font-mono w-3 text-center">{idx + 1}</span>
+                            <button
+                              onClick={() => onReorder(m, "down")}
+                              disabled={idx === list.length - 1}
+                              className="text-muted-foreground hover:text-primary disabled:opacity-20 disabled:cursor-not-allowed transition-colors p-0.5"
+                              title="Move down (rank lower)"
+                            >
+                              <ChevronDown className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-semibold">{m.label}</div>
+                            <div className="text-[11px] text-muted-foreground mt-0.5 space-x-2">
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-secondary text-foreground/80 font-medium">
+                                {TRAINING_CATEGORIES.find((c) => c.value === m.category)?.label ?? "—"}
+                              </span>
+                              {m.creator_id && (
+                                <span>{creators.find((c) => c.id === m.creator_id)?.name ?? "—"}</span>
+                              )}
+                              {m.video_url && <span className="text-primary">▶ video</span>}
+                            </div>
+                            {m.body && <div className="text-xs text-muted-foreground mt-2 line-clamp-2 whitespace-pre-wrap">{m.body}</div>}
+                          </div>
+
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button onClick={() => onEdit(m)} className="text-muted-foreground hover:text-primary p-1" title="Edit">
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                            <button onClick={() => onDelete(m)} className="text-muted-foreground hover:text-destructive p-1" title="Delete">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                  {m.body && <div className="text-xs text-muted-foreground mt-2 line-clamp-2 whitespace-pre-wrap">{m.body}</div>}
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <button onClick={() => onEdit(m)} className="text-muted-foreground hover:text-primary p-1"><Pencil className="h-3.5 w-3.5" /></button>
-                  <button onClick={() => onDelete(m)} className="text-muted-foreground hover:text-destructive p-1"><Trash2 className="h-3.5 w-3.5" /></button>
-                </div>
+                ))}
               </div>
-            </div>
-          ))
+            );
+          })()
         )}
       </div>
     </div>
@@ -503,6 +607,25 @@ function ScriptsManager({ creators }: { creators: Creator[] }) {
     void load();
   };
 
+  // Swap display_order with the adjacent script in the same category
+  const onReorder = async (s: Script, direction: "up" | "down") => {
+    const sameCat = items
+      .filter((i) => i.category === s.category)
+      .sort((a, b) => a.display_order - b.display_order);
+    const idx = sameCat.findIndex((i) => i.id === s.id);
+    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= sameCat.length) return;
+    const other = sameCat[swapIdx];
+    const myOrder = s.display_order;
+    const otherOrder = other.display_order;
+    const [{ error: e1 }, { error: e2 }] = await Promise.all([
+      supabase.from("staff_scripts").update({ display_order: otherOrder }).eq("id", s.id),
+      supabase.from("staff_scripts").update({ display_order: myOrder }).eq("id", other.id),
+    ]);
+    if (e1 || e2) return toast.error((e1 ?? e2)!.message);
+    void load();
+  };
+
   // group by category
   const grouped = useMemo(() => {
     const out: Record<string, Script[]> = {};
@@ -560,30 +683,53 @@ function ScriptsManager({ creators }: { creators: Creator[] }) {
             No scripts yet.
           </div>
         ) : (
-          Object.entries(grouped).map(([cat, list]) => (
-            <div key={cat} className="space-y-1.5">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/80">
-                {SCRIPT_CATEGORIES.find((c) => c.value === cat)?.label ?? cat}
-              </div>
-              {list.map((s) => (
-                <div key={s.id} className="group rounded-xl border border-border bg-card p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-semibold">
-                        {s.label}
-                        {s.creator_id && <span className="ml-2 text-[10px] font-normal text-muted-foreground">· {creators.find((c) => c.id === s.creator_id)?.name}</span>}
+          Object.entries(grouped).map(([cat, list]) => {
+            // Sort by display_order within the category for the rank up/down to make sense
+            const ordered = [...list].sort((a, b) => a.display_order - b.display_order);
+            return (
+              <div key={cat} className="space-y-1.5">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/80">
+                  {SCRIPT_CATEGORIES.find((c) => c.value === cat)?.label ?? cat}
+                </div>
+                {ordered.map((s, idx) => (
+                  <div key={s.id} className="group rounded-xl border border-border bg-card p-3 hover:bg-secondary/20 transition-colors">
+                    <div className="flex items-start gap-3">
+                      <div className="flex flex-col -space-y-0.5 shrink-0">
+                        <button
+                          onClick={() => onReorder(s, "up")}
+                          disabled={idx === 0}
+                          className="text-muted-foreground hover:text-primary disabled:opacity-20 disabled:cursor-not-allowed transition-colors p-0.5"
+                          title="Rank higher"
+                        >
+                          <ChevronUp className="h-3.5 w-3.5" />
+                        </button>
+                        <span className="text-[9px] text-muted-foreground/60 font-mono w-3 text-center">{idx + 1}</span>
+                        <button
+                          onClick={() => onReorder(s, "down")}
+                          disabled={idx === ordered.length - 1}
+                          className="text-muted-foreground hover:text-primary disabled:opacity-20 disabled:cursor-not-allowed transition-colors p-0.5"
+                          title="Rank lower"
+                        >
+                          <ChevronDown className="h-3.5 w-3.5" />
+                        </button>
                       </div>
-                      <div className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap line-clamp-3">{s.body}</div>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button onClick={() => onEdit(s)} className="text-muted-foreground hover:text-primary p-1"><Pencil className="h-3 w-3" /></button>
-                      <button onClick={() => onDelete(s)} className="text-muted-foreground hover:text-destructive p-1"><Trash2 className="h-3 w-3" /></button>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-semibold">
+                          {s.label}
+                          {s.creator_id && <span className="ml-2 text-[10px] font-normal text-muted-foreground">· {creators.find((c) => c.id === s.creator_id)?.name}</span>}
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap line-clamp-3">{s.body}</div>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button onClick={() => onEdit(s)} className="text-muted-foreground hover:text-primary p-1"><Pencil className="h-3 w-3" /></button>
+                        <button onClick={() => onDelete(s)} className="text-muted-foreground hover:text-destructive p-1"><Trash2 className="h-3 w-3" /></button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          ))
+                ))}
+              </div>
+            );
+          })
         )}
       </div>
     </div>
