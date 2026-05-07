@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e87852"/>
+      <stop offset="100%" stop-color="#f4a374"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+  <!-- Full bleed for "any maskable" — keeps content in safe zone (80% center) -->
+  <rect width="512" height="512" rx="112" fill="url(#g)"/>
+  <!-- Stylised mark: a chevron / sparkle that nods to the Bernard sparkle without being literal -->
+  <g transform="translate(256 256)" filter="url(#shadow)">
+    <path d="M 0 -90 L 30 -30 L 90 0 L 30 30 L 0 90 L -30 30 L -90 0 L -30 -30 Z"
+          fill="#fff"
+          opacity="0.95"/>
+    <circle cx="0" cy="0" r="20" fill="url(#g)"/>
+  </g>
+</svg>

@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Agency Console — Chatter Logger",
+  "short_name": "Agency",
+  "version": "0.1.0",
+  "description": "Log PPV sales, tips, and custom requests to your shift without leaving Infloww or OnlyFans.",
+  "icons": {
+    "16": "icon.svg",
+    "48": "icon.svg",
+    "128": "icon.svg"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon.svg",
+      "48": "icon.svg",
+      "128": "icon.svg"
+    }
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": false
+  },
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://*.supabase.co/*"
+  ]
+}

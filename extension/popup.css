@@ -1,0 +1,186 @@
+/* Match the dashboard's warm cream + coral palette so the extension feels
+   like a piece of the same product. Uses the same Poppins fallback chain. */
+
+:root {
+  --bg: #fcf9ee;
+  --card: #ffffff;
+  --card-soft: #f7f1de;
+  --border: #e8dec6;
+  --text: #3a2a20;
+  --text-muted: #7a6a5e;
+  --primary: #e87852;
+  --primary-glow: #f4a374;
+  --success: #4d8a3a;
+  --warning: #c98a2e;
+  --danger: #c84a3a;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: "Poppins", system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  width: 340px;
+  min-height: 200px;
+}
+
+button { font-family: inherit; }
+
+/* Header */
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(255,255,255,0.5);
+  backdrop-filter: blur(10px);
+}
+.brand { display: flex; align-items: center; gap: 10px; }
+.logo {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--primary), var(--primary-glow));
+  box-shadow: 0 3px 12px -3px rgba(232, 120, 82, 0.4);
+}
+.brand-title { font-weight: 700; font-size: 13px; line-height: 1.1; }
+.brand-sub { font-size: 10px; color: var(--text-muted); margin-top: 1px; }
+
+/* Screens */
+.screen { padding: 14px; }
+.screen.hidden { display: none; }
+.hidden { display: none !important; }
+.screen-title { font-weight: 600; font-size: 14px; margin-bottom: 4px; }
+.section-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+.muted { color: var(--text-muted); }
+.small { font-size: 11px; line-height: 1.5; }
+
+/* Status cards */
+.status-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 10px;
+}
+.status-card.warning { border-color: rgba(201, 138, 46, 0.4); background: rgba(201, 138, 46, 0.06); }
+.status-title { font-weight: 600; font-size: 13px; margin-bottom: 6px; }
+
+/* Forms */
+form { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--text-muted); }
+label > span { font-weight: 500; }
+input[type="text"],
+input[type="password"],
+input[type="number"] {
+  font-family: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(232, 120, 82, 0.15);
+}
+
+/* Buttons */
+button {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  transition: all 0.15s ease-out;
+}
+button:active { transform: scale(0.97); }
+
+button.primary {
+  background: linear-gradient(135deg, var(--primary), var(--primary-glow));
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 3px 10px -3px rgba(232, 120, 82, 0.4);
+}
+button.primary:hover { transform: translateY(-1px); box-shadow: 0 5px 14px -3px rgba(232, 120, 82, 0.5); }
+
+button.outline {
+  background: var(--card);
+  color: var(--text);
+  border-color: var(--border);
+}
+button.outline:hover { background: var(--card-soft); }
+
+button.ghost {
+  background: transparent;
+  color: var(--text-muted);
+  border-color: transparent;
+}
+button.ghost:hover { color: var(--text); background: rgba(0,0,0,0.04); }
+
+button.block { display: block; width: 100%; margin-top: 8px; }
+
+button:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; box-shadow: none !important; }
+
+/* Errors */
+.error {
+  font-size: 11px;
+  color: var(--danger);
+  padding: 6px 10px;
+  background: rgba(200, 74, 58, 0.08);
+  border-radius: 6px;
+  margin-top: 4px;
+}
+
+/* Status line */
+.status-line {
+  font-size: 11px;
+  color: var(--success);
+  margin-top: 8px;
+  min-height: 16px;
+  text-align: center;
+  font-weight: 500;
+}
+.status-line.error { color: var(--danger); }
+.status-line.muted { color: var(--text-muted); font-weight: normal; }
+
+/* Shift card */
+.shift-card {
+  background: linear-gradient(135deg, rgba(232, 120, 82, 0.08), rgba(244, 163, 116, 0.04));
+  border: 1px solid rgba(232, 120, 82, 0.25);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+.shift-creator { font-weight: 700; font-size: 16px; line-height: 1.2; }
+.shift-meta { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+.shift-totals { display: flex; gap: 16px; margin-top: 10px; }
+.total { flex: 1; }
+.total-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.14em; color: var(--text-muted); }
+.total-value { font-size: 18px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }
+
+/* Quick-log rows */
+.quick-row {
+  display: flex;
+  gap: 8px;
+  align-items: end;
+  margin-bottom: 8px;
+}
+.quick-input { flex: 1; }
+.quick-row button { white-space: nowrap; flex-shrink: 0; }

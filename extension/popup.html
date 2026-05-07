@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Agency Console</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <!-- Header (always visible) -->
+    <header id="header">
+      <div class="brand">
+        <div class="logo"></div>
+        <div class="brand-text">
+          <div class="brand-title">Agency</div>
+          <div class="brand-sub" id="brand-sub">Chatter logger</div>
+        </div>
+      </div>
+      <button class="ghost" id="settings-btn" title="Settings" aria-label="Settings">⚙</button>
+    </header>
+
+    <!-- Setup needed (no Supabase config) -->
+    <section id="needs-setup" class="screen hidden">
+      <div class="status-card warning">
+        <div class="status-title">Set up the extension first</div>
+        <p class="muted small">
+          Open the settings (⚙ above), paste your Supabase URL and anon key, then come back.
+        </p>
+        <button class="primary block" id="open-settings">Open settings</button>
+      </div>
+    </section>
+
+    <!-- Login -->
+    <section id="login" class="screen hidden">
+      <div class="screen-title">Sign in</div>
+      <p class="muted small">Use your staff portal username + password.</p>
+      <form id="login-form">
+        <label>
+          <span>Username</span>
+          <input type="text" id="username" autocomplete="username" required autofocus />
+        </label>
+        <label>
+          <span>Password</span>
+          <input type="password" id="password" autocomplete="current-password" required />
+        </label>
+        <button class="primary block" type="submit" id="login-btn">Sign in</button>
+        <div class="error hidden" id="login-error"></div>
+      </form>
+    </section>
+
+    <!-- No active shift -->
+    <section id="no-shift" class="screen hidden">
+      <div class="status-card">
+        <div class="status-title">You're not clocked in</div>
+        <p class="muted small">
+          Open the staff portal in your browser to clock in. Once a shift is active you'll be able to log activity from here.
+        </p>
+        <button class="outline block" id="open-portal">Open staff portal</button>
+        <button class="ghost block" id="signout-noshift">Sign out</button>
+      </div>
+    </section>
+
+    <!-- Active shift workspace -->
+    <section id="workspace" class="screen hidden">
+      <div class="shift-card">
+        <div class="shift-creator" id="shift-creator">—</div>
+        <div class="shift-meta" id="shift-meta">—</div>
+        <div class="shift-totals">
+          <div class="total">
+            <div class="total-label">Revenue</div>
+            <div class="total-value" id="total-revenue">$0</div>
+          </div>
+          <div class="total">
+            <div class="total-label">PPVs</div>
+            <div class="total-value" id="total-ppv-count">0</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="quick-log">
+        <div class="section-title">Log a sale</div>
+
+        <div class="quick-row">
+          <label class="quick-input">
+            <span>PPV ($)</span>
+            <input type="number" inputmode="decimal" min="0" step="0.01" id="ppv-amount" placeholder="0.00" />
+          </label>
+          <button class="primary" id="log-ppv">+ PPV</button>
+        </div>
+
+        <div class="quick-row">
+          <label class="quick-input">
+            <span>Tip ($)</span>
+            <input type="number" inputmode="decimal" min="0" step="0.01" id="tip-amount" placeholder="0.00" />
+          </label>
+          <button class="primary" id="log-tip">+ Tip</button>
+        </div>
+
+        <div class="quick-row">
+          <label class="quick-input">
+            <span>Custom ($)</span>
+            <input type="number" inputmode="decimal" min="0" step="0.01" id="custom-amount" placeholder="0.00" />
+          </label>
+          <button class="primary" id="log-custom">+ Custom</button>
+        </div>
+
+        <div class="quick-row">
+          <label class="quick-input">
+            <span>Messages sent</span>
+            <input type="number" inputmode="numeric" min="0" step="1" id="msg-count" placeholder="0" />
+          </label>
+          <button class="outline" id="log-messages">+ Add</button>
+        </div>
+
+        <div class="status-line" id="status-line"></div>
+      </div>
+
+      <button class="ghost block" id="signout">Sign out</button>
+    </section>
+
+    <script src="popup.js" type="module"></script>
+  </body>
+</html>

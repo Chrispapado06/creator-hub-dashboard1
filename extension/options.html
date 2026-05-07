@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Agency Console — Settings</title>
+    <link rel="stylesheet" href="popup.css" />
+    <style>
+      body { width: 480px; min-height: 0; }
+      .help { font-size: 11px; color: var(--text-muted); margin-top: 4px; line-height: 1.5; }
+      .help code {
+        background: rgba(0,0,0,0.06);
+        padding: 1px 5px;
+        border-radius: 4px;
+        font-family: "IBM Plex Mono", "Courier New", monospace;
+        font-size: 10px;
+      }
+      .saved {
+        color: var(--success);
+        font-size: 12px;
+        text-align: center;
+        margin-top: 8px;
+        font-weight: 500;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <div class="logo"></div>
+        <div class="brand-text">
+          <div class="brand-title">Agency Console</div>
+          <div class="brand-sub">Extension settings</div>
+        </div>
+      </div>
+    </header>
+
+    <div class="screen">
+      <div class="screen-title">Connect to your Supabase</div>
+      <p class="muted small">
+        These come from the same Supabase project your dashboard uses.
+        Find them in <strong>Supabase → Settings → API</strong>.
+        These values are public and safe to embed in client apps.
+      </p>
+
+      <form id="config-form">
+        <label>
+          <span>Supabase URL</span>
+          <input type="text" id="url" placeholder="https://xxxxx.supabase.co" required />
+          <div class="help">Project URL — looks like <code>https://abcdefghij.supabase.co</code></div>
+        </label>
+
+        <label>
+          <span>Anon key</span>
+          <input type="text" id="anonKey" placeholder="eyJhbGciOi..." required />
+          <div class="help">The <code>anon</code> public key from Supabase → Settings → API → Project API keys.</div>
+        </label>
+
+        <label>
+          <span>Staff portal URL (optional)</span>
+          <input type="text" id="portalUrl" placeholder="https://your-dashboard.vercel.app" />
+          <div class="help">If set, the "Open staff portal" button on the popup opens here. Helps chatters click in to clock in fast.</div>
+        </label>
+
+        <button class="primary block" type="submit" id="save-btn">Save settings</button>
+        <div class="saved hidden" id="saved-msg">Saved.</div>
+      </form>
+    </div>
+
+    <script type="module">
+      const $ = (id) => document.getElementById(id);
+
+      const KEY = "agency_supabase_config";
+
+      chrome.storage.local.get([KEY], (res) => {
+        const c = res[KEY] ?? {};
+        $("url").value = c.url ?? "";
+        $("anonKey").value = c.anonKey ?? "";
+        $("portalUrl").value = c.portalUrl ?? "";
+      });
+
+      $("config-form").addEventListener("submit", (e) => {
+        e.preventDefault();
+        const config = {
+          url: $("url").value.trim(),
+          anonKey: $("anonKey").value.trim(),
+          portalUrl: $("portalUrl").value.trim(),
+        };
+        chrome.storage.local.set({ [KEY]: config }, () => {
+          const msg = $("saved-msg");
+          msg.classList.remove("hidden");
+          setTimeout(() => msg.classList.add("hidden"), 2000);
+        });
+      });
+    </script>
+  </body>
+</html>
