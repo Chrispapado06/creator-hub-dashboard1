@@ -474,12 +474,19 @@ export async function gatherBusinessSnapshot(days: number): Promise<BusinessSnap
     leadActivities,
   ] = await Promise.all([
     fetchRange("revenue_entries", "creator_id, amount, entry_date", "entry_date", startISO, endISO),
-    fetchRange("organic_revenue_entries", "creator_id, amount, entry_date", "entry_date", startISO, endISO),
-    fetchRange("internal_revenue_entries", "creator_id, amount, entry_date", "entry_date", startISO, endISO),
+    // Tables were renamed in a schema refactor — these used to be
+    // organic_revenue_entries / internal_revenue_entries.
+    fetchRange("organic_entries", "creator_id, amount, entry_date", "entry_date", startISO, endISO),
+    fetchRange("internal_entries", "creator_id, amount, entry_date", "entry_date", startISO, endISO),
     fetchRange("ad_campaigns", "creator_id, amount_spent, revenue_generated, start_date", "start_date", startISO, endISO),
-    fetchAll("creator_leads", "id, name, status, source, created_at, signed_at, last_contact_at"),
+    // creator_leads.source was renamed to source_platform; last_contact_at
+    // was removed (use lead_activities.occurred_at as the source of truth).
+    fetchAll("creator_leads", "id, name, status, source_platform, created_at, signed_at"),
     fetchAll("creators", "id, name, status, created_at"),
-    fetchRange("daily_link_snapshots", "campaign_code, link_name, clicks_count, subscribers_count, revenue_total, snapshot_date", "snapshot_date", startISO, endISO),
+    // daily_link_snapshots was retired; infloww_tracking_stats is the live
+    // current-state equivalent. No date column on this so pull all of it
+    // and let the consumer aggregate cumulatively.
+    fetchAll("infloww_tracking_stats", "campaign_code, campaign_url, clicks_count, subscribers_count, revenue_total"),
     fetchAll("reddit_accounts", "username, status, creator_id"),
     fetchAll("chatters", "id, name, role, status"),
     fetchRange("shifts", "chatter_id, start_at, end_at, total_revenue, creator_id", "start_at", start.toISOString(), end.toISOString()),
@@ -544,7 +551,10 @@ export async function gatherBusinessSnapshot(days: number): Promise<BusinessSnap
   const linkAgg = new Map<number, { name: string; revenue: number; clicks: number; subs: number }>();
   for (const s of snaps) {
     const code = num(s.campaign_code);
-    const cur = linkAgg.get(code) ?? { name: str(s.link_name) || `Code ${code}`, revenue: 0, clicks: 0, subs: 0 };
+    // infloww_tracking_stats has no `link_name` — fall back to the URL or
+    // the campaign code so we always have something readable to render.
+    const linkName = str(s.link_name) || str(s.campaign_url) || `Code ${code}`;
+    const cur = linkAgg.get(code) ?? { name: linkName, revenue: 0, clicks: 0, subs: 0 };
     cur.revenue += num(s.revenue_total);
     cur.clicks += num(s.clicks_count);
     cur.subs += num(s.subscribers_count);
@@ -605,12 +615,16 @@ export async function gatherBusinessSnapshot(days: number): Promise<BusinessSnap
     .filter((l) => {
       const status = str(l.status);
       if (status === "signed" || status === "lost") return false;
-      const last = lastActivity.get(str(l.id)) ?? str(l.last_contact_at) ?? str(l.created_at);
+      // last_contact_at was removed from creator_leads; lead_activities is
+      // now the source of truth, falling back to created_at if no activity.
+      const last = lastActivity.get(str(l.id)) ?? str(l.created_at);
       const days = (today.getTime() - new Date(last).getTime()) / 86400000;
       return days > 7;
     })
     .map((l) => {
-      const last = lastActivity.get(str(l.id)) ?? str(l.last_contact_at) ?? str(l.created_at);
+      // last_contact_at was removed from creator_leads; lead_activities is
+      // now the source of truth, falling back to created_at if no activity.
+      const last = lastActivity.get(str(l.id)) ?? str(l.created_at);
       return {
         name: str(l.name),
         status: str(l.status),
