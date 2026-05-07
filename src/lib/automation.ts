@@ -93,8 +93,8 @@ async function findDormantCreators(days: number): Promise<Match[]> {
     // Has any revenue entry in the window?
     const [{ data: r1 }, { data: r2 }, { data: r3 }] = await Promise.all([
       supabase.from("revenue_entries").select("id").eq("creator_id", c.id).gte("entry_date", since).limit(1),
-      supabase.from("organic_revenue_entries").select("id").eq("creator_id", c.id).gte("entry_date", since).limit(1),
-      supabase.from("internal_revenue_entries").select("id").eq("creator_id", c.id).gte("entry_date", since).limit(1),
+      supabase.from("organic_entries").select("id").eq("creator_id", c.id).gte("entry_date", since).limit(1),
+      supabase.from("internal_entries").select("id").eq("creator_id", c.id).gte("entry_date", since).limit(1),
     ]);
     if ((r1?.length ?? 0) === 0 && (r2?.length ?? 0) === 0 && (r3?.length ?? 0) === 0) {
       out.push({
@@ -108,28 +108,22 @@ async function findDormantCreators(days: number): Promise<Match[]> {
   return out;
 }
 
-async function findLowCvrLinks(threshold: number, minClicks: number, days: number): Promise<Match[]> {
-  const since = subDays(new Date(), days).toISOString().slice(0, 10);
-  // daily_link_snapshots aggregates clicks + subscribers per code per day.
-  // Type-cast since this table may not be in the generated types.
-  const sb = supabase as unknown as {
-    from: (t: string) => {
-      select: (c: string) => {
-        gte: (k: string, v: string) => Promise<{ data: Record<string, unknown>[] | null }>;
-      };
-    };
-  };
-  const { data } = await sb
-    .from("daily_link_snapshots")
-    .select("campaign_code, link_name, clicks_count, subscribers_count")
-    .gte("snapshot_date", since);
+async function findLowCvrLinks(threshold: number, minClicks: number, _days: number): Promise<Match[]> {
+  // The `days` window argument is preserved for back-compat but ignored:
+  // daily_link_snapshots was retired and infloww_tracking_stats only stores
+  // current cumulative counters. We aggregate across whatever's there now.
+  // Low CVR over total lifetime is still a useful signal.
+  const { data } = await supabase
+    .from("infloww_tracking_stats")
+    .select("campaign_code, campaign_url, clicks_count, subscribers_count");
   if (!data) return [];
   const agg = new Map<number, { name: string; clicks: number; subs: number }>();
   for (const r of data) {
-    const code = num(r.campaign_code, 0);
-    const cur = agg.get(code) ?? { name: str(r.link_name, `Code ${code}`), clicks: 0, subs: 0 };
-    cur.clicks += num(r.clicks_count, 0);
-    cur.subs += num(r.subscribers_count, 0);
+    const code = num((r as Record<string, unknown>).campaign_code, 0);
+    const fallbackName = str((r as Record<string, unknown>).campaign_url, `Code ${code}`);
+    const cur = agg.get(code) ?? { name: fallbackName, clicks: 0, subs: 0 };
+    cur.clicks += num((r as Record<string, unknown>).clicks_count, 0);
+    cur.subs += num((r as Record<string, unknown>).subscribers_count, 0);
     agg.set(code, cur);
   }
   const out: Match[] = [];

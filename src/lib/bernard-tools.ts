@@ -115,8 +115,8 @@ const tool_get_creator_detail: Tool = {
     const [{ data: c }, { data: landing }, { data: org }, { data: int }, { data: rev }, { data: ads }] = await Promise.all([
       supabase.from("creators").select("*").eq("id", id).maybeSingle(),
       supabase.from("creator_landing_pages").select("id, slug, custom_domain, is_published, is_verified").eq("creator_id", id).maybeSingle(),
-      supabase.from("organic_revenue_entries").select("amount").eq("creator_id", id).gte("entry_date", since),
-      supabase.from("internal_revenue_entries").select("amount").eq("creator_id", id).gte("entry_date", since),
+      supabase.from("organic_entries").select("amount").eq("creator_id", id).gte("entry_date", since),
+      supabase.from("internal_entries").select("amount").eq("creator_id", id).gte("entry_date", since),
       supabase.from("revenue_entries").select("amount").eq("creator_id", id).gte("entry_date", since),
       supabase.from("ad_campaigns").select("amount_spent, revenue_generated").eq("creator_id", id).gte("start_date", since),
     ]);
@@ -167,8 +167,8 @@ const tool_query_revenue: Tool = {
       cid ? q.eq("creator_id", cid).gte("start_date", since).lte("start_date", until)
           : q.gte("start_date", since).lte("start_date", until);
     const [{ data: org }, { data: int }, { data: rev }, { data: ads }] = await Promise.all([
-      filter(supabase.from("organic_revenue_entries").select("amount, entry_date")),
-      filter(supabase.from("internal_revenue_entries").select("amount, entry_date")),
+      filter(supabase.from("organic_entries").select("amount, entry_date")),
+      filter(supabase.from("internal_entries").select("amount, entry_date")),
       filter(supabase.from("revenue_entries").select("amount, entry_date")),
       filterAds(supabase.from("ad_campaigns").select("amount_spent, revenue_generated, start_date")),
     ]);

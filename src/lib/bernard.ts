@@ -794,8 +794,10 @@ export async function gatherForecastInputs(): Promise<{ summary: ForecastSummary
 
   const [revenue, organic, internal, ads] = await Promise.all([
     fetchRange("revenue_entries", "amount, entry_date", "entry_date", startISO, endISO),
-    fetchRange("organic_revenue_entries", "amount, entry_date", "entry_date", startISO, endISO),
-    fetchRange("internal_revenue_entries", "amount, entry_date", "entry_date", startISO, endISO),
+    // Same rename as in gatherBusinessSnapshot — these were
+    // organic_revenue_entries / internal_revenue_entries pre-refactor.
+    fetchRange("organic_entries", "amount, entry_date", "entry_date", startISO, endISO),
+    fetchRange("internal_entries", "amount, entry_date", "entry_date", startISO, endISO),
     fetchRange("ad_campaigns", "amount_spent, revenue_generated, start_date", "start_date", startISO, endISO),
   ]);
 
