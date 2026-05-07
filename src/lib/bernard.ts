@@ -83,6 +83,69 @@ export const BERNARD_SYSTEM = `You are Bernard, the in-house AI analyst and stra
 /** Optional helper string for callers that want to inject the same OFM context separately. */
 export const OFM_GLOSSARY = `Key OFM terms: PPV (pay-per-view DM), CVR (click-to-sub conversion rate), ROAS (return on ad spend), LTV (lifetime value), churn (% of subs who cancel monthly), OnlyFinder (paid placement directory), Infloww (chatter management tool), Beacons/Linktree (link aggregator landing).`;
 
+/**
+ * Agentic system prompt — used when Bernard has tools available. Extends the
+ * analyst persona with rules for tool use.
+ */
+export const BERNARD_AGENTIC_SYSTEM = `${BERNARD_SYSTEM}
+
+# Agentic mode
+
+You have a set of tools that let you read AND write to the agency's database
+and connected services (Airtable, Supabase). Use them when the user asks for
+something concrete — don't just describe what could be done, do it.
+
+## Rules of tool use
+
+1. **Read freely. Write carefully.** Read tools (query_creators, query_revenue,
+   list_landing_pages, airtable_list_*) execute silently — call them whenever
+   you need data. Write tools require the user's approval, which surfaces
+   automatically as a confirmation card; you don't need to ask "should I?"
+   before calling them, because the user gets the chance to approve or reject
+   the actual call.
+
+2. **Resolve identifiers before mutating.** Most write tools take UUIDs or
+   record IDs, not names. If the user says "update Maylee's status," call
+   query_creators({ name: "Maylee" }) first, get the id, then call
+   update_creator with that id. Never invent IDs.
+
+3. **For Airtable, follow this order:**
+   1. airtable_list_bases → get the base_id of the base they're referencing
+   2. airtable_list_tables → understand the table + field names
+   3. airtable_list_records (with filterByFormula) to find the row
+   4. airtable_update_record / airtable_create_record to make the change
+   The user usually says "the Airtable" or "Reddit Content Manager"; map that
+   to a base_id from list_bases.
+
+4. **One thing at a time.** If the user asks for several changes, plan them
+   out, then execute them in sequence. Each write surfaces its own approval
+   card — the user can approve all or stop you partway through.
+
+5. **Custom domain reality check.** When asked to "connect a domain" to a
+   landing page, you can set the custom_domain field on the landing_page row
+   via update_landing_page. THEN tell the user clearly that they still need
+   to do two manual steps: (a) add the domain in Vercel → Settings → Domains,
+   and (b) point its DNS at Vercel (the registrar shows them an A record /
+   CNAME / nameservers to copy in). You can't do those for them.
+
+6. **After every write, summarize what changed.** Don't just say "done" —
+   tell the user what record now reads what way, and surface anything they
+   should follow up on (e.g. "I set custom_domain=creatorname.com; now add
+   the domain in Vercel + point DNS").
+
+7. **Stay in scope.** You only have tools for this app's data and the
+   integrations the user has configured (Airtable). You CANNOT browse the
+   web, send emails, post to Instagram/Reddit/OF, or call any other API.
+   If asked, say so clearly and offer the closest in-scope alternative.
+
+8. **Errors aren't failures, they're information.** If a tool returns an
+   error string starting with "Error:", report it to the user, hypothesize
+   why, and offer to retry with adjusted parameters.
+
+When you're just analyzing (no action needed), behave the way you always
+have — cite numbers, give specific recommendations, end with "Next moves" if
+the question implies action. Tools are an addition, not a replacement.`;
+
 export async function getAnthropicKey(): Promise<string | null> {
   const { data } = await supabase
     .from("agency_settings")
@@ -127,6 +190,124 @@ export async function callClaude(
   const text = json.content?.find((c) => c.type === "text")?.text ?? "";
   if (!text) throw new Error("Empty response from Claude");
   return text;
+}
+
+// ── Agentic streaming (tool use) ───────────────────────────────────────────
+
+/**
+ * Anthropic content blocks we care about. Tool-use input arrives as a stream
+ * of partial-json deltas — we re-assemble the full JSON before exposing it.
+ */
+export type AgenticEvent =
+  | { type: "text_delta"; text: string }
+  | { type: "tool_use_start"; id: string; name: string; index: number }
+  | { type: "tool_use_complete"; id: string; name: string; index: number; input: Record<string, unknown> }
+  | { type: "message_done"; stopReason: "end_turn" | "tool_use" | "max_tokens" | "stop_sequence" | "unknown" };
+
+export type AgenticChatMessage =
+  | { role: "user"; content: string | Array<{ type: "tool_result"; tool_use_id: string; content: string; is_error?: boolean }> }
+  | { role: "assistant"; content: string | Array<{ type: "text"; text: string } | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }> };
+
+/**
+ * Streaming chat with optional tool use. When `tools` are provided, Claude
+ * may emit tool_use blocks; the caller is expected to execute them and
+ * resume the conversation by appending a user message with `tool_result`
+ * content blocks (one per tool_use).
+ */
+export async function* streamClaudeAgentic(
+  apiKey: string,
+  messages: AgenticChatMessage[],
+  opts?: { maxTokens?: number; signal?: AbortSignal; tools?: Array<{ name: string; description: string; input_schema: Record<string, unknown> }>; system?: string }
+): AsyncGenerator<AgenticEvent, void, unknown> {
+  const body: Record<string, unknown> = {
+    model: MODEL,
+    max_tokens: opts?.maxTokens ?? 4000,
+    system: opts?.system ?? BERNARD_SYSTEM,
+    messages,
+    stream: true,
+  };
+  if (opts?.tools && opts.tools.length > 0) {
+    body.tools = opts.tools;
+  }
+
+  const res = await fetch(ANTHROPIC_API_URL, {
+    method: "POST",
+    headers: CLAUDE_HEADERS(apiKey),
+    signal: opts?.signal,
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Claude API ${res.status}: ${errText.slice(0, 300)}`);
+  }
+  if (!res.body) throw new Error("Streaming response has no body");
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  // Per-block scratch — Anthropic streams content in indexed blocks
+  const toolBuffers = new Map<number, { id: string; name: string; partialJson: string }>();
+  let stopReason: AgenticEvent extends { type: "message_done"; stopReason: infer S } ? S : never = "unknown" as never;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const events = buffer.split("\n\n");
+    buffer = events.pop() ?? "";
+    for (const evt of events) {
+      for (const line of evt.split("\n")) {
+        if (!line.startsWith("data: ")) continue;
+        const payload = line.slice(6).trim();
+        if (!payload || payload === "[DONE]") continue;
+        try {
+          const json = JSON.parse(payload) as {
+            type?: string;
+            index?: number;
+            content_block?: { type?: string; id?: string; name?: string };
+            delta?: {
+              type?: string;
+              text?: string;
+              partial_json?: string;
+              stop_reason?: string;
+            };
+          };
+
+          if (json.type === "content_block_start" && typeof json.index === "number") {
+            const cb = json.content_block;
+            if (cb?.type === "tool_use" && cb.id && cb.name) {
+              toolBuffers.set(json.index, { id: cb.id, name: cb.name, partialJson: "" });
+              yield { type: "tool_use_start", id: cb.id, name: cb.name, index: json.index };
+            }
+          } else if (json.type === "content_block_delta" && json.delta) {
+            if (json.delta.type === "text_delta" && json.delta.text) {
+              yield { type: "text_delta", text: json.delta.text };
+            } else if (json.delta.type === "input_json_delta" && typeof json.index === "number") {
+              const buf = toolBuffers.get(json.index);
+              if (buf) buf.partialJson += json.delta.partial_json ?? "";
+            }
+          } else if (json.type === "content_block_stop" && typeof json.index === "number") {
+            const buf = toolBuffers.get(json.index);
+            if (buf) {
+              let parsed: Record<string, unknown> = {};
+              try {
+                parsed = buf.partialJson ? JSON.parse(buf.partialJson) as Record<string, unknown> : {};
+              } catch {
+                // Tool input arrived malformed — pass empty so the caller can decide what to do
+              }
+              yield { type: "tool_use_complete", id: buf.id, name: buf.name, index: json.index, input: parsed };
+              toolBuffers.delete(json.index);
+            }
+          } else if (json.type === "message_delta" && json.delta?.stop_reason) {
+            stopReason = json.delta.stop_reason as typeof stopReason;
+          }
+        } catch {
+          // Keepalives / malformed lines — ignore
+        }
+      }
+    }
+  }
+  yield { type: "message_done", stopReason };
 }
 
 /**

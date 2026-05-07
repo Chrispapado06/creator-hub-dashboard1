@@ -30,6 +30,7 @@ type AgencySettings = {
   logo_url: string | null;
   theme: string;
   anthropic_api_key: string | null;
+  airtable_api_key: string | null;
 };
 
 type AccountType = "admin" | "staff";
@@ -47,8 +48,9 @@ type StaffMember = { id: string; name: string; role: string };
 
 function SettingsPage() {
   const [settings, setSettings] = useState<AgencySettings | null>(null);
-  const [form, setForm] = useState({ agency_name: "", logo_url: "", theme: "dark", anthropic_api_key: "" });
+  const [form, setForm] = useState({ agency_name: "", logo_url: "", theme: "dark", anthropic_api_key: "", airtable_api_key: "" });
   const [showAnthropicKey, setShowAnthropicKey] = useState(false);
+  const [showAirtableKey, setShowAirtableKey] = useState(false);
   const [users, setUsers] = useState<TeamUser[]>([]);
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [newUser, setNewUser] = useState({
@@ -74,6 +76,7 @@ function SettingsPage() {
         logo_url: s.logo_url ?? "",
         theme: s.theme,
         anthropic_api_key: s.anthropic_api_key ?? "",
+        airtable_api_key: s.airtable_api_key ?? "",
       });
     }
     setUsers((u ?? []) as TeamUser[]);
@@ -110,6 +113,7 @@ function SettingsPage() {
       logo_url: form.logo_url.trim() || null,
       theme: form.theme,
       anthropic_api_key: form.anthropic_api_key.trim() || null,
+      airtable_api_key: form.airtable_api_key.trim() || null,
     };
     let error;
     if (settings?.id) {
@@ -264,6 +268,64 @@ function SettingsPage() {
           >
             Get an API key <ExternalLink className="h-3 w-3" />
           </a>
+        </div>
+      </section>
+
+      {/* Integrations */}
+      <section className="space-y-5">
+        <h2 className="text-lg font-semibold border-b border-border pb-2 flex items-center gap-2">
+          <ExternalLink className="h-4 w-4 text-primary" />
+          Integrations
+        </h2>
+        <p className="text-sm text-muted-foreground -mt-2">
+          Connect external services Bernard can read and write to. Tokens are stored in Supabase
+          and called browser-direct — they never leave your project.
+        </p>
+
+        <div className="space-y-1.5">
+          <Label>Airtable Personal Access Token</Label>
+          <div className="flex gap-2">
+            <Input
+              type={showAirtableKey ? "text" : "password"}
+              placeholder="patAbc..."
+              value={form.airtable_api_key}
+              onChange={(e) => setForm({ ...form, airtable_api_key: e.target.value })}
+              autoComplete="off"
+              className="font-mono"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={() => setShowAirtableKey((v) => !v)}
+              aria-label={showAirtableKey ? "Hide token" : "Show token"}
+            >
+              {showAirtableKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </Button>
+          </div>
+          <div className="text-[11px] text-muted-foreground space-y-1">
+            <p>
+              Lets Bernard read your bases (when you ask) and write rows (with your approval).
+              Generate a PAT at{" "}
+              <a
+                href="https://airtable.com/create/tokens"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary hover:underline inline-flex items-center gap-0.5"
+              >
+                airtable.com/create/tokens
+                <ExternalLink className="h-2.5 w-2.5" />
+              </a>
+              .
+            </p>
+            <p>Required scopes:</p>
+            <ul className="list-disc list-inside ml-2 space-y-0.5">
+              <li><code className="font-mono bg-secondary px-1 rounded text-[10px]">data.records:read</code> — read records</li>
+              <li><code className="font-mono bg-secondary px-1 rounded text-[10px]">data.records:write</code> — create + update records</li>
+              <li><code className="font-mono bg-secondary px-1 rounded text-[10px]">schema.bases:read</code> — list tables and fields</li>
+            </ul>
+            <p>Then add each base you want Bernard to access in the same form.</p>
+          </div>
         </div>
       </section>
 

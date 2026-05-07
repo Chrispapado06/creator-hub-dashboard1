@@ -19,10 +19,13 @@ import {
 } from "@/components/ui/popover";
 import { format, formatDistanceToNow } from "date-fns";
 import {
-  streamClaude, gatherBusinessSnapshot, gatherForecastInputs, getAnthropicKey,
-  snapshotToContext, forecastToContext, type ChatMessage,
+  streamClaudeAgentic, gatherBusinessSnapshot, gatherForecastInputs, getAnthropicKey,
+  snapshotToContext, forecastToContext, BERNARD_AGENTIC_SYSTEM,
+  type AgenticChatMessage,
 } from "@/lib/bernard";
+import { TOOLS, getTool, toolsForAnthropic, type Tool } from "@/lib/bernard-tools";
 import { logAudit } from "@/lib/audit";
+import { Wrench, ShieldCheck, ShieldAlert, Loader2 } from "lucide-react";
 
 export const Route = createFileRoute("/bernard")({
   head: () => ({ meta: [{ title: "Bernard — Agency Console" }] }),
@@ -201,10 +204,26 @@ type Conversation = {
   title: string;
   preset_id: string | null;
   data_window_days: number;
-  messages: ChatMessage[];
+  messages: AgenticChatMessage[];
   range: { start: string; end: string };
   created_at: string;
   updated_at: string;
+};
+
+// Status of each tool call for the UI — keyed by tool_use_id
+type ToolCallStatus = "pending_approval" | "executing" | "done" | "error" | "rejected";
+type ToolCallState = {
+  status: ToolCallStatus;
+  /** Result string or error message — surfaced in the card after execution */
+  result?: string;
+};
+
+// A tool call awaiting the user's approve/reject. Resolves when they click.
+type PendingApproval = {
+  toolUseId: string;
+  toolName: string;
+  input: Record<string, unknown>;
+  resolve: (toolResult: { type: "tool_result"; tool_use_id: string; content: string; is_error?: boolean }) => void;
 };
 
 const STORAGE_KEY = "bernard_conversations_v2";
@@ -244,6 +263,16 @@ function BernardPage() {
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Agentic state: per-tool-call display status + the queue of approvals
+  // the user is currently looking at.
+  const [toolCallStates, setToolCallStates] = useState<Record<string, ToolCallState>>({});
+  const pendingApprovalsRef = useRef<PendingApproval[]>([]);
+  // Re-render trigger for the approval queue (since the ref doesn't trigger one)
+  const [approvalTick, setApprovalTick] = useState(0);
+  const bumpApprovals = () => setApprovalTick((n) => n + 1);
+  const setToolStatus = (id: string, status: ToolCallStatus, result?: string) =>
+    setToolCallStates((prev) => ({ ...prev, [id]: { status, result } }));
+
   // Load conversations + API key state on mount
   useEffect(() => {
     getAnthropicKey().then((k) => setHasKey(!!k));
@@ -275,21 +304,119 @@ function BernardPage() {
     persist([convo, ...conversations.filter((c) => c.id !== convo.id)].slice(0, STORAGE_LIMIT));
   };
 
-  // Append a chunk to the assistant's message in-progress
-  const appendToActiveAssistant = (chunk: string, convoId: string) => {
-    setStreamingText((prev) => prev + chunk);
+  // Mutate the live conversation's last assistant message — append text or
+  // attach tool_use blocks as they stream in.
+  const updateLastAssistant = (convoId: string, mutate: (msg: AgenticChatMessage) => AgenticChatMessage) => {
     setConversations((prev) => prev.map((c) => {
       if (c.id !== convoId) return c;
       const msgs = [...c.messages];
       const last = msgs[msgs.length - 1];
       if (last && last.role === "assistant") {
-        msgs[msgs.length - 1] = { ...last, content: last.content + chunk };
+        msgs[msgs.length - 1] = mutate(last);
       }
       return { ...c, messages: msgs, updated_at: new Date().toISOString() };
     }));
   };
 
-  const runStreaming = async (convo: Conversation, dataSectionForFirstTurn: string | null, userMessage: string, isFirstMessage: boolean) => {
+  /**
+   * Append plain text to the assistant's last message — handles both the
+   * "string content" shape (initial state) and the "array content" shape
+   * (after a tool_use block has been added).
+   */
+  const appendAssistantText = (convoId: string, chunk: string) => {
+    setStreamingText((prev) => prev + chunk);
+    updateLastAssistant(convoId, (last) => {
+      if (last.role !== "assistant") return last;
+      if (typeof last.content === "string") {
+        return { role: "assistant", content: last.content + chunk };
+      }
+      // Array form — append to the last text block, or create one
+      const blocks = [...last.content];
+      const tail = blocks[blocks.length - 1];
+      if (tail && tail.type === "text") {
+        blocks[blocks.length - 1] = { type: "text", text: tail.text + chunk };
+      } else {
+        blocks.push({ type: "text", text: chunk });
+      }
+      return { role: "assistant", content: blocks };
+    });
+  };
+
+  /** Add a tool_use block to the assistant's last message. */
+  const addAssistantToolUse = (convoId: string, id: string, name: string, input: Record<string, unknown>) => {
+    updateLastAssistant(convoId, (last) => {
+      if (last.role !== "assistant") return last;
+      // Convert string content into array form on first tool use
+      const blocks = typeof last.content === "string"
+        ? (last.content ? [{ type: "text" as const, text: last.content }] : [])
+        : [...last.content];
+      blocks.push({ type: "tool_use", id, name, input });
+      return { role: "assistant", content: blocks };
+    });
+  };
+
+  /** Append a user message containing tool_result blocks (after Bernard called tools). */
+  const appendToolResults = (convoId: string, results: Array<{ type: "tool_result"; tool_use_id: string; content: string; is_error?: boolean }>) => {
+    setConversations((prev) => prev.map((c) => {
+      if (c.id !== convoId) return c;
+      const msgs = [...c.messages, { role: "user" as const, content: results }];
+      // Add an empty assistant placeholder for the next streaming pass
+      msgs.push({ role: "assistant" as const, content: "" });
+      return { ...c, messages: msgs, updated_at: new Date().toISOString() };
+    }));
+  };
+
+  /**
+   * Wait for the user to approve or reject a pending tool call.
+   * Push a PendingApproval with a resolver into the queue; the UI's
+   * approve/reject handlers resolve it.
+   */
+  const askApproval = (toolUseId: string, toolName: string, input: Record<string, unknown>): Promise<{ type: "tool_result"; tool_use_id: string; content: string; is_error?: boolean }> => {
+    return new Promise((resolve) => {
+      pendingApprovalsRef.current = [
+        ...pendingApprovalsRef.current,
+        { toolUseId, toolName, input, resolve },
+      ];
+      bumpApprovals();
+    });
+  };
+
+  /** Approve handler — runs the tool's handler and resolves the waiting promise. */
+  const onApproveTool = async (toolUseId: string) => {
+    const pending = pendingApprovalsRef.current.find((p) => p.toolUseId === toolUseId);
+    if (!pending) return;
+    pendingApprovalsRef.current = pendingApprovalsRef.current.filter((p) => p.toolUseId !== toolUseId);
+    bumpApprovals();
+    setToolStatus(toolUseId, "executing");
+    const tool = getTool(pending.toolName);
+    if (!tool) {
+      setToolStatus(toolUseId, "error", `Tool ${pending.toolName} not found.`);
+      pending.resolve({ type: "tool_result", tool_use_id: toolUseId, content: `Tool ${pending.toolName} not found.`, is_error: true });
+      return;
+    }
+    try {
+      const result = await tool.handler(pending.input);
+      const isError = result.startsWith("Error:");
+      setToolStatus(toolUseId, isError ? "error" : "done", result);
+      pending.resolve({ type: "tool_result", tool_use_id: toolUseId, content: result, is_error: isError });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setToolStatus(toolUseId, "error", msg);
+      pending.resolve({ type: "tool_result", tool_use_id: toolUseId, content: `Error: ${msg}`, is_error: true });
+    }
+  };
+
+  /** Reject handler — short-circuits the tool call with a rejection result. */
+  const onRejectTool = (toolUseId: string) => {
+    const pending = pendingApprovalsRef.current.find((p) => p.toolUseId === toolUseId);
+    if (!pending) return;
+    pendingApprovalsRef.current = pendingApprovalsRef.current.filter((p) => p.toolUseId !== toolUseId);
+    bumpApprovals();
+    setToolStatus(toolUseId, "rejected", "User rejected this action.");
+    pending.resolve({ type: "tool_result", tool_use_id: toolUseId, content: "User rejected this action. Don't retry it.", is_error: true });
+  };
+
+  const runAgentic = async (convo: Conversation, dataSectionForFirstTurn: string | null, userMessage: string, isFirstMessage: boolean) => {
     setError(null);
     setStreaming(true);
     setStreamingText("");
@@ -299,28 +426,117 @@ function BernardPage() {
       const apiKey = await getAnthropicKey();
       if (!apiKey) throw new Error("Add an Anthropic API key in Settings → AI to enable Bernard.");
 
-      // Build the message list. On the first turn, the user's content is
-      // wrapped with the data context (snapshot or forecast inputs).
+      // On the first turn, prepend the data context to the user's prompt so
+      // Bernard sees the snapshot. The conversation's persisted user message
+      // stays unwrapped so the chat history shows the user's actual question.
       const dataSection = dataSectionForFirstTurn ?? "";
       const wrappedUser = isFirstMessage && dataSection
         ? `${dataSection}\n\n---\n\n${userMessage}`
         : userMessage;
 
-      const history: ChatMessage[] = [
-        ...convo.messages.slice(0, -2), // already-sent prior turns (we just appended user + empty assistant)
-        { role: "user", content: wrappedUser },
-      ];
-
-      // Iteratively append to the convo's assistant message as chunks arrive
-      for await (const chunk of streamClaude(apiKey, history, { signal: abortRef.current.signal })) {
-        appendToActiveAssistant(chunk, convo.id);
+      // Build the messages array we'll send to the API. The convo.messages
+      // already has the new user message + an empty assistant placeholder;
+      // strip the placeholder and replace the last user with the wrapped one
+      // (only on the first turn).
+      let history: AgenticChatMessage[] = convo.messages.slice(0, -1);
+      if (isFirstMessage && dataSection && history.length > 0) {
+        const lastUser = history[history.length - 1];
+        if (lastUser.role === "user" && typeof lastUser.content === "string") {
+          history = [
+            ...history.slice(0, -1),
+            { role: "user", content: wrappedUser },
+          ];
+        }
       }
 
-      // Final persist (includes the fully-streamed assistant reply)
+      // Agentic loop — keeps calling tools until Claude says "end_turn"
+      const tools = toolsForAnthropic();
+      let safety = 6; // Max round-trips per user turn (covers complex multi-tool flows)
+      while (safety-- > 0) {
+        let stopReason: "end_turn" | "tool_use" | "max_tokens" | "stop_sequence" | "unknown" = "unknown";
+        const pendingThisTurn: Array<{ id: string; name: string }> = [];
+
+        for await (const evt of streamClaudeAgentic(apiKey, history, {
+          signal: abortRef.current.signal,
+          tools,
+          system: BERNARD_AGENTIC_SYSTEM,
+        })) {
+          if (evt.type === "text_delta") {
+            appendAssistantText(convo.id, evt.text);
+          } else if (evt.type === "tool_use_start") {
+            // Placeholder so the UI shows a "loading" tool card while input streams in
+            pendingThisTurn.push({ id: evt.id, name: evt.name });
+          } else if (evt.type === "tool_use_complete") {
+            addAssistantToolUse(convo.id, evt.id, evt.name, evt.input);
+          } else if (evt.type === "message_done") {
+            stopReason = evt.stopReason;
+          }
+        }
+
+        if (stopReason !== "tool_use" || pendingThisTurn.length === 0) {
+          break;
+        }
+
+        // Execute / approve each tool. Read = auto, write/destructive = wait for user.
+        // Re-read the tool_use blocks from the latest assistant message so we have the parsed inputs.
+        let latestAssistant: AgenticChatMessage | undefined;
+        setConversations((prev) => {
+          latestAssistant = prev.find((c) => c.id === convo.id)?.messages.at(-1);
+          return prev;
+        });
+        const toolUseBlocks = (latestAssistant && latestAssistant.role === "assistant" && Array.isArray(latestAssistant.content))
+          ? latestAssistant.content.filter((b): b is { type: "tool_use"; id: string; name: string; input: Record<string, unknown> } => b.type === "tool_use")
+          : [];
+
+        const results: Array<{ type: "tool_result"; tool_use_id: string; content: string; is_error?: boolean }> = [];
+        for (const block of toolUseBlocks) {
+          // Skip ones we already executed in earlier rounds (defensive — shouldn't happen but possible if reactions re-trigger)
+          const existing = toolCallStates[block.id];
+          if (existing && (existing.status === "done" || existing.status === "error" || existing.status === "rejected")) continue;
+
+          const tool = getTool(block.name);
+          if (!tool) {
+            setToolStatus(block.id, "error", `Tool ${block.name} not found.`);
+            results.push({ type: "tool_result", tool_use_id: block.id, content: `Tool ${block.name} not found.`, is_error: true });
+            continue;
+          }
+
+          if (tool.category === "read") {
+            // Auto-execute silently
+            setToolStatus(block.id, "executing");
+            try {
+              const result = await tool.handler(block.input);
+              const isError = result.startsWith("Error:");
+              setToolStatus(block.id, isError ? "error" : "done", result);
+              results.push({ type: "tool_result", tool_use_id: block.id, content: result, is_error: isError });
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              setToolStatus(block.id, "error", msg);
+              results.push({ type: "tool_result", tool_use_id: block.id, content: `Error: ${msg}`, is_error: true });
+            }
+          } else {
+            // Write / destructive — surface an approval card
+            setToolStatus(block.id, "pending_approval");
+            const result = await askApproval(block.id, block.name, block.input);
+            results.push(result);
+          }
+        }
+
+        // Continue: append a user message with the tool_results + a fresh assistant placeholder
+        appendToolResults(convo.id, results);
+
+        // Update local history to include what just happened, for the next iteration
+        history = [
+          ...history,
+          (latestAssistant ?? { role: "assistant", content: "" }),
+          { role: "user", content: results },
+        ];
+      }
+
+      // Persist the conversation with everything we've appended
       setConversations((prev) => {
-        const next = prev.map((c) => c);
-        saveConversations(next);
-        return next;
+        saveConversations(prev);
+        return prev;
       });
 
       void logAudit({
@@ -331,9 +547,8 @@ function BernardPage() {
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      // Aborts shouldn't be shown as errors
       if (msg.toLowerCase().includes("abort")) {
-        // User cancelled — leave the partial response in place
+        // user cancelled mid-stream — leave the partial state
       } else {
         setError(msg);
         toast.error(msg);
@@ -344,6 +559,9 @@ function BernardPage() {
       abortRef.current = null;
     }
   };
+
+  // Backwards-compat alias so existing call sites keep working
+  const runStreaming = runAgentic;
 
   const startConversation = async (preset: Preset | null, customPrompt?: string) => {
     const userMessage = preset ? preset.prompt : (customPrompt ?? "").trim();
@@ -517,9 +735,11 @@ function BernardPage() {
             {activeConvo.messages.map((msg, i) => (
               <ChatBubble
                 key={i}
-                role={msg.role}
-                content={msg.content}
+                message={msg}
                 isStreaming={streaming && i === activeConvo.messages.length - 1 && msg.role === "assistant"}
+                toolCallStates={toolCallStates}
+                onApproveTool={onApproveTool}
+                onRejectTool={onRejectTool}
               />
             ))}
           </div>
@@ -719,16 +939,24 @@ function PresetGrid({ disabled, onPick }: { disabled: boolean; onPick: (p: Prese
 
 // ── Chat bubble + markdown render ────────────────────────────────────────────
 
-function ChatBubble({ role, content, isStreaming }: { role: "user" | "assistant"; content: string; isStreaming: boolean }) {
+function ChatBubble({
+  message, isStreaming, toolCallStates, onApproveTool, onRejectTool,
+}: {
+  message: AgenticChatMessage;
+  isStreaming: boolean;
+  toolCallStates: Record<string, ToolCallState>;
+  onApproveTool: (id: string) => void;
+  onRejectTool: (id: string) => void;
+}) {
   const [copied, setCopied] = useState(false);
-  const onCopy = async () => {
-    if (!content) return;
-    await navigator.clipboard.writeText(content);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  };
 
-  if (role === "user") {
+  // ── User bubble ─────────────────────────────────────────────────────
+  if (message.role === "user") {
+    // Tool-result-only user messages are rendered as compact "Bernard ran X" notes,
+    // since they're system-generated bridges in the agentic loop, not real user input.
+    if (Array.isArray(message.content)) {
+      return null; // tool results are surfaced inside the ToolCallCard above; no separate bubble
+    }
     return (
       <div className="flex gap-3 group">
         <div className="h-8 w-8 rounded-lg bg-secondary flex items-center justify-center shrink-0 mt-0.5">
@@ -736,11 +964,26 @@ function ChatBubble({ role, content, isStreaming }: { role: "user" | "assistant"
         </div>
         <div className="flex-1 min-w-0">
           <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">You</div>
-          <div className="text-sm whitespace-pre-wrap text-foreground/90 leading-relaxed">{content}</div>
+          <div className="text-sm whitespace-pre-wrap text-foreground/90 leading-relaxed">{message.content}</div>
         </div>
       </div>
     );
   }
+
+  // ── Assistant bubble ────────────────────────────────────────────────
+  const blocks = typeof message.content === "string"
+    ? (message.content ? [{ type: "text" as const, text: message.content }] : [])
+    : message.content;
+
+  // Plain-text concatenation for the Copy button
+  const allText = blocks.filter((b) => b.type === "text").map((b) => (b as { text: string }).text).join("\n\n");
+
+  const onCopy = async () => {
+    if (!allText) return;
+    await navigator.clipboard.writeText(allText);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
 
   return (
     <div className="flex gap-3 group">
@@ -750,7 +993,7 @@ function ChatBubble({ role, content, isStreaming }: { role: "user" | "assistant"
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-1">
           <span className="text-[10px] font-semibold uppercase tracking-wider text-primary">Bernard</span>
-          {!isStreaming && content && (
+          {!isStreaming && allText && (
             <button
               onClick={onCopy}
               className="opacity-0 group-hover:opacity-100 text-[10px] text-muted-foreground hover:text-foreground transition-opacity inline-flex items-center gap-1"
@@ -760,19 +1003,173 @@ function ChatBubble({ role, content, isStreaming }: { role: "user" | "assistant"
             </button>
           )}
         </div>
-        <div className="prose prose-sm max-w-none">
-          {content ? renderMarkdown(content) : (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <RefreshCw className="h-3 w-3 animate-spin" /> thinking…
-            </div>
-          )}
-          {isStreaming && content && (
-            <span className="inline-block w-1.5 h-3.5 bg-primary/60 ml-0.5 align-middle animate-pulse" />
-          )}
-        </div>
+
+        {blocks.length === 0 ? (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <RefreshCw className="h-3 w-3 animate-spin" /> thinking…
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {blocks.map((b, i) => {
+              if (b.type === "text") {
+                return (
+                  <div key={i} className="prose prose-sm max-w-none">
+                    {renderMarkdown(b.text)}
+                    {isStreaming && i === blocks.length - 1 && b.text && (
+                      <span className="inline-block w-1.5 h-3.5 bg-primary/60 ml-0.5 align-middle animate-pulse" />
+                    )}
+                  </div>
+                );
+              }
+              if (b.type === "tool_use") {
+                const state = toolCallStates[b.id];
+                return (
+                  <ToolCallCard
+                    key={b.id}
+                    toolName={b.name}
+                    input={b.input}
+                    state={state}
+                    onApprove={() => onApproveTool(b.id)}
+                    onReject={() => onRejectTool(b.id)}
+                  />
+                );
+              }
+              return null;
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
+}
+
+// ── Tool call card ──────────────────────────────────────────────────────
+//
+// Renders inline inside Bernard's bubble for each tool call. Read tools
+// auto-execute and show as compact "called X — done" strips. Write tools
+// show an approval card with the inputs.
+
+function ToolCallCard({
+  toolName, input, state, onApprove, onReject,
+}: {
+  toolName: string;
+  input: Record<string, unknown>;
+  state: ToolCallState | undefined;
+  onApprove: () => void;
+  onReject: () => void;
+}) {
+  const tool = useMemo(() => getTool(toolName) ?? null, [toolName]);
+  const status: ToolCallStatus = state?.status ?? "executing";
+
+  if (!tool) {
+    return (
+      <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs">
+        Unknown tool: <code className="font-mono">{toolName}</code>
+      </div>
+    );
+  }
+
+  const isRead = tool.category === "read";
+  const callDescription = tool.describeCall?.(input) ?? `${tool.label}`;
+
+  // Compact display for read-only tools (auto-executed, low-friction)
+  if (isRead) {
+    return (
+      <div className="rounded-lg border border-border bg-secondary/30 px-3 py-2 text-xs flex items-center gap-2">
+        <Wrench className="h-3 w-3 text-muted-foreground shrink-0" />
+        <span className="text-muted-foreground font-medium">{tool.label}</span>
+        <span className="text-muted-foreground/70 truncate flex-1">· {summarizeInput(input)}</span>
+        <ToolStatusBadge status={status} />
+      </div>
+    );
+  }
+
+  // Detailed approval card for write/destructive tools
+  const isPending = status === "pending_approval";
+  const isExecuting = status === "executing";
+  const isDone = status === "done";
+  const isError = status === "error";
+  const isRejected = status === "rejected";
+
+  return (
+    <div className={`rounded-xl border p-3 ${
+      isPending ? "border-warning/40 bg-warning/5" :
+      isDone ? "border-success/30 bg-success/5" :
+      isError ? "border-destructive/30 bg-destructive/5" :
+      isRejected ? "border-border bg-secondary/30 opacity-70" :
+      "border-border bg-card"
+    }`}>
+      <div className="flex items-start gap-2.5">
+        <div className={`h-7 w-7 rounded-lg flex items-center justify-center shrink-0 ${
+          isPending ? "bg-warning/20 text-warning" :
+          isDone ? "bg-success/20 text-success" :
+          isError ? "bg-destructive/20 text-destructive" :
+          "bg-primary/10 text-primary"
+        }`}>
+          {isPending ? <ShieldAlert className="h-3.5 w-3.5" /> :
+           isExecuting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> :
+           isDone ? <ShieldCheck className="h-3.5 w-3.5" /> :
+           isError ? <ShieldAlert className="h-3.5 w-3.5" /> :
+           isRejected ? <ShieldAlert className="h-3.5 w-3.5" /> :
+           <Wrench className="h-3.5 w-3.5" />}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-semibold">{tool.label}</span>
+            <ToolStatusBadge status={status} />
+          </div>
+          <p className="text-[11px] text-muted-foreground mt-0.5">{tool.blurb}</p>
+          <div className="text-[11px] text-foreground/85 mt-2 font-mono bg-secondary/60 rounded p-2 break-words">
+            {callDescription}
+          </div>
+          {state?.result && (status === "done" || status === "error") && (
+            <details className="mt-2 text-[10px] text-muted-foreground">
+              <summary className="cursor-pointer hover:text-foreground">Result</summary>
+              <pre className="mt-1 p-2 bg-secondary/40 rounded overflow-x-auto text-[10px] font-mono whitespace-pre-wrap break-words max-h-40 overflow-y-auto">
+                {state.result}
+              </pre>
+            </details>
+          )}
+        </div>
+        {isPending && (
+          <div className="flex flex-col gap-1.5 shrink-0">
+            <Button size="sm" onClick={onApprove} className="text-xs h-7">
+              <ShieldCheck className="h-3 w-3 mr-1" /> Approve
+            </Button>
+            <Button size="sm" variant="ghost" onClick={onReject} className="text-xs h-7 text-muted-foreground hover:text-destructive">
+              <X className="h-3 w-3 mr-1" /> Reject
+            </Button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ToolStatusBadge({ status }: { status: ToolCallStatus }) {
+  const map: Record<ToolCallStatus, { label: string; cls: string }> = {
+    pending_approval: { label: "Awaiting approval", cls: "text-warning bg-warning/10 border-warning/20" },
+    executing:        { label: "Running…",          cls: "text-primary bg-primary/10 border-primary/20" },
+    done:             { label: "Done",              cls: "text-success bg-success/10 border-success/20" },
+    error:            { label: "Error",             cls: "text-destructive bg-destructive/10 border-destructive/20" },
+    rejected:         { label: "Rejected",          cls: "text-muted-foreground bg-secondary border-border" },
+  };
+  const { label, cls } = map[status];
+  return (
+    <span className={`inline-flex items-center text-[10px] px-1.5 py-0.5 rounded border ${cls}`}>
+      {label}
+    </span>
+  );
+}
+
+/** Best-effort one-line summary of a tool call's inputs for compact rendering. */
+function summarizeInput(input: Record<string, unknown>): string {
+  const keys = Object.keys(input);
+  if (keys.length === 0) return "(no args)";
+  return keys.slice(0, 3).map((k) => `${k}: ${truncate(JSON.stringify(input[k]), 30)}`).join(", ") + (keys.length > 3 ? "…" : "");
+}
+function truncate(s: string, n: number): string {
+  return s.length > n ? s.slice(0, n - 1) + "…" : s;
 }
 
 function renderMarkdown(md: string): React.ReactNode {

@@ -528,6 +528,7 @@ export type Database = {
           meta_ads_connected_at: string | null
           scrapecreators_api_key: string | null
           anthropic_api_key: string | null
+          airtable_api_key: string | null
           updated_at: string
         }
         Insert: {
@@ -540,6 +541,7 @@ export type Database = {
           meta_ads_connected_at?: string | null
           scrapecreators_api_key?: string | null
           anthropic_api_key?: string | null
+          airtable_api_key?: string | null
           updated_at?: string
         }
         Update: {
@@ -552,6 +554,7 @@ export type Database = {
           meta_ads_connected_at?: string | null
           scrapecreators_api_key?: string | null
           anthropic_api_key?: string | null
+          airtable_api_key?: string | null
           updated_at?: string
         }
         Relationships: []
