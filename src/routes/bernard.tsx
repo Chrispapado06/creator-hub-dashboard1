@@ -277,9 +277,20 @@ function BernardPage() {
   // We populate the history sidebar but DON'T auto-open the most recent one —
   // every visit lands on the fresh preset picker. Old conversations are still
   // a click away in the sidebar.
+  // Agency name powers the greeting — pulled from agency_settings, with
+  // a friendly fallback if the row hasn't been seeded yet.
+  const [agencyName, setAgencyName] = useState<string>("Boss");
+
   useEffect(() => {
     getAnthropicKey().then((k) => setHasKey(!!k));
     setConversations(loadConversations());
+    void supabase
+      .from("agency_settings")
+      .select("agency_name")
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.agency_name) setAgencyName(data.agency_name);
+      });
   }, []);
 
   // Auto-scroll the chat to bottom on new content
@@ -777,7 +788,11 @@ function BernardPage() {
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
         <div className="max-w-3xl mx-auto w-full px-4 sm:px-6 py-6">
           {!activeConvo && showPresets && (
-            <PresetGrid disabled={hasKey === false || streaming} onPick={(p) => startConversation(p)} />
+            <PresetGrid
+              disabled={hasKey === false || streaming}
+              onPick={(p) => startConversation(p)}
+              agencyName={agencyName}
+            />
           )}
           {activeConvo && (
             <div className="space-y-6">
@@ -974,43 +989,110 @@ function ConversationsPopover({
 
 // ── Preset grid ─────────────────────────────────────────────────────────────
 
-function PresetGrid({ disabled, onPick }: { disabled: boolean; onPick: (p: Preset) => void }) {
+// IDs of the 4 presets shown by default on a fresh chat — the
+// "executive shortcuts." The remaining presets are hidden behind a
+// "Show all" toggle so the empty-state isn't a wall of cards.
+const FEATURED_PRESET_IDS = ["weekly_digest", "monthly_review", "top_performers", "revenue_forecast"];
+
+function PresetGrid({
+  disabled, onPick, agencyName,
+}: {
+  disabled: boolean;
+  onPick: (p: Preset) => void;
+  agencyName: string;
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const featured = PRESETS.filter((p) => FEATURED_PRESET_IDS.includes(p.id));
+  const rest = PRESETS.filter((p) => !FEATURED_PRESET_IDS.includes(p.id));
+
   return (
-    <div className="max-w-3xl space-y-4">
-      <div>
-        <h2 className="text-sm font-semibold flex items-center gap-2 mb-1">
-          <Sparkles className="h-4 w-4 text-primary" /> Quick analyses
+    <div className="space-y-8 py-4">
+      {/* Personal greeting — feels like Claude.ai's home screen */}
+      <div className="text-center space-y-2 pt-4">
+        <div className="inline-flex items-center justify-center h-12 w-12 rounded-2xl bg-gradient-to-br from-primary to-primary-glow shadow-[0_4px_20px_-4px_oklch(0.6_0.15_35/0.5)] mb-2">
+          <Sparkles className="h-6 w-6 text-primary-foreground" />
+        </div>
+        <h2 className="text-2xl font-bold tracking-tight">
+          Hey {agencyName}<span className="text-muted-foreground/70">, CEO</span>
         </h2>
-        <p className="text-xs text-muted-foreground">
-          Pick a preset, or just type a question below. Each preset starts a chat — you can ask follow-ups.
+        <p className="text-sm text-muted-foreground">
+          What do you want to dig into? Pick a shortcut or just ask.
         </p>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {PRESETS.map((p) => {
+
+      {/* Featured 4 — compact chips, 2x2 on mobile, 4-across on desktop */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+        {featured.map((p) => {
           const Icon = p.icon;
           return (
             <button
               key={p.id}
               onClick={() => onPick(p)}
               disabled={disabled}
-              className={`group rounded-xl border p-4 text-left transition-all duration-150 ease-out hover:-translate-y-px disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 ${TONE_BORDER[p.tone]}`}
+              className={`group rounded-xl border p-3 text-left transition-all duration-150 ease-out hover:-translate-y-px hover:shadow-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 ${TONE_BORDER[p.tone]}`}
             >
-              <div className="flex items-start gap-3 min-w-0">
-                <div className={`h-9 w-9 rounded-lg bg-background/50 flex items-center justify-center shrink-0 ${TONE_ICON[p.tone]}`}>
-                  <Icon className="h-4 w-4" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold">{p.title}</div>
-                  <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">{p.blurb}</p>
-                  <div className="text-[10px] text-muted-foreground/70 uppercase tracking-wider mt-2">
-                    {p.days}-day window
-                  </div>
-                </div>
+              <div className={`h-7 w-7 rounded-md bg-background/50 flex items-center justify-center mb-2 ${TONE_ICON[p.tone]}`}>
+                <Icon className="h-3.5 w-3.5" />
+              </div>
+              <div className="text-xs font-semibold leading-tight">{p.title}</div>
+              <div className="text-[10px] text-muted-foreground/70 uppercase tracking-wider mt-1.5">
+                {p.days}d
               </div>
             </button>
           );
         })}
       </div>
+
+      {/* Show-all toggle — hides the long tail until asked for */}
+      {!showAll && rest.length > 0 && (
+        <div className="flex justify-center">
+          <button
+            onClick={() => setShowAll(true)}
+            disabled={disabled}
+            className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md hover:bg-secondary/50 transition-colors disabled:opacity-50"
+          >
+            <ChevronDown className="h-3.5 w-3.5" /> Show {rest.length} more presets
+          </button>
+        </div>
+      )}
+
+      {/* Long-tail presets — same compact treatment, scrollable if many */}
+      {showAll && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              All presets
+            </h3>
+            <button
+              onClick={() => setShowAll(false)}
+              className="text-[11px] text-muted-foreground hover:text-primary"
+            >
+              Hide
+            </button>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
+            {rest.map((p) => {
+              const Icon = p.icon;
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => onPick(p)}
+                  disabled={disabled}
+                  className={`group rounded-xl border p-3 text-left transition-all duration-150 ease-out hover:-translate-y-px hover:shadow-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 ${TONE_BORDER[p.tone]}`}
+                >
+                  <div className={`h-7 w-7 rounded-md bg-background/50 flex items-center justify-center mb-2 ${TONE_ICON[p.tone]}`}>
+                    <Icon className="h-3.5 w-3.5" />
+                  </div>
+                  <div className="text-xs font-semibold leading-tight">{p.title}</div>
+                  <div className="text-[10px] text-muted-foreground/70 uppercase tracking-wider mt-1.5">
+                    {p.days}d
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
