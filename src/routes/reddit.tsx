@@ -17,6 +17,8 @@ import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
 import { format, formatDistanceToNow } from "date-fns";
 import { SiReddit } from "react-icons/si";
+import { Users, BarChart3 } from "lucide-react";
+import { RedditRoster } from "@/components/RedditRoster";
 
 export const Route = createFileRoute("/reddit")({ component: RedditPage });
 
@@ -63,6 +65,9 @@ function RedditPage() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [syncingReddit, setSyncingReddit] = useState(false);
+  // View mode — "roster" is the agency-wide overview (all accounts, all
+  // subs, heatmap). "creator" is the original per-creator detail view.
+  const [viewMode, setViewMode] = useState<"roster" | "creator">("roster");
 
   const loadCreatorData = async (creatorId: string) => {
     if (!creatorId) return;
@@ -237,13 +242,43 @@ function RedditPage() {
   return (
     <div className="space-y-6">
       <Toaster />
-      <div>
-        <div className="flex items-center gap-2.5 mb-1">
-          <SiReddit className="h-6 w-6" style={{ color: "#FF4500" }} />
-          <h1 className="text-3xl font-bold tracking-tight">Reddit</h1>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <div className="flex items-center gap-2.5 mb-1">
+            <SiReddit className="h-6 w-6" style={{ color: "#FF4500" }} />
+            <h1 className="text-3xl font-bold tracking-tight">Reddit</h1>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            {viewMode === "roster"
+              ? "Agency-wide view: every account, every sub, heatmap of what's working."
+              : "Manage Reddit accounts, posts, revenue, and performance for one creator."}
+          </p>
         </div>
-        <p className="text-sm text-muted-foreground">Manage Reddit accounts, posts, revenue, and performance per creator.</p>
+        {/* Roster ↔ Per-creator toggle */}
+        <div className="inline-flex items-center rounded-md bg-secondary p-0.5">
+          <button
+            onClick={() => setViewMode("roster")}
+            className={`text-xs px-3 py-1.5 rounded font-medium inline-flex items-center gap-1.5 ${
+              viewMode === "roster" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <BarChart3 className="h-3.5 w-3.5" /> Roster
+          </button>
+          <button
+            onClick={() => setViewMode("creator")}
+            className={`text-xs px-3 py-1.5 rounded font-medium inline-flex items-center gap-1.5 ${
+              viewMode === "creator" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Users className="h-3.5 w-3.5" /> Per creator
+          </button>
+        </div>
       </div>
+
+      {viewMode === "roster" ? (
+        <RedditRoster />
+      ) : (
+        <>
 
       <div className="flex items-center gap-3">
         <span className="text-sm font-medium text-muted-foreground">Creator:</span>
@@ -295,6 +330,8 @@ function RedditPage() {
             <AnalyticsTab accounts={accounts} posts={posts} />
           </TabsContent>
         </Tabs>
+      )}
+        </>
       )}
     </div>
   );

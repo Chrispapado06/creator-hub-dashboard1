@@ -23,6 +23,8 @@ export type Database = {
           avatar_url: string | null
           onlyfansapi_acct_id: string | null
           status: Database["public"]["Enums"]["creator_status"]
+          payout_split_pct: number
+          of_platform_fee_pct: number
           updated_at: string
         }
         Insert: {
@@ -33,6 +35,8 @@ export type Database = {
           avatar_url?: string | null
           onlyfansapi_acct_id?: string | null
           status?: Database["public"]["Enums"]["creator_status"]
+          payout_split_pct?: number
+          of_platform_fee_pct?: number
           updated_at?: string
         }
         Update: {
@@ -43,6 +47,71 @@ export type Database = {
           avatar_url?: string | null
           onlyfansapi_acct_id?: string | null
           status?: Database["public"]["Enums"]["creator_status"]
+          payout_split_pct?: number
+          of_platform_fee_pct?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      creator_payouts: {
+        Row: {
+          id: string
+          creator_id: string
+          period_start: string
+          period_end: string
+          gross_revenue: number
+          of_platform_fee: number
+          agency_cut: number
+          deductions: { label: string; amount: number }[]
+          net_to_creator: number
+          split_pct_snapshot: number | null
+          fee_pct_snapshot: number | null
+          status: "draft" | "sent" | "paid"
+          payment_method: string | null
+          paid_at: string | null
+          paid_by: string | null
+          notes: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          creator_id: string
+          period_start: string
+          period_end: string
+          gross_revenue?: number
+          of_platform_fee?: number
+          agency_cut?: number
+          deductions?: { label: string; amount: number }[]
+          net_to_creator?: number
+          split_pct_snapshot?: number | null
+          fee_pct_snapshot?: number | null
+          status?: "draft" | "sent" | "paid"
+          payment_method?: string | null
+          paid_at?: string | null
+          paid_by?: string | null
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          creator_id?: string
+          period_start?: string
+          period_end?: string
+          gross_revenue?: number
+          of_platform_fee?: number
+          agency_cut?: number
+          deductions?: { label: string; amount: number }[]
+          net_to_creator?: number
+          split_pct_snapshot?: number | null
+          fee_pct_snapshot?: number | null
+          status?: "draft" | "sent" | "paid"
+          payment_method?: string | null
+          paid_at?: string | null
+          paid_by?: string | null
+          notes?: string | null
+          created_at?: string
           updated_at?: string
         }
         Relationships: []

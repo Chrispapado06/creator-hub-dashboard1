@@ -62,6 +62,7 @@ import { CreatorGoals } from "@/components/CreatorGoals";
 import { CreatorDocuments } from "@/components/CreatorDocuments";
 import { CreatorForms } from "@/components/CreatorForms";
 import { CreatorLanding } from "@/components/CreatorLanding";
+import { CreatorPayouts } from "@/components/CreatorPayouts";
 import { logAudit } from "@/lib/audit";
 
 export const Route = createFileRoute("/creators/$creatorId")({
@@ -994,6 +995,7 @@ function CreatorDetailPage() {
           <TabsTrigger value="organic">Organic</TabsTrigger>
           <TabsTrigger value="internal">Internal</TabsTrigger>
           <TabsTrigger value="ads">Ads</TabsTrigger>
+          <TabsTrigger value="payouts">Payouts</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview">
@@ -1071,6 +1073,10 @@ function CreatorDetailPage() {
 
         <TabsContent value="ads">
           <AdsTab creatorId={creatorId} campaigns={adCampaigns} onRefresh={load} />
+        </TabsContent>
+
+        <TabsContent value="payouts">
+          <CreatorPayouts creatorId={creatorId} creatorName={creator?.name} />
         </TabsContent>
       </Tabs>
     </div>
