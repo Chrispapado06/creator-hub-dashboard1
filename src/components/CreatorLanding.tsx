@@ -10,20 +10,23 @@ import { toast } from "sonner";
 import {
   Plus, Trash2, ChevronUp, ChevronDown, Copy, Check, ExternalLink,
   Globe, Eye, BarChart3, Image as ImageIcon, Link as LinkIcon, Upload,
-  Info,
+  Info, BadgeCheck, Images,
 } from "lucide-react";
+import { detectPlatform } from "@/lib/landing-platforms";
 import { format, parseISO, subDays } from "date-fns";
 import { logAudit } from "@/lib/audit";
 
 const LANDING_BUCKET = "landing-assets";
 
 type LandingLink = { label: string; url: string };
+type LandingMedia = { url: string; caption?: string };
 type Landing = {
   id: string;
   creator_id: string;
   slug: string;
   custom_domain: string | null;
   is_published: boolean;
+  is_verified: boolean;
   display_name: string | null;
   tagline: string | null;
   bio: string | null;
@@ -33,6 +36,7 @@ type Landing = {
   accent_color: string | null;
   font: string;
   links: LandingLink[];
+  media: LandingMedia[];
   seo_title: string | null;
   seo_description: string | null;
 };
@@ -85,6 +89,9 @@ export function CreatorLanding({ creatorId, creatorName }: { creatorId: string; 
     if (data) {
       const row = data as unknown as Landing;
       if (!Array.isArray(row.links)) row.links = [];
+      if (!Array.isArray(row.media)) row.media = [];
+      // Tolerate older rows where the column didn't exist yet
+      if (typeof row.is_verified !== "boolean") row.is_verified = false;
       setLanding(row);
       setForm(row);
       void loadClicks(row.id);
@@ -181,6 +188,7 @@ export function CreatorLanding({ creatorId, creatorName }: { creatorId: string; 
       slug: form.slug.trim(),
       custom_domain: form.custom_domain?.trim() || null,
       is_published: form.is_published,
+      is_verified: form.is_verified,
       display_name: form.display_name?.trim() || null,
       tagline: form.tagline?.trim() || null,
       bio: form.bio?.trim() || null,
@@ -190,6 +198,7 @@ export function CreatorLanding({ creatorId, creatorName }: { creatorId: string; 
       accent_color: form.accent_color || null,
       font: form.font,
       links: form.links,
+      media: form.media,
       seo_title: form.seo_title?.trim() || null,
       seo_description: form.seo_description?.trim() || null,
       updated_at: new Date().toISOString(),
@@ -213,6 +222,44 @@ export function CreatorLanding({ creatorId, creatorName }: { creatorId: string; 
   };
 
   // ── Image uploads (avatar / cover) ────────────────────────────────────
+
+  // ── Gallery uploads ───────────────────────────────────────────────────
+
+  const onUploadGalleryImage = async (file: File) => {
+    if (!landing || !form) return;
+    if (file.size > 10 * 1024 * 1024) return toast.error("Image must be 10 MB or smaller");
+    if (!file.type.startsWith("image/")) return toast.error("Pick an image file");
+    const ext = (file.name.split(".").pop() ?? "jpg").toLowerCase();
+    const path = `${landing.id}/gallery-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    const { error } = await supabase.storage.from(LANDING_BUCKET).upload(path, file, {
+      cacheControl: "3600",
+      upsert: false,
+      contentType: file.type,
+    });
+    if (error) {
+      const msg = error.message;
+      if (msg.toLowerCase().includes("not found")) {
+        return toast.error("Storage bucket missing — run the landing migration in Supabase");
+      }
+      return toast.error(msg);
+    }
+    const { data } = supabase.storage.from(LANDING_BUCKET).getPublicUrl(path);
+    setForm({ ...form, media: [...form.media, { url: data.publicUrl }] });
+  };
+
+  const onRemoveGalleryImage = (i: number) => {
+    if (!form) return;
+    setForm({ ...form, media: form.media.filter((_, idx) => idx !== i) });
+  };
+
+  const onMoveGalleryImage = (i: number, direction: "up" | "down") => {
+    if (!form) return;
+    const j = direction === "up" ? i - 1 : i + 1;
+    if (j < 0 || j >= form.media.length) return;
+    const next = [...form.media];
+    [next[i], next[j]] = [next[j], next[i]];
+    setForm({ ...form, media: next });
+  };
 
   const onUploadImage = async (file: File, kind: "avatar" | "cover") => {
     if (!landing || !form) return;
@@ -407,6 +454,27 @@ export function CreatorLanding({ creatorId, creatorName }: { creatorId: string; 
           </div>
         </div>
 
+        {/* Verified mark */}
+        <div className="flex items-start justify-between gap-3 rounded-lg border border-border bg-secondary/20 p-3">
+          <div className="flex items-start gap-2.5">
+            <BadgeCheck
+              className="h-5 w-5 shrink-0 mt-0.5"
+              style={{ color: form.is_verified ? "#1d9bf0" : "#94a3b8", fill: form.is_verified ? "currentColor" : "none" }}
+            />
+            <div>
+              <div className="text-sm font-medium">Verified mark</div>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                Shows a blue checkmark next to the name on the public page. Use this for established creators —
+                it signals legitimacy to fans visiting from cold traffic.
+              </p>
+            </div>
+          </div>
+          <Switch
+            checked={form.is_verified}
+            onCheckedChange={(v) => setForm({ ...form, is_verified: v })}
+          />
+        </div>
+
         <div className="space-y-1.5">
           <Label className="text-xs">Bio</Label>
           <Textarea
@@ -478,49 +546,122 @@ export function CreatorLanding({ creatorId, creatorName }: { creatorId: string; 
         </div>
         {form.links.length === 0 ? (
           <div className="text-xs text-muted-foreground italic py-3">
-            No links yet — add one to get started.
+            No links yet — add one to get started. Logos auto-match popular platforms (Instagram, OnlyFans, TikTok, etc.).
           </div>
         ) : (
           <div className="space-y-2">
-            {form.links.map((link, i) => (
-              <div key={i} className="rounded-lg border border-border bg-secondary/20 p-3">
-                <div className="flex items-start gap-2">
-                  <div className="flex flex-col -space-y-0.5 shrink-0">
+            {form.links.map((link, i) => {
+              const platform = link.url ? detectPlatform(link.url) : null;
+              const PlatformIcon = platform?.Icon;
+              return (
+                <div key={i} className="rounded-lg border border-border bg-secondary/20 p-3">
+                  <div className="flex items-start gap-2">
+                    <div className="flex flex-col -space-y-0.5 shrink-0">
+                      <button
+                        onClick={() => moveLink(i, "up")}
+                        disabled={i === 0}
+                        className="text-muted-foreground hover:text-primary disabled:opacity-20 p-0.5"
+                        title="Move up"
+                      >
+                        <ChevronUp className="h-3.5 w-3.5" />
+                      </button>
+                      <span className="text-[9px] text-muted-foreground font-mono w-3 text-center">{i + 1}</span>
+                      <button
+                        onClick={() => moveLink(i, "down")}
+                        disabled={i === form.links.length - 1}
+                        className="text-muted-foreground hover:text-primary disabled:opacity-20 p-0.5"
+                        title="Move down"
+                      >
+                        <ChevronDown className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                    {/* Platform-detected logo preview */}
+                    {PlatformIcon && (
+                      <div
+                        className="h-9 w-9 rounded-lg bg-card border border-border flex items-center justify-center shrink-0"
+                        title={platform?.label}
+                      >
+                        <PlatformIcon
+                          className="h-4 w-4"
+                          style={{ color: platform?.color ?? "currentColor" }}
+                        />
+                      </div>
+                    )}
+                    <div className="flex-1 grid grid-cols-1 sm:grid-cols-[1fr_2fr] gap-2">
+                      <Input
+                        value={link.label}
+                        onChange={(e) => updateLink(i, { label: e.target.value })}
+                        placeholder="Label"
+                      />
+                      <Input
+                        value={link.url}
+                        onChange={(e) => updateLink(i, { url: e.target.value })}
+                        placeholder="https://..."
+                        className="font-mono text-xs"
+                      />
+                    </div>
                     <button
-                      onClick={() => moveLink(i, "up")}
-                      disabled={i === 0}
-                      className="text-muted-foreground hover:text-primary disabled:opacity-20 p-0.5"
-                      title="Move up"
+                      onClick={() => removeLink(i)}
+                      className="text-muted-foreground hover:text-destructive p-1.5 shrink-0"
+                      aria-label="Remove link"
                     >
-                      <ChevronUp className="h-3.5 w-3.5" />
-                    </button>
-                    <span className="text-[9px] text-muted-foreground font-mono w-3 text-center">{i + 1}</span>
-                    <button
-                      onClick={() => moveLink(i, "down")}
-                      disabled={i === form.links.length - 1}
-                      className="text-muted-foreground hover:text-primary disabled:opacity-20 p-0.5"
-                      title="Move down"
-                    >
-                      <ChevronDown className="h-3.5 w-3.5" />
+                      <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>
-                  <div className="flex-1 grid grid-cols-1 sm:grid-cols-[1fr_2fr] gap-2">
-                    <Input
-                      value={link.label}
-                      onChange={(e) => updateLink(i, { label: e.target.value })}
-                      placeholder="Label"
-                    />
-                    <Input
-                      value={link.url}
-                      onChange={(e) => updateLink(i, { url: e.target.value })}
-                      placeholder="https://..."
-                      className="font-mono text-xs"
-                    />
-                  </div>
+                  {platform && link.url && (
+                    <div className="text-[10px] text-muted-foreground mt-1.5 ml-7 pl-3">
+                      Detected: <span className="text-primary font-medium">{platform.label}</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      {/* Gallery */}
+      <section className="rounded-xl border border-border bg-card p-5 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="text-sm font-semibold flex items-center gap-1.5">
+            <Images className="h-4 w-4 text-primary" /> Photo gallery
+            {form.media.length > 0 && (
+              <span className="text-[10px] text-muted-foreground font-normal">({form.media.length} image{form.media.length === 1 ? "" : "s"})</span>
+            )}
+          </div>
+          <GalleryUploadButton onUpload={onUploadGalleryImage} />
+        </div>
+        {form.media.length === 0 ? (
+          <div className="text-xs text-muted-foreground italic py-3">
+            No gallery images yet. Optional — adds a 3-column photo grid below the links on the public page.
+          </div>
+        ) : (
+          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+            {form.media.map((m, i) => (
+              <div key={i} className="group relative aspect-square rounded-lg overflow-hidden border border-border">
+                <img src={m.url} alt={m.caption ?? ""} className="w-full h-full object-cover" />
+                {/* Hover overlay with reorder + delete */}
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100">
                   <button
-                    onClick={() => removeLink(i)}
-                    className="text-muted-foreground hover:text-destructive p-1.5 shrink-0"
-                    aria-label="Remove link"
+                    onClick={() => onMoveGalleryImage(i, "up")}
+                    disabled={i === 0}
+                    className="rounded-full p-1.5 bg-white/90 text-foreground hover:bg-white disabled:opacity-30"
+                    title="Move earlier"
+                  >
+                    <ChevronUp className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={() => onMoveGalleryImage(i, "down")}
+                    disabled={i === form.media.length - 1}
+                    className="rounded-full p-1.5 bg-white/90 text-foreground hover:bg-white disabled:opacity-30"
+                    title="Move later"
+                  >
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={() => onRemoveGalleryImage(i)}
+                    className="rounded-full p-1.5 bg-white/90 text-destructive hover:bg-white"
+                    title="Remove"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
@@ -646,3 +787,29 @@ function ImageUpload({
     </div>
   );
 }
+
+// ── Gallery upload button helper ───────────────────────────────────────
+
+function GalleryUploadButton({ onUpload }: { onUpload: (f: File) => void }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  return (
+    <>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          const files = Array.from(e.target.files ?? []);
+          for (const f of files) onUpload(f);
+          e.target.value = "";
+        }}
+      />
+      <Button size="sm" variant="outline" onClick={() => inputRef.current?.click()}>
+        <Plus className="h-3.5 w-3.5 mr-1" /> Add photos
+      </Button>
+    </>
+  );
+}
+

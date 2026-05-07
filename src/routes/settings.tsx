@@ -15,6 +15,8 @@ import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
 import { Plus, Trash2, Copy, Check, Eye, EyeOff, Shield, MessageCircle, Sparkles, ExternalLink } from "lucide-react";
 import { AgencyLogoUpload } from "@/components/AgencyLogoUpload";
+import { FormTemplatesManager } from "@/components/CreatorForms";
+import { ClipboardList } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export const Route = createFileRoute("/settings")({
@@ -268,6 +270,15 @@ function SettingsPage() {
       <Button onClick={onSave} disabled={saving} className="bg-gradient-to-r from-primary to-primary-glow text-primary-foreground hover:opacity-90">
         {saving ? "Saving…" : "Save settings"}
       </Button>
+
+      {/* Form templates */}
+      <section className="space-y-5">
+        <h2 className="text-lg font-semibold border-b border-border pb-2 flex items-center gap-2">
+          <ClipboardList className="h-4 w-4 text-primary" />
+          Form templates
+        </h2>
+        <FormTemplatesManager />
+      </section>
 
       {/* Team accounts */}
       <section className="space-y-5">

@@ -873,6 +873,99 @@ export type Database = {
         }
         Relationships: []
       }
+      creator_form_templates: {
+        Row: {
+          id: string
+          label: string
+          description: string | null
+          provider: string
+          master_url: string | null
+          category: string | null
+          required_for_active: boolean
+          archive_as_document: boolean
+          document_category: string | null
+          display_order: number
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          label: string
+          description?: string | null
+          provider?: string
+          master_url?: string | null
+          category?: string | null
+          required_for_active?: boolean
+          archive_as_document?: boolean
+          document_category?: string | null
+          display_order?: number
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          label?: string
+          description?: string | null
+          provider?: string
+          master_url?: string | null
+          category?: string | null
+          required_for_active?: boolean
+          archive_as_document?: boolean
+          document_category?: string | null
+          display_order?: number
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      creator_form_submissions: {
+        Row: {
+          id: string
+          template_id: string
+          creator_id: string
+          status: string
+          share_url: string | null
+          submission_url: string | null
+          notes: string | null
+          sent_at: string | null
+          submitted_at: string | null
+          marked_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          template_id: string
+          creator_id: string
+          status?: string
+          share_url?: string | null
+          submission_url?: string | null
+          notes?: string | null
+          sent_at?: string | null
+          submitted_at?: string | null
+          marked_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          template_id?: string
+          creator_id?: string
+          status?: string
+          share_url?: string | null
+          submission_url?: string | null
+          notes?: string | null
+          sent_at?: string | null
+          submitted_at?: string | null
+          marked_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       creator_landing_pages: {
         Row: {
           id: string
@@ -880,6 +973,7 @@ export type Database = {
           slug: string
           custom_domain: string | null
           is_published: boolean
+          is_verified: boolean
           display_name: string | null
           tagline: string | null
           bio: string | null
@@ -889,6 +983,7 @@ export type Database = {
           accent_color: string | null
           font: string
           links: unknown
+          media: unknown
           seo_title: string | null
           seo_description: string | null
           created_at: string
@@ -900,6 +995,7 @@ export type Database = {
           slug: string
           custom_domain?: string | null
           is_published?: boolean
+          is_verified?: boolean
           display_name?: string | null
           tagline?: string | null
           bio?: string | null
@@ -909,6 +1005,7 @@ export type Database = {
           accent_color?: string | null
           font?: string
           links?: unknown
+          media?: unknown
           seo_title?: string | null
           seo_description?: string | null
           created_at?: string
@@ -920,6 +1017,7 @@ export type Database = {
           slug?: string
           custom_domain?: string | null
           is_published?: boolean
+          is_verified?: boolean
           display_name?: string | null
           tagline?: string | null
           bio?: string | null
@@ -929,6 +1027,7 @@ export type Database = {
           accent_color?: string | null
           font?: string
           links?: unknown
+          media?: unknown
           seo_title?: string | null
           seo_description?: string | null
           created_at?: string

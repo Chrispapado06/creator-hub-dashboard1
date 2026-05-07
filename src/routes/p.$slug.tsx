@@ -1,17 +1,20 @@
 import { createFileRoute, useParams } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { ExternalLink, Loader2 } from "lucide-react";
+import { ExternalLink, Loader2, BadgeCheck } from "lucide-react";
+import { detectPlatform } from "@/lib/landing-platforms";
 
 export const Route = createFileRoute("/p/$slug")({
   component: LandingPage,
 });
 
 type LandingLink = { label: string; url: string; icon?: string };
+type LandingMedia = { url: string; caption?: string };
 type Landing = {
   id: string;
   slug: string;
   is_published: boolean;
+  is_verified: boolean;
   display_name: string | null;
   tagline: string | null;
   bio: string | null;
@@ -21,6 +24,7 @@ type Landing = {
   accent_color: string | null;
   font: string;
   links: LandingLink[];
+  media: LandingMedia[];
   seo_title: string | null;
   seo_description: string | null;
 };
@@ -182,10 +186,9 @@ function LandingPage() {
         setLoading(false);
         return;
       }
-      // Normalize links to an array even if the DB returned an object/null
-      if (!Array.isArray(row.links)) {
-        row.links = [];
-      }
+      // Normalize JSONB columns to arrays even if the DB returned null/object
+      if (!Array.isArray(row.links)) row.links = [];
+      if (!Array.isArray(row.media)) row.media = [];
       setLanding(row);
       setLoading(false);
 
@@ -264,8 +267,17 @@ function LandingPage() {
         </div>
 
         {/* Name + tagline */}
-        <h1 className="text-2xl font-bold tracking-tight text-center" style={{ color: theme.primaryText }}>
+        <h1 className="text-2xl font-bold tracking-tight text-center inline-flex items-center gap-1.5" style={{ color: theme.primaryText }}>
           {landing.display_name ?? landing.slug}
+          {landing.is_verified && (
+            <BadgeCheck
+              className="h-5 w-5"
+              style={{ color: "#1d9bf0", fill: "currentColor", strokeWidth: 0 }}
+              aria-label="Verified"
+            >
+              <title>Verified</title>
+            </BadgeCheck>
+          )}
         </h1>
         {landing.tagline && (
           <p className="text-sm mt-1 text-center" style={{ color: theme.mutedText }}>
@@ -291,6 +303,26 @@ function LandingPage() {
           ))}
         </div>
 
+        {/* Photo gallery */}
+        {landing.media.length > 0 && (
+          <div className="w-full mt-8 grid grid-cols-3 gap-1.5">
+            {landing.media.map((m, i) => (
+              <div
+                key={i}
+                className="aspect-square rounded-xl overflow-hidden"
+                style={{ background: "rgba(0,0,0,0.04)" }}
+              >
+                <img
+                  src={m.url}
+                  alt={m.caption ?? ""}
+                  className="w-full h-full object-cover"
+                  loading="lazy"
+                />
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Footer */}
         <div className="mt-12 text-[10px] uppercase tracking-[0.2em] opacity-60" style={{ color: theme.mutedText }}>
           @{landing.slug}
@@ -311,6 +343,8 @@ function LinkButton({
   hoverStyle: React.CSSProperties;
 }) {
   const [hover, setHover] = useState(false);
+  const platform = useMemo(() => detectPlatform(link.url), [link.url]);
+  const Icon = platform.Icon;
 
   const onClick = () => {
     // Fire-and-forget click tracking. Don't block navigation if it fails.
@@ -331,13 +365,12 @@ function LinkButton({
       onClick={onClick}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
-      className="block w-full rounded-2xl px-5 py-4 text-center text-sm font-semibold transition-all duration-200 ease-out hover:-translate-y-0.5"
+      className="grid grid-cols-[24px_1fr_24px] items-center w-full rounded-2xl px-5 py-4 text-sm font-semibold transition-all duration-200 ease-out hover:-translate-y-0.5"
       style={hover ? { ...baseStyle, ...hoverStyle } : baseStyle}
     >
-      <span className="inline-flex items-center gap-2 justify-center">
-        {link.label}
-        <ExternalLink className="h-3.5 w-3.5 opacity-60" />
-      </span>
+      <Icon className="h-5 w-5 justify-self-start" style={{ color: hover ? "currentColor" : platform.color }} />
+      <span className="text-center">{link.label}</span>
+      <ExternalLink className="h-3.5 w-3.5 opacity-50 justify-self-end" />
     </a>
   );
 }

@@ -60,6 +60,7 @@ import { isMissingCreatorAvatarColumnError, normalizeCreatorFromDb } from "@/lib
 import { OnboardingChecklist } from "@/components/OnboardingChecklist";
 import { CreatorGoals } from "@/components/CreatorGoals";
 import { CreatorDocuments } from "@/components/CreatorDocuments";
+import { CreatorForms } from "@/components/CreatorForms";
 import { CreatorLanding } from "@/components/CreatorLanding";
 import { logAudit } from "@/lib/audit";
 
@@ -1044,8 +1045,11 @@ function CreatorDetailPage() {
           />
         </TabsContent>
 
-        <TabsContent value="documents">
-          <CreatorDocuments creatorId={creatorId} creatorName={creator?.name} />
+        <TabsContent value="documents" className="space-y-10">
+          <CreatorForms creatorId={creatorId} creatorName={creator?.name} />
+          <div className="border-t border-border pt-8">
+            <CreatorDocuments creatorId={creatorId} creatorName={creator?.name} />
+          </div>
         </TabsContent>
 
         <TabsContent value="landing">
