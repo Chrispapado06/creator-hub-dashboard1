@@ -12,15 +12,15 @@ import {
   Sparkles, RefreshCw, Copy, Check, AlertCircle,
   TrendingUp, TrendingDown, Megaphone, ListChecks, MessageCircle,
   Lightbulb, Send, Trash2, Plus, X, Target, BarChart3,
-  Users as UsersIcon, ChevronRight, History,
+  Users as UsersIcon, ChevronRight, History, LineChart,
 } from "lucide-react";
 import {
   Popover, PopoverContent, PopoverTrigger,
 } from "@/components/ui/popover";
 import { format, formatDistanceToNow } from "date-fns";
 import {
-  streamClaude, gatherBusinessSnapshot, getAnthropicKey,
-  snapshotToContext, type BusinessSnapshot, type ChatMessage,
+  streamClaude, gatherBusinessSnapshot, gatherForecastInputs, getAnthropicKey,
+  snapshotToContext, forecastToContext, type ChatMessage,
 } from "@/lib/bernard";
 import { logAudit } from "@/lib/audit";
 
@@ -42,6 +42,8 @@ type Preset = {
   tone: "primary" | "warning" | "success" | "info";
   days: number;
   prompt: string;
+  /** What data context to give Bernard. Defaults to the standard business snapshot. */
+  kind?: "snapshot" | "forecast";
 };
 
 const PRESETS: Preset[] = [
@@ -153,6 +155,30 @@ const PRESETS: Preset[] = [
     days: 30,
     prompt: "Propose 3-5 specific testable growth bets to run in the next 30 days. For each: hypothesis (cite the data), what to do (concrete steps + creators involved), rough cost, expected impact, and the metric we'll watch. Rank by expected ROI. No vague ideas.",
   },
+  {
+    id: "revenue_forecast",
+    title: "Revenue forecast",
+    blurb: "30/60/90-day projection with run-rate + trend math, plus what to do to hit the higher number.",
+    icon: LineChart,
+    tone: "info",
+    days: 90,
+    kind: "forecast",
+    prompt: `You've been given two scenarios — a flat run-rate projection and a trend-adjusted one. Your job:
+
+# Revenue Forecast
+## Bottom line
+One sentence: what's the most likely 30 / 60 / 90 day revenue, given the trend? Pick a single number per horizon — don't hedge.
+
+## What's driving it
+Reference the channel mix shifts (Organic / Internal / Ads). Which channel is carrying or dragging? Cite the numbers.
+
+## What would change the number
+- 3 specific moves that could push revenue toward the OPTIMISTIC scenario (+ rough $ each)
+- 1-2 risks that could push it toward the PESSIMISTIC scenario
+
+## Honest assessment
+If the data is too thin or too volatile to forecast confidently, say so. Don't pretend.`,
+  },
 ];
 
 const TONE_BORDER: Record<Preset["tone"], string> = {
@@ -263,7 +289,7 @@ function BernardPage() {
     }));
   };
 
-  const runStreaming = async (convo: Conversation, snapshot: BusinessSnapshot | null, userMessage: string, isFirstMessage: boolean) => {
+  const runStreaming = async (convo: Conversation, dataSectionForFirstTurn: string | null, userMessage: string, isFirstMessage: boolean) => {
     setError(null);
     setStreaming(true);
     setStreamingText("");
@@ -274,8 +300,8 @@ function BernardPage() {
       if (!apiKey) throw new Error("Add an Anthropic API key in Settings → AI to enable Bernard.");
 
       // Build the message list. On the first turn, the user's content is
-      // wrapped with the business snapshot so Bernard sees the data.
-      const dataSection = snapshot ? snapshotToContext(snapshot) : "";
+      // wrapped with the data context (snapshot or forecast inputs).
+      const dataSection = dataSectionForFirstTurn ?? "";
       const wrappedUser = isFirstMessage && dataSection
         ? `${dataSection}\n\n---\n\n${userMessage}`
         : userMessage;
@@ -327,10 +353,26 @@ function BernardPage() {
     setStreaming(true);
     setError(null);
 
-    let snapshot: BusinessSnapshot;
+    // Forecast presets get the deterministic forecast math instead of the
+    // standard business snapshot. Everything else uses the snapshot.
+    let dataSection: string;
+    let range: { start: string; end: string };
     try {
-      snapshot = await gatherBusinessSnapshot(days);
-      setSnapshotInfo({ generated_at: snapshot.generated_at, range: snapshot.range });
+      if (preset?.kind === "forecast") {
+        const { summary } = await gatherForecastInputs();
+        // Pair the forecast math with the standard 90-day snapshot — Bernard
+        // benefits from BOTH the numbers and the qualitative context (which
+        // creators / channels are growing or shrinking).
+        const snapshot = await gatherBusinessSnapshot(90);
+        dataSection = forecastToContext(summary) + "\n\n" + snapshotToContext(snapshot);
+        range = snapshot.range;
+        setSnapshotInfo({ generated_at: snapshot.generated_at, range });
+      } else {
+        const snapshot = await gatherBusinessSnapshot(days);
+        dataSection = snapshotToContext(snapshot);
+        range = snapshot.range;
+        setSnapshotInfo({ generated_at: snapshot.generated_at, range });
+      }
     } catch (e) {
       setStreaming(false);
       const msg = e instanceof Error ? e.message : String(e);
@@ -344,7 +386,7 @@ function BernardPage() {
       title: preset?.title ?? (userMessage.length > 60 ? userMessage.slice(0, 60) + "…" : userMessage),
       preset_id: preset?.id ?? null,
       data_window_days: days,
-      range: snapshot.range,
+      range,
       messages: [
         { role: "user", content: userMessage },
         { role: "assistant", content: "" }, // placeholder — streamed into
@@ -357,7 +399,7 @@ function BernardPage() {
     setInput("");
     setShowPresets(false);
 
-    await runStreaming(convo, snapshot, userMessage, /* isFirstMessage */ true);
+    await runStreaming(convo, dataSection, userMessage, /* isFirstMessage */ true);
   };
 
   const sendFollowup = async () => {

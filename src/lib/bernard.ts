@@ -553,3 +553,201 @@ export function snapshotToContext(s: BusinessSnapshot): string {
   else for (const a of s.alerts) lines.push(`- ${a}`);
   return lines.join("\n");
 }
+
+// ── Forecast-specific data gatherer ───────────────────────────────────────────
+
+export type ForecastInputs = {
+  /** Total revenue (organic + internal + ads_net) per ISO date. */
+  dailyTotals: Record<string, number>;
+  /** Same but split per channel — the AI can read which channel is rising/falling. */
+  dailyOrganic: Record<string, number>;
+  dailyInternal: Record<string, number>;
+  dailyAdsNet: Record<string, number>;
+};
+
+export type ForecastSummary = {
+  windowDays: number;
+  totalRevenue: number;
+  dailyAvg: number;
+  weeklyAvg: number;
+  monthlyAvg: number;
+  /** Compares the most recent 30d to the 30d before that. >1 = growing, <1 = shrinking. */
+  trendRatio: number;
+  trendDirection: "up" | "down" | "flat";
+  /** Naive projections off the last-30d run rate. */
+  next30Projected: number;
+  next60Projected: number;
+  next90Projected: number;
+  /** Same projections but adjusted for the trend (compounding-ish). */
+  next30Adjusted: number;
+  next60Adjusted: number;
+  next90Adjusted: number;
+  /** Per-channel split of the last 30 days, to surface what's growing/shrinking. */
+  channelMix: Array<{ channel: string; last30: number; prev30: number; pctChange: number }>;
+};
+
+/**
+ * Pulls 90 days of revenue across all 3 buckets and computes deterministic
+ * trend math. Bernard then gets these numbers PLUS the data to interpret —
+ * not pure vibes, not pure formula. Best of both.
+ */
+export async function gatherForecastInputs(): Promise<{ summary: ForecastSummary; inputs: ForecastInputs }> {
+  const end = new Date();
+  const start = subDays(end, 90);
+  const startISO = format(start, "yyyy-MM-dd");
+  const endISO = format(end, "yyyy-MM-dd");
+
+  const [revenue, organic, internal, ads] = await Promise.all([
+    fetchRange("revenue_entries", "amount, entry_date", "entry_date", startISO, endISO),
+    fetchRange("organic_revenue_entries", "amount, entry_date", "entry_date", startISO, endISO),
+    fetchRange("internal_revenue_entries", "amount, entry_date", "entry_date", startISO, endISO),
+    fetchRange("ad_campaigns", "amount_spent, revenue_generated, start_date", "start_date", startISO, endISO),
+  ]);
+
+  // Daily buckets per channel
+  const dailyOrganic: Record<string, number> = {};
+  const dailyInternal: Record<string, number> = {};
+  const dailyAdsNet: Record<string, number> = {};
+
+  // OnlyFinder/Infloww revenue rolls into the Ads bucket (no separate spend column,
+  // so it counts as net here)
+  for (const r of revenue) {
+    const k = str(r.entry_date);
+    if (!k) continue;
+    dailyAdsNet[k] = (dailyAdsNet[k] ?? 0) + num(r.amount);
+  }
+  for (const r of organic) {
+    const k = str(r.entry_date);
+    if (!k) continue;
+    dailyOrganic[k] = (dailyOrganic[k] ?? 0) + num(r.amount);
+  }
+  for (const r of internal) {
+    const k = str(r.entry_date);
+    if (!k) continue;
+    dailyInternal[k] = (dailyInternal[k] ?? 0) + num(r.amount);
+  }
+  for (const r of ads) {
+    const k = str(r.start_date);
+    if (!k) continue;
+    dailyAdsNet[k] = (dailyAdsNet[k] ?? 0) + (num(r.revenue_generated) - num(r.amount_spent));
+  }
+
+  const dailyTotals: Record<string, number> = {};
+  const allDates = new Set([...Object.keys(dailyOrganic), ...Object.keys(dailyInternal), ...Object.keys(dailyAdsNet)]);
+  for (const d of allDates) {
+    dailyTotals[d] = (dailyOrganic[d] ?? 0) + (dailyInternal[d] ?? 0) + (dailyAdsNet[d] ?? 0);
+  }
+
+  const totalRevenue = Object.values(dailyTotals).reduce((s, v) => s + v, 0);
+
+  // Run-rate math
+  const sumBetween = (from: Date, to: Date) => {
+    let s = 0;
+    for (const [date, v] of Object.entries(dailyTotals)) {
+      const d = new Date(date);
+      if (d >= from && d <= to) s += v;
+    }
+    return s;
+  };
+  const last30 = sumBetween(subDays(end, 30), end);
+  const prev30 = sumBetween(subDays(end, 60), subDays(end, 30));
+
+  const dailyAvg = last30 / 30;
+  const weeklyAvg = dailyAvg * 7;
+  const monthlyAvg = dailyAvg * 30;
+
+  const trendRatio = prev30 > 0 ? last30 / prev30 : 1;
+  const trendDirection: "up" | "down" | "flat" =
+    trendRatio > 1.05 ? "up" : trendRatio < 0.95 ? "down" : "flat";
+
+  // Linear (run-rate) projections
+  const next30Projected = monthlyAvg;
+  const next60Projected = monthlyAvg * 2;
+  const next90Projected = monthlyAvg * 3;
+
+  // Trend-adjusted: each subsequent 30-day window scales by trendRatio,
+  // capped to ±50% growth so an outlier week doesn't produce nonsense.
+  const cappedTrend = Math.max(0.5, Math.min(1.5, trendRatio));
+  const next30Adjusted = monthlyAvg * cappedTrend;
+  const next60Adjusted = next30Adjusted + monthlyAvg * Math.pow(cappedTrend, 2);
+  const next90Adjusted = next30Adjusted + monthlyAvg * Math.pow(cappedTrend, 2) + monthlyAvg * Math.pow(cappedTrend, 3);
+
+  // Channel mix
+  const channelMix = [
+    { channel: "Organic",  last30: 0, prev30: 0, pctChange: 0 },
+    { channel: "Internal", last30: 0, prev30: 0, pctChange: 0 },
+    { channel: "Ads",      last30: 0, prev30: 0, pctChange: 0 },
+  ];
+  const sumDailyBetween = (m: Record<string, number>, from: Date, to: Date) => {
+    let s = 0;
+    for (const [date, v] of Object.entries(m)) {
+      const d = new Date(date);
+      if (d >= from && d <= to) s += v;
+    }
+    return s;
+  };
+  channelMix[0].last30 = sumDailyBetween(dailyOrganic,  subDays(end, 30), end);
+  channelMix[0].prev30 = sumDailyBetween(dailyOrganic,  subDays(end, 60), subDays(end, 30));
+  channelMix[1].last30 = sumDailyBetween(dailyInternal, subDays(end, 30), end);
+  channelMix[1].prev30 = sumDailyBetween(dailyInternal, subDays(end, 60), subDays(end, 30));
+  channelMix[2].last30 = sumDailyBetween(dailyAdsNet,   subDays(end, 30), end);
+  channelMix[2].prev30 = sumDailyBetween(dailyAdsNet,   subDays(end, 60), subDays(end, 30));
+  for (const ch of channelMix) {
+    ch.pctChange = ch.prev30 > 0 ? ((ch.last30 - ch.prev30) / ch.prev30) * 100 : (ch.last30 > 0 ? 100 : 0);
+  }
+
+  return {
+    summary: {
+      windowDays: 90,
+      totalRevenue,
+      dailyAvg,
+      weeklyAvg,
+      monthlyAvg,
+      trendRatio,
+      trendDirection,
+      next30Projected,
+      next60Projected,
+      next90Projected,
+      next30Adjusted,
+      next60Adjusted,
+      next90Adjusted,
+      channelMix,
+    },
+    inputs: { dailyTotals, dailyOrganic, dailyInternal, dailyAdsNet },
+  };
+}
+
+/** Converts the deterministic forecast math into a context block for Bernard. */
+export function forecastToContext(s: ForecastSummary): string {
+  const lines: string[] = [];
+  lines.push(`# Revenue forecast inputs (computed deterministically — do not invent these numbers)`);
+  lines.push(``);
+  lines.push(`## Last 90 days`);
+  lines.push(`- Total revenue: ${fmt(s.totalRevenue)}`);
+  lines.push(`- Daily average: ${fmt(s.dailyAvg)}`);
+  lines.push(`- Weekly run rate: ${fmt(s.weeklyAvg)}`);
+  lines.push(`- Monthly run rate: ${fmt(s.monthlyAvg)}`);
+  lines.push(``);
+  lines.push(`## Trend (last 30d vs prior 30d)`);
+  lines.push(`- Direction: ${s.trendDirection.toUpperCase()}`);
+  lines.push(`- Ratio: ${s.trendRatio.toFixed(2)}x (${s.trendRatio > 1 ? "+" : ""}${((s.trendRatio - 1) * 100).toFixed(1)}% MoM)`);
+  lines.push(``);
+  lines.push(`## Channel mix shifts (last 30d vs prior 30d)`);
+  for (const ch of s.channelMix) {
+    const arrow = ch.pctChange > 5 ? "↑" : ch.pctChange < -5 ? "↓" : "→";
+    lines.push(`- ${ch.channel}: ${fmt(ch.last30)} (was ${fmt(ch.prev30)}, ${arrow} ${ch.pctChange > 0 ? "+" : ""}${ch.pctChange.toFixed(1)}%)`);
+  }
+  lines.push(``);
+  lines.push(`## Two projection scenarios`);
+  lines.push(``);
+  lines.push(`A. **Run rate** (assumes the last 30-day pace simply continues, no trend):`);
+  lines.push(`  - Next 30 days: ${fmt(s.next30Projected)}`);
+  lines.push(`  - Next 60 days: ${fmt(s.next60Projected)}`);
+  lines.push(`  - Next 90 days: ${fmt(s.next90Projected)}`);
+  lines.push(``);
+  lines.push(`B. **Trend-adjusted** (compounds the recent MoM growth/decline, capped at ±50%):`);
+  lines.push(`  - Next 30 days: ${fmt(s.next30Adjusted)}`);
+  lines.push(`  - Next 60 days: ${fmt(s.next60Adjusted)}`);
+  lines.push(`  - Next 90 days: ${fmt(s.next90Adjusted)}`);
+  return lines.join("\n");
+}
