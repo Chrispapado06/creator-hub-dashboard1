@@ -789,6 +789,174 @@ export type Database = {
           }
         ]
       }
+      staff_announcements: {
+        Row: {
+          id: string
+          body: string
+          pinned: boolean
+          scope: string
+          expires_at: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          body: string
+          pinned?: boolean
+          scope?: string
+          expires_at?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          body?: string
+          pinned?: boolean
+          scope?: string
+          expires_at?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      staff_training_materials: {
+        Row: {
+          id: string
+          label: string
+          body: string | null
+          video_url: string | null
+          category: string | null
+          creator_id: string | null
+          scope: string
+          display_order: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          label: string
+          body?: string | null
+          video_url?: string | null
+          category?: string | null
+          creator_id?: string | null
+          scope?: string
+          display_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          label?: string
+          body?: string | null
+          video_url?: string | null
+          category?: string | null
+          creator_id?: string | null
+          scope?: string
+          display_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      staff_scripts: {
+        Row: {
+          id: string
+          label: string
+          body: string
+          category: string
+          creator_id: string | null
+          display_order: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          label: string
+          body: string
+          category: string
+          creator_id?: string | null
+          display_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          label?: string
+          body?: string
+          category?: string
+          creator_id?: string | null
+          display_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      staff_coaching_notes: {
+        Row: {
+          id: string
+          chatter_id: string
+          body: string
+          visible_to_staff: boolean
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          chatter_id: string
+          body: string
+          visible_to_staff?: boolean
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          chatter_id?: string
+          body?: string
+          visible_to_staff?: boolean
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      staff_goals: {
+        Row: {
+          id: string
+          chatter_id: string
+          label: string
+          metric: string
+          target_amount: number
+          period_start: string
+          period_end: string
+          set_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          chatter_id: string
+          label: string
+          metric?: string
+          target_amount: number
+          period_start: string
+          period_end: string
+          set_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          chatter_id?: string
+          label?: string
+          metric?: string
+          target_amount?: number
+          period_start?: string
+          period_end?: string
+          set_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
       airtable_embeds: {
         Row: {
           id: string

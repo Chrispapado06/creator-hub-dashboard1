@@ -22,6 +22,8 @@ import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
 import { format, formatDistanceToNow, startOfMonth, endOfMonth, startOfWeek, endOfWeek, subWeeks, subMonths, addDays } from "date-fns";
 import { logAudit } from "@/lib/audit";
+import { StaffPortalAdmin, CoachingDialog } from "@/components/StaffPortalAdmin";
+import { GraduationCap, Sparkles } from "lucide-react";
 
 export const Route = createFileRoute("/chatters")({ component: ChattersPage });
 
@@ -209,6 +211,9 @@ function ChattersPage() {
             <TabsTrigger value="shifts">Shifts</TabsTrigger>
             <TabsTrigger value="leaderboard">Leaderboard</TabsTrigger>
             <TabsTrigger value="pay">Pay</TabsTrigger>
+            <TabsTrigger value="portal" className="flex items-center gap-1.5">
+              <GraduationCap className="h-3.5 w-3.5" /> Portal Content
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="timeclock" className="mt-6">
@@ -237,6 +242,9 @@ function ChattersPage() {
           </TabsContent>
           <TabsContent value="pay" className="mt-6">
             <PayTab chatters={chatters} shifts={shifts} payouts={payouts} onRefresh={refresh} />
+          </TabsContent>
+          <TabsContent value="portal" className="mt-6">
+            <StaffPortalAdmin creators={creators} chatters={chatters} />
           </TabsContent>
         </Tabs>
       )}
@@ -272,6 +280,7 @@ function RosterTab({
   const [revealedLogin, setRevealedLogin] = useState<Record<string, boolean>>({});
   const [copied, setCopied] = useState<string | null>(null);
   const [genLoginFor, setGenLoginFor] = useState<Chatter | null>(null);
+  const [coachingFor, setCoachingFor] = useState<Chatter | null>(null);
   const [genForm, setGenForm] = useState({ username: "", password: "" });
 
   const startEdit = (c: Chatter) => {
@@ -717,6 +726,13 @@ function RosterTab({
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
                         <button
+                          onClick={() => setCoachingFor(c)}
+                          className="rounded p-1.5 text-muted-foreground hover:text-primary hover:bg-secondary transition-colors"
+                          title="Coach (notes + goals)"
+                        >
+                          <Sparkles className="h-3.5 w-3.5" />
+                        </button>
+                        <button
                           onClick={() => startEdit(c)}
                           className="rounded p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
                         >
@@ -800,6 +816,15 @@ function RosterTab({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Coaching dialog — opened from the Sparkles button on each row */}
+      {coachingFor && (
+        <CoachingDialog
+          chatter={{ id: coachingFor.id, name: coachingFor.name }}
+          open={!!coachingFor}
+          onClose={() => setCoachingFor(null)}
+        />
+      )}
     </div>
   );
 }
