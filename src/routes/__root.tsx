@@ -5,6 +5,7 @@ import {
   Settings, LogOut, Sun, Moon, Users, DollarSign,
   CalendarDays, LayoutDashboard, ChevronDown, ChevronRight,
   MessageCircle, UserPlus, ScrollText, Sparkles, Zap,
+  PiggyBank,
 } from "lucide-react";
 import { NotificationsBell } from "@/components/NotificationsBell";
 import { SyncStatusBadge } from "@/components/SyncStatusBadge";
@@ -372,6 +373,7 @@ function RootComponent() {
               <SideNavLink to="/chatters" icon={<MessageCircle className="h-4 w-4" />} label="Staff" />
               <SideNavLink to="/leads" icon={<UserPlus className="h-4 w-4" />} label="Client Acquisition" />
               <SideNavLink to="/automation" icon={<Zap className="h-4 w-4" />} label="Automation" />
+              <SideNavLink to="/financials" icon={<PiggyBank className="h-4 w-4" />} label="Financials" />
               <SideNavLink to="/audit" icon={<ScrollText className="h-4 w-4" />} label="Audit Log" />
             </div>
           </div>

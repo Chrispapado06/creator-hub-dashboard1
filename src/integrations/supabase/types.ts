@@ -586,6 +586,42 @@ export type Database = {
           },
         ]
       }
+      agency_expenses: {
+        Row: {
+          id: string
+          category: string
+          description: string
+          amount: number
+          expense_date: string
+          vendor: string | null
+          notes: string | null
+          recurring: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          category?: string
+          description: string
+          amount: number
+          expense_date?: string
+          vendor?: string | null
+          notes?: string | null
+          recurring?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          category?: string
+          description?: string
+          amount?: number
+          expense_date?: string
+          vendor?: string | null
+          notes?: string | null
+          recurring?: boolean
+          created_at?: string
+        }
+        Relationships: []
+      }
       agency_settings: {
         Row: {
           id: string
