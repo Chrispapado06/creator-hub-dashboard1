@@ -460,7 +460,14 @@ function BernardPage() {
       let safety = 6; // Max round-trips per user turn (covers complex multi-tool flows)
       while (safety-- > 0) {
         let stopReason: "end_turn" | "tool_use" | "max_tokens" | "stop_sequence" | "unknown" = "unknown";
-        const pendingThisTurn: Array<{ id: string; name: string }> = [];
+        // Track everything Bernard streams locally during this iteration.
+        // We previously re-read these from React state via a setConversations
+        // callback hack, but in React 18's async update model the read could
+        // race ahead of the streaming setState commits and return 0 tool
+        // blocks even though tool_use_complete had fired. The "Running..."
+        // chip stayed forever because the agentic loop bailed early.
+        const localTextBuffer: string[] = [];
+        const localToolUseBlocks: Array<{ type: "tool_use"; id: string; name: string; input: Record<string, unknown> }> = [];
 
         for await (const evt of streamClaudeAgentic(apiKey, history, {
           signal: abortRef.current.signal,
@@ -469,30 +476,34 @@ function BernardPage() {
         })) {
           if (evt.type === "text_delta") {
             appendAssistantText(convo.id, evt.text);
+            localTextBuffer.push(evt.text);
           } else if (evt.type === "tool_use_start") {
-            // Placeholder so the UI shows a "loading" tool card while input streams in
-            pendingThisTurn.push({ id: evt.id, name: evt.name });
+            // tool_use_start has no input yet — wait for tool_use_complete
+            // before recording. The UI shows the loading chip via React
+            // state once addAssistantToolUse fires below.
           } else if (evt.type === "tool_use_complete") {
             addAssistantToolUse(convo.id, evt.id, evt.name, evt.input);
+            localToolUseBlocks.push({ type: "tool_use", id: evt.id, name: evt.name, input: evt.input });
           } else if (evt.type === "message_done") {
             stopReason = evt.stopReason;
           }
         }
 
-        if (stopReason !== "tool_use" || pendingThisTurn.length === 0) {
+        if (stopReason !== "tool_use" || localToolUseBlocks.length === 0) {
           break;
         }
 
-        // Execute / approve each tool. Read = auto, write/destructive = wait for user.
-        // Re-read the tool_use blocks from the latest assistant message so we have the parsed inputs.
-        let latestAssistant: AgenticChatMessage | undefined;
-        setConversations((prev) => {
-          latestAssistant = prev.find((c) => c.id === convo.id)?.messages.at(-1);
-          return prev;
-        });
-        const toolUseBlocks = (latestAssistant && latestAssistant.role === "assistant" && Array.isArray(latestAssistant.content))
-          ? latestAssistant.content.filter((b): b is { type: "tool_use"; id: string; name: string; input: Record<string, unknown> } => b.type === "tool_use")
-          : [];
+        // Build the assistant message ourselves from the locally-tracked
+        // stream events (text + tool_use blocks). This is what we'll push
+        // into `history` for the next API turn — protocol-correct without
+        // depending on React having committed all updates yet.
+        type AssistantBlock = { type: "text"; text: string } | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> };
+        const assistantContentBlocks: AssistantBlock[] = [];
+        const fullText = localTextBuffer.join("");
+        if (fullText) assistantContentBlocks.push({ type: "text", text: fullText });
+        for (const tb of localToolUseBlocks) assistantContentBlocks.push(tb);
+        const latestAssistant: AgenticChatMessage = { role: "assistant", content: assistantContentBlocks };
+        const toolUseBlocks = localToolUseBlocks;
 
         const results: Array<{ type: "tool_result"; tool_use_id: string; content: string; is_error?: boolean }> = [];
         for (const block of toolUseBlocks) {
