@@ -394,10 +394,17 @@ function BernardPage() {
       return;
     }
     try {
-      const result = await tool.handler(pending.input);
+      // 45s timeout so a stuck Supabase / Airtable request can't wedge
+      // the loop. Bernard sees the timeout error and can decide to retry.
+      const result = await Promise.race([
+        tool.handler(pending.input),
+        new Promise<string>((_, rej) =>
+          setTimeout(() => rej(new Error("Tool timed out after 45s — try again or check network")), 45_000),
+        ),
+      ]);
       const isError = result.startsWith("Error:");
       setToolStatus(toolUseId, isError ? "error" : "done", result);
-      pending.resolve({ type: "tool_result", tool_use_id: toolUseId, content: result, is_error: isError });
+      pending.resolve({ type: "tool_result", tool_use_id: toolUseId, content: result || "(no output)", is_error: isError });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setToolStatus(toolUseId, "error", msg);
@@ -501,10 +508,18 @@ function BernardPage() {
           }
 
           if (tool.category === "read") {
-            // Auto-execute silently
+            // Auto-execute silently with a 45s safety timeout — a stuck
+            // Supabase request shouldn't be able to wedge the agentic
+            // loop forever. If we time out, surface an error and let
+            // Bernard decide whether to retry.
             setToolStatus(block.id, "executing");
             try {
-              const result = await tool.handler(block.input);
+              const result = await Promise.race([
+                tool.handler(block.input),
+                new Promise<string>((_, rej) =>
+                  setTimeout(() => rej(new Error("Tool timed out after 45s — try again or check network")), 45_000),
+                ),
+              ]);
               const isError = result.startsWith("Error:");
               setToolStatus(block.id, isError ? "error" : "done", result);
               // Anthropic rejects user messages with empty content, so guard
