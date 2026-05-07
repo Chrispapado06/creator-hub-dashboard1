@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { NotificationsBell } from "@/components/NotificationsBell";
 import { SyncStatusBadge } from "@/components/SyncStatusBadge";
+import { InstallPromptBanner } from "@/components/InstallPromptBanner";
 import { SiOnlyfans, SiInstagram, SiFacebook, SiReddit, SiX, SiMeta, SiTiktok, SiAirtable } from "react-icons/si";
 
 type AgencySettings = {
@@ -285,6 +286,7 @@ function RootComponent() {
     return (
       <div className="min-h-screen bg-background">
         <Outlet />
+        <InstallPromptBanner />
       </div>
     );
   }
@@ -395,6 +397,7 @@ function RootComponent() {
           <Outlet />
         </div>
       </main>
+      <InstallPromptBanner />
     </div>
   );
 }

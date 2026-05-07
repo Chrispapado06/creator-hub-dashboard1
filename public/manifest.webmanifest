@@ -1,0 +1,37 @@
+{
+  "name": "Agency Console",
+  "short_name": "Agency",
+  "description": "OFM agency operations — creators, staff, revenue, training, and Bernard.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fcf9ee",
+  "theme_color": "#e87852",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Clock in/out",
+      "short_name": "Clock",
+      "url": "/clock",
+      "description": "Staff time clock"
+    },
+    {
+      "name": "Daily dashboard",
+      "short_name": "Daily",
+      "url": "/daily"
+    },
+    {
+      "name": "Bernard",
+      "short_name": "Bernard",
+      "url": "/bernard"
+    }
+  ]
+}

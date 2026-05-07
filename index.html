@@ -1,9 +1,29 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+
+    <!-- Branding / theming -->
     <title>Agency Console</title>
+    <meta name="description" content="OFM agency operations — creators, staff, revenue, training, and Bernard." />
+    <meta name="theme-color" content="#e87852" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#2a1a13" media="(prefers-color-scheme: dark)" />
+
+    <!-- PWA: installable web app -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+
+    <!-- iOS home-screen support. iOS Safari ignores SVG apple-touch-icon and
+         falls back to a screenshot of the page if no PNG is present, but the
+         install still works fine. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Agency" />
+    <link rel="apple-touch-icon" href="/icon.svg" />
+
+    <!-- Mobile chrome / address bar tinting on Android -->
+    <meta name="mobile-web-app-capable" content="yes" />
   </head>
   <body>
     <div id="root"></div>
