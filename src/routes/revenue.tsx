@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { DollarSign, TrendingUp, Users, Plus, Trash2 } from "lucide-react";
+import { DollarSign, TrendingUp, Users, Plus, Trash2, RefreshCw, Wallet, Megaphone, Layers } from "lucide-react";
+import { runSyncJob } from "@/lib/sync";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -225,6 +226,51 @@ function RevenuePage() {
 
   const totalRevenue = filtered.reduce((s, e) => s + e.amount, 0);
 
+  // ── 3-bucket overview totals (across ALL data, not just the table filter) ──
+  // Organic = organic_revenue_entries (Reddit / IG / FB / X / TikTok organic posts)
+  // Internal = internal_revenue_entries (internal tracking links)
+  // Ads = ad_campaigns.revenue_generated (Meta paid) + revenue_entries.amount (OnlyFinder/Infloww sync)
+  const overview = useMemo(() => {
+    const inflowwTotal = entries.reduce((s, e) => s + e.amount, 0);
+    const metaAdsTotal = adCampaigns.reduce((s, c) => s + c.revenue_generated, 0);
+    const metaAdsSpend = adCampaigns.reduce((s, c) => s + c.amount_spent, 0);
+    const adsTotal = inflowwTotal + metaAdsTotal;
+    const adsNet = adsTotal - metaAdsSpend;
+    const organic = organicEntries.reduce((s, e) => s + e.amount, 0);
+    const internal = internalEntries.reduce((s, e) => s + e.amount, 0);
+    return {
+      organic,
+      internal,
+      ads: adsTotal,
+      adsNet,
+      adsSpend: metaAdsSpend,
+      meta: metaAdsTotal,
+      infloww: inflowwTotal,
+      total: organic + internal + adsNet,
+    };
+  }, [entries, organicEntries, internalEntries, adCampaigns]);
+
+  const [syncingInfloww, setSyncingInfloww] = useState(false);
+  const onSyncInfloww = async () => {
+    setSyncingInfloww(true);
+    try {
+      const result = await runSyncJob("infloww_revenue");
+      if (!result) {
+        toast.info("Another tab is already syncing — try again in a moment");
+      } else if (result.status === "ok") {
+        toast.success(`Infloww sync · ${result.message}`);
+        await load();
+      } else if (result.status === "partial") {
+        toast.warning(`Infloww sync · ${result.message}`);
+        await load();
+      } else {
+        toast.error(`Infloww sync failed: ${result.message}`);
+      }
+    } finally {
+      setSyncingInfloww(false);
+    }
+  };
+
   const byAccount = useMemo(() => {
     const map = new Map<string, number>();
     for (const e of filtered) {
@@ -341,7 +387,16 @@ function RevenuePage() {
             Track revenue across all channels and monitor performance over time.
           </p>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={onSyncInfloww}
+            disabled={syncingInfloww}
+          >
+            <RefreshCw className={`mr-1.5 h-4 w-4 ${syncingInfloww ? "animate-spin" : ""}`} />
+            {syncingInfloww ? "Syncing…" : "Sync Infloww"}
+          </Button>
+          <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button className="bg-gradient-to-r from-primary to-primary-glow text-primary-foreground hover:opacity-90 shadow-[0_0_20px_oklch(0.72_0.18_30/0.3)]">
               <Plus className="mr-1.5 h-4 w-4" />
@@ -420,6 +475,69 @@ function RevenuePage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        </div>
+      </div>
+
+      {/* ── Total revenue overview (all-time, all channels) ────────────────── */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div className="rounded-xl border border-border bg-card p-5">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <DollarSign className="h-4 w-4 text-primary" />
+            Total revenue (all time)
+          </div>
+          <div className="mt-2 text-2xl font-bold">
+            ${overview.total.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+          </div>
+          <div className="mt-1 text-[11px] text-muted-foreground">
+            Organic + Internal + Ads (net)
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-success/30 bg-success/5 p-5">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Layers className="h-4 w-4 text-success" />
+            Organic
+          </div>
+          <div className="mt-2 text-2xl font-bold">
+            ${overview.organic.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+          </div>
+          <div className="mt-1 text-[11px] text-muted-foreground">
+            Reddit · IG · FB · X · TikTok
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-warning/30 bg-warning/5 p-5">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Wallet className="h-4 w-4 text-warning" />
+            Internal
+          </div>
+          <div className="mt-2 text-2xl font-bold">
+            ${overview.internal.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+          </div>
+          <div className="mt-1 text-[11px] text-muted-foreground">
+            Internal tracking links
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-ads/30 bg-ads/5 p-5">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Megaphone className="h-4 w-4 text-ads" />
+            Ads
+          </div>
+          <div className="mt-2 text-2xl font-bold">
+            ${overview.ads.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+          </div>
+          <div className="mt-1 text-[11px] text-muted-foreground space-x-1">
+            <span>Meta ${overview.meta.toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>
+            <span className="text-muted-foreground/50">·</span>
+            <span>Infloww/OnlyFinder ${overview.infloww.toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>
+          </div>
+          {overview.adsSpend > 0 && (
+            <div className="mt-1 text-[10px] text-destructive">
+              Spend −${overview.adsSpend.toLocaleString("en-US", { maximumFractionDigits: 0 })} · Net ${overview.adsNet.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ── Infloww (all-time totals from API) ──────────────────────────────── */}
