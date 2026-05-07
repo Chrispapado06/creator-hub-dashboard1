@@ -8,21 +8,26 @@
 // Data sources: `landing_views` (one row per visit, with referrer + geo)
 // and `landing_clicks` (one row per outbound click).
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
-  ArrowLeft, BarChart3, Eye, MousePointerClick, Globe,
-  Users, Activity, MapPin, PieChart as PieIcon, ChartPie,
+  ArrowLeft, BarChart3, MousePointerClick, Globe,
+  Users, Activity, MapPin, ChartPie,
   TrendingUp, TrendingDown, Minus, RefreshCw, ExternalLink, Clock,
+  CalendarRange,
 } from "lucide-react";
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis, Legend,
 } from "recharts";
 import {
-  eachDayOfInterval, format, startOfDay, subDays, subMinutes, differenceInMinutes,
+  format, startOfDay, endOfDay, subDays, subMinutes, differenceInMinutes,
+  differenceInCalendarDays,
 } from "date-fns";
+import type { DateRange } from "react-day-picker";
 
 // ── ISO country code → flag emoji ────────────────────────────────────────
 // 'US' → 🇺🇸. Works because flag emojis are two regional-indicator
@@ -34,7 +39,35 @@ const countryFlag = (cc: string | null): string => {
     .replace(/./g, (c) => String.fromCodePoint(127397 + c.charCodeAt(0)));
 };
 
-type Period = 7 | 30 | 90;
+// Range state. The current window is always a concrete (from, to) pair —
+// preset pills (7d/30d/90d) just write into it. "Custom" opens a calendar
+// where the user picks an arbitrary span.
+type RangeKind = 7 | 30 | 90 | "custom";
+type Range = { from: Date; to: Date };
+
+const presetRange = (days: number): Range => {
+  const to = endOfDay(new Date());
+  const from = startOfDay(subDays(to, days - 1));
+  return { from, to };
+};
+
+const rangeDays = (r: Range): number =>
+  Math.max(1, differenceInCalendarDays(r.to, r.from) + 1);
+
+// "Previous period" is the same-length window immediately before the
+// current one. Used for vs-last-period deltas.
+const previousRange = (current: Range): Range => {
+  const days = rangeDays(current);
+  const to = endOfDay(subDays(current.from, 1));
+  const from = startOfDay(subDays(to, days - 1));
+  return { from, to };
+};
+
+const formatRange = (r: Range): string => {
+  const sameYear = r.from.getFullYear() === r.to.getFullYear();
+  const fromFmt = sameYear ? "MMM d" : "MMM d, yyyy";
+  return `${format(r.from, fromFmt)} – ${format(r.to, "MMM d, yyyy")}`;
+};
 
 type ViewRow = {
   occurred_at: string;
@@ -61,8 +94,14 @@ export function LandingAnalytics({
   pageName: string;
   onBack: () => void;
 }) {
-  const [period, setPeriod] = useState<Period>(30);
+  const [rangeKind, setRangeKind] = useState<RangeKind>(30);
+  const [range, setRange] = useState<Range>(() => presetRange(30));
   const [loading, setLoading] = useState(true);
+
+  // Custom range picker state — held separately so the user can tweak
+  // both ends before applying. Empty until they open it.
+  const [customDraft, setCustomDraft] = useState<DateRange | undefined>(undefined);
+  const [customOpen, setCustomOpen] = useState(false);
 
   // Current window
   const [views, setViews] = useState<ViewRow[]>([]);
@@ -81,12 +120,29 @@ export function LandingAnalytics({
     return `${window.location.origin}/p/${pageSlug}`;
   }, [pageSlug]);
 
+  const days = rangeDays(range);
+  const prev = useMemo(() => previousRange(range), [range]);
+
+  const setPreset = (k: 7 | 30 | 90) => {
+    setRangeKind(k);
+    setRange(presetRange(k));
+  };
+
+  const applyCustomRange = () => {
+    if (!customDraft?.from) return;
+    const from = startOfDay(customDraft.from);
+    const to = endOfDay(customDraft.to ?? customDraft.from);
+    setRange({ from, to });
+    setRangeKind("custom");
+    setCustomOpen(false);
+  };
+
   const load = async () => {
     setLoading(true);
-    const now = new Date();
-    const sinceCurrent = subDays(now, period).toISOString();
-    const sincePrevious = subDays(now, period * 2).toISOString();
-    const cutoffPrevious = subDays(now, period).toISOString();
+    const sinceCurrent = range.from.toISOString();
+    const cutoffCurrent = range.to.toISOString();
+    const sincePrevious = prev.from.toISOString();
+    const cutoffPrevious = prev.to.toISOString();
 
     const [
       { data: vCur }, { data: cCur },
@@ -95,21 +151,23 @@ export function LandingAnalytics({
       supabase.from("landing_views")
         .select("occurred_at, referrer, country, city, region")
         .eq("landing_id", pageId)
-        .gte("occurred_at", sinceCurrent),
+        .gte("occurred_at", sinceCurrent)
+        .lte("occurred_at", cutoffCurrent),
       supabase.from("landing_clicks")
         .select("occurred_at, link_url, link_label, referrer")
         .eq("landing_id", pageId)
-        .gte("occurred_at", sinceCurrent),
+        .gte("occurred_at", sinceCurrent)
+        .lte("occurred_at", cutoffCurrent),
       supabase.from("landing_views")
         .select("occurred_at, referrer, country, city, region")
         .eq("landing_id", pageId)
         .gte("occurred_at", sincePrevious)
-        .lt("occurred_at", cutoffPrevious),
+        .lte("occurred_at", cutoffPrevious),
       supabase.from("landing_clicks")
         .select("occurred_at, link_url, link_label, referrer")
         .eq("landing_id", pageId)
         .gte("occurred_at", sincePrevious)
-        .lt("occurred_at", cutoffPrevious),
+        .lte("occurred_at", cutoffPrevious),
     ]);
 
     setViews((vCur ?? []) as ViewRow[]);
@@ -136,7 +194,7 @@ export function LandingAnalytics({
     setLivePulse((p) => p + 1);
   };
 
-  useEffect(() => { void load(); }, [pageId, period]);
+  useEffect(() => { void load(); }, [pageId, range.from.getTime(), range.to.getTime()]);
   useEffect(() => {
     void loadLive();
     const t = setInterval(() => { void loadLive(); }, 15_000);
@@ -181,10 +239,59 @@ export function LandingAnalytics({
             {publicUrl} <ExternalLink className="h-3 w-3" />
           </a>
         </div>
-        <div className="flex items-center gap-1.5">
-          <PeriodPill active={period === 7}  onClick={() => setPeriod(7)}>7d</PeriodPill>
-          <PeriodPill active={period === 30} onClick={() => setPeriod(30)}>30d</PeriodPill>
-          <PeriodPill active={period === 90} onClick={() => setPeriod(90)}>90d</PeriodPill>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <PeriodPill active={rangeKind === 7}  onClick={() => setPreset(7)}>7d</PeriodPill>
+          <PeriodPill active={rangeKind === 30} onClick={() => setPreset(30)}>30d</PeriodPill>
+          <PeriodPill active={rangeKind === 90} onClick={() => setPreset(90)}>90d</PeriodPill>
+
+          {/* Custom range — opens a calendar in range mode. The "Apply"
+              button confirms; closing without applying keeps the previous
+              range. */}
+          <Popover open={customOpen} onOpenChange={(o) => {
+            setCustomOpen(o);
+            if (o) setCustomDraft({ from: range.from, to: range.to });
+          }}>
+            <PopoverTrigger asChild>
+              <button
+                className={`text-xs px-2.5 py-1 rounded-md font-medium transition-colors inline-flex items-center gap-1 ${
+                  rangeKind === "custom"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-secondary text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <CalendarRange className="h-3.5 w-3.5" />
+                {rangeKind === "custom" ? formatRange(range) : "Custom"}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="end">
+              <Calendar
+                mode="range"
+                selected={customDraft}
+                onSelect={(r) => setCustomDraft(r)}
+                numberOfMonths={2}
+                disabled={(d) => d > new Date()}
+                autoFocus
+              />
+              <div className="border-t border-border p-2 flex items-center justify-between gap-2">
+                <div className="text-[11px] text-muted-foreground pl-1">
+                  {customDraft?.from
+                    ? customDraft.to
+                      ? `${format(customDraft.from, "MMM d")} – ${format(customDraft.to, "MMM d, yyyy")}`
+                      : `${format(customDraft.from, "MMM d, yyyy")} – pick end date`
+                    : "Pick a start date"}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Button size="sm" variant="ghost" onClick={() => setCustomDraft(undefined)}>
+                    Clear
+                  </Button>
+                  <Button size="sm" onClick={applyCustomRange} disabled={!customDraft?.from}>
+                    Apply
+                  </Button>
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
+
           <Button size="sm" variant="outline" onClick={() => { void load(); void loadLive(); }} disabled={loading}>
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
           </Button>
@@ -233,7 +340,7 @@ export function LandingAnalytics({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <SourcesDonut
           title="Traffic Sources"
-          subtitle={`Last ${period} days`}
+          subtitle={formatRange(range)}
           icon={<ChartPie className="h-4 w-4 text-violet-400" />}
           views={views}
         />
@@ -248,7 +355,9 @@ export function LandingAnalytics({
 
       {/* Period comparison */}
       <PeriodComparison
-        period={period}
+        days={days}
+        currentRange={range}
+        previousRange={prev}
         v={v} c={c} pv={pv} pc={pc}
       />
     </div>
@@ -733,9 +842,11 @@ function SourcesDonut({
 // ── Period comparison ──────────────────────────────────────────────────
 
 function PeriodComparison({
-  period, v, c, pv, pc,
+  days, currentRange, previousRange, v, c, pv, pc,
 }: {
-  period: number;
+  days: number;
+  currentRange: Range;
+  previousRange: Range;
   v: number; c: number; pv: number; pc: number;
 }) {
   const compareData = [
@@ -755,7 +866,8 @@ function PeriodComparison({
           <BarChart3 className="h-4 w-4 text-primary" /> Period Comparison
         </div>
         <div className="text-[11px] text-muted-foreground mt-0.5">
-          Last {period} days vs previous {period} days
+          {formatRange(currentRange)} <span className="opacity-50">vs</span> {formatRange(previousRange)}
+          <span className="ml-1 opacity-60">({days}-day window)</span>
         </div>
       </div>
 
