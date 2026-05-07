@@ -1258,9 +1258,79 @@ function renderMarkdown(md: string): React.ReactNode {
       .replace(/`([^`]+)`/g, '<code class="font-mono text-xs bg-secondary px-1 py-0.5 rounded">$1</code>')
       .replace(/\$(\d[\d,]*(?:\.\d+)?)/g, '<span class="font-semibold text-foreground tabular-nums">$$$1</span>');
 
-  for (const rawLine of lines) {
+  // ── Table helpers ───────────────────────────────────────────────────
+  // Markdown tables look like:
+  //   | Field | Value |
+  //   |-------|-------|
+  //   | foo   | bar   |
+  // We detect them by looking for a "row" line followed by a separator
+  // line of dashes — without that pair, we treat the | as plain text so
+  // we don't false-positive on regular content.
+  const isTableRow = (s: string) => /^\|.+\|$/.test(s.trim());
+  const isTableSeparator = (s: string) => /^\|\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|$/.test(s.trim());
+  const parseRow = (s: string): string[] => {
+    const trimmed = s.trim();
+    return trimmed.slice(1, -1).split("|").map((c) => c.trim());
+  };
+
+  // Index-based loop so table parsing can advance past consumed lines
+  let i = 0;
+  while (i < lines.length) {
+    const rawLine = lines[i];
     const t = rawLine.trimEnd();
-    if (!t.trim()) { flushList(); continue; }
+
+    // Table block — only kicks in when row+separator pattern is present
+    if (isTableRow(t) && i + 1 < lines.length && isTableSeparator(lines[i + 1])) {
+      flushList();
+      const headers = parseRow(t);
+      const rows: string[][] = [];
+      i += 2;
+      while (i < lines.length && isTableRow(lines[i])) {
+        rows.push(parseRow(lines[i]));
+        i++;
+      }
+      out.push(
+        <div key={`table-${out.length}`} className="my-3 overflow-x-auto rounded-lg border border-border bg-card">
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="border-b border-border bg-secondary/30">
+                {headers.map((h, hi) => (
+                  <th
+                    key={hi}
+                    className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
+                    dangerouslySetInnerHTML={{ __html: inlineFmt(h) }}
+                  />
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, ri) => (
+                <tr key={ri} className="border-b border-border last:border-0 hover:bg-secondary/20 transition-colors">
+                  {row.map((cell, ci) => (
+                    <td
+                      key={ci}
+                      className={`px-3 py-2 align-top text-foreground/90 ${ci === 0 ? "font-medium" : ""}`}
+                      dangerouslySetInnerHTML={{ __html: inlineFmt(cell) }}
+                    />
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+      continue;
+    }
+
+    // Horizontal rule — `---` on its own line
+    if (/^-{3,}$/.test(t.trim())) {
+      flushList();
+      out.push(<hr key={out.length} className="my-3 border-border" />);
+      i++;
+      continue;
+    }
+
+    if (!t.trim()) { flushList(); i++; continue; }
 
     if (t.startsWith("# ")) {
       flushList();
@@ -1285,6 +1355,7 @@ function renderMarkdown(md: string): React.ReactNode {
         <p key={out.length} className="text-sm text-foreground/90 my-2 leading-relaxed" dangerouslySetInnerHTML={{ __html: inlineFmt(t) }} />
       );
     }
+    i++;
   }
   flushList();
   return <>{out}</>;
