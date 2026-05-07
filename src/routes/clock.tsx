@@ -277,7 +277,7 @@ function ClockPage() {
     }
 
     // ── v2: load portal data (announcements, payouts, training, scripts, coaching, goals, 90d shifts) ──
-    const role = (ch as Chatter).role;
+    // (`role` is already declared above for the platform-accounts branch — reuse it.)
     const since90d = subDays(new Date(), 90).toISOString();
     const todayISO = new Date().toISOString();
     const [
