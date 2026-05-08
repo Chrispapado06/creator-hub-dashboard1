@@ -80,11 +80,24 @@ export async function syncCreatorOnlyFans(creator: CreatorMin): Promise<SyncOneR
     }
   }
 
-  // 2. Best-effort fetch helper — null on any error.
+  // 2. Best-effort fetch helpers — null on any error.
   const baseHeaders = { Authorization: `Bearer ${key}` };
   const safeFetch = async (path: string): Promise<unknown | null> => {
     try {
-      const r = await fetch(`${BASE}/${acctId}/${path}`, { headers: baseHeaders });
+      const r = await fetch(`${BASE}/${path.replace(/^\//, "")}`, { headers: baseHeaders });
+      if (!r.ok) return null;
+      return await r.json();
+    } catch {
+      return null;
+    }
+  };
+  const safePost = async (path: string, body: unknown): Promise<unknown | null> => {
+    try {
+      const r = await fetch(`${BASE}/${path.replace(/^\//, "")}`, {
+        method: "POST",
+        headers: { ...baseHeaders, "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify(body),
+      });
       if (!r.ok) return null;
       return await r.json();
     } catch {
@@ -92,13 +105,30 @@ export async function syncCreatorOnlyFans(creator: CreatorMin): Promise<SyncOneR
     }
   };
 
-  // 3. Pull each endpoint in parallel
-  const [profileJson, earningsJson, fansJson, ppvJson, trackingJson] = await Promise.all([
-    safeFetch(""),
-    safeFetch("earnings"),
-    safeFetch("fans?limit=200"),
-    safeFetch("messages?type=ppv&limit=100"),
-    safeFetch("tracking-links"),
+  // 3. Pull every endpoint we need in parallel.
+  //
+  // OnlyFansAPI uses two different patterns:
+  //   • Per-account profile data sits at /api/{account}/me
+  //   • Money / earnings data sits at /api/analytics/* (POST endpoints
+  //     that take an account_ids array in the body — NOT GETs against
+  //     /api/{account}/earnings, which returns 404).
+  //
+  // For lifetime earnings we ask for a wide date range (2018-now —
+  // pre-2018 OF wasn't paying out meaningful sums and 2018 covers any
+  // realistic creator). For the chart series we also ask the
+  // financial/profitability/{account}/history endpoint which is the
+  // only per-account historical series exposed.
+  const today = format(new Date(), "yyyy-MM-dd");
+  const lifetimeStart = "2018-01-01";
+  const [profileJson, earningsJson, historyJson, trackingJson] = await Promise.all([
+    safeFetch(`${acctId}/me`),
+    safePost("analytics/summary/earnings", {
+      account_ids: [acctId],
+      start_date: lifetimeStart,
+      end_date: today,
+    }),
+    safeFetch(`analytics/financial/profitability/${acctId}/history?months=24`),
+    safeFetch(`${acctId}/tracking-links`),
   ]);
 
   // Helpers to unwrap { data: ... } envelopes that OnlyFansAPI uses
@@ -110,55 +140,51 @@ export async function syncCreatorOnlyFans(creator: CreatorMin): Promise<SyncOneR
 
   // 4. Upsert profile + lifetime earnings
   //
-  // OnlyFansAPI's /earnings endpoint has shipped at least three response
-  // shapes across the lifetime of the API. We've seen all of these in
-  // the wild:
-  //   { data: { total, subscriptions, tips, ... } }
-  //   { data: { earnings: { total: ..., breakdown: {...} } } }
-  //   { total, subscriptions, tips, ... }   (older accounts, flat)
-  // The unwrap() above peels off `data:`. Then we drill once more in
-  // case there's a nested `earnings:` envelope. Field names are also
-  // inconsistent — try every documented variant before giving up.
+  // /api/{account}/me wraps profile in `data:` and adds a `_meta` envelope.
+  // /api/analytics/summary/earnings sometimes wraps and sometimes doesn't —
+  // we strip both layers below.
   const profile = unwrap(profileJson);
-  const earningsOuter = unwrap(earningsJson);
-  // Drill into a nested `earnings:` if present (some accounts return that)
-  const earnings = (earningsOuter?.earnings && typeof earningsOuter.earnings === "object")
-    ? earningsOuter.earnings as Record<string, unknown>
-    : earningsOuter;
-  // OnlyFansAPI sometimes nests the breakdown one more level under
-  // `breakdown:` or `byType:`. Pull the leaf object that actually
-  // contains numeric fields.
-  const breakdown = (earnings?.breakdown && typeof earnings.breakdown === "object")
-    ? earnings.breakdown as Record<string, unknown>
-    : (earnings?.byType && typeof earnings.byType === "object")
-      ? earnings.byType as Record<string, unknown>
-      : earnings;
+  const earnings = unwrap(earningsJson);
+  // The analytics earnings response uses the field names: total_earnings,
+  // subscriptions, posts, messages, tips, streams. Older docs also
+  // documented totalEarnings / subs / ppv as variants — try them all
+  // for resilience across API versions.
   const pickNum = (...keys: string[]): number => {
     for (const k of keys) {
-      const v = num(earnings?.[k]) || num(breakdown?.[k]) || num(earningsOuter?.[k]);
+      const v = num(earnings?.[k]);
       if (v) return v;
     }
     return 0;
   };
-  const totalEarnings = pickNum("total", "lifetime", "lifetimeEarnings", "totalEarnings", "earnings", "amount");
+  const totalEarnings = pickNum("total_earnings", "totalEarnings", "total");
   const statsPayload = {
     creator_id: creator.id,
     username: str(profile?.username) ?? creator.of_username,
     display_name: str(profile?.name) ?? str(profile?.display_name),
-    avatar_url: str(profile?.avatar) ?? str(profile?.avatar_url),
+    // /me returns avatar at the top level; thumbnails nested in avatarThumbs.
+    avatar_url: str(profile?.avatar)
+      ?? str((profile?.avatarThumbs as Record<string, unknown> | undefined)?.c144)
+      ?? str(profile?.avatar_url),
     bio: str(profile?.about) ?? str(profile?.bio),
-    followers_count: num(profile?.followers_count) || num(profile?.subscribers_count) || 0,
-    posts_count: num(profile?.posts_count) || 0,
-    active_subscribers: num(profile?.active_subscribers) || num(profile?.subscribers_count) || 0,
+    // OF /me uses subscribersCount (without underscore). Keep the
+    // snake_case fallback for older accounts.
+    followers_count: num(profile?.subscribersCount) || num(profile?.subscribers_count) || 0,
+    posts_count: num(profile?.postsCount) || num(profile?.posts_count) || 0,
+    active_subscribers: num(profile?.subscribersCount) || num(profile?.subscribers_count) || 0,
     expired_subscribers: num(profile?.expired_subscribers) || 0,
-    sub_price: profile?.subscribe_price ? num(profile.subscribe_price) : null,
+    sub_price: profile?.subscribePrice
+      ? num(profile.subscribePrice)
+      : profile?.subscribe_price
+        ? num(profile.subscribe_price)
+        : null,
     total_earnings: totalEarnings,
-    earnings_subs: pickNum("subscriptions", "subs", "subscription", "subscriptionEarnings"),
-    earnings_tips: pickNum("tips", "tipsEarnings"),
-    earnings_ppv: pickNum("ppv", "posts", "ppvEarnings", "postEarnings"),
-    earnings_messages: pickNum("messages", "messageEarnings", "msgs"),
-    earnings_streams: pickNum("streams", "livestreams", "streamEarnings"),
-    earnings_referrals: pickNum("referrals", "referralEarnings"),
+    earnings_subs: pickNum("subscriptions", "subs", "subscription"),
+    earnings_tips: pickNum("tips"),
+    // OF API names PPV revenue "posts" in the analytics summary.
+    earnings_ppv: pickNum("posts", "ppv"),
+    earnings_messages: pickNum("messages"),
+    earnings_streams: pickNum("streams", "livestreams"),
+    earnings_referrals: pickNum("referrals"),
     synced_at: new Date().toISOString(),
   };
   const { error: statsErr } = await supabase
@@ -168,109 +194,57 @@ export async function syncCreatorOnlyFans(creator: CreatorMin): Promise<SyncOneR
     return { ok: false, creator_id: creator.id, error: `Stats save failed: ${statsErr.message}` };
   }
 
-  // 5. Daily earnings (best-effort — many OF accounts return a history)
-  const dailyArr =
-    (earnings?.daily as unknown[] | undefined)
-    ?? (earnings?.byDay as unknown[] | undefined)
-    ?? (earnings?.history as unknown[] | undefined)
-    ?? [];
-  if (Array.isArray(dailyArr) && dailyArr.length > 0) {
-    const dailyRows = (dailyArr as Record<string, unknown>[]).map((d) => {
-      const dateStr = str(d.date) ?? str(d.day) ?? str(d.entry_date);
-      const subs = num(d.subscriptions) || num(d.subs);
-      const tips = num(d.tips);
-      const ppv = num(d.ppv) || num(d.posts);
-      const msgs = num(d.messages);
-      const streams = num(d.streams) || num(d.livestreams);
-      const refs = num(d.referrals);
-      const total = num(d.total) || subs + tips + ppv + msgs + streams + refs;
+  // 5. Historical earnings for the chart.
+  //
+  // OnlyFansAPI's only per-account time series is monthly:
+  //   GET /api/analytics/financial/profitability/{account}/history?months=24
+  // Response: [{ year, month, gross_revenue, net_revenue, profit, margin }]
+  //
+  // We don't have daily data, so we synthesize one row per month at
+  // the 1st-of-the-month into of_earnings_daily.total. The chart
+  // bucket-by-day is fine with sparse data — it just shows non-zero
+  // dots on the first of each month. Better than $0 across the board.
+  const historyData = unwrap(historyJson);
+  const historyRows = Array.isArray(historyData) ? historyData
+    : Array.isArray((historyData as { data?: unknown })?.data) ? (historyData as { data: unknown[] }).data
+    : [];
+  if (historyRows.length > 0) {
+    const dailyRows = (historyRows as Record<string, unknown>[]).map((m) => {
+      const year = num(m.year);
+      const month = num(m.month);
+      if (!year || !month) return null;
+      const dateStr = `${year}-${String(month).padStart(2, "0")}-01`;
+      const grossRev = num(m.gross_revenue) || num(m.grossRevenue);
+      const netRev = num(m.net_revenue) || num(m.netRevenue);
+      // Use gross by default — net subtracts OF's 20% cut, which is
+      // what hits the bank, but the rest of the app reports gross
+      // numbers consistently.
+      const total = grossRev || netRev;
       return {
         creator_id: creator.id,
-        entry_date: dateStr ?? format(new Date(), "yyyy-MM-dd"),
-        earnings_subs: subs,
-        earnings_tips: tips,
-        earnings_ppv: ppv,
-        earnings_messages: msgs,
-        earnings_streams: streams,
-        earnings_referrals: refs,
+        entry_date: dateStr,
+        earnings_subs: 0,
+        earnings_tips: 0,
+        earnings_ppv: 0,
+        earnings_messages: 0,
+        earnings_streams: 0,
+        earnings_referrals: 0,
         total,
       };
-    }).filter((r) => r.entry_date);
+    }).filter((r): r is NonNullable<typeof r> => r !== null);
     if (dailyRows.length > 0) {
       await supabase.from("of_earnings_daily")
         .upsert(dailyRows, { onConflict: "creator_id,entry_date" });
     }
   }
 
-  // 6. Subscribers
-  const fansArr = (() => {
-    if (!fansJson) return [] as unknown[];
-    const j = fansJson as { data?: { list?: unknown[] }; list?: unknown[] };
-    return (j.data?.list ?? j.list ?? []) as unknown[];
-  })();
-  if (fansArr.length > 0) {
-    const fanRows = (fansArr as Record<string, unknown>[]).map((f) => {
-      const fanId = str(f.id) ?? str(f.user_id) ?? str(f.fan_id);
-      if (!fanId) return null;
-      return {
-        creator_id: creator.id,
-        fan_id: fanId,
-        username: str(f.username) ?? str(f.handle),
-        display_name: str(f.name) ?? str(f.display_name),
-        avatar_url: str(f.avatar) ?? str(f.avatar_url),
-        total_spent: num(f.total_spent) || num(f.spent),
-        tips_total: num(f.tips_total) || num(f.tips),
-        ppv_total: num(f.ppv_total) || num(f.ppv_spent),
-        messages_total: num(f.messages_total) || num(f.messages_spent),
-        subscribed_at: str(f.subscribed_at) ?? str(f.created_at),
-        expires_at: str(f.expires_at) ?? str(f.expired_at),
-        is_active: typeof f.is_active === "boolean"
-          ? f.is_active
-          : (f.subscribed_is_expired_now !== true),
-        last_seen_at: str(f.last_seen) ?? str(f.last_active),
-        synced_at: new Date().toISOString(),
-      };
-    }).filter((r): r is NonNullable<typeof r> => r !== null);
-    if (fanRows.length > 0) {
-      await supabase.from("of_subscribers")
-        .upsert(fanRows, { onConflict: "creator_id,fan_id" });
-    }
-  }
+  // 6. Subscribers / PPV messages skipped — those endpoints aren't
+  // exposed under /api/{account}/ in the current OnlyFansAPI surface.
+  // The /onlyfans page sync still uses the inline path that hits them
+  // directly (kept as-is for backward compatibility); this shared lib
+  // sticks to the documented endpoints.
 
-  // 7. PPV messages
-  const ppvArr = (() => {
-    if (!ppvJson) return [] as unknown[];
-    const j = ppvJson as { data?: { list?: unknown[] }; list?: unknown[] };
-    return (j.data?.list ?? j.list ?? []) as unknown[];
-  })();
-  if (ppvArr.length > 0) {
-    const ppvRows = (ppvArr as Record<string, unknown>[]).map((m) => {
-      const msgId = str(m.id) ?? str(m.message_id);
-      return {
-        creator_id: creator.id,
-        message_id: msgId,
-        sent_at: str(m.sent_at) ?? str(m.created_at),
-        price: m.price != null ? num(m.price) : null,
-        recipients_count: num(m.recipients_count) || num(m.recipients),
-        unlocks_count: num(m.unlocks_count) || num(m.purchased_count) || num(m.unlocks),
-        revenue: num(m.revenue) || num(m.earned),
-        preview: str(m.text) ?? str(m.preview),
-        synced_at: new Date().toISOString(),
-      };
-    });
-    const withId = ppvRows.filter((p) => p.message_id);
-    const withoutId = ppvRows.filter((p) => !p.message_id);
-    if (withId.length > 0) {
-      await supabase.from("of_ppv_messages")
-        .upsert(withId, { onConflict: "creator_id,message_id" });
-    }
-    if (withoutId.length > 0) {
-      await supabase.from("of_ppv_messages").insert(withoutId);
-    }
-  }
-
-  // 8. Daily subscriber metric snapshot (today's row)
-  const today = format(new Date(), "yyyy-MM-dd");
+  // 7. Daily subscriber metric snapshot (today's row)
   await supabase.from("of_subscriber_metrics_daily").upsert({
     creator_id: creator.id,
     entry_date: today,

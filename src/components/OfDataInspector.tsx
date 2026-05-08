@@ -114,13 +114,35 @@ export function OfDataInspector() {
         }
         acctId = match.id;
       }
-      // Fetch /earnings — the endpoint that should give us the numbers
-      const r = await fetch(`${BASE}/${acctId}/earnings`, {
-        headers: { Authorization: `Bearer ${key}` },
+      // POST to /api/analytics/summary/earnings — the documented endpoint
+      // (the old /api/{account}/earnings GET that this used to call returns
+      // 404; OnlyFansAPI doesn't expose earnings as a per-account GET).
+      // Lifetime range so the response reflects everything the OF account
+      // has ever earned.
+      const today = new Date().toISOString().slice(0, 10);
+      const r = await fetch(`${BASE}/analytics/summary/earnings`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${key}`,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          account_ids: [acctId],
+          start_date: "2018-01-01",
+          end_date: today,
+        }),
       });
       if (!r.ok) {
+        let detail = `HTTP ${r.status}`;
+        try {
+          const err = await r.json();
+          if (err && typeof err === "object" && "message" in err) {
+            detail = `HTTP ${r.status}: ${(err as { message: string }).message}`;
+          }
+        } catch { /* ignore */ }
         setProbeResults((p) => ({
-          ...p, [c.id]: { error: `/earnings returned HTTP ${r.status}`, acctId },
+          ...p, [c.id]: { error: `/analytics/summary/earnings → ${detail}`, acctId },
         }));
         setProbing(null);
         return;
