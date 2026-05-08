@@ -171,36 +171,59 @@ function RevenuePage() {
   const [filterSource, setFilterSource] = useState("all");
 
   // ── Page-level date range ──────────────────────────────────────────
-  // Drives the OnlyFans Direct numbers in the hero / breakdown table /
-  // chart. Defaults to the last 30 days. "lifetime" maps to a 2018→now
-  // window which is far enough back to cover every realistic creator.
-  type RangePreset = "7d" | "30d" | "90d" | "365d" | "lifetime" | "custom";
-  const [rangePreset, setRangePreset] = useState<RangePreset>("30d");
+  // Infloww-style preset buttons: Yesterday / Today / This week /
+  // This month + Custom. "This month" is the default — most agencies
+  // open Revenue to ask "how am I doing this month".
+  type RangePreset = "yesterday" | "today" | "week" | "month" | "custom";
+  const [rangePreset, setRangePreset] = useState<RangePreset>("month");
   const [customFrom, setCustomFrom] = useState<string>("");
   const [customTo, setCustomTo] = useState<string>("");
+  // ── Metric selector ─────────────────────────────────────────────────
+  // Drops down beside the range pills, like Infloww. Flips which
+  // headline number the hero shows: total agency revenue, net
+  // earnings (after OF fee + creator split), OF direct only, or
+  // ad-channel net. Doesn't filter the breakdown table — that always
+  // shows every channel — just the big number at the top.
+  type Metric = "total" | "net" | "of" | "ads";
+  const [metric, setMetric] = useState<Metric>("total");
   const dateRange = useMemo<{ from: Date; to: Date; startStr: string; endStr: string; label: string }>(() => {
-    const today = new Date();
-    if (rangePreset === "lifetime") {
-      const from = new Date("2018-01-01");
-      return { from, to: today, startStr: "2018-01-01", endStr: today.toISOString().slice(0, 10), label: "Lifetime" };
+    const now = new Date();
+    const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const endOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59);
+    const isoDay = (d: Date) => d.toISOString().slice(0, 10);
+    if (rangePreset === "today") {
+      return { from: startOfDay(now), to: endOfDay(now), startStr: isoDay(now), endStr: isoDay(now), label: "Today" };
     }
-    if (rangePreset === "custom") {
-      const from = customFrom ? new Date(customFrom) : new Date(Date.now() - 30 * 86400_000);
-      const to = customTo ? new Date(customTo) : today;
+    if (rangePreset === "yesterday") {
+      const y = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+      return { from: startOfDay(y), to: endOfDay(y), startStr: isoDay(y), endStr: isoDay(y), label: "Yesterday" };
+    }
+    if (rangePreset === "week") {
+      // Mon-Sun ISO week. JS Date.getDay() returns 0=Sun..6=Sat;
+      // we shift so Monday is the start of the week.
+      const dayIdx = (now.getDay() + 6) % 7; // 0=Mon
+      const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayIdx);
       return {
-        from, to,
-        startStr: from.toISOString().slice(0, 10),
-        endStr: to.toISOString().slice(0, 10),
-        label: `${from.toISOString().slice(0,10)} – ${to.toISOString().slice(0,10)}`,
+        from: monday, to: endOfDay(now),
+        startStr: isoDay(monday), endStr: isoDay(now),
+        label: "This week",
       };
     }
-    const days = { "7d": 7, "30d": 30, "90d": 90, "365d": 365 }[rangePreset];
-    const from = new Date(Date.now() - days * 86400_000);
+    if (rangePreset === "month") {
+      const first = new Date(now.getFullYear(), now.getMonth(), 1);
+      return {
+        from: first, to: endOfDay(now),
+        startStr: isoDay(first), endStr: isoDay(now),
+        label: "This month",
+      };
+    }
+    // custom
+    const from = customFrom ? new Date(customFrom) : new Date(now.getFullYear(), now.getMonth(), 1);
+    const to = customTo ? new Date(customTo) : now;
     return {
-      from, to: today,
-      startStr: from.toISOString().slice(0, 10),
-      endStr: today.toISOString().slice(0, 10),
-      label: `Last ${days} days`,
+      from, to,
+      startStr: isoDay(from), endStr: isoDay(to),
+      label: `${isoDay(from)} – ${isoDay(to)}`,
     };
   }, [rangePreset, customFrom, customTo]);
 
@@ -689,15 +712,31 @@ function RevenuePage() {
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold">
               <DollarSign className="h-3.5 w-3.5 text-primary" />
-              Total revenue · all time
+              {metric === "total" ? "Total revenue" :
+                metric === "net" ? "Net earnings" :
+                metric === "of" ? "OnlyFans Direct" : "Ads (net)"}
+              <span className="text-muted-foreground/70 normal-case font-medium">· {dateRange.label.toLowerCase()}</span>
             </div>
             <div className="mt-2 flex items-baseline gap-2 flex-wrap">
               <span className="text-4xl sm:text-5xl font-bold tracking-tight bg-gradient-to-r from-foreground to-primary/70 bg-clip-text text-transparent">
-                ${overview.total.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                ${(() => {
+                  // Map the metric selector to the right value from the
+                  // already-computed overview rollup. Net earnings =
+                  // total revenue − ad spend (matches the Financials
+                  // page's "agency revenue, net of ads" framing).
+                  switch (metric) {
+                    case "total": return overview.total;
+                    case "net":   return overview.total - overview.adsSpend;
+                    case "of":    return overview.ofDirect;
+                    case "ads":   return overview.adsNet;
+                  }
+                })().toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
               </span>
-              {overview.adsSpend > 0 && (
+              {overview.adsSpend > 0 && metric !== "of" && (
                 <span className="text-xs text-muted-foreground">
-                  Net of ${overview.adsSpend.toLocaleString("en-US", { maximumFractionDigits: 0 })} ad spend
+                  {metric === "net"
+                    ? `Total $${overview.total.toLocaleString("en-US", { maximumFractionDigits: 0 })}, less $${overview.adsSpend.toLocaleString("en-US", { maximumFractionDigits: 0 })} ads`
+                    : `Net of $${overview.adsSpend.toLocaleString("en-US", { maximumFractionDigits: 0 })} ad spend`}
                 </span>
               )}
             </div>
@@ -711,30 +750,50 @@ function RevenuePage() {
                 <BucketPill icon={<Link2 className="h-3 w-3" />} label="OF tracking links" value={overview.ofTrackingTotal} tone="of-track" />
               )}
             </div>
-            {/* Date range picker — controls the OF Direct numbers
-                in the bucket pills above and the per-creator breakdown
-                below. Defaults to last 30 days. */}
-            <div className="mt-4 flex items-center gap-1.5 flex-wrap">
-              <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold mr-1">
-                Range
-              </span>
-              {(["7d","30d","90d","365d","lifetime"] as const).map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setRangePreset(p)}
-                  className={`px-2.5 py-1 rounded-md text-xs border transition-colors ${
-                    rangePreset === p
-                      ? "bg-primary text-primary-foreground border-primary"
-                      : "border-border bg-secondary/30 hover:bg-secondary/60"
-                  }`}
-                >
-                  {p === "7d" ? "7d" : p === "30d" ? "30d" : p === "90d" ? "90d" : p === "365d" ? "1y" : "All time"}
-                </button>
-              ))}
-              {/* Custom range — date inputs appear when picked */}
+            {/* Metric + range picker — Infloww-style row.
+                Metric dropdown picks which headline number drives the
+                hero (total revenue / net earnings / OF direct / ads net).
+                Range pills are Yesterday / Today / This week / This
+                month / Custom and control the date window for both
+                the hero number and the per-creator breakdown. */}
+            <div className="mt-4 flex items-center gap-2 flex-wrap">
+              {/* Metric dropdown — small, sits left of the range pills */}
+              <select
+                value={metric}
+                onChange={(e) => setMetric(e.target.value as Metric)}
+                className="h-8 px-3 pr-8 rounded-md text-xs border border-border bg-card text-foreground hover:bg-secondary/60 cursor-pointer transition-colors"
+                title="Headline metric"
+              >
+                <option value="total">Total revenue</option>
+                <option value="net">Net earnings</option>
+                <option value="of">OnlyFans Direct</option>
+                <option value="ads">Ads (net)</option>
+              </select>
+              {/* Range pills — Infloww layout */}
+              <div className="inline-flex rounded-md border border-border bg-secondary/30 p-0.5">
+                {([
+                  { v: "yesterday", label: "Yesterday" },
+                  { v: "today",     label: "Today" },
+                  { v: "week",      label: "This week" },
+                  { v: "month",     label: "This month" },
+                ] as const).map((p) => (
+                  <button
+                    key={p.v}
+                    onClick={() => setRangePreset(p.v)}
+                    className={`px-3 py-1 rounded text-xs transition-colors ${
+                      rangePreset === p.v
+                        ? "bg-background text-primary font-semibold shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+              {/* Custom range — separate so the pill row stays tight */}
               <button
                 onClick={() => setRangePreset("custom")}
-                className={`px-2.5 py-1 rounded-md text-xs border transition-colors ${
+                className={`px-3 py-1 rounded-md text-xs border transition-colors ${
                   rangePreset === "custom"
                     ? "bg-primary text-primary-foreground border-primary"
                     : "border-border bg-secondary/30 hover:bg-secondary/60"
