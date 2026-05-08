@@ -625,6 +625,8 @@ function ClockPage() {
       elapsed={elapsed}
       creatorName={creatorName}
       localTzAbbr={localTzAbbr}
+      now={now}
+      maxShiftHours={maxShiftHours}
     />
   );
 
@@ -977,12 +979,17 @@ function TodayTab(props: {
   elapsed: (s: string) => string;
   creatorName: (id: string) => string;
   localTzAbbr: string;
+  // Current epoch ms — driven by the parent's 1s ticker so the
+  // shift-limit banner re-renders smoothly as time passes.
+  now: number;
+  // Effective per-staff cap (hours). Used for the time-left banner.
+  maxShiftHours: number;
 }) {
   const {
     chatter, creators, assignments, announcements, activeShifts, groupedSchedule,
     pickedCreatorId, setPickedCreatorId, pickedAccountId, setPickedAccountId,
     availableAccounts, needsAccountPicker, clockingIn, onClockIn, openClockOut,
-    elapsed, creatorName, localTzAbbr,
+    elapsed, creatorName, localTzAbbr, now, maxShiftHours,
   } = props;
 
   const today = groupedSchedule.find((g) => g.label === "Today");
