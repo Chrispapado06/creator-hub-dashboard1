@@ -38,6 +38,27 @@ export function useUnreadChatMentions() {
   // re-render of the subscription doesn't double-toast.
   const notifiedRef = useRef<Set<string>>(new Set());
 
+  // Polling fallback. Even with Realtime enabled the websocket can
+  // hiccup (proxy timeouts, browser tab sleeping, app waking from
+  // background). A 30s poll keeps the badge accurate when realtime
+  // misses an event. It also bridges the gap if the user hasn't
+  // enabled Realtime replication for team_message_mentions yet.
+  useEffect(() => {
+    if (!userId) return;
+    const t = setInterval(() => { void refresh(); }, 30_000);
+    // Re-fetch when the tab becomes visible again — covers the common
+    // case of leaving the dashboard open in a background tab for
+    // hours then coming back.
+    const onVis = () => {
+      if (document.visibilityState === "visible") void refresh();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [userId, refresh]);
+
   // Initial load + realtime subscription. Listens to BOTH inserts (new
   // mention) and updates (mention marked read). Filtering on
   // mentioned_chatter_id keeps the bandwidth tight.
