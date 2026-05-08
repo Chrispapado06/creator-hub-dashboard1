@@ -310,15 +310,24 @@ function PageCard({
         </div>
       </div>
       <div className="p-3 space-y-2">
-        <div className="flex items-start gap-2 cursor-pointer" onClick={onEdit}>
+        {/* Avatar overlap row. Avatar is bumped to 56px with a thicker
+            ring-card "halo" so it reads clearly against busy cover
+            photos — the previous 36px avatar disappeared into the
+            cover's bottom edge. relative+z-10 makes sure it stacks
+            above the cover regardless of paint order. */}
+        <div className="flex items-end gap-3 cursor-pointer -mt-10" onClick={onEdit}>
           {page.avatar_url ? (
-            <img src={page.avatar_url} alt="" className="h-9 w-9 rounded-full object-cover border-2 border-card -mt-7 shrink-0" />
+            <img
+              src={page.avatar_url}
+              alt=""
+              className="relative z-10 h-14 w-14 rounded-full object-cover ring-4 ring-card shrink-0 shadow-md bg-card"
+            />
           ) : (
-            <div className="h-9 w-9 rounded-full bg-secondary flex items-center justify-center -mt-7 shrink-0 border-2 border-card">
-              <Globe className="h-4 w-4 text-muted-foreground" />
+            <div className="relative z-10 h-14 w-14 rounded-full bg-secondary flex items-center justify-center shrink-0 ring-4 ring-card shadow-md">
+              <Globe className="h-5 w-5 text-muted-foreground" />
             </div>
           )}
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 flex-1 pb-0.5">
             <div className="text-sm font-semibold truncate flex items-center gap-1">
               {page.display_name || page.slug}
               {page.is_verified && <BadgeCheck className="h-3.5 w-3.5 text-[#1d9bf0] fill-current shrink-0" />}
