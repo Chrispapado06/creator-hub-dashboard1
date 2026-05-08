@@ -28,7 +28,7 @@ import {
 import { format, formatDistanceToNow, isToday, isYesterday, parseISO } from "date-fns";
 import {
   ensureCurrentChatUser, listChannelsForUser, listMessages, sendMessage,
-  markChannelRead, markAllMentionsRead,
+  deleteMessage, markChannelRead, markAllMentionsRead,
   ensureCreatorChannels, ensureDmChannel, createChannel,
   extractMentions, resolveMentions, uploadChatAttachment,
   hasBroadcastMention, expandBroadcastMention,
@@ -166,6 +166,7 @@ function ChatPage() {
     if (!activeChannelId) return;
     const sub = supabase
       .channel(`chat-${activeChannelId}`)
+      // INSERT: new message → append to the list
       .on(
         "postgres_changes",
         {
@@ -177,12 +178,30 @@ function ChatPage() {
         (payload) => {
           const m = payload.new as Message;
           setMessages((prev) => {
-            // Dedupe in case the optimistic insert already added this
             if (prev.some((p) => p.id === m.id)) return prev;
             return [...prev, m];
           });
-          // Mark read on incoming because the user is actively viewing
           if (user) void markChannelRead(activeChannelId, user.id);
+        },
+      )
+      // UPDATE: message edited or soft-deleted. If deleted_at is set,
+      // drop it from the list immediately for every viewer. Otherwise
+      // patch the row in place (reserved for future edit feature).
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "team_messages",
+          filter: `channel_id=eq.${activeChannelId}`,
+        },
+        (payload) => {
+          const updated = payload.new as Message;
+          if (updated.deleted_at) {
+            setMessages((prev) => prev.filter((m) => m.id !== updated.id));
+          } else {
+            setMessages((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
+          }
         },
       )
       .subscribe();
@@ -488,7 +507,18 @@ function ChatPage() {
                   <div className="text-xs">Be the first to say something.</div>
                 </div>
               ) : (
-                <MessageList messages={messages} currentUserId={user.id} />
+                <MessageList
+                  messages={messages}
+                  currentUserId={user.id}
+                  onDeleteMessage={async (id) => {
+                    if (!confirm("Delete this message? This can't be undone.")) return;
+                    // Optimistic remove — realtime UPDATE will arrive
+                    // shortly and confirm for everyone else.
+                    setMessages((prev) => prev.filter((m) => m.id !== id));
+                    const ok = await deleteMessage(id);
+                    if (!ok) toast.error("Couldn't delete the message");
+                  }}
+                />
               )}
               <div ref={messagesEndRef} />
             </div>
@@ -633,10 +663,11 @@ function ChannelIcon({ channel, small }: { channel: ChannelWithMeta | Channel; s
 // ── Message list ─────────────────────────────────────────────────────────
 
 function MessageList({
-  messages, currentUserId,
+  messages, currentUserId, onDeleteMessage,
 }: {
   messages: Message[];
   currentUserId: string;
+  onDeleteMessage: (id: string) => void;
 }) {
   // Group consecutive messages from the same author within 5 minutes
   const groups: Message[][] = [];
@@ -652,7 +683,13 @@ function MessageList({
   return (
     <div className="space-y-3">
       {groups.map((g, i) => (
-        <MessageGroup key={g[0].id} messages={g} mine={g[0].author_chatter_id === currentUserId} showDateHeader={i === 0 || !sameDay(groups[i - 1][0].created_at, g[0].created_at)} />
+        <MessageGroup
+          key={g[0].id}
+          messages={g}
+          mine={g[0].author_chatter_id === currentUserId}
+          showDateHeader={i === 0 || !sameDay(groups[i - 1][0].created_at, g[0].created_at)}
+          onDeleteMessage={onDeleteMessage}
+        />
       ))}
     </div>
   );
@@ -663,7 +700,14 @@ function sameDay(a: string, b: string) {
   return da.getFullYear() === db.getFullYear() && da.getMonth() === db.getMonth() && da.getDate() === db.getDate();
 }
 
-function MessageGroup({ messages, mine, showDateHeader }: { messages: Message[]; mine: boolean; showDateHeader: boolean }) {
+function MessageGroup({
+  messages, mine, showDateHeader, onDeleteMessage,
+}: {
+  messages: Message[];
+  mine: boolean;
+  showDateHeader: boolean;
+  onDeleteMessage: (id: string) => void;
+}) {
   const first = messages[0];
   return (
     <>
@@ -692,7 +736,14 @@ function MessageGroup({ messages, mine, showDateHeader }: { messages: Message[];
             <span className="text-[10px] text-muted-foreground">{format(parseISO(first.created_at), "h:mm a")}</span>
           </div>
           <div className="space-y-1.5 mt-0.5">
-            {messages.map((m) => <MessageRow key={m.id} message={m} />)}
+            {messages.map((m) => (
+              <MessageRow
+                key={m.id}
+                message={m}
+                canDelete={mine}
+                onDelete={() => onDeleteMessage(m.id)}
+              />
+            ))}
           </div>
         </div>
       </div>
@@ -707,9 +758,25 @@ function humanDate(iso: string): string {
   return format(d, "MMM d, yyyy");
 }
 
-function MessageRow({ message }: { message: Message }) {
+function MessageRow({
+  message, canDelete, onDelete,
+}: {
+  message: Message;
+  canDelete: boolean;
+  onDelete: () => void;
+}) {
   return (
-    <div>
+    <div className="group relative">
+      {canDelete && (
+        <button
+          onClick={onDelete}
+          aria-label="Delete message"
+          title="Delete message"
+          className="absolute -top-1.5 right-0 opacity-0 group-hover:opacity-100 transition-opacity inline-flex items-center justify-center h-6 w-6 rounded-md bg-card border border-border text-muted-foreground hover:text-rose-400 hover:border-rose-500/40 hover:bg-rose-500/5"
+        >
+          <Trash2 className="h-3 w-3" />
+        </button>
+      )}
       {message.content && (
         <div className="text-sm whitespace-pre-wrap leading-relaxed">
           <RenderedContent content={message.content} />

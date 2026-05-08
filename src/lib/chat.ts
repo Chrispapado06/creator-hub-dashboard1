@@ -435,6 +435,24 @@ export async function sendMessage(input: {
   return msg as Message;
 }
 
+/**
+ * Soft-delete a message. We set deleted_at instead of removing the
+ * row so any audit / mention chain stays intact and the realtime
+ * UPDATE event reaches every other viewer (DELETE events with
+ * postgres_changes are flaky to filter by foreign key).
+ *
+ * No server-side permission check — the UI gates the delete button
+ * to the message's own author. (Same single-tenant trust model the
+ * rest of the app uses; tighten later with proper Supabase auth.)
+ */
+export async function deleteMessage(messageId: string): Promise<boolean> {
+  const { error } = await supabase
+    .from("team_messages")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", messageId);
+  return !error;
+}
+
 export async function markChannelRead(channelId: string, userId: string): Promise<void> {
   await supabase
     .from("team_channel_members")
