@@ -495,15 +495,55 @@ function CreatorsTab({
   onOpenDetail: (id: string) => void;
 }) {
   const statFor = (cid: string) => stats.find((s) => s.creator_id === cid) ?? null;
-  const totalEarnings = stats.reduce((s, x) => s + x.total_earnings, 0);
   const totalSubs = stats.reduce((s, x) => s + x.active_subscribers, 0);
   const withOF = creators.filter((c) => c.of_username).length;
+
+  // ── Month-to-date earnings per creator (live from OnlyFansAPI) ─────
+  // Replaces the previous "lifetime" display on each card. Refreshes
+  // when the creators list changes (e.g. after a sync resolves an
+  // acct_id). Uses fetchOfEarningsPerCreator which fans out across
+  // every connected OF page per creator and sums them.
+  const [monthlyByCreator, setMonthlyByCreator] = useState<Record<string, number>>({});
+  const [loadingMonthly, setLoadingMonthly] = useState(false);
+  useEffect(() => {
+    if (creators.length === 0) return;
+    let cancelled = false;
+    setLoadingMonthly(true);
+    void (async () => {
+      const { fetchOfEarningsPerCreator } = await import("@/lib/of-sync");
+      // 1st of current month → today, in local time so the date string
+      // matches the user's wall clock (matches the Revenue page rule).
+      const now = new Date();
+      const first = new Date(now.getFullYear(), now.getMonth(), 1);
+      const fmtLocal = (d: Date) =>
+        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const map = await fetchOfEarningsPerCreator(
+        creators.map((c) => ({ id: c.id, onlyfansapi_acct_id: c.onlyfansapi_acct_id })),
+        fmtLocal(first),
+        fmtLocal(now),
+      );
+      if (cancelled) return;
+      const out: Record<string, number> = {};
+      for (const [id, b] of Object.entries(map)) out[id] = b.total;
+      setMonthlyByCreator(out);
+      setLoadingMonthly(false);
+    })();
+    return () => { cancelled = true; };
+  }, [creators]);
+
+  const totalMonthly = Object.values(monthlyByCreator).reduce((s, v) => s + v, 0);
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <KpiCard label="Creators with OF" value={withOF} sub={`of ${creators.length} total`} icon={<Users className="h-3.5 w-3.5" />} />
-        <KpiCard label="Total earnings" value={fmt$0(totalEarnings)} sub="lifetime, all sources" icon={<DollarSign className="h-3.5 w-3.5" />} valueClass="text-success" />
+        <KpiCard
+          label="Earnings this month"
+          value={loadingMonthly && totalMonthly === 0 ? "…" : fmt$0(totalMonthly)}
+          sub="month-to-date, all creators"
+          icon={<DollarSign className="h-3.5 w-3.5" />}
+          valueClass="text-success"
+        />
         <KpiCard label="Active subscribers" value={fmtNum(totalSubs)} sub="across all creators" icon={<Users className="h-3.5 w-3.5" />} />
       </div>
 
@@ -557,9 +597,13 @@ function CreatorsTab({
 
                   <div className="grid grid-cols-3 gap-2 text-center">
                     <div className="rounded-lg bg-secondary/40 px-2 py-2">
-                      <div className="text-xs text-muted-foreground">Earnings</div>
+                      <div className="text-xs text-muted-foreground">This month</div>
                       <div className="text-sm font-bold mt-0.5 text-success">
-                        {st && st.total_earnings > 0 ? fmt$0(st.total_earnings) : "—"}
+                        {(() => {
+                          const monthly = monthlyByCreator[c.id];
+                          if (monthly === undefined) return loadingMonthly ? "…" : "—";
+                          return monthly > 0 ? fmt$0(monthly) : "$0";
+                        })()}
                       </div>
                     </div>
                     <div className="rounded-lg bg-secondary/40 px-2 py-2">
