@@ -13,6 +13,7 @@ import {
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
 import { format } from "date-fns";
+import { DailyHero } from "@/components/DailyHero";
 
 export const Route = createFileRoute("/daily")({
   component: DailyPage,
@@ -397,18 +398,21 @@ function DailyPage() {
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <Toaster />
 
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4">
+      {/* Command-center hero — pulse, alerts, movers, monthly goal */}
+      <DailyHero />
+
+      {/* Sub-header for the link-tracking section that follows */}
+      <div className="flex items-end justify-between gap-4 pt-2 border-t border-border/40">
         <div>
-          <div className="flex items-center gap-2.5 mb-1">
-            <LayoutDashboard className="h-6 w-6 text-primary" />
-            <h1 className="text-3xl font-bold tracking-tight">Daily Dashboard</h1>
+          <div className="flex items-center gap-2 mb-1">
+            <LayoutDashboard className="h-4 w-4 text-primary" />
+            <h2 className="text-lg font-semibold tracking-tight">Tracking links</h2>
           </div>
-          <p className="text-sm text-muted-foreground">
-            {format(new Date(), "EEEE, MMMM d yyyy")} · {trackedLinks.length} link{trackedLinks.length !== 1 ? "s" : ""} tracked
+          <p className="text-xs text-muted-foreground">
+            {trackedLinks.length} link{trackedLinks.length !== 1 ? "s" : ""} synced from Infloww · clicks, subscribers, ROI per link.
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -417,12 +421,12 @@ function DailyPage() {
             Add link
           </Button>
           <div className="flex flex-col items-end gap-1">
-            <Button onClick={syncAll} disabled={syncing}>
-              <RefreshCw className={`h-4 w-4 mr-2 ${syncing ? "animate-spin" : ""}`} />
-              {syncing ? "Syncing…" : "Sync"}
+            <Button size="sm" onClick={syncAll} disabled={syncing}>
+              <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${syncing ? "animate-spin" : ""}`} />
+              {syncing ? "Syncing…" : "Sync links"}
             </Button>
             {lastSynced && (
-              <p className="text-[11px] text-muted-foreground">Last synced {format(lastSynced, "h:mm a")}</p>
+              <p className="text-[10px] text-muted-foreground">Synced {format(lastSynced, "h:mm a")}</p>
             )}
           </div>
         </div>
