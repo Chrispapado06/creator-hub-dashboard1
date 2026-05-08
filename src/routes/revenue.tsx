@@ -190,7 +190,17 @@ function RevenuePage() {
     const now = new Date();
     const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
     const endOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59);
-    const isoDay = (d: Date) => d.toISOString().slice(0, 10);
+    // Local-tz date string (NOT UTC). Was using d.toISOString().slice(0,10)
+    // which shifts the date if local time is east-of-UTC late-night or
+    // west-of-UTC early-morning — e.g. EST 8 PM Tuesday becomes
+    // "Wednesday" in UTC. Using local date components keeps the API
+    // call's start_date / end_date matching the user's wall clock.
+    const isoDay = (d: Date) => {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    };
     if (rangePreset === "today") {
       return { from: startOfDay(now), to: endOfDay(now), startStr: isoDay(now), endStr: isoDay(now), label: "Today" };
     }
@@ -199,9 +209,13 @@ function RevenuePage() {
       return { from: startOfDay(y), to: endOfDay(y), startStr: isoDay(y), endStr: isoDay(y), label: "Yesterday" };
     }
     if (rangePreset === "week") {
-      // Mon-Sun ISO week. JS Date.getDay() returns 0=Sun..6=Sat;
-      // we shift so Monday is the start of the week.
-      const dayIdx = (now.getDay() + 6) % 7; // 0=Mon
+      // ISO week: Monday 00:00 (local) → today 23:59:59 (week-to-date).
+      // Date.getDay() returns 0=Sunday..6=Saturday, so shift +6 mod 7 to
+      // turn it into a 0=Monday..6=Sunday index for the offset back.
+      //   - Today is Monday  → dayIdx 0 → from = today
+      //   - Today is Tuesday → dayIdx 1 → from = yesterday
+      //   - Today is Sunday  → dayIdx 6 → from = 6 days ago (last Mon)
+      const dayIdx = (now.getDay() + 6) % 7;
       const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayIdx);
       return {
         from: monday, to: endOfDay(now),
@@ -210,6 +224,8 @@ function RevenuePage() {
       };
     }
     if (rangePreset === "month") {
+      // 1st of current month at 00:00 (local) → today 23:59:59. Always
+      // resets on the 1st regardless of how many days elapsed.
       const first = new Date(now.getFullYear(), now.getMonth(), 1);
       return {
         from: first, to: endOfDay(now),
