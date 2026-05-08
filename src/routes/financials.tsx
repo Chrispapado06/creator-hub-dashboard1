@@ -289,37 +289,40 @@ function FinancialsPage() {
 
   const creatorById = useMemo(() => new Map(creators.map((c) => [c.id, c.name])), [creators]);
 
-  // ── OnlyFans Direct earnings (live from analytics endpoint) ────────
-  // Range-filtered, fetched on every range change. Counts every dollar
-  // OnlyFans itself attributes to the creator's account in the window
-  // — subscriptions + tips + PPV posts + DM unlocks + streams. This is
-  // separate from the per-entry "gross volume" above, which only
-  // captures manually-tagged Reddit/social revenue.
-  const [ofDirectInRange, setOfDirectInRange] = useState(0);
-  const [loadingOfDirect, setLoadingOfDirect] = useState(false);
+  // ── Centralised financial rollup ───────────────────────────────────
+  // Pulls EVERY revenue + expense source the dashboard tracks through
+  // a single helper so Revenue / Financials / Daily all show the same
+  // numbers. Auto-synced Meta ad spend (meta_insights_daily) is now
+  // included in totalAdSpend even when admins haven't entered a manual
+  // ad_campaigns row for it — that was the gap that made Financials
+  // under-report Meta spend.
+  type RollupT = import("@/lib/financials-rollup").FinancialsRollup;
+  const [rollup, setRollup] = useState<RollupT | null>(null);
+  const [prevRollup, setPrevRollup] = useState<RollupT | null>(null);
+  const [loadingRollup, setLoadingRollup] = useState(false);
   useEffect(() => {
     let cancelled = false;
-    setLoadingOfDirect(true);
+    setLoadingRollup(true);
     void (async () => {
-      const { fetchOfEarnings } = await import("@/lib/of-sync");
-      const { data: cs } = await supabase
-        .from("creators")
-        .select("onlyfansapi_acct_id")
-        .not("onlyfansapi_acct_id", "is", null);
-      const ids = (cs ?? []).map((c) => c.onlyfansapi_acct_id as string);
-      if (cancelled) return;
-      const breakdown = await fetchOfEarnings(
-        ids,
-        format(range.from, "yyyy-MM-dd"),
-        format(range.to, "yyyy-MM-dd"),
-      );
+      const { loadFinancialsRollup, previousRange: prevRangeOf } = await import("@/lib/financials-rollup");
+      const cur = { from: format(range.from, "yyyy-MM-dd"), to: format(range.to, "yyyy-MM-dd") };
+      const pr = prevRangeOf(cur);
+      const [c, p] = await Promise.all([
+        loadFinancialsRollup(cur),
+        loadFinancialsRollup(pr),
+      ]);
       if (!cancelled) {
-        setOfDirectInRange(breakdown.total);
-        setLoadingOfDirect(false);
+        setRollup(c);
+        setPrevRollup(p);
+        setLoadingRollup(false);
       }
     })();
     return () => { cancelled = true; };
   }, [range.from, range.to]);
+
+  // Convenience accessors so the JSX below stays readable.
+  const ofDirectInRange = rollup?.revenue.ofDirect ?? 0;
+  const loadingOfDirect = loadingRollup;
 
   // Gross OF volume — every dollar that flowed through OnlyFans in the
   // window (per creator entries; not the sum of payouts because payouts
@@ -348,12 +351,18 @@ function FinancialsPage() {
     [prevPayouts],
   );
 
-  const adSpend = useMemo(() => ads.reduce((s, a) => s + Number(a.amount_spent || 0), 0), [ads]);
+  // Ad spend uses the centralised rollup (which now includes auto-
+  // synced Meta API spend, not just manually-entered ad_campaigns rows).
+  // Falls back to local manual sum until the async rollup loads, so
+  // the page never flashes $0 between range changes.
+  const manualAdSpend = useMemo(() => ads.reduce((s, a) => s + Number(a.amount_spent || 0), 0), [ads]);
+  const adSpend = rollup?.expenses.totalAdSpend ?? manualAdSpend;
   const staffComp = useMemo(() => staffPayouts.reduce((s, sp) => s + Number(sp.amount || 0), 0), [staffPayouts]);
   const opsExpenses = useMemo(() => expenses.reduce((s, e) => s + Number(e.amount || 0), 0), [expenses]);
   const totalExpenses = adSpend + staffComp + opsExpenses;
 
-  const prevAdSpend = useMemo(() => prevAds.reduce((s, a) => s + Number(a.amount_spent || 0), 0), [prevAds]);
+  const prevManualAdSpend = useMemo(() => prevAds.reduce((s, a) => s + Number(a.amount_spent || 0), 0), [prevAds]);
+  const prevAdSpend = prevRollup?.expenses.totalAdSpend ?? prevManualAdSpend;
   const prevStaffComp = useMemo(() => prevStaff.reduce((s, sp) => s + Number(sp.amount || 0), 0), [prevStaff]);
   const prevOpsExpenses = useMemo(() => prevExpenses.reduce((s, e) => s + Number(e.amount || 0), 0), [prevExpenses]);
   const prevTotalExpenses = prevAdSpend + prevStaffComp + prevOpsExpenses;
@@ -362,6 +371,27 @@ function FinancialsPage() {
   const prevNetProfit = prevAgencyRevenue - prevTotalExpenses;
   const margin = agencyRevenue > 0 ? (netProfit / agencyRevenue) * 100 : 0;
   const prevMargin = prevAgencyRevenue > 0 ? (prevNetProfit / prevAgencyRevenue) * 100 : 0;
+
+  // Auto-synced Meta ad spend, bucketed by day, for the chart.
+  const [metaInsightsDaily, setMetaInsightsDaily] = useState<Array<{ date_start: string; spend: number }>>([]);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const cFrom = format(range.from, "yyyy-MM-dd");
+      const cTo = format(range.to, "yyyy-MM-dd");
+      const { data } = await supabase
+        .from("meta_insights_daily")
+        .select("date_start, spend")
+        .eq("level", "account")
+        .eq("breakdown_key", "")
+        .gte("date_start", cFrom)
+        .lte("date_start", cTo);
+      if (!cancelled) {
+        setMetaInsightsDaily(((data ?? []) as Array<{ date_start: string; spend: number }>));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [range.from, range.to]);
 
   // Daily cash-flow series — bucket every income/expense to its day so the
   // chart shows the rhythm of the period instead of just totals.
@@ -377,15 +407,24 @@ function FinancialsPage() {
     };
     // Income — agency_cut bucketed at period_end
     for (const p of payouts) bump(p.period_end, "income", Number(p.agency_cut));
-    // Expenses
-    for (const a of ads) bump(a.start_date, "expense", Number(a.amount_spent));
+    // Expenses — manual ad campaigns + auto-synced Meta + staff + ops
+    for (const a of ads) {
+      // Skip manual Meta campaigns when we have auto-synced data —
+      // see financials-rollup.ts for the same de-dupe rule applied to
+      // KPI totals. This keeps the chart consistent with the cards.
+      const platform = String(a.platform ?? "other").toLowerCase();
+      const isMeta = platform === "meta" || platform === "facebook" || platform === "instagram";
+      if (isMeta && metaInsightsDaily.length > 0) continue;
+      bump(a.start_date, "expense", Number(a.amount_spent));
+    }
+    for (const m of metaInsightsDaily) bump(m.date_start, "expense", Number(m.spend));
     for (const sp of staffPayouts) bump(sp.period_end, "expense", Number(sp.amount));
     for (const e of expenses) bump(e.expense_date, "expense", Number(e.amount));
     return [...buckets.values()].map((b) => ({
       ...b,
       net: b.income - b.expense,
     }));
-  }, [payouts, ads, staffPayouts, expenses, range]);
+  }, [payouts, ads, staffPayouts, expenses, range, metaInsightsDaily]);
 
   // Income breakdown: agency cut per creator
   const incomeByCreator = useMemo(() => {
@@ -399,12 +438,21 @@ function FinancialsPage() {
       .sort((a, b) => b.value - a.value);
   }, [payouts, creatorById]);
 
-  // Expense breakdown — by major bucket
+  // Expense breakdown — by major bucket. Includes the auto-synced
+  // Meta API spend so the breakdown chart matches the KPI total.
   const expenseBuckets = useMemo(() => {
     const adsByPlatform = new Map<string, number>();
+    const haveAutoMeta = metaInsightsDaily.length > 0;
     for (const a of ads) {
       const platform = (a.platform || "other").toLowerCase();
+      const isMeta = platform === "meta" || platform === "facebook" || platform === "instagram";
+      // De-dupe with auto-synced Meta — same rule as the KPI totals.
+      if (isMeta && haveAutoMeta) continue;
       adsByPlatform.set(platform, (adsByPlatform.get(platform) ?? 0) + Number(a.amount_spent));
+    }
+    if (haveAutoMeta) {
+      const autoMetaTotal = metaInsightsDaily.reduce((s, m) => s + Number(m.spend ?? 0), 0);
+      if (autoMetaTotal > 0) adsByPlatform.set("meta (api)", autoMetaTotal);
     }
     const expensesByCategory = new Map<string, number>();
     for (const e of expenses) {
@@ -418,7 +466,7 @@ function FinancialsPage() {
       list.push({ name: meta.label, value: v, group: "ops" });
     }
     return list.sort((a, b) => b.value - a.value);
-  }, [ads, staffComp, expenses]);
+  }, [ads, staffComp, expenses, metaInsightsDaily]);
 
   // Per-creator P&L
   const creatorPL = useMemo(() => {

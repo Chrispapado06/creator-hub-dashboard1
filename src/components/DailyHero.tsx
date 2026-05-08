@@ -245,11 +245,22 @@ export function DailyHero() {
     return last7.reduce((s, d) => s + d.amount, 0) / last7.length;
   }, [dailyRevenue, todayStr, sevenDaysAgoStr]);
 
-  // Today's ad spend → net profit (revenue − ads)
+  // Today's ad spend → net profit (revenue − ads).
+  // Revenue here includes BOTH the manually-tagged Reddit/social entries
+  // (revenueRows) AND OnlyFans Direct earnings for the day, so the
+  // profit number stays consistent with the Revenue page's formula:
+  //    profit = (organic + internal + OF direct + ad-attributed rev)
+  //           − (ad spend + staff + ops)
+  // Daily Dashboard only knows about ad spend day-by-day (staff + ops
+  // payouts don't have a daily date column), so the tile shows
+  // "today's revenue minus today's ad spend" — useful as a daily pulse,
+  // not the full P&L.
   const todayAdSpend = adSpend14d.find((d) => d.date === todayStr)?.spend ?? 0;
   const yesterdayAdSpend = adSpend14d.find((d) => d.date === yesterdayStr)?.spend ?? 0;
-  const todayNetProfit = todayRevenue - todayAdSpend;
-  const yesterdayNetProfit = yesterdayRevenue - yesterdayAdSpend;
+  const todayTotalRevenue = todayRevenue + ofToday;
+  const yesterdayTotalRevenue = yesterdayRevenue + ofYesterday;
+  const todayNetProfit = todayTotalRevenue - todayAdSpend;
+  const yesterdayNetProfit = yesterdayTotalRevenue - yesterdayAdSpend;
 
   // Per-creator today vs 7-day avg → top movers
   const movers = useMemo(() => {
@@ -412,9 +423,9 @@ export function DailyHero() {
           tone="emerald"
           icon={<Wallet className="h-4 w-4" />}
           label="Today's revenue"
-          value={formatMoney(todayRevenue)}
-          delta={pctChange(todayRevenue, yesterdayRevenue)}
-          deltaSubtitle="vs yesterday"
+          value={formatMoney(todayTotalRevenue)}
+          delta={pctChange(todayTotalRevenue, yesterdayTotalRevenue)}
+          deltaSubtitle={ofToday > 0 ? `incl. ${formatMoney(ofToday)} OF` : "vs yesterday"}
           sparkline={dailyRevenue.map((d) => ({ x: d.date, y: d.amount }))}
           sparkColor="rgb(52,211,153)"
           loading={loading}

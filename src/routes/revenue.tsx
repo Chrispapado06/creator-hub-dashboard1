@@ -348,12 +348,47 @@ function RevenuePage() {
   // Organic = organic_revenue_entries (Reddit / IG / FB / X / TikTok organic posts)
   // Internal = internal_revenue_entries (internal tracking links)
   // Ads = ad_campaigns.revenue_generated (Meta paid) + revenue_entries.amount (OnlyFinder/Infloww sync)
+  // Auto-synced Meta API ad spend for the active page range — pulled
+  // from meta_insights_daily so we stay consistent with the Financials
+  // page rollup (and don't under-report when admins haven't entered a
+  // manual ad_campaigns row but the Meta sync has been running).
+  const [metaAutoSpend, setMetaAutoSpend] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const { data } = await supabase
+        .from("meta_insights_daily")
+        .select("spend")
+        .eq("level", "account")
+        .eq("breakdown_key", "")
+        .gte("date_start", dateRange.startStr)
+        .lte("date_start", dateRange.endStr);
+      if (!cancelled) {
+        const total = (data ?? []).reduce((s, r) => s + Number((r as { spend?: number }).spend ?? 0), 0);
+        setMetaAutoSpend(total);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [dateRange.startStr, dateRange.endStr]);
+
   const overview = useMemo(() => {
     const inflowwTotal = entries.reduce((s, e) => s + e.amount, 0);
     const metaAdsTotal = adCampaigns.reduce((s, c) => s + c.revenue_generated, 0);
-    const metaAdsSpend = adCampaigns.reduce((s, c) => s + c.amount_spent, 0);
+    const manualAdsSpend = adCampaigns.reduce((s, c) => s + c.amount_spent, 0);
+    // De-dupe manual Meta entries when auto-sync data exists for the
+    // window — same rule as financials-rollup.ts. Other-platform manual
+    // ad spend (e.g. OnlyFinder) still counts on top of the auto Meta.
+    const manualNonMetaSpend = adCampaigns
+      .filter((c) => {
+        const p = String(((c as unknown) as { platform?: string }).platform ?? "other").toLowerCase();
+        return !(p === "meta" || p === "facebook" || p === "instagram");
+      })
+      .reduce((s, c) => s + c.amount_spent, 0);
+    const effectiveAdSpend = metaAutoSpend > 0
+      ? metaAutoSpend + manualNonMetaSpend
+      : manualAdsSpend;
     const adsTotal = inflowwTotal + metaAdsTotal;
-    const adsNet = adsTotal - metaAdsSpend;
+    const adsNet = adsTotal - effectiveAdSpend;
     const organic = organicEntries.reduce((s, e) => s + e.amount, 0);
     const internal = internalEntries.reduce((s, e) => s + e.amount, 0);
     // OnlyFans direct = earnings in the active date range, fetched live
@@ -387,7 +422,7 @@ function RevenuePage() {
       internal,
       ads: adsTotal,
       adsNet,
-      adsSpend: metaAdsSpend,
+      adsSpend: effectiveAdSpend,
       meta: metaAdsTotal,
       infloww: inflowwTotal,
       ofDirect,
@@ -400,7 +435,7 @@ function RevenuePage() {
       // running OF as their primary channel saw $0 on the dashboard.
       total: organic + internal + adsNet + ofDirect,
     };
-  }, [entries, organicEntries, internalEntries, adCampaigns, ofStats, ofTracking, rangeOfEarnings]);
+  }, [entries, organicEntries, internalEntries, adCampaigns, ofStats, ofTracking, rangeOfEarnings, metaAutoSpend]);
 
   const [syncingInfloww, setSyncingInfloww] = useState(false);
   const onSyncInfloww = async () => {
