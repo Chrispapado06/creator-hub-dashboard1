@@ -3,6 +3,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { canAccessPage, isSuperAdmin } from "@/lib/admin-pages";
 import { ChatBadge } from "@/components/ChatBadge";
+import { StaffTopNav } from "@/components/StaffTopNav";
 import {
   Settings, LogOut, Sun, Moon, Users, DollarSign,
   CalendarDays, LayoutDashboard, ChevronDown, ChevronRight,
@@ -352,11 +353,16 @@ function RootComponent() {
 
   if (!authed) return null;
 
-  // Staff portal: no sidebar, no admin nav. Outlet renders /clock.
+  // Staff portal: thin top nav (Clock / Chat tabs + sign-out) above
+  // the page content. No admin sidebar — staff only see what they
+  // need. Login redirects to /clock; the nav lets them hop to /chat.
   if (session?.type === "staff") {
     return (
-      <div className="min-h-screen bg-background">
-        <Outlet />
+      <div className="min-h-screen bg-background flex flex-col">
+        <StaffTopNav />
+        <main className="flex-1 min-h-0 flex flex-col">
+          <Outlet />
+        </main>
         <InstallPromptBanner />
       </div>
     );

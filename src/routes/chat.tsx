@@ -260,7 +260,12 @@ function ChatPage() {
   }
 
   return (
-    <div className="-mx-4 sm:-mx-8 -mt-10 -mb-10 h-[calc(100vh-4rem)] flex bg-background">
+    {/* flex-1 + min-h-0 lets the chat fill naturally inside the
+        staff layout (which is flex-col); the h-calc is a fallback
+        for admin where the parent isn't a flex column. Negative
+        margins cancel the admin page-container padding so the chat
+        goes edge-to-edge there. */}
+    <div className="flex-1 min-h-0 -mx-4 sm:-mx-8 -mt-10 -mb-10 h-[calc(100vh-4rem)] flex bg-background">
       <Toaster />
 
       {/* Sidebar */}
