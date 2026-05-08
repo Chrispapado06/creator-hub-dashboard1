@@ -1,7 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { DollarSign, TrendingUp, Users, Plus, Trash2, RefreshCw, Wallet, Megaphone, Layers } from "lucide-react";
+import { DollarSign, TrendingUp, Users, Plus, Trash2, RefreshCw, Wallet, Megaphone, Layers, Link2 } from "lucide-react";
+import { SiOnlyfans } from "react-icons/si";
+import { OfDataInspector } from "@/components/OfDataInspector";
 import { runSyncJob } from "@/lib/sync";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -69,6 +71,38 @@ type InflowwStat = {
   spenders_count: number;
   synced_at: string;
 };
+// OF lifetime totals (one row per creator, upserted by the OF sync)
+type OfCreatorStat = {
+  creator_id: string;
+  total_earnings: number;
+  earnings_subs: number;
+  earnings_tips: number;
+  earnings_ppv: number;
+  earnings_messages: number;
+  earnings_streams: number;
+  earnings_referrals: number;
+  synced_at: string;
+};
+// One row per creator per day from /earnings.daily
+type OfDailyEarning = {
+  creator_id: string;
+  entry_date: string;
+  total: number;
+};
+// OF native tracking-link campaigns (synced from /tracking-links)
+type OfTrackingLink = {
+  id: string;
+  creator_id: string;
+  campaign_code: number;
+  campaign_url: string | null;
+  name: string | null;
+  clicks_count: number;
+  subscribers_count: number;
+  spenders_count: number;
+  revenue_total: number;
+  revenue_per_subscriber: number;
+  synced_at: string;
+};
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -101,6 +135,7 @@ const STAT_OPTIONS = [
   { value: "internal_rev",  label: "Internal (tracking links)", color: "oklch(0.78 0.16 75)" },
   { value: "ads_revenue",   label: "Ads Revenue (Meta + OnlyFinder)", color: "oklch(0.7 0.18 250)" },
   { value: "ads_net",       label: "Ads Net (Rev − Spend)", color: "oklch(0.6 0.18 250)" },
+  { value: "of_direct",     label: "OnlyFans Direct (subs + tips + PPV + msgs)", color: "oklch(0.65 0.2 240)" },
   { value: "posts",         label: "Posts Count", color: "oklch(0.72 0.18 30)" },
   { value: "upvotes",       label: "Total Upvotes", color: "oklch(0.7 0.16 155)" },
 ];
@@ -125,6 +160,9 @@ function RevenuePage() {
   const [adCampaigns, setAdCampaigns] = useState<AdCampaign[]>([]);
   const [allPosts, setAllPosts] = useState<PostStat[]>([]);
   const [inflowwStats, setInflowwStats] = useState<InflowwStat[]>([]);
+  const [ofStats, setOfStats] = useState<OfCreatorStat[]>([]);
+  const [ofDaily, setOfDaily] = useState<OfDailyEarning[]>([]);
+  const [ofTracking, setOfTracking] = useState<OfTrackingLink[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
@@ -144,7 +182,8 @@ function RevenuePage() {
     const since1y = new Date(Date.now() - 366 * 24 * 3600_000).toISOString().slice(0, 10);
 
     const [{ data: cs }, { data: ras }, { data: tls }, { data: rev },
-           { data: org }, { data: int_ }, { data: ads }, { data: ifw }] = await Promise.all([
+           { data: org }, { data: int_ }, { data: ads }, { data: ifw },
+           { data: ofs }, { data: ofd }, { data: oft }] = await Promise.all([
       supabase.from("creators").select("id, name").order("name"),
       supabase.from("reddit_accounts").select("id, creator_id, username"),
       supabase.from("tracking_links").select("id, reddit_account_id, label, url"),
@@ -153,6 +192,12 @@ function RevenuePage() {
       supabase.from("internal_entries").select("creator_id, amount, entry_date").gte("entry_date", since1y),
       supabase.from("ad_campaigns").select("creator_id, amount_spent, revenue_generated, start_date").gte("start_date", since1y),
       supabase.from("infloww_tracking_stats").select("*").order("revenue_total", { ascending: false }),
+      // OF lifetime totals (one row per creator)
+      supabase.from("of_creator_stats").select("*"),
+      // OF daily earnings — feeds the chart "OnlyFans Direct" series
+      supabase.from("of_earnings_daily").select("creator_id, entry_date, total").gte("entry_date", since1y),
+      // OF native tracking-link campaigns
+      supabase.from("of_tracking_links").select("*").order("revenue_total", { ascending: false }),
     ]);
 
     const raIds = (ras ?? []).map((r) => r.id);
@@ -172,6 +217,9 @@ function RevenuePage() {
     setAdCampaigns((ads ?? []) as AdCampaign[]);
     setAllPosts((ps ?? []) as PostStat[]);
     setInflowwStats((ifw ?? []) as InflowwStat[]);
+    setOfStats((ofs ?? []) as OfCreatorStat[]);
+    setOfDaily((ofd ?? []) as OfDailyEarning[]);
+    setOfTracking((oft ?? []) as OfTrackingLink[]);
     setLoading(false);
   };
 
@@ -238,6 +286,19 @@ function RevenuePage() {
     const adsNet = adsTotal - metaAdsSpend;
     const organic = organicEntries.reduce((s, e) => s + e.amount, 0);
     const internal = internalEntries.reduce((s, e) => s + e.amount, 0);
+    // OnlyFans direct = lifetime earnings the OF API attributes to the
+    // creator's account itself (subs + tips + PPV + messages + streams +
+    // referrals). Synced into of_creator_stats by the OF sync button.
+    const ofDirect = ofStats.reduce((s, r) => s + (r.total_earnings ?? 0), 0);
+    const ofSubs = ofStats.reduce((s, r) => s + (r.earnings_subs ?? 0), 0);
+    const ofTips = ofStats.reduce((s, r) => s + (r.earnings_tips ?? 0), 0);
+    const ofPpv = ofStats.reduce((s, r) => s + (r.earnings_ppv ?? 0), 0);
+    const ofMsgs = ofStats.reduce((s, r) => s + (r.earnings_messages ?? 0), 0);
+    // OF tracking-link revenue (the campaigns shown on onlyfans.com →
+    // Statistics → Tracking links). Treated as a sub-bucket of OnlyFans
+    // direct rather than a separate "Ads" line because it's still
+    // money OF attributes to the creator account.
+    const ofTrackingTotal = ofTracking.reduce((s, r) => s + (r.revenue_total ?? 0), 0);
     return {
       organic,
       internal,
@@ -246,9 +307,17 @@ function RevenuePage() {
       adsSpend: metaAdsSpend,
       meta: metaAdsTotal,
       infloww: inflowwTotal,
-      total: organic + internal + adsNet,
+      ofDirect,
+      ofSubs,
+      ofTips,
+      ofPpv,
+      ofMsgs,
+      ofTrackingTotal,
+      // Grand total now includes OF earnings — without this, agencies
+      // running OF as their primary channel saw $0 on the dashboard.
+      total: organic + internal + adsNet + ofDirect,
     };
-  }, [entries, organicEntries, internalEntries, adCampaigns]);
+  }, [entries, organicEntries, internalEntries, adCampaigns, ofStats, ofTracking]);
 
   const [syncingInfloww, setSyncingInfloww] = useState(false);
   const onSyncInfloww = async () => {
@@ -270,6 +339,85 @@ function RevenuePage() {
       setSyncingInfloww(false);
     }
   };
+
+  // ── OnlyFans sync (right here on the Revenue page) ─────────────────
+  const [syncingOf, setSyncingOf] = useState(false);
+  const onSyncOf = async () => {
+    setSyncingOf(true);
+    try {
+      // Lazy-load to keep this route's bundle tight when nobody syncs.
+      const { syncAllCreatorsOnlyFans } = await import("@/lib/of-sync");
+      // Pull the full creator rows we need (sync function reads their
+      // OF username + stored acct id).
+      const { data: cs } = await supabase
+        .from("creators")
+        .select("id, name, of_username, onlyfansapi_acct_id");
+      if (!cs || cs.length === 0) {
+        toast.info("No creators found");
+        return;
+      }
+      const result = await syncAllCreatorsOnlyFans(cs);
+      if (result.succeeded === 0) {
+        toast.error(
+          `OF sync failed for all ${result.total} creator(s)` +
+          (result.failures[0] ? ` · ${result.failures[0].error}` : ""),
+        );
+      } else if (result.failed > 0) {
+        toast.warning(
+          `OF sync · ${result.succeeded}/${result.total} succeeded · $${result.totalEarningsSynced.toLocaleString()} lifetime`,
+        );
+      } else {
+        toast.success(
+          `OF sync complete · ${result.succeeded} creator(s) · $${result.totalEarningsSynced.toLocaleString()} lifetime`,
+        );
+      }
+      await load();
+    } catch (e) {
+      toast.error(`OF sync error: ${e instanceof Error ? e.message : "unknown"}`);
+    } finally {
+      setSyncingOf(false);
+    }
+  };
+
+  // Last sync timestamp — newest synced_at across of_creator_stats
+  const ofLastSync = useMemo(() => {
+    if (ofStats.length === 0) return null;
+    return ofStats.reduce((latest, r) => r.synced_at > latest ? r.synced_at : latest, ofStats[0].synced_at);
+  }, [ofStats]);
+
+  // ── Per-creator revenue rollup (driving the modern breakdown table) ──
+  const creatorBreakdown = useMemo(() => {
+    return creators.map((c) => {
+      const ofRow = ofStats.find((s) => s.creator_id === c.id);
+      const ofRev = ofRow?.total_earnings ?? 0;
+      const ofTrackRev = ofTracking
+        .filter((t) => t.creator_id === c.id)
+        .reduce((s, t) => s + t.revenue_total, 0);
+      const orgRev = organicEntries
+        .filter((e) => e.creator_id === c.id)
+        .reduce((s, e) => s + e.amount, 0);
+      const intRev = internalEntries
+        .filter((e) => e.creator_id === c.id)
+        .reduce((s, e) => s + e.amount, 0);
+      const adsRev = adCampaigns
+        .filter((a) => a.creator_id === c.id)
+        .reduce((s, a) => s + a.revenue_generated, 0);
+      const adsSpend = adCampaigns
+        .filter((a) => a.creator_id === c.id)
+        .reduce((s, a) => s + a.amount_spent, 0);
+      const inflowwRev = entries
+        .filter((e) => e.creator_id === c.id)
+        .reduce((s, e) => s + e.amount, 0);
+      const total = ofRev + orgRev + intRev + adsRev + inflowwRev;
+      return {
+        creator: c,
+        ofRev, ofTrackRev, orgRev, intRev,
+        adsRev, adsSpend, inflowwRev,
+        total,
+        synced_at: ofRow?.synced_at ?? null,
+      };
+    }).sort((a, b) => b.total - a.total);
+  }, [creators, ofStats, ofTracking, organicEntries, internalEntries, adCampaigns, entries]);
 
   const byAccount = useMemo(() => {
     const map = new Map<string, number>();
@@ -337,6 +485,15 @@ function RevenuePage() {
           : c.revenue_generated;
       }
     }
+    // OnlyFans Direct — the live earnings stream from the OF API,
+    // synced daily into of_earnings_daily. Included in total_revenue
+    // alongside organic/internal/ads, or shown solo via "of_direct".
+    if (chartStat === "of_direct" || chartStat === "total_revenue") {
+      for (const e of ofDaily) {
+        if (!matchCreator(e.creator_id)) continue;
+        if (valueMap[e.entry_date] !== undefined) valueMap[e.entry_date] += e.total ?? 0;
+      }
+    }
     if (chartStat === "posts") {
       for (const p of allPosts) {
         if (!matchCreatorByRa(p.reddit_account_id)) continue;
@@ -356,7 +513,7 @@ function RevenuePage() {
       const key = d.toISOString().slice(0, 10);
       return { date: key, value: valueMap[key] ?? 0 };
     });
-  }, [chartStat, chartDateRange, chartCreator, entries, organicEntries, internalEntries, adCampaigns, allPosts, raToCreator]);
+  }, [chartStat, chartDateRange, chartCreator, entries, organicEntries, internalEntries, adCampaigns, allPosts, ofDaily, raToCreator]);
 
   const statOption = STAT_OPTIONS.find((s) => s.value === chartStat) ?? STAT_OPTIONS[0];
   const chartTotal = chartData.reduce((s, d) => s + d.value, 0);
@@ -379,23 +536,78 @@ function RevenuePage() {
     <div className="space-y-8">
       <Toaster />
 
-      {/* Page header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Revenue</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Track revenue across all channels and monitor performance over time.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            onClick={onSyncInfloww}
-            disabled={syncingInfloww}
-          >
-            <RefreshCw className={`mr-1.5 h-4 w-4 ${syncingInfloww ? "animate-spin" : ""}`} />
-            {syncingInfloww ? "Syncing…" : "Sync Infloww"}
-          </Button>
+      {/* ── Modern hero ───────────────────────────────────────────────────
+          Big gradient panel with the live grand total front-and-centre,
+          plus the per-bucket breakdown as horizontal pills underneath.
+          Sync controls live here so admins don't have to bounce between
+          pages to refresh the numbers. */}
+      <div className="relative overflow-hidden rounded-3xl border border-border bg-gradient-to-br from-card via-card/80 to-primary/5 p-6 sm:p-8">
+        {/* Decorative gradient blobs */}
+        <div aria-hidden className="absolute -top-24 -right-24 h-72 w-72 rounded-full bg-primary/15 blur-3xl" />
+        <div aria-hidden className="absolute -bottom-24 -left-24 h-72 w-72 rounded-full bg-blue-500/10 blur-3xl" />
+
+        <div className="relative flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold">
+              <DollarSign className="h-3.5 w-3.5 text-primary" />
+              Total revenue · all time
+            </div>
+            <div className="mt-2 flex items-baseline gap-2 flex-wrap">
+              <span className="text-4xl sm:text-5xl font-bold tracking-tight bg-gradient-to-r from-foreground to-primary/70 bg-clip-text text-transparent">
+                ${overview.total.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+              </span>
+              {overview.adsSpend > 0 && (
+                <span className="text-xs text-muted-foreground">
+                  Net of ${overview.adsSpend.toLocaleString("en-US", { maximumFractionDigits: 0 })} ad spend
+                </span>
+              )}
+            </div>
+            {/* Bucket pills */}
+            <div className="mt-4 flex flex-wrap gap-2">
+              <BucketPill icon={<SiOnlyfans className="h-3 w-3" />} label="OnlyFans Direct" value={overview.ofDirect} tone="of" />
+              <BucketPill icon={<Layers className="h-3 w-3" />} label="Organic" value={overview.organic} tone="organic" />
+              <BucketPill icon={<Wallet className="h-3 w-3" />} label="Internal" value={overview.internal} tone="internal" />
+              <BucketPill icon={<Megaphone className="h-3 w-3" />} label="Ads" value={overview.ads} tone="ads" />
+              {overview.ofTrackingTotal > 0 && (
+                <BucketPill icon={<Link2 className="h-3 w-3" />} label="OF tracking links" value={overview.ofTrackingTotal} tone="of-track" />
+              )}
+            </div>
+            {/* Sync status strip */}
+            <div className="mt-4 text-[11px] text-muted-foreground flex items-center gap-3 flex-wrap">
+              {ofLastSync ? (
+                <span>OF synced {format(new Date(ofLastSync), "MMM d 'at' h:mm a")} · {ofStats.length} creator{ofStats.length === 1 ? "" : "s"}</span>
+              ) : (
+                <span className="text-amber-400">⚠ No OF data synced yet — hit "Sync OnlyFans" →</span>
+              )}
+            </div>
+          </div>
+
+          {/* Action column */}
+          <div className="flex flex-col gap-2 sm:items-end shrink-0">
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Revenue</h1>
+            <p className="text-xs text-muted-foreground sm:text-right max-w-[280px]">
+              All channels in one view. Sync directly from this page.
+            </p>
+            <div className="mt-3 flex items-center gap-2 flex-wrap">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onSyncOf}
+                disabled={syncingOf}
+                className="bg-blue-500/10 border-blue-500/30 text-blue-400 hover:bg-blue-500/20 hover:text-blue-300"
+              >
+                <SiOnlyfans className={`mr-1.5 h-3.5 w-3.5 ${syncingOf ? "animate-spin" : ""}`} />
+                {syncingOf ? "Syncing OF…" : "Sync OnlyFans"}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onSyncInfloww}
+                disabled={syncingInfloww}
+              >
+                <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${syncingInfloww ? "animate-spin" : ""}`} />
+                {syncingInfloww ? "Syncing…" : "Sync Infloww"}
+              </Button>
           <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button className="bg-gradient-to-r from-primary to-primary-glow text-primary-foreground hover:opacity-90 shadow-[0_0_20px_oklch(0.72_0.18_30/0.3)]">
@@ -475,70 +687,99 @@ function RevenuePage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-        </div>
-      </div>
+            </div> {/* end action buttons row */}
+          </div> {/* end action column */}
+        </div> {/* end hero flex container */}
+      </div> {/* end hero panel */}
 
-      {/* ── Total revenue overview (all-time, all channels) ────────────────── */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <div className="rounded-xl border border-border bg-card p-5">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <DollarSign className="h-4 w-4 text-primary" />
-            Total revenue (all time)
-          </div>
-          <div className="mt-2 text-2xl font-bold">
-            ${overview.total.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-          </div>
-          <div className="mt-1 text-[11px] text-muted-foreground">
-            Organic + Internal + Ads (net)
-          </div>
-        </div>
+      {/* ── OnlyFans data inspector ─────────────────────────────────────
+          Collapsible diagnostic panel. Shows what's in the database vs
+          what the OnlyFansAPI is actually returning, so a non-technical
+          admin can self-diagnose "I synced but see $0" without opening
+          the browser dev tools. */}
+      <OfDataInspector />
 
-        <div className="rounded-xl border border-success/30 bg-success/5 p-5">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Layers className="h-4 w-4 text-success" />
-            Organic
-          </div>
-          <div className="mt-2 text-2xl font-bold">
-            ${overview.organic.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-          </div>
-          <div className="mt-1 text-[11px] text-muted-foreground">
-            Reddit · IG · FB · X · TikTok
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-warning/30 bg-warning/5 p-5">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Wallet className="h-4 w-4 text-warning" />
-            Internal
-          </div>
-          <div className="mt-2 text-2xl font-bold">
-            ${overview.internal.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-          </div>
-          <div className="mt-1 text-[11px] text-muted-foreground">
-            Internal tracking links
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-ads/30 bg-ads/5 p-5">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Megaphone className="h-4 w-4 text-ads" />
-            Ads
-          </div>
-          <div className="mt-2 text-2xl font-bold">
-            ${overview.ads.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-          </div>
-          <div className="mt-1 text-[11px] text-muted-foreground space-x-1">
-            <span>Meta ${overview.meta.toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>
-            <span className="text-muted-foreground/50">·</span>
-            <span>Infloww/OnlyFinder ${overview.infloww.toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>
-          </div>
-          {overview.adsSpend > 0 && (
-            <div className="mt-1 text-[10px] text-destructive">
-              Spend −${overview.adsSpend.toLocaleString("en-US", { maximumFractionDigits: 0 })} · Net ${overview.adsNet.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+      {/* ── Per-creator revenue breakdown ───────────────────────────────
+          Sortable mini-table showing every creator's revenue split
+          across OF Direct / Organic / Internal / Ads. Click a row to
+          jump to the creator's detail page. */}
+      {creatorBreakdown.length > 0 && (
+        <div className="rounded-2xl border border-border bg-card overflow-hidden">
+          <div className="px-5 py-4 border-b border-border flex items-center justify-between flex-wrap gap-2">
+            <div>
+              <h2 className="text-sm font-semibold flex items-center gap-2">
+                <Users className="h-4 w-4 text-primary" />
+                Revenue by creator
+              </h2>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                All channels combined, sorted by total. Click a creator to drill in.
+              </p>
             </div>
-          )}
+            <div className="text-[11px] text-muted-foreground">
+              {creatorBreakdown.filter((b) => b.total > 0).length} of {creatorBreakdown.length} creator{creatorBreakdown.length === 1 ? "" : "s"} earning
+            </div>
+          </div>
+          {/* Header row — desktop only */}
+          <div className="hidden lg:grid lg:grid-cols-[2fr_1fr_1fr_1fr_1fr_1.2fr] px-5 py-2 text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold border-b border-border/50 bg-secondary/20">
+            <div>Creator</div>
+            <div className="text-right">OnlyFans</div>
+            <div className="text-right">Organic</div>
+            <div className="text-right">Internal</div>
+            <div className="text-right">Ads (net)</div>
+            <div className="text-right">Total</div>
+          </div>
+          <div className="divide-y divide-border/40">
+            {creatorBreakdown.map((b) => {
+              const adsNetCreator = b.adsRev + b.inflowwRev - b.adsSpend;
+              const grand = b.ofRev + b.orgRev + b.intRev + adsNetCreator;
+              const ofPct = grand > 0 ? (b.ofRev / grand) * 100 : 0;
+              return (
+                <Link
+                  key={b.creator.id}
+                  to="/creators/$creatorId"
+                  params={{ creatorId: b.creator.id }}
+                  className="block lg:grid lg:grid-cols-[2fr_1fr_1fr_1fr_1fr_1.2fr] px-5 py-3 hover:bg-secondary/30 transition-colors"
+                >
+                  {/* Creator — with sync status */}
+                  <div className="flex items-center gap-3 min-w-0 mb-2 lg:mb-0">
+                    <span className="h-8 w-8 rounded-full bg-gradient-to-br from-primary/20 to-blue-500/20 flex items-center justify-center text-[11px] font-bold text-foreground shrink-0">
+                      {b.creator.name.slice(0, 2).toUpperCase()}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium truncate">{b.creator.name}</div>
+                      <div className="text-[10px] text-muted-foreground truncate">
+                        {b.synced_at
+                          ? `OF synced ${format(new Date(b.synced_at), "MMM d, h:mm a")}`
+                          : "OF not synced"}
+                      </div>
+                    </div>
+                  </div>
+                  {/* Channel cells */}
+                  <ChannelCell value={b.ofRev} accent="text-blue-400" />
+                  <ChannelCell value={b.orgRev} accent="text-success" />
+                  <ChannelCell value={b.intRev} accent="text-warning" />
+                  <ChannelCell value={adsNetCreator} accent="text-ads" />
+                  {/* Total + share-bar */}
+                  <div className="text-right">
+                    <div className="text-sm font-bold tabular-nums">
+                      ${grand.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                    {grand > 0 && (
+                      <div className="mt-1.5 h-1 rounded-full bg-secondary/40 overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-blue-400 to-primary"
+                          style={{ width: `${Math.min(100, ofPct)}%` }}
+                          title={`OF share ${ofPct.toFixed(0)}%`}
+                        />
+                      </div>
+                    )}
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ── Infloww (all-time totals from API) ──────────────────────────────── */}
       {inflowwStats.length > 0 && (() => {
@@ -606,6 +847,95 @@ function RevenuePage() {
                         </div>
                       );
                     })}
+                  </div>
+                  <div className="mt-2 text-[10px] text-muted-foreground">
+                    Last synced {format(new Date(lastSync), "MMM d, yyyy 'at' h:mm a")}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── OnlyFans tracking links (synced from /tracking-links) ──────────── */}
+      {/* Each row is a campaign code the creator set up on
+          onlyfans.com → Statistics → Tracking links. We mirror clicks /
+          subscribers / spenders / revenue on every OF sync, so the
+          numbers here are always at most one sync stale. */}
+      {ofTracking.length > 0 && (() => {
+        const grouped = creators.map((c) => {
+          const rows = ofTracking.filter((t) => t.creator_id === c.id);
+          if (rows.length === 0) return null;
+          const totalRev = rows.reduce((s, r) => s + r.revenue_total, 0);
+          const totalClicks = rows.reduce((s, r) => s + r.clicks_count, 0);
+          const totalSubs = rows.reduce((s, r) => s + r.subscribers_count, 0);
+          const lastSync = rows.reduce(
+            (latest, r) => r.synced_at > latest ? r.synced_at : latest,
+            rows[0].synced_at,
+          );
+          return { creator: c, rows, totalRev, totalClicks, totalSubs, lastSync };
+        }).filter(Boolean) as {
+          creator: Creator; rows: OfTrackingLink[];
+          totalRev: number; totalClicks: number; totalSubs: number; lastSync: string;
+        }[];
+        const grandTotal = grouped.reduce((s, g) => s + g.totalRev, 0);
+        return (
+          <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-semibold flex items-center gap-2">
+                  <SiOnlyfans className="h-4 w-4" style={{ color: "#00AFF0" }} />
+                  OnlyFans tracking links
+                </h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Real campaign-code revenue from OnlyFans → Statistics → Tracking links.
+                  Synced on every OF sync.
+                </p>
+              </div>
+              <div className="text-right">
+                <div className="text-2xl font-bold">
+                  ${grandTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+                <div className="text-xs text-muted-foreground">grand total</div>
+              </div>
+            </div>
+            <div className="space-y-3">
+              {grouped.map(({ creator, rows, totalRev, totalClicks, totalSubs, lastSync }) => (
+                <div key={creator.id} className="rounded-xl border border-border bg-card p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <Link to="/creators/$creatorId" params={{ creatorId: creator.id }}
+                      className="font-medium hover:text-primary transition-colors">
+                      {creator.name}
+                    </Link>
+                    <div className="flex items-center gap-4 text-sm">
+                      <span className="text-muted-foreground">{totalClicks.toLocaleString()} clicks</span>
+                      <span className="text-muted-foreground">{totalSubs.toLocaleString()} subs</span>
+                      <span className="font-bold text-primary">
+                        ${totalRev.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+                    {rows.map((r) => (
+                      <div key={r.id} className="rounded-lg bg-secondary/40 px-3 py-2 text-xs">
+                        <div className="font-medium text-muted-foreground truncate mb-1 flex items-center gap-1">
+                          <Link2 className="h-2.5 w-2.5" />
+                          {r.name ?? `c${r.campaign_code}`}
+                        </div>
+                        <div className="font-bold text-sm">
+                          ${r.revenue_total.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
+                        <div className="text-muted-foreground mt-0.5">
+                          {r.clicks_count.toLocaleString()} clicks · {r.subscribers_count.toLocaleString()} subs
+                        </div>
+                        {r.spenders_count > 0 && (
+                          <div className="text-[10px] text-muted-foreground mt-0.5">
+                            {r.spenders_count} spenders · ${r.revenue_per_subscriber.toFixed(2)}/sub
+                          </div>
+                        )}
+                      </div>
+                    ))}
                   </div>
                   <div className="mt-2 text-[10px] text-muted-foreground">
                     Last synced {format(new Date(lastSync), "MMM d, yyyy 'at' h:mm a")}
@@ -880,6 +1210,50 @@ function RevenuePage() {
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Reusable building blocks ────────────────────────────────────────────────
+
+/** Compact pill used in the hero to show a bucket's contribution. */
+function BucketPill({
+  icon, label, value, tone,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: number;
+  tone: "of" | "of-track" | "organic" | "internal" | "ads";
+}) {
+  const toneCls = {
+    of:        "border-blue-500/30 bg-blue-500/10 text-blue-300",
+    "of-track":"border-cyan-500/30 bg-cyan-500/10 text-cyan-300",
+    organic:   "border-success/30 bg-success/10 text-success",
+    internal:  "border-warning/30 bg-warning/10 text-warning",
+    ads:       "border-ads/30 bg-ads/10 text-ads",
+  }[tone];
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs ${toneCls}`}>
+      {icon}
+      <span className="font-medium">{label}</span>
+      <span className="font-bold tabular-nums">
+        ${value.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+      </span>
+    </span>
+  );
+}
+
+/** One revenue cell in the per-creator breakdown row. Greys out zeros. */
+function ChannelCell({ value, accent }: { value: number; accent: string }) {
+  const zero = value === 0;
+  return (
+    <div className="flex items-center justify-between lg:justify-end gap-2 lg:gap-0 text-xs lg:text-sm py-0.5 lg:py-0">
+      <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 lg:hidden">
+        {accent.includes("blue") ? "OF" : accent.includes("success") ? "Organic" : accent.includes("warning") ? "Internal" : "Ads"}
+      </span>
+      <span className={`tabular-nums ${zero ? "text-muted-foreground/40" : `${accent} font-medium`}`}>
+        ${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+      </span>
     </div>
   );
 }

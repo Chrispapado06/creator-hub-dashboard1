@@ -349,6 +349,42 @@ function OnlyFansPage() {
       expired_count: statsPayload.expired_subscribers,
     }, { onConflict: "creator_id,entry_date" });
 
+    // ── OF native tracking links (campaign codes) ───────────────────────────
+    // These are the real OF campaign tracking links — not the manually-
+    // entered Reddit ones. Each row has clicks / subs / revenue per
+    // campaign. Mirrored locally so the Revenue page can show them
+    // without an API call on every render.
+    const trackingJson = (await safeFetch("tracking-links")) as
+      { data?: unknown[]; list?: unknown[] } | unknown[] | null;
+    const trackingArr = Array.isArray(trackingJson)
+      ? trackingJson
+      : (trackingJson?.data ?? trackingJson?.list ?? []);
+    if (Array.isArray(trackingArr) && trackingArr.length > 0) {
+      const trackingRows = (trackingArr as Record<string, unknown>[]).map((t) => {
+        const code = num(t.campaignCode) || num(t.campaign_code) || num(t.code);
+        if (!code) return null;
+        const revObj = (t.revenue as Record<string, unknown> | undefined) ?? {};
+        return {
+          creator_id: creator.id,
+          campaign_code: code,
+          campaign_url: str(t.campaignUrl) ?? str(t.campaign_url) ?? str(t.url),
+          name: str(t.name) ?? str(t.label) ?? null,
+          clicks_count: num(t.clicksCount) || num(t.clicks_count) || num(t.clicks),
+          subscribers_count: num(t.subscribersCount) || num(t.subscribers_count) || num(t.subs),
+          spenders_count: num(t.spendersCount) || num(t.spenders_count)
+            || num(revObj.spendersCount) || num(revObj.spenders_count),
+          revenue_total: num(revObj.total) || num(t.revenue_total) || num(t.revenue),
+          revenue_per_subscriber: num(revObj.revenuePerSubscriber)
+            || num(revObj.revenue_per_subscriber) || 0,
+          synced_at: new Date().toISOString(),
+        };
+      }).filter((r): r is NonNullable<typeof r> => r !== null);
+      if (trackingRows.length > 0) {
+        await supabase.from("of_tracking_links")
+          .upsert(trackingRows, { onConflict: "creator_id,campaign_code" });
+      }
+    }
+
     return { ok: true };
   };
 
