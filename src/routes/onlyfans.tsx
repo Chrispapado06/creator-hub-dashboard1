@@ -7,6 +7,8 @@ import {
   Tag, Calendar as CalendarIcon, AlertTriangle,
 } from "lucide-react";
 import { SiOnlyfans } from "react-icons/si";
+import { OnlyFansInbox } from "@/components/OnlyFansInbox";
+import { OnlyFansMassDm } from "@/components/OnlyFansMassDm";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -762,12 +764,15 @@ function CreatorDetailView({
         </div>
       ) : (
         <Tabs defaultValue="overview">
-          <TabsList>
+          <TabsList className="flex-wrap h-auto">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="subscribers">Subscribers</TabsTrigger>
             <TabsTrigger value="topfans">Top fans</TabsTrigger>
             <TabsTrigger value="ppv">PPV</TabsTrigger>
             <TabsTrigger value="promotions">Promotions</TabsTrigger>
+            {/* New tabs powered by the typed of-api client */}
+            <TabsTrigger value="inbox" disabled={!creator.onlyfansapi_acct_id}>Inbox</TabsTrigger>
+            <TabsTrigger value="massdm" disabled={!creator.onlyfansapi_acct_id}>Mass DM</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="mt-6">
@@ -784,6 +789,24 @@ function CreatorDetailView({
           </TabsContent>
           <TabsContent value="promotions" className="mt-6">
             <PromotionsSubtab creatorId={creator.id} promotions={promotions} earnings={earnings} onRefresh={onRefresh} />
+          </TabsContent>
+          <TabsContent value="inbox" className="mt-6">
+            {creator.onlyfansapi_acct_id ? (
+              <OnlyFansInbox accountId={creator.onlyfansapi_acct_id} creatorName={creator.name} />
+            ) : (
+              <NotConnectedHint />
+            )}
+          </TabsContent>
+          <TabsContent value="massdm" className="mt-6">
+            {creator.onlyfansapi_acct_id ? (
+              <OnlyFansMassDm
+                accountId={creator.onlyfansapi_acct_id}
+                creatorId={creator.id}
+                creatorName={creator.name}
+              />
+            ) : (
+              <NotConnectedHint />
+            )}
           </TabsContent>
         </Tabs>
       )}
@@ -1428,6 +1451,21 @@ function ChartCard({
         {sub && <div className="text-xs text-muted-foreground">{sub}</div>}
       </div>
       {children}
+    </div>
+  );
+}
+
+// Shared empty state for the new tabs that need an OF account id
+function NotConnectedHint() {
+  return (
+    <div className="rounded-xl border border-dashed border-border bg-card/40 p-12 text-center">
+      <SiOnlyfans className="h-7 w-7 mx-auto mb-3" style={{ color: "#00AFF0", opacity: 0.5 }} />
+      <div className="text-sm font-medium">Not connected to OnlyFansAPI yet</div>
+      <p className="text-xs text-muted-foreground mt-1 max-w-md mx-auto">
+        Set this creator's OnlyFans username and click <strong>Sync</strong> on the
+        Overview tab — that resolves their OnlyFansAPI account id and unlocks
+        the Inbox and Mass DM tools.
+      </p>
     </div>
   );
 }

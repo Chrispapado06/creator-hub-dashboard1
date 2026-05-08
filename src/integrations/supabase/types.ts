@@ -731,6 +731,35 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["meta_account_snapshots"]["Row"]>
         Relationships: []
       }
+      of_scheduled_messages: {
+        Row: {
+          id: string
+          creator_id: string
+          of_account_id: string
+          text: string
+          price: number
+          media_ids: number[]
+          recipient_type: "all" | "active" | "expired" | "list" | "userIds"
+          recipient_list_id: number | null
+          recipient_user_ids: number[]
+          scheduled_at: string | null
+          status: "draft" | "scheduled" | "sent" | "failed" | "cancelled"
+          of_queue_id: number | null
+          error_message: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+          sent_at: string | null
+        }
+        Insert: Partial<Database["public"]["Tables"]["of_scheduled_messages"]["Row"]> & {
+          creator_id: string
+          of_account_id: string
+          text: string
+          recipient_type: "all" | "active" | "expired" | "list" | "userIds"
+        }
+        Update: Partial<Database["public"]["Tables"]["of_scheduled_messages"]["Row"]>
+        Relationships: []
+      }
       team_categories: {
         Row: {
           id: string
