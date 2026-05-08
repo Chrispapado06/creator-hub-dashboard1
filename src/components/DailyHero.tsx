@@ -234,13 +234,23 @@ export function DailyHero() {
     const days = eachDayOfInterval({ start: subDays(today, 13), end: today });
     const map = new Map<string, number>();
     for (const d of days) map.set(format(d, "yyyy-MM-dd"), 0);
+    // Manual entries (Reddit / IG / FB / X / TikTok organic + internal)
     for (const r of revenueRows) {
       if (map.has(r.entry_date)) {
         map.set(r.entry_date, (map.get(r.entry_date) ?? 0) + Number(r.amount || 0));
       }
     }
+    // Live OnlyFans daily series — one entry per day from the
+    // analytics endpoint. Ensures the chart actually shows OF revenue
+    // instead of leaving every bar empty when admins haven't typed in
+    // any manual entries.
+    for (const [date, amount] of Object.entries(ofDaily14)) {
+      if (map.has(date)) {
+        map.set(date, (map.get(date) ?? 0) + amount);
+      }
+    }
     return [...map.entries()].map(([date, amount]) => ({ date, amount }));
-  }, [revenueRows, today]);
+  }, [revenueRows, today, ofDaily14]);
 
   const todayRevenue = dailyRevenue.find((d) => d.date === todayStr)?.amount ?? 0;
   const yesterdayRevenue = dailyRevenue.find((d) => d.date === yesterdayStr)?.amount ?? 0;
@@ -251,15 +261,15 @@ export function DailyHero() {
   // may be small until late afternoon.
   const [ofToday, setOfToday] = useState(0);
   const [ofYesterday, setOfYesterday] = useState(0);
+  // Daily OF earnings series for the last 14 days, used to enrich the
+  // revenue chart so it shows actual money flowing through OnlyFans
+  // each day (was empty before because the chart only summed manual
+  // entry tables). Keyed by date string `yyyy-MM-dd`.
+  const [ofDaily14, setOfDaily14] = useState<Record<string, number>>({});
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const { fetchOfEarnings } = await import("@/lib/of-sync");
-      // Multi-account aware: pull every connected OF page across all
-      // creators. Falls back to the legacy creators column when the
-      // creator_of_accounts table is empty (migration not run yet, or
-      // the migration ran but the backfill hadn't yet completed for
-      // some accounts) so the dashboard never spuriously shows $0.
+      // Pull every OF page (multi-account + legacy fallback)
       const [{ data: multi }, { data: legacy }] = await Promise.all([
         supabase.from("creator_of_accounts")
           .select("onlyfansapi_acct_id")
@@ -272,24 +282,62 @@ export function DailyHero() {
       for (const row of (multi ?? []) as Array<{ onlyfansapi_acct_id: string | null }>) {
         if (row.onlyfansapi_acct_id) idSet.add(row.onlyfansapi_acct_id);
       }
-      // Legacy column always merged in — covers any creator that exists
-      // but doesn't have a creator_of_accounts row yet.
       for (const row of (legacy ?? []) as Array<{ onlyfansapi_acct_id: string | null }>) {
         if (row.onlyfansapi_acct_id) idSet.add(row.onlyfansapi_acct_id);
       }
       const ids = [...idSet];
       if (cancelled || ids.length === 0) return;
-      const [t, y] = await Promise.all([
-        fetchOfEarnings(ids, todayStr, todayStr),
-        fetchOfEarnings(ids, yesterdayStr, yesterdayStr),
-      ]);
+
+      // Per-day calls to /analytics/summary/earnings give us the daily
+      // breakdown we need for the chart. We make ONE call per day with
+      // ALL account_ids in the body — that's 14 sequential calls total
+      // (vs 14 × N if we per-creator'd it), well within rate limits and
+      // takes ~1.5s end-to-end.
+      const key = (import.meta.env.VITE_ONLYFANSAPI_KEY as string | undefined) ?? "";
+      if (!key) return;
+      const dayBuckets: Record<string, number> = {};
+      const days = eachDayOfInterval({ start: subDays(today, 13), end: today });
+      for (const d of days) {
+        const dateStr = format(d, "yyyy-MM-dd");
+        try {
+          const r = await fetch("https://app.onlyfansapi.com/api/analytics/summary/earnings", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${key}`,
+              "Content-Type": "application/json",
+              Accept: "application/json",
+            },
+            body: JSON.stringify({
+              account_ids: ids,
+              start_date: dateStr,
+              end_date: dateStr,
+            }),
+          });
+          if (r.ok) {
+            const j = await r.json();
+            const u = (j?.data ?? j) as Record<string, unknown>;
+            const total = Number(u.totalEarnings ?? u.total_earnings ?? u.total ?? 0);
+            dayBuckets[dateStr] = total;
+          } else {
+            dayBuckets[dateStr] = 0;
+          }
+        } catch {
+          dayBuckets[dateStr] = 0;
+        }
+        // Tiny breather between calls. Cumulatively ~150ms × 13 = ~2s
+        // of latency for the chart, which is fine — it loads in the
+        // background while the rest of the hero is already on screen.
+        await new Promise((res) => setTimeout(res, 150));
+        if (cancelled) return;
+      }
       if (!cancelled) {
-        setOfToday(t.total);
-        setOfYesterday(y.total);
+        setOfDaily14(dayBuckets);
+        setOfToday(dayBuckets[todayStr] ?? 0);
+        setOfYesterday(dayBuckets[yesterdayStr] ?? 0);
       }
     })();
     return () => { cancelled = true; };
-  }, [todayStr, yesterdayStr]);
+  }, [todayStr, yesterdayStr, today]);
   const sevenDayAvgRevenue = useMemo(() => {
     const last7 = dailyRevenue.filter((d) => d.date >= sevenDaysAgoStr && d.date < todayStr);
     if (last7.length === 0) return 0;
@@ -312,8 +360,12 @@ export function DailyHero() {
   const yesterdayStaff = staffSpend14d.find((d) => d.date === yesterdayStr)?.amount ?? 0;
   const todayOps = opsSpend14d.find((d) => d.date === todayStr)?.amount ?? 0;
   const yesterdayOps = opsSpend14d.find((d) => d.date === yesterdayStr)?.amount ?? 0;
-  const todayTotalRevenue = todayRevenue + ofToday;
-  const yesterdayTotalRevenue = yesterdayRevenue + ofYesterday;
+  // todayRevenue already includes OF earnings (ofDaily14 is folded
+  // into dailyRevenue above), so DON'T add ofToday again — that would
+  // double-count. The separate `ofToday` state is still used by the
+  // dedicated "OnlyFans today" tile to show the OF portion only.
+  const todayTotalRevenue = todayRevenue;
+  const yesterdayTotalRevenue = yesterdayRevenue;
   const todayTotalExpenses = todayAdSpend + todayStaff + todayOps;
   const yesterdayTotalExpenses = yesterdayAdSpend + yesterdayStaff + yesterdayOps;
   const todayNetProfit = todayTotalRevenue - todayTotalExpenses;
