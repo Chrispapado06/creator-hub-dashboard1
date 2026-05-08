@@ -478,15 +478,24 @@ function RootComponent() {
         </div>
       </aside>
 
-      {/* Main content */}
-      <main className="ml-60 flex-1 min-h-screen relative">
+      {/* Main content. /chat gets the full canvas (no max-width or
+          page padding) so the chat sidebar + message pane can fill
+          the screen edge-to-edge like a native app. Everything else
+          uses the centered max-w-7xl container. */}
+      <main className="ml-60 flex-1 min-h-screen relative flex flex-col">
         <div className="absolute top-5 right-8 z-30 flex items-center gap-2">
           <SyncStatusBadge enabled={authed === true} />
           <NotificationsBell />
         </div>
-        <div className="mx-auto max-w-7xl px-8 py-10">
-          <Outlet />
-        </div>
+        {location.pathname === "/chat" ? (
+          <div className="flex-1 min-h-0 flex flex-col">
+            <Outlet />
+          </div>
+        ) : (
+          <div className="mx-auto max-w-7xl px-8 py-10 w-full">
+            <Outlet />
+          </div>
+        )}
       </main>
       <InstallPromptBanner />
     </div>

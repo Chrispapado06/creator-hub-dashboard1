@@ -259,12 +259,14 @@ function ChatPage() {
     );
   }
 
-  // flex-1 + min-h-0 lets the chat fill naturally inside the staff
-  // layout (which is flex-col); the h-calc is a fallback for admin
-  // where the parent isn't a flex column. Negative margins cancel
-  // the admin page-container padding so the chat goes edge-to-edge.
+  // The wrapping container is provided by __root.tsx — this page
+  // just fills it. flex-1 + min-h-0 = "take all available vertical
+  // space". h-full = fallback when the parent isn't a flex column.
+  // The admin layout strips its page padding for /chat (in __root)
+  // so we don't need negative margins anymore — those used to
+  // overlap the staff top nav and block clicks on it.
   return (
-    <div className="flex-1 min-h-0 -mx-4 sm:-mx-8 -mt-10 -mb-10 h-[calc(100vh-4rem)] flex bg-background">
+    <div className="flex-1 min-h-0 h-full w-full flex bg-background">
       <Toaster />
 
       {/* Sidebar */}
