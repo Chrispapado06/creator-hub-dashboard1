@@ -28,7 +28,8 @@ import {
 import { format, formatDistanceToNow, isToday, isYesterday, parseISO } from "date-fns";
 import {
   ensureCurrentChatUser, listChannelsForUser, listMessages, sendMessage,
-  markChannelRead, ensureCreatorChannels, ensureDmChannel, createChannel,
+  markChannelRead, markAllMentionsRead,
+  ensureCreatorChannels, ensureDmChannel, createChannel,
   extractMentions, resolveMentions, uploadChatAttachment,
   hasBroadcastMention, expandBroadcastMention,
   hasRoleMention, expandRoleMention, roleLabelFor,
@@ -88,11 +89,42 @@ function ChatPage() {
       setChannels(list);
       setCategories(cats);
       setLoadingChannels(false);
-      // Default to #general if nothing else picked
-      const general = list.find((c) => c.slug === "general") ?? list[0];
+      // Restore the channel the user was on when they last left chat —
+      // falls back to #general if the saved id is no longer visible
+      // (deleted, role-gated out, etc.) or nothing's been saved yet.
+      const lastId = typeof window !== "undefined"
+        ? localStorage.getItem(`chat:lastChannel:${u.id}`)
+        : null;
+      const restored = lastId ? list.find((c) => c.id === lastId) : null;
+      const general = restored ?? list.find((c) => c.slug === "general") ?? list[0];
       if (general) setActiveChannelId(general.id);
     })();
   }, []);
+
+  // Persist the active channel any time it changes so a refresh keeps
+  // the user where they were instead of bouncing back to #general.
+  useEffect(() => {
+    if (!user || !activeChannelId) return;
+    try {
+      localStorage.setItem(`chat:lastChannel:${user.id}`, activeChannelId);
+    } catch { /* localStorage blocked, ignore */ }
+  }, [user, activeChannelId]);
+
+  // Clear ALL of the current user's unread mentions when /chat is open
+  // and the tab is visible. The sidebar ping is meant to grab the
+  // user's attention when they're elsewhere — once they're on the
+  // chat page, that signal has done its job. Per-channel unread
+  // pills are not affected — those still need a channel open to clear.
+  useEffect(() => {
+    if (!user) return;
+    const clearMentions = () => {
+      if (document.visibilityState !== "visible") return;
+      void markAllMentionsRead(user.id);
+    };
+    clearMentions(); // run immediately on mount
+    document.addEventListener("visibilitychange", clearMentions);
+    return () => document.removeEventListener("visibilitychange", clearMentions);
+  }, [user]);
 
   // Helper used by every "after the fact" mutation (create channel,
   // create/edit category, etc.) to re-pull both lists with the

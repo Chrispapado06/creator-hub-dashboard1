@@ -442,11 +442,28 @@ export async function markChannelRead(channelId: string, userId: string): Promis
       { channel_id: channelId, chatter_id: userId, last_read_at: new Date().toISOString() },
       { onConflict: "channel_id,chatter_id" },
     );
-  // Mark mentions read too — clears the notification badge
+  // Mark mentions in THIS channel read too — clears their per-channel
+  // unread + the global ping pill (after refresh).
   await supabase
     .from("team_message_mentions")
     .update({ read_at: new Date().toISOString() })
     .eq("channel_id", channelId)
+    .eq("mentioned_chatter_id", userId)
+    .is("read_at", null);
+}
+
+/**
+ * Clear EVERY unread mention for the current user, regardless of
+ * channel. Called when the chat page opens / becomes visible — the
+ * sidebar ping is meant to alert "look at chat", and once the user
+ * is on /chat that signal has done its job. Per-channel unread
+ * counts (driven by last_read_at on membership) still persist until
+ * the user opens each channel.
+ */
+export async function markAllMentionsRead(userId: string): Promise<void> {
+  await supabase
+    .from("team_message_mentions")
+    .update({ read_at: new Date().toISOString() })
     .eq("mentioned_chatter_id", userId)
     .is("read_at", null);
 }
