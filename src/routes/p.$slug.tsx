@@ -281,34 +281,64 @@ function LandingPage() {
         </div>
       )}
 
-      {/* Hero: cover photo as a full-width hero with name + tagline overlaid.
-          Falls back to a centered avatar+name layout when there's no cover. */}
+      {/* Hero: phone-mockup-style — cover photo fills the top of the
+          screen with the name overlaid in big white type at the bottom,
+          edge-to-edge on desktop too so the layout feels mobile-native. */}
       {landing.cover_url ? (
         <HeroWithCover landing={landing} themeBg={(theme.page.background as string) || "#fcf9ee"} />
       ) : (
         <HeroAvatarOnly landing={landing} theme={theme} />
       )}
 
-      <div className={`w-full max-w-md px-5 pb-20 flex flex-col items-center ${landing.cover_url ? "pt-2" : "pt-2"}`}>
-        {/* Bio (longer description, sits below the hero) */}
+      {/* Mobile-width column for everything below the hero. Wrapped in a
+          consistent max-width so it reads like a native app on desktop. */}
+      <div className="w-full max-w-md px-5 pb-20 flex flex-col items-center pt-5">
+        {/* Auto-detected social icon strip — small circular brand icons
+            inline like Linktree / Beacons. Pulled from the link list. */}
+        <SocialIconStrip
+          links={landing.links}
+          landingId={landing.id}
+          mutedText={theme.mutedText}
+        />
+
+        {/* Featured CTA — the primary link (typically OnlyFans). Bigger,
+            more prominent than the rest of the list. */}
+        <FeaturedCTA
+          links={landing.links}
+          landingId={landing.id}
+          theme={theme}
+        />
+
+        {/* Bio sits between the CTA and the secondary link list */}
         {landing.bio && (
-          <p className="text-sm text-center max-w-xs leading-relaxed whitespace-pre-wrap mb-2" style={{ color: theme.mutedText }}>
+          <p
+            className="text-sm text-center max-w-xs leading-relaxed whitespace-pre-wrap mt-6"
+            style={{ color: theme.mutedText }}
+          >
             {landing.bio}
           </p>
         )}
 
-        {/* Links */}
-        <div className="w-full mt-8 space-y-3">
-          {(landing.links as LandingLink[]).filter((l) => l.label && l.url).map((link, i) => (
-            <LinkButton
-              key={i}
-              link={link}
-              landingId={landing.id}
-              baseStyle={theme.link}
-              hoverStyle={theme.linkHover}
-            />
-          ))}
-        </div>
+        {/* Secondary links — anything that isn't the featured CTA or
+            already shown in the social icon strip. Renders the existing
+            LinkButton component. */}
+        {(() => {
+          const secondary = secondaryLinks(landing.links);
+          if (secondary.length === 0) return null;
+          return (
+            <div className="w-full mt-6 space-y-3">
+              {secondary.map((link, i) => (
+                <LinkButton
+                  key={i}
+                  link={link}
+                  landingId={landing.id}
+                  baseStyle={theme.link}
+                  hoverStyle={theme.linkHover}
+                />
+              ))}
+            </div>
+          );
+        })()}
 
         {/* Photo gallery */}
         {landing.media.length > 0 && (
@@ -339,6 +369,186 @@ function LandingPage() {
   );
 }
 
+// ── Link partitioning ───────────────────────────────────────────────────
+//
+// The new phone-style layout splits links into three buckets so the page
+// reads like a native app instead of a stack of identical pills:
+//
+//   • SOCIAL — Instagram, Snapchat, TikTok, X, Threads, Bluesky, Reddit,
+//     YouTube, Facebook, Twitch, Kick, Discord, Pinterest, Tumblr.
+//     Rendered as small circular brand icons in a row above the CTA.
+//   • FEATURED — first OnlyFans link (typical OFM page intent), or the
+//     first link if no OF is present. Renders as a big colored button.
+//   • SECONDARY — everything else (Spotify, Patreon, payment apps,
+//     custom websites, etc.). Renders as the existing LinkButton list.
+//
+// We compute each bucket lazily inline rather than tagging the rows in
+// the DB so creators can add/remove links without touching schema.
+
+const SOCIAL_KEYS = new Set([
+  "instagram", "snapchat", "tiktok", "x", "threads", "bluesky",
+  "reddit", "youtube", "facebook", "twitch", "kick", "discord",
+  "pinterest", "tumblr",
+]);
+
+const isValidLink = (l: LandingLink) => !!(l.label && l.url);
+
+function partitionLinks(links: LandingLink[]) {
+  const valid = (links ?? []).filter(isValidLink);
+  // Featured = first OF, else first link of any kind
+  const ofIdx = valid.findIndex((l) => detectPlatform(l.url).key === "onlyfans");
+  const featuredIdx = ofIdx >= 0 ? ofIdx : valid.length > 0 ? 0 : -1;
+  const featured = featuredIdx >= 0 ? valid[featuredIdx] : null;
+
+  // Social = any link whose platform is in our social allowlist, but
+  // exclude the featured one if it happened to be social.
+  const social = valid.filter(
+    (l, i) => i !== featuredIdx && SOCIAL_KEYS.has(detectPlatform(l.url).key),
+  );
+
+  // Secondary = everything left over.
+  const secondary = valid.filter(
+    (l, i) =>
+      i !== featuredIdx &&
+      !SOCIAL_KEYS.has(detectPlatform(l.url).key),
+  );
+  return { featured, social, secondary };
+}
+
+function socialLinks(links: LandingLink[]): LandingLink[] {
+  return partitionLinks(links).social;
+}
+function featuredLink(links: LandingLink[]): LandingLink | null {
+  return partitionLinks(links).featured;
+}
+function secondaryLinks(links: LandingLink[]): LandingLink[] {
+  return partitionLinks(links).secondary;
+}
+
+// ── Social icon strip ───────────────────────────────────────────────────
+
+function SocialIconStrip({
+  links, landingId, mutedText,
+}: {
+  links: LandingLink[];
+  landingId: string;
+  mutedText: string;
+}) {
+  const social = useMemo(() => socialLinks(links ?? []), [links]);
+  if (social.length === 0) return null;
+  return (
+    <div className="flex items-center justify-center gap-3 flex-wrap">
+      {social.map((link, i) => (
+        <SocialIconButton key={i} link={link} landingId={landingId} mutedText={mutedText} />
+      ))}
+    </div>
+  );
+}
+
+function SocialIconButton({
+  link, landingId, mutedText,
+}: {
+  link: LandingLink;
+  landingId: string;
+  mutedText: string;
+}) {
+  const platform = useMemo(() => detectPlatform(link.url), [link.url]);
+  const Icon = platform.Icon;
+  const onClick = () => {
+    void supabase.from("landing_clicks").insert({
+      landing_id: landingId,
+      link_url: link.url,
+      link_label: link.label,
+      referrer: typeof document !== "undefined" ? document.referrer.slice(0, 200) || null : null,
+      user_agent: typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 200) : null,
+    });
+  };
+  return (
+    <a
+      href={link.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={onClick}
+      aria-label={platform.label}
+      title={link.label || platform.label}
+      className="h-11 w-11 rounded-full flex items-center justify-center transition-all hover:-translate-y-0.5 hover:scale-105"
+      style={{
+        background: platform.color,
+        boxShadow: "0 4px 12px -4px rgba(0,0,0,0.25)",
+      }}
+    >
+      <Icon className="h-5 w-5" style={{ color: pickReadableTextOn(platform.color) }} />
+    </a>
+  );
+}
+
+// ── Featured CTA (typically OnlyFans) ───────────────────────────────────
+
+function FeaturedCTA({
+  links, landingId, theme,
+}: {
+  links: LandingLink[];
+  landingId: string;
+  theme: ThemeStyles;
+}) {
+  const link = useMemo(() => featuredLink(links ?? []), [links]);
+  const platform = useMemo(() => link ? detectPlatform(link.url) : null, [link]);
+  if (!link || !platform) return null;
+  const Icon = platform.Icon;
+  // OnlyFans uses its blue (or accent for non-OF). The button uses the
+  // platform color for instant brand recognition — same idea as the
+  // big red "VIP" button in the Kinsley reference.
+  const buttonBg = platform.key === "onlyfans" ? "#FF0000" : platform.color;
+  const buttonFg = pickReadableTextOn(buttonBg);
+  const onClick = () => {
+    void supabase.from("landing_clicks").insert({
+      landing_id: landingId,
+      link_url: link.url,
+      link_label: link.label,
+      referrer: typeof document !== "undefined" ? document.referrer.slice(0, 200) || null : null,
+      user_agent: typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 200) : null,
+    });
+  };
+  // Fall back to a circular icon-only badge when the label is empty.
+  const label = (link.label || "").trim();
+  return (
+    <a
+      href={link.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={onClick}
+      className="group w-full mt-5 rounded-full flex items-center justify-center gap-3 px-6 py-4 font-bold text-base sm:text-lg transition-all hover:-translate-y-0.5"
+      style={{
+        background: buttonBg,
+        color: buttonFg,
+        boxShadow: "0 8px 24px -8px rgba(0,0,0,0.35)",
+      }}
+    >
+      <span className="h-7 w-7 rounded-full bg-white/95 flex items-center justify-center shrink-0">
+        <Icon className="h-4 w-4" style={{ color: platform.color }} />
+      </span>
+      <span className="tracking-wide">{label || platform.label}</span>
+    </a>
+  );
+}
+
+// ── Color contrast helper ───────────────────────────────────────────────
+//
+// A few platforms use very light brand colors (Snapchat yellow, Kick
+// neon green). A black icon reads on those — a white icon disappears.
+// Picks the readable text color via a simple luminance check.
+
+function pickReadableTextOn(hex: string): string {
+  // Defensive: anything non-hex (like 'currentColor') falls back to white
+  if (!/^#([0-9a-f]{6})$/i.test(hex)) return "#fff";
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  // Standard relative-luminance approximation
+  const lum = 0.2126 * (r / 255) + 0.7152 * (g / 255) + 0.0722 * (b / 255);
+  return lum > 0.6 ? "#0a0a0a" : "#ffffff";
+}
+
 // ── Hero variants ───────────────────────────────────────────────────────
 
 /**
@@ -348,66 +558,70 @@ function LandingPage() {
  * name (vs the big standalone circle in the no-cover variant).
  */
 function HeroWithCover({ landing, themeBg }: { landing: Landing; themeBg: string }) {
+  // Phone-mockup style: cover photo dominates the upper half of the
+  // viewport, with the name CENTERED on a dark gradient at the bottom.
+  // The avatar is no longer rendered inline next to the name — when
+  // there's a cover photo it usually IS the avatar (face crop), so
+  // showing both reads as redundant. We keep the avatar only as the
+  // small reference next to /p/{slug} on the editor card.
   return (
-    <div className="relative w-full" style={{ height: "min(60vh, 540px)" }}>
+    <div className="relative w-full" style={{ height: "min(70vh, 640px)" }}>
       <img
         src={landing.cover_url ?? ""}
         alt={landing.display_name ?? landing.slug}
         className="w-full h-full object-cover"
         loading="eager"
-        // Center the subject so portraits crop nicely on wider viewports
-        style={{ objectPosition: "center 25%" }}
+        // Bias the crop toward the upper third so a face/eyes anchor
+        // the composition the way a phone hero shot would.
+        style={{ objectPosition: "center 30%" }}
       />
-      {/* Dark gradient fade at the bottom for text readability */}
+      {/* Dark gradient covers the bottom 50% so text reads cleanly. */}
       <div
         className="absolute inset-0 pointer-events-none"
         style={{
           background:
-            "linear-gradient(180deg, transparent 0%, transparent 40%, rgba(0,0,0,0.55) 75%, rgba(0,0,0,0.85) 100%)",
+            "linear-gradient(180deg, transparent 0%, transparent 35%, rgba(0,0,0,0.45) 65%, rgba(0,0,0,0.85) 92%, rgba(0,0,0,0.95) 100%)",
         }}
       />
-      {/* Bottom-fade into the page background so the hero doesn't end with a hard edge */}
+      {/* Soft bottom-fade into the page background so the hero hands
+          off to the column below without a hard edge. */}
       <div
-        className="absolute inset-x-0 bottom-0 h-12 pointer-events-none"
+        className="absolute inset-x-0 bottom-0 h-16 pointer-events-none"
         style={{ background: `linear-gradient(180deg, transparent 0%, ${themeBg} 100%)` }}
       />
-      {/* Name + tagline overlaid on the bottom of the cover */}
-      <div className="absolute inset-x-0 bottom-0 px-5 pb-8 flex flex-col items-center text-center">
-        <div className="flex items-center gap-3">
-          {landing.avatar_url && (
-            <img
-              src={landing.avatar_url}
-              alt=""
-              className="h-14 w-14 rounded-full object-cover border-2"
-              style={{ borderColor: "rgba(255,255,255,0.85)", boxShadow: "0 4px 16px -4px rgba(0,0,0,0.6)" }}
-            />
-          )}
-          <div className="flex flex-col items-start">
-            <h1
-              className="text-2xl sm:text-3xl font-bold tracking-tight inline-flex items-center gap-1.5"
-              style={{ color: "#fff", textShadow: "0 2px 16px rgba(0,0,0,0.7)" }}
+      {/* Name + @slug + tagline, centered at the bottom of the cover.
+          Big white type, with @slug as a smaller sub-line. Matches the
+          Kinsley-style reference layout. */}
+      <div className="absolute inset-x-0 bottom-0 px-5 pb-10 flex flex-col items-center text-center">
+        <h1
+          className="text-3xl sm:text-4xl font-bold tracking-tight inline-flex items-center gap-2"
+          style={{ color: "#fff", textShadow: "0 2px 20px rgba(0,0,0,0.75)" }}
+        >
+          {landing.display_name ?? landing.slug}
+          {landing.is_verified && (
+            <BadgeCheck
+              className="h-6 w-6 sm:h-7 sm:w-7"
+              style={{ color: "#1d9bf0", fill: "currentColor", strokeWidth: 0 }}
+              aria-label="Verified"
             >
-              {landing.display_name ?? landing.slug}
-              {landing.is_verified && (
-                <BadgeCheck
-                  className="h-5 w-5 sm:h-6 sm:w-6"
-                  style={{ color: "#1d9bf0", fill: "currentColor", strokeWidth: 0 }}
-                  aria-label="Verified"
-                >
-                  <title>Verified</title>
-                </BadgeCheck>
-              )}
-            </h1>
-            {landing.tagline && (
-              <p
-                className="text-sm sm:text-base mt-0.5"
-                style={{ color: "rgba(255,255,255,0.92)", textShadow: "0 2px 12px rgba(0,0,0,0.7)" }}
-              >
-                {landing.tagline}
-              </p>
-            )}
-          </div>
+              <title>Verified</title>
+            </BadgeCheck>
+          )}
+        </h1>
+        <div
+          className="text-sm font-medium mt-1.5 opacity-90 tracking-wide"
+          style={{ color: "#fff", textShadow: "0 2px 16px rgba(0,0,0,0.7)" }}
+        >
+          @{landing.slug}
         </div>
+        {landing.tagline && (
+          <p
+            className="text-sm sm:text-base mt-3 max-w-xs"
+            style={{ color: "rgba(255,255,255,0.92)", textShadow: "0 2px 12px rgba(0,0,0,0.7)" }}
+          >
+            {landing.tagline}
+          </p>
+        )}
       </div>
     </div>
   );

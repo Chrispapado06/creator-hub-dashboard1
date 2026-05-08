@@ -310,24 +310,26 @@ function PageCard({
         </div>
       </div>
       <div className="p-3 space-y-2">
-        {/* Avatar overlap row. Avatar is bumped to 56px with a thicker
-            ring-card "halo" so it reads clearly against busy cover
-            photos — the previous 36px avatar disappeared into the
-            cover's bottom edge. relative+z-10 makes sure it stacks
-            above the cover regardless of paint order. */}
-        <div className="flex items-end gap-3 cursor-pointer -mt-10" onClick={onEdit}>
-          {page.avatar_url ? (
-            <img
-              src={page.avatar_url}
-              alt=""
-              className="relative z-10 h-14 w-14 rounded-full object-cover ring-4 ring-card shrink-0 shadow-md bg-card"
-            />
-          ) : (
-            <div className="relative z-10 h-14 w-14 rounded-full bg-secondary flex items-center justify-center shrink-0 ring-4 ring-card shadow-md">
-              <Globe className="h-5 w-5 text-muted-foreground" />
-            </div>
-          )}
-          <div className="min-w-0 flex-1 pb-0.5">
+        {/* Avatar overlap row. The avatar is wrapped so the ring-card
+            "halo" is part of the layout box (vs ring-4 which extends
+            outside and was eating into the name text). Wider gap-4
+            keeps the name well clear of the avatar even on narrow
+            cards. */}
+        <div className="flex items-end gap-4 cursor-pointer -mt-10" onClick={onEdit}>
+          <div className="relative z-10 h-16 w-16 rounded-full bg-card shadow-md p-1 shrink-0">
+            {page.avatar_url ? (
+              <img
+                src={page.avatar_url}
+                alt=""
+                className="h-full w-full rounded-full object-cover"
+              />
+            ) : (
+              <div className="h-full w-full rounded-full bg-secondary flex items-center justify-center">
+                <Globe className="h-5 w-5 text-muted-foreground" />
+              </div>
+            )}
+          </div>
+          <div className="min-w-0 flex-1 pb-1">
             <div className="text-sm font-semibold truncate flex items-center gap-1">
               {page.display_name || page.slug}
               {page.is_verified && <BadgeCheck className="h-3.5 w-3.5 text-[#1d9bf0] fill-current shrink-0" />}
