@@ -22,6 +22,54 @@ export type CreatorMin = {
   onlyfansapi_acct_id: string | null;
 };
 
+// One row per OF page a creator runs. Primary is mirrored on the
+// legacy creators.of_username column for backward compat.
+export type CreatorOfAccount = {
+  id: string;
+  creator_id: string;
+  of_username: string;
+  onlyfansapi_acct_id: string | null;
+  label: string | null;
+  is_primary: boolean;
+};
+
+/**
+ * Load every OF account for the given creators in one query, returned
+ * as a map keyed by creator_id. Used wherever the dashboard needs to
+ * "fan out across all of a creator's pages" — sync, live earnings,
+ * data inspector. Falls back to the legacy creators.of_username column
+ * for creators that have no creator_of_accounts rows yet (e.g. brand-
+ * new creator added before the migration ran).
+ */
+export async function loadOfAccountsForCreators(
+  creatorIds: string[],
+): Promise<Record<string, CreatorOfAccount[]>> {
+  const out: Record<string, CreatorOfAccount[]> = {};
+  if (creatorIds.length === 0) return out;
+  const { data } = await supabase
+    .from("creator_of_accounts")
+    .select("id, creator_id, of_username, onlyfansapi_acct_id, label, is_primary")
+    .in("creator_id", creatorIds);
+  for (const row of (data ?? []) as CreatorOfAccount[]) {
+    (out[row.creator_id] ??= []).push(row);
+  }
+  return out;
+}
+
+/**
+ * Returns every onlyfansapi_acct_id for a creator across all of their
+ * OF pages. Empty if no accounts have been resolved yet.
+ */
+export async function loadAcctIdsForCreator(creatorId: string): Promise<string[]> {
+  const { data } = await supabase
+    .from("creator_of_accounts")
+    .select("onlyfansapi_acct_id")
+    .eq("creator_id", creatorId);
+  return ((data ?? []) as Array<{ onlyfansapi_acct_id: string | null }>)
+    .map((r) => r.onlyfansapi_acct_id)
+    .filter((s): s is string => !!s);
+}
+
 export type SyncOneResult =
   | { ok: true; creator_id: string; total_earnings: number }
   | { ok: false; creator_id: string; error: string };
@@ -51,34 +99,87 @@ export async function syncCreatorOnlyFans(creator: CreatorMin): Promise<SyncOneR
   if (!key) return { ok: false, creator_id: creator.id, error: "VITE_ONLYFANSAPI_KEY not set" };
   if (!creator.of_username) return { ok: false, creator_id: creator.id, error: "No OF username set" };
 
-  // 1. Resolve onlyfansapi_acct_id if missing
-  let acctId = creator.onlyfansapi_acct_id;
-  if (!acctId) {
+  // 1. Load every OF account this creator has (could be 1, could be 5).
+  //    If creator_of_accounts has no rows yet (creator was added before
+  //    the multi-account migration ran) we synthesise a single primary
+  //    row from the legacy creators columns.
+  const { data: ofRows } = await supabase
+    .from("creator_of_accounts")
+    .select("id, of_username, onlyfansapi_acct_id, is_primary, label")
+    .eq("creator_id", creator.id);
+  let ofAccounts: Array<{ id?: string; of_username: string; onlyfansapi_acct_id: string | null; is_primary: boolean }> =
+    (ofRows ?? []).map((r) => ({
+      id: (r as { id: string }).id,
+      of_username: r.of_username as string,
+      onlyfansapi_acct_id: (r as { onlyfansapi_acct_id?: string | null }).onlyfansapi_acct_id ?? null,
+      is_primary: !!(r as { is_primary?: boolean }).is_primary,
+    }));
+  if (ofAccounts.length === 0) {
+    ofAccounts = [{
+      of_username: creator.of_username,
+      onlyfansapi_acct_id: creator.onlyfansapi_acct_id,
+      is_primary: true,
+    }];
+  }
+
+  // 2. Fetch the OnlyFansAPI accounts directory once so we can resolve
+  //    any unresolved acct_ids in this creator's account list. Cached
+  //    for the rest of this sync run.
+  let directory: Array<{ id: string; onlyfans_username?: string }> | null = null;
+  const ensureDirectory = async () => {
+    if (directory) return directory;
     try {
-      const r = await fetch(`${BASE}/accounts`, {
-        headers: { Authorization: `Bearer ${key}` },
-      });
+      const r = await fetch(`${BASE}/accounts`, { headers: { Authorization: `Bearer ${key}` } });
       const j = await r.json();
-      const arr = (Array.isArray(j) ? j : j?.data ?? []) as
-        Array<{ id: string; onlyfans_username?: string }>;
-      const match = arr.find(
-        (a) => a.onlyfans_username?.toLowerCase() === creator.of_username!.toLowerCase(),
-      );
-      if (!match) {
-        return {
-          ok: false, creator_id: creator.id,
-          error: `Creator ${creator.of_username} not found in OnlyFansAPI accounts. Connect on app.onlyfansapi.com first.`,
-        };
+      directory = (Array.isArray(j) ? j : j?.data ?? []) as Array<{ id: string; onlyfans_username?: string }>;
+    } catch {
+      directory = [];
+    }
+    return directory;
+  };
+
+  // 3. Resolve missing acct_ids for every account on this creator.
+  for (const a of ofAccounts) {
+    if (a.onlyfansapi_acct_id) continue;
+    const dir = await ensureDirectory();
+    const match = dir.find((d) => d.onlyfans_username?.toLowerCase() === a.of_username.toLowerCase());
+    if (match) {
+      a.onlyfansapi_acct_id = match.id;
+      // Persist the resolution. Update the row in creator_of_accounts
+      // when one exists; also keep the legacy creators column in sync
+      // for the primary so older code paths keep working.
+      if (a.id) {
+        await supabase.from("creator_of_accounts").update({ onlyfansapi_acct_id: match.id }).eq("id", a.id);
+      } else {
+        // No row yet — first-ever sync for this creator. Insert one
+        // so the dashboard's multi-account UI can manage it.
+        await supabase.from("creator_of_accounts").insert({
+          creator_id: creator.id,
+          of_username: a.of_username,
+          onlyfansapi_acct_id: match.id,
+          is_primary: a.is_primary,
+          label: a.is_primary ? "main" : null,
+        });
       }
-      acctId = match.id;
-      await supabase.from("creators").update({ onlyfansapi_acct_id: acctId }).eq("id", creator.id);
-    } catch (e) {
-      return {
-        ok: false, creator_id: creator.id,
-        error: e instanceof Error ? e.message : "Couldn't resolve OF account id",
-      };
+      if (a.is_primary) {
+        await supabase.from("creators").update({ onlyfansapi_acct_id: match.id }).eq("id", creator.id);
+      }
     }
   }
+
+  // 4. Drop accounts we couldn't resolve. If NONE resolved we can't
+  //    sync anything — bail with a useful error.
+  ofAccounts = ofAccounts.filter((a) => a.onlyfansapi_acct_id);
+  if (ofAccounts.length === 0) {
+    return {
+      ok: false, creator_id: creator.id,
+      error: `None of ${creator.name ?? "this creator"}'s OF accounts found in OnlyFansAPI. Connect them on app.onlyfansapi.com first.`,
+    };
+  }
+  // The "primary" acct id is what we use for profile fetches and
+  // tracking-link fetches. Earnings are summed across every account.
+  const primary = ofAccounts.find((a) => a.is_primary) ?? ofAccounts[0];
+  const acctId = primary.onlyfansapi_acct_id!;
 
   // 2. Best-effort fetch helpers — null on any error.
   const baseHeaders = { Authorization: `Bearer ${key}` };
@@ -121,13 +222,15 @@ export async function syncCreatorOnlyFans(creator: CreatorMin): Promise<SyncOneR
   // instead of the monthly buckets the old endpoint forced.
   const today = format(new Date(), "yyyy-MM-dd");
   const lifetimeStart = "2018-01-01";
-  // Earnings endpoint: POST /analytics/summary/earnings is the working
-  // path for current OnlyFansAPI tiers. We try the GET path as a
-  // fallback below in case POST fails for any reason.
+  // Earnings — pass EVERY of_account_id so the response is the union
+  // across all of this creator's pages. Profile + tracking-links use
+  // the primary account only (those are page-scoped, not creator-
+  // scoped — fanning them out and merging would double-count).
+  const allAcctIds = ofAccounts.map((a) => a.onlyfansapi_acct_id!).filter(Boolean);
   const [profileJson, earningsJson, trackingJson] = await Promise.all([
     safeFetch(`${acctId}/me`),
     safePost("analytics/summary/earnings", {
-      account_ids: [acctId],
+      account_ids: allAcctIds,
       start_date: lifetimeStart,
       end_date: today,
     }),
@@ -176,22 +279,44 @@ export async function syncCreatorOnlyFans(creator: CreatorMin): Promise<SyncOneR
   const earningsAvailable = earningsJson !== null && totalEarnings >= 0
     && (totalEarnings > 0 || (earnings && Object.keys(earnings).length > 0));
 
-  // If the primary POST call also failed, try the GET endpoint as
-  // a forward-compat fallback (currently 404s for our accounts but
-  // documented — flips on automatically the day OnlyFansAPI ships it).
+  // If the primary POST call also failed, try the GET endpoint per
+  // account and sum the results as a forward-compat fallback. The GET
+  // endpoint currently 404s for our accounts but the moment OnlyFansAPI
+  // flips it on we'll start using it automatically.
   let fallbackEarnings: Record<string, unknown> | null = null;
   if (!earningsAvailable) {
     try {
-      const r = await fetch(
-        `${BASE}/${acctId}/payouts/earnings-statistics?startDate=${lifetimeStart}&endDate=${today}`,
-        { headers: { Authorization: `Bearer ${key}` } },
-      );
-      if (r.ok) {
+      let summedTotal = 0;
+      let summedSubs = 0; let summedTips = 0; let summedPpv = 0;
+      let summedMessages = 0; let summedStreams = 0;
+      for (const id of allAcctIds) {
+        const r = await fetch(
+          `${BASE}/${id}/payouts/earnings-statistics?startDate=${lifetimeStart}&endDate=${today}`,
+          { headers: { Authorization: `Bearer ${key}` } },
+        );
+        if (!r.ok) continue;
         const j = await r.json();
         const u = unwrap(j);
-        if (u && (num(u.total_earnings) || num(u.totalEarnings))) {
-          fallbackEarnings = u;
-        }
+        if (!u) continue;
+        const bd = (u.breakdown && typeof u.breakdown === "object")
+          ? u.breakdown as Record<string, unknown>
+          : u;
+        summedTotal += num(u.totalEarnings) || num(u.total_earnings);
+        summedSubs += num(bd.subscriptions) || num(bd.subs);
+        summedTips += num(bd.tips);
+        summedPpv += num(bd.posts) || num(bd.ppv);
+        summedMessages += num(bd.messages);
+        summedStreams += num(bd.streams) || num(bd.livestreams);
+      }
+      if (summedTotal > 0) {
+        fallbackEarnings = {
+          totalEarnings: summedTotal,
+          subscriptions: summedSubs,
+          tips: summedTips,
+          posts: summedPpv,
+          messages: summedMessages,
+          streams: summedStreams,
+        };
       }
     } catch { /* swallow — we'll just skip earnings update */ }
   }
@@ -517,23 +642,58 @@ export async function fetchOfEarnings(
 
 /**
  * Per-creator earnings breakdown. Same serial discipline as
- * fetchOfEarnings — one call per creator, sequential, with a small
- * delay between requests.
+ * fetchOfEarnings — sequential calls with a small delay between
+ * requests to stay under OF API rate limits.
+ *
+ * Now multi-account aware: a creator with two OF pages gets ONE entry
+ * in the returned map with the SUM of both pages' earnings. The caller
+ * doesn't need to know how many OF accounts a creator has.
+ *
+ * Accepts either:
+ *   • an array of {id, onlyfansapi_acct_id} for backward compat
+ *     (treats the legacy column as the single account)
+ *   • a list of creator ids — looks up creator_of_accounts internally
+ *     and aggregates per creator
  */
 export async function fetchOfEarningsPerCreator(
-  creators: Array<{ id: string; onlyfansapi_acct_id: string | null }>,
+  creators: Array<{ id: string; onlyfansapi_acct_id?: string | null }>,
   startDate: string,
   endDate: string,
 ): Promise<Record<string, EarningsBreakdown>> {
   const key = getApiKey();
-  const eligible = creators.filter((c) => c.onlyfansapi_acct_id);
   const out: Record<string, EarningsBreakdown> = {};
-  if (!key || eligible.length === 0) return out;
-  for (const c of eligible) {
-    out[c.id] = await fetchEarningsForOneAccount(
-      key, c.onlyfansapi_acct_id!, startDate, endDate,
-    );
-    await new Promise((res) => setTimeout(res, 150));
+  if (!key || creators.length === 0) return out;
+
+  // Pull every OF account from creator_of_accounts so a creator with
+  // multiple pages gets all of them. Falls back to the legacy column
+  // for any creator without rows in the new table yet.
+  const accountsMap = await loadOfAccountsForCreators(creators.map((c) => c.id));
+  for (const c of creators) {
+    const accounts = accountsMap[c.id] ?? [];
+    const acctIds = accounts
+      .map((a) => a.onlyfansapi_acct_id)
+      .filter((s): s is string => !!s);
+    // Legacy fallback: if creator_of_accounts has no rows for this
+    // creator, use the column on the creators row.
+    if (acctIds.length === 0 && c.onlyfansapi_acct_id) {
+      acctIds.push(c.onlyfansapi_acct_id);
+    }
+    if (acctIds.length === 0) {
+      out[c.id] = { ...ZERO_BREAKDOWN };
+      continue;
+    }
+    const acc: EarningsBreakdown = { ...ZERO_BREAKDOWN };
+    for (const id of acctIds) {
+      const r = await fetchEarningsForOneAccount(key, id, startDate, endDate);
+      acc.total += r.total;
+      acc.subs += r.subs;
+      acc.tips += r.tips;
+      acc.ppv += r.ppv;
+      acc.messages += r.messages;
+      acc.streams += r.streams;
+      await new Promise((res) => setTimeout(res, 150));
+    }
+    out[c.id] = acc;
   }
   return out;
 }

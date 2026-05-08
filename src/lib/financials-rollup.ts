@@ -107,7 +107,11 @@ export async function loadRevenueRollup(range: DateRange): Promise<RevenueRollup
     supabase.from("ad_campaigns").select("revenue_generated").gte("start_date", from).lte("start_date", to),
     supabase.from("revenue_entries").select("amount").gte("entry_date", from).lte("entry_date", to),
     supabase.from("of_tracking_links").select("revenue_total"),
-    supabase.from("creators").select("onlyfansapi_acct_id").not("onlyfansapi_acct_id", "is", null),
+    // Multi-account aware: pull every connected OF page, not just the
+    // primary on the legacy creators column.
+    supabase.from("creator_of_accounts")
+      .select("onlyfansapi_acct_id")
+      .not("onlyfansapi_acct_id", "is", null),
   ]);
 
   const acctIds = (creators ?? [])

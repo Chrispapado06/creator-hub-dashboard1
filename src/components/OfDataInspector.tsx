@@ -42,11 +42,20 @@ type StatRow = {
   synced_at: string;
 };
 
+type SecondaryAccount = {
+  creator_id: string;
+  of_username: string;
+  onlyfansapi_acct_id: string | null;
+  label: string | null;
+  is_primary: boolean;
+};
+
 export function OfDataInspector() {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [creators, setCreators] = useState<CreatorMin[]>([]);
   const [stats, setStats] = useState<StatRow[]>([]);
+  const [secondaryAccounts, setSecondaryAccounts] = useState<SecondaryAccount[]>([]);
 
   // Per-creator raw API peek state
   const [probing, setProbing] = useState<string | null>(null);
@@ -58,12 +67,16 @@ export function OfDataInspector() {
     if (!open) return;
     setLoading(true);
     void (async () => {
-      const [{ data: cs }, { data: st }] = await Promise.all([
+      const [{ data: cs }, { data: st }, { data: of }] = await Promise.all([
         supabase.from("creators").select("id, name, of_username, onlyfansapi_acct_id").order("name"),
         supabase.from("of_creator_stats").select("creator_id, total_earnings, earnings_subs, earnings_tips, earnings_ppv, earnings_messages, active_subscribers, synced_at"),
+        // Pull every secondary OF account too so the inspector shows
+        // all of a creator's connected pages, not just the primary.
+        supabase.from("creator_of_accounts").select("creator_id, of_username, onlyfansapi_acct_id, label, is_primary"),
       ]);
       setCreators((cs ?? []) as CreatorMin[]);
       setStats((st ?? []) as StatRow[]);
+      setSecondaryAccounts((of ?? []) as SecondaryAccount[]);
       setLoading(false);
     })();
   }, [open]);
@@ -216,11 +229,28 @@ export function OfDataInspector() {
                   const probe = probeResults[c.id];
                   const hasUsername = !!c.of_username;
                   const hasAcctId = !!c.onlyfansapi_acct_id;
+                  const myAccounts = secondaryAccounts.filter((a) => a.creator_id === c.id);
+                  // List of OF accounts to show under the creator. If
+                  // the creator hasn't been migrated yet (no rows in
+                  // creator_of_accounts), we synthesise the primary
+                  // from the legacy columns so the inspector still
+                  // shows something useful.
+                  const accountList = myAccounts.length > 0
+                    ? [...myAccounts].sort((a, b) => Number(b.is_primary) - Number(a.is_primary))
+                    : (hasUsername ? [{
+                        creator_id: c.id, of_username: c.of_username!, onlyfansapi_acct_id: c.onlyfansapi_acct_id,
+                        label: "main", is_primary: true,
+                      } as SecondaryAccount] : []);
                   return (
                     <div key={c.id} className="rounded-lg border border-border bg-card p-3 space-y-2">
                       <div className="flex items-center justify-between gap-2 flex-wrap">
-                        <div className="flex items-center gap-2 min-w-0">
+                        <div className="flex items-center gap-2 min-w-0 flex-wrap">
                           <span className="text-sm font-medium truncate">{c.name}</span>
+                          {accountList.length > 1 && (
+                            <span className="text-[10px] text-muted-foreground">
+                              · {accountList.length} OF pages
+                            </span>
+                          )}
                           {/* Status badges */}
                           <Badge ok={hasUsername} label={hasUsername ? `OF: ${c.of_username}` : "No OF username"} />
                           <Badge ok={hasAcctId} label={hasAcctId ? "Connected" : "Not connected"} />
@@ -244,6 +274,28 @@ export function OfDataInspector() {
                           )}
                         </Button>
                       </div>
+
+                      {/* Per-OF-page strip — only meaningful when more
+                          than one page is connected, otherwise just
+                          duplicates the badge above. */}
+                      {accountList.length > 1 && (
+                        <div className="flex flex-wrap gap-1">
+                          {accountList.map((a) => (
+                            <span
+                              key={`${a.of_username}-${a.is_primary}`}
+                              className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                                a.is_primary
+                                  ? "border-primary/30 bg-primary/5 text-primary"
+                                  : "border-border bg-secondary/40 text-muted-foreground"
+                              }`}
+                              title={a.onlyfansapi_acct_id ?? "not connected"}
+                            >
+                              @{a.of_username}{a.label ? ` · ${a.label}` : ""}
+                              {!a.onlyfansapi_acct_id && " ⚠"}
+                            </span>
+                          ))}
+                        </div>
+                      )}
 
                       {/* DB row contents */}
                       {stat ? (

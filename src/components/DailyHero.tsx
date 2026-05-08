@@ -222,11 +222,14 @@ export function DailyHero() {
     let cancelled = false;
     void (async () => {
       const { fetchOfEarnings } = await import("@/lib/of-sync");
+      // Multi-account aware: pull every connected OF page across all
+      // creators (a creator can run more than one), not just the
+      // primary on the legacy creators column.
       const { data: cs } = await supabase
-        .from("creators")
+        .from("creator_of_accounts")
         .select("onlyfansapi_acct_id")
         .not("onlyfansapi_acct_id", "is", null);
-      const ids = (cs ?? []).map((c) => c.onlyfansapi_acct_id as string);
+      const ids = (cs ?? []).map((c) => c.onlyfansapi_acct_id as string).filter(Boolean);
       if (cancelled || ids.length === 0) return;
       const [t, y] = await Promise.all([
         fetchOfEarnings(ids, todayStr, todayStr),

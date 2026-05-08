@@ -23,6 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { OfAccountsEditor } from "@/components/OfAccountsEditor";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -817,6 +818,11 @@ function CreatorDetailPage() {
               </div>
               <p className="text-[11px] text-muted-foreground">Used to sync tracking link stats from Infloww</p>
             </div>
+            {/* Multi-account editor — let admins add a second / third
+                OnlyFans page to the same creator. The earnings sync
+                fans out across every account here and rolls up the
+                totals under this creator. */}
+            <OfAccountsEditor creatorId={creatorId} />
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setEditOpen(false)}>
@@ -1271,21 +1277,35 @@ function OverviewTab({
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const { data: row } = await supabase
-        .from("creators")
+      // Pull every OF page connected to this creator (could be 1+).
+      // The earnings card sums across all of them.
+      const { data: rows } = await supabase
+        .from("creator_of_accounts")
         .select("onlyfansapi_acct_id")
-        .eq("id", creatorId)
-        .maybeSingle();
-      const acctId = row?.onlyfansapi_acct_id as string | null | undefined;
-      if (!acctId || cancelled) return;
+        .eq("creator_id", creatorId)
+        .not("onlyfansapi_acct_id", "is", null);
+      let acctIds = (rows ?? [])
+        .map((r) => r.onlyfansapi_acct_id as string)
+        .filter(Boolean);
+      // Legacy fallback for creators not yet migrated into creator_of_accounts.
+      if (acctIds.length === 0) {
+        const { data: row } = await supabase
+          .from("creators")
+          .select("onlyfansapi_acct_id")
+          .eq("id", creatorId)
+          .maybeSingle();
+        const acctId = row?.onlyfansapi_acct_id as string | null | undefined;
+        if (acctId) acctIds = [acctId];
+      }
+      if (acctIds.length === 0 || cancelled) return;
       const { fetchOfEarnings } = await import("@/lib/of-sync");
       const today = new Date().toISOString().slice(0, 10);
       const sevenAgo = new Date(Date.now() - 6 * 86400_000).toISOString().slice(0, 10);
       const thirtyAgo = new Date(Date.now() - 29 * 86400_000).toISOString().slice(0, 10);
       const [t, w, m] = await Promise.all([
-        fetchOfEarnings([acctId], today, today),
-        fetchOfEarnings([acctId], sevenAgo, today),
-        fetchOfEarnings([acctId], thirtyAgo, today),
+        fetchOfEarnings(acctIds, today, today),
+        fetchOfEarnings(acctIds, sevenAgo, today),
+        fetchOfEarnings(acctIds, thirtyAgo, today),
       ]);
       if (!cancelled) {
         setOfData({ today: t.total, sevenD: w.total, thirtyD: m.total, loaded: true });

@@ -760,6 +760,23 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["of_scheduled_messages"]["Row"]>
         Relationships: []
       }
+      creator_of_accounts: {
+        Row: {
+          id: string
+          creator_id: string
+          of_username: string
+          onlyfansapi_acct_id: string | null
+          label: string | null
+          is_primary: boolean
+          created_at: string
+        }
+        Insert: Partial<Database["public"]["Tables"]["creator_of_accounts"]["Row"]> & {
+          creator_id: string
+          of_username: string
+        }
+        Update: Partial<Database["public"]["Tables"]["creator_of_accounts"]["Row"]>
+        Relationships: []
+      }
       voice_session_participants: {
         Row: {
           id: string
