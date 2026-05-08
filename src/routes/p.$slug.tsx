@@ -269,18 +269,38 @@ function LandingPage() {
     return <NotFound />;
   }
 
-  // The whole landing page renders inside a 480px-wide column even on
-  // desktop — that's the actual fix for "still looks like a desktop page."
-  // On mobile (< 480px) the column collapses to viewport width and you
-  // get the native phone experience. On desktop the column sits centered
-  // with the page background filling the empty sides, so the layout reads
-  // as a phone mockup the way Linktree / Beacons do.
-  const phoneBg = (theme.page.background as string) || "#fcf9ee";
+  // Layout matches the Kinsley-style reference:
+  //   • Outside the phone (desktop only): the cover photo blurred and
+  //     darkened acts as an ambient backdrop so the page feels designed
+  //     for the creator, not a generic frame.
+  //   • Inside the phone: black bg, rounded-3xl, shadow. Cover photo
+  //     fills the top portion (no overlay), then the name + @slug +
+  //     social icons + CTA + bio + links + gallery stack on the dark
+  //     area below the photo.
   return (
-    <div
-      className="min-h-screen w-full overflow-x-hidden flex flex-col items-center"
-      style={{ ...theme.page, fontFamily }}
-    >
+    <div className="min-h-screen w-full overflow-x-hidden relative" style={{ fontFamily }}>
+      {/* Ambient blurred backdrop — uses the creator's cover so each
+          page has its own desktop frame. On mobile it's invisible
+          because the phone column fills the viewport. */}
+      {landing.cover_url && (
+        <div className="fixed inset-0 -z-10 pointer-events-none" aria-hidden="true">
+          <div
+            className="absolute inset-0"
+            style={{
+              backgroundImage: `url(${landing.cover_url})`,
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+              filter: "blur(60px) saturate(1.1)",
+              transform: "scale(1.15)",
+            }}
+          />
+          <div className="absolute inset-0" style={{ background: "rgba(0,0,0,0.62)" }} />
+        </div>
+      )}
+      {!landing.cover_url && (
+        <div className="fixed inset-0 -z-10" style={theme.page} aria-hidden="true" />
+      )}
+
       {/* Preview banner — shows only when an admin is viewing an unpublished draft */}
       {previewMode && (
         <div className="w-full sticky top-0 z-50 text-center text-xs font-semibold py-1.5 px-3" style={{ background: "#f59e0b", color: "#1a1a1a" }}>
@@ -288,91 +308,93 @@ function LandingPage() {
         </div>
       )}
 
-      {/* Phone-frame column — fixed width on desktop, full-width on mobile.
-          Everything (cover, name, links, gallery) lives inside this column
-          so the page reads like a native phone screen at any viewport. */}
-      <div className="w-full max-w-[480px] flex flex-col items-stretch shadow-[0_0_60px_-20px_rgba(0,0,0,0.25)]" style={{ background: phoneBg }}>
-        {/* Hero: cover photo fills the top of the column with the name
-            overlaid in big white type at the bottom. */}
-        {landing.cover_url ? (
-          <HeroWithCover landing={landing} themeBg={phoneBg} />
-        ) : (
-          <HeroAvatarOnly landing={landing} theme={theme} />
-        )}
+      {/* Phone-frame column — fixed 480px on desktop, full-width on mobile.
+          Rounded corners + soft shadow on desktop give it the mockup feel.
+          Inside is dark (true black) so the cover image and the white name
+          read with maximum contrast — Kinsley style. */}
+      <div className="flex justify-center py-0 sm:py-8">
+        <div
+          className="w-full max-w-[480px] sm:rounded-3xl overflow-hidden shadow-[0_25px_80px_-20px_rgba(0,0,0,0.5)] flex flex-col items-stretch"
+          style={{ background: "#000" }}
+        >
+          {/* Hero photo — fills the top, no overlay. Avatar-fallback when
+              no cover, kept on a black bg to match. */}
+          {landing.cover_url ? (
+            <HeroWithCover landing={landing} themeBg="#000" />
+          ) : (
+            <HeroAvatarOnly landing={landing} theme={theme} />
+          )}
 
-        {/* Content column inside the phone frame */}
-        <div className="w-full px-5 pb-20 flex flex-col items-center pt-5">
-        {/* Auto-detected social icon strip — small circular brand icons
-            inline like Linktree / Beacons. Pulled from the link list. */}
-        <SocialIconStrip
-          links={landing.links}
-          landingId={landing.id}
-          mutedText={theme.mutedText}
-        />
-
-        {/* Featured CTA — the primary link (typically OnlyFans). Bigger,
-            more prominent than the rest of the list. */}
-        <FeaturedCTA
-          links={landing.links}
-          landingId={landing.id}
-          theme={theme}
-        />
-
-        {/* Bio sits between the CTA and the secondary link list */}
-        {landing.bio && (
-          <p
-            className="text-sm text-center max-w-xs leading-relaxed whitespace-pre-wrap mt-6"
-            style={{ color: theme.mutedText }}
-          >
-            {landing.bio}
-          </p>
-        )}
-
-        {/* Secondary links — anything that isn't the featured CTA or
-            already shown in the social icon strip. Renders the existing
-            LinkButton component. */}
-        {(() => {
-          const secondary = secondaryLinks(landing.links);
-          if (secondary.length === 0) return null;
-          return (
-            <div className="w-full mt-6 space-y-3">
-              {secondary.map((link, i) => (
-                <LinkButton
-                  key={i}
-                  link={link}
-                  landingId={landing.id}
-                  baseStyle={theme.link}
-                  hoverStyle={theme.linkHover}
-                />
-              ))}
+          {/* Content stack on the black phone interior */}
+          <div className="w-full px-5 pt-7 pb-12 flex flex-col items-center">
+            {/* Name + @slug — centered, big white type just below the photo */}
+            <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight inline-flex items-center gap-2 text-center text-white">
+              {landing.display_name ?? landing.slug}
+              {landing.is_verified && (
+                <BadgeCheck
+                  className="h-6 w-6 sm:h-7 sm:w-7 shrink-0"
+                  style={{ color: "#1d9bf0", fill: "currentColor", strokeWidth: 0 }}
+                  aria-label="Verified"
+                >
+                  <title>Verified</title>
+                </BadgeCheck>
+              )}
+            </h1>
+            <div className="text-base text-white/55 mt-1 font-medium">
+              @{landing.slug}
             </div>
-          );
-        })()}
 
-        {/* Photo gallery */}
-        {landing.media.length > 0 && (
-          <div className="w-full mt-8 grid grid-cols-3 gap-1.5">
-            {landing.media.map((m, i) => (
-              <div
-                key={i}
-                className="aspect-square rounded-xl overflow-hidden"
-                style={{ background: "rgba(0,0,0,0.04)" }}
-              >
-                <img
-                  src={m.url}
-                  alt={m.caption ?? ""}
-                  className="w-full h-full object-cover"
-                  loading="lazy"
-                />
+            {/* Social icons — small circular brand-colored buttons */}
+            <div className="mt-5 w-full">
+              <SocialIconStrip links={landing.links} landingId={landing.id} mutedText={theme.mutedText} />
+            </div>
+
+            {/* Featured CTA — big colored pill with icon badge on the
+                left and the creator's text label centered. */}
+            <FeaturedCTA links={landing.links} landingId={landing.id} theme={theme} />
+
+            {/* Tagline / bio area */}
+            {landing.bio && (
+              <p className="text-sm text-center max-w-xs leading-relaxed whitespace-pre-wrap mt-6 text-white/70">
+                {landing.bio}
+              </p>
+            )}
+
+            {/* Secondary links */}
+            {(() => {
+              const secondary = secondaryLinks(landing.links);
+              if (secondary.length === 0) return null;
+              return (
+                <div className="w-full mt-6 space-y-3">
+                  {secondary.map((link, i) => (
+                    <LinkButton
+                      key={i}
+                      link={link}
+                      landingId={landing.id}
+                      baseStyle={theme.link}
+                      hoverStyle={theme.linkHover}
+                    />
+                  ))}
+                </div>
+              );
+            })()}
+
+            {/* Photo gallery */}
+            {landing.media.length > 0 && (
+              <div className="w-full mt-8 grid grid-cols-3 gap-1.5">
+                {landing.media.map((m, i) => (
+                  <div key={i} className="aspect-square rounded-xl overflow-hidden bg-white/5">
+                    <img src={m.url} alt={m.caption ?? ""} className="w-full h-full object-cover" loading="lazy" />
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        )}
+            )}
 
-        {/* Footer */}
-        <div className="mt-12 text-[10px] uppercase tracking-[0.2em] opacity-60" style={{ color: theme.mutedText }}>
-          @{landing.slug}
-        </div>
+            {/* Footer */}
+            <div className="mt-12 text-[10px] uppercase tracking-[0.2em] text-white/30">
+              @{landing.slug}
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -504,11 +526,9 @@ function FeaturedCTA({
   const link = useMemo(() => featuredLink(links ?? []), [links]);
   const platform = useMemo(() => link ? detectPlatform(link.url) : null, [link]);
   if (!link || !platform) return null;
-  // The CTA is text-only by design — the platform identity already lives
-  // in the small social-icon strip ABOVE this button (which is where the
-  // user can include the OnlyFans / brand logos as small circles). The
-  // big button is just a high-contrast call-to-action with whatever
-  // label the creator typed ("VIP <3", "Subscribe", "OF", etc).
+  const Icon = platform.Icon;
+  // OnlyFans CTA renders red to match the Kinsley reference style; for
+  // any other platform we use the brand color as the bg.
   const buttonBg = platform.key === "onlyfans" ? "#FF0000" : platform.color;
   const buttonFg = pickReadableTextOn(buttonBg);
   const onClick = () => {
@@ -521,20 +541,29 @@ function FeaturedCTA({
     });
   };
   const label = (link.label || "").trim() || platform.label;
+  // Layout: white circular icon badge anchored to the LEFT, label
+  // centered across the full button width. Matches the "VIP <3" pill
+  // in the reference.
   return (
     <a
       href={link.url}
       target="_blank"
       rel="noopener noreferrer"
       onClick={onClick}
-      className="w-full mt-5 rounded-full flex items-center justify-center px-6 py-4 font-bold text-base sm:text-lg tracking-wide transition-all hover:-translate-y-0.5"
+      className="relative w-full mt-5 rounded-full flex items-center justify-center pl-16 pr-5 py-4 font-bold text-lg tracking-wide transition-all hover:-translate-y-0.5"
       style={{
         background: buttonBg,
         color: buttonFg,
-        boxShadow: "0 8px 24px -8px rgba(0,0,0,0.35)",
+        boxShadow: "0 8px 24px -8px rgba(0,0,0,0.45)",
       }}
     >
-      {label}
+      <span
+        className="absolute left-1.5 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full bg-white flex items-center justify-center"
+        aria-hidden="true"
+      >
+        <Icon className="h-4 w-4" style={{ color: platform.color }} />
+      </span>
+      <span className="text-center">{label}</span>
     </a>
   );
 }
@@ -564,72 +593,28 @@ function pickReadableTextOn(hex: string): string {
  * readable. The optional avatar appears as a small inline circle next to the
  * name (vs the big standalone circle in the no-cover variant).
  */
-function HeroWithCover({ landing, themeBg }: { landing: Landing; themeBg: string }) {
-  // Phone-mockup style: cover photo dominates the upper half of the
-  // viewport, with the name CENTERED on a dark gradient at the bottom.
-  // The avatar is no longer rendered inline next to the name — when
-  // there's a cover photo it usually IS the avatar (face crop), so
-  // showing both reads as redundant. We keep the avatar only as the
-  // small reference next to /p/{slug} on the editor card.
+function HeroWithCover({ landing, themeBg: _themeBg }: { landing: Landing; themeBg: string }) {
+  // Kinsley-style hero: photo only, no overlay. The name and @slug are
+  // rendered in the dark column BELOW the photo so the cover stays
+  // unobstructed and reads like a phone screen. We use a soft bottom
+  // fade into black so the hand-off to the dark phone interior is
+  // seamless instead of a hard horizontal cut.
   return (
-    <div className="relative w-full" style={{ height: "min(70vh, 640px)" }}>
+    <div className="relative w-full" style={{ aspectRatio: "1 / 1.15" }}>
       <img
         src={landing.cover_url ?? ""}
         alt={landing.display_name ?? landing.slug}
         className="w-full h-full object-cover"
         loading="eager"
-        // Bias the crop toward the upper third so a face/eyes anchor
-        // the composition the way a phone hero shot would.
-        style={{ objectPosition: "center 30%" }}
+        // Bias the crop toward the face by anchoring near the top
+        style={{ objectPosition: "center 25%" }}
       />
-      {/* Dark gradient covers the bottom 50% so text reads cleanly. */}
+      {/* Subtle bottom fade so the photo blends into the black panel
+          below instead of ending with a sharp horizontal line. */}
       <div
-        className="absolute inset-0 pointer-events-none"
-        style={{
-          background:
-            "linear-gradient(180deg, transparent 0%, transparent 35%, rgba(0,0,0,0.45) 65%, rgba(0,0,0,0.85) 92%, rgba(0,0,0,0.95) 100%)",
-        }}
+        className="absolute inset-x-0 bottom-0 h-24 pointer-events-none"
+        style={{ background: "linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.35) 60%, #000 100%)" }}
       />
-      {/* Soft bottom-fade into the page background so the hero hands
-          off to the column below without a hard edge. */}
-      <div
-        className="absolute inset-x-0 bottom-0 h-16 pointer-events-none"
-        style={{ background: `linear-gradient(180deg, transparent 0%, ${themeBg} 100%)` }}
-      />
-      {/* Name + @slug + tagline, centered at the bottom of the cover.
-          Big white type, with @slug as a smaller sub-line. Matches the
-          Kinsley-style reference layout. */}
-      <div className="absolute inset-x-0 bottom-0 px-5 pb-10 flex flex-col items-center text-center">
-        <h1
-          className="text-3xl sm:text-4xl font-bold tracking-tight inline-flex items-center gap-2"
-          style={{ color: "#fff", textShadow: "0 2px 20px rgba(0,0,0,0.75)" }}
-        >
-          {landing.display_name ?? landing.slug}
-          {landing.is_verified && (
-            <BadgeCheck
-              className="h-6 w-6 sm:h-7 sm:w-7"
-              style={{ color: "#1d9bf0", fill: "currentColor", strokeWidth: 0 }}
-              aria-label="Verified"
-            >
-              <title>Verified</title>
-            </BadgeCheck>
-          )}
-        </h1>
-        <div
-          className="text-sm font-medium mt-1.5 opacity-90 tracking-wide"
-          style={{ color: "#fff", textShadow: "0 2px 16px rgba(0,0,0,0.7)" }}
-        >
-          @{landing.slug}
-        </div>
-        {landing.tagline && (
-          <p
-            className="text-sm sm:text-base mt-3 max-w-xs"
-            style={{ color: "rgba(255,255,255,0.92)", textShadow: "0 2px 12px rgba(0,0,0,0.7)" }}
-          >
-            {landing.tagline}
-          </p>
-        )}
-      </div>
     </div>
   );
 }
