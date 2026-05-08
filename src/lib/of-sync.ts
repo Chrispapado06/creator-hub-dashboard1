@@ -37,21 +37,48 @@ export type CreatorOfAccount = {
  * Load every OF account for the given creators in one query, returned
  * as a map keyed by creator_id. Used wherever the dashboard needs to
  * "fan out across all of a creator's pages" — sync, live earnings,
- * data inspector. Falls back to the legacy creators.of_username column
- * for creators that have no creator_of_accounts rows yet (e.g. brand-
- * new creator added before the migration ran).
+ * data inspector.
+ *
+ * Resilient to the multi-account migration not having run yet: also
+ * queries the legacy creators.of_username + creators.onlyfansapi_acct_id
+ * columns, and synthesises a primary row for any creator that has no
+ * creator_of_accounts entry. So the dashboard never spuriously shows
+ * $0 just because the SQL hasn't been applied yet.
  */
 export async function loadOfAccountsForCreators(
   creatorIds: string[],
 ): Promise<Record<string, CreatorOfAccount[]>> {
   const out: Record<string, CreatorOfAccount[]> = {};
   if (creatorIds.length === 0) return out;
-  const { data } = await supabase
-    .from("creator_of_accounts")
-    .select("id, creator_id, of_username, onlyfansapi_acct_id, label, is_primary")
-    .in("creator_id", creatorIds);
-  for (const row of (data ?? []) as CreatorOfAccount[]) {
+  // Pull both sources in parallel — multi-account table + legacy
+  // columns. We trust whichever has data.
+  const [{ data: multi }, { data: legacy }] = await Promise.all([
+    supabase
+      .from("creator_of_accounts")
+      .select("id, creator_id, of_username, onlyfansapi_acct_id, label, is_primary")
+      .in("creator_id", creatorIds),
+    supabase
+      .from("creators")
+      .select("id, of_username, onlyfansapi_acct_id")
+      .in("id", creatorIds),
+  ]);
+  for (const row of (multi ?? []) as CreatorOfAccount[]) {
     (out[row.creator_id] ??= []).push(row);
+  }
+  // For any creator missing from the multi-account table, synthesise
+  // a primary row from the legacy columns so callers can still iterate
+  // accounts uniformly. Skipped when the legacy of_username is null.
+  for (const row of (legacy ?? []) as Array<{ id: string; of_username: string | null; onlyfansapi_acct_id: string | null }>) {
+    if (out[row.id]) continue;
+    if (!row.of_username) continue;
+    out[row.id] = [{
+      id: row.id,
+      creator_id: row.id,
+      of_username: row.of_username,
+      onlyfansapi_acct_id: row.onlyfansapi_acct_id,
+      label: "main",
+      is_primary: true,
+    }];
   }
   return out;
 }

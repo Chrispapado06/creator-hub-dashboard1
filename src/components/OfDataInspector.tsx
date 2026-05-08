@@ -72,6 +72,8 @@ export function OfDataInspector() {
         supabase.from("of_creator_stats").select("creator_id, total_earnings, earnings_subs, earnings_tips, earnings_ppv, earnings_messages, active_subscribers, synced_at"),
         // Pull every secondary OF account too so the inspector shows
         // all of a creator's connected pages, not just the primary.
+        // Returns null if the migration hasn't been applied yet —
+        // we coalesce to [] so the inspector still renders.
         supabase.from("creator_of_accounts").select("creator_id, of_username, onlyfansapi_acct_id, label, is_primary"),
       ]);
       setCreators((cs ?? []) as CreatorMin[]);

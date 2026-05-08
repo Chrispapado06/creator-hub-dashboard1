@@ -256,13 +256,28 @@ export function DailyHero() {
     void (async () => {
       const { fetchOfEarnings } = await import("@/lib/of-sync");
       // Multi-account aware: pull every connected OF page across all
-      // creators (a creator can run more than one), not just the
-      // primary on the legacy creators column.
-      const { data: cs } = await supabase
-        .from("creator_of_accounts")
-        .select("onlyfansapi_acct_id")
-        .not("onlyfansapi_acct_id", "is", null);
-      const ids = (cs ?? []).map((c) => c.onlyfansapi_acct_id as string).filter(Boolean);
+      // creators. Falls back to the legacy creators column when the
+      // creator_of_accounts table is empty (migration not run yet, or
+      // the migration ran but the backfill hadn't yet completed for
+      // some accounts) so the dashboard never spuriously shows $0.
+      const [{ data: multi }, { data: legacy }] = await Promise.all([
+        supabase.from("creator_of_accounts")
+          .select("onlyfansapi_acct_id")
+          .not("onlyfansapi_acct_id", "is", null),
+        supabase.from("creators")
+          .select("onlyfansapi_acct_id")
+          .not("onlyfansapi_acct_id", "is", null),
+      ]);
+      const idSet = new Set<string>();
+      for (const row of (multi ?? []) as Array<{ onlyfansapi_acct_id: string | null }>) {
+        if (row.onlyfansapi_acct_id) idSet.add(row.onlyfansapi_acct_id);
+      }
+      // Legacy column always merged in — covers any creator that exists
+      // but doesn't have a creator_of_accounts row yet.
+      for (const row of (legacy ?? []) as Array<{ onlyfansapi_acct_id: string | null }>) {
+        if (row.onlyfansapi_acct_id) idSet.add(row.onlyfansapi_acct_id);
+      }
+      const ids = [...idSet];
       if (cancelled || ids.length === 0) return;
       const [t, y] = await Promise.all([
         fetchOfEarnings(ids, todayStr, todayStr),

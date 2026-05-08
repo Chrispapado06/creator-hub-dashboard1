@@ -101,22 +101,37 @@ export async function loadFinancialsRollup(range: DateRange): Promise<Financials
 export async function loadRevenueRollup(range: DateRange): Promise<RevenueRollup> {
   const { from, to } = range;
   const [{ data: orgRows }, { data: intRows }, { data: adRows }, { data: revRows },
-         { data: trackRows }, { data: creators }] = await Promise.all([
+         { data: trackRows }, { data: ofMulti }, { data: ofLegacy }] = await Promise.all([
     supabase.from("organic_entries").select("amount").gte("entry_date", from).lte("entry_date", to),
     supabase.from("internal_entries").select("amount").gte("entry_date", from).lte("entry_date", to),
     supabase.from("ad_campaigns").select("revenue_generated").gte("start_date", from).lte("start_date", to),
     supabase.from("revenue_entries").select("amount").gte("entry_date", from).lte("entry_date", to),
     supabase.from("of_tracking_links").select("revenue_total"),
-    // Multi-account aware: pull every connected OF page, not just the
-    // primary on the legacy creators column.
+    // Multi-account aware: pull every connected OF page from
+    // creator_of_accounts. We ALSO query the legacy creators column
+    // and union the two below, so the rollup keeps working when the
+    // multi-account migration hasn't been applied yet (the table
+    // returns empty) and on creators that haven't been backfilled.
     supabase.from("creator_of_accounts")
+      .select("onlyfansapi_acct_id")
+      .not("onlyfansapi_acct_id", "is", null),
+    // Legacy fallback — every creator with a primary OF account on the
+    // creators row. Merged with the rows from creator_of_accounts via
+    // a Set so duplicates collapse cleanly.
+    supabase.from("creators")
       .select("onlyfansapi_acct_id")
       .not("onlyfansapi_acct_id", "is", null),
   ]);
 
-  const acctIds = (creators ?? [])
-    .map((c) => c.onlyfansapi_acct_id as string)
-    .filter(Boolean);
+  // Union of both sources, de-duped via Set.
+  const idSet = new Set<string>();
+  for (const r of (ofMulti ?? []) as Array<{ onlyfansapi_acct_id: string | null }>) {
+    if (r.onlyfansapi_acct_id) idSet.add(r.onlyfansapi_acct_id);
+  }
+  for (const r of (ofLegacy ?? []) as Array<{ onlyfansapi_acct_id: string | null }>) {
+    if (r.onlyfansapi_acct_id) idSet.add(r.onlyfansapi_acct_id);
+  }
+  const acctIds = [...idSet];
   const ofBreakdown = acctIds.length > 0
     ? await fetchOfEarnings(acctIds, from, to)
     : { total: 0, subs: 0, tips: 0, ppv: 0, messages: 0, streams: 0 };
