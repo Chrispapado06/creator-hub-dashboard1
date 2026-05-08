@@ -522,126 +522,58 @@ export function DailyHero() {
         </Button>
       </div>
 
-      {/* Helper: when today is $0 (OF data lag — typical for the first
-          few hours of the day), fall back to the most recent day in
-          the 14-day window that has data. Returns the value to display,
-          the date it represents, and whether we're showing today or
-          a fallback. Used by the OnlyFans / Today's revenue / Net
-          profit tiles so admins see meaningful numbers instead of $0. */}
-      {(() => null)() /* IIFE-style separator — comments only */}
-      {/* (The real helpers are inlined below per-tile to keep the
-          render block self-contained. dailyRevenue is already merged
-          across manual entries + OF, so we walk it back to find the
-          most recent non-zero day.) */}
-
-      {/* Hero KPI tiles */}
+      {/* Hero KPI tiles — always show today's actual numbers, even
+          when OnlyFans data hasn't been reported yet (typical in the
+          first few hours of the day). $0 is the truthful answer until
+          OF catches up; the 14-day chart below tells the longer story. */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-        {/* OnlyFans tile — falls back to the most recent day with OF
-            earnings if today is still $0 (data lag). */}
-        {(() => {
-          // Walk dailyRevenue from the end (today) backwards looking for
-          // the most recent day where ofDaily14 had a value. Falls back
-          // to today when nothing else exists.
-          const ofRecent = (() => {
-            for (let i = dailyRevenue.length - 1; i >= 0; i--) {
-              const d = dailyRevenue[i].date;
-              const v = ofDaily14[d] ?? 0;
-              if (v > 0) return { date: d, amount: v, isToday: d === todayStr };
-            }
-            return { date: todayStr, amount: 0, isToday: true };
-          })();
-          const subtitle = ofRecent.isToday
-            ? "vs yesterday"
-            : `as of ${ofRecent.date.slice(5)} · today still updating`;
-          return (
-            <HeroTile
-              tone="cyan"
-              icon={<Wallet className="h-4 w-4" />}
-              label={ofRecent.isToday ? "OnlyFans today" : "OnlyFans (latest)"}
-              value={formatMoney(ofRecent.amount)}
-              delta={ofRecent.isToday ? pctChange(ofToday, ofYesterday) : null}
-              deltaSubtitle={subtitle}
-              sparkline={[]}
-              sparkColor="rgb(56,189,248)"
-              loading={loading}
-            />
-          );
-        })()}
-        {(() => {
-          // Same fall-back rule for the combined revenue tile.
-          const recent = (() => {
-            for (let i = dailyRevenue.length - 1; i >= 0; i--) {
-              const r = dailyRevenue[i];
-              if (r.amount > 0) return { ...r, isToday: r.date === todayStr };
-            }
-            return { date: todayStr, amount: 0, isToday: true };
-          })();
-          return (
-            <HeroTile
-              tone="emerald"
-              icon={<Wallet className="h-4 w-4" />}
-              label={recent.isToday ? "Today's revenue" : "Latest revenue"}
-              value={formatMoney(recent.amount)}
-              delta={recent.isToday ? pctChange(todayTotalRevenue, yesterdayTotalRevenue) : null}
-              deltaSubtitle={
-                recent.isToday
-                  ? (ofToday > 0 ? `incl. ${formatMoney(ofToday)} OF` : "vs yesterday")
-                  : `as of ${recent.date.slice(5)} · today still updating`
-              }
-              sparkline={dailyRevenue.map((d) => ({ x: d.date, y: d.amount }))}
-              sparkColor="rgb(52,211,153)"
-              loading={loading}
-            />
-          );
-        })()}
-        {(() => {
-          // Net profit follows the revenue fallback: pick the same
-          // recent day so all three tiles tell a coherent story.
-          const recent = (() => {
-            for (let i = dailyRevenue.length - 1; i >= 0; i--) {
-              const r = dailyRevenue[i];
-              const ad = adSpend14d.find((a) => a.date === r.date)?.spend ?? 0;
-              const sf = staffSpend14d.find((a) => a.date === r.date)?.amount ?? 0;
-              const op = opsSpend14d.find((a) => a.date === r.date)?.amount ?? 0;
-              if (r.amount > 0) {
-                return {
-                  date: r.date,
-                  profit: r.amount - ad - sf - op,
-                  ad, sf, op,
-                  isToday: r.date === todayStr,
-                };
-              }
-            }
-            return {
-              date: todayStr, profit: 0,
-              ad: todayAdSpend, sf: todayStaff, op: todayOps,
-              isToday: true,
-            };
-          })();
-          const breakdown = [
-            `ads ${formatMoney(recent.ad)}`,
-            ...(recent.sf > 0 ? [`staff ${formatMoney(recent.sf)}`] : []),
-            ...(recent.op > 0 ? [`ops ${formatMoney(recent.op)}`] : []),
-          ].join(" · ");
-          return (
-            <HeroTile
-              tone={recent.profit >= 0 ? "violet" : "rose"}
-              icon={<TrendingUp className="h-4 w-4" />}
-              label={recent.isToday ? "Net profit today" : "Net profit (latest)"}
-              value={formatMoney(recent.profit)}
-              delta={recent.isToday ? pctChange(todayNetProfit, yesterdayNetProfit) : null}
-              deltaSubtitle={recent.isToday ? breakdown : `as of ${recent.date.slice(5)} · ${breakdown}`}
-              sparkline={dailyRevenue.map((d) => {
-                const ad = adSpend14d.find((a) => a.date === d.date)?.spend ?? 0;
-                const sf = staffSpend14d.find((a) => a.date === d.date)?.amount ?? 0;
-                const op = opsSpend14d.find((a) => a.date === d.date)?.amount ?? 0;
-                return { x: d.date, y: d.amount - ad - sf - op };
-              })}
-              sparkColor="rgb(167,139,250)"
-              loading={loading}
-            />
-          );
-        })()}
+        <HeroTile
+          tone="cyan"
+          icon={<Wallet className="h-4 w-4" />}
+          label="OnlyFans today"
+          value={formatMoney(ofToday)}
+          delta={pctChange(ofToday, ofYesterday)}
+          deltaSubtitle="vs yesterday"
+          sparkline={[]}
+          sparkColor="rgb(56,189,248)"
+          loading={loading}
+        />
+        <HeroTile
+          tone="emerald"
+          icon={<Wallet className="h-4 w-4" />}
+          label="Today's revenue"
+          value={formatMoney(todayTotalRevenue)}
+          delta={pctChange(todayTotalRevenue, yesterdayTotalRevenue)}
+          deltaSubtitle={ofToday > 0 ? `incl. ${formatMoney(ofToday)} OF` : "vs yesterday"}
+          sparkline={dailyRevenue.map((d) => ({ x: d.date, y: d.amount }))}
+          sparkColor="rgb(52,211,153)"
+          loading={loading}
+        />
+        <HeroTile
+          tone={todayNetProfit >= 0 ? "violet" : "rose"}
+          icon={<TrendingUp className="h-4 w-4" />}
+          label="Net profit today"
+          value={formatMoney(todayNetProfit)}
+          delta={pctChange(todayNetProfit, yesterdayNetProfit)}
+          deltaSubtitle={
+            // Compact breakdown of today's costs so users can see what
+            // makes up the deduction. Ad spend always shown; staff +
+            // ops only appear when non-zero (most days they're $0).
+            [
+              `ads ${formatMoney(todayAdSpend)}`,
+              ...(todayStaff > 0 ? [`staff ${formatMoney(todayStaff)}`] : []),
+              ...(todayOps > 0 ? [`ops ${formatMoney(todayOps)}`] : []),
+            ].join(" · ")
+          }
+          sparkline={dailyRevenue.map((d) => {
+            const ad = adSpend14d.find((a) => a.date === d.date)?.spend ?? 0;
+            const sf = staffSpend14d.find((a) => a.date === d.date)?.amount ?? 0;
+            const op = opsSpend14d.find((a) => a.date === d.date)?.amount ?? 0;
+            return { x: d.date, y: d.amount - ad - sf - op };
+          })}
+          sparkColor="rgb(167,139,250)"
+          loading={loading}
+        />
         <HeroTile
           tone="cyan"
           icon={<ArrowUpRight className="h-4 w-4" />}
