@@ -229,6 +229,18 @@ export function DailyHero() {
 
   const creatorsById = useMemo(() => new Map(creators.map((c) => [c.id, c])), [creators]);
 
+  // OF state declared FIRST so the `dailyRevenue` useMemo below can
+  // reference it in its deps array. Moving these declarations after
+  // the useMemo would trigger a TDZ error ("cannot access uninitialized
+  // variable") because deps are evaluated immediately.
+  const [ofToday, setOfToday] = useState(0);
+  const [ofYesterday, setOfYesterday] = useState(0);
+  // Daily OF earnings series for the last 14 days, used to enrich the
+  // revenue chart so it shows actual money flowing through OnlyFans
+  // each day (was empty before because the chart only summed manual
+  // entry tables). Keyed by date string `yyyy-MM-dd`.
+  const [ofDaily14, setOfDaily14] = useState<Record<string, number>>({});
+
   // Revenue per day (last 14)
   const dailyRevenue = useMemo(() => {
     const days = eachDayOfInterval({ start: subDays(today, 13), end: today });
@@ -258,14 +270,9 @@ export function DailyHero() {
   // ── Live OnlyFans Direct earnings (today + yesterday) ─────────────
   // Hits /api/analytics/summary/earnings with a 1-day window for each.
   // OnlyFans data lags by ~1 hour for live numbers, so today's value
-  // may be small until late afternoon.
-  const [ofToday, setOfToday] = useState(0);
-  const [ofYesterday, setOfYesterday] = useState(0);
-  // Daily OF earnings series for the last 14 days, used to enrich the
-  // revenue chart so it shows actual money flowing through OnlyFans
-  // each day (was empty before because the chart only summed manual
-  // entry tables). Keyed by date string `yyyy-MM-dd`.
-  const [ofDaily14, setOfDaily14] = useState<Record<string, number>>({});
+  // may be small until late afternoon. The state is hoisted above
+  // dailyRevenue (see top of this component) — the effect that
+  // populates it lives below for readability.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
