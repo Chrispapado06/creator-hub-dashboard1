@@ -731,6 +731,81 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["meta_account_snapshots"]["Row"]>
         Relationships: []
       }
+      team_channels: {
+        Row: {
+          id: string
+          name: string
+          slug: string
+          type: "public" | "private" | "creator" | "dm" | "announcements"
+          creator_id: string | null
+          description: string | null
+          read_only_for_staff: boolean
+          created_by: string | null
+          created_at: string
+          archived_at: string | null
+          last_message_at: string | null
+          last_message_preview: string | null
+        }
+        Insert: Partial<Database["public"]["Tables"]["team_channels"]["Row"]> & {
+          name: string
+          slug: string
+          type: "public" | "private" | "creator" | "dm" | "announcements"
+        }
+        Update: Partial<Database["public"]["Tables"]["team_channels"]["Row"]>
+        Relationships: []
+      }
+      team_channel_members: {
+        Row: {
+          channel_id: string
+          chatter_id: string
+          joined_at: string
+          last_read_at: string | null
+          is_muted: boolean
+        }
+        Insert: Partial<Database["public"]["Tables"]["team_channel_members"]["Row"]> & {
+          channel_id: string
+          chatter_id: string
+        }
+        Update: Partial<Database["public"]["Tables"]["team_channel_members"]["Row"]>
+        Relationships: []
+      }
+      team_messages: {
+        Row: {
+          id: string
+          channel_id: string
+          author_chatter_id: string | null
+          author_name: string
+          author_role: string | null
+          content: string
+          attachments: { url: string; name: string; type: string; size: number }[]
+          edited_at: string | null
+          deleted_at: string | null
+          created_at: string
+        }
+        Insert: Partial<Database["public"]["Tables"]["team_messages"]["Row"]> & {
+          channel_id: string
+          author_name: string
+          content: string
+        }
+        Update: Partial<Database["public"]["Tables"]["team_messages"]["Row"]>
+        Relationships: []
+      }
+      team_message_mentions: {
+        Row: {
+          message_id: string
+          mentioned_chatter_id: string
+          channel_id: string
+          read_at: string | null
+          created_at: string
+        }
+        Insert: Partial<Database["public"]["Tables"]["team_message_mentions"]["Row"]> & {
+          message_id: string
+          mentioned_chatter_id: string
+          channel_id: string
+        }
+        Update: Partial<Database["public"]["Tables"]["team_message_mentions"]["Row"]>
+        Relationships: []
+      }
       agency_expenses: {
         Row: {
           id: string

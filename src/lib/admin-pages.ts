@@ -31,6 +31,7 @@ export const ADMIN_PAGES: AdminPage[] = [
   { slug: "leads",      path: "/leads",      label: "Client Acquisition", group: "Operations" },
   { slug: "automation", path: "/automation", label: "Automation",         group: "Operations" },
   { slug: "financials", path: "/financials", label: "Financials",         group: "Operations" },
+  { slug: "chat",       path: "/chat",       label: "Team Chat",          group: "Operations" },
   { slug: "audit",      path: "/audit",      label: "Audit Log",          group: "Operations" },
 
   // Platforms
