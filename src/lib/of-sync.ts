@@ -121,10 +121,16 @@ export async function syncCreatorOnlyFans(creator: CreatorMin): Promise<SyncOneR
   // instead of the monthly buckets the old endpoint forced.
   const today = format(new Date(), "yyyy-MM-dd");
   const lifetimeStart = "2018-01-01";
-  const earningsParams = `?startDate=${lifetimeStart}&endDate=${today}&groupBy=day`;
+  // Earnings endpoint: POST /analytics/summary/earnings is the working
+  // path for current OnlyFansAPI tiers. We try the GET path as a
+  // fallback below in case POST fails for any reason.
   const [profileJson, earningsJson, trackingJson] = await Promise.all([
     safeFetch(`${acctId}/me`),
-    safeFetch(`${acctId}/payouts/earnings-statistics${earningsParams}`),
+    safePost("analytics/summary/earnings", {
+      account_ids: [acctId],
+      start_date: lifetimeStart,
+      end_date: today,
+    }),
     safeFetch(`${acctId}/tracking-links`),
   ]);
 
@@ -170,18 +176,16 @@ export async function syncCreatorOnlyFans(creator: CreatorMin): Promise<SyncOneR
   const earningsAvailable = earningsJson !== null && totalEarnings >= 0
     && (totalEarnings > 0 || (earnings && Object.keys(earnings).length > 0));
 
-  // If earnings call also failed, retry with the OLD POST endpoint as a
-  // fallback. Some accounts respond to /analytics/summary/earnings even
-  // when /payouts/earnings-statistics returns 4xx — the latter is newer
-  // and not every account is migrated.
+  // If the primary POST call also failed, try the GET endpoint as
+  // a forward-compat fallback (currently 404s for our accounts but
+  // documented — flips on automatically the day OnlyFansAPI ships it).
   let fallbackEarnings: Record<string, unknown> | null = null;
   if (!earningsAvailable) {
     try {
-      const r = await fetch(`${BASE}/analytics/summary/earnings`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ account_ids: [acctId], start_date: lifetimeStart, end_date: today }),
-      });
+      const r = await fetch(
+        `${BASE}/${acctId}/payouts/earnings-statistics?startDate=${lifetimeStart}&endDate=${today}`,
+        { headers: { Authorization: `Bearer ${key}` } },
+      );
       if (r.ok) {
         const j = await r.json();
         const u = unwrap(j);
@@ -443,15 +447,12 @@ async function fetchEarningsForOneAccount(
   startDate: string,
   endDate: string,
 ): Promise<EarningsBreakdown> {
-  // Primary
-  try {
-    const r = await fetch(
-      `${BASE}/${accountId}/payouts/earnings-statistics?startDate=${startDate}&endDate=${endDate}`,
-      { headers: { Authorization: `Bearer ${key}` } },
-    );
-    if (r.ok) return parseEarnings(await r.json());
-  } catch { /* fall through */ }
-  // Fallback
+  // PRIMARY: POST /analytics/summary/earnings.
+  // This is the endpoint that's been working in production for these
+  // accounts — confirmed via the OF Data Inspector. The supposedly-newer
+  // GET /payouts/earnings-statistics returns 404 for accounts on the
+  // current OnlyFansAPI tier, even though the docs document it. Try
+  // POST first; only fall back to GET if POST fails.
   try {
     const r = await fetch(`${BASE}/analytics/summary/earnings`, {
       method: "POST",
@@ -466,6 +467,16 @@ async function fetchEarningsForOneAccount(
         end_date: endDate,
       }),
     });
+    if (r.ok) return parseEarnings(await r.json());
+  } catch { /* fall through */ }
+  // FALLBACK: GET /payouts/earnings-statistics. Documented but currently
+  // 404s for our accounts — kept as a forward-compat fallback so the
+  // moment OnlyFansAPI flips it on we'll start using it automatically.
+  try {
+    const r = await fetch(
+      `${BASE}/${accountId}/payouts/earnings-statistics?startDate=${startDate}&endDate=${endDate}`,
+      { headers: { Authorization: `Bearer ${key}` } },
+    );
     if (r.ok) return parseEarnings(await r.json());
   } catch { /* both failed */ }
   return ZERO_BREAKDOWN;

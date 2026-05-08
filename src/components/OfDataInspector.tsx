@@ -114,14 +114,24 @@ export function OfDataInspector() {
         }
         acctId = match.id;
       }
-      // GET /api/{account}/payouts/earnings-statistics — the per-account
-      // endpoint with daily granularity. Lifetime range so the response
-      // reflects everything the OF account has ever earned.
+      // POST /analytics/summary/earnings — the working earnings endpoint
+      // for current OnlyFansAPI tiers. We tried the documented GET
+      // /payouts/earnings-statistics first but it returns 404 for our
+      // accounts. The probe matches the sync's primary path.
       const today = new Date().toISOString().slice(0, 10);
-      const r = await fetch(
-        `${BASE}/${acctId}/payouts/earnings-statistics?startDate=2018-01-01&endDate=${today}&groupBy=day`,
-        { headers: { Authorization: `Bearer ${key}` } },
-      );
+      const r = await fetch(`${BASE}/analytics/summary/earnings`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${key}`,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          account_ids: [acctId],
+          start_date: "2018-01-01",
+          end_date: today,
+        }),
+      });
       if (!r.ok) {
         let detail = `HTTP ${r.status}`;
         try {
@@ -131,7 +141,7 @@ export function OfDataInspector() {
           }
         } catch { /* ignore */ }
         setProbeResults((p) => ({
-          ...p, [c.id]: { error: `/payouts/earnings-statistics → ${detail}`, acctId },
+          ...p, [c.id]: { error: `/analytics/summary/earnings → ${detail}`, acctId },
         }));
         setProbing(null);
         return;
