@@ -8,7 +8,7 @@ import {
   Settings, LogOut, Sun, Moon, Users, DollarSign,
   CalendarDays, LayoutDashboard, ChevronDown, ChevronRight,
   MessageCircle, UserPlus, ScrollText, Sparkles, Zap,
-  PiggyBank, MessagesSquare,
+  PiggyBank, MessagesSquare, Menu, X as XIcon,
 } from "lucide-react";
 import { NotificationsBell } from "@/components/NotificationsBell";
 import { SyncStatusBadge } from "@/components/SyncStatusBadge";
@@ -221,6 +221,11 @@ function RootComponent() {
     logo_url: null,
     theme: "dark",
   });
+  // Mobile drawer for the admin sidebar. Hidden by default; opens via
+  // the top-left hamburger button. Auto-closes on navigation so a tap
+  // on a nav link feels like a real page change.
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  useEffect(() => { setMobileNavOpen(false); }, [location.pathname]);
 
   const applyTheme = (theme: string) => {
     if (theme === "light") {
@@ -371,15 +376,55 @@ function RootComponent() {
   return (
     <AllowedPagesCtx.Provider value={session?.allowed_pages ?? null}>
     <div className="flex min-h-screen bg-background">
-      {/* Sidebar */}
-      <aside className="fixed inset-y-0 left-0 z-40 flex w-60 flex-col border-r border-border bg-card/30 backdrop-blur-sm">
-        {/* Logo */}
+      {/* Mobile-only top bar — hamburger + agency name. Hidden on lg
+          where the sidebar is permanent. Sticky so it stays visible
+          while scrolling. */}
+      <header className="lg:hidden fixed top-0 inset-x-0 z-30 h-14 flex items-center justify-between gap-3 px-4 border-b border-border bg-background/90 backdrop-blur-md">
+        <button
+          onClick={() => setMobileNavOpen(true)}
+          aria-label="Open menu"
+          className="h-9 w-9 rounded-lg flex items-center justify-center hover:bg-secondary/60 active:bg-secondary transition-colors"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+        <div className="flex items-center gap-2 min-w-0">
+          <AgencyLogoBadge url={settings.logo_url} name={settings.agency_name} />
+          <div className="text-sm font-semibold tracking-tight truncate">{settings.agency_name}</div>
+        </div>
+        <div className="flex items-center gap-1">
+          <SyncStatusBadge enabled={authed === true} />
+          <NotificationsBell />
+        </div>
+      </header>
+
+      {/* Backdrop — only when mobile drawer is open. Tap to close. */}
+      {mobileNavOpen && (
+        <div
+          onClick={() => setMobileNavOpen(false)}
+          className="lg:hidden fixed inset-0 z-40 bg-black/60 backdrop-blur-sm animate-in fade-in"
+        />
+      )}
+
+      {/* Sidebar
+          • lg+: fixed permanent sidebar at the left edge (existing behavior)
+          • below lg: slide-in drawer toggled via the hamburger above */}
+      <aside className={`fixed inset-y-0 left-0 z-50 flex w-60 flex-col border-r border-border bg-card/95 lg:bg-card/30 backdrop-blur-sm transition-transform duration-200 ease-out ${
+        mobileNavOpen ? "translate-x-0" : "-translate-x-full"
+      } lg:translate-x-0`}>
+        {/* Logo + close (mobile) */}
         <div className="flex h-16 items-center gap-3 border-b border-border px-5">
           <AgencyLogoBadge url={settings.logo_url} name={settings.agency_name} />
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <div className="text-sm font-semibold tracking-tight truncate">{settings.agency_name}</div>
             <div className="text-[10px] text-muted-foreground -mt-0.5 tracking-wide">Creator operations</div>
           </div>
+          <button
+            onClick={() => setMobileNavOpen(false)}
+            aria-label="Close menu"
+            className="lg:hidden h-8 w-8 rounded-lg flex items-center justify-center hover:bg-secondary/60 active:bg-secondary transition-colors"
+          >
+            <XIcon className="h-4 w-4" />
+          </button>
         </div>
 
         {/* Nav */}
@@ -478,12 +523,16 @@ function RootComponent() {
         </div>
       </aside>
 
-      {/* Main content. /chat gets the full canvas (no max-width or
-          page padding) so the chat sidebar + message pane can fill
-          the screen edge-to-edge like a native app. Everything else
-          uses the centered max-w-7xl container. */}
-      <main className="ml-60 flex-1 min-h-screen relative flex flex-col">
-        <div className="absolute top-5 right-8 z-30 flex items-center gap-2">
+      {/* Main content.
+          • lg+: reserves 240px on the left for the permanent sidebar
+          • below lg: full width; the mobile top bar above gives 56px
+            of header space, so the page content offsets by pt-14
+          /chat gets the full canvas (no max-width or page padding) so
+          the chat sidebar + message pane can fill the screen edge-to-edge
+          like a native app. Everything else uses the centered max-w-7xl. */}
+      <main className="lg:ml-60 flex-1 min-h-screen relative flex flex-col w-full min-w-0 pt-14 lg:pt-0">
+        {/* Desktop-only header actions. Mobile shows these in the top bar. */}
+        <div className="hidden lg:flex absolute top-5 right-8 z-30 items-center gap-2">
           <SyncStatusBadge enabled={authed === true} />
           <NotificationsBell />
         </div>
@@ -492,7 +541,7 @@ function RootComponent() {
             <Outlet />
           </div>
         ) : (
-          <div className="mx-auto max-w-7xl px-8 py-10 w-full">
+          <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 sm:py-7 lg:px-8 lg:py-10 w-full">
             <Outlet />
           </div>
         )}
