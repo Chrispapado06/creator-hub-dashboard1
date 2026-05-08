@@ -760,6 +760,27 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["of_scheduled_messages"]["Row"]>
         Relationships: []
       }
+      voice_session_participants: {
+        Row: {
+          id: string
+          channel_id: string
+          chatter_id: string
+          peer_id: string
+          is_muted: boolean
+          has_video: boolean
+          is_screen_sharing: boolean
+          is_speaking: boolean
+          joined_at: string
+          last_heartbeat: string
+        }
+        Insert: Partial<Database["public"]["Tables"]["voice_session_participants"]["Row"]> & {
+          channel_id: string
+          chatter_id: string
+          peer_id: string
+        }
+        Update: Partial<Database["public"]["Tables"]["voice_session_participants"]["Row"]>
+        Relationships: []
+      }
       team_categories: {
         Row: {
           id: string
@@ -789,6 +810,7 @@ export type Database = {
           position: number
           description: string | null
           read_only_for_staff: boolean
+          is_voice_channel: boolean
           created_by: string | null
           created_at: string
           archived_at: string | null
@@ -1934,6 +1956,28 @@ export type Database = {
             referencedColumns: ["id"]
           }
         ]
+      }
+      of_tracking_links: {
+        Row: {
+          id: string
+          creator_id: string
+          campaign_code: number
+          campaign_url: string | null
+          name: string | null
+          clicks_count: number
+          subscribers_count: number
+          spenders_count: number
+          revenue_total: number
+          revenue_per_subscriber: number
+          synced_at: string
+          created_at: string
+        }
+        Insert: Partial<Database["public"]["Tables"]["of_tracking_links"]["Row"]> & {
+          creator_id: string
+          campaign_code: number
+        }
+        Update: Partial<Database["public"]["Tables"]["of_tracking_links"]["Row"]>
+        Relationships: []
       }
       of_earnings_daily: {
         Row: {

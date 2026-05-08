@@ -23,8 +23,14 @@ import {
 import {
   Hash, Lock, Megaphone, Users as UsersIcon, MessageCircle, Plus,
   Send, Paperclip, Smile, Search, ArrowLeft, ChevronRight,
-  Check, X, Edit2, Trash2, AlertCircle,
+  Check, X, Edit2, Trash2, AlertCircle, Volume2,
 } from "lucide-react";
+import { VoiceCallTray } from "@/components/VoiceCallTray";
+import { VoiceJoinBar } from "@/components/VoiceJoinBar";
+import {
+  VoiceCallManager, listVoiceParticipants,
+  type ParticipantRow as VoiceParticipantRow, type RemoteParticipant,
+} from "@/lib/voice-call";
 import { format, formatDistanceToNow, isToday, isYesterday, parseISO } from "date-fns";
 import {
   ensureCurrentChatUser, listChannelsForUser, listMessages, sendMessage,
@@ -69,6 +75,20 @@ function ChatPage() {
   // returns to the list. Tracked separately from desktop so resizing
   // doesn't lose state.
   const [mobileShowSidebar, setMobileShowSidebar] = useState(true);
+
+  // ── Voice/video call state ────────────────────────────────────────
+  // The manager survives channel switches so a user can keep talking
+  // while reading another channel. Only one call at a time per tab.
+  const voiceManagerRef = useRef<VoiceCallManager | null>(null);
+  const [voiceActiveChannelId, setVoiceActiveChannelId] = useState<string | null>(null);
+  const [voiceLocalStream, setVoiceLocalStream] = useState<MediaStream | null>(null);
+  const [voiceRemotes, setVoiceRemotes] = useState<RemoteParticipant[]>([]);
+  const [voiceJoining, setVoiceJoining] = useState(false);
+  // Per-channel voice presence — drives the join-bar headcount and the
+  // sidebar 🔊 N pill. Subscribed once below.
+  const [voicePresence, setVoicePresence] = useState<Record<string, VoiceParticipantRow[]>>({});
+  // chatter id → display name lookup, used to label voice tiles.
+  const [chatterIndex, setChatterIndex] = useState<Record<string, { name: string }>>({});
 
   // ── Initial load ────────────────────────────────────────────────────
 
@@ -243,6 +263,108 @@ function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length]);
 
+  // ── Voice presence: who's in voice on which channel ───────────────
+  // One subscription, all channels. Drives both the per-channel "Join"
+  // banner headcount and the sidebar 🔊 N pill. We pull a snapshot on
+  // mount, then listen for INSERT/UPDATE/DELETE on the table.
+  useEffect(() => {
+    if (!user || channels.length === 0) return;
+    let cancelled = false;
+    const channelIds = channels.map((c) => c.id);
+    void (async () => {
+      const map = await listVoiceParticipants(channelIds);
+      if (!cancelled) setVoicePresence(map);
+    })();
+    const sub = supabase
+      .channel(`voice-presence-global-${user.id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "voice_session_participants" },
+        () => {
+          // Cheap path: re-pull the whole snapshot. The table has at most
+          // a handful of rows at any time (people in active calls), so a
+          // re-read is fine and avoids hand-merging insert/update/delete.
+          void (async () => {
+            const map = await listVoiceParticipants(channelIds);
+            setVoicePresence(map);
+          })();
+        },
+      )
+      .subscribe();
+    return () => {
+      cancelled = true;
+      void supabase.removeChannel(sub);
+    };
+  }, [user, channels.length]);
+
+  // ── Chatter id → name lookup, for voice tile labels ──────────────
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const { data } = await supabase.from("chatters").select("id, name");
+      if (cancelled || !data) return;
+      const map: Record<string, { name: string }> = {};
+      for (const c of data) map[c.id as string] = { name: c.name as string };
+      setChatterIndex(map);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // ── Voice join/leave handlers ────────────────────────────────────
+  const onJoinVoice = useCallback(async (channelId: string) => {
+    if (!user) return;
+    if (voiceManagerRef.current) {
+      // Already in another channel's call — leave first.
+      await voiceManagerRef.current.leave();
+      voiceManagerRef.current = null;
+      setVoiceLocalStream(null);
+      setVoiceRemotes([]);
+      setVoiceActiveChannelId(null);
+    }
+    setVoiceJoining(true);
+    const mgr = new VoiceCallManager({
+      channelId,
+      chatterId: user.id,
+      events: {
+        onLocalStream: (s) => setVoiceLocalStream(s),
+        onParticipantsChanged: (list) => setVoiceRemotes(list),
+        onError: (msg) => toast.error(msg),
+        onLeft: () => {
+          setVoiceLocalStream(null);
+          setVoiceRemotes([]);
+          setVoiceActiveChannelId(null);
+        },
+      },
+    });
+    try {
+      await mgr.join({ withVideo: false });
+      voiceManagerRef.current = mgr;
+      setVoiceActiveChannelId(channelId);
+    } catch {
+      // onError already toasted
+      voiceManagerRef.current = null;
+    } finally {
+      setVoiceJoining(false);
+    }
+  }, [user]);
+
+  const onLeaveVoice = useCallback(async () => {
+    const mgr = voiceManagerRef.current;
+    if (!mgr) return;
+    await mgr.leave();
+    voiceManagerRef.current = null;
+  }, []);
+
+  // Make sure we leave the call cleanly if the user closes the page.
+  useEffect(() => {
+    const handler = () => {
+      const mgr = voiceManagerRef.current;
+      if (mgr) void mgr.leave();
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, []);
+
   // ── Filtering for the channel sidebar ──────────────────────────────
 
   const filteredChannels = useMemo(() => {
@@ -399,6 +521,7 @@ function ChatPage() {
                 activeId={activeChannelId}
                 onPick={(id) => { setActiveChannelId(id); setMobileShowSidebar(false); }}
                 userIsAdmin={user.is_admin}
+                voicePresence={voicePresence}
               />
 
               {/* Categorized channels — one section per category, only
@@ -435,6 +558,7 @@ function ChatPage() {
                 activeId={activeChannelId}
                 onPick={(id) => { setActiveChannelId(id); setMobileShowSidebar(false); }}
                 userIsAdmin={user.is_admin}
+                voicePresence={voicePresence}
               />
 
               {user.is_admin && (
@@ -496,6 +620,22 @@ function ChatPage() {
               )}
             </header>
 
+            {/* Voice join banner — only shown on channels the admin
+                has explicitly marked as voice channels. Regular text
+                channels stay text-only (no mic/camera prompts, no
+                screen-share button). DMs never get a voice banner. */}
+            {voiceActiveChannelId !== activeChannel.id
+              && activeChannel.type !== "dm"
+              && activeChannel.is_voice_channel && (
+              <VoiceJoinBar
+                channelName={activeChannel.name}
+                participants={voicePresence[activeChannel.id] ?? []}
+                chatterIndex={chatterIndex}
+                joining={voiceJoining}
+                onJoin={() => void onJoinVoice(activeChannel.id)}
+              />
+            )}
+
             {/* Messages */}
             <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1">
               {loadingMessages ? (
@@ -522,6 +662,22 @@ function ChatPage() {
               )}
               <div ref={messagesEndRef} />
             </div>
+
+            {/* Active voice call tray — appears above the composer when
+                this user is in a voice channel. Survives switching to
+                another channel; visible only on the channel they joined. */}
+            {voiceActiveChannelId === activeChannel.id && voiceManagerRef.current && (
+              <VoiceCallTray
+                manager={voiceManagerRef.current}
+                localStream={voiceLocalStream}
+                participants={voiceRemotes}
+                channelName={activeChannel.name}
+                meName={user.name}
+                meId={user.id}
+                chatterIndex={chatterIndex}
+                onLeave={() => void onLeaveVoice()}
+              />
+            )}
 
             {/* Composer */}
             <Composer
@@ -593,7 +749,7 @@ function ChatPage() {
 
 function ChannelGroup({
   label, channels, activeId, onPick, userIsAdmin: _userIsAdmin,
-  onEditCategory, categoryRoles,
+  onEditCategory, categoryRoles, voicePresence,
 }: {
   label: string;
   channels: ChannelWithMeta[];
@@ -606,6 +762,10 @@ function ChannelGroup({
       to the header so admins can see at a glance which categories are
       gated. NULL/empty = visible to everyone (no lock). */
   categoryRoles?: string[] | null;
+  /** Map of channel_id → array of currently-in-voice participants.
+      Drives the 🔊 N pill on each channel row. Optional — defaults
+      to no pills shown. */
+  voicePresence?: Record<string, VoiceParticipantRow[]>;
 }) {
   if (channels.length === 0) return null;
   const isLocked = !!(categoryRoles && categoryRoles.length > 0);
@@ -624,33 +784,49 @@ function ChannelGroup({
           </button>
         )}
       </div>
-      {channels.map((c) => (
-        <button
-          key={c.id}
-          onClick={() => onPick(c.id)}
-          className={`group w-full flex items-center gap-2 px-4 py-1.5 text-sm transition-colors ${
-            activeId === c.id
-              ? "bg-primary/10 text-foreground border-l-2 border-primary"
-              : "text-muted-foreground hover:bg-secondary/40 hover:text-foreground border-l-2 border-transparent"
-          }`}
-        >
-          <ChannelIcon channel={c} small />
-          <span className="truncate flex-1 text-left">
-            {c.type === "dm" ? (c.dm_partner?.name ?? "DM") : c.name}
-          </span>
-          {c.unread_count > 0 && (
-            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-primary text-primary-foreground min-w-[18px] text-center">
-              {c.unread_count > 99 ? "99+" : c.unread_count}
+      {channels.map((c) => {
+        const inVoice = voicePresence?.[c.id]?.length ?? 0;
+        return (
+          <button
+            key={c.id}
+            onClick={() => onPick(c.id)}
+            className={`group w-full flex items-center gap-2 px-4 py-1.5 text-sm transition-colors ${
+              activeId === c.id
+                ? "bg-primary/10 text-foreground border-l-2 border-primary"
+                : "text-muted-foreground hover:bg-secondary/40 hover:text-foreground border-l-2 border-transparent"
+            }`}
+          >
+            <ChannelIcon channel={c} small />
+            <span className="truncate flex-1 text-left">
+              {c.type === "dm" ? (c.dm_partner?.name ?? "DM") : c.name}
             </span>
-          )}
-        </button>
-      ))}
+            {inVoice > 0 && (
+              <span
+                title={`${inVoice} in voice`}
+                className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 inline-flex items-center gap-0.5"
+              >
+                <Volume2 className="h-2.5 w-2.5" /> {inVoice}
+              </span>
+            )}
+            {c.unread_count > 0 && (
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-primary text-primary-foreground min-w-[18px] text-center">
+                {c.unread_count > 99 ? "99+" : c.unread_count}
+              </span>
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 }
 
 function ChannelIcon({ channel, small }: { channel: ChannelWithMeta | Channel; small?: boolean }) {
   const cls = small ? "h-3.5 w-3.5 shrink-0" : "h-4 w-4 shrink-0";
+  // Voice channels visually trump every other type — the speaker icon
+  // tells you at a glance that clicking joins a call, not a thread.
+  if (channel.is_voice_channel) {
+    return <Volume2 className={`${cls} text-emerald-400`} />;
+  }
   switch (channel.type) {
     case "announcements": return <Megaphone className={`${cls} text-amber-400`} />;
     case "private":       return <Lock      className={cls} />;
@@ -998,6 +1174,7 @@ function CreateChannelDialog({
   const [type, setType] = useState<"public" | "private">("public");
   const [description, setDescription] = useState("");
   const [categoryId, setCategoryId] = useState<string>("none");
+  const [isVoiceChannel, setIsVoiceChannel] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const handleCreate = async () => {
@@ -1012,6 +1189,7 @@ function CreateChannelDialog({
       description: description.trim() || undefined,
       createdBy,
       categoryId: categoryId === "none" ? null : categoryId,
+      isVoiceChannel,
     });
     setBusy(false);
     if (id) {
@@ -1074,6 +1252,27 @@ function CreateChannelDialog({
               placeholder="What's this channel for?"
             />
           </div>
+          {/* Voice toggle — only voice channels show the "Join voice"
+              banner and let users turn on cam / share screen. Regular
+              text channels stay text-only with no mic prompts. */}
+          <label className="flex items-start gap-2.5 rounded-md border border-border bg-secondary/20 p-3 cursor-pointer hover:bg-secondary/40 transition-colors">
+            <input
+              type="checkbox"
+              checked={isVoiceChannel}
+              onChange={(e) => setIsVoiceChannel(e.target.checked)}
+              className="mt-0.5 accent-primary"
+            />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5 text-xs font-medium">
+                <Volume2 className="h-3 w-3 text-emerald-400" />
+                Voice channel
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-0.5">
+                Members can join voice calls, turn on their camera, and share their screen.
+                Choose this for daily standups, meetings, or VC rooms.
+              </p>
+            </div>
+          </label>
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>

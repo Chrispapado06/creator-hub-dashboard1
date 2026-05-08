@@ -293,6 +293,9 @@ export async function createChannel(input: {
   description?: string;
   createdBy: string;
   categoryId?: string | null;
+  /** When true, the channel is a Discord-style voice channel: members
+      can join voice, turn on camera, and share screen. Default false. */
+  isVoiceChannel?: boolean;
 }): Promise<string | null> {
   const slug = input.name.toLowerCase().trim()
     .replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
@@ -306,6 +309,7 @@ export async function createChannel(input: {
       description: input.description ?? null,
       created_by: input.createdBy,
       category_id: input.categoryId ?? null,
+      is_voice_channel: input.isVoiceChannel ?? false,
     })
     .select("id")
     .single();
