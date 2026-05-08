@@ -538,12 +538,12 @@ function RevenuePage() {
   const creatorBreakdown = useMemo(() => {
     return creators.map((c) => {
       const rangeRow = rangeOfEarnings[c.id];
-      // Always use the live range value. Earlier we fell back to
-      // lifetime totals when live returned $0 — that was misleading
-      // for short ranges (Today/Yesterday) where $0 is the actual
-      // truth. The sync's skip-on-failure upsert protects the
-      // database from permanent data loss; here we just render the
-      // honest range number.
+      // The lifetime stats row is still useful for the "synced X ago"
+      // timestamp shown next to each creator's name — it tells admins
+      // when OnlyFansAPI data was last pulled, regardless of whether
+      // the active range is Today or All time. The earnings number
+      // itself comes from the live range fetch.
+      const lifetimeRow = ofStats.find((s) => s.creator_id === c.id);
       const ofRev = rangeRow?.total ?? 0;
       const ofTrackRev = ofTracking
         .filter((t) => t.creator_id === c.id)
@@ -569,7 +569,7 @@ function RevenuePage() {
         ofRev, ofTrackRev, orgRev, intRev,
         adsRev, adsSpend, inflowwRev,
         total,
-        synced_at: ofRow?.synced_at ?? null,
+        synced_at: lifetimeRow?.synced_at ?? null,
       };
     }).sort((a, b) => b.total - a.total);
   }, [creators, ofStats, ofTracking, organicEntries, internalEntries, adCampaigns, entries, rangeOfEarnings]);
