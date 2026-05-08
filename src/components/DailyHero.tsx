@@ -73,6 +73,12 @@ export function DailyHero() {
   const [yesterdayClicks, setYesterdayClicks] = useState<number>(0);
   const [yesterdaySubs, setYesterdaySubs] = useState<number>(0);
   const [adSpend14d, setAdSpend14d] = useState<{ date: string; spend: number }[]>([]);
+  // Same 14-day series for staff payouts + agency operating expenses,
+  // bucketed by their natural date columns (staff_payouts.period_end,
+  // agency_expenses.expense_date). Used so "Net profit today" matches
+  // the formula on the Financials page instead of only deducting ad spend.
+  const [staffSpend14d, setStaffSpend14d] = useState<{ date: string; amount: number }[]>([]);
+  const [opsSpend14d, setOpsSpend14d] = useState<{ date: string; amount: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -120,6 +126,8 @@ export function DailyHero() {
         { data: goals },
         { data: dailySnaps },
         { data: adsDaily },
+        { data: staffDaily },
+        { data: opsDaily },
       ] = await Promise.all([
         supabase.from("organic_entries").select("creator_id, amount, entry_date").gte("entry_date", fourteenDaysAgoStr),
         supabase.from("internal_entries").select("creator_id, amount, entry_date").gte("entry_date", fourteenDaysAgoStr),
@@ -132,6 +140,11 @@ export function DailyHero() {
         supabase.from("revenue_goals").select("target_amount, period_start, period_end, channel").lte("period_start", monthEnd).gte("period_end", monthStart).limit(5),
         supabase.from("daily_link_snapshots").select("clicks_count, subscribers_count, snapshot_date").gte("snapshot_date", yesterdayStr),
         supabase.from("meta_insights_daily").select("date_start, spend").eq("level", "account").eq("breakdown_key", "").gte("date_start", fourteenDaysAgoStr),
+        // Staff payouts + agency operating expenses, last 14 days. Used
+        // so the "Net profit today" tile matches the formula on /financials
+        // (revenue − ad spend − staff − ops) instead of only deducting ads.
+        supabase.from("staff_payouts").select("amount, period_end").gte("period_end", fourteenDaysAgoStr),
+        supabase.from("agency_expenses").select("amount, expense_date").gte("expense_date", fourteenDaysAgoStr),
       ]);
       if (cancelled) return;
 
@@ -186,6 +199,26 @@ export function DailyHero() {
       const adsSeries = eachDayOfInterval({ start: subDays(today, 13), end: today })
         .map((d) => ({ date: format(d, "yyyy-MM-dd"), spend: adsByDay.get(format(d, "yyyy-MM-dd")) ?? 0 }));
       setAdSpend14d(adsSeries);
+
+      // Staff payouts (14-day series) bucketed by period_end. Most days
+      // will be $0 with one big spike on payroll day — that's accurate.
+      type DayAmount = { date: string; amount: number };
+      const staffByDay = new Map<string, number>();
+      for (const r of (staffDaily ?? []) as Array<{ period_end: string; amount: number }>) {
+        staffByDay.set(r.period_end, (staffByDay.get(r.period_end) ?? 0) + Number(r.amount || 0));
+      }
+      const staffSeries: DayAmount[] = eachDayOfInterval({ start: subDays(today, 13), end: today })
+        .map((d) => ({ date: format(d, "yyyy-MM-dd"), amount: staffByDay.get(format(d, "yyyy-MM-dd")) ?? 0 }));
+      setStaffSpend14d(staffSeries);
+
+      // Agency operating expenses (14-day series) bucketed by expense_date.
+      const opsByDay = new Map<string, number>();
+      for (const r of (opsDaily ?? []) as Array<{ expense_date: string; amount: number }>) {
+        opsByDay.set(r.expense_date, (opsByDay.get(r.expense_date) ?? 0) + Number(r.amount || 0));
+      }
+      const opsSeries: DayAmount[] = eachDayOfInterval({ start: subDays(today, 13), end: today })
+        .map((d) => ({ date: format(d, "yyyy-MM-dd"), amount: opsByDay.get(format(d, "yyyy-MM-dd")) ?? 0 }));
+      setOpsSpend14d(opsSeries);
 
       setLoading(false);
     })();
@@ -248,22 +281,28 @@ export function DailyHero() {
     return last7.reduce((s, d) => s + d.amount, 0) / last7.length;
   }, [dailyRevenue, todayStr, sevenDaysAgoStr]);
 
-  // Today's ad spend → net profit (revenue − ads).
-  // Revenue here includes BOTH the manually-tagged Reddit/social entries
-  // (revenueRows) AND OnlyFans Direct earnings for the day, so the
-  // profit number stays consistent with the Revenue page's formula:
-  //    profit = (organic + internal + OF direct + ad-attributed rev)
-  //           − (ad spend + staff + ops)
-  // Daily Dashboard only knows about ad spend day-by-day (staff + ops
-  // payouts don't have a daily date column), so the tile shows
-  // "today's revenue minus today's ad spend" — useful as a daily pulse,
-  // not the full P&L.
+  // Today's net profit. Now uses the same formula as the Financials
+  // page rollup so the numbers reconcile across pages:
+  //   profit = (organic + internal + OF direct)
+  //          − (ad spend + staff payouts + agency ops)
+  //
+  // Staff and ops are bucketed by their natural date columns
+  // (period_end / expense_date). Most days they'll be $0 with one
+  // big spike on payroll/invoice day — that's accurate, not a bug.
+  // The tile's tooltip shows the breakdown so admins can read why a
+  // particular day is high or low.
   const todayAdSpend = adSpend14d.find((d) => d.date === todayStr)?.spend ?? 0;
   const yesterdayAdSpend = adSpend14d.find((d) => d.date === yesterdayStr)?.spend ?? 0;
+  const todayStaff = staffSpend14d.find((d) => d.date === todayStr)?.amount ?? 0;
+  const yesterdayStaff = staffSpend14d.find((d) => d.date === yesterdayStr)?.amount ?? 0;
+  const todayOps = opsSpend14d.find((d) => d.date === todayStr)?.amount ?? 0;
+  const yesterdayOps = opsSpend14d.find((d) => d.date === yesterdayStr)?.amount ?? 0;
   const todayTotalRevenue = todayRevenue + ofToday;
   const yesterdayTotalRevenue = yesterdayRevenue + ofYesterday;
-  const todayNetProfit = todayTotalRevenue - todayAdSpend;
-  const yesterdayNetProfit = yesterdayTotalRevenue - yesterdayAdSpend;
+  const todayTotalExpenses = todayAdSpend + todayStaff + todayOps;
+  const yesterdayTotalExpenses = yesterdayAdSpend + yesterdayStaff + yesterdayOps;
+  const todayNetProfit = todayTotalRevenue - todayTotalExpenses;
+  const yesterdayNetProfit = yesterdayTotalRevenue - yesterdayTotalExpenses;
 
   // Per-creator today vs 7-day avg → top movers
   const movers = useMemo(() => {
@@ -439,10 +478,21 @@ export function DailyHero() {
           label="Net profit today"
           value={formatMoney(todayNetProfit)}
           delta={pctChange(todayNetProfit, yesterdayNetProfit)}
-          deltaSubtitle={`ad spend ${formatMoney(todayAdSpend)}`}
+          deltaSubtitle={
+            // Compact breakdown of today's costs so users can see what
+            // makes up the deduction. Ad spend always shown; staff +
+            // ops only appear when non-zero (most days they're $0).
+            [
+              `ads ${formatMoney(todayAdSpend)}`,
+              ...(todayStaff > 0 ? [`staff ${formatMoney(todayStaff)}`] : []),
+              ...(todayOps > 0 ? [`ops ${formatMoney(todayOps)}`] : []),
+            ].join(" · ")
+          }
           sparkline={dailyRevenue.map((d) => {
             const ad = adSpend14d.find((a) => a.date === d.date)?.spend ?? 0;
-            return { x: d.date, y: d.amount - ad };
+            const sf = staffSpend14d.find((a) => a.date === d.date)?.amount ?? 0;
+            const op = opsSpend14d.find((a) => a.date === d.date)?.amount ?? 0;
+            return { x: d.date, y: d.amount - ad - sf - op };
           })}
           sparkColor="rgb(167,139,250)"
           loading={loading}
