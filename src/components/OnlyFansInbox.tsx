@@ -55,13 +55,13 @@ export function OnlyFansInbox({ accountId, creatorName }: { accountId: string; c
     const q = search.trim().toLowerCase();
     if (!q) return chats;
     return chats.filter((c) =>
-      c.withUser.username.toLowerCase().includes(q) ||
-      (c.withUser.name ?? "").toLowerCase().includes(q),
+      c.fan.username.toLowerCase().includes(q) ||
+      (c.fan.name ?? "").toLowerCase().includes(q),
     );
   }, [chats, search]);
 
   const activeChat = activeFanId
-    ? chats.find((c) => c.withUser.id === activeFanId) ?? null
+    ? chats.find((c) => c.fan.id === activeFanId) ?? null
     : null;
 
   return (
@@ -105,29 +105,29 @@ export function OnlyFansInbox({ accountId, creatorName }: { accountId: string; c
             ) : (
               <ul className="divide-y divide-border">
                 {filteredChats.map((c) => (
-                  <li key={c.withUser.id}>
+                  <li key={c.fan.id}>
                     <button
-                      onClick={() => setActiveFanId(c.withUser.id)}
+                      onClick={() => setActiveFanId(c.fan.id)}
                       className={`w-full flex items-start gap-2.5 px-3 py-2.5 text-left hover:bg-secondary/40 transition-colors ${
-                        activeFanId === c.withUser.id ? "bg-primary/5 border-l-2 border-primary" : "border-l-2 border-transparent"
+                        activeFanId === c.fan.id ? "bg-primary/5 border-l-2 border-primary" : "border-l-2 border-transparent"
                       }`}
                     >
                       <div className="relative shrink-0">
-                        {c.withUser.avatar ? (
-                          <img src={c.withUser.avatar} alt="" className="h-9 w-9 rounded-full object-cover" />
+                        {c.fan.avatar ? (
+                          <img src={c.fan.avatar} alt="" className="h-9 w-9 rounded-full object-cover" />
                         ) : (
                           <div className="h-9 w-9 rounded-full bg-secondary flex items-center justify-center text-[11px] font-semibold">
-                            {c.withUser.username.slice(0, 2).toUpperCase()}
+                            {c.fan.username.slice(0, 2).toUpperCase()}
                           </div>
                         )}
-                        {c.withUser.isOnline && (
+                        {c.fan.isOnline && (
                           <span className="absolute bottom-0 right-0 h-2 w-2 rounded-full bg-emerald-500 border-2 border-card" />
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-1">
                           <span className="text-sm font-medium truncate">
-                            {c.withUser.name || c.withUser.username}
+                            {c.fan.name || c.fan.username}
                           </span>
                           {c.lastMessage?.createdAt && (
                             <span className="text-[10px] text-muted-foreground shrink-0">
@@ -137,14 +137,14 @@ export function OnlyFansInbox({ accountId, creatorName }: { accountId: string; c
                         </div>
                         {c.lastMessage?.text && (
                           <div className="text-[11px] text-muted-foreground truncate mt-0.5">
-                            {c.lastMessage.isFromUser ? "" : "You: "}
+                            {c.lastMessage.sentBy === "fan" ? "" : "You: "}
                             {c.lastMessage.text}
                           </div>
                         )}
                       </div>
-                      {(c.unreadMessagesCount ?? 0) > 0 && (
+                      {(c.unreadCount ?? 0) > 0 && (
                         <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-primary text-primary-foreground min-w-[18px] text-center self-center">
-                          {c.unreadMessagesCount}
+                          {c.unreadCount}
                         </span>
                       )}
                     </button>
@@ -195,7 +195,7 @@ function ConversationPane({
   const load = async () => {
     setLoading(true);
     try {
-      const list = await listChatMessages(accountId, chat.withUser.id, { limit: 200 });
+      const list = await listChatMessages(accountId, chat.fan.id, { limit: 200 });
       // OF returns newest-first; reverse so we stack chronologically.
       setMessages([...list].reverse());
     } catch (e) {
@@ -205,14 +205,14 @@ function ConversationPane({
     }
   };
 
-  useEffect(() => { void load(); }, [accountId, chat.withUser.id]);
+  useEffect(() => { void load(); }, [accountId, chat.fan.id]);
 
   const onSend = async () => {
     if (!draft.trim()) return;
     setSending(true);
     try {
       const numericPrice = price ? Math.max(0, Number(price)) : 0;
-      await sendChatMessage(accountId, chat.withUser.id, {
+      await sendChatMessage(accountId, chat.fan.id, {
         text: draft.trim(),
         price: numericPrice,
       });
@@ -236,22 +236,22 @@ function ConversationPane({
         <Button size="icon" variant="ghost" className="h-8 w-8 sm:hidden" onClick={onBack}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
-        {chat.withUser.avatar ? (
-          <img src={chat.withUser.avatar} alt="" className="h-8 w-8 rounded-full object-cover" />
+        {chat.fan.avatar ? (
+          <img src={chat.fan.avatar} alt="" className="h-8 w-8 rounded-full object-cover" />
         ) : (
           <div className="h-8 w-8 rounded-full bg-secondary flex items-center justify-center text-[10px] font-semibold">
-            {chat.withUser.username.slice(0, 2).toUpperCase()}
+            {chat.fan.username.slice(0, 2).toUpperCase()}
           </div>
         )}
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-semibold truncate">{chat.withUser.name || chat.withUser.username}</div>
+          <div className="text-sm font-semibold truncate">{chat.fan.name || chat.fan.username}</div>
           <a
-            href={`https://onlyfans.com/${chat.withUser.username}`}
+            href={`https://onlyfans.com/${chat.fan.username}`}
             target="_blank"
             rel="noopener noreferrer"
             className="text-[10px] text-muted-foreground hover:text-primary inline-flex items-center gap-1"
           >
-            @{chat.withUser.username} <ExternalLink className="h-2.5 w-2.5" />
+            @{chat.fan.username} <ExternalLink className="h-2.5 w-2.5" />
           </a>
         </div>
         <Button size="icon" variant="ghost" className="h-8 w-8" onClick={async () => { setRefreshing(true); await load(); setRefreshing(false); }}>
@@ -282,7 +282,7 @@ function ConversationPane({
                 void onSend();
               }
             }}
-            placeholder={`Reply to ${chat.withUser.name || chat.withUser.username}…  (Enter to send)`}
+            placeholder={`Reply to ${chat.fan.name || chat.fan.username}…  (Enter to send)`}
             rows={1}
             className="resize-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 px-3 pt-2 pb-1 shadow-none text-sm bg-transparent max-h-32"
           />
@@ -319,9 +319,9 @@ function ConversationPane({
 }
 
 function MessageBubble({ message, creatorName }: { message: OfChatMessage; creatorName: string }) {
-  // OF's `isFromUser=true` means "from the FAN" (the OF user).
+  // OF's `sentBy="fan"` means the message came from the fan (vs the creator).
   // false / undefined = the creator (us).
-  const fromFan = !!message.isFromUser;
+  const fromFan = message.sentBy === "fan";
   return (
     <div className={`flex ${fromFan ? "justify-start" : "justify-end"}`}>
       <div className={`max-w-[80%] rounded-2xl px-3.5 py-2 text-sm ${

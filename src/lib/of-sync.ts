@@ -107,27 +107,24 @@ export async function syncCreatorOnlyFans(creator: CreatorMin): Promise<SyncOneR
 
   // 3. Pull every endpoint we need in parallel.
   //
-  // OnlyFansAPI uses two different patterns:
-  //   • Per-account profile data sits at /api/{account}/me
-  //   • Money / earnings data sits at /api/analytics/* (POST endpoints
-  //     that take an account_ids array in the body — NOT GETs against
-  //     /api/{account}/earnings, which returns 404).
+  // OnlyFansAPI's documented endpoints:
+  //   GET  /api/{account}/me                              → profile
+  //   GET  /api/{account}/payouts/earnings-statistics     → totals + DAILY series
+  //                                                         (this replaces the old
+  //                                                         /api/analytics/summary/earnings
+  //                                                         POST that only returned aggregates)
+  //   GET  /api/{account}/tracking-links                  → campaign codes + revenue
   //
-  // For lifetime earnings we ask for a wide date range (2018-now —
-  // pre-2018 OF wasn't paying out meaningful sums and 2018 covers any
-  // realistic creator). For the chart series we also ask the
-  // financial/profitability/{account}/history endpoint which is the
-  // only per-account historical series exposed.
+  // earnings-statistics returns: { data: { totalEarnings, breakdown:
+  // {subscriptions, tips, messages, posts, streams}, timeSeries: [...] } }.
+  // We use groupBy=day so the chart finally gets actual daily granularity
+  // instead of the monthly buckets the old endpoint forced.
   const today = format(new Date(), "yyyy-MM-dd");
   const lifetimeStart = "2018-01-01";
-  const [profileJson, earningsJson, historyJson, trackingJson] = await Promise.all([
+  const earningsParams = `?startDate=${lifetimeStart}&endDate=${today}&groupBy=day`;
+  const [profileJson, earningsJson, trackingJson] = await Promise.all([
     safeFetch(`${acctId}/me`),
-    safePost("analytics/summary/earnings", {
-      account_ids: [acctId],
-      start_date: lifetimeStart,
-      end_date: today,
-    }),
-    safeFetch(`analytics/financial/profitability/${acctId}/history?months=24`),
+    safeFetch(`${acctId}/payouts/earnings-statistics${earningsParams}`),
     safeFetch(`${acctId}/tracking-links`),
   ]);
 
@@ -140,23 +137,25 @@ export async function syncCreatorOnlyFans(creator: CreatorMin): Promise<SyncOneR
 
   // 4. Upsert profile + lifetime earnings
   //
-  // /api/{account}/me wraps profile in `data:` and adds a `_meta` envelope.
-  // /api/analytics/summary/earnings sometimes wraps and sometimes doesn't —
-  // we strip both layers below.
+  // Both endpoints wrap in { data: ... }. The earnings-statistics shape:
+  //   { data: { totalEarnings, breakdown: { subscriptions, tips,
+  //                                          messages, posts, streams },
+  //             timeSeries: [{ date, earnings, type }] } }
+  // The breakdown object is where the per-category numbers live — we
+  // also fall back to top-level keys for resilience.
   const profile = unwrap(profileJson);
   const earnings = unwrap(earningsJson);
-  // The analytics earnings response uses the field names: total_earnings,
-  // subscriptions, posts, messages, tips, streams. Older docs also
-  // documented totalEarnings / subs / ppv as variants — try them all
-  // for resilience across API versions.
+  const breakdown = (earnings?.breakdown && typeof earnings.breakdown === "object")
+    ? earnings.breakdown as Record<string, unknown>
+    : earnings;
   const pickNum = (...keys: string[]): number => {
     for (const k of keys) {
-      const v = num(earnings?.[k]);
+      const v = num(earnings?.[k]) || num(breakdown?.[k]);
       if (v) return v;
     }
     return 0;
   };
-  const totalEarnings = pickNum("total_earnings", "totalEarnings", "total");
+  const totalEarnings = pickNum("totalEarnings", "total_earnings", "total");
   const statsPayload = {
     creator_id: creator.id,
     username: str(profile?.username) ?? creator.of_username,
@@ -194,44 +193,67 @@ export async function syncCreatorOnlyFans(creator: CreatorMin): Promise<SyncOneR
     return { ok: false, creator_id: creator.id, error: `Stats save failed: ${statsErr.message}` };
   }
 
-  // 5. Historical earnings for the chart.
+  // 5. Daily earnings series for the chart.
   //
-  // OnlyFansAPI's only per-account time series is monthly:
-  //   GET /api/analytics/financial/profitability/{account}/history?months=24
-  // Response: [{ year, month, gross_revenue, net_revenue, profit, margin }]
+  // The earnings-statistics response includes a timeSeries array where
+  // each entry is one day (because we passed groupBy=day). Shape:
+  //   [{ date: "2025-05-01", earnings: 123.45, type: "subscription"|...
+  //      |"tip"|"message"|"post"|"stream" }]
   //
-  // We don't have daily data, so we synthesize one row per month at
-  // the 1st-of-the-month into of_earnings_daily.total. The chart
-  // bucket-by-day is fine with sparse data — it just shows non-zero
-  // dots on the first of each month. Better than $0 across the board.
-  const historyData = unwrap(historyJson);
-  const historyRows = Array.isArray(historyData) ? historyData
-    : Array.isArray((historyData as { data?: unknown })?.data) ? (historyData as { data: unknown[] }).data
-    : [];
-  if (historyRows.length > 0) {
-    const dailyRows = (historyRows as Record<string, unknown>[]).map((m) => {
-      const year = num(m.year);
-      const month = num(m.month);
-      if (!year || !month) return null;
-      const dateStr = `${year}-${String(month).padStart(2, "0")}-01`;
-      const grossRev = num(m.gross_revenue) || num(m.grossRevenue);
-      const netRev = num(m.net_revenue) || num(m.netRevenue);
-      // Use gross by default — net subtracts OF's 20% cut, which is
-      // what hits the bank, but the rest of the app reports gross
-      // numbers consistently.
-      const total = grossRev || netRev;
-      return {
-        creator_id: creator.id,
-        entry_date: dateStr,
-        earnings_subs: 0,
-        earnings_tips: 0,
-        earnings_ppv: 0,
-        earnings_messages: 0,
-        earnings_streams: 0,
-        earnings_referrals: 0,
-        total,
-      };
-    }).filter((r): r is NonNullable<typeof r> => r !== null);
+  // Multiple entries can share the same date (one per type). We bucket
+  // by date and split into the per-category columns of of_earnings_daily.
+  const seriesRaw = (earnings?.timeSeries as unknown[] | undefined)
+    ?? (earnings?.history as unknown[] | undefined)
+    ?? (earnings?.daily as unknown[] | undefined)
+    ?? [];
+  if (Array.isArray(seriesRaw) && seriesRaw.length > 0) {
+    type DailyAccumulator = {
+      subs: number; tips: number; ppv: number; messages: number;
+      streams: number; referrals: number; total: number;
+    };
+    const buckets = new Map<string, DailyAccumulator>();
+    const ensure = (date: string): DailyAccumulator => {
+      let b = buckets.get(date);
+      if (!b) {
+        b = { subs: 0, tips: 0, ppv: 0, messages: 0, streams: 0, referrals: 0, total: 0 };
+        buckets.set(date, b);
+      }
+      return b;
+    };
+    for (const row of seriesRaw as Record<string, unknown>[]) {
+      const dateStr = str(row.date) ?? str(row.day) ?? str(row.entry_date);
+      if (!dateStr) continue;
+      const day = dateStr.slice(0, 10);
+      const amt = num(row.earnings) || num(row.amount) || num(row.total);
+      const type = String(row.type ?? "").toLowerCase();
+      const b = ensure(day);
+      switch (type) {
+        case "subscription": case "subscriptions": case "subs":
+          b.subs += amt; break;
+        case "tip": case "tips":
+          b.tips += amt; break;
+        case "message": case "messages":
+          b.messages += amt; break;
+        case "post": case "posts": case "ppv":
+          b.ppv += amt; break;
+        case "stream": case "streams": case "livestream":
+          b.streams += amt; break;
+        case "referral": case "referrals":
+          b.referrals += amt; break;
+      }
+      b.total += amt;
+    }
+    const dailyRows = [...buckets.entries()].map(([entry_date, b]) => ({
+      creator_id: creator.id,
+      entry_date,
+      earnings_subs: b.subs,
+      earnings_tips: b.tips,
+      earnings_ppv: b.ppv,
+      earnings_messages: b.messages,
+      earnings_streams: b.streams,
+      earnings_referrals: b.referrals,
+      total: b.total,
+    }));
     if (dailyRows.length > 0) {
       await supabase.from("of_earnings_daily")
         .upsert(dailyRows, { onConflict: "creator_id,entry_date" });
@@ -319,19 +341,26 @@ function parseEarnings(json: unknown): EarningsBreakdown {
   const e = (obj.data && typeof obj.data === "object")
     ? (obj.data as Record<string, unknown>)
     : obj;
+  // earnings-statistics nests the per-category numbers in `breakdown`
+  const bd = (e.breakdown && typeof e.breakdown === "object")
+    ? (e.breakdown as Record<string, unknown>)
+    : e;
   return {
-    total: num(e.total_earnings) || num(e.totalEarnings) || num(e.total),
-    subs: num(e.subscriptions) || num(e.subs),
-    tips: num(e.tips),
-    ppv: num(e.posts) || num(e.ppv),
-    messages: num(e.messages),
-    streams: num(e.streams) || num(e.livestreams),
+    total: num(e.totalEarnings) || num(e.total_earnings) || num(e.total),
+    subs: num(bd.subscriptions) || num(bd.subs),
+    tips: num(bd.tips),
+    ppv: num(bd.posts) || num(bd.ppv),
+    messages: num(bd.messages),
+    streams: num(bd.streams) || num(bd.livestreams),
   };
 }
 
 /**
  * Fetch one combined earnings summary across the given account_ids
- * for [start, end]. Use this when you only need agency-wide totals.
+ * for [start, end]. Hits /api/{account}/payouts/earnings-statistics
+ * once per account in parallel and sums the totals — same total as
+ * the old POST /api/analytics/summary/earnings endpoint, but the new
+ * endpoint is officially documented and returns more detail.
  */
 export async function fetchOfEarnings(
   accountIds: string[],
@@ -340,25 +369,27 @@ export async function fetchOfEarnings(
 ): Promise<EarningsBreakdown> {
   const key = getApiKey();
   if (!key || accountIds.length === 0) return ZERO_BREAKDOWN;
-  try {
-    const r = await fetch(`${BASE}/analytics/summary/earnings`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${key}`,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify({
-        account_ids: accountIds,
-        start_date: startDate,
-        end_date: endDate,
-      }),
-    });
-    if (!r.ok) return ZERO_BREAKDOWN;
-    return parseEarnings(await r.json());
-  } catch {
-    return ZERO_BREAKDOWN;
-  }
+  const params = `?startDate=${startDate}&endDate=${endDate}`;
+  const results = await Promise.all(accountIds.map(async (id) => {
+    try {
+      const r = await fetch(`${BASE}/${id}/payouts/earnings-statistics${params}`, {
+        headers: { Authorization: `Bearer ${key}` },
+      });
+      if (!r.ok) return ZERO_BREAKDOWN;
+      return parseEarnings(await r.json());
+    } catch {
+      return ZERO_BREAKDOWN;
+    }
+  }));
+  // Sum per-account breakdowns into one combined total
+  return results.reduce((acc, r) => ({
+    total: acc.total + r.total,
+    subs: acc.subs + r.subs,
+    tips: acc.tips + r.tips,
+    ppv: acc.ppv + r.ppv,
+    messages: acc.messages + r.messages,
+    streams: acc.streams + r.streams,
+  }), ZERO_BREAKDOWN);
 }
 
 /**

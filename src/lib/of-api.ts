@@ -234,14 +234,64 @@ export async function listFans(
 }
 
 // ── Chats / messaging ────────────────────────────────────────────────
+//
+// OnlyFansAPI's actual response uses these field names:
+//   GET /api/{account}/chats          → { data: [{ fan, lastMessage, unreadCount }] }
+//   GET /api/{account}/chats/{id}/messages → { data: [{ id, text, sentBy, ... }] }
+//
+// Older docs and older versions of this client used `withUser` /
+// `unreadMessagesCount` / `isFromUser`. The normaliser below maps both
+// shapes onto a single internal type so consumers don't have to care
+// which version of the API is responding. The `chat_id` path parameter
+// for the messages endpoint accepts the fan's user id (data.fan.id) —
+// the OF API treats them as interchangeable.
 
 export type OfChat = {
   id: number;
-  withUser: { id: number; username: string; name?: string; avatar?: string; isOnline?: boolean };
-  lastMessage?: { id: number; text?: string; createdAt: string; isFromUser?: boolean };
-  unreadMessagesCount?: number;
+  // Renamed from `withUser` to match the live API. The fan we're
+  // chatting with — their user id is also the chat's id for the
+  // messages endpoint.
+  fan: { id: number; username: string; name?: string; avatar?: string; isOnline?: boolean };
+  lastMessage?: { id: number; text?: string; createdAt: string; sentBy?: "fan" | "creator" };
+  unreadCount?: number;
   isPinned?: boolean;
 };
+
+function normaliseChat(raw: unknown): OfChat | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  // Pull whichever shape is present — `fan` (current API) or
+  // `withUser` (legacy / older accounts).
+  const fanRaw = (r.fan ?? r.withUser) as Record<string, unknown> | undefined;
+  if (!fanRaw || typeof fanRaw.id !== "number") return null;
+  const lastRaw = r.lastMessage as Record<string, unknown> | undefined;
+  let lastMessage: OfChat["lastMessage"];
+  if (lastRaw) {
+    const sentBy: "fan" | "creator" =
+      typeof lastRaw.sentBy === "string"
+        ? (lastRaw.sentBy === "fan" ? "fan" : "creator")
+        : (lastRaw.isFromUser === true ? "fan" : "creator");
+    lastMessage = {
+      id: Number(lastRaw.id ?? 0),
+      text: typeof lastRaw.text === "string" ? lastRaw.text : undefined,
+      createdAt: typeof lastRaw.createdAt === "string" ? lastRaw.createdAt : "",
+      sentBy,
+    };
+  }
+  return {
+    id: Number(r.id ?? fanRaw.id),
+    fan: {
+      id: Number(fanRaw.id),
+      username: String(fanRaw.username ?? ""),
+      name: typeof fanRaw.name === "string" ? fanRaw.name : undefined,
+      avatar: typeof fanRaw.avatar === "string" ? fanRaw.avatar : undefined,
+      isOnline: typeof fanRaw.isOnline === "boolean" ? fanRaw.isOnline : undefined,
+    },
+    lastMessage,
+    unreadCount: Number(r.unreadCount ?? r.unreadMessagesCount ?? 0) || undefined,
+    isPinned: typeof r.isPinned === "boolean" ? r.isPinned : undefined,
+  };
+}
 
 export async function listChats(
   accountId: string,
@@ -252,18 +302,48 @@ export async function listChats(
   if (opts?.offset) params.set("offset", String(opts.offset));
   if (opts?.unreadOnly) params.set("filter", "unread");
   const q = params.toString();
-  return ofPaginate<OfChat>(`/${accountId}/chats${q ? `?${q}` : ""}`, opts);
+  const raw = await ofPaginate<unknown>(`/${accountId}/chats${q ? `?${q}` : ""}`, opts);
+  return raw.map(normaliseChat).filter((c): c is OfChat => c !== null);
 }
 
 export type OfChatMessage = {
   id: number;
   text?: string;
-  isFromUser?: boolean;       // true = sent by the fan, false = by the creator
+  // "fan" = sent by the fan, "creator" = sent by the creator.
+  // Preferred over `isFromUser` because the OF docs use it.
+  sentBy: "fan" | "creator";
   createdAt: string;
   price?: number;             // PPV price if any
+  tip?: number;               // tip amount included in the message
   isOpened?: boolean;
   media?: Array<{ id: number; type: string; src?: string; thumb?: string }>;
 };
+
+function normaliseMessage(raw: unknown): OfChatMessage | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const sentBy: "fan" | "creator" =
+    typeof r.sentBy === "string"
+      ? (r.sentBy === "fan" ? "fan" : "creator")
+      : (r.isFromUser === true ? "fan" : "creator");
+  const mediaRaw = r.media as Array<Record<string, unknown>> | undefined;
+  const media = Array.isArray(mediaRaw) ? mediaRaw.map((m) => ({
+    id: Number(m.id ?? 0),
+    type: String(m.type ?? "photo"),
+    src: typeof m.src === "string" ? m.src : (typeof m.url === "string" ? m.url : undefined),
+    thumb: typeof m.thumb === "string" ? m.thumb : (typeof m.preview === "string" ? m.preview : undefined),
+  })) : undefined;
+  return {
+    id: Number(r.id ?? 0),
+    text: typeof r.text === "string" ? r.text : undefined,
+    sentBy,
+    createdAt: typeof r.createdAt === "string" ? r.createdAt : "",
+    price: typeof r.price === "number" ? r.price : undefined,
+    tip: typeof r.tip === "number" ? r.tip : undefined,
+    isOpened: typeof r.isOpened === "boolean" ? r.isOpened : undefined,
+    media,
+  };
+}
 
 export async function listChatMessages(
   accountId: string,
@@ -271,7 +351,8 @@ export async function listChatMessages(
   opts?: { limit?: number; key?: string; maxPages?: number },
 ): Promise<OfChatMessage[]> {
   const limit = opts?.limit ?? 100;
-  return ofPaginate<OfChatMessage>(`/${accountId}/chats/${fanUserId}/messages?limit=${limit}`, opts);
+  const raw = await ofPaginate<unknown>(`/${accountId}/chats/${fanUserId}/messages?limit=${limit}`, opts);
+  return raw.map(normaliseMessage).filter((m): m is OfChatMessage => m !== null);
 }
 
 export type SendMessageInput = {
