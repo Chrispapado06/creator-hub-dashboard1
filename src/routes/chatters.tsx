@@ -310,6 +310,51 @@ function RosterTab({
   const [coachingFor, setCoachingFor] = useState<Chatter | null>(null);
   const [genForm, setGenForm] = useState({ username: "", password: "" });
 
+  // ── Multi-select state for bulk delete ──────────────────────────
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const visibleChatters = useMemo(
+    () => chatters.filter((c) => filterRole === "all" || c.role === filterRole),
+    [chatters, filterRole],
+  );
+  const allVisibleSelected = visibleChatters.length > 0
+    && visibleChatters.every((c) => selectedIds.has(c.id));
+  const toggleOne = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const toggleAllVisible = () => {
+    setSelectedIds((prev) => {
+      if (allVisibleSelected) {
+        const next = new Set(prev);
+        for (const c of visibleChatters) next.delete(c.id);
+        return next;
+      }
+      const next = new Set(prev);
+      for (const c of visibleChatters) next.add(c.id);
+      return next;
+    });
+  };
+  const onBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    setBulkDeleting(true);
+    const ids = Array.from(selectedIds);
+    const { error } = await supabase.from("chatters").delete().in("id", ids);
+    setBulkDeleting(false);
+    setBulkConfirmOpen(false);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    toast.success(`Removed ${ids.length} staff member${ids.length === 1 ? "" : "s"}`);
+    setSelectedIds(new Set());
+    onRefresh();
+  };
+
   const startEdit = (c: Chatter) => {
     setForm({
       name: c.name,
@@ -638,10 +683,46 @@ function RosterTab({
           No staff added yet — click "Add chatter" to start.
         </div>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-border">
+        <>
+          {/* Bulk action bar — slides in when any rows are selected. */}
+          {selectedIds.size > 0 && (
+            <div className="rounded-xl border border-primary/30 bg-primary/5 px-4 py-2.5 flex items-center justify-between gap-3 flex-wrap">
+              <div className="text-sm">
+                <span className="font-semibold">{selectedIds.size}</span>
+                <span className="text-muted-foreground"> staff selected</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>
+                  Clear selection
+                </Button>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={() => setBulkConfirmOpen(true)}
+                  disabled={bulkDeleting}
+                >
+                  <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                  Delete {selectedIds.size}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          <div className="overflow-hidden rounded-xl border border-border">
           <table className="w-full text-sm">
             <thead className="bg-secondary/40 text-xs uppercase tracking-wide text-muted-foreground">
               <tr>
+                {/* Select-all checkbox in the header — toggles every
+                    row currently visible (after the role filter). */}
+                <th className="px-3 py-3 w-10">
+                  <input
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    onChange={toggleAllVisible}
+                    aria-label="Select all"
+                    className="h-4 w-4 accent-primary cursor-pointer"
+                  />
+                </th>
                 <th className="text-left font-medium px-4 py-3">Name</th>
                 <th className="text-left font-medium px-4 py-3">Role</th>
                 <th className="text-left font-medium px-4 py-3">Status</th>
@@ -654,11 +735,23 @@ function RosterTab({
               </tr>
             </thead>
             <tbody>
-              {chatters.filter((c) => filterRole === "all" || c.role === filterRole).map((c) => {
+              {visibleChatters.map((c) => {
                 const accs = assignmentsFor(c.id);
                 const last = lastShiftFor(c.id);
+                const isSelected = selectedIds.has(c.id);
                 return (
-                  <tr key={c.id} className="border-t border-border bg-card hover:bg-secondary/20 transition-colors align-top">
+                  <tr key={c.id} className={`border-t border-border transition-colors align-top ${
+                    isSelected ? "bg-primary/5 hover:bg-primary/10" : "bg-card hover:bg-secondary/20"
+                  }`}>
+                    <td className="px-3 py-3">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleOne(c.id)}
+                        aria-label={`Select ${c.name}`}
+                        className="h-4 w-4 accent-primary cursor-pointer mt-1"
+                      />
+                    </td>
                     <td className="px-4 py-3">
                       <div className="font-medium">{c.name}</div>
                       <div className="text-xs text-muted-foreground">
@@ -829,8 +922,34 @@ function RosterTab({
               })}
             </tbody>
           </table>
-        </div>
+          </div>
+        </>
       )}
+
+      {/* Bulk delete confirm dialog */}
+      <AlertDialog open={bulkConfirmOpen} onOpenChange={setBulkConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Delete {selectedIds.size} staff member{selectedIds.size === 1 ? "" : "s"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This deletes every selected staff member and all of their shifts.
+              Cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={onBulkDelete}
+              disabled={bulkDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {bulkDeleting ? "Deleting…" : `Delete ${selectedIds.size}`}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {assignDialogOpen && (
         <AssignmentsDialog

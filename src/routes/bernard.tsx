@@ -478,6 +478,18 @@ function BernardPage() {
       // Agentic loop — keeps calling tools until Claude says "end_turn"
       const tools = toolsForAnthropic();
       let safety = 6; // Max round-trips per user turn (covers complex multi-tool flows)
+      // Loop-prevention: track every tool call we've already executed
+      // this turn, keyed by `${name}::${stable JSON of input}`. If we see
+      // a duplicate, we don't re-execute — we feed Claude back the prior
+      // result with a "Already ran this" prefix so it stops trying. This
+      // catches the failure mode where Bernard re-fires the same query
+      // four or five times because earlier output didn't satisfy it,
+      // burning credits and looking like a hang to the user.
+      const executedCalls = new Map<string, string>(); // hash → prior result content
+      const callKey = (name: string, input: unknown) => {
+        try { return `${name}::${JSON.stringify(input ?? {})}`; }
+        catch { return `${name}::?`; }
+      };
       while (safety-- > 0) {
         let stopReason: "end_turn" | "tool_use" | "max_tokens" | "stop_sequence" | "unknown" = "unknown";
         // Track everything Bernard streams locally during this iteration.
@@ -531,6 +543,19 @@ function BernardPage() {
           const existing = toolCallStates[block.id];
           if (existing && (existing.status === "done" || existing.status === "error" || existing.status === "rejected")) continue;
 
+          // Loop guard — if Bernard tries to run the same tool with
+          // identical args again, short-circuit. We feed the prior
+          // result back with a prefix that nudges him toward summarising
+          // rather than retrying yet again.
+          const key = callKey(block.name, block.input);
+          if (executedCalls.has(key)) {
+            const prior = executedCalls.get(key)!;
+            const dedupMsg = `(Loop guard: this exact tool call was already run earlier in this turn. Use the prior result below — do NOT repeat the call.)\n\n${prior}`;
+            setToolStatus(block.id, "done", dedupMsg);
+            results.push({ type: "tool_result", tool_use_id: block.id, content: dedupMsg });
+            continue;
+          }
+
           const tool = getTool(block.name);
           if (!tool) {
             setToolStatus(block.id, "error", `Tool ${block.name} not found.`);
@@ -553,6 +578,8 @@ function BernardPage() {
               ]);
               const isError = result.startsWith("Error:");
               setToolStatus(block.id, isError ? "error" : "done", result);
+              // Cache successful (non-error) reads for the loop guard
+              if (!isError) executedCalls.set(key, result || "(no output)");
               // Anthropic rejects user messages with empty content, so guard
               // against a tool returning "" — surface "(no output)" instead.
               results.push({ type: "tool_result", tool_use_id: block.id, content: result || "(no output)", is_error: isError });
@@ -565,6 +592,7 @@ function BernardPage() {
             // Write / destructive — surface an approval card
             setToolStatus(block.id, "pending_approval");
             const result = await askApproval(block.id, block.name, block.input);
+            if (!result.is_error) executedCalls.set(key, result.content || "(no output)");
             // Same guard as the read branch — never let an empty content
             // string leak through.
             results.push({ ...result, content: result.content || "(no output)" });
@@ -791,6 +819,35 @@ function BernardPage() {
         </div>
       )}
 
+      {/* ── Streaming indicator with prominent Stop ────────────────────── */}
+      {/* Sticky pill near the top of the chat area whenever Bernard is
+          working on a turn. The composer's Stop button is small and
+          users miss it; this one floats over the response so it's
+          impossible to miss. Click stops the in-flight stream + any
+          tool execution mid-flight. */}
+      {streaming && (
+        <div className="sticky top-0 z-20 flex justify-center pointer-events-none">
+          <div className="pointer-events-auto mt-3 inline-flex items-center gap-3 rounded-full border border-border bg-card/95 backdrop-blur-md shadow-lg px-3 py-1.5">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary/70" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
+            </span>
+            <span className="text-xs text-muted-foreground">
+              Bernard is working…
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={cancelStreaming}
+              className="h-7 px-2.5 rounded-full bg-rose-500/10 border-rose-500/40 text-rose-400 hover:bg-rose-500/20 hover:text-rose-300"
+            >
+              <X className="h-3 w-3 mr-1" />
+              <span className="text-[11px]">Stop</span>
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* ── Conversation area ──────────────────────────────────────────── */}
       {/* Borderless flow column — content breathes against the page bg the
           way Claude / ChatGPT do, instead of being trapped inside a card. */}
@@ -883,13 +940,14 @@ function BernardPage() {
                 </span>
                 {streaming ? (
                   <Button
-                    size="icon"
+                    size="sm"
                     variant="outline"
                     onClick={cancelStreaming}
-                    className="h-8 w-8 rounded-full"
-                    aria-label="Stop"
+                    className="h-8 px-3 rounded-full bg-rose-500/10 border-rose-500/40 text-rose-400 hover:bg-rose-500/20 hover:text-rose-300"
+                    aria-label="Stop Bernard"
                   >
-                    <X className="h-4 w-4" />
+                    <X className="h-4 w-4 mr-1" />
+                    Stop
                   </Button>
                 ) : (
                   <Button
