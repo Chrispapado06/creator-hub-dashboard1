@@ -45,10 +45,18 @@ CREATE POLICY "Public full access" ON public.creator_of_accounts
   FOR ALL USING (true) WITH CHECK (true);
 
 -- Backfill: copy every existing primary OF identity into the new table.
--- Skip rows where the creator has no of_username set, and don't clobber
--- an already-backfilled row if this migration runs twice.
+-- Skip rows where the creator has no of_username set. Only insert when
+-- the creator has NO rows at all in creator_of_accounts — protects
+-- against re-runs where (a) a previous run already backfilled this
+-- creator, OR (b) admins added a secondary account before backfill.
+-- Without this NOT EXISTS guard, a re-run can conflict with the
+-- partial-unique-on-is_primary index when of_username has changed
+-- between the two source tables.
 INSERT INTO public.creator_of_accounts (creator_id, of_username, onlyfansapi_acct_id, is_primary, label)
-SELECT id, of_username, onlyfansapi_acct_id, true, 'main'
-FROM public.creators
-WHERE of_username IS NOT NULL AND of_username <> ''
-ON CONFLICT (creator_id, of_username) DO NOTHING;
+SELECT c.id, c.of_username, c.onlyfansapi_acct_id, true, 'main'
+FROM public.creators c
+WHERE c.of_username IS NOT NULL
+  AND c.of_username <> ''
+  AND NOT EXISTS (
+    SELECT 1 FROM public.creator_of_accounts a WHERE a.creator_id = c.id
+  );
