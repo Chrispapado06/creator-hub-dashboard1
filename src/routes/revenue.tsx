@@ -170,7 +170,48 @@ function RevenuePage() {
   const [filterCreator, setFilterCreator] = useState("all");
   const [filterSource, setFilterSource] = useState("all");
 
-  // Chart controls
+  // ── Page-level date range ──────────────────────────────────────────
+  // Drives the OnlyFans Direct numbers in the hero / breakdown table /
+  // chart. Defaults to the last 30 days. "lifetime" maps to a 2018→now
+  // window which is far enough back to cover every realistic creator.
+  type RangePreset = "7d" | "30d" | "90d" | "365d" | "lifetime" | "custom";
+  const [rangePreset, setRangePreset] = useState<RangePreset>("30d");
+  const [customFrom, setCustomFrom] = useState<string>("");
+  const [customTo, setCustomTo] = useState<string>("");
+  const dateRange = useMemo<{ from: Date; to: Date; startStr: string; endStr: string; label: string }>(() => {
+    const today = new Date();
+    if (rangePreset === "lifetime") {
+      const from = new Date("2018-01-01");
+      return { from, to: today, startStr: "2018-01-01", endStr: today.toISOString().slice(0, 10), label: "Lifetime" };
+    }
+    if (rangePreset === "custom") {
+      const from = customFrom ? new Date(customFrom) : new Date(Date.now() - 30 * 86400_000);
+      const to = customTo ? new Date(customTo) : today;
+      return {
+        from, to,
+        startStr: from.toISOString().slice(0, 10),
+        endStr: to.toISOString().slice(0, 10),
+        label: `${from.toISOString().slice(0,10)} – ${to.toISOString().slice(0,10)}`,
+      };
+    }
+    const days = { "7d": 7, "30d": 30, "90d": 90, "365d": 365 }[rangePreset];
+    const from = new Date(Date.now() - days * 86400_000);
+    return {
+      from, to: today,
+      startStr: from.toISOString().slice(0, 10),
+      endStr: today.toISOString().slice(0, 10),
+      label: `Last ${days} days`,
+    };
+  }, [rangePreset, customFrom, customTo]);
+
+  // Per-creator OF earnings for the active range, fetched live from
+  // OnlyFansAPI when the range changes. Keyed by creator_id.
+  const [rangeOfEarnings, setRangeOfEarnings] = useState<Record<string, {
+    total: number; subs: number; tips: number; ppv: number; messages: number; streams: number;
+  }>>({});
+  const [loadingRangeOf, setLoadingRangeOf] = useState(false);
+
+  // Chart controls (separate from page-level range — but defaults to it)
   const [chartStat, setChartStat] = useState("total_revenue");
   const [chartRange, setChartRange] = useState("30d");
   const [chartFrom, setChartFrom] = useState("");
@@ -224,6 +265,35 @@ function RevenuePage() {
   };
 
   useEffect(() => { load(); }, []);
+
+  // Fetch OF earnings for the chosen date range whenever it changes
+  // (or after a fresh creator list loads). Lazy-imports the helper so
+  // /revenue stays light on first paint.
+  useEffect(() => {
+    if (creators.length === 0) return;
+    let cancelled = false;
+    setLoadingRangeOf(true);
+    void (async () => {
+      const { fetchOfEarningsPerCreator } = await import("@/lib/of-sync");
+      // We need each creator's onlyfansapi_acct_id to call analytics —
+      // pull the full row from supabase since the load() above only
+      // selects id+name.
+      const { data: full } = await supabase
+        .from("creators")
+        .select("id, onlyfansapi_acct_id");
+      if (cancelled) return;
+      const map = await fetchOfEarningsPerCreator(
+        (full ?? []) as Array<{ id: string; onlyfansapi_acct_id: string | null }>,
+        dateRange.startStr,
+        dateRange.endStr,
+      );
+      if (!cancelled) {
+        setRangeOfEarnings(map);
+        setLoadingRangeOf(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [creators.length, dateRange.startStr, dateRange.endStr]);
 
   const accountsForCreator = useMemo(
     () => accounts.filter((a) => a.creator_id === form.creator_id),
@@ -286,14 +356,27 @@ function RevenuePage() {
     const adsNet = adsTotal - metaAdsSpend;
     const organic = organicEntries.reduce((s, e) => s + e.amount, 0);
     const internal = internalEntries.reduce((s, e) => s + e.amount, 0);
-    // OnlyFans direct = lifetime earnings the OF API attributes to the
-    // creator's account itself (subs + tips + PPV + messages + streams +
-    // referrals). Synced into of_creator_stats by the OF sync button.
-    const ofDirect = ofStats.reduce((s, r) => s + (r.total_earnings ?? 0), 0);
-    const ofSubs = ofStats.reduce((s, r) => s + (r.earnings_subs ?? 0), 0);
-    const ofTips = ofStats.reduce((s, r) => s + (r.earnings_tips ?? 0), 0);
-    const ofPpv = ofStats.reduce((s, r) => s + (r.earnings_ppv ?? 0), 0);
-    const ofMsgs = ofStats.reduce((s, r) => s + (r.earnings_messages ?? 0), 0);
+    // OnlyFans direct = earnings in the active date range, fetched live
+    // from /api/analytics/summary/earnings. Falls back to lifetime
+    // numbers (of_creator_stats) before the live fetch finishes so the
+    // hero never flashes $0 between range changes.
+    const rangeRows = Object.values(rangeOfEarnings);
+    const haveRange = rangeRows.length > 0;
+    const ofDirect = haveRange
+      ? rangeRows.reduce((s, r) => s + r.total, 0)
+      : ofStats.reduce((s, r) => s + (r.total_earnings ?? 0), 0);
+    const ofSubs = haveRange
+      ? rangeRows.reduce((s, r) => s + r.subs, 0)
+      : ofStats.reduce((s, r) => s + (r.earnings_subs ?? 0), 0);
+    const ofTips = haveRange
+      ? rangeRows.reduce((s, r) => s + r.tips, 0)
+      : ofStats.reduce((s, r) => s + (r.earnings_tips ?? 0), 0);
+    const ofPpv = haveRange
+      ? rangeRows.reduce((s, r) => s + r.ppv, 0)
+      : ofStats.reduce((s, r) => s + (r.earnings_ppv ?? 0), 0);
+    const ofMsgs = haveRange
+      ? rangeRows.reduce((s, r) => s + r.messages, 0)
+      : ofStats.reduce((s, r) => s + (r.earnings_messages ?? 0), 0);
     // OF tracking-link revenue (the campaigns shown on onlyfans.com →
     // Statistics → Tracking links). Treated as a sub-bucket of OnlyFans
     // direct rather than a separate "Ads" line because it's still
@@ -317,7 +400,7 @@ function RevenuePage() {
       // running OF as their primary channel saw $0 on the dashboard.
       total: organic + internal + adsNet + ofDirect,
     };
-  }, [entries, organicEntries, internalEntries, adCampaigns, ofStats, ofTracking]);
+  }, [entries, organicEntries, internalEntries, adCampaigns, ofStats, ofTracking, rangeOfEarnings]);
 
   const [syncingInfloww, setSyncingInfloww] = useState(false);
   const onSyncInfloww = async () => {
@@ -389,7 +472,11 @@ function RevenuePage() {
   const creatorBreakdown = useMemo(() => {
     return creators.map((c) => {
       const ofRow = ofStats.find((s) => s.creator_id === c.id);
-      const ofRev = ofRow?.total_earnings ?? 0;
+      const rangeRow = rangeOfEarnings[c.id];
+      // Prefer the live range-filtered number; fall back to lifetime
+      // sync if the live fetch hasn't filled in yet (or the creator
+      // has no acct id resolved).
+      const ofRev = rangeRow ? rangeRow.total : (ofRow?.total_earnings ?? 0);
       const ofTrackRev = ofTracking
         .filter((t) => t.creator_id === c.id)
         .reduce((s, t) => s + t.revenue_total, 0);
@@ -417,7 +504,7 @@ function RevenuePage() {
         synced_at: ofRow?.synced_at ?? null,
       };
     }).sort((a, b) => b.total - a.total);
-  }, [creators, ofStats, ofTracking, organicEntries, internalEntries, adCampaigns, entries]);
+  }, [creators, ofStats, ofTracking, organicEntries, internalEntries, adCampaigns, entries, rangeOfEarnings]);
 
   const byAccount = useMemo(() => {
     const map = new Map<string, number>();
@@ -572,10 +659,64 @@ function RevenuePage() {
                 <BucketPill icon={<Link2 className="h-3 w-3" />} label="OF tracking links" value={overview.ofTrackingTotal} tone="of-track" />
               )}
             </div>
+            {/* Date range picker — controls the OF Direct numbers
+                in the bucket pills above and the per-creator breakdown
+                below. Defaults to last 30 days. */}
+            <div className="mt-4 flex items-center gap-1.5 flex-wrap">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold mr-1">
+                Range
+              </span>
+              {(["7d","30d","90d","365d","lifetime"] as const).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setRangePreset(p)}
+                  className={`px-2.5 py-1 rounded-md text-xs border transition-colors ${
+                    rangePreset === p
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "border-border bg-secondary/30 hover:bg-secondary/60"
+                  }`}
+                >
+                  {p === "7d" ? "7d" : p === "30d" ? "30d" : p === "90d" ? "90d" : p === "365d" ? "1y" : "All time"}
+                </button>
+              ))}
+              {/* Custom range — date inputs appear when picked */}
+              <button
+                onClick={() => setRangePreset("custom")}
+                className={`px-2.5 py-1 rounded-md text-xs border transition-colors ${
+                  rangePreset === "custom"
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "border-border bg-secondary/30 hover:bg-secondary/60"
+                }`}
+              >
+                Custom
+              </button>
+              {rangePreset === "custom" && (
+                <>
+                  <input
+                    type="date"
+                    value={customFrom}
+                    onChange={(e) => setCustomFrom(e.target.value)}
+                    className="text-xs border border-border bg-background rounded-md px-2 py-1 h-7"
+                  />
+                  <span className="text-xs text-muted-foreground">→</span>
+                  <input
+                    type="date"
+                    value={customTo}
+                    onChange={(e) => setCustomTo(e.target.value)}
+                    className="text-xs border border-border bg-background rounded-md px-2 py-1 h-7"
+                  />
+                </>
+              )}
+              {loadingRangeOf && (
+                <span className="text-[10px] text-muted-foreground inline-flex items-center gap-1 ml-2">
+                  <RefreshCw className="h-2.5 w-2.5 animate-spin" /> Updating…
+                </span>
+              )}
+            </div>
             {/* Sync status strip */}
-            <div className="mt-4 text-[11px] text-muted-foreground flex items-center gap-3 flex-wrap">
+            <div className="mt-2 text-[11px] text-muted-foreground flex items-center gap-3 flex-wrap">
               {ofLastSync ? (
-                <span>OF synced {format(new Date(ofLastSync), "MMM d 'at' h:mm a")} · {ofStats.length} creator{ofStats.length === 1 ? "" : "s"}</span>
+                <span>OF synced {format(new Date(ofLastSync), "MMM d 'at' h:mm a")} · {ofStats.length} creator{ofStats.length === 1 ? "" : "s"} · showing <span className="text-foreground font-medium">{dateRange.label.toLowerCase()}</span></span>
               ) : (
                 <span className="text-amber-400">⚠ No OF data synced yet — hit "Sync OnlyFans" →</span>
               )}

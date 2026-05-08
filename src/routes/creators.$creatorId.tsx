@@ -1262,10 +1262,66 @@ function OverviewTab({
   const channelTotal = organicRev + internalRev + adsRev;
   const adsTooltip = `Ads $${adsRev.toFixed(2)} — Meta $${adsBreakdown.meta.toFixed(2)} · OnlyFinder $${adsBreakdown.onlyfinder.toFixed(2)}`;
 
+  // ── OnlyFans Direct earnings (last 30d / 7d / today) ──────────────
+  // Fires three small analytics calls in parallel so the user sees
+  // OF performance at a glance on the creator detail page.
+  const [ofData, setOfData] = useState<{
+    today: number; sevenD: number; thirtyD: number; loaded: boolean;
+  }>({ today: 0, sevenD: 0, thirtyD: 0, loaded: false });
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const { data: row } = await supabase
+        .from("creators")
+        .select("onlyfansapi_acct_id")
+        .eq("id", creatorId)
+        .maybeSingle();
+      const acctId = row?.onlyfansapi_acct_id as string | null | undefined;
+      if (!acctId || cancelled) return;
+      const { fetchOfEarnings } = await import("@/lib/of-sync");
+      const today = new Date().toISOString().slice(0, 10);
+      const sevenAgo = new Date(Date.now() - 6 * 86400_000).toISOString().slice(0, 10);
+      const thirtyAgo = new Date(Date.now() - 29 * 86400_000).toISOString().slice(0, 10);
+      const [t, w, m] = await Promise.all([
+        fetchOfEarnings([acctId], today, today),
+        fetchOfEarnings([acctId], sevenAgo, today),
+        fetchOfEarnings([acctId], thirtyAgo, today),
+      ]);
+      if (!cancelled) {
+        setOfData({ today: t.total, sevenD: w.total, thirtyD: m.total, loaded: true });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [creatorId]);
+
   return (
     <div className="space-y-8">
       {/* Health Warnings */}
       <HealthWarnings accounts={accounts} posts={posts} />
+
+      {/* OnlyFans Direct earnings panel — pulled live from OnlyFansAPI */}
+      {ofData.loaded && (ofData.today + ofData.sevenD + ofData.thirtyD > 0) && (
+        <div className="rounded-xl border border-blue-500/30 bg-blue-500/5 p-5 grid grid-cols-3 gap-4">
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold">OnlyFans · today</div>
+            <div className="text-xl font-bold mt-1">
+              ${ofData.today.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold">Last 7 days</div>
+            <div className="text-xl font-bold mt-1">
+              ${ofData.sevenD.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold">Last 30 days</div>
+            <div className="text-xl font-bold mt-1">
+              ${ofData.thirtyD.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Channel Revenue Breakdown */}
       {channelTotal > 0 && (

@@ -211,6 +211,34 @@ export function DailyHero() {
 
   const todayRevenue = dailyRevenue.find((d) => d.date === todayStr)?.amount ?? 0;
   const yesterdayRevenue = dailyRevenue.find((d) => d.date === yesterdayStr)?.amount ?? 0;
+
+  // ── Live OnlyFans Direct earnings (today + yesterday) ─────────────
+  // Hits /api/analytics/summary/earnings with a 1-day window for each.
+  // OnlyFans data lags by ~1 hour for live numbers, so today's value
+  // may be small until late afternoon.
+  const [ofToday, setOfToday] = useState(0);
+  const [ofYesterday, setOfYesterday] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const { fetchOfEarnings } = await import("@/lib/of-sync");
+      const { data: cs } = await supabase
+        .from("creators")
+        .select("onlyfansapi_acct_id")
+        .not("onlyfansapi_acct_id", "is", null);
+      const ids = (cs ?? []).map((c) => c.onlyfansapi_acct_id as string);
+      if (cancelled || ids.length === 0) return;
+      const [t, y] = await Promise.all([
+        fetchOfEarnings(ids, todayStr, todayStr),
+        fetchOfEarnings(ids, yesterdayStr, yesterdayStr),
+      ]);
+      if (!cancelled) {
+        setOfToday(t.total);
+        setOfYesterday(y.total);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [todayStr, yesterdayStr]);
   const sevenDayAvgRevenue = useMemo(() => {
     const last7 = dailyRevenue.filter((d) => d.date >= sevenDaysAgoStr && d.date < todayStr);
     if (last7.length === 0) return 0;
@@ -368,7 +396,18 @@ export function DailyHero() {
       </div>
 
       {/* Hero KPI tiles */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+        <HeroTile
+          tone="cyan"
+          icon={<Wallet className="h-4 w-4" />}
+          label="OnlyFans today"
+          value={formatMoney(ofToday)}
+          delta={pctChange(ofToday, ofYesterday)}
+          deltaSubtitle="vs yesterday"
+          sparkline={[]}
+          sparkColor="rgb(56,189,248)"
+          loading={loading}
+        />
         <HeroTile
           tone="emerald"
           icon={<Wallet className="h-4 w-4" />}

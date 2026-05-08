@@ -290,6 +290,103 @@ export async function syncCreatorOnlyFans(creator: CreatorMin): Promise<SyncOneR
   return { ok: true, creator_id: creator.id, total_earnings: totalEarnings };
 }
 
+// ── Date-range earnings (live, no DB write) ──────────────────────────
+//
+// Used by the Revenue / Financials / Daily pages to show "earnings in
+// this date range" without re-running the full sync. Hits the same
+// /api/analytics/summary/earnings endpoint as the sync, but with a
+// caller-chosen window and returns the data straight back rather than
+// upserting it. Deliberately skips the DB so a date-picker change is
+// instant and doesn't blow away the lifetime totals saved by the
+// sync.
+
+export type EarningsBreakdown = {
+  total: number;
+  subs: number;
+  tips: number;
+  ppv: number;
+  messages: number;
+  streams: number;
+};
+
+const ZERO_BREAKDOWN: EarningsBreakdown = {
+  total: 0, subs: 0, tips: 0, ppv: 0, messages: 0, streams: 0,
+};
+
+function parseEarnings(json: unknown): EarningsBreakdown {
+  if (!json || typeof json !== "object") return ZERO_BREAKDOWN;
+  const obj = json as Record<string, unknown>;
+  const e = (obj.data && typeof obj.data === "object")
+    ? (obj.data as Record<string, unknown>)
+    : obj;
+  return {
+    total: num(e.total_earnings) || num(e.totalEarnings) || num(e.total),
+    subs: num(e.subscriptions) || num(e.subs),
+    tips: num(e.tips),
+    ppv: num(e.posts) || num(e.ppv),
+    messages: num(e.messages),
+    streams: num(e.streams) || num(e.livestreams),
+  };
+}
+
+/**
+ * Fetch one combined earnings summary across the given account_ids
+ * for [start, end]. Use this when you only need agency-wide totals.
+ */
+export async function fetchOfEarnings(
+  accountIds: string[],
+  startDate: string,
+  endDate: string,
+): Promise<EarningsBreakdown> {
+  const key = getApiKey();
+  if (!key || accountIds.length === 0) return ZERO_BREAKDOWN;
+  try {
+    const r = await fetch(`${BASE}/analytics/summary/earnings`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        account_ids: accountIds,
+        start_date: startDate,
+        end_date: endDate,
+      }),
+    });
+    if (!r.ok) return ZERO_BREAKDOWN;
+    return parseEarnings(await r.json());
+  } catch {
+    return ZERO_BREAKDOWN;
+  }
+}
+
+/**
+ * Fetch one earnings breakdown PER creator. The analytics endpoint
+ * accepts an array of account_ids but returns combined totals — there's
+ * no per-account split in the response — so to get per-creator numbers
+ * we have to fire one call per creator. With 5–10 creators this is
+ * fine; for larger agencies we'd batch and rate-limit, but that's a
+ * future problem.
+ *
+ * Returns a map keyed by creator_id (NOT account_id) so the caller
+ * can render directly against their creator list.
+ */
+export async function fetchOfEarningsPerCreator(
+  creators: Array<{ id: string; onlyfansapi_acct_id: string | null }>,
+  startDate: string,
+  endDate: string,
+): Promise<Record<string, EarningsBreakdown>> {
+  const eligible = creators.filter((c) => c.onlyfansapi_acct_id);
+  const results = await Promise.all(eligible.map(async (c) => {
+    const breakdown = await fetchOfEarnings([c.onlyfansapi_acct_id!], startDate, endDate);
+    return [c.id, breakdown] as const;
+  }));
+  const out: Record<string, EarningsBreakdown> = {};
+  for (const [id, b] of results) out[id] = b;
+  return out;
+}
+
 /** Sync every creator that has an of_username set. */
 export async function syncAllCreatorsOnlyFans(
   creators: CreatorMin[],

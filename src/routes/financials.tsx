@@ -289,6 +289,38 @@ function FinancialsPage() {
 
   const creatorById = useMemo(() => new Map(creators.map((c) => [c.id, c.name])), [creators]);
 
+  // ── OnlyFans Direct earnings (live from analytics endpoint) ────────
+  // Range-filtered, fetched on every range change. Counts every dollar
+  // OnlyFans itself attributes to the creator's account in the window
+  // — subscriptions + tips + PPV posts + DM unlocks + streams. This is
+  // separate from the per-entry "gross volume" above, which only
+  // captures manually-tagged Reddit/social revenue.
+  const [ofDirectInRange, setOfDirectInRange] = useState(0);
+  const [loadingOfDirect, setLoadingOfDirect] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingOfDirect(true);
+    void (async () => {
+      const { fetchOfEarnings } = await import("@/lib/of-sync");
+      const { data: cs } = await supabase
+        .from("creators")
+        .select("onlyfansapi_acct_id")
+        .not("onlyfansapi_acct_id", "is", null);
+      const ids = (cs ?? []).map((c) => c.onlyfansapi_acct_id as string);
+      if (cancelled) return;
+      const breakdown = await fetchOfEarnings(
+        ids,
+        format(range.from, "yyyy-MM-dd"),
+        format(range.to, "yyyy-MM-dd"),
+      );
+      if (!cancelled) {
+        setOfDirectInRange(breakdown.total);
+        setLoadingOfDirect(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [range.from, range.to]);
+
   // Gross OF volume — every dollar that flowed through OnlyFans in the
   // window (per creator entries; not the sum of payouts because payouts
   // can lag behind the entries date-wise).
@@ -529,7 +561,15 @@ function FinancialsPage() {
       </div>
 
       {/* KPI strip */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
+        <KpiCard
+          tone="cyan"
+          icon={<DollarSign className="h-4 w-4" />}
+          label="OnlyFans Direct"
+          value={loadingOfDirect ? "…" : fmtMoney(ofDirectInRange)}
+          delta={null}
+          hint="from /analytics/summary/earnings"
+        />
         <KpiCard
           tone="cyan"
           icon={<DollarSign className="h-4 w-4" />}
