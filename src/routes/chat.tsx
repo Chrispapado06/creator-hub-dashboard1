@@ -6,7 +6,7 @@
 // per active channel so we don't get firehose noise.
 
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
@@ -31,7 +31,10 @@ import {
   markChannelRead, ensureCreatorChannels, ensureDmChannel, createChannel,
   extractMentions, resolveMentions, uploadChatAttachment,
   hasBroadcastMention, expandBroadcastMention,
-  type Channel, type Message, type ChatUser, type Attachment,
+  hasRoleMention, expandRoleMention, roleLabelFor,
+  listCategories, createCategory, updateCategoryRoles, deleteCategory,
+  CHATTER_ROLES,
+  type Channel, type Message, type ChatUser, type Attachment, type Category,
 } from "@/lib/chat";
 
 export const Route = createFileRoute("/chat")({ component: ChatPage });
@@ -45,12 +48,15 @@ type ChannelWithMeta = Channel & {
 function ChatPage() {
   const [user, setUser] = useState<ChatUser | null>(null);
   const [channels, setChannels] = useState<ChannelWithMeta[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [loadingChannels, setLoadingChannels] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [showCreateChannel, setShowCreateChannel] = useState(false);
+  const [showCreateCategory, setShowCreateCategory] = useState(false);
   const [showStartDm, setShowStartDm] = useState(false);
+  const [editCategory, setEditCategory] = useState<Category | null>(null);
   const [search, setSearch] = useState("");
   const [draft, setDraft] = useState("");
   const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
@@ -75,14 +81,31 @@ function ChatPage() {
       setUser(u);
       // Side-effect on first load: make sure per-creator channels exist
       await ensureCreatorChannels();
-      const list = await listChannelsForUser(u.id);
+      const [list, cats] = await Promise.all([
+        listChannelsForUser(u.id, { user: u }),
+        listCategories(),
+      ]);
       setChannels(list);
+      setCategories(cats);
       setLoadingChannels(false);
       // Default to #general if nothing else picked
       const general = list.find((c) => c.slug === "general") ?? list[0];
       if (general) setActiveChannelId(general.id);
     })();
   }, []);
+
+  // Helper used by every "after the fact" mutation (create channel,
+  // create/edit category, etc.) to re-pull both lists with the
+  // current user's role gating applied.
+  const refreshSidebar = useCallback(async () => {
+    if (!user) return;
+    const [list, cats] = await Promise.all([
+      listChannelsForUser(user.id, { user }),
+      listCategories(),
+    ]);
+    setChannels(list);
+    setCategories(cats);
+  }, [user]);
 
   // ── Load messages whenever the active channel changes ──────────────
 
@@ -181,15 +204,27 @@ function ChatPage() {
   }, [channels, search]);
 
   const grouped = useMemo(() => {
-    const channelsList: ChannelWithMeta[] = [];
+    // Bucket layout matches the sidebar render order:
+    //   • Top-level channels (no category, type !== dm/creator)
+    //   • Categorized channels (one section per category)
+    //   • Creators (per-creator auto-created channels)
+    //   • Direct messages
+    const topLevel: ChannelWithMeta[] = [];
     const dmsList: ChannelWithMeta[] = [];
     const creatorRooms: ChannelWithMeta[] = [];
+    const byCategory = new Map<string, ChannelWithMeta[]>();
     for (const c of filteredChannels) {
-      if (c.type === "dm") dmsList.push(c);
-      else if (c.type === "creator") creatorRooms.push(c);
-      else channelsList.push(c);
+      if (c.type === "dm") { dmsList.push(c); continue; }
+      if (c.type === "creator") { creatorRooms.push(c); continue; }
+      if (c.category_id) {
+        const arr = byCategory.get(c.category_id) ?? [];
+        arr.push(c);
+        byCategory.set(c.category_id, arr);
+      } else {
+        topLevel.push(c);
+      }
     }
-    return { channelsList, dmsList, creatorRooms };
+    return { topLevel, dmsList, creatorRooms, byCategory };
   }, [filteredChannels]);
 
   const activeChannel = channels.find((c) => c.id === activeChannelId) ?? null;
@@ -205,17 +240,18 @@ function ChatPage() {
     }
     setSending(true);
     const handles = extractMentions(draft);
-    // Two paths converge into the same mention list sent to the DB:
-    //   • direct @username mentions → resolveMentions
-    //   • broadcast @everyone / @all / @here → expand to every active
-    //     chatter (or every channel member for @here)
-    // Authors are excluded from broadcast fan-out so you don't notify
+    // Three resolution paths feed the same mention list:
+    //   1. Direct @username        → resolveMentions
+    //   2. Broadcast @everyone/all/here → expandBroadcastMention
+    //   3. Role @rolename          → expandRoleMention (NEW)
+    // Authors are excluded from any fan-out so you don't notify
     // yourself when posting an announcement.
-    const directIds = handles.length > 0 ? await resolveMentions(handles) : [];
-    const broadcastIds = hasBroadcastMention(handles)
-      ? await expandBroadcastMention(handles, activeChannelId, user.id)
-      : [];
-    const mentionedIds = [...new Set([...directIds, ...broadcastIds])];
+    const [directIds, broadcastIds, roleIds] = await Promise.all([
+      handles.length > 0 ? resolveMentions(handles) : Promise.resolve([]),
+      hasBroadcastMention(handles) ? expandBroadcastMention(handles, activeChannelId, user.id) : Promise.resolve([]),
+      hasRoleMention(handles) ? expandRoleMention(handles, user.id) : Promise.resolve([]),
+    ]);
+    const mentionedIds = [...new Set([...directIds, ...broadcastIds, ...roleIds])];
     const sent = await sendMessage({
       channelId: activeChannelId,
       author: user,
@@ -305,11 +341,59 @@ function ChatPage() {
             <div className="px-4 py-6 text-xs text-muted-foreground italic">Loading channels…</div>
           ) : (
             <>
-              <ChannelGroup label="Channels" channels={grouped.channelsList} activeId={activeChannelId} onPick={(id) => { setActiveChannelId(id); setMobileShowSidebar(false); }} userIsAdmin={user.is_admin} />
+              {/* Top-level (no category) */}
+              <ChannelGroup
+                label="Channels"
+                channels={grouped.topLevel}
+                activeId={activeChannelId}
+                onPick={(id) => { setActiveChannelId(id); setMobileShowSidebar(false); }}
+                userIsAdmin={user.is_admin}
+              />
+
+              {/* Categorized channels — one section per category, only
+                  rendered if at least one of its channels survived the
+                  visibility filter. Admins also get an Edit-roles
+                  shortcut on each category header. */}
+              {categories
+                .filter((cat) => (grouped.byCategory.get(cat.id) ?? []).length > 0)
+                .map((cat) => (
+                  <ChannelGroup
+                    key={cat.id}
+                    label={cat.name}
+                    channels={grouped.byCategory.get(cat.id) ?? []}
+                    activeId={activeChannelId}
+                    onPick={(id) => { setActiveChannelId(id); setMobileShowSidebar(false); }}
+                    userIsAdmin={user.is_admin}
+                    onEditCategory={user.is_admin ? () => setEditCategory(cat) : undefined}
+                    categoryRoles={cat.allowed_roles ?? null}
+                  />
+                ))}
+
               {grouped.creatorRooms.length > 0 && (
-                <ChannelGroup label="Creators" channels={grouped.creatorRooms} activeId={activeChannelId} onPick={(id) => { setActiveChannelId(id); setMobileShowSidebar(false); }} userIsAdmin={user.is_admin} />
+                <ChannelGroup
+                  label="Creators"
+                  channels={grouped.creatorRooms}
+                  activeId={activeChannelId}
+                  onPick={(id) => { setActiveChannelId(id); setMobileShowSidebar(false); }}
+                  userIsAdmin={user.is_admin}
+                />
               )}
-              <ChannelGroup label="Direct messages" channels={grouped.dmsList} activeId={activeChannelId} onPick={(id) => { setActiveChannelId(id); setMobileShowSidebar(false); }} userIsAdmin={user.is_admin} />
+              <ChannelGroup
+                label="Direct messages"
+                channels={grouped.dmsList}
+                activeId={activeChannelId}
+                onPick={(id) => { setActiveChannelId(id); setMobileShowSidebar(false); }}
+                userIsAdmin={user.is_admin}
+              />
+
+              {user.is_admin && (
+                <button
+                  onClick={() => setShowCreateCategory(true)}
+                  className="mx-2 mt-2 flex w-[calc(100%-1rem)] items-center gap-2 rounded-md border border-dashed border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-secondary/40 hover:text-foreground transition-colors"
+                >
+                  <Plus className="h-3 w-3" /> New category
+                </button>
+              )}
             </>
           )}
         </div>
@@ -402,11 +486,28 @@ function ChatPage() {
         <CreateChannelDialog
           onClose={() => setShowCreateChannel(false)}
           onCreated={async (id) => {
-            const list = await listChannelsForUser(user.id);
-            setChannels(list);
+            await refreshSidebar();
             setActiveChannelId(id);
             setShowCreateChannel(false);
           }}
+          createdBy={user.id}
+          categories={categories}
+        />
+      )}
+      {showCreateCategory && (
+        <CategoryDialog
+          mode="create"
+          onClose={() => setShowCreateCategory(false)}
+          onSaved={async () => { await refreshSidebar(); setShowCreateCategory(false); }}
+          createdBy={user.id}
+        />
+      )}
+      {editCategory && (
+        <CategoryDialog
+          mode="edit"
+          category={editCategory}
+          onClose={() => setEditCategory(null)}
+          onSaved={async () => { await refreshSidebar(); setEditCategory(null); }}
           createdBy={user.id}
         />
       )}
@@ -415,8 +516,7 @@ function ChatPage() {
           meId={user.id}
           onClose={() => setShowStartDm(false)}
           onStarted={async (channelId) => {
-            const list = await listChannelsForUser(user.id);
-            setChannels(list);
+            await refreshSidebar();
             setActiveChannelId(channelId);
             setShowStartDm(false);
             setMobileShowSidebar(false);
@@ -431,18 +531,36 @@ function ChatPage() {
 
 function ChannelGroup({
   label, channels, activeId, onPick, userIsAdmin: _userIsAdmin,
+  onEditCategory, categoryRoles,
 }: {
   label: string;
   channels: ChannelWithMeta[];
   activeId: string | null;
   onPick: (id: string) => void;
   userIsAdmin: boolean;
+  /** Optional edit shortcut shown on category headers (admin only). */
+  onEditCategory?: () => void;
+  /** Allowed roles for the category — drives the lock icon shown next
+      to the header so admins can see at a glance which categories are
+      gated. NULL/empty = visible to everyone (no lock). */
+  categoryRoles?: string[] | null;
 }) {
   if (channels.length === 0) return null;
+  const isLocked = !!(categoryRoles && categoryRoles.length > 0);
   return (
     <div className="space-y-0.5">
-      <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-semibold px-4 mb-1.5">
-        {label}
+      <div className="group flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/60 font-semibold px-4 mb-1.5">
+        {isLocked && <Lock className="h-2.5 w-2.5 opacity-70" />}
+        <span className="flex-1 truncate">{label}</span>
+        {onEditCategory && (
+          <button
+            onClick={onEditCategory}
+            className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-foreground"
+            title="Edit category access"
+          >
+            <Edit2 className="h-3 w-3" />
+          </button>
+        )}
       </div>
       {channels.map((c) => (
         <button
@@ -603,6 +721,9 @@ function RenderedContent({ content }: { content: string }) {
 
 // @everyone / @here / @all read as broadcasts — render with the
 // amber tone Discord uses to signal "this hits the whole team."
+// @rolename (e.g. @RedditVA) renders with a violet pill so it's
+// distinguishable from both broadcasts (amber) and direct user
+// mentions (brand blue).
 const BROADCAST_HANDLES = new Set(["@everyone", "@here", "@all"]);
 
 function MentionParts({ text }: { text: string }) {
@@ -612,20 +733,25 @@ function MentionParts({ text }: { text: string }) {
   let match: RegExpExecArray | null;
   while ((match = re.exec(text)) !== null) {
     if (match.index > cursor) parts.push(text.slice(cursor, match.index));
-    const isBroadcast = BROADCAST_HANDLES.has(match[0].toLowerCase());
+    const handle = match[0];
+    const isBroadcast = BROADCAST_HANDLES.has(handle.toLowerCase());
+    const roleLabel = !isBroadcast ? roleLabelFor(handle.slice(1)) : null;
+    let className = "text-primary font-medium bg-primary/10 px-1 rounded";
+    let display: string = handle;
+    if (isBroadcast) {
+      className = "font-bold bg-amber-500/15 text-amber-400 px-1 rounded";
+    } else if (roleLabel) {
+      // Show the friendly label so the message reads "@Reddit VA"
+      // instead of "@redditva" / "@reddit_va" / etc.
+      className = "font-semibold bg-violet-500/15 text-violet-400 px-1 rounded";
+      display = `@${roleLabel}`;
+    }
     parts.push(
-      <span
-        key={match.index}
-        className={
-          isBroadcast
-            ? "font-bold bg-amber-500/15 text-amber-400 px-1 rounded"
-            : "text-primary font-medium bg-primary/10 px-1 rounded"
-        }
-      >
-        {match[0]}
+      <span key={match.index} className={className} title={isBroadcast ? "Notifies everyone" : roleLabel ? `Notifies all ${roleLabel}s` : undefined}>
+        {display}
       </span>,
     );
-    cursor = match.index + match[0].length;
+    cursor = match.index + handle.length;
   }
   if (cursor < text.length) parts.push(text.slice(cursor));
   return <>{parts}</>;
@@ -762,15 +888,17 @@ function Composer({
 // ── Create-channel dialog ───────────────────────────────────────────────
 
 function CreateChannelDialog({
-  onClose, onCreated, createdBy,
+  onClose, onCreated, createdBy, categories,
 }: {
   onClose: () => void;
   onCreated: (id: string) => void;
   createdBy: string;
+  categories: Category[];
 }) {
   const [name, setName] = useState("");
   const [type, setType] = useState<"public" | "private">("public");
   const [description, setDescription] = useState("");
+  const [categoryId, setCategoryId] = useState<string>("none");
   const [busy, setBusy] = useState(false);
 
   const handleCreate = async () => {
@@ -779,7 +907,13 @@ function CreateChannelDialog({
       return;
     }
     setBusy(true);
-    const id = await createChannel({ name, type, description: description.trim() || undefined, createdBy });
+    const id = await createChannel({
+      name,
+      type,
+      description: description.trim() || undefined,
+      createdBy,
+      categoryId: categoryId === "none" ? null : categoryId,
+    });
     setBusy(false);
     if (id) {
       toast.success("Channel created");
@@ -810,6 +944,28 @@ function CreateChannelDialog({
               </SelectContent>
             </Select>
           </div>
+          {categories.length > 0 && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Category (optional)</Label>
+              <Select value={categoryId} onValueChange={setCategoryId}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">— None (top level)</SelectItem>
+                  {categories.map((cat) => (
+                    <SelectItem key={cat.id} value={cat.id}>
+                      {cat.name}
+                      {cat.allowed_roles && cat.allowed_roles.length > 0 && (
+                        <span className="text-muted-foreground"> · gated</span>
+                      )}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground">
+                Channels in a gated category are only visible to roles the category allows.
+              </p>
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label className="text-xs">Description (optional)</Label>
             <Textarea
@@ -825,6 +981,152 @@ function CreateChannelDialog({
           <Button onClick={handleCreate} disabled={busy}>
             {busy ? "Creating…" : "Create"}
           </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Category dialog (create + edit) ─────────────────────────────────────
+
+function CategoryDialog({
+  mode, category, onClose, onSaved, createdBy,
+}: {
+  mode: "create" | "edit";
+  category?: Category;
+  onClose: () => void;
+  onSaved: () => void;
+  createdBy: string;
+}) {
+  const [name, setName] = useState(category?.name ?? "");
+  // "all" = visible to everyone (NULL allowed_roles)
+  // "gated" = restricted to selected roles
+  const [accessMode, setAccessMode] = useState<"all" | "gated">(
+    !category?.allowed_roles || category.allowed_roles.length === 0 ? "all" : "gated",
+  );
+  const [allowedRoles, setAllowedRoles] = useState<string[]>(category?.allowed_roles ?? []);
+  const [busy, setBusy] = useState(false);
+
+  const toggleRole = (role: string) => {
+    setAllowedRoles((prev) => prev.includes(role) ? prev.filter((r) => r !== role) : [...prev, role]);
+  };
+
+  const handleSave = async () => {
+    if (!name.trim() && mode === "create") {
+      toast.error("Name is required");
+      return;
+    }
+    if (accessMode === "gated" && allowedRoles.length === 0) {
+      toast.error("Pick at least one role or switch to Visible to everyone");
+      return;
+    }
+    setBusy(true);
+    if (mode === "create") {
+      const id = await createCategory({
+        name,
+        allowedRoles: accessMode === "gated" ? allowedRoles : null,
+        createdBy,
+      });
+      setBusy(false);
+      if (id) { toast.success("Category created"); onSaved(); }
+      else toast.error("Failed to create — try a different name");
+    } else if (category) {
+      const ok = await updateCategoryRoles(category.id, accessMode === "gated" ? allowedRoles : null);
+      setBusy(false);
+      if (ok) { toast.success("Category updated"); onSaved(); }
+      else toast.error("Update failed");
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!category) return;
+    if (!confirm(`Delete category "${category.name}"? Channels inside will move to the top level (not deleted).`)) return;
+    const ok = await deleteCategory(category.id);
+    if (ok) { toast.success("Category deleted"); onSaved(); }
+    else toast.error("Delete failed");
+  };
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>
+            {mode === "create" ? "New category" : `Edit "${category?.name ?? ""}"`}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          {mode === "create" && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Category name</Label>
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Reddit Team" autoFocus />
+            </div>
+          )}
+          <div className="space-y-1.5">
+            <Label className="text-xs">Who can see channels in this category?</Label>
+            <div className="inline-flex items-center rounded-md bg-secondary p-0.5 w-full">
+              <button
+                onClick={() => { setAccessMode("all"); setAllowedRoles([]); }}
+                className={`flex-1 text-xs px-3 py-1.5 rounded font-medium ${accessMode === "all" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                Everyone
+              </button>
+              <button
+                onClick={() => setAccessMode("gated")}
+                className={`flex-1 text-xs px-3 py-1.5 rounded font-medium ${accessMode === "gated" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                Specific roles
+              </button>
+            </div>
+          </div>
+          {accessMode === "gated" && (
+            <div className="space-y-1.5">
+              <div className="grid grid-cols-2 gap-1.5 max-h-64 overflow-y-auto">
+                {CHATTER_ROLES.map((r) => {
+                  const checked = allowedRoles.includes(r.value);
+                  return (
+                    <label
+                      key={r.value}
+                      className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer text-xs transition-colors ${
+                        checked
+                          ? "bg-primary/10 text-foreground border border-primary/30"
+                          : "bg-secondary/30 text-muted-foreground hover:bg-secondary border border-transparent"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleRole(r.value)}
+                        className="h-3.5 w-3.5 rounded border-border accent-primary"
+                      />
+                      <span className="truncate">{r.label}</span>
+                    </label>
+                  );
+                })}
+              </div>
+              <p className="text-[10px] text-muted-foreground">
+                Admins always see every category regardless of role.
+              </p>
+            </div>
+          )}
+          {accessMode === "all" && (
+            <div className="text-[11px] text-muted-foreground italic flex items-center gap-1.5 p-2.5 rounded-lg border border-emerald-500/20 bg-emerald-500/5">
+              <Check className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+              Channels in this category will be visible to all team members.
+            </div>
+          )}
+        </div>
+        <DialogFooter className="flex sm:justify-between">
+          {mode === "edit" ? (
+            <Button variant="ghost" onClick={handleDelete} className="text-rose-400 hover:text-rose-300 hover:bg-rose-500/10">
+              <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete
+            </Button>
+          ) : <span />}
+          <div className="flex gap-2">
+            <Button variant="ghost" onClick={onClose}>Cancel</Button>
+            <Button onClick={handleSave} disabled={busy}>
+              {busy ? "Saving…" : "Save"}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

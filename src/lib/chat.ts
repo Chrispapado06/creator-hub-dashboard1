@@ -13,6 +13,7 @@ export type ChannelType = "public" | "private" | "creator" | "dm" | "announcemen
 export type Channel = Database["public"]["Tables"]["team_channels"]["Row"];
 export type ChannelMember = Database["public"]["Tables"]["team_channel_members"]["Row"];
 export type Message = Database["public"]["Tables"]["team_messages"]["Row"];
+export type Category = Database["public"]["Tables"]["team_categories"]["Row"];
 export type Attachment = { url: string; name: string; type: string; size: number };
 
 export type ChatUser = {
@@ -21,6 +22,24 @@ export type ChatUser = {
   role: string | null;
   is_admin: boolean; // true if this row was auto-created from an admin login
 };
+
+// All chatter roles that exist today. Source of truth is the role enum
+// in the chatters table, mirrored here so the role-mention picker /
+// permission picker can iterate without an extra query.
+export const CHATTER_ROLES = [
+  { value: "manager",          label: "Manager" },
+  { value: "chatter",          label: "Chatter" },
+  { value: "reddit_va",        label: "Reddit VA" },
+  { value: "instagram_va",     label: "Instagram VA" },
+  { value: "facebook_va",      label: "Facebook VA" },
+  { value: "x_va",             label: "X VA" },
+  { value: "tiktok_va",        label: "TikTok VA" },
+  { value: "social_media_va",  label: "Social Media VA" },
+  { value: "content_editor",   label: "Content Editor" },
+  { value: "recruiter",        label: "Recruiter" },
+  { value: "other",            label: "Other" },
+] as const;
+export type ChatterRole = typeof CHATTER_ROLES[number]["value"];
 
 // ── Current-user resolution ─────────────────────────────────────────────
 //
@@ -103,30 +122,65 @@ export async function ensureCurrentChatUser(): Promise<ChatUser | null> {
 
 // ── Channels ────────────────────────────────────────────────────────────
 
-/** All channels the current user can see, with unread counts merged in. */
-export async function listChannelsForUser(userId: string): Promise<(Channel & {
+/**
+ * All channels the current user can see, with unread counts merged in.
+ * Visibility rules — applied in this order:
+ *   1. Channels in a category check the category's allowed_roles. Empty
+ *      / NULL allowed_roles = visible to everyone. Admins always pass.
+ *   2. Private + DM channels also require membership.
+ *   3. Public / announcements / creator channels with no category are
+ *      visible to everyone.
+ */
+export async function listChannelsForUser(
+  userId: string,
+  opts?: { user?: ChatUser },
+): Promise<(Channel & {
   unread_count: number;
   is_member: boolean;
   dm_partner?: { id: string; name: string } | null;
 })[]> {
-  // Pull every non-archived channel + the user's membership rows in
-  // parallel so we can decide visibility client-side.
-  const [{ data: channels }, { data: memberships }] = await Promise.all([
+  const isAdmin = opts?.user?.is_admin ?? false;
+  // Pull every non-archived channel + the user's membership rows + every
+  // category in parallel so we can decide visibility client-side.
+  const [{ data: channels }, { data: memberships }, { data: cats }, { data: meRow }] = await Promise.all([
     supabase
       .from("team_channels")
       .select("*")
       .is("archived_at", null)
+      .order("position", { ascending: true })
       .order("last_message_at", { ascending: false, nullsFirst: false }),
     supabase
       .from("team_channel_members")
       .select("*")
       .eq("chatter_id", userId),
+    supabase
+      .from("team_categories")
+      .select("id, allowed_roles")
+      .is("archived_at", null),
+    // Pull our own role for category gating (the auto-created admin
+    // chatter is role='manager', which is fine — admins also bypass
+    // via isAdmin).
+    supabase.from("chatters").select("role").eq("id", userId).maybeSingle(),
   ]);
+
+  const myRole = (meRow as { role: string } | null)?.role ?? null;
+  const catRoles = new Map<string, string[] | null>(
+    (cats ?? []).map((c) => [c.id, (c.allowed_roles ?? null) as string[] | null]),
+  );
 
   const memberByChannel = new Map((memberships ?? []).map((m) => [m.channel_id, m]));
   const visibleChannels = (channels ?? []).filter((c) => {
-    // Public + announcements + creator channels: visible to everyone.
-    // Private + DM channels: only if the user is a member.
+    // Category visibility gate. Skipped for admins. Skipped for channels
+    // with no category. Skipped for categories with empty allowed_roles.
+    if (c.category_id && !isAdmin) {
+      const allowed = catRoles.get(c.category_id);
+      if (allowed && allowed.length > 0) {
+        if (!myRole || !allowed.includes(myRole)) return false;
+      }
+    }
+    // Public + announcements + creator channels: visible to everyone
+    // (after the category gate). Private + DM channels still require
+    // membership.
     if (c.type === "private" || c.type === "dm") return memberByChannel.has(c.id);
     return true;
   });
@@ -232,12 +286,13 @@ export async function ensureDmChannel(meId: string, otherId: string): Promise<st
   return chan.id;
 }
 
-/** Create a custom public/private channel. */
+/** Create a custom public/private channel, optionally inside a category. */
 export async function createChannel(input: {
   name: string;
   type: "public" | "private";
   description?: string;
   createdBy: string;
+  categoryId?: string | null;
 }): Promise<string | null> {
   const slug = input.name.toLowerCase().trim()
     .replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
@@ -250,6 +305,7 @@ export async function createChannel(input: {
       type: input.type,
       description: input.description ?? null,
       created_by: input.createdBy,
+      category_id: input.categoryId ?? null,
     })
     .select("id")
     .single();
@@ -257,6 +313,65 @@ export async function createChannel(input: {
   // Creator joins automatically; others can join later for private channels
   await supabase.from("team_channel_members").insert({ channel_id: data.id, chatter_id: input.createdBy });
   return data.id;
+}
+
+// ── Categories ─────────────────────────────────────────────────────────
+
+export async function listCategories(): Promise<Category[]> {
+  const { data } = await supabase
+    .from("team_categories")
+    .select("*")
+    .is("archived_at", null)
+    .order("position", { ascending: true })
+    .order("name");
+  return (data ?? []) as Category[];
+}
+
+export async function createCategory(input: {
+  name: string;
+  allowedRoles?: string[] | null;  // null/empty = visible to everyone
+  createdBy: string;
+}): Promise<string | null> {
+  const slug = input.name.toLowerCase().trim()
+    .replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
+  if (!slug) return null;
+  // Allowed roles is stored as NULL when "everyone" so the visibility
+  // check stays cheap. Empty arrays are normalized to NULL for the
+  // same reason.
+  const allowedRoles = (input.allowedRoles && input.allowedRoles.length > 0)
+    ? input.allowedRoles
+    : null;
+  const { data, error } = await supabase
+    .from("team_categories")
+    .insert({
+      name: input.name.trim(),
+      slug,
+      allowed_roles: allowedRoles,
+      created_by: input.createdBy,
+    })
+    .select("id")
+    .single();
+  if (error || !data) return null;
+  return data.id;
+}
+
+export async function updateCategoryRoles(
+  categoryId: string,
+  allowedRoles: string[] | null,
+): Promise<boolean> {
+  const normalized = (allowedRoles && allowedRoles.length > 0) ? allowedRoles : null;
+  const { error } = await supabase
+    .from("team_categories")
+    .update({ allowed_roles: normalized })
+    .eq("id", categoryId);
+  return !error;
+}
+
+export async function deleteCategory(categoryId: string): Promise<boolean> {
+  // Channels in the category get their category_id nulled (FK ON DELETE
+  // SET NULL); they reappear at the top level of the sidebar.
+  const { error } = await supabase.from("team_categories").delete().eq("id", categoryId);
+  return !error;
 }
 
 // ── Messages ────────────────────────────────────────────────────────────
@@ -384,6 +499,61 @@ export async function resolveMentions(handles: string[]): Promise<string[]> {
     }
   }
   return [...new Set(out)];
+}
+
+// ── Role mentions (@RedditVA / @manager etc.) ──────────────────────────
+//
+// Builds a normalized handle map so users don't need to type the
+// underscored DB role exactly: any of "@redditva", "@reddit_va",
+// "@reddit-va", "@redditvas" all expand to chatters with role=reddit_va.
+
+const normHandle = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+// Map of normalized handle → DB role value
+const ROLE_HANDLES: Map<string, ChatterRole> = (() => {
+  const out = new Map<string, ChatterRole>();
+  for (const { value, label } of CHATTER_ROLES) {
+    out.set(normHandle(value), value);
+    out.set(normHandle(value) + "s", value);   // managers, chatters
+    out.set(normHandle(label), value);          // "Reddit VA" → reddit_va
+    out.set(normHandle(label) + "s", value);
+  }
+  return out;
+})();
+
+/** True if any handle in the list maps to a chatter role. */
+export function hasRoleMention(handles: string[]): boolean {
+  return handles.some((h) => ROLE_HANDLES.has(normHandle(h)));
+}
+
+/** Pretty label for a role handle, used by the message renderer. */
+export function roleLabelFor(handle: string): string | null {
+  const role = ROLE_HANDLES.get(normHandle(handle));
+  if (!role) return null;
+  return CHATTER_ROLES.find((r) => r.value === role)?.label ?? null;
+}
+
+/**
+ * Expand @rolename handles → all active chatters with that role,
+ * minus the author. Used by sendMessage alongside the broadcast and
+ * direct-mention expansions.
+ */
+export async function expandRoleMention(
+  handles: string[],
+  authorId: string,
+): Promise<string[]> {
+  const roles = new Set<ChatterRole>();
+  for (const h of handles) {
+    const r = ROLE_HANDLES.get(normHandle(h));
+    if (r) roles.add(r);
+  }
+  if (roles.size === 0) return [];
+  const { data } = await supabase
+    .from("chatters")
+    .select("id")
+    .in("role", [...roles])
+    .eq("status", "active");
+  return (data ?? []).map((r) => r.id).filter((id) => id !== authorId);
 }
 
 /**

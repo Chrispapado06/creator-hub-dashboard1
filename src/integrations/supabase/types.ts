@@ -731,6 +731,24 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["meta_account_snapshots"]["Row"]>
         Relationships: []
       }
+      team_categories: {
+        Row: {
+          id: string
+          name: string
+          slug: string
+          position: number
+          allowed_roles: string[] | null
+          created_by: string | null
+          created_at: string
+          archived_at: string | null
+        }
+        Insert: Partial<Database["public"]["Tables"]["team_categories"]["Row"]> & {
+          name: string
+          slug: string
+        }
+        Update: Partial<Database["public"]["Tables"]["team_categories"]["Row"]>
+        Relationships: []
+      }
       team_channels: {
         Row: {
           id: string
@@ -738,6 +756,8 @@ export type Database = {
           slug: string
           type: "public" | "private" | "creator" | "dm" | "announcements"
           creator_id: string | null
+          category_id: string | null
+          position: number
           description: string | null
           read_only_for_staff: boolean
           created_by: string | null
