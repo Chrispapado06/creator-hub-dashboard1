@@ -113,13 +113,30 @@ export function useUnreadChatMentions() {
 /** Renders the Discord-style red pill if there are any unread mentions. */
 export function ChatBadge() {
   const count = useUnreadChatMentions();
+
+  // Mirror the unread count into the browser tab title so the user
+  // sees a "(3) Agency Console" prefix when the app is in a background
+  // tab. Discord, Slack, etc. all do this. We strip and re-apply the
+  // prefix idempotently so it doesn't compound on every render or
+  // fight other route-driven title updates.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const stripped = document.title.replace(/^\(\d+\)\s+/, "");
+    document.title = count > 0 ? `(${count > 99 ? "99+" : count}) ${stripped}` : stripped;
+  }, [count]);
+
   if (count <= 0) return null;
   return (
-    <span
-      className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-500 text-white min-w-[18px] text-center leading-none"
-      title={`${count} unread mention${count === 1 ? "" : "s"}`}
-    >
-      {count > 99 ? "99+" : count}
+    <span className="ml-auto relative inline-flex items-center justify-center">
+      {/* Soft pulsing ring so the pill reads as a "ping" — same effect
+          as a status dot on a Discord server icon. */}
+      <span className="absolute inset-0 rounded-full bg-rose-500 opacity-75 animate-ping" aria-hidden="true" />
+      <span
+        className="relative text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-500 text-white min-w-[18px] text-center leading-none shadow-[0_0_0_2px_rgba(244,63,94,0.3)]"
+        title={`${count} unread mention${count === 1 ? "" : "s"}`}
+      >
+        {count > 99 ? "99+" : count}
+      </span>
     </span>
   );
 }
