@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,7 @@ import {
   Play, Square, LogOut, Clock as ClockIcon, Calendar, LayoutDashboard,
   TrendingUp, DollarSign, GraduationCap, MessageCircle, Sparkles,
   Megaphone, Copy, Check, Target, Wallet, BarChart3, ChevronRight,
+  AlertTriangle, Clock,
 } from "lucide-react";
 import { logAudit } from "@/lib/audit";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -163,6 +164,11 @@ function ClockPage() {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [agencyName, setAgencyName] = useState("Agency Console");
+  const [maxShiftHours, setMaxShiftHours] = useState<number>(8);
+  // Track which threshold notifications have already fired this shift,
+  // keyed by shift id, so we don't spam the chatter every second once
+  // they cross a boundary.
+  const firedNotificationsRef = useRef<Map<string, Set<number>>>(new Map());
   const [loading, setLoading] = useState(true);
   const [now, setNow] = useState(Date.now());
 
@@ -201,6 +207,20 @@ function ClockPage() {
     return () => clearInterval(t);
   }, []);
 
+  // Ask the browser for notification permission once we know there's
+  // an active session — only useful for the shift-limit warnings, so
+  // we don't ask up-front. No-op if the user has already decided.
+  useEffect(() => {
+    if (typeof Notification !== "undefined" && Notification.permission === "default") {
+      // Defer slightly so the prompt doesn't appear before the page
+      // renders something useful behind it.
+      const t = setTimeout(() => {
+        try { void Notification.requestPermission(); } catch { /* ignore */ }
+      }, 4000);
+      return () => clearTimeout(t);
+    }
+  }, []);
+
   // Read session and load own data
   useEffect(() => {
     const raw = localStorage.getItem("agency_session");
@@ -232,7 +252,9 @@ function ClockPage() {
     setLoading(true);
     const [{ data: ch }, { data: ag }, { data: ass }, { data: sh }] = await Promise.all([
       supabase.from("chatters").select("*").eq("id", chatterId).maybeSingle(),
-      supabase.from("agency_settings").select("agency_name").maybeSingle(),
+      // Pull the agency-wide max-shift default at the same time so the
+      // timer warnings are ready as soon as the page renders.
+      supabase.from("agency_settings").select("agency_name, default_max_shift_hours").maybeSingle(),
       supabase.from("chatter_assignments").select("*").eq("chatter_id", chatterId).eq("active", true),
       supabase.from("shifts").select("*").eq("chatter_id", chatterId).order("start_at", { ascending: false }).limit(20),
     ]);
@@ -243,6 +265,18 @@ function ClockPage() {
     }
     setChatter(ch as Chatter);
     if (ag?.agency_name) setAgencyName(ag.agency_name);
+    // Effective shift max = chatter override (NULL=unset) || agency default || hard fallback 8h
+    const chatterMax = (ch as Chatter & { max_shift_hours: number | null }).max_shift_hours;
+    const agencyDefault = (ag as { default_max_shift_hours?: number } | null)?.default_max_shift_hours;
+    setMaxShiftHours(
+      Number(
+        chatterMax != null
+          ? chatterMax
+          : agencyDefault != null
+          ? agencyDefault
+          : 8,
+      ),
+    );
     const assignList = (ass ?? []) as Assignment[];
     setAssignments(assignList);
 
@@ -367,6 +401,42 @@ function ClockPage() {
     [shifts, now]
   );
   const closedShifts = useMemo(() => shifts.filter((s) => s.end_at), [shifts]);
+
+  // ── Shift-limit notifications ──────────────────────────────────────
+  // Fires a browser notification (if permitted) + a toast when an
+  // active shift crosses the 30 / 15 / 5 minute thresholds, and
+  // again when the chatter goes over the cap. Each threshold fires
+  // at most once per shift, tracked in firedNotificationsRef.
+  useEffect(() => {
+    const thresholds = [30, 15, 5, 0]; // minutes remaining
+    for (const s of activeShifts) {
+      const startMs = new Date(s.start_at).getTime();
+      const limitMs = startMs + maxShiftHours * 3600_000;
+      const minutesLeft = Math.floor((limitMs - now) / 60_000);
+      const fired = firedNotificationsRef.current.get(s.id) ?? new Set<number>();
+      for (const t of thresholds) {
+        // Cross the threshold from above: ≤ t but we haven't fired this t yet.
+        if (minutesLeft <= t && !fired.has(t)) {
+          fired.add(t);
+          const title = t === 0 ? "Shift limit reached" : `${t} min left in your shift`;
+          const body = t === 0
+            ? `You've hit your ${maxShiftHours}h shift cap. Wrap up and clock out.`
+            : `You're at ${formatHoursMins(maxShiftHours * 60 - minutesLeft)} on a ${maxShiftHours}h shift.`;
+          // Non-blocking native notification (user must have granted permission)
+          try {
+            if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+              new Notification(title, { body, tag: `shift-${s.id}-${t}` });
+            }
+          } catch { /* ignore */ }
+          // Always show a toast — backstop for users who didn't grant
+          // browser notifications.
+          if (t === 0) toast.warning(title, { description: body, duration: 10_000 });
+          else toast.message(title, { description: body });
+        }
+      }
+      firedNotificationsRef.current.set(s.id, fired);
+    }
+  }, [now, activeShifts, maxShiftHours]);
 
   // Group scheduled shifts into buckets for calendar-like display
   const groupedSchedule = useMemo(() => {
@@ -965,34 +1035,49 @@ function TodayTab(props: {
           <h2 className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/70">
             You're clocked in
           </h2>
-          {activeShifts.map((s) => (
-            <div key={s.id} className="rounded-2xl border-2 border-success/40 bg-success/5 p-6">
-              <div className="flex items-start justify-between gap-3 flex-wrap">
-                <div>
-                  <div className="text-xs text-muted-foreground mb-1">Working with</div>
-                  <div className="text-2xl font-bold">{creatorName(s.creator_id)}</div>
-                  {s.target_account_name && (
-                    <div className="text-xs text-primary mt-0.5 font-medium">on {s.target_account_name}</div>
-                  )}
-                  <div className="text-xs text-muted-foreground mt-1">
-                    Started {format(new Date(s.start_at), "h:mm a")}
+          {activeShifts.map((s) => {
+            // Time-left math for the shift-limit banner. Tick at the
+            // page's `now` clock so the banner re-renders every second.
+            const startMs = new Date(s.start_at).getTime();
+            const limitMs = startMs + maxShiftHours * 3600_000;
+            const remainingMs = limitMs - now;
+            const minutesLeft = Math.floor(remainingMs / 60_000);
+            const overage = remainingMs < 0 ? Math.abs(minutesLeft) : 0;
+            return (
+              <div key={s.id} className="rounded-2xl border-2 border-success/40 bg-success/5 p-6">
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div>
+                    <div className="text-xs text-muted-foreground mb-1">Working with</div>
+                    <div className="text-2xl font-bold">{creatorName(s.creator_id)}</div>
+                    {s.target_account_name && (
+                      <div className="text-xs text-primary mt-0.5 font-medium">on {s.target_account_name}</div>
+                    )}
+                    <div className="text-xs text-muted-foreground mt-1">
+                      Started {format(new Date(s.start_at), "h:mm a")}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[11px] text-muted-foreground uppercase tracking-wider">Elapsed</div>
+                    <div className="text-3xl font-mono font-bold tabular-nums">{elapsed(s.start_at)}</div>
                   </div>
                 </div>
-                <div className="text-right">
-                  <div className="text-[11px] text-muted-foreground uppercase tracking-wider">Elapsed</div>
-                  <div className="text-3xl font-mono font-bold tabular-nums">{elapsed(s.start_at)}</div>
-                </div>
+
+                {/* Shift-limit banner: shows different urgency at
+                    30/15/5 minutes remaining, then "exceeded" when
+                    the chatter blows past the cap. */}
+                <ShiftLimitBanner minutesLeft={minutesLeft} overageMinutes={overage} maxShiftHours={maxShiftHours} />
+
+                <Button
+                  size="lg"
+                  className="w-full mt-4 bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+                  onClick={() => openClockOut(s)}
+                >
+                  <Square className="h-4 w-4 mr-2" fill="currentColor" />
+                  Clock out
+                </Button>
               </div>
-              <Button
-                size="lg"
-                className="w-full mt-4 bg-destructive hover:bg-destructive/90 text-destructive-foreground"
-                onClick={() => openClockOut(s)}
-              >
-                <Square className="h-4 w-4 mr-2" fill="currentColor" />
-                Clock out
-              </Button>
-            </div>
-          ))}
+            );
+          })}
         </section>
       )}
 
@@ -1769,4 +1854,76 @@ function CoachingTab({ notes, goals }: { notes: CoachingNote[]; goals: Goal[] })
       </section>
     </div>
   );
+}
+
+// ── Shift-limit banner ─────────────────────────────────────────────────
+//
+// Goes inside an active-shift card. Renders nothing until ≤ 30 min
+// remain, then escalates the visual urgency at 30 / 15 / 5 / 0 min.
+// The browser-Notification side-effect lives in the parent so it
+// fires once per threshold (independent of re-renders).
+
+function ShiftLimitBanner({
+  minutesLeft, overageMinutes, maxShiftHours,
+}: {
+  minutesLeft: number;
+  overageMinutes: number;
+  maxShiftHours: number;
+}) {
+  if (overageMinutes > 0) {
+    return (
+      <div className="mt-3 rounded-xl border border-rose-500/40 bg-rose-500/10 px-3 py-2.5 flex items-start gap-2">
+        <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
+        <div className="text-xs">
+          <div className="font-semibold text-rose-400">Shift cap exceeded</div>
+          <div className="text-muted-foreground">
+            You're {formatHoursMins(overageMinutes)} past your {maxShiftHours}h limit. Please clock out.
+          </div>
+        </div>
+      </div>
+    );
+  }
+  if (minutesLeft <= 5) {
+    return (
+      <div className="mt-3 rounded-xl border border-rose-500/40 bg-rose-500/10 px-3 py-2.5 flex items-start gap-2">
+        <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
+        <div className="text-xs">
+          <div className="font-semibold text-rose-400">{minutesLeft} min left</div>
+          <div className="text-muted-foreground">Wrap up and clock out before your {maxShiftHours}h cap.</div>
+        </div>
+      </div>
+    );
+  }
+  if (minutesLeft <= 15) {
+    return (
+      <div className="mt-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2.5 flex items-start gap-2">
+        <Clock className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+        <div className="text-xs">
+          <div className="font-semibold text-amber-400">{minutesLeft} min left in your shift</div>
+          <div className="text-muted-foreground">{maxShiftHours}h cap is approaching.</div>
+        </div>
+      </div>
+    );
+  }
+  if (minutesLeft <= 30) {
+    return (
+      <div className="mt-3 rounded-xl border border-border bg-secondary/30 px-3 py-2.5 flex items-start gap-2">
+        <Clock className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+        <div className="text-xs">
+          <div className="font-semibold text-foreground">{minutesLeft} min left</div>
+          <div className="text-muted-foreground">Heads up — you're nearing your {maxShiftHours}h cap.</div>
+        </div>
+      </div>
+    );
+  }
+  return null;
+}
+
+// "1h 23m" — used in the banner copy + notification body
+function formatHoursMins(totalMinutes: number): string {
+  const m = Math.max(0, Math.floor(totalMinutes));
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  const rest = m - h * 60;
+  return rest > 0 ? `${h}h ${rest}m` : `${h}h`;
 }

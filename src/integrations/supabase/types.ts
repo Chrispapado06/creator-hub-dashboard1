@@ -779,6 +779,7 @@ export type Database = {
           scrapecreators_api_key: string | null
           anthropic_api_key: string | null
           airtable_api_key: string | null
+          default_max_shift_hours: number
           updated_at: string
         }
         Insert: {
@@ -792,6 +793,7 @@ export type Database = {
           scrapecreators_api_key?: string | null
           anthropic_api_key?: string | null
           airtable_api_key?: string | null
+          default_max_shift_hours?: number
           updated_at?: string
         }
         Update: {
@@ -805,6 +807,7 @@ export type Database = {
           scrapecreators_api_key?: string | null
           anthropic_api_key?: string | null
           airtable_api_key?: string | null
+          default_max_shift_hours?: number
           updated_at?: string
         }
         Relationships: []
@@ -820,6 +823,7 @@ export type Database = {
           hourly_rate: number | null
           languages: string | null
           hire_date: string | null
+          max_shift_hours: number | null
           notes: string | null
           created_at: string
           updated_at: string
@@ -834,6 +838,7 @@ export type Database = {
           hourly_rate?: number | null
           languages?: string | null
           hire_date?: string | null
+          max_shift_hours?: number | null
           notes?: string | null
           created_at?: string
           updated_at?: string
@@ -848,6 +853,7 @@ export type Database = {
           hourly_rate?: number | null
           languages?: string | null
           hire_date?: string | null
+          max_shift_hours?: number | null
           notes?: string | null
           created_at?: string
           updated_at?: string

@@ -308,13 +308,12 @@ function LandingPage() {
         </div>
       )}
 
-      {/* Phone-frame column — fixed 480px on desktop, full-width on mobile.
-          Rounded corners + soft shadow on desktop give it the mockup feel.
-          Inside is dark (true black) so the cover image and the white name
-          read with maximum contrast — Kinsley style. */}
-      <div className="flex justify-center py-0 sm:py-8">
+      {/* Phone-frame column — fixed 480px on desktop, full-bleed on
+          mobile. Rounded corners + soft shadow only on desktop so the
+          phone frame doesn't fight the actual phone bezel on mobile. */}
+      <div className="flex justify-center sm:py-8 min-h-screen">
         <div
-          className="w-full max-w-[480px] sm:rounded-3xl overflow-hidden shadow-[0_25px_80px_-20px_rgba(0,0,0,0.5)] flex flex-col items-stretch"
+          className="w-full max-w-[480px] sm:rounded-3xl overflow-hidden sm:shadow-[0_25px_80px_-20px_rgba(0,0,0,0.5)] flex flex-col items-stretch"
           style={{ background: "#000" }}
         >
           {/* Hero photo — fills the top, no overlay. Avatar-fallback when
@@ -325,8 +324,13 @@ function LandingPage() {
             <HeroAvatarOnly landing={landing} theme={theme} />
           )}
 
-          {/* Content stack on the black phone interior */}
-          <div className="w-full px-5 pt-7 pb-12 flex flex-col items-center">
+          {/* Content stack on the black phone interior. Bottom padding
+              respects iOS safe-area so the footer + last link don't
+              disappear under the home indicator on iPhone. */}
+          <div
+            className="w-full px-5 pt-7 flex flex-col items-center"
+            style={{ paddingBottom: "calc(3rem + env(safe-area-inset-bottom, 0px))" }}
+          >
             {/* Name + @slug — centered, big white type just below the photo */}
             <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight inline-flex items-center gap-2 text-center text-white">
               {landing.display_name ?? landing.slug}
@@ -594,28 +598,45 @@ function pickReadableTextOn(hex: string): string {
  * name (vs the big standalone circle in the no-cover variant).
  */
 function HeroWithCover({ landing, themeBg: _themeBg }: { landing: Landing; themeBg: string }) {
-  // Kinsley-style hero: photo only, no overlay. The name and @slug are
-  // rendered in the dark column BELOW the photo so the cover stays
-  // unobstructed and reads like a phone screen. We use a soft bottom
-  // fade into black so the hand-off to the dark phone interior is
-  // seamless instead of a hard horizontal cut.
+  // Kinsley-style hero: photo only, no overlay. Sized differently per
+  // viewport so it dominates the screen the way a phone hero should
+  // without dwarfing the layout on tall desktop screens:
+  //
+  //   • Mobile: the photo fills ~58% of the viewport height (svh, which
+  //     accounts for the iOS Safari address bar). Capped by the column
+  //     width's natural aspect to avoid super-tall portraits.
+  //   • Desktop: aspect-ratio 1:1.15 keeps it visually anchored inside
+  //     the 480px frame regardless of screen height.
   return (
-    <div className="relative w-full" style={{ aspectRatio: "1 / 1.15" }}>
-      <img
-        src={landing.cover_url ?? ""}
-        alt={landing.display_name ?? landing.slug}
-        className="w-full h-full object-cover"
-        loading="eager"
-        // Bias the crop toward the face by anchoring near the top
-        style={{ objectPosition: "center 25%" }}
-      />
-      {/* Subtle bottom fade so the photo blends into the black panel
-          below instead of ending with a sharp horizontal line. */}
-      <div
-        className="absolute inset-x-0 bottom-0 h-24 pointer-events-none"
-        style={{ background: "linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.35) 60%, #000 100%)" }}
-      />
-    </div>
+    <>
+      {/* Mobile sizes by viewport height (svh accounts for iOS Safari's
+          collapsing chrome); desktop uses a fixed aspect ratio so the
+          phone frame stays balanced regardless of window height. */}
+      <style>{`
+        .landing-hero-shell { aspect-ratio: 1 / 1.15; }
+        @media (max-width: 639px) {
+          .landing-hero-shell {
+            aspect-ratio: auto;
+            height: 58svh;
+            min-height: 380px;
+            max-height: 620px;
+          }
+        }
+      `}</style>
+      <div className="landing-hero-shell relative w-full overflow-hidden">
+        <img
+          src={landing.cover_url ?? ""}
+          alt={landing.display_name ?? landing.slug}
+          className="absolute inset-0 w-full h-full object-cover"
+          loading="eager"
+          style={{ objectPosition: "center 25%" }}
+        />
+        <div
+          className="absolute inset-x-0 bottom-0 h-24 pointer-events-none"
+          style={{ background: "linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.35) 60%, #000 100%)" }}
+        />
+      </div>
+    </>
   );
 }
 

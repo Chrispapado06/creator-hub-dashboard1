@@ -33,6 +33,7 @@ type AgencySettings = {
   theme: string;
   anthropic_api_key: string | null;
   airtable_api_key: string | null;
+  default_max_shift_hours: number;
 };
 
 type AccountType = "admin" | "staff";
@@ -54,7 +55,7 @@ type StaffMember = { id: string; name: string; role: string };
 
 function SettingsPage() {
   const [settings, setSettings] = useState<AgencySettings | null>(null);
-  const [form, setForm] = useState({ agency_name: "", logo_url: "", theme: "dark", anthropic_api_key: "", airtable_api_key: "" });
+  const [form, setForm] = useState({ agency_name: "", logo_url: "", theme: "dark", anthropic_api_key: "", airtable_api_key: "", default_max_shift_hours: 8 });
   const [showAnthropicKey, setShowAnthropicKey] = useState(false);
   const [showAirtableKey, setShowAirtableKey] = useState(false);
   const [users, setUsers] = useState<TeamUser[]>([]);
@@ -88,6 +89,7 @@ function SettingsPage() {
         theme: s.theme,
         anthropic_api_key: s.anthropic_api_key ?? "",
         airtable_api_key: s.airtable_api_key ?? "",
+        default_max_shift_hours: Number((s as AgencySettings).default_max_shift_hours ?? 8),
       });
     }
     setUsers((u ?? []) as TeamUser[]);
@@ -125,6 +127,9 @@ function SettingsPage() {
       theme: form.theme,
       anthropic_api_key: form.anthropic_api_key.trim() || null,
       airtable_api_key: form.airtable_api_key.trim() || null,
+      // Clamp to a sane range so a typo doesn't lock staff out or
+      // let them clock in for impossibly long shifts. 0.5h–24h.
+      default_max_shift_hours: Math.max(0.5, Math.min(24, Number(form.default_max_shift_hours) || 8)),
     };
     let error;
     if (settings?.id) {
@@ -357,6 +362,34 @@ function SettingsPage() {
             </ul>
             <p>Then add each base you want Bernard to access in the same form.</p>
           </div>
+        </div>
+      </section>
+
+      {/* Staff settings — agency-wide shift limit. Per-chatter overrides
+          live on the Chatters page. */}
+      <section className="space-y-5">
+        <h2 className="text-lg font-semibold border-b border-border pb-2 flex items-center gap-2">
+          <ClipboardList className="h-4 w-4 text-primary" />
+          Staff settings
+        </h2>
+        <div className="space-y-2 max-w-md">
+          <Label className="text-sm">
+            Max shift length (hours)
+          </Label>
+          <Input
+            type="number"
+            min={0.5}
+            max={24}
+            step={0.5}
+            value={form.default_max_shift_hours}
+            onChange={(e) => setForm({ ...form, default_max_shift_hours: Number(e.target.value) })}
+            className="max-w-[120px]"
+          />
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            Default ceiling for any active shift. Staff get a warning at 30, 15,
+            and 5 minutes left, plus a browser notification if they enabled them.
+            Override per-chatter on the Staff page.
+          </p>
         </div>
       </section>
 
