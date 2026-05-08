@@ -324,28 +324,96 @@ function FinancialsPage() {
   const ofDirectInRange = rollup?.revenue.ofDirect ?? 0;
   const loadingOfDirect = loadingRollup;
 
-  // Gross OF volume — every dollar that flowed through OnlyFans in the
-  // window (per creator entries; not the sum of payouts because payouts
-  // can lag behind the entries date-wise).
-  const grossVolume = useMemo(
+  // Gross volume — every dollar that flowed through every revenue
+  // channel in the window. Uses the centralised rollup so it includes
+  // OF Direct earnings (the synced /payouts/earnings-statistics totals)
+  // alongside organic + internal entries + ad-attributed + infloww.
+  // Falls back to the entry-only sum until the async rollup loads.
+  const manualGrossVolume = useMemo(
     () =>
       organicEntries.reduce((s, e) => s + Number(e.amount || 0), 0) +
       internalEntries.reduce((s, e) => s + Number(e.amount || 0), 0),
     [organicEntries, internalEntries],
   );
-  const prevGrossVolume = useMemo(
+  const grossVolume = rollup?.revenue.total ?? manualGrossVolume;
+  const prevManualGrossVolume = useMemo(
     () =>
       prevOrganic.reduce((s, e) => s + Number(e.amount || 0), 0) +
       prevInternal.reduce((s, e) => s + Number(e.amount || 0), 0),
     [prevOrganic, prevInternal],
   );
+  const prevGrossVolume = prevRollup?.revenue.total ?? prevManualGrossVolume;
 
-  // Agency revenue — sum of agency_cut from payouts whose period_end falls
-  // in the window. This is the agency's actual income.
-  const agencyRevenue = useMemo(
+  // Agency revenue — the agency's actual income for the window. Two
+  // paths, in order of preference:
+  //   1. Sum of agency_cut from manually-entered creator_payouts.
+  //      This is the most accurate when admins are diligent about
+  //      logging payouts.
+  //   2. ESTIMATED from OF Direct earnings × creator splits, when no
+  //      manual payouts cover the window. Avoids the "I synced but
+  //      Financials still says $0" trap. Each creator has a
+  //      payout_split_pct (creator's share) and of_platform_fee_pct
+  //      (OF's 20%). Agency cut = OF earnings × (1 − OF fee%) × (1 − creator share%).
+  const manualAgencyRevenue = useMemo(
     () => payouts.reduce((s, p) => s + Number(p.agency_cut || 0), 0),
     [payouts],
   );
+  // Fetch creator split percentages once so the estimate works.
+  const [creatorSplits, setCreatorSplits] = useState<Record<string, { payout_split_pct: number; of_platform_fee_pct: number }>>({});
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const { data } = await supabase
+        .from("creators")
+        .select("id, payout_split_pct, of_platform_fee_pct");
+      if (cancelled || !data) return;
+      const map: Record<string, { payout_split_pct: number; of_platform_fee_pct: number }> = {};
+      for (const c of data) {
+        map[c.id as string] = {
+          payout_split_pct: Number((c as { payout_split_pct?: number }).payout_split_pct ?? 70),
+          of_platform_fee_pct: Number((c as { of_platform_fee_pct?: number }).of_platform_fee_pct ?? 20),
+        };
+      }
+      setCreatorSplits(map);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+  // Per-creator OF earnings for the active window — used for the
+  // agency-cut estimate when no manual payout exists.
+  const [creatorOfRange, setCreatorOfRange] = useState<Record<string, number>>({});
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const { fetchOfEarningsPerCreator } = await import("@/lib/of-sync");
+      const { data: cs } = await supabase
+        .from("creators")
+        .select("id, onlyfansapi_acct_id");
+      if (cancelled || !cs) return;
+      const map = await fetchOfEarningsPerCreator(
+        cs as Array<{ id: string; onlyfansapi_acct_id: string | null }>,
+        format(range.from, "yyyy-MM-dd"),
+        format(range.to, "yyyy-MM-dd"),
+      );
+      const totals: Record<string, number> = {};
+      for (const [id, b] of Object.entries(map)) totals[id] = b.total;
+      if (!cancelled) setCreatorOfRange(totals);
+    })();
+    return () => { cancelled = true; };
+  }, [range.from, range.to]);
+  const estimatedAgencyRevenue = useMemo(() => {
+    let total = 0;
+    for (const [creatorId, ofTotal] of Object.entries(creatorOfRange)) {
+      if (ofTotal <= 0) continue;
+      const split = creatorSplits[creatorId];
+      if (!split) continue;
+      const afterOfFee = ofTotal * (1 - split.of_platform_fee_pct / 100);
+      const agencyShare = afterOfFee * (1 - split.payout_split_pct / 100);
+      total += agencyShare;
+    }
+    return total;
+  }, [creatorOfRange, creatorSplits]);
+  const agencyRevenue = manualAgencyRevenue > 0 ? manualAgencyRevenue : estimatedAgencyRevenue;
+  const usingEstimatedAgency = manualAgencyRevenue === 0 && estimatedAgencyRevenue > 0;
   const prevAgencyRevenue = useMemo(
     () => prevPayouts.reduce((s, p) => s + Number(p.agency_cut || 0), 0),
     [prevPayouts],
@@ -393,6 +461,24 @@ function FinancialsPage() {
     return () => { cancelled = true; };
   }, [range.from, range.to]);
 
+  // Daily OF earnings rows for the window — same data the chart on
+  // /revenue uses, populated by the most recent OnlyFans sync.
+  const [ofDailyRows, setOfDailyRows] = useState<Array<{ entry_date: string; total: number }>>([]);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const cFrom = format(range.from, "yyyy-MM-dd");
+      const cTo = format(range.to, "yyyy-MM-dd");
+      const { data } = await supabase
+        .from("of_earnings_daily")
+        .select("entry_date, total")
+        .gte("entry_date", cFrom)
+        .lte("entry_date", cTo);
+      if (!cancelled) setOfDailyRows((data ?? []) as Array<{ entry_date: string; total: number }>);
+    })();
+    return () => { cancelled = true; };
+  }, [range.from, range.to]);
+
   // Daily cash-flow series — bucket every income/expense to its day so the
   // chart shows the rhythm of the period instead of just totals.
   const dailySeries = useMemo(() => {
@@ -405,7 +491,17 @@ function FinancialsPage() {
       const b = buckets.get(key);
       if (b) b[kind] += amt;
     };
-    // Income — agency_cut bucketed at period_end
+    // Income — manual entries + OF Direct earnings + agency_cut payouts.
+    // Why all three? Each captures a different reality:
+    //   • organic/internal entries — what VAs typed in for Reddit promos
+    //   • OF Direct earnings — what OnlyFans actually paid the creator
+    //   • agency_cut payouts — the post-split agency income
+    // The chart shows every dollar that hit any of these channels, so a
+    // creator's daily OF total appears as income on the day it landed
+    // even if no manual payout has been recorded yet.
+    for (const e of organicEntries) bump(e.entry_date, "income", Number(e.amount));
+    for (const e of internalEntries) bump(e.entry_date, "income", Number(e.amount));
+    for (const r of ofDailyRows) bump(r.entry_date, "income", Number(r.total));
     for (const p of payouts) bump(p.period_end, "income", Number(p.agency_cut));
     // Expenses — manual ad campaigns + auto-synced Meta + staff + ops
     for (const a of ads) {
@@ -424,7 +520,7 @@ function FinancialsPage() {
       ...b,
       net: b.income - b.expense,
     }));
-  }, [payouts, ads, staffPayouts, expenses, range, metaInsightsDaily]);
+  }, [payouts, ads, staffPayouts, expenses, range, metaInsightsDaily, organicEntries, internalEntries, ofDailyRows]);
 
   // Income breakdown: agency cut per creator
   const incomeByCreator = useMemo(() => {
@@ -621,10 +717,10 @@ function FinancialsPage() {
         <KpiCard
           tone="cyan"
           icon={<DollarSign className="h-4 w-4" />}
-          label="Gross OF volume"
-          value={fmtMoney(grossVolume)}
+          label="Total revenue"
+          value={loadingRollup ? "…" : fmtMoney(grossVolume)}
           delta={pctChange(grossVolume, prevGrossVolume)}
-          hint="all $ flowing through"
+          hint="OF + organic + internal + ads"
         />
         <KpiCard
           tone="emerald"
@@ -632,7 +728,7 @@ function FinancialsPage() {
           label="Agency revenue"
           value={fmtMoney(agencyRevenue)}
           delta={pctChange(agencyRevenue, prevAgencyRevenue)}
-          hint="agency's share"
+          hint={usingEstimatedAgency ? "est. from OF × splits" : "agency's share"}
         />
         <KpiCard
           tone="rose"
