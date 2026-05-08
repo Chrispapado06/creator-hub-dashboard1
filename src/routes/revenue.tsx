@@ -392,26 +392,40 @@ function RevenuePage() {
     const organic = organicEntries.reduce((s, e) => s + e.amount, 0);
     const internal = internalEntries.reduce((s, e) => s + e.amount, 0);
     // OnlyFans direct = earnings in the active date range, fetched live
-    // from /api/analytics/summary/earnings. Falls back to lifetime
-    // numbers (of_creator_stats) before the live fetch finishes so the
-    // hero never flashes $0 between range changes.
-    const rangeRows = Object.values(rangeOfEarnings);
-    const haveRange = rangeRows.length > 0;
-    const ofDirect = haveRange
-      ? rangeRows.reduce((s, r) => s + r.total, 0)
-      : ofStats.reduce((s, r) => s + (r.total_earnings ?? 0), 0);
-    const ofSubs = haveRange
-      ? rangeRows.reduce((s, r) => s + r.subs, 0)
-      : ofStats.reduce((s, r) => s + (r.earnings_subs ?? 0), 0);
-    const ofTips = haveRange
-      ? rangeRows.reduce((s, r) => s + r.tips, 0)
-      : ofStats.reduce((s, r) => s + (r.earnings_tips ?? 0), 0);
-    const ofPpv = haveRange
-      ? rangeRows.reduce((s, r) => s + r.ppv, 0)
-      : ofStats.reduce((s, r) => s + (r.earnings_ppv ?? 0), 0);
-    const ofMsgs = haveRange
-      ? rangeRows.reduce((s, r) => s + r.messages, 0)
-      : ofStats.reduce((s, r) => s + (r.earnings_messages ?? 0), 0);
+    // from /payouts/earnings-statistics. Per-creator fallback rule: if
+    // the live call returned $0 for a creator BUT the synced lifetime
+    // total is non-zero, use the lifetime number for that creator.
+    // This handles transient API failures (rate limits, intermittent
+    // 5xx) — the user never sees a creator's earnings disappear just
+    // because the live fetch hiccupped on this page load.
+    let ofDirect = 0;
+    let ofSubs = 0;
+    let ofTips = 0;
+    let ofPpv = 0;
+    let ofMsgs = 0;
+    for (const c of creators) {
+      const live = rangeOfEarnings[c.id];
+      const lifetime = ofStats.find((s) => s.creator_id === c.id);
+      const liveTotal = live?.total ?? 0;
+      const lifetimeTotal = lifetime?.total_earnings ?? 0;
+      // Trust the live number when it's non-zero. Otherwise fall back
+      // to the lifetime sync (only meaningful when the active range
+      // covers most of the creator's history).
+      const useLive = liveTotal > 0 || lifetimeTotal === 0;
+      if (useLive && live) {
+        ofDirect += live.total;
+        ofSubs += live.subs;
+        ofTips += live.tips;
+        ofPpv += live.ppv;
+        ofMsgs += live.messages;
+      } else if (lifetime) {
+        ofDirect += lifetime.total_earnings ?? 0;
+        ofSubs += lifetime.earnings_subs ?? 0;
+        ofTips += lifetime.earnings_tips ?? 0;
+        ofPpv += lifetime.earnings_ppv ?? 0;
+        ofMsgs += lifetime.earnings_messages ?? 0;
+      }
+    }
     // OF tracking-link revenue (the campaigns shown on onlyfans.com →
     // Statistics → Tracking links). Treated as a sub-bucket of OnlyFans
     // direct rather than a separate "Ads" line because it's still
@@ -508,10 +522,13 @@ function RevenuePage() {
     return creators.map((c) => {
       const ofRow = ofStats.find((s) => s.creator_id === c.id);
       const rangeRow = rangeOfEarnings[c.id];
-      // Prefer the live range-filtered number; fall back to lifetime
-      // sync if the live fetch hasn't filled in yet (or the creator
-      // has no acct id resolved).
-      const ofRev = rangeRow ? rangeRow.total : (ofRow?.total_earnings ?? 0);
+      // Same fallback rule as the hero: prefer the live range number
+      // when it's non-zero, fall back to lifetime when the live fetch
+      // came back empty (transient API failure). Avoids the "I added
+      // a creator and now Marissa shows $0" surprise.
+      const liveTotal = rangeRow?.total ?? 0;
+      const lifetimeTotal = ofRow?.total_earnings ?? 0;
+      const ofRev = liveTotal > 0 ? liveTotal : lifetimeTotal;
       const ofTrackRev = ofTracking
         .filter((t) => t.creator_id === c.id)
         .reduce((s, t) => s + t.revenue_total, 0);

@@ -156,17 +156,66 @@ export async function syncCreatorOnlyFans(creator: CreatorMin): Promise<SyncOneR
     return 0;
   };
   const totalEarnings = pickNum("totalEarnings", "total_earnings", "total");
-  const statsPayload = {
+
+  // Critical fail-safe: if the earnings endpoint failed (returned null),
+  // OR returned an obviously-empty response, DO NOT touch the earnings
+  // columns. Earlier behaviour was to write zeros over Marissa's existing
+  // good numbers when a transient 429/5xx hit on a multi-creator sync.
+  // The trigger was multiple creators causing rate limits, and the symptom
+  // was "I added more creators and now Marissa shows $0".
+  //
+  // Profile fields ARE always updated — those don't have the same
+  // overwrite risk because /me is a separate, cheaper endpoint that
+  // succeeds independently.
+  const earningsAvailable = earningsJson !== null && totalEarnings >= 0
+    && (totalEarnings > 0 || (earnings && Object.keys(earnings).length > 0));
+
+  // If earnings call also failed, retry with the OLD POST endpoint as a
+  // fallback. Some accounts respond to /analytics/summary/earnings even
+  // when /payouts/earnings-statistics returns 4xx — the latter is newer
+  // and not every account is migrated.
+  let fallbackEarnings: Record<string, unknown> | null = null;
+  if (!earningsAvailable) {
+    try {
+      const r = await fetch(`${BASE}/analytics/summary/earnings`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ account_ids: [acctId], start_date: lifetimeStart, end_date: today }),
+      });
+      if (r.ok) {
+        const j = await r.json();
+        const u = unwrap(j);
+        if (u && (num(u.total_earnings) || num(u.totalEarnings))) {
+          fallbackEarnings = u;
+        }
+      }
+    } catch { /* swallow — we'll just skip earnings update */ }
+  }
+
+  // Build the upsert payload. Earnings columns are added ONLY when we
+  // have real data (from primary endpoint OR fallback). Omitted columns
+  // are preserved on existing rows (Postgres upsert default), so a sync
+  // failure no longer wipes a creator's good numbers.
+  type StatsPayload = {
+    creator_id: string;
+    username: string | null; display_name: string | null;
+    avatar_url: string | null; bio: string | null;
+    followers_count: number; posts_count: number;
+    active_subscribers: number; expired_subscribers: number;
+    sub_price: number | null;
+    synced_at: string;
+    total_earnings?: number; earnings_subs?: number; earnings_tips?: number;
+    earnings_ppv?: number; earnings_messages?: number;
+    earnings_streams?: number; earnings_referrals?: number;
+  };
+  const statsPayload: StatsPayload = {
     creator_id: creator.id,
     username: str(profile?.username) ?? creator.of_username,
     display_name: str(profile?.name) ?? str(profile?.display_name),
-    // /me returns avatar at the top level; thumbnails nested in avatarThumbs.
     avatar_url: str(profile?.avatar)
       ?? str((profile?.avatarThumbs as Record<string, unknown> | undefined)?.c144)
       ?? str(profile?.avatar_url),
     bio: str(profile?.about) ?? str(profile?.bio),
-    // OF /me uses subscribersCount (without underscore). Keep the
-    // snake_case fallback for older accounts.
     followers_count: num(profile?.subscribersCount) || num(profile?.subscribers_count) || 0,
     posts_count: num(profile?.postsCount) || num(profile?.posts_count) || 0,
     active_subscribers: num(profile?.subscribersCount) || num(profile?.subscribers_count) || 0,
@@ -176,21 +225,42 @@ export async function syncCreatorOnlyFans(creator: CreatorMin): Promise<SyncOneR
       : profile?.subscribe_price
         ? num(profile.subscribe_price)
         : null,
-    total_earnings: totalEarnings,
-    earnings_subs: pickNum("subscriptions", "subs", "subscription"),
-    earnings_tips: pickNum("tips"),
-    // OF API names PPV revenue "posts" in the analytics summary.
-    earnings_ppv: pickNum("posts", "ppv"),
-    earnings_messages: pickNum("messages"),
-    earnings_streams: pickNum("streams", "livestreams"),
-    earnings_referrals: pickNum("referrals"),
     synced_at: new Date().toISOString(),
   };
+  if (earningsAvailable) {
+    statsPayload.total_earnings = totalEarnings;
+    statsPayload.earnings_subs = pickNum("subscriptions", "subs", "subscription");
+    statsPayload.earnings_tips = pickNum("tips");
+    statsPayload.earnings_ppv = pickNum("posts", "ppv");
+    statsPayload.earnings_messages = pickNum("messages");
+    statsPayload.earnings_streams = pickNum("streams", "livestreams");
+    statsPayload.earnings_referrals = pickNum("referrals");
+  } else if (fallbackEarnings) {
+    statsPayload.total_earnings = num(fallbackEarnings.total_earnings) || num(fallbackEarnings.totalEarnings);
+    statsPayload.earnings_subs = num(fallbackEarnings.subscriptions) || num(fallbackEarnings.subs);
+    statsPayload.earnings_tips = num(fallbackEarnings.tips);
+    statsPayload.earnings_ppv = num(fallbackEarnings.posts) || num(fallbackEarnings.ppv);
+    statsPayload.earnings_messages = num(fallbackEarnings.messages);
+    statsPayload.earnings_streams = num(fallbackEarnings.streams) || num(fallbackEarnings.livestreams);
+    statsPayload.earnings_referrals = num(fallbackEarnings.referrals);
+  }
+  // Else: leave earnings columns untouched (preserves prior good values
+  // on update; defaults to 0 only on a fresh insert, which is correct).
+
   const { error: statsErr } = await supabase
     .from("of_creator_stats")
     .upsert(statsPayload, { onConflict: "creator_id" });
   if (statsErr) {
     return { ok: false, creator_id: creator.id, error: `Stats save failed: ${statsErr.message}` };
+  }
+  // Surface a clear error message to the caller when ALL earnings paths
+  // failed, so the toast tells the truth.
+  if (!earningsAvailable && !fallbackEarnings) {
+    return {
+      ok: false,
+      creator_id: creator.id,
+      error: "Earnings endpoint failed (likely OF API rate limit). Profile updated, earnings preserved.",
+    };
   }
 
   // 5. Daily earnings series for the chart.
@@ -309,7 +379,11 @@ export async function syncCreatorOnlyFans(creator: CreatorMin): Promise<SyncOneR
     }
   }
 
-  return { ok: true, creator_id: creator.id, total_earnings: totalEarnings };
+  // Report whichever total we ended up using (primary or fallback).
+  const reportedTotal = earningsAvailable
+    ? totalEarnings
+    : (fallbackEarnings ? num(fallbackEarnings.total_earnings) || num(fallbackEarnings.totalEarnings) : 0);
+  return { ok: true, creator_id: creator.id, total_earnings: reportedTotal };
 }
 
 // ── Date-range earnings (live, no DB write) ──────────────────────────
@@ -356,11 +430,55 @@ function parseEarnings(json: unknown): EarningsBreakdown {
 }
 
 /**
- * Fetch one combined earnings summary across the given account_ids
- * for [start, end]. Hits /api/{account}/payouts/earnings-statistics
- * once per account in parallel and sums the totals — same total as
- * the old POST /api/analytics/summary/earnings endpoint, but the new
- * endpoint is officially documented and returns more detail.
+ * Fetch earnings for a single account, with automatic fallback.
+ *
+ * Tries the new endpoint first (/payouts/earnings-statistics). If that
+ * fails for any reason, falls back to the legacy POST endpoint
+ * (/analytics/summary/earnings). Some accounts respond to one but not
+ * the other depending on which API tier they're on, so we cover both.
+ */
+async function fetchEarningsForOneAccount(
+  key: string,
+  accountId: string,
+  startDate: string,
+  endDate: string,
+): Promise<EarningsBreakdown> {
+  // Primary
+  try {
+    const r = await fetch(
+      `${BASE}/${accountId}/payouts/earnings-statistics?startDate=${startDate}&endDate=${endDate}`,
+      { headers: { Authorization: `Bearer ${key}` } },
+    );
+    if (r.ok) return parseEarnings(await r.json());
+  } catch { /* fall through */ }
+  // Fallback
+  try {
+    const r = await fetch(`${BASE}/analytics/summary/earnings`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        account_ids: [accountId],
+        start_date: startDate,
+        end_date: endDate,
+      }),
+    });
+    if (r.ok) return parseEarnings(await r.json());
+  } catch { /* both failed */ }
+  return ZERO_BREAKDOWN;
+}
+
+/**
+ * Fetch combined earnings across multiple account_ids for [start, end].
+ *
+ * Calls the per-account endpoint SERIALLY with a small inter-call delay
+ * to stay under OnlyFansAPI's rate limit. Earlier behaviour was
+ * Promise.all parallel which tripped 429s once admins had ~3+
+ * connected creators (the trigger for the "added more creators and
+ * now Marissa shows $0" bug).
  */
 export async function fetchOfEarnings(
   accountIds: string[],
@@ -369,52 +487,43 @@ export async function fetchOfEarnings(
 ): Promise<EarningsBreakdown> {
   const key = getApiKey();
   if (!key || accountIds.length === 0) return ZERO_BREAKDOWN;
-  const params = `?startDate=${startDate}&endDate=${endDate}`;
-  const results = await Promise.all(accountIds.map(async (id) => {
-    try {
-      const r = await fetch(`${BASE}/${id}/payouts/earnings-statistics${params}`, {
-        headers: { Authorization: `Bearer ${key}` },
-      });
-      if (!r.ok) return ZERO_BREAKDOWN;
-      return parseEarnings(await r.json());
-    } catch {
-      return ZERO_BREAKDOWN;
-    }
-  }));
-  // Sum per-account breakdowns into one combined total
-  return results.reduce((acc, r) => ({
-    total: acc.total + r.total,
-    subs: acc.subs + r.subs,
-    tips: acc.tips + r.tips,
-    ppv: acc.ppv + r.ppv,
-    messages: acc.messages + r.messages,
-    streams: acc.streams + r.streams,
-  }), ZERO_BREAKDOWN);
+  const out: EarningsBreakdown = { ...ZERO_BREAKDOWN };
+  for (const id of accountIds) {
+    const r = await fetchEarningsForOneAccount(key, id, startDate, endDate);
+    out.total += r.total;
+    out.subs += r.subs;
+    out.tips += r.tips;
+    out.ppv += r.ppv;
+    out.messages += r.messages;
+    out.streams += r.streams;
+    // Gentle 150ms breather between accounts. With 5 creators that's
+    // ~750ms of extra latency vs parallel — worth it to keep numbers
+    // accurate instead of intermittently zero.
+    await new Promise((res) => setTimeout(res, 150));
+  }
+  return out;
 }
 
 /**
- * Fetch one earnings breakdown PER creator. The analytics endpoint
- * accepts an array of account_ids but returns combined totals — there's
- * no per-account split in the response — so to get per-creator numbers
- * we have to fire one call per creator. With 5–10 creators this is
- * fine; for larger agencies we'd batch and rate-limit, but that's a
- * future problem.
- *
- * Returns a map keyed by creator_id (NOT account_id) so the caller
- * can render directly against their creator list.
+ * Per-creator earnings breakdown. Same serial discipline as
+ * fetchOfEarnings — one call per creator, sequential, with a small
+ * delay between requests.
  */
 export async function fetchOfEarningsPerCreator(
   creators: Array<{ id: string; onlyfansapi_acct_id: string | null }>,
   startDate: string,
   endDate: string,
 ): Promise<Record<string, EarningsBreakdown>> {
+  const key = getApiKey();
   const eligible = creators.filter((c) => c.onlyfansapi_acct_id);
-  const results = await Promise.all(eligible.map(async (c) => {
-    const breakdown = await fetchOfEarnings([c.onlyfansapi_acct_id!], startDate, endDate);
-    return [c.id, breakdown] as const;
-  }));
   const out: Record<string, EarningsBreakdown> = {};
-  for (const [id, b] of results) out[id] = b;
+  if (!key || eligible.length === 0) return out;
+  for (const c of eligible) {
+    out[c.id] = await fetchEarningsForOneAccount(
+      key, c.onlyfansapi_acct_id!, startDate, endDate,
+    );
+    await new Promise((res) => setTimeout(res, 150));
+  }
   return out;
 }
 
