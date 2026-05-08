@@ -421,6 +421,14 @@ function RevenuePage() {
     // This handles transient API failures (rate limits, intermittent
     // 5xx) — the user never sees a creator's earnings disappear just
     // because the live fetch hiccupped on this page load.
+    // Trust the live range value, full stop. Earlier I had a fallback
+    // to lifetime totals when the live call returned $0 — that was
+    // meant to handle transient API failures, but it backfires on
+    // short ranges like "Today": picking Today with $0 from OF would
+    // show LIFETIME numbers as today's hero, which is plainly wrong.
+    // The sync's separate fail-safe (skip-on-failure upsert) already
+    // protects against permanent data loss; the page should always
+    // show the real range value, even if it's $0.
     let ofDirect = 0;
     let ofSubs = 0;
     let ofTips = 0;
@@ -428,26 +436,12 @@ function RevenuePage() {
     let ofMsgs = 0;
     for (const c of creators) {
       const live = rangeOfEarnings[c.id];
-      const lifetime = ofStats.find((s) => s.creator_id === c.id);
-      const liveTotal = live?.total ?? 0;
-      const lifetimeTotal = lifetime?.total_earnings ?? 0;
-      // Trust the live number when it's non-zero. Otherwise fall back
-      // to the lifetime sync (only meaningful when the active range
-      // covers most of the creator's history).
-      const useLive = liveTotal > 0 || lifetimeTotal === 0;
-      if (useLive && live) {
-        ofDirect += live.total;
-        ofSubs += live.subs;
-        ofTips += live.tips;
-        ofPpv += live.ppv;
-        ofMsgs += live.messages;
-      } else if (lifetime) {
-        ofDirect += lifetime.total_earnings ?? 0;
-        ofSubs += lifetime.earnings_subs ?? 0;
-        ofTips += lifetime.earnings_tips ?? 0;
-        ofPpv += lifetime.earnings_ppv ?? 0;
-        ofMsgs += lifetime.earnings_messages ?? 0;
-      }
+      if (!live) continue;
+      ofDirect += live.total;
+      ofSubs += live.subs;
+      ofTips += live.tips;
+      ofPpv += live.ppv;
+      ofMsgs += live.messages;
     }
     // OF tracking-link revenue (the campaigns shown on onlyfans.com →
     // Statistics → Tracking links). Treated as a sub-bucket of OnlyFans
@@ -543,15 +537,14 @@ function RevenuePage() {
   // ── Per-creator revenue rollup (driving the modern breakdown table) ──
   const creatorBreakdown = useMemo(() => {
     return creators.map((c) => {
-      const ofRow = ofStats.find((s) => s.creator_id === c.id);
       const rangeRow = rangeOfEarnings[c.id];
-      // Same fallback rule as the hero: prefer the live range number
-      // when it's non-zero, fall back to lifetime when the live fetch
-      // came back empty (transient API failure). Avoids the "I added
-      // a creator and now Marissa shows $0" surprise.
-      const liveTotal = rangeRow?.total ?? 0;
-      const lifetimeTotal = ofRow?.total_earnings ?? 0;
-      const ofRev = liveTotal > 0 ? liveTotal : lifetimeTotal;
+      // Always use the live range value. Earlier we fell back to
+      // lifetime totals when live returned $0 — that was misleading
+      // for short ranges (Today/Yesterday) where $0 is the actual
+      // truth. The sync's skip-on-failure upsert protects the
+      // database from permanent data loss; here we just render the
+      // honest range number.
+      const ofRev = rangeRow?.total ?? 0;
       const ofTrackRev = ofTracking
         .filter((t) => t.creator_id === c.id)
         .reduce((s, t) => s + t.revenue_total, 0);
