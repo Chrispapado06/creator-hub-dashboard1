@@ -9,7 +9,6 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as WeeklyRouteImport } from './routes/weekly'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as RevenueRouteImport } from './routes/revenue'
 import { Route as LoginRouteImport } from './routes/login'
@@ -94,11 +93,6 @@ const PSlugRoute = PSlugRouteImport.update({
   path: '/p/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
-const WeeklyRoute = WeeklyRouteImport.update({
-  id: '/weekly',
-  path: '/weekly',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -160,7 +154,6 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/revenue': typeof RevenueRoute
   '/settings': typeof SettingsRoute
-  '/weekly': typeof WeeklyRoute
   '/onlyfans': typeof OnlyFansRoute
   '/instagram': typeof InstagramRoute
   '/reddit': typeof RedditRoute
@@ -186,7 +179,6 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/revenue': typeof RevenueRoute
   '/settings': typeof SettingsRoute
-  '/weekly': typeof WeeklyRoute
   '/onlyfans': typeof OnlyFansRoute
   '/instagram': typeof InstagramRoute
   '/reddit': typeof RedditRoute
@@ -213,7 +205,6 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/revenue': typeof RevenueRoute
   '/settings': typeof SettingsRoute
-  '/weekly': typeof WeeklyRoute
   '/onlyfans': typeof OnlyFansRoute
   '/instagram': typeof InstagramRoute
   '/reddit': typeof RedditRoute
@@ -241,7 +232,6 @@ export interface FileRouteTypes {
     | '/login'
     | '/revenue'
     | '/settings'
-    | '/weekly'
     | '/onlyfans'
     | '/instagram'
     | '/reddit'
@@ -267,7 +257,6 @@ export interface FileRouteTypes {
     | '/login'
     | '/revenue'
     | '/settings'
-    | '/weekly'
     | '/onlyfans'
     | '/instagram'
     | '/reddit'
@@ -293,7 +282,6 @@ export interface FileRouteTypes {
     | '/login'
     | '/revenue'
     | '/settings'
-    | '/weekly'
     | '/onlyfans'
     | '/instagram'
     | '/reddit'
@@ -320,7 +308,6 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   RevenueRoute: typeof RevenueRoute
   SettingsRoute: typeof SettingsRoute
-  WeeklyRoute: typeof WeeklyRoute
   OnlyFansRoute: typeof OnlyFansRoute
   InstagramRoute: typeof InstagramRoute
   RedditRoute: typeof RedditRoute
@@ -344,13 +331,6 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/weekly': {
-      id: '/weekly'
-      path: '/weekly'
-      fullPath: '/weekly'
-      preLoaderRoute: typeof WeeklyRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/settings': {
       id: '/settings'
       path: '/settings'
@@ -520,7 +500,6 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   RevenueRoute: RevenueRoute,
   SettingsRoute: SettingsRoute,
-  WeeklyRoute: WeeklyRoute,
   OnlyFansRoute: OnlyFansRoute,
   InstagramRoute: InstagramRoute,
   RedditRoute: RedditRoute,

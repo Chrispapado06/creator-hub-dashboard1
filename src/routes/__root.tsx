@@ -434,7 +434,6 @@ function RootComponent() {
             <SideNavLink to="/daily" slug="daily" icon={<LayoutDashboard className="h-4 w-4" />} label="Daily Dashboard" />
             <SideNavLink to="/" slug="creators" icon={<Users className="h-4 w-4" />} label="Creators" exact />
             <SideNavLink to="/revenue" slug="revenue" icon={<DollarSign className="h-4 w-4" />} label="Revenue" />
-            <SideNavLink to="/weekly" slug="weekly" icon={<CalendarDays className="h-4 w-4" />} label="Weekly" />
           </div>
 
           {/* Operations */}

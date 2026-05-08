@@ -24,7 +24,6 @@ export const ADMIN_PAGES: AdminPage[] = [
   { slug: "daily",     path: "/daily",    label: "Daily Dashboard",    group: "Core" },
   { slug: "creators",  path: "/",         label: "Creators",           group: "Core" },
   { slug: "revenue",   path: "/revenue",  label: "Revenue",            group: "Core" },
-  { slug: "weekly",    path: "/weekly",   label: "Weekly",             group: "Core" },
 
   // Operations
   { slug: "chatters",   path: "/chatters",   label: "Staff",              group: "Operations" },
