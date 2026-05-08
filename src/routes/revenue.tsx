@@ -757,18 +757,21 @@ function RevenuePage() {
                 month / Custom and control the date window for both
                 the hero number and the per-creator breakdown. */}
             <div className="mt-4 flex items-center gap-2 flex-wrap">
-              {/* Metric dropdown — small, sits left of the range pills */}
-              <select
-                value={metric}
-                onChange={(e) => setMetric(e.target.value as Metric)}
-                className="h-8 px-3 pr-8 rounded-md text-xs border border-border bg-card text-foreground hover:bg-secondary/60 cursor-pointer transition-colors"
-                title="Headline metric"
-              >
-                <option value="total">Total revenue</option>
-                <option value="net">Net earnings</option>
-                <option value="of">OnlyFans Direct</option>
-                <option value="ads">Ads (net)</option>
-              </select>
+              {/* Metric dropdown — uses the shadcn Select primitive
+                  so it matches the rest of the app's chrome (no
+                  native browser styling, proper hover/focus rings,
+                  Lucide chevron). Sits to the left of the range pills. */}
+              <Select value={metric} onValueChange={(v) => setMetric(v as Metric)}>
+                <SelectTrigger className="h-8 w-[180px] text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="total">Total revenue</SelectItem>
+                  <SelectItem value="net">Net earnings</SelectItem>
+                  <SelectItem value="of">OnlyFans Direct</SelectItem>
+                  <SelectItem value="ads">Ads (net)</SelectItem>
+                </SelectContent>
+              </Select>
               {/* Range pills — Infloww layout */}
               <div className="inline-flex rounded-md border border-border bg-secondary/30 p-0.5">
                 {([
@@ -860,13 +863,11 @@ function RevenuePage() {
                 <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${syncingInfloww ? "animate-spin" : ""}`} />
                 {syncingInfloww ? "Syncing…" : "Sync Infloww"}
               </Button>
-          <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button className="bg-gradient-to-r from-primary to-primary-glow text-primary-foreground hover:opacity-90 shadow-[0_0_20px_oklch(0.72_0.18_30/0.3)]">
-              <Plus className="mr-1.5 h-4 w-4" />
-              Add Reddit entry
-            </Button>
-          </DialogTrigger>
+          {/* Reddit entry dialog removed — admins log Reddit entries
+              directly on the creator detail page now. The block below
+              is kept commented-out rather than deleted so it's easy
+              to bring back if we change our mind. */}
+          {false && <Dialog open={open} onOpenChange={setOpen}>
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle>Add revenue entry</DialogTitle>
@@ -938,7 +939,7 @@ function RevenuePage() {
               <Button onClick={onAdd}>Add</Button>
             </DialogFooter>
           </DialogContent>
-        </Dialog>
+        </Dialog>}
             </div> {/* end action buttons row */}
           </div> {/* end action column */}
         </div> {/* end hero flex container */}
