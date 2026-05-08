@@ -339,6 +339,10 @@ export async function markChannelRead(channelId: string, userId: string): Promis
 // ── Mentions ────────────────────────────────────────────────────────────
 
 const MENTION_REGEX = /@([A-Za-z0-9_-]{2,40})/g;
+// Special handles that fan out to the whole team. Discord-equivalents:
+//   @everyone → every active chatter
+//   @here     → every member of the current channel
+const SPECIAL_MENTIONS = new Set(["everyone", "here", "all"]);
 
 /** Pull plain-text @handles out of a message. Resolution happens server-side. */
 export function extractMentions(content: string): string[] {
@@ -349,13 +353,21 @@ export function extractMentions(content: string): string[] {
   return [...out];
 }
 
+/** True if any handle in the list is @everyone / @all / @here. */
+export function hasBroadcastMention(handles: string[]): boolean {
+  return handles.some((h) => SPECIAL_MENTIONS.has(h));
+}
+
 /**
  * Match a list of @handles against the chatter directory by name (case
- * insensitive) and return the chatter ids that match. Used by the
- * composer right before sending.
+ * insensitive) and return the chatter ids that match. Skips the
+ * broadcast handles (@everyone, @here, @all) — those are handled
+ * separately via expandBroadcastMention because they fan out to many
+ * users at once.
  */
 export async function resolveMentions(handles: string[]): Promise<string[]> {
-  if (handles.length === 0) return [];
+  const direct = handles.filter((h) => !SPECIAL_MENTIONS.has(h));
+  if (direct.length === 0) return [];
   // Match by name (lowercased, word-friendly). We prefix-match the handle
   // against the lowercase name with hyphens / underscores stripped.
   const { data } = await supabase
@@ -364,7 +376,7 @@ export async function resolveMentions(handles: string[]): Promise<string[]> {
   const out: string[] = [];
   for (const c of (data ?? [])) {
     const norm = c.name.toLowerCase().replace(/\s+/g, "");
-    for (const h of handles) {
+    for (const h of direct) {
       if (norm === h || norm.startsWith(h)) {
         out.push(c.id);
         break;
@@ -373,6 +385,37 @@ export async function resolveMentions(handles: string[]): Promise<string[]> {
   }
   return [...new Set(out)];
 }
+
+/**
+ * Expand @everyone / @all → every active chatter id (minus the author).
+ * Expand @here → every channel member (minus the author).
+ * Used by sendMessage to insert mention rows for the broadcast.
+ */
+export async function expandBroadcastMention(
+  handles: string[],
+  channelId: string,
+  authorId: string,
+): Promise<string[]> {
+  if (!hasBroadcastMention(handles)) return [];
+  const isHere = handles.includes("here") && !handles.some((h) => h === "everyone" || h === "all");
+  if (isHere) {
+    const { data } = await supabase
+      .from("team_channel_members")
+      .select("chatter_id")
+      .eq("channel_id", channelId);
+    return (data ?? []).map((r) => r.chatter_id).filter((id) => id !== authorId);
+  }
+  // @everyone / @all → every active team member except the author
+  const { data } = await supabase
+    .from("chatters")
+    .select("id")
+    .eq("status", "active");
+  return (data ?? []).map((r) => r.id).filter((id) => id !== authorId);
+}
+
+// Note: the React `useUnreadChatMentions` hook lives in
+// `src/components/ChatBadge.tsx` so this file stays a pure data-layer
+// module that's safe to import from non-React code (e.g. tests).
 
 // ── Attachment upload ───────────────────────────────────────────────────
 

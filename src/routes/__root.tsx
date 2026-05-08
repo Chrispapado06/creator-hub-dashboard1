@@ -2,6 +2,7 @@ import { Outlet, Link, createRootRoute, useNavigate, useLocation } from "@tansta
 import { createContext, useContext, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { canAccessPage, isSuperAdmin } from "@/lib/admin-pages";
+import { ChatBadge } from "@/components/ChatBadge";
 import {
   Settings, LogOut, Sun, Moon, Users, DollarSign,
   CalendarDays, LayoutDashboard, ChevronDown, ChevronRight,
@@ -102,6 +103,7 @@ function SideNavLink({
   label,
   exact,
   slug,
+  badge,
 }: {
   to: string;
   icon: React.ReactNode;
@@ -110,6 +112,9 @@ function SideNavLink({
   /** Optional permission slug. If set and the admin doesn't have it,
       this link is hidden. Omit to always render (settings, profile, etc). */
   slug?: string;
+  /** Optional trailing element (e.g. unread-mention pill). Rendered
+      flush right via ml-auto. */
+  badge?: React.ReactNode;
 }) {
   const allowedPages = useContext(AllowedPagesCtx);
   if (slug && !canAccessPage(slug, allowedPages)) return null;
@@ -124,7 +129,8 @@ function SideNavLink({
       className="relative flex items-center gap-3 rounded-lg pl-4 pr-3 py-2 text-sm text-muted-foreground transition-all duration-150 ease-out hover:bg-secondary/60 hover:text-foreground hover:translate-x-px before:content-[''] before:absolute before:left-1 before:top-1/2 before:-translate-y-1/2 before:h-1/2 before:w-[3px] before:rounded-full before:bg-transparent before:transition-colors"
     >
       <span className="nav-icon h-4 w-4 shrink-0 flex items-center justify-center transition-colors">{icon}</span>
-      {label}
+      <span className="flex-1 truncate">{label}</span>
+      {badge}
     </Link>
   );
 }
@@ -394,7 +400,13 @@ function RootComponent() {
               <SideNavLink to="/leads" slug="leads" icon={<UserPlus className="h-4 w-4" />} label="Client Acquisition" />
               <SideNavLink to="/automation" slug="automation" icon={<Zap className="h-4 w-4" />} label="Automation" />
               <SideNavLink to="/financials" slug="financials" icon={<PiggyBank className="h-4 w-4" />} label="Financials" />
-              <SideNavLink to="/chat" slug="chat" icon={<MessagesSquare className="h-4 w-4" />} label="Team Chat" />
+              <SideNavLink
+                to="/chat"
+                slug="chat"
+                icon={<MessagesSquare className="h-4 w-4" />}
+                label="Team Chat"
+                badge={<ChatBadge />}
+              />
               <SideNavLink to="/audit" slug="audit" icon={<ScrollText className="h-4 w-4" />} label="Audit Log" />
             </div>
           </div>

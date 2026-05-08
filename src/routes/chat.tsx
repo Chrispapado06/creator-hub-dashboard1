@@ -30,6 +30,7 @@ import {
   ensureCurrentChatUser, listChannelsForUser, listMessages, sendMessage,
   markChannelRead, ensureCreatorChannels, ensureDmChannel, createChannel,
   extractMentions, resolveMentions, uploadChatAttachment,
+  hasBroadcastMention, expandBroadcastMention,
   type Channel, type Message, type ChatUser, type Attachment,
 } from "@/lib/chat";
 
@@ -204,7 +205,17 @@ function ChatPage() {
     }
     setSending(true);
     const handles = extractMentions(draft);
-    const mentionedIds = handles.length > 0 ? await resolveMentions(handles) : [];
+    // Two paths converge into the same mention list sent to the DB:
+    //   • direct @username mentions → resolveMentions
+    //   • broadcast @everyone / @all / @here → expand to every active
+    //     chatter (or every channel member for @here)
+    // Authors are excluded from broadcast fan-out so you don't notify
+    // yourself when posting an announcement.
+    const directIds = handles.length > 0 ? await resolveMentions(handles) : [];
+    const broadcastIds = hasBroadcastMention(handles)
+      ? await expandBroadcastMention(handles, activeChannelId, user.id)
+      : [];
+    const mentionedIds = [...new Set([...directIds, ...broadcastIds])];
     const sent = await sendMessage({
       channelId: activeChannelId,
       author: user,
@@ -584,6 +595,10 @@ function RenderedContent({ content }: { content: string }) {
   return <>{parts}</>;
 }
 
+// @everyone / @here / @all read as broadcasts — render with the
+// amber tone Discord uses to signal "this hits the whole team."
+const BROADCAST_HANDLES = new Set(["@everyone", "@here", "@all"]);
+
 function MentionParts({ text }: { text: string }) {
   const parts: React.ReactNode[] = [];
   const re = /@[A-Za-z0-9_-]{2,40}/g;
@@ -591,8 +606,18 @@ function MentionParts({ text }: { text: string }) {
   let match: RegExpExecArray | null;
   while ((match = re.exec(text)) !== null) {
     if (match.index > cursor) parts.push(text.slice(cursor, match.index));
+    const isBroadcast = BROADCAST_HANDLES.has(match[0].toLowerCase());
     parts.push(
-      <span key={match.index} className="text-primary font-medium bg-primary/10 px-1 rounded">{match[0]}</span>,
+      <span
+        key={match.index}
+        className={
+          isBroadcast
+            ? "font-bold bg-amber-500/15 text-amber-400 px-1 rounded"
+            : "text-primary font-medium bg-primary/10 px-1 rounded"
+        }
+      >
+        {match[0]}
+      </span>,
     );
     cursor = match.index + match[0].length;
   }
