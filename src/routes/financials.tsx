@@ -176,8 +176,11 @@ const PALETTE = [
 // ── Page ───────────────────────────────────────────────────────────────
 
 function FinancialsPage() {
-  const [rangeKind, setRangeKind] = useState<RangeKind>("mtd");
-  const [range, setRange] = useState<Range>(() => presetRange("mtd"));
+  // Default to 30d. MTD on early-month visits gave a 1-8 day window
+  // where most agencies have $0 of activity yet, making the whole
+  // page look broken. 30d matches what /revenue defaults to.
+  const [rangeKind, setRangeKind] = useState<RangeKind>("30d");
+  const [range, setRange] = useState<Range>(() => presetRange("30d"));
   const [customDraft, setCustomDraft] = useState<DateRange | undefined>();
   const [customOpen, setCustomOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -712,7 +715,7 @@ function FinancialsPage() {
           label="OnlyFans Direct"
           value={loadingOfDirect ? "…" : fmtMoney(ofDirectInRange)}
           delta={null}
-          hint="from /analytics/summary/earnings"
+          hint={`live from /payouts/earnings-statistics${ofDirectInRange === 0 ? " · widen the range?" : ""}`}
         />
         <KpiCard
           tone="cyan"
