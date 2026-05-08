@@ -269,6 +269,13 @@ function LandingPage() {
     return <NotFound />;
   }
 
+  // The whole landing page renders inside a 480px-wide column even on
+  // desktop — that's the actual fix for "still looks like a desktop page."
+  // On mobile (< 480px) the column collapses to viewport width and you
+  // get the native phone experience. On desktop the column sits centered
+  // with the page background filling the empty sides, so the layout reads
+  // as a phone mockup the way Linktree / Beacons do.
+  const phoneBg = (theme.page.background as string) || "#fcf9ee";
   return (
     <div
       className="min-h-screen w-full overflow-x-hidden flex flex-col items-center"
@@ -276,23 +283,25 @@ function LandingPage() {
     >
       {/* Preview banner — shows only when an admin is viewing an unpublished draft */}
       {previewMode && (
-        <div className="w-full sticky top-0 z-50 bg-warning text-warning-foreground text-center text-xs font-semibold py-1.5 px-3" style={{ background: "#f59e0b", color: "#1a1a1a" }}>
+        <div className="w-full sticky top-0 z-50 text-center text-xs font-semibold py-1.5 px-3" style={{ background: "#f59e0b", color: "#1a1a1a" }}>
           ⚠ Preview mode — this page is a draft. Toggle "Published" in the editor to make it live.
         </div>
       )}
 
-      {/* Hero: phone-mockup-style — cover photo fills the top of the
-          screen with the name overlaid in big white type at the bottom,
-          edge-to-edge on desktop too so the layout feels mobile-native. */}
-      {landing.cover_url ? (
-        <HeroWithCover landing={landing} themeBg={(theme.page.background as string) || "#fcf9ee"} />
-      ) : (
-        <HeroAvatarOnly landing={landing} theme={theme} />
-      )}
+      {/* Phone-frame column — fixed width on desktop, full-width on mobile.
+          Everything (cover, name, links, gallery) lives inside this column
+          so the page reads like a native phone screen at any viewport. */}
+      <div className="w-full max-w-[480px] flex flex-col items-stretch shadow-[0_0_60px_-20px_rgba(0,0,0,0.25)]" style={{ background: phoneBg }}>
+        {/* Hero: cover photo fills the top of the column with the name
+            overlaid in big white type at the bottom. */}
+        {landing.cover_url ? (
+          <HeroWithCover landing={landing} themeBg={phoneBg} />
+        ) : (
+          <HeroAvatarOnly landing={landing} theme={theme} />
+        )}
 
-      {/* Mobile-width column for everything below the hero. Wrapped in a
-          consistent max-width so it reads like a native app on desktop. */}
-      <div className="w-full max-w-md px-5 pb-20 flex flex-col items-center pt-5">
+        {/* Content column inside the phone frame */}
+        <div className="w-full px-5 pb-20 flex flex-col items-center pt-5">
         {/* Auto-detected social icon strip — small circular brand icons
             inline like Linktree / Beacons. Pulled from the link list. */}
         <SocialIconStrip
@@ -363,6 +372,7 @@ function LandingPage() {
         {/* Footer */}
         <div className="mt-12 text-[10px] uppercase tracking-[0.2em] opacity-60" style={{ color: theme.mutedText }}>
           @{landing.slug}
+        </div>
         </div>
       </div>
     </div>
@@ -485,7 +495,7 @@ function SocialIconButton({
 // ── Featured CTA (typically OnlyFans) ───────────────────────────────────
 
 function FeaturedCTA({
-  links, landingId, theme,
+  links, landingId, theme: _theme,
 }: {
   links: LandingLink[];
   landingId: string;
@@ -494,10 +504,11 @@ function FeaturedCTA({
   const link = useMemo(() => featuredLink(links ?? []), [links]);
   const platform = useMemo(() => link ? detectPlatform(link.url) : null, [link]);
   if (!link || !platform) return null;
-  const Icon = platform.Icon;
-  // OnlyFans uses its blue (or accent for non-OF). The button uses the
-  // platform color for instant brand recognition — same idea as the
-  // big red "VIP" button in the Kinsley reference.
+  // The CTA is text-only by design — the platform identity already lives
+  // in the small social-icon strip ABOVE this button (which is where the
+  // user can include the OnlyFans / brand logos as small circles). The
+  // big button is just a high-contrast call-to-action with whatever
+  // label the creator typed ("VIP <3", "Subscribe", "OF", etc).
   const buttonBg = platform.key === "onlyfans" ? "#FF0000" : platform.color;
   const buttonFg = pickReadableTextOn(buttonBg);
   const onClick = () => {
@@ -509,25 +520,21 @@ function FeaturedCTA({
       user_agent: typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 200) : null,
     });
   };
-  // Fall back to a circular icon-only badge when the label is empty.
-  const label = (link.label || "").trim();
+  const label = (link.label || "").trim() || platform.label;
   return (
     <a
       href={link.url}
       target="_blank"
       rel="noopener noreferrer"
       onClick={onClick}
-      className="group w-full mt-5 rounded-full flex items-center justify-center gap-3 px-6 py-4 font-bold text-base sm:text-lg transition-all hover:-translate-y-0.5"
+      className="w-full mt-5 rounded-full flex items-center justify-center px-6 py-4 font-bold text-base sm:text-lg tracking-wide transition-all hover:-translate-y-0.5"
       style={{
         background: buttonBg,
         color: buttonFg,
         boxShadow: "0 8px 24px -8px rgba(0,0,0,0.35)",
       }}
     >
-      <span className="h-7 w-7 rounded-full bg-white/95 flex items-center justify-center shrink-0">
-        <Icon className="h-4 w-4" style={{ color: platform.color }} />
-      </span>
-      <span className="tracking-wide">{label || platform.label}</span>
+      {label}
     </a>
   );
 }
