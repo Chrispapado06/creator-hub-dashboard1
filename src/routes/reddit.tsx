@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { CreatorAvatarOption } from "@/components/CreatorAvatarOption";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
@@ -23,7 +24,7 @@ import { RedditRoster } from "@/components/RedditRoster";
 export const Route = createFileRoute("/reddit")({ component: RedditPage });
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-type Creator = { id: string; name: string; of_username: string | null; onlyfansapi_acct_id: string | null };
+type Creator = { id: string; name: string; of_username: string | null; onlyfansapi_acct_id: string | null; avatar_url: string | null };
 type RedditAccount = { id: string; creator_id: string; username: string; status: string; notes: string | null; infloww_campaign_code: number | null };
 type Post = { id: string; reddit_account_id: string; post_id: string; title: string; subreddit: string; posted_at: string; upvotes: number; comments: number; url: string };
 type Subreddit = { id: string; reddit_account_id: string; name: string; status: string; notes: string | null };
@@ -102,7 +103,7 @@ function RedditPage() {
   };
 
   const loadCreators = async () => {
-    const { data, error } = await supabase.from("creators").select("id, name, of_username, onlyfansapi_acct_id").order("name");
+    const { data, error } = await supabase.from("creators").select("id, name, of_username, onlyfansapi_acct_id, avatar_url").order("name");
     if (error) { toast.error(`Failed to load creators: ${error.message}`); setLoading(false); return; }
     const cs = (data ?? []) as Creator[];
     setCreators(cs);
@@ -284,7 +285,13 @@ function RedditPage() {
         <span className="text-sm font-medium text-muted-foreground">Creator:</span>
         <Select value={selectedCreatorId} onValueChange={handleCreatorChange}>
           <SelectTrigger className="w-[220px]"><SelectValue placeholder="Select creator" /></SelectTrigger>
-          <SelectContent>{creators.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
+          <SelectContent>
+            {creators.map((c) => (
+              <SelectItem key={c.id} value={c.id} textValue={c.name}>
+                <CreatorAvatarOption creator={c} />
+              </SelectItem>
+            ))}
+          </SelectContent>
         </Select>
       </div>
 

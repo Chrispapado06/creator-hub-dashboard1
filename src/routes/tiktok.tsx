@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { CreatorAvatarOption } from "@/components/CreatorAvatarOption";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -36,7 +37,7 @@ const fmtMoney2 = (n: number) =>
   n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-type Creator = { id: string; name: string; of_username: string | null; onlyfansapi_acct_id: string | null };
+type Creator = { id: string; name: string; of_username: string | null; onlyfansapi_acct_id: string | null; avatar_url: string | null };
 type TTAccountStatus = "active" | "warm_up" | "shadowbanned" | "banned" | "inactive";
 type APIProvider = "scrapecreators" | "apify" | "tikapi";
 type TTAccount = {
@@ -150,7 +151,7 @@ function TikTokPage() {
   const loadCreators = async () => {
     const { data, error } = await supabase
       .from("creators")
-      .select("id, name, of_username, onlyfansapi_acct_id")
+      .select("id, name, of_username, onlyfansapi_acct_id, avatar_url")
       .order("name");
     if (error) {
       toast.error(`Failed to load creators: ${error.message}`);
@@ -291,7 +292,9 @@ function TikTokPage() {
           </SelectTrigger>
           <SelectContent>
             {creators.map((c) => (
-              <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+              <SelectItem key={c.id} value={c.id} textValue={c.name}>
+                <CreatorAvatarOption creator={c} />
+              </SelectItem>
             ))}
           </SelectContent>
         </Select>
