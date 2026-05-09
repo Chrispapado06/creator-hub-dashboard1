@@ -215,9 +215,31 @@ function RedditPage() {
     let nextUrl: string | null = `https://app.onlyfansapi.com/api/${acctId}/tracking-links`;
     while (nextUrl) {
       const resp = await fetch(nextUrl, { headers: { Authorization: `Bearer ${key}` } });
-      const json = (await resp.json()) as { data?: { list?: OFLink[] }; _pagination?: { next_page?: string } };
-      allLinks.push(...(json.data?.list ?? []));
-      nextUrl = json._pagination?.next_page ?? null;
+      const json = await resp.json() as Record<string, unknown>;
+      // OnlyFansAPI's tracking-links endpoint has shipped multiple
+      // response shapes across versions. Handle every one:
+      //   { data: [...] }         ← current most-common
+      //   { data: { list: [...] } } ← legacy nested
+      //   { list: [...] }         ← top-level list
+      //   [...]                   ← bare array
+      // Until this commit we only accepted shape #2, so on the current
+      // API the sync silently parsed zero links and stopped — leaving
+      // the per-account cards frozen at whatever the last working sync
+      // wrote. The fix is just being permissive about the wrapping.
+      const data = json.data;
+      let pageLinks: OFLink[] = [];
+      if (Array.isArray(data)) {
+        pageLinks = data as OFLink[];
+      } else if (data && typeof data === "object" && Array.isArray((data as { list?: unknown }).list)) {
+        pageLinks = (data as { list: OFLink[] }).list;
+      } else if (Array.isArray(json.list)) {
+        pageLinks = json.list as OFLink[];
+      } else if (Array.isArray(json)) {
+        pageLinks = json as unknown as OFLink[];
+      }
+      allLinks.push(...pageLinks);
+      const pagination = json._pagination as { next_page?: string } | undefined;
+      nextUrl = pagination?.next_page ?? null;
     }
     if (allLinks.length === 0) { setSyncing(false); return toast.info("No tracking links found"); }
     const upserts = allLinks.map((l) => ({ creator_id: selectedCreatorId, campaign_code: l.campaignCode, campaign_url: l.campaignUrl, clicks_count: l.clicksCount, subscribers_count: l.subscribersCount, revenue_total: l.revenue.total, revenue_per_sub: l.revenue.revenuePerSubscriber, spenders_count: l.revenue.spendersCount, synced_at: new Date().toISOString() }));

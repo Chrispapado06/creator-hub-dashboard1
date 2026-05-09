@@ -209,9 +209,19 @@ function TikTokPage() {
     let nextUrl: string | null = `https://app.onlyfansapi.com/api/${acctId}/tracking-links`;
     while (nextUrl) {
       const resp = await fetch(nextUrl, { headers: { Authorization: `Bearer ${key}` } });
-      const json = (await resp.json()) as { data?: { list?: OFLink[] }; _pagination?: { next_page?: string } };
-      allLinks.push(...(json.data?.list ?? []));
-      nextUrl = json._pagination?.next_page ?? null;
+      const json = await resp.json() as Record<string, unknown>;
+      // OnlyFansAPI's tracking-links endpoint ships multiple shapes;
+      // accept all of them so the sync doesn't silently parse zero
+      // links and freeze cached numbers. See reddit.tsx for the rule.
+      const data = json.data;
+      let pageLinks: OFLink[] = [];
+      if (Array.isArray(data)) pageLinks = data as OFLink[];
+      else if (data && typeof data === "object" && Array.isArray((data as { list?: unknown }).list)) pageLinks = (data as { list: OFLink[] }).list;
+      else if (Array.isArray(json.list)) pageLinks = json.list as OFLink[];
+      else if (Array.isArray(json)) pageLinks = json as unknown as OFLink[];
+      allLinks.push(...pageLinks);
+      const pagination = json._pagination as { next_page?: string } | undefined;
+      nextUrl = pagination?.next_page ?? null;
     }
     if (allLinks.length === 0) {
       setSyncing(false);
