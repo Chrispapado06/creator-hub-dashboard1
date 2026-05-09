@@ -524,24 +524,36 @@ function ChatPage() {
                 voicePresence={voicePresence}
               />
 
-              {/* Categorized channels — one section per category, only
-                  rendered if at least one of its channels survived the
-                  visibility filter. Admins also get an Edit-roles
-                  shortcut on each category header. */}
+              {/* Categorized channels — one section per category.
+                  Categories with at least one channel always render.
+                  EMPTY categories also render for admins so they can
+                  see a category they just made and add channels to it
+                  (otherwise it'd look like creation silently failed).
+                  Non-admins still see only populated categories. */}
               {categories
-                .filter((cat) => (grouped.byCategory.get(cat.id) ?? []).length > 0)
-                .map((cat) => (
-                  <ChannelGroup
-                    key={cat.id}
-                    label={cat.name}
-                    channels={grouped.byCategory.get(cat.id) ?? []}
-                    activeId={activeChannelId}
-                    onPick={(id) => { setActiveChannelId(id); setMobileShowSidebar(false); }}
-                    userIsAdmin={user.is_admin}
-                    onEditCategory={user.is_admin ? () => setEditCategory(cat) : undefined}
-                    categoryRoles={cat.allowed_roles ?? null}
-                  />
-                ))}
+                .filter((cat) => {
+                  const populated = (grouped.byCategory.get(cat.id) ?? []).length > 0;
+                  return populated || user.is_admin;
+                })
+                .map((cat) => {
+                  const channels = grouped.byCategory.get(cat.id) ?? [];
+                  return (
+                    <ChannelGroup
+                      key={cat.id}
+                      label={cat.name}
+                      channels={channels}
+                      activeId={activeChannelId}
+                      onPick={(id) => { setActiveChannelId(id); setMobileShowSidebar(false); }}
+                      userIsAdmin={user.is_admin}
+                      onEditCategory={user.is_admin ? () => setEditCategory(cat) : undefined}
+                      categoryRoles={cat.allowed_roles ?? null}
+                      voicePresence={voicePresence}
+                      emptyHint={user.is_admin && channels.length === 0
+                        ? "No channels yet — use the + button to add one"
+                        : undefined}
+                    />
+                  );
+                })}
 
               {grouped.creatorRooms.length > 0 && (
                 <ChannelGroup
@@ -749,7 +761,7 @@ function ChatPage() {
 
 function ChannelGroup({
   label, channels, activeId, onPick, userIsAdmin: _userIsAdmin,
-  onEditCategory, categoryRoles, voicePresence,
+  onEditCategory, categoryRoles, voicePresence, emptyHint,
 }: {
   label: string;
   channels: ChannelWithMeta[];
@@ -766,8 +778,16 @@ function ChannelGroup({
       Drives the 🔊 N pill on each channel row. Optional — defaults
       to no pills shown. */
   voicePresence?: Record<string, VoiceParticipantRow[]>;
+  /** When provided AND there are zero channels, the group still
+      renders with this hint string under the header (instead of
+      collapsing to nothing). Used so an empty category created by an
+      admin doesn't look like the create silently failed. */
+  emptyHint?: string;
 }) {
-  if (channels.length === 0) return null;
+  // Bail only when there are no channels AND no empty-state hint to
+  // show. Admins viewing an empty category they just made get a
+  // helpful hint; non-admins see nothing.
+  if (channels.length === 0 && !emptyHint) return null;
   const isLocked = !!(categoryRoles && categoryRoles.length > 0);
   return (
     <div className="space-y-0.5">
@@ -784,6 +804,11 @@ function ChannelGroup({
           </button>
         )}
       </div>
+      {channels.length === 0 && emptyHint && (
+        <div className="mx-4 mb-1 text-[10px] italic text-muted-foreground/70 leading-tight">
+          {emptyHint}
+        </div>
+      )}
       {channels.map((c) => {
         const inVoice = voicePresence?.[c.id]?.length ?? 0;
         return (
@@ -1183,7 +1208,7 @@ function CreateChannelDialog({
       return;
     }
     setBusy(true);
-    const id = await createChannel({
+    const result = await createChannel({
       name,
       type,
       description: description.trim() || undefined,
@@ -1192,11 +1217,13 @@ function CreateChannelDialog({
       isVoiceChannel,
     });
     setBusy(false);
-    if (id) {
+    if (result.ok) {
       toast.success("Channel created");
-      onCreated(id);
+      onCreated(result.id);
     } else {
-      toast.error("Failed to create — try a different name");
+      // Pre-baked friendly messages — duplicate slug, invalid name,
+      // or fallthrough — surfaced from the new structured result.
+      toast.error(result.message);
     }
   };
 

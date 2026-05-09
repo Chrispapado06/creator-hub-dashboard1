@@ -301,7 +301,14 @@ export async function ensureDmChannel(meId: string, otherId: string): Promise<st
   return chan.id;
 }
 
-/** Create a custom public/private channel, optionally inside a category. */
+/** Create a custom public/private channel, optionally inside a category.
+ *  Returns the new channel's id on success, or a structured error so
+ *  the caller can surface a useful toast (e.g. "Name already taken")
+ *  instead of a generic "try a different name" string. */
+export type CreateChannelResult =
+  | { ok: true; id: string }
+  | { ok: false; reason: "duplicate" | "invalid-name" | "unknown"; message: string };
+
 export async function createChannel(input: {
   name: string;
   type: "public" | "private";
@@ -311,10 +318,27 @@ export async function createChannel(input: {
   /** When true, the channel is a Discord-style voice channel: members
       can join voice, turn on camera, and share screen. Default false. */
   isVoiceChannel?: boolean;
-}): Promise<string | null> {
+}): Promise<CreateChannelResult> {
   const slug = input.name.toLowerCase().trim()
     .replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
-  if (!slug) return null;
+  if (!slug) {
+    return { ok: false, reason: "invalid-name", message: "Channel name must contain at least one letter or number." };
+  }
+  // Pre-check for slug collision so we can give a clean error message
+  // before hitting the unique-constraint violation. Saves admins from
+  // staring at a generic "failed" toast when they pick "announcements"
+  // — which already exists.
+  const { data: dup } = await supabase
+    .from("team_channels")
+    .select("id")
+    .eq("slug", slug)
+    .maybeSingle();
+  if (dup) {
+    return {
+      ok: false, reason: "duplicate",
+      message: `A channel named "${input.name.trim()}" already exists. Pick a different name.`,
+    };
+  }
   const { data, error } = await supabase
     .from("team_channels")
     .insert({
@@ -328,10 +352,23 @@ export async function createChannel(input: {
     })
     .select("id")
     .single();
-  if (error || !data) return null;
+  if (error || !data) {
+    // Postgres unique-violation code for slug collision (race-condition
+    // path past the pre-check). Same friendly message either way.
+    if (error?.code === "23505") {
+      return {
+        ok: false, reason: "duplicate",
+        message: `A channel named "${input.name.trim()}" already exists. Pick a different name.`,
+      };
+    }
+    return {
+      ok: false, reason: "unknown",
+      message: error?.message ?? "Couldn't create the channel — try again.",
+    };
+  }
   // Creator joins automatically; others can join later for private channels
   await supabase.from("team_channel_members").insert({ channel_id: data.id, chatter_id: input.createdBy });
-  return data.id;
+  return { ok: true, id: data.id };
 }
 
 // ── Categories ─────────────────────────────────────────────────────────
