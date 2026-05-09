@@ -1414,8 +1414,15 @@ function ShiftsTab({
 
 // ── Leaderboard Tab ────────────────────────────────────────────────────────────
 function LeaderboardTab({ chatters, shifts }: { chatters: Chatter[]; shifts: Shift[] }) {
+  // Only count chatters who are still on the team. Paused / inactive
+  // staff stay in the chatters table for historical payout records,
+  // but they shouldn't clutter the leaderboard with stale numbers
+  // from before they were removed. If you genuinely want to see a
+  // departed chatter's totals, look at their row in the Roster tab
+  // (which shows everyone) or the Pay tab.
   const stats = useMemo(() => {
     return chatters
+      .filter((c) => c.status === "active")
       .map((c) => {
         const cShifts = shifts.filter((s) => s.chatter_id === c.id);
         const totalRev = cShifts.reduce((s, sh) => s + sh.total_revenue, 0);
@@ -1438,6 +1445,7 @@ function LeaderboardTab({ chatters, shifts }: { chatters: Chatter[]; shifts: Shi
       })
       .sort((a, b) => b.revenue - a.revenue);
   }, [chatters, shifts]);
+  const hiddenInactive = chatters.filter((c) => c.status !== "active").length;
 
   if (stats.length === 0) {
     return (
@@ -1534,6 +1542,13 @@ function LeaderboardTab({ chatters, shifts }: { chatters: Chatter[]; shifts: Shi
           </tbody>
         </table>
       </div>
+
+      {hiddenInactive > 0 && (
+        <p className="text-xs text-muted-foreground italic">
+          {hiddenInactive} paused or inactive staff hidden — switch them back to Active
+          on the Roster tab to include them here.
+        </p>
+      )}
     </div>
   );
 }
