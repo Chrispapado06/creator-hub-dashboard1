@@ -90,12 +90,25 @@ export async function ensureCurrentChatUser(): Promise<ChatUser | null> {
 
   // Admin path: find an existing chatter by name (case-insensitive) so
   // we don't accidentally create duplicates if the admin already has a
-  // staff record. Falls through to creating a new one if no match.
-  const { data: existing } = await supabase
+  // staff record.
+  //
+  // CRITICAL: this used to call .maybeSingle() which throws an error
+  // when more than one row matches (data: null, error: PGRST116). The
+  // error wasn't being checked — the code just saw `existing` was null
+  // and fell through to INSERT, creating yet another duplicate. Each
+  // page load that mounted ChatBadge added one more row, snowballing
+  // into hundreds of "Admin" entries on the Roster.
+  //
+  // The fix: order by created_at ASC and limit(1). Always returns the
+  // OLDEST row even when many duplicates exist, never errors. Future
+  // duplicates can't be created because we always reuse the oldest.
+  const { data: existingRows } = await supabase
     .from("chatters")
     .select("id, name, role")
     .ilike("name", session.username)
-    .maybeSingle();
+    .order("created_at", { ascending: true })
+    .limit(1);
+  const existing = existingRows?.[0];
   if (existing) {
     // Backfill access_codes.chatter_id so subsequent logins skip this lookup
     await supabase
@@ -106,6 +119,8 @@ export async function ensureCurrentChatUser(): Promise<ChatUser | null> {
   }
 
   // Create a "manager" chatter row that represents this admin in chat.
+  // Only happens when truly no row exists — duplicate-creation is now
+  // guarded by the ordered-limit-1 lookup above.
   const { data: created, error } = await supabase
     .from("chatters")
     .insert({ name: session.username, role: "manager", status: "active" })
