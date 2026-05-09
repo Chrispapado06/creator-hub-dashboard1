@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import {
-  Plus, Trash2, Edit2, Check, X, ExternalLink, RefreshCw, Upload,
+  Plus, Trash2, Edit2, Check, X, ExternalLink, RefreshCw,
   Heart, MessageCircle, Eye, Image as ImageIcon, Video, Film, Layers,
   Camera, AlertTriangle, Link2, ArrowLeft, Link as LinkIcon, Unlink,
   Users, TrendingUp, DollarSign,
@@ -324,8 +324,6 @@ function InstagramPage() {
               accounts={accounts}
               posts={posts}
               inflowwStats={inflowwStats}
-              syncing={syncing}
-              onSyncInfloww={syncInfloww}
             />
           </TabsContent>
           <TabsContent value="accounts" className="mt-6">
@@ -359,14 +357,14 @@ function InstagramPage() {
 }
 
 // ── Overview Tab ───────────────────────────────────────────────────────────────
+// Sync Infloww moved out of this hero — lives on the Revenue tab where
+// it's been historically. Avoids a duplicate button two clicks apart.
 function OverviewTab({
-  accounts, posts, inflowwStats, syncing, onSyncInfloww,
+  accounts, posts, inflowwStats,
 }: {
   accounts: IGAccount[];
   posts: IGPost[];
   inflowwStats: InflowwStat[];
-  syncing: boolean;
-  onSyncInfloww: () => void;
 }) {
   const totalFollowers = accounts.reduce((s, a) => s + a.followers_count, 0);
   const totalLikes = posts.reduce((s, p) => s + p.likes_count, 0);
@@ -408,10 +406,6 @@ function OverviewTab({
               {posts.length.toLocaleString()} posts tracked · {posts30d} in last 30d · {totalLikes.toLocaleString()} total likes
             </div>
           </div>
-          <Button variant="outline" size="sm" onClick={onSyncInfloww} disabled={syncing}>
-            <Upload className={`h-3.5 w-3.5 mr-1.5 ${syncing ? "animate-pulse" : ""}`} />
-            {syncing ? "Syncing…" : "Sync Infloww"}
-          </Button>
         </div>
       </div>
 
