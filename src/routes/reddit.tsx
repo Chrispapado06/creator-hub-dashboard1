@@ -242,7 +242,19 @@ function RedditPage() {
       nextUrl = pagination?.next_page ?? null;
     }
     if (allLinks.length === 0) { setSyncing(false); return toast.info("No tracking links found"); }
-    const upserts = allLinks.map((l) => ({ creator_id: selectedCreatorId, campaign_code: l.campaignCode, campaign_url: l.campaignUrl, clicks_count: l.clicksCount, subscribers_count: l.subscribersCount, revenue_total: l.revenue.total, revenue_per_sub: l.revenue.revenuePerSubscriber, spenders_count: l.revenue.spendersCount, synced_at: new Date().toISOString() }));
+    // Dedupe by campaign_code BEFORE the upsert.
+    //
+    // OnlyFansAPI's /tracking-links endpoint can return the same code
+    // more than once when a creator runs multiple OF pages — the
+    // campaign exists on each connected account. Postgres rejects an
+    // UPSERT batch where two rows share the conflict key
+    // (creator_id, campaign_code) with: \"ON CONFLICT DO UPDATE
+    // command cannot affect row a second time\". Keeping the first
+    // occurrence per code is fine — the rows are identical.
+    const dedupedLinks = Array.from(
+      new Map(allLinks.map((l) => [l.campaignCode, l])).values(),
+    );
+    const upserts = dedupedLinks.map((l) => ({ creator_id: selectedCreatorId, campaign_code: l.campaignCode, campaign_url: l.campaignUrl, clicks_count: l.clicksCount, subscribers_count: l.subscribersCount, revenue_total: l.revenue.total, revenue_per_sub: l.revenue.revenuePerSubscriber, spenders_count: l.revenue.spendersCount, synced_at: new Date().toISOString() }));
     const { error } = await supabase.from("infloww_tracking_stats").upsert(upserts, { onConflict: "creator_id,campaign_code" });
     if (error) { setSyncing(false); return toast.error(error.message); }
     await supabase.from("revenue_entries").delete().eq("creator_id", selectedCreatorId).eq("source", "infloww");

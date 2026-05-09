@@ -225,7 +225,19 @@ function FacebookPage() {
       setSyncing(false);
       return toast.info("No tracking links found");
     }
-    const upserts = allLinks.map((l) => ({
+    // Dedupe by campaign_code BEFORE the upsert.
+    //
+    // OnlyFansAPI's /tracking-links endpoint can return the same code
+    // more than once when a creator runs multiple OF pages — the
+    // campaign exists on each connected account. Postgres rejects an
+    // UPSERT batch where two rows share the conflict key
+    // (creator_id, campaign_code) with: "ON CONFLICT DO UPDATE
+    // command cannot affect row a second time". Keeping the first
+    // occurrence per code is fine — the rows are identical.
+    const dedupedLinks = Array.from(
+      new Map(allLinks.map((l) => [l.campaignCode, l])).values(),
+    );
+    const upserts = dedupedLinks.map((l) => ({
       creator_id: selectedCreatorId,
       campaign_code: l.campaignCode,
       campaign_url: l.campaignUrl,

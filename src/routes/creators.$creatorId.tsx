@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { OfAccountsEditor } from "@/components/OfAccountsEditor";
+import { CreatorRail } from "@/components/CreatorRail";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -65,6 +66,11 @@ import { CreatorForms } from "@/components/CreatorForms";
 import { CreatorLanding } from "@/components/CreatorLanding";
 import { CreatorPayouts } from "@/components/CreatorPayouts";
 import { logAudit } from "@/lib/audit";
+import { StatTile } from "@/components/StatTile";
+import { TrendingUp as TrendingUpIcon, Receipt as ReceiptIcon, Wallet as WalletIcon, Layers } from "lucide-react";
+import { SiOnlyfans } from "react-icons/si";
+import { Area, AreaChart as RcAreaChart, ResponsiveContainer as RcContainer, Tooltip as RcTooltip, XAxis as RcXAxis, YAxis as RcYAxis } from "recharts";
+import { eachDayOfInterval, parseISO } from "date-fns";
 
 export const Route = createFileRoute("/creators/$creatorId")({
   head: () => ({ meta: [{ title: "Creator — Agency Console" }] }),
@@ -683,24 +689,36 @@ function CreatorDetailPage() {
     downloadCSV(`${creator?.name.replace(/\s+/g, "-") ?? "creator"}-export.csv`, rows);
   };
 
-  if (loading && !creator) return <div className="h-64 animate-pulse rounded-xl bg-card/60" />;
+  if (loading && !creator) {
+    return (
+      <div className="flex gap-5 items-start">
+        <CreatorRail activeId={creatorId} />
+        <div className="flex-1 min-w-0">
+          <div className="h-64 animate-pulse rounded-xl bg-card/60" />
+        </div>
+      </div>
+    );
+  }
 
   if (!loading && creatorLoadError) {
     return (
-      <div className="space-y-6">
-        <Link
-          to="/"
-          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          All creators
-        </Link>
-        <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-8 text-center">
-          <p className="text-sm font-medium text-destructive">Couldn&apos;t load this creator</p>
-          <p className="mt-2 text-xs text-muted-foreground">{creatorLoadError}</p>
-          <Button className="mt-4" onClick={() => load()}>
-            Try again
-          </Button>
+      <div className="flex gap-5 items-start">
+        <CreatorRail activeId={creatorId} />
+        <div className="flex-1 min-w-0 space-y-6">
+          <Link
+            to="/"
+            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            All creators
+          </Link>
+          <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-8 text-center">
+            <p className="text-sm font-medium text-destructive">Couldn&apos;t load this creator</p>
+            <p className="mt-2 text-xs text-muted-foreground">{creatorLoadError}</p>
+            <Button className="mt-4" onClick={() => load()}>
+              Try again
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -708,11 +726,14 @@ function CreatorDetailPage() {
 
   if (!creator) {
     return (
-      <div className="text-center py-20">
-        <p className="text-muted-foreground">Creator not found.</p>
-        <Link to="/" className="text-primary hover:underline mt-2 inline-block">
-          Back to creators
-        </Link>
+      <div className="flex gap-5 items-start">
+        <CreatorRail activeId={creatorId} />
+        <div className="flex-1 min-w-0 text-center py-20">
+          <p className="text-muted-foreground">Creator not found.</p>
+          <Link to="/" className="text-primary hover:underline mt-2 inline-block">
+            Back to creators
+          </Link>
+        </div>
       </div>
     );
   }
@@ -731,7 +752,9 @@ function CreatorDetailPage() {
   const totalRevenue = totalOrganicRev + totalInternalRev + totalAdsRevenue;
 
   return (
-    <div className="space-y-8">
+    <div className="flex gap-5 items-start">
+      <CreatorRail activeId={creatorId} />
+      <div className="flex-1 min-w-0 space-y-8">
       <Toaster />
 
       {/* Edit creator dialog */}
@@ -1020,6 +1043,10 @@ function CreatorDetailPage() {
             inflowwStats={inflowwStats}
             syncing={syncing}
             onSyncInfloww={syncInfloww}
+            organicEntries={organicEntries}
+            internalEntries={internalEntries}
+            revenueEntries={revenueEntries}
+            adCampaigns={adCampaigns}
           />
         </TabsContent>
 
@@ -1085,6 +1112,7 @@ function CreatorDetailPage() {
           <CreatorPayouts creatorId={creatorId} creatorName={creator?.name} />
         </TabsContent>
       </Tabs>
+      </div>
     </div>
   );
 }
@@ -1160,6 +1188,10 @@ function OverviewTab({
   inflowwStats,
   syncing,
   onSyncInfloww,
+  organicEntries,
+  internalEntries,
+  revenueEntries,
+  adCampaigns,
 }: {
   accounts: RedditAccount[];
   posts: Post[];
@@ -1175,6 +1207,12 @@ function OverviewTab({
   inflowwStats: InflowwStat[];
   syncing: boolean;
   onSyncInfloww: () => void;
+  /** Raw entry arrays — used to build the 30-day daily-revenue series
+   *  feeding the sparklines on the personal-revenue tiles. */
+  organicEntries: OrganicEntry[];
+  internalEntries: InternalEntry[];
+  revenueEntries: RevenueEntry[];
+  adCampaigns: AdCampaign[];
 }) {
   const [open, setOpen] = useState(false);
   const [accForm, setAccForm] = useState({ username: "", status: "active" });
@@ -1265,8 +1303,87 @@ function OverviewTab({
     onRefresh();
   };
 
-  const channelTotal = organicRev + internalRev + adsRev;
+  // OnlyFans lifetime earnings — pulled from the synced of_creator_stats
+  // table (one row per creator + OF page). Declared up here so the
+  // `channelTotal` and `grossRevenue` calcs immediately below can read
+  // it without hitting a "Cannot access uninitialized variable" TDZ
+  // error (which is what happened the first time around — these
+  // variables ran in module order, the state was declared further down).
+  const [ofLifetime, setOfLifetime] = useState<number>(0);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const { data: rows } = await supabase
+        .from("of_creator_stats")
+        .select("total_earnings")
+        .eq("creator_id", creatorId);
+      if (cancelled) return;
+      const total = (rows ?? []).reduce(
+        (s, r) => s + Number((r as { total_earnings?: number }).total_earnings ?? 0),
+        0,
+      );
+      setOfLifetime(total);
+    })();
+    return () => { cancelled = true; };
+  }, [creatorId]);
+
+  // Channel total includes OF direct so the breakdown bar reconciles
+  // with the gross revenue tile above.
+  const channelTotal = organicRev + internalRev + adsRev + ofLifetime;
   const adsTooltip = `Ads $${adsRev.toFixed(2)} — Meta $${adsBreakdown.meta.toFixed(2)} · OnlyFinder $${adsBreakdown.onlyfinder.toFixed(2)}`;
+
+  // ── Personal-revenue rollup (Nexus pattern, mirrors /revenue page) ──
+  // Three KPIs: Revenue (gross), Net Revenue (gross − ad spend),
+  // Expenses (ad spend). Sparklines come from a 30-day daily series
+  // built from the entry arrays so the tiles feel alive without an
+  // extra Supabase round-trip.
+  //
+  // Gross revenue NOW includes OF direct lifetime earnings — same
+  // formula the /revenue page's per-creator breakdown uses
+  // (organic + internal + ads + OF direct). Without this, the Overview
+  // tab under-reported by the OF amount and disagreed with the Revenue
+  // dashboard.
+  const grossRevenue = organicRev + internalRev + adsRev + ofLifetime;
+  const netRevenue = grossRevenue - adsSpend;
+  const totalExpenses = adsSpend;
+
+  const dailyRevenueSeries = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const start = new Date(today.getTime() - 29 * 86400_000);
+    const days = eachDayOfInterval({ start, end: today });
+    const isoDay = (d: Date | string) => {
+      const date = typeof d === "string" ? parseISO(d) : d;
+      return format(date, "yyyy-MM-dd");
+    };
+    const map = new Map<string, { rev: number; spend: number }>();
+    for (const d of days) map.set(isoDay(d), { rev: 0, spend: 0 });
+    const add = (key: string, rev: number, spend = 0) => {
+      const cur = map.get(key);
+      if (!cur) return;        // outside the 30-day window
+      cur.rev += rev;
+      cur.spend += spend;
+    };
+    for (const e of organicEntries) add(isoDay(e.entry_date), e.amount);
+    for (const e of internalEntries) add(isoDay(e.entry_date), e.amount);
+    for (const e of revenueEntries) add(isoDay(e.entry_date), e.amount);
+    for (const c of adCampaigns) {
+      // Bucket each ad campaign by start_date — close enough for a 30-day
+      // sparkline; precise per-day attribution lives on /revenue.
+      const sd = (c as unknown as { start_date?: string | null }).start_date ?? null;
+      if (sd) add(isoDay(sd), c.revenue_generated, c.amount_spent);
+    }
+    return Array.from(map.entries()).map(([date, v]) => ({
+      x: date,
+      rev: v.rev,
+      net: v.rev - v.spend,
+      spend: v.spend,
+    }));
+  }, [organicEntries, internalEntries, revenueEntries, adCampaigns]);
+
+  const sparkRev = dailyRevenueSeries.map((d) => ({ x: d.x, y: d.rev }));
+  const sparkNet = dailyRevenueSeries.map((d) => ({ x: d.x, y: d.net }));
+  const sparkSpend = dailyRevenueSeries.map((d) => ({ x: d.x, y: d.spend }));
 
   // ── OnlyFans Direct earnings (last 30d / 7d / today) ──────────────
   // Fires three small analytics calls in parallel so the user sees
@@ -1316,517 +1433,185 @@ function OverviewTab({
 
   return (
     <div className="space-y-8">
-      {/* Health Warnings */}
-      <HealthWarnings accounts={accounts} posts={posts} />
-
-      {/* OnlyFans Direct earnings panel — pulled live from OnlyFansAPI */}
-      {ofData.loaded && (ofData.today + ofData.sevenD + ofData.thirtyD > 0) && (
-        <div className="rounded-xl border border-blue-500/30 bg-blue-500/5 p-5 grid grid-cols-3 gap-4">
+      {/* ── Personal revenue (Nexus pattern, mirrors /revenue page).
+          Three white KPI tiles: Revenue (gross), Net Revenue (after ad
+          spend), Expenses (ad spend). Sparklines = last 30 days of
+          per-day rollups. */}
+      <section className="space-y-4">
+        <div className="flex items-center gap-2.5">
+          <span className="h-7 w-7 rounded-lg bg-primary/12 text-primary flex items-center justify-center">
+            <DollarSign className="h-4 w-4" />
+          </span>
           <div>
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold">OnlyFans · today</div>
-            <div className="text-xl font-bold mt-1">
-              ${ofData.today.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </div>
-          </div>
-          <div>
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold">Last 7 days</div>
-            <div className="text-xl font-bold mt-1">
-              ${ofData.sevenD.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </div>
-          </div>
-          <div>
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold">Last 30 days</div>
-            <div className="text-xl font-bold mt-1">
-              ${ofData.thirtyD.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </div>
+            <h2 className="text-sm font-semibold">Personal revenue</h2>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              All-time roll-up across every channel · sparklines show last 30 days
+            </p>
           </div>
         </div>
-      )}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <StatTile
+            tone="emerald"
+            icon={<WalletIcon className="h-4 w-4" />}
+            label="Revenue"
+            value={`$${grossRevenue.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}
+            delta={null}
+            deltaSubtitle="all-time · all channels gross"
+            sparkline={sparkRev}
+          />
+          <StatTile
+            tone={netRevenue >= 0 ? "violet" : "rose"}
+            icon={<TrendingUpIcon className="h-4 w-4" />}
+            label="Net Revenue"
+            value={`$${netRevenue.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}
+            delta={null}
+            deltaSubtitle={
+              adsSpend > 0
+                ? `gross − $${adsSpend.toLocaleString("en-US", { maximumFractionDigits: 0 })} ad spend`
+                : "no ad spend recorded"
+            }
+            sparkline={sparkNet}
+          />
+          <StatTile
+            tone="amber"
+            icon={<ReceiptIcon className="h-4 w-4" />}
+            label="Expenses"
+            value={`$${totalExpenses.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}
+            delta={null}
+            deltaSubtitle="lifetime ad spend"
+            sparkline={sparkSpend}
+          />
+        </div>
+      </section>
 
-      {/* Channel Revenue Breakdown */}
-      {channelTotal > 0 && (
-        <div className="rounded-xl border border-border bg-card p-5">
-          <div className="flex items-center justify-between mb-3">
-            <div className="text-sm font-semibold">All-time revenue by channel</div>
-            <div className="text-lg font-bold">
-              $
-              {channelTotal.toLocaleString("en-US", {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}
+      {/* ── OnlyFans Direct earnings — pulled live from OnlyFansAPI.
+          Cleaner Nexus card with a blue OF icon chip in the header
+          and three rounded-xl mini-stats inside. Only shown when there's
+          actual OF data; otherwise the card just stays hidden. */}
+      {ofData.loaded && (ofData.today + ofData.sevenD + ofData.thirtyD > 0) && (
+        <section className="rounded-2xl border border-border bg-card p-5 space-y-4">
+          <div className="flex items-center gap-2.5">
+            <span className="h-7 w-7 rounded-lg bg-blue-500/15 text-blue-600 flex items-center justify-center">
+              <SiOnlyfans className="h-4 w-4" />
+            </span>
+            <div>
+              <h3 className="text-sm font-semibold">OnlyFans direct earnings</h3>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                Live data from OnlyFansAPI · subs + tips + PPV + messages
+              </p>
             </div>
           </div>
-          <div className="h-3 rounded-full overflow-hidden flex gap-px bg-secondary">
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { label: "Today", value: ofData.today },
+              { label: "Last 7 days", value: ofData.sevenD },
+              { label: "Last 30 days", value: ofData.thirtyD },
+            ].map((s) => (
+              <div key={s.label} className="rounded-xl bg-blue-500/5 border border-blue-500/15 p-3.5">
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-bold">
+                  {s.label}
+                </div>
+                <div className="text-2xl font-bold mt-1 tabular-nums">
+                  ${s.value.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* ── Channel breakdown (cleaner Nexus pattern). Stacked bar +
+          legend chips, with adjusted colors that read on the white
+          theme. */}
+      {channelTotal > 0 && (
+        <section className="rounded-2xl border border-border bg-card p-5 space-y-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2.5">
+              <span className="h-7 w-7 rounded-lg bg-violet-500/15 text-violet-600 flex items-center justify-center">
+                <Layers className="h-4 w-4" />
+              </span>
+              <div>
+                <h3 className="text-sm font-semibold">Revenue by channel</h3>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  All-time rollup · click any tab to drill into the channel
+                </p>
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-2xl font-bold tabular-nums leading-none">
+                ${channelTotal.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+              </div>
+              <div className="text-[11px] text-muted-foreground mt-1">grand total</div>
+            </div>
+          </div>
+
+          {/* Stacked bar */}
+          <div className="h-2.5 rounded-full overflow-hidden flex gap-px bg-muted">
+            {ofLifetime > 0 && (
+              <div
+                className="h-full bg-blue-500"
+                style={{ width: `${(ofLifetime / channelTotal) * 100}%` }}
+                title={`OnlyFans direct $${ofLifetime.toFixed(2)}`}
+              />
+            )}
             {organicRev > 0 && (
               <div
-                className="h-full bg-success"
+                className="h-full bg-emerald-500"
                 style={{ width: `${(organicRev / channelTotal) * 100}%` }}
-                title={`Organic (Reddit / IG / FB / X / TikTok) $${organicRev.toFixed(2)}`}
+                title={`Organic $${organicRev.toFixed(2)}`}
               />
             )}
             {internalRev > 0 && (
               <div
-                className="h-full bg-warning"
+                className="h-full bg-amber-500"
                 style={{ width: `${(internalRev / channelTotal) * 100}%` }}
                 title={`Internal $${internalRev.toFixed(2)}`}
               />
             )}
             {adsRev > 0 && (
               <div
-                className="h-full bg-ads"
+                className="h-full bg-violet-500"
                 style={{ width: `${(adsRev / channelTotal) * 100}%` }}
                 title={adsTooltip}
               />
             )}
           </div>
-          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5 text-xs">
+
+          {/* Legend pills */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 pt-2">
             {[
-              { label: "Organic", sublabel: "Reddit · IG · FB · X · TikTok", value: organicRev, cls: "bg-success" },
-              { label: "Internal", sublabel: "Tracking links", value: internalRev, cls: "bg-warning" },
-              { label: "Ads", sublabel: `Meta $${adsBreakdown.meta.toFixed(0)} · OnlyFinder $${adsBreakdown.onlyfinder.toFixed(0)}`, value: adsRev, cls: "bg-ads" },
+              { label: "OnlyFans", sublabel: "Direct earnings (subs + tips + PPV)", value: ofLifetime, dot: "bg-blue-500", chipBg: "bg-blue-500/8" },
+              { label: "Organic", sublabel: "Reddit · IG · FB · X · TikTok", value: organicRev, dot: "bg-emerald-500", chipBg: "bg-emerald-500/8" },
+              { label: "Internal", sublabel: "Tracking links", value: internalRev, dot: "bg-amber-500", chipBg: "bg-amber-500/8" },
+              { label: "Ads", sublabel: `Meta $${adsBreakdown.meta.toFixed(0)} · OF Finder $${adsBreakdown.onlyfinder.toFixed(0)}`, value: adsRev, dot: "bg-violet-500", chipBg: "bg-violet-500/8" },
             ].map((ch) => (
-              <div key={ch.label} className="flex items-baseline gap-1.5">
-                <span className={`h-2.5 w-2.5 rounded-full ${ch.cls} translate-y-px`} />
-                <div>
-                  <div className="flex items-baseline gap-1.5">
-                    <span className="text-muted-foreground">{ch.label}</span>
-                    <span className="font-semibold">
-                      $
-                      {ch.value.toLocaleString("en-US", {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
-                    </span>
-                    {channelTotal > 0 && (
-                      <span className="text-muted-foreground">
-                        ({Math.round((ch.value / channelTotal) * 100)}%)
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-[10px] text-muted-foreground/70">{ch.sublabel}</div>
+              <div key={ch.label} className={`rounded-xl border border-border ${ch.chipBg} p-3`}>
+                <div className="flex items-center gap-2">
+                  <span className={`h-2 w-2 rounded-full ${ch.dot}`} />
+                  <span className="text-[11px] text-muted-foreground font-medium">{ch.label}</span>
+                  <span className="text-[10px] text-muted-foreground/60 ml-auto tabular-nums">
+                    {Math.round((ch.value / channelTotal) * 100)}%
+                  </span>
                 </div>
+                <div className="mt-1 text-lg font-bold tabular-nums">
+                  ${ch.value.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                </div>
+                <div className="text-[10px] text-muted-foreground/70 truncate">{ch.sublabel}</div>
               </div>
             ))}
-            {adsSpend > 0 && (
-              <div className="flex items-center gap-1.5 ml-auto">
-                <span className="text-muted-foreground">Ad spend:</span>
-                <span className="font-semibold text-destructive">
-                  -$
-                  {adsSpend.toLocaleString("en-US", {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
-                </span>
-              </div>
-            )}
           </div>
-        </div>
+
+          {/* Ad spend footer */}
+          {adsSpend > 0 && (
+            <div className="flex items-center justify-end gap-2 text-xs pt-1 border-t border-border">
+              <span className="text-muted-foreground">Ad spend:</span>
+              <span className="font-bold text-rose-600 tabular-nums">
+                -${adsSpend.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+              </span>
+            </div>
+          )}
+        </section>
       )}
-
-
-      {/* Reddit Accounts */}
-      <section>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Reddit accounts</h2>
-          <div className="flex items-center gap-2">
-            <Button size="sm" variant="outline" onClick={onSyncInfloww} disabled={syncing}>
-              {syncing ? (
-                <span className="flex items-center gap-1.5"><Upload className="h-3.5 w-3.5 animate-pulse" />Syncing…</span>
-              ) : (
-                <span className="flex items-center gap-1.5"><Upload className="h-3.5 w-3.5" />Sync Infloww</span>
-              )}
-            </Button>
-            <Dialog open={linkOpen} onOpenChange={setLinkOpen}>
-              <DialogTrigger asChild>
-                <Button size="sm" variant="outline">
-                  <Link2 className="h-4 w-4 mr-1.5" />
-                  Add tracking link
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Add tracking link</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4 py-2">
-                  <div className="space-y-1.5">
-                    <Label>Account</Label>
-                    <Select
-                      value={linkForm.reddit_account_id}
-                      onValueChange={(v) => setLinkForm({ ...linkForm, reddit_account_id: v })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select account" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {accounts.map((a) => (
-                          <SelectItem key={a.id} value={a.id}>
-                            u/{a.username}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Label</Label>
-                    <Input
-                      placeholder="e.g. Bio link – Marissa"
-                      value={linkForm.label}
-                      onChange={(e) => setLinkForm({ ...linkForm, label: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>URL (Infloww or other)</Label>
-                    <Input
-                      placeholder="https://infloww.me/..."
-                      value={linkForm.url}
-                      onChange={(e) => setLinkForm({ ...linkForm, url: e.target.value })}
-                    />
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button variant="ghost" onClick={() => setLinkOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button onClick={onAddLink}>Add</Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-
-            <Dialog open={open} onOpenChange={setOpen}>
-              <DialogTrigger asChild>
-                <Button size="sm" variant="outline">
-                  <Plus className="h-4 w-4 mr-1.5" />
-                  Add account
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Add Reddit account</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4 py-2">
-                  <div className="space-y-1.5">
-                    <Label>Username</Label>
-                    <Input
-                      value={accForm.username}
-                      onChange={(e) => setAccForm({ ...accForm, username: e.target.value })}
-                      placeholder="luna_xo"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Status</Label>
-                    <Select
-                      value={accForm.status}
-                      onValueChange={(v) => setAccForm({ ...accForm, status: v })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="active">Active</SelectItem>
-                        <SelectItem value="shadowbanned">Shadowbanned</SelectItem>
-                        <SelectItem value="suspended">Suspended</SelectItem>
-                        <SelectItem value="inactive">Inactive</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button variant="ghost" onClick={() => setOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button onClick={onAddAccount}>Add</Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          </div>
-        </div>
-
-        {accounts.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border bg-card/40 p-8 text-center text-sm text-muted-foreground">
-            No Reddit accounts linked yet.
-          </div>
-        ) : (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {accounts.map((a) => {
-              const acctLinks = trackingLinks.filter((l) => l.reddit_account_id === a.id);
-              const acctPosts = posts.filter((p) => p.reddit_account_id === a.id);
-              const acctStat = a.infloww_campaign_code != null
-                ? inflowwStats.find((s) => s.campaign_code === a.infloww_campaign_code) ?? null
-                : null;
-              return (
-                <div
-                  key={a.id}
-                  className="rounded-xl border border-border bg-card p-4 hover:border-primary/40 transition-colors"
-                >
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <div className="font-medium">u/{a.username}</div>
-                      <div className="text-xs text-muted-foreground mt-0.5">
-                        {acctPosts.length} posts
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${accountStatusStyles[a.status]}`}
-                      >
-                        {a.status}
-                      </span>
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <button className="text-muted-foreground hover:text-destructive transition-colors">
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Remove u/{a.username}?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              This will also delete all posts, subreddits, and tracking links for
-                              this account.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => onDeleteAccount(a.id)}>
-                              Remove
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    </div>
-                  </div>
-
-                  {acctLinks.length > 0 && (
-                    <div className="mt-3 pt-3 border-t border-border space-y-1.5">
-                      <div className="text-[10px] text-muted-foreground uppercase tracking-wide">
-                        Tracking links
-                      </div>
-                      {acctLinks.map((l) => (
-                        <div key={l.id} className="flex items-center justify-between gap-2">
-                          <a
-                            href={l.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-xs text-primary hover:underline truncate flex items-center gap-1"
-                          >
-                            <Link2 className="h-3 w-3 shrink-0" />
-                            {l.label}
-                          </a>
-                          <button
-                            onClick={() => onDeleteLink(l.id)}
-                            className="text-muted-foreground hover:text-destructive transition-colors shrink-0"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Infloww tracking stats */}
-                  <div className="mt-3 pt-3 border-t border-border space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Infloww</span>
-                      {acctStat && (
-                        <span className="text-[10px] text-muted-foreground">
-                          synced {new Date(acctStat.synced_at).toLocaleDateString()}
-                        </span>
-                      )}
-                    </div>
-                    {acctStat ? (
-                      <div className="grid grid-cols-3 gap-1.5 text-center">
-                        <div className="rounded-lg bg-secondary/60 px-2 py-1.5">
-                          <div className="text-sm font-semibold">{acctStat.clicks_count.toLocaleString()}</div>
-                          <div className="text-[10px] text-muted-foreground">Clicks</div>
-                        </div>
-                        <div className="rounded-lg bg-secondary/60 px-2 py-1.5">
-                          <div className="text-sm font-semibold">{acctStat.subscribers_count.toLocaleString()}</div>
-                          <div className="text-[10px] text-muted-foreground">Subs</div>
-                        </div>
-                        <div className="rounded-lg bg-success/15 px-2 py-1.5">
-                          <div className="text-sm font-semibold text-success">${acctStat.revenue_total.toFixed(0)}</div>
-                          <div className="text-[10px] text-muted-foreground">Earned</div>
-                        </div>
-                        {acctStat.spenders_count > 0 && (
-                          <div className="col-span-3 flex justify-between text-[11px] text-muted-foreground px-1">
-                            <span>{acctStat.spenders_count} spenders</span>
-                            {acctStat.subscribers_count > 0 && (
-                              <span>${acctStat.revenue_per_sub.toFixed(2)}/sub</span>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="text-[11px] text-muted-foreground italic">
-                        {a.infloww_campaign_code != null
-                          ? `c${a.infloww_campaign_code} — not synced yet`
-                          : "No campaign code set"}
-                      </div>
-                    )}
-                    <InflowwCodeInput
-                      accountId={a.id}
-                      currentCode={a.infloww_campaign_code}
-                      onRefresh={onRefresh}
-                    />
-                  </div>
-
-                  {/* Inline note */}
-                  <div className="mt-2 pt-2 border-t border-border/50">
-                    {editingNoteId === a.id ? (
-                      <input
-                        autoFocus
-                        className="w-full rounded border border-border bg-secondary/40 px-2 py-1 text-xs outline-none focus:border-primary"
-                        value={noteValue}
-                        onChange={(e) => setNoteValue(e.target.value)}
-                        onBlur={() => {
-                          saveAccountNote(a.id, noteValue);
-                          setEditingNoteId(null);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            saveAccountNote(a.id, noteValue);
-                            setEditingNoteId(null);
-                          }
-                          if (e.key === "Escape") setEditingNoteId(null);
-                        }}
-                        placeholder="Add a note…"
-                      />
-                    ) : (
-                      <button
-                        onClick={() => {
-                          setEditingNoteId(a.id);
-                          setNoteValue(a.notes ?? "");
-                        }}
-                        className="flex w-full items-center gap-1.5 text-left text-xs text-muted-foreground transition-colors hover:text-foreground"
-                      >
-                        <MessageSquare className="h-3 w-3 shrink-0" />
-                        <span className={a.notes ? "" : "italic"}>{a.notes || "Add note…"}</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
-      {/* Posts */}
-      <section>
-        <div className="flex flex-wrap items-end justify-between gap-4 mb-4">
-          <h2 className="text-lg font-semibold">Posts</h2>
-          <div className="flex flex-wrap gap-2">
-            <Select value={accountFilter} onValueChange={setAccountFilter}>
-              <SelectTrigger className="w-[160px]">
-                <SelectValue placeholder="Account" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All accounts</SelectItem>
-                {accounts.map((a) => (
-                  <SelectItem key={a.id} value={a.id}>
-                    u/{a.username}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={subFilter} onValueChange={setSubFilter}>
-              <SelectTrigger className="w-[160px]">
-                <SelectValue placeholder="Subreddit" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All subreddits</SelectItem>
-                {postSubreddits.map((s) => (
-                  <SelectItem key={s} value={s}>
-                    r/{s}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={dateFilter} onValueChange={setDateFilter}>
-              <SelectTrigger className="w-[140px]">
-                <SelectValue placeholder="Date" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All time</SelectItem>
-                <SelectItem value="24h">Last 24h</SelectItem>
-                <SelectItem value="7d">Last 7 days</SelectItem>
-                <SelectItem value="30d">Last 30 days</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-
-        {filteredPosts.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border bg-card/40 p-8 text-center text-sm text-muted-foreground">
-            No posts match these filters.
-          </div>
-        ) : (
-          <div className="overflow-hidden rounded-xl border border-border">
-            <table className="w-full text-sm">
-              <thead className="bg-secondary/40 text-xs uppercase tracking-wide text-muted-foreground">
-                <tr>
-                  <th className="text-left font-medium px-4 py-3">Post</th>
-                  <th className="text-left font-medium px-4 py-3">Subreddit</th>
-                  <th className="text-left font-medium px-4 py-3">Account</th>
-                  <th className="text-left font-medium px-4 py-3">Posted</th>
-                  <th className="text-right font-medium px-4 py-3">Upvotes</th>
-                  <th className="text-right font-medium px-4 py-3">Comments</th>
-                  <th className="px-4 py-3" />
-                </tr>
-              </thead>
-              <tbody>
-                {filteredPosts.map((p) => (
-                  <tr
-                    key={p.id}
-                    className="border-t border-border bg-card hover:bg-secondary/30 transition-colors"
-                  >
-                    <td className="px-4 py-3 max-w-[280px]">
-                      <div className="font-medium truncate">{p.title}</div>
-                      <div className="text-xs text-muted-foreground">{p.post_id}</div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="rounded-md bg-accent/40 px-2 py-0.5 text-xs">
-                        r/{p.subreddit}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">
-                      u/{accountUsername(p.reddit_account_id)}
-                    </td>
-                    <td
-                      className="px-4 py-3 text-muted-foreground"
-                      title={format(new Date(p.posted_at), "PPpp")}
-                    >
-                      {formatDistanceToNow(new Date(p.posted_at), { addSuffix: true })}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <span className="inline-flex items-center gap-1 font-medium">
-                        <ArrowUp className="h-3.5 w-3.5 text-primary" />
-                        {p.upvotes.toLocaleString()}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <span className="inline-flex items-center gap-1 text-muted-foreground">
-                        <MessageCircle className="h-3.5 w-3.5" />
-                        {p.comments.toLocaleString()}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <a
-                        href={p.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-muted-foreground hover:text-primary inline-flex"
-                      >
-                        <ExternalLink className="h-4 w-4" />
-                      </a>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
     </div>
   );
 }

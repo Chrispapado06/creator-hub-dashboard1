@@ -8,7 +8,7 @@ import {
   Settings, LogOut, Sun, Moon, Users, DollarSign,
   CalendarDays, LayoutDashboard, ChevronDown, ChevronRight,
   MessageCircle, UserPlus, ScrollText, Sparkles, Zap,
-  PiggyBank, MessagesSquare, Menu, X as XIcon,
+  PiggyBank, MessagesSquare, Menu, X as XIcon, Brain,
 } from "lucide-react";
 import { NotificationsBell } from "@/components/NotificationsBell";
 import { SyncStatusBadge } from "@/components/SyncStatusBadge";
@@ -124,15 +124,61 @@ function SideNavLink({
       to={to}
       activeOptions={exact ? { exact: true } : undefined}
       activeProps={{
+        // Filled green pill, white text/icon — Fixoria aesthetic.
         className:
-          "bg-primary/10 text-foreground font-medium before:bg-primary [&_.nav-icon]:text-primary",
+          "bg-primary text-primary-foreground font-semibold shadow-sm shadow-primary/30 [&_.nav-icon]:text-primary-foreground hover:bg-primary",
       }}
-      className="relative flex items-center gap-3 rounded-lg pl-4 pr-3 py-2 text-sm text-muted-foreground transition-all duration-150 ease-out hover:bg-secondary/60 hover:text-foreground hover:translate-x-px before:content-[''] before:absolute before:left-1 before:top-1/2 before:-translate-y-1/2 before:h-1/2 before:w-[3px] before:rounded-full before:bg-transparent before:transition-colors"
+      className="relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-all duration-150 ease-out hover:bg-secondary hover:text-foreground"
     >
       <span className="nav-icon h-4 w-4 shrink-0 flex items-center justify-center transition-colors">{icon}</span>
       <span className="flex-1 truncate">{label}</span>
       {badge}
     </Link>
+  );
+}
+
+/** Collapsible section header — uppercase label, ± chevron on the right.
+ *  Matches Fixoria's "DAILY OPERATION −" pattern. Persists open/closed
+ *  state in localStorage so it survives reloads. */
+function NavSection({
+  id,
+  label,
+  defaultOpen = true,
+  children,
+}: {
+  id: string;
+  label: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const storageKey = `navsection:${id}`;
+  const [open, setOpen] = useState<boolean>(() => {
+    try {
+      const v = localStorage.getItem(storageKey);
+      return v == null ? defaultOpen : v === "1";
+    } catch {
+      return defaultOpen;
+    }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(storageKey, open ? "1" : "0"); } catch { /* ignore */ }
+  }, [open, storageKey]);
+  return (
+    <div>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 px-3 mb-1.5 group"
+      >
+        <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground/70 group-hover:text-foreground transition-colors">
+          {label}
+        </span>
+        <div className="h-px flex-1 bg-border/60" />
+        <span className="text-muted-foreground/50 group-hover:text-foreground transition-colors">
+          {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+        </span>
+      </button>
+      {open && <div className="space-y-0.5">{children}</div>}
+    </div>
   );
 }
 
@@ -166,6 +212,43 @@ function RedditNavGroup() {
         <div className="ml-4 mt-0.5 space-y-0.5 border-l border-border pl-3">
           <SideNavLink to="/reddit" slug="reddit" icon={<SiReddit className="h-4 w-4" />} label="Posts" />
           <SideNavLink to="/reddit-airtable" slug="reddit-airtable" icon={<SiAirtable className="h-4 w-4" />} label="Airtable" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Assistant dropdown — Bernard + his Brains nested underneath, same
+ *  pattern as Meta. Auto-opens when you're on a child route. */
+function AssistantNavGroup() {
+  const location = useLocation();
+  const isActive =
+    location.pathname === "/bernard" || location.pathname === "/brains";
+  const [open, setOpen] = useState(isActive);
+  return (
+    <div>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+          isActive
+            ? "bg-secondary text-foreground"
+            : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
+        }`}
+      >
+        <span className="h-4 w-4 shrink-0 flex items-center justify-center">
+          <Sparkles className="h-4 w-4" />
+        </span>
+        <span className="flex-1 text-left">Assistant</span>
+        {open ? (
+          <ChevronDown className="h-3 w-3 opacity-50" />
+        ) : (
+          <ChevronRight className="h-3 w-3 opacity-50" />
+        )}
+      </button>
+      {open && (
+        <div className="ml-4 mt-0.5 space-y-0.5 border-l border-border pl-3">
+          <SideNavLink to="/bernard" slug="bernard" icon={<Sparkles className="h-4 w-4" />} label="Bernard" />
+          <SideNavLink to="/brains" slug="brains" icon={<Brain className="h-4 w-4" />} label="Brains" />
         </div>
       )}
     </div>
@@ -322,8 +405,17 @@ function RootComponent() {
     if (authed === true && location.pathname === "/login") {
       navigate({ to: session?.type === "staff" ? "/clock" : "/" });
     }
-    // Force staff to stay on /clock — they have no admin access
-    if (authed === true && session?.type === "staff" && location.pathname !== "/clock" && location.pathname !== "/login") {
+    // Staff are restricted to the routes they need: /clock for shifts and
+    // /chat for team comms. Anywhere else (admin pages, settings, etc)
+    // bounces back to /clock. Without /chat in the allow-list, clicking
+    // the Chat tab in StaffTopNav fired this guard and redirected back —
+    // the page would flash blank then return to /clock.
+    const STAFF_ALLOWED = ["/clock", "/chat", "/login"];
+    if (
+      authed === true &&
+      session?.type === "staff" &&
+      !STAFF_ALLOWED.includes(location.pathname)
+    ) {
       navigate({ to: "/clock" });
     }
   }, [authed, location.pathname, session]);
@@ -361,12 +453,26 @@ function RootComponent() {
   // Staff portal: thin top nav (Clock / Chat tabs + sign-out) above
   // the page content. No admin sidebar — staff only see what they
   // need. Login redirects to /clock; the nav lets them hop to /chat.
+  //
+  // The /chat route mirrors the admin-side wrapper: a separate
+  // `flex-1 min-h-0 flex flex-col` div around the Outlet so chat.tsx's
+  // own `flex-1 min-h-0 h-full` can resolve to a real pixel height.
+  // Without this extra flex column, the chat's outer container
+  // collapses to 0 height in some browsers (Safari iOS especially) —
+  // staff would see the Chat tab navigate but the page would render
+  // blank because the chat is sized to nothing.
   if (session?.type === "staff") {
     return (
       <div className="min-h-screen bg-background flex flex-col">
         <StaffTopNav />
         <main className="flex-1 min-h-0 flex flex-col">
-          <Outlet />
+          {location.pathname === "/chat" ? (
+            <div className="flex-1 min-h-0 flex flex-col">
+              <Outlet />
+            </div>
+          ) : (
+            <Outlet />
+          )}
         </main>
         <InstallPromptBanner />
       </div>
@@ -427,71 +533,40 @@ function RootComponent() {
           </button>
         </div>
 
-        {/* Nav */}
-        <nav className="flex-1 overflow-y-auto py-5 px-3 space-y-6">
-          {/* Main */}
-          <div className="space-y-0.5">
+        {/* Nav — collapsible section headers with ± chevrons (Fixoria style) */}
+        <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-5">
+          <NavSection id="daily" label="Daily Operation">
             <SideNavLink to="/daily" slug="daily" icon={<LayoutDashboard className="h-4 w-4" />} label="Daily Dashboard" />
             <SideNavLink to="/" slug="creators" icon={<Users className="h-4 w-4" />} label="Creators" exact />
             <SideNavLink to="/revenue" slug="revenue" icon={<DollarSign className="h-4 w-4" />} label="Revenue" />
-          </div>
+          </NavSection>
 
-          {/* Operations */}
-          <div>
-            <div className="flex items-center gap-2 px-3 mb-2">
-              <div className="h-px flex-1 bg-border/60" />
-              <span className="text-[9px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/60">
-                Operations
-              </span>
-              <div className="h-px flex-1 bg-border/60" />
-            </div>
-            <div className="space-y-0.5">
-              <SideNavLink to="/chatters" slug="chatters" icon={<MessageCircle className="h-4 w-4" />} label="Staff" />
-              <SideNavLink to="/leads" slug="leads" icon={<UserPlus className="h-4 w-4" />} label="Client Acquisition" />
-              <SideNavLink to="/automation" slug="automation" icon={<Zap className="h-4 w-4" />} label="Automation" />
-              <SideNavLink to="/financials" slug="financials" icon={<PiggyBank className="h-4 w-4" />} label="Financials" />
-              <SideNavLink
-                to="/chat"
-                slug="chat"
-                icon={<MessagesSquare className="h-4 w-4" />}
-                label="Team Chat"
-                badge={<ChatBadge />}
-              />
-              <SideNavLink to="/audit" slug="audit" icon={<ScrollText className="h-4 w-4" />} label="Audit Log" />
-            </div>
-          </div>
+          <NavSection id="operations" label="Operations">
+            <SideNavLink to="/chatters" slug="chatters" icon={<MessageCircle className="h-4 w-4" />} label="Staff" />
+            <SideNavLink to="/leads" slug="leads" icon={<UserPlus className="h-4 w-4" />} label="Client Acquisition" />
+            <SideNavLink to="/automation" slug="automation" icon={<Zap className="h-4 w-4" />} label="Automation" />
+            <SideNavLink to="/financials" slug="financials" icon={<PiggyBank className="h-4 w-4" />} label="Financials" />
+            <SideNavLink
+              to="/chat"
+              slug="chat"
+              icon={<MessagesSquare className="h-4 w-4" />}
+              label="Team Chat"
+              badge={<ChatBadge />}
+            />
+            <SideNavLink to="/audit" slug="audit" icon={<ScrollText className="h-4 w-4" />} label="Audit Log" />
+          </NavSection>
 
-          {/* Platforms */}
-          <div>
-            <div className="flex items-center gap-2 px-3 mb-2">
-              <div className="h-px flex-1 bg-border/60" />
-              <span className="text-[9px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/60">
-                Platforms
-              </span>
-              <div className="h-px flex-1 bg-border/60" />
-            </div>
-            <div className="space-y-0.5">
-              <SideNavLink to="/onlyfans" slug="onlyfans" icon={<SiOnlyfans className="h-4 w-4" />} label="OnlyFans" />
-              <RedditNavGroup />
-              <SideNavLink to="/x" slug="x" icon={<SiX className="h-4 w-4" />} label="X" />
-              <SideNavLink to="/tiktok" slug="tiktok" icon={<SiTiktok className="h-4 w-4" />} label="TikTok" />
-              <MetaNavGroup />
-            </div>
-          </div>
+          <NavSection id="platforms" label="Platforms">
+            <SideNavLink to="/onlyfans" slug="onlyfans" icon={<SiOnlyfans className="h-4 w-4" />} label="OnlyFans" />
+            <RedditNavGroup />
+            <SideNavLink to="/x" slug="x" icon={<SiX className="h-4 w-4" />} label="X" />
+            <SideNavLink to="/tiktok" slug="tiktok" icon={<SiTiktok className="h-4 w-4" />} label="TikTok" />
+            <MetaNavGroup />
+          </NavSection>
 
-          {/* AI */}
-          <div>
-            <div className="flex items-center gap-2 px-3 mb-2">
-              <div className="h-px flex-1 bg-border/60" />
-              <span className="text-[9px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/60">
-                AI
-              </span>
-              <div className="h-px flex-1 bg-border/60" />
-            </div>
-            <div className="space-y-0.5">
-              <SideNavLink to="/bernard" slug="bernard" icon={<Sparkles className="h-4 w-4" />} label="Bernard" />
-            </div>
-          </div>
+          <NavSection id="ai" label="AI">
+            <AssistantNavGroup />
+          </NavSection>
         </nav>
 
         {/* Bottom */}
@@ -526,24 +601,33 @@ function RootComponent() {
           • lg+: reserves 240px on the left for the permanent sidebar
           • below lg: full width; the mobile top bar above gives 56px
             of header space, so the page content offsets by pt-14
-          /chat gets the full canvas (no max-width or page padding) so
-          the chat sidebar + message pane can fill the screen edge-to-edge
-          like a native app. Everything else uses the centered max-w-7xl. */}
+          /chat + the Creators routes (/ and /creators/$id) get the full
+          canvas (no max-width or page padding) so their split-pane
+          layouts can sit flush against the main sidebar — the creator
+          rail attaches directly to the admin nav like Golfy's Clients
+          panel. Everything else stays centered with max-w-7xl. */}
       <main className="lg:ml-60 flex-1 min-h-screen relative flex flex-col w-full min-w-0 pt-14 lg:pt-0">
         {/* Desktop-only header actions. Mobile shows these in the top bar. */}
         <div className="hidden lg:flex absolute top-5 right-8 z-30 items-center gap-2">
           <SyncStatusBadge enabled={authed === true} />
           <NotificationsBell />
         </div>
-        {location.pathname === "/chat" ? (
-          <div className="flex-1 min-h-0 flex flex-col">
-            <Outlet />
-          </div>
-        ) : (
-          <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 sm:py-7 lg:px-8 lg:py-10 w-full">
-            <Outlet />
-          </div>
-        )}
+        {(() => {
+          const path = location.pathname;
+          const fullCanvas =
+            path === "/chat" ||
+            path === "/" ||
+            path.startsWith("/creators/");
+          return fullCanvas ? (
+            <div className="flex-1 min-h-0 flex flex-col">
+              <Outlet />
+            </div>
+          ) : (
+            <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 sm:py-7 lg:px-8 lg:py-10 w-full">
+              <Outlet />
+            </div>
+          );
+        })()}
       </main>
       <InstallPromptBanner />
     </div>

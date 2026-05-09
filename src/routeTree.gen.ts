@@ -27,6 +27,7 @@ import { Route as ClockRouteImport } from './routes/clock'
 import { Route as AuditRouteImport } from './routes/audit'
 import { Route as AutomationRouteImport } from './routes/automation'
 import { Route as BernardRouteImport } from './routes/bernard'
+import { Route as BrainsRouteImport } from './routes/brains'
 import { Route as ChatRouteImport } from './routes/chat'
 import { Route as FinancialsRouteImport } from './routes/financials'
 import { Route as RedditAirtableRouteImport } from './routes/reddit-airtable'
@@ -71,6 +72,11 @@ const AutomationRoute = AutomationRouteImport.update({
 const BernardRoute = BernardRouteImport.update({
   id: '/bernard',
   path: '/bernard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BrainsRoute = BrainsRouteImport.update({
+  id: '/brains',
+  path: '/brains',
   getParentRoute: () => rootRouteImport,
 } as any)
 const FinancialsRoute = FinancialsRouteImport.update({
@@ -168,6 +174,7 @@ export interface FileRoutesByFullPath {
   '/audit': typeof AuditRoute
   '/automation': typeof AutomationRoute
   '/bernard': typeof BernardRoute
+  '/brains': typeof BrainsRoute
   '/chat': typeof ChatRoute
   '/financials': typeof FinancialsRoute
   '/reddit-airtable': typeof RedditAirtableRoute
@@ -193,6 +200,7 @@ export interface FileRoutesByTo {
   '/audit': typeof AuditRoute
   '/automation': typeof AutomationRoute
   '/bernard': typeof BernardRoute
+  '/brains': typeof BrainsRoute
   '/chat': typeof ChatRoute
   '/financials': typeof FinancialsRoute
   '/reddit-airtable': typeof RedditAirtableRoute
@@ -219,6 +227,7 @@ export interface FileRoutesById {
   '/audit': typeof AuditRoute
   '/automation': typeof AutomationRoute
   '/bernard': typeof BernardRoute
+  '/brains': typeof BrainsRoute
   '/chat': typeof ChatRoute
   '/financials': typeof FinancialsRoute
   '/reddit-airtable': typeof RedditAirtableRoute
@@ -246,6 +255,7 @@ export interface FileRouteTypes {
     | '/audit'
     | '/automation'
     | '/bernard'
+    | '/brains'
     | '/chat'
     | '/financials'
     | '/reddit-airtable'
@@ -271,6 +281,7 @@ export interface FileRouteTypes {
     | '/audit'
     | '/automation'
     | '/bernard'
+    | '/brains'
     | '/chat'
     | '/financials'
     | '/reddit-airtable'
@@ -296,6 +307,7 @@ export interface FileRouteTypes {
     | '/audit'
     | '/automation'
     | '/bernard'
+    | '/brains'
     | '/chat'
     | '/financials'
     | '/reddit-airtable'
@@ -322,6 +334,7 @@ export interface RootRouteChildren {
   AuditRoute: typeof AuditRoute
   AutomationRoute: typeof AutomationRoute
   BernardRoute: typeof BernardRoute
+  BrainsRoute: typeof BrainsRoute
   ChatRoute: typeof ChatRoute
   FinancialsRoute: typeof FinancialsRoute
   RedditAirtableRoute: typeof RedditAirtableRoute
@@ -457,6 +470,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BernardRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/brains': {
+      id: '/brains'
+      path: '/brains'
+      fullPath: '/brains'
+      preLoaderRoute: typeof BrainsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/chat': {
       id: '/chat'
       path: '/chat'
@@ -514,6 +534,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuditRoute: AuditRoute,
   AutomationRoute: AutomationRoute,
   BernardRoute: BernardRoute,
+  BrainsRoute: BrainsRoute,
   ChatRoute: ChatRoute,
   FinancialsRoute: FinancialsRoute,
   RedditAirtableRoute: RedditAirtableRoute,

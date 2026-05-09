@@ -45,6 +45,7 @@ export const ADMIN_PAGES: AdminPage[] = [
 
   // AI
   { slug: "bernard", path: "/bernard", label: "Bernard", group: "AI" },
+  { slug: "brains",  path: "/brains",  label: "Brains",  group: "AI" },
 ];
 
 export const ADMIN_PAGE_GROUPS: AdminPageGroup[] = ["Core", "Operations", "Platforms", "AI"];

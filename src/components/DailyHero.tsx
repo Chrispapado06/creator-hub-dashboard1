@@ -25,11 +25,11 @@ import {
   TrendingUp, TrendingDown, Minus, RefreshCw, AlertCircle, Pause,
   Receipt, FileWarning, MessageCircle as ChatIcon, Wallet,
   ArrowUpRight, ArrowDownRight, Sparkles, Calendar, Target,
-  CheckCircle2, Clock, ChevronRight,
+  CheckCircle2, Clock, ChevronRight, Info,
 } from "lucide-react";
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer,
-  Tooltip, XAxis, YAxis, Cell,
+  Tooltip, XAxis, YAxis, Cell, PieChart, Pie,
 } from "recharts";
 import {
   format, parseISO, subDays, startOfDay, endOfDay, startOfMonth,
@@ -72,6 +72,9 @@ export function DailyHero() {
   const [todaySubs, setTodaySubs] = useState<number>(0);
   const [yesterdayClicks, setYesterdayClicks] = useState<number>(0);
   const [yesterdaySubs, setYesterdaySubs] = useState<number>(0);
+  // 7-day subscriber count, bucketed by snapshot_date — feeds the
+  // "Total Subscriber" weekly bar chart (Nexus pattern).
+  const [subs7d, setSubs7d] = useState<{ date: string; count: number }[]>([]);
   const [adSpend14d, setAdSpend14d] = useState<{ date: string; spend: number }[]>([]);
   // Same 14-day series for staff payouts + agency operating expenses,
   // bucketed by their natural date columns (staff_payouts.period_end,
@@ -138,7 +141,9 @@ export function DailyHero() {
         supabase.from("lead_activities").select("lead_id, occurred_at"),
         supabase.from("creator_payouts").select("id, creator_id, net_to_creator, status, period_end").neq("status", "paid").limit(20),
         supabase.from("revenue_goals").select("target_amount, period_start, period_end, channel").lte("period_start", monthEnd).gte("period_end", monthStart).limit(5),
-        supabase.from("daily_link_snapshots").select("clicks_count, subscribers_count, snapshot_date").gte("snapshot_date", yesterdayStr),
+        // Pull a full 7 days of link snapshots — used both for today/yesterday
+        // KPI deltas AND the "Total Subscriber" weekly bar chart.
+        supabase.from("daily_link_snapshots").select("clicks_count, subscribers_count, snapshot_date").gte("snapshot_date", sevenDaysAgoStr),
         supabase.from("meta_insights_daily").select("date_start, spend").eq("level", "account").eq("breakdown_key", "").gte("date_start", fourteenDaysAgoStr),
         // Staff payouts + agency operating expenses, last 14 days. Used
         // so the "Net profit today" tile matches the formula on /financials
@@ -174,21 +179,31 @@ export function DailyHero() {
       const totalGoal = monthGoals.find((g) => g.channel === "total") ?? monthGoals[0] ?? null;
       setMonthGoal(totalGoal);
 
-      // Daily link snapshots — today + yesterday
+      // Daily link snapshots — today + yesterday for KPIs, plus a 7-day
+      // bucketed series for the Total Subscriber bar chart.
       type Snap = { clicks_count: number; subscribers_count: number; snapshot_date: string };
       const snaps = (dailySnaps ?? []) as Snap[];
       let tc = 0, ts = 0, yc = 0, ys = 0;
+      const subsByDay = new Map<string, number>();
       for (const s of snaps) {
+        const subs = Number(s.subscribers_count || 0);
+        const clicks = Number(s.clicks_count || 0);
+        subsByDay.set(s.snapshot_date, (subsByDay.get(s.snapshot_date) ?? 0) + subs);
         if (s.snapshot_date === todayStr) {
-          tc += Number(s.clicks_count || 0);
-          ts += Number(s.subscribers_count || 0);
+          tc += clicks; ts += subs;
         } else if (s.snapshot_date === yesterdayStr) {
-          yc += Number(s.clicks_count || 0);
-          ys += Number(s.subscribers_count || 0);
+          yc += clicks; ys += subs;
         }
       }
       setTodayClicks(tc); setTodaySubs(ts);
       setYesterdayClicks(yc); setYesterdaySubs(ys);
+      // Build the 7-day series (always include all 7 days — even zeros)
+      const subsSeries = eachDayOfInterval({ start: subDays(today, 6), end: today })
+        .map((d) => {
+          const key = format(d, "yyyy-MM-dd");
+          return { date: key, count: subsByDay.get(key) ?? 0 };
+        });
+      setSubs7d(subsSeries);
 
       // Ad spend (14-day series) for the cost line
       type AdsRow = { date_start: string; spend: number };
@@ -496,69 +511,114 @@ export function DailyHero() {
   const goalAmount = monthGoal ? Number(monthGoal.target_amount) : 0;
   const goalPct = goalAmount > 0 ? Math.min(100, (monthlyRevenue / goalAmount) * 100) : 0;
 
+  // ── Top performers + sales distribution ───────────────────────────────
+  // Both feed the bottom row of the dashboard (Nexus pattern: donut chart
+  // beside a leaderboard table). Window: today's revenue per creator. If
+  // today is too early to have data we silently fall back to "yesterday"
+  // so the cards stay populated.
+  const performerWindow = useMemo(() => {
+    const todayCount = revenueRows.filter((r) => r.entry_date === todayStr).length;
+    return todayCount > 0 ? "today" : "yesterday";
+  }, [revenueRows, todayStr]);
+
+  const topPerformers = useMemo(() => {
+    const targetDate = performerWindow === "today" ? todayStr : yesterdayStr;
+    const byCreator = new Map<string, number>();
+    for (const r of revenueRows) {
+      if (r.entry_date === targetDate) {
+        byCreator.set(r.creator_id, (byCreator.get(r.creator_id) ?? 0) + Number(r.amount || 0));
+      }
+    }
+    return Array.from(byCreator.entries())
+      .map(([creator_id, amount]) => ({
+        creator_id,
+        name: creatorsById.get(creator_id)?.name ?? "Unknown",
+        amount,
+      }))
+      .filter((r) => r.amount > 0)
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 5);
+  }, [revenueRows, creatorsById, performerWindow, todayStr, yesterdayStr]);
+
+  // Sales distribution donut: top 4 creators by today's (or yesterday's
+  // if today is empty) revenue + an aggregated "Others" slice. Same data
+  // window as topPerformers so the two cards always agree.
+  const salesDistribution = useMemo(() => {
+    const targetDate = performerWindow === "today" ? todayStr : yesterdayStr;
+    const byCreator = new Map<string, number>();
+    for (const r of revenueRows) {
+      if (r.entry_date === targetDate) {
+        byCreator.set(r.creator_id, (byCreator.get(r.creator_id) ?? 0) + Number(r.amount || 0));
+      }
+    }
+    const sorted = Array.from(byCreator.entries())
+      .map(([id, amount]) => ({ id, amount, name: creatorsById.get(id)?.name ?? "Unknown" }))
+      .filter((r) => r.amount > 0)
+      .sort((a, b) => b.amount - a.amount);
+    const top = sorted.slice(0, 4);
+    const others = sorted.slice(4).reduce((s, r) => s + r.amount, 0);
+    const slices = others > 0
+      ? [...top, { id: "others", amount: others, name: "Others" }]
+      : top;
+    const total = slices.reduce((s, r) => s + r.amount, 0);
+    return { slices, total };
+  }, [revenueRows, creatorsById, performerWindow, todayStr, yesterdayStr]);
+
   // ── Render ────────────────────────────────────────────────────────────
 
   return (
-    <section className="space-y-6">
-      {/* Greeting + refresh */}
+    <section className="space-y-5">
+      {/* Header — Nexus pattern: title left, subtitle, action chips right */}
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <div className="flex items-center gap-2 text-[11px] text-muted-foreground mb-1">
-            <Calendar className="h-3 w-3" />
-            <span>{format(today, "EEEE, MMMM d, yyyy")}</span>
-            <span className="text-muted-foreground/50">·</span>
-            <span>Live data</span>
-          </div>
           <h2 className="text-2xl font-bold tracking-tight">
             Good {timeOfDay()}, <span className="capitalize">{userName}</span>
           </h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            Here's where the agency stands today.
-          </p>
+          <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+            <Calendar className="h-3.5 w-3.5" />
+            <span>{format(today, "EEEE, MMMM d, yyyy")}</span>
+            <span className="text-muted-foreground/40">·</span>
+            <span className="inline-flex items-center gap-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              Live data
+            </span>
+          </div>
         </div>
-        <Button size="sm" variant="outline" onClick={() => setRefreshKey((k) => k + 1)} disabled={loading}>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setRefreshKey((k) => k + 1)}
+          disabled={loading}
+          className="rounded-full border-border bg-card hover:bg-secondary"
+        >
           <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${loading ? "animate-spin" : ""}`} />
           {loading ? "Refreshing…" : "Refresh"}
         </Button>
       </div>
 
-      {/* Hero KPI tiles — always show today's actual numbers, even
-          when OnlyFans data hasn't been reported yet (typical in the
-          first few hours of the day). $0 is the truthful answer until
-          OF catches up; the 14-day chart below tells the longer story. */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-        <HeroTile
-          tone="cyan"
-          icon={<Wallet className="h-4 w-4" />}
-          label="OnlyFans today"
-          value={formatMoney(ofToday)}
-          delta={pctChange(ofToday, ofYesterday)}
-          deltaSubtitle="vs yesterday"
-          sparkline={[]}
-          sparkColor="rgb(56,189,248)"
-          loading={loading}
-        />
+      {/* Top KPI row — Nexus pattern: exactly three wide tiles.
+          Revenue (gross today), Net Revenue (after expenses), Expenses. */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <HeroTile
           tone="emerald"
           icon={<Wallet className="h-4 w-4" />}
-          label="Today's revenue"
+          label="Revenue"
           value={formatMoney(todayTotalRevenue)}
           delta={pctChange(todayTotalRevenue, yesterdayTotalRevenue)}
-          deltaSubtitle={ofToday > 0 ? `incl. ${formatMoney(ofToday)} OF` : "vs yesterday"}
+          deltaSubtitle={ofToday > 0 ? `today · incl. ${formatMoney(ofToday)} OF` : "today vs yesterday"}
           sparkline={dailyRevenue.map((d) => ({ x: d.date, y: d.amount }))}
-          sparkColor="rgb(52,211,153)"
           loading={loading}
         />
         <HeroTile
           tone={todayNetProfit >= 0 ? "violet" : "rose"}
           icon={<TrendingUp className="h-4 w-4" />}
-          label="Net profit today"
+          label="Net Revenue"
           value={formatMoney(todayNetProfit)}
           delta={pctChange(todayNetProfit, yesterdayNetProfit)}
           deltaSubtitle={
             // Compact breakdown of today's costs so users can see what
-            // makes up the deduction. Ad spend always shown; staff +
-            // ops only appear when non-zero (most days they're $0).
+            // makes up the deduction. Ads always shown; staff + ops
+            // only appear when non-zero (most days they're $0).
             [
               `ads ${formatMoney(todayAdSpend)}`,
               ...(todayStaff > 0 ? [`staff ${formatMoney(todayStaff)}`] : []),
@@ -571,41 +631,35 @@ export function DailyHero() {
             const op = opsSpend14d.find((a) => a.date === d.date)?.amount ?? 0;
             return { x: d.date, y: d.amount - ad - sf - op };
           })}
-          sparkColor="rgb(167,139,250)"
-          loading={loading}
-        />
-        <HeroTile
-          tone="cyan"
-          icon={<ArrowUpRight className="h-4 w-4" />}
-          label="Subscribers today"
-          value={String(todaySubs)}
-          delta={pctChange(todaySubs, yesterdaySubs)}
-          deltaSubtitle="vs yesterday"
-          sparkline={[]}
-          sparkColor="rgb(56,189,248)"
           loading={loading}
         />
         <HeroTile
           tone="amber"
-          icon={<Sparkles className="h-4 w-4" />}
-          label="Clicks today"
-          value={String(todayClicks)}
-          delta={pctChange(todayClicks, yesterdayClicks)}
-          deltaSubtitle="vs yesterday"
-          sparkline={[]}
-          sparkColor="rgb(251,191,36)"
+          icon={<Receipt className="h-4 w-4" />}
+          label="Expenses"
+          value={formatMoney(todayTotalExpenses)}
+          delta={pctChange(todayTotalExpenses, yesterdayTotalExpenses)}
+          deltaSubtitle="today · ads + staff + ops"
+          sparkline={dailyRevenue.map((d) => {
+            const ad = adSpend14d.find((a) => a.date === d.date)?.spend ?? 0;
+            const sf = staffSpend14d.find((a) => a.date === d.date)?.amount ?? 0;
+            const op = opsSpend14d.find((a) => a.date === d.date)?.amount ?? 0;
+            return { x: d.date, y: ad + sf + op };
+          })}
           loading={loading}
         />
       </div>
 
       {/* Alerts */}
       {alerts.length > 0 && (
-        <section className="rounded-xl border border-border bg-card p-5 space-y-3">
+        <section className="rounded-2xl border border-border bg-card p-5 space-y-3">
           <div className="flex items-center gap-2 mb-1">
-            <AlertCircle className="h-4 w-4 text-primary" />
+            <span className="h-7 w-7 rounded-lg bg-amber-500/12 text-amber-600 flex items-center justify-center">
+              <AlertCircle className="h-4 w-4" />
+            </span>
             <h3 className="text-sm font-semibold">Today's wins & watchouts</h3>
-            <span className="text-[10px] text-muted-foreground uppercase tracking-wide ml-1">
-              {alerts.length} item{alerts.length === 1 ? "" : "s"}
+            <span className="ml-1 text-[10px] font-mono tabular-nums px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+              {alerts.length}
             </span>
           </div>
           <div className="space-y-2">
@@ -614,56 +668,72 @@ export function DailyHero() {
         </section>
       )}
       {alerts.length === 0 && !loading && (
-        <section className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 flex items-center gap-3">
-          <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" />
+        <section className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-4 flex items-center gap-3">
+          <span className="h-9 w-9 rounded-xl bg-emerald-500/15 text-emerald-600 flex items-center justify-center shrink-0">
+            <CheckCircle2 className="h-5 w-5" />
+          </span>
           <div className="text-sm">
-            <span className="font-medium text-emerald-400">All clear today.</span>{" "}
+            <span className="font-semibold text-emerald-700 dark:text-emerald-400">All clear today.</span>{" "}
             <span className="text-muted-foreground">No paused campaigns, no stale leads, no unpaid payouts, no dormant creators.</span>
           </div>
         </section>
       )}
 
-      {/* 14-day revenue chart + goal progress */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-        <section className="lg:col-span-2 rounded-xl border border-border bg-card p-5 space-y-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-semibold flex items-center gap-1.5">
-                <TrendingUp className="h-4 w-4 text-primary" /> Revenue — last 14 days
-              </h3>
-              <div className="text-[11px] text-muted-foreground mt-0.5">
-                Today's bar highlighted. 7-day avg: {formatMoney(sevenDayAvgRevenue)}.
+      {/* Sales Overview (wide) + Total Subscriber (right column).
+          Mirrors the Nexus dashboard's main analytics row. */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <section className="lg:col-span-2 rounded-2xl border border-border bg-card p-5 space-y-4">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2.5">
+              <span className="h-7 w-7 rounded-lg bg-violet-500/15 text-violet-600 flex items-center justify-center">
+                <TrendingUp className="h-4 w-4" />
+              </span>
+              <div>
+                <h3 className="text-sm font-semibold">Sales Overview</h3>
+                <div className="text-[11px] text-muted-foreground mt-0.5">
+                  Last 14 days · 7-day avg <span className="font-medium text-foreground">{formatMoney(sevenDayAvgRevenue)}</span>
+                </div>
               </div>
             </div>
-            <div className="text-[11px] text-muted-foreground">
-              {dailyRevenue.length > 0 && (
-                <>Total: <span className="font-semibold text-foreground">{formatMoney(dailyRevenue.reduce((s, d) => s + d.amount, 0))}</span></>
-              )}
-            </div>
+            {dailyRevenue.length > 0 && (
+              <div className="flex items-center gap-2">
+                <div className="text-right">
+                  <div className="text-2xl font-bold tabular-nums leading-none">
+                    {formatMoney(dailyRevenue.reduce((s, d) => s + d.amount, 0))}
+                  </div>
+                  <div className="text-[11px] text-muted-foreground mt-1">14-day total</div>
+                </div>
+                <DeltaBadge delta={pctChange(todayTotalRevenue, sevenDayAvgRevenue)} />
+              </div>
+            )}
           </div>
-          <div className="h-44">
+          <div className="h-56">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={dailyRevenue} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
                 <defs>
                   <linearGradient id="dailyHeroGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="rgb(52,211,153)" stopOpacity={0.6} />
-                    <stop offset="100%" stopColor="rgb(52,211,153)" stopOpacity={0.2} />
+                    <stop offset="0%" stopColor="rgb(99 102 241)" stopOpacity={0.45} />
+                    <stop offset="100%" stopColor="rgb(99 102 241)" stopOpacity={0.10} />
+                  </linearGradient>
+                  <linearGradient id="dailyHeroToday" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="rgb(99 102 241)" stopOpacity={1} />
+                    <stop offset="100%" stopColor="rgb(139 92 246)" stopOpacity={0.85} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid stroke="rgba(255,255,255,0.05)" vertical={false} />
+                <CartesianGrid stroke="var(--border)" vertical={false} strokeDasharray="3 3" opacity={0.5} />
                 <XAxis dataKey="date" tick={{ fontSize: 10, fill: "var(--muted-foreground)" }}
                   tickFormatter={(v) => format(parseISO(v as string), "MMM d")}
                   axisLine={false} tickLine={false} interval={1} />
                 <YAxis tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} axisLine={false} tickLine={false}
                   tickFormatter={(v) => v >= 1000 ? `$${(v / 1000).toFixed(0)}k` : `$${v}`} width={40} />
                 <Tooltip
-                  contentStyle={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 11 }}
+                  contentStyle={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, fontSize: 11, boxShadow: "0 8px 24px -8px rgba(0,0,0,0.10)" }}
                   labelFormatter={(v) => format(parseISO(v as string), "EEEE, MMM d")}
                   formatter={(v: number) => [formatMoney(v), "Revenue"]}
                 />
-                <Bar dataKey="amount" radius={[4, 4, 0, 0]}>
+                <Bar dataKey="amount" radius={[6, 6, 0, 0]}>
                   {dailyRevenue.map((d) => (
-                    <Cell key={d.date} fill={d.date === todayStr ? "rgb(232,120,82)" : "url(#dailyHeroGrad)"} />
+                    <Cell key={d.date} fill={d.date === todayStr ? "url(#dailyHeroToday)" : "url(#dailyHeroGrad)"} />
                   ))}
                 </Bar>
               </BarChart>
@@ -671,56 +741,88 @@ export function DailyHero() {
           </div>
         </section>
 
-        {/* Monthly goal progress */}
-        <section className="rounded-xl border border-border bg-card p-5 space-y-4 flex flex-col">
-          <div>
-            <h3 className="text-sm font-semibold flex items-center gap-1.5">
-              <Target className="h-4 w-4 text-primary" /> Monthly goal
-            </h3>
-            <div className="text-[11px] text-muted-foreground mt-0.5">
-              {format(today, "MMMM yyyy")}
+        {/* Total Subscriber — Nexus's "weekly bar chart" pattern.
+            Highlights today's bar with a violet→indigo gradient,
+            other days fade into the muted background. */}
+        <section className="rounded-2xl border border-border bg-card p-5 space-y-3 flex flex-col">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5">
+              <span className="h-7 w-7 rounded-lg bg-cyan-500/15 text-cyan-600 flex items-center justify-center">
+                <ArrowUpRight className="h-4 w-4" />
+              </span>
+              <h3 className="text-sm font-semibold">Total Subscriber</h3>
             </div>
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+              Weekly
+            </span>
           </div>
-          {goalAmount > 0 ? (
-            <div className="space-y-3 flex-1 flex flex-col justify-center">
-              <div className="text-2xl font-bold tabular-nums">
-                {formatMoney(monthlyRevenue)}
-                <span className="text-sm text-muted-foreground font-normal"> / {formatMoney(goalAmount)}</span>
-              </div>
-              <div className="space-y-1.5">
-                <div className="h-2 rounded-full bg-secondary overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all duration-500 ${goalPct >= 100 ? "bg-emerald-500" : goalPct >= 75 ? "bg-primary" : goalPct >= 50 ? "bg-amber-500" : "bg-rose-500"}`}
-                    style={{ width: `${goalPct}%` }}
-                  />
-                </div>
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className={`font-semibold ${goalPct >= 100 ? "text-emerald-400" : goalPct >= 75 ? "text-primary" : "text-muted-foreground"}`}>
-                    {goalPct.toFixed(1)}%
-                  </span>
-                  <span className="text-muted-foreground">
-                    {goalPct < 100 ? `${formatMoney(goalAmount - monthlyRevenue)} to go` : "Goal hit"}
-                  </span>
-                </div>
-              </div>
-              <PaceMeter monthlyRevenue={monthlyRevenue} goalAmount={goalAmount} today={today} monthEnd={parseISO(monthEnd)} monthStart={parseISO(monthStart)} />
-            </div>
-          ) : (
-            <div className="text-xs text-muted-foreground italic flex-1 flex items-center justify-center text-center px-4">
-              Set a monthly goal in any creator's Plan tab → Goals to track progress here.
-            </div>
-          )}
+          <div className="flex items-baseline gap-2.5 flex-wrap">
+            <span className="text-3xl font-bold tabular-nums leading-none">
+              {subs7d.reduce((s, d) => s + d.count, 0).toLocaleString()}
+            </span>
+            <DeltaBadge delta={pctChange(todaySubs, yesterdaySubs)} />
+          </div>
+          <div className="text-[11px] text-muted-foreground">
+            +{todaySubs.toLocaleString()} new today · last 7 days
+          </div>
+          <div className="h-44 flex-1">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={subs7d} margin={{ top: 16, right: 0, left: -22, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="subsToday" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="rgb(99 102 241)" stopOpacity={1} />
+                    <stop offset="100%" stopColor="rgb(139 92 246)" stopOpacity={0.85} />
+                  </linearGradient>
+                </defs>
+                <XAxis
+                  dataKey="date"
+                  tick={{ fontSize: 10, fill: "var(--muted-foreground)" }}
+                  tickFormatter={(v) => format(parseISO(v as string), "EEE")}
+                  axisLine={false} tickLine={false}
+                />
+                <YAxis hide />
+                <Tooltip
+                  contentStyle={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, fontSize: 11, boxShadow: "0 8px 24px -8px rgba(0,0,0,0.10)" }}
+                  labelFormatter={(v) => format(parseISO(v as string), "EEEE, MMM d")}
+                  formatter={(v: number) => [v.toLocaleString(), "Subscribers"]}
+                />
+                <Bar dataKey="count" radius={[6, 6, 0, 0]} maxBarSize={26}>
+                  {subs7d.map((d) => (
+                    <Cell key={d.date} fill={d.date === todayStr ? "url(#subsToday)" : "var(--muted)"} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </section>
       </div>
 
+      {/* Bottom row: Sales Distribution donut + Top Performers list.
+          Direct port of Nexus's "Sales Distribution" + "List of Integration"
+          row, retargeted to OFM data (per-creator revenue split). */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <SalesDistributionCard
+          slices={salesDistribution.slices}
+          total={salesDistribution.total}
+          windowLabel={performerWindow === "today" ? "Today" : "Yesterday"}
+        />
+        <TopPerformersCard
+          rows={topPerformers}
+          windowLabel={performerWindow === "today" ? "Today" : "Yesterday"}
+        />
+      </div>
+
       {/* Top movers */}
-      <section className="rounded-xl border border-border bg-card p-5 space-y-4">
-        <div>
-          <h3 className="text-sm font-semibold flex items-center gap-1.5">
-            <Sparkles className="h-4 w-4 text-primary" /> Top movers
-          </h3>
-          <div className="text-[11px] text-muted-foreground mt-0.5">
-            Today vs each creator's 7-day average.
+      <section className="rounded-2xl border border-border bg-card p-5 space-y-4">
+        <div className="flex items-center gap-2.5">
+          <span className="h-7 w-7 rounded-lg bg-primary/12 text-primary flex items-center justify-center">
+            <Sparkles className="h-4 w-4" />
+          </span>
+          <div>
+            <h3 className="text-sm font-semibold">Top movers</h3>
+            <div className="text-[11px] text-muted-foreground mt-0.5">
+              Today vs each creator's 7-day average.
+            </div>
           </div>
         </div>
         {movers.ups.length === 0 && movers.downs.length === 0 ? (
@@ -731,7 +833,7 @@ export function DailyHero() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Up movers */}
             <div className="space-y-2">
-              <div className="text-[10px] uppercase tracking-wider text-emerald-400 font-semibold flex items-center gap-1">
+              <div className="text-[10px] uppercase tracking-[0.14em] text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
                 <ArrowUpRight className="h-3 w-3" /> Trending up
               </div>
               {movers.ups.length === 0 ? (
@@ -742,11 +844,11 @@ export function DailyHero() {
             </div>
             {/* Down movers */}
             <div className="space-y-2">
-              <div className="text-[10px] uppercase tracking-wider text-rose-400 font-semibold flex items-center gap-1">
+              <div className="text-[10px] uppercase tracking-[0.14em] text-rose-600 dark:text-rose-400 font-bold flex items-center gap-1">
                 <ArrowDownRight className="h-3 w-3" /> Trending down
               </div>
               {movers.downs.length === 0 ? (
-                <div className="text-xs text-emerald-400/80 italic">No downturns — clean day so far.</div>
+                <div className="text-xs text-emerald-600/80 dark:text-emerald-400/80 italic">No downturns — clean day so far.</div>
               ) : (
                 movers.downs.map((m) => <MoverRow key={m.id} mover={m} direction="down" />)
               )}
@@ -760,16 +862,22 @@ export function DailyHero() {
 
 // ── Sub-components ───────────────────────────────────────────────────────
 
-const TILE_TONES: Record<string, { ring: string; bg: string; text: string }> = {
-  emerald: { ring: "border-emerald-500/20", bg: "from-emerald-500/10 to-emerald-500/0", text: "text-emerald-400" },
-  violet:  { ring: "border-violet-500/20",  bg: "from-violet-500/10 to-violet-500/0",   text: "text-violet-400" },
-  cyan:    { ring: "border-cyan-500/20",    bg: "from-cyan-500/10 to-cyan-500/0",       text: "text-cyan-400" },
-  amber:   { ring: "border-amber-500/20",   bg: "from-amber-500/10 to-amber-500/0",     text: "text-amber-400" },
-  rose:    { ring: "border-rose-500/20",    bg: "from-rose-500/10 to-rose-500/0",       text: "text-rose-400" },
+// Tone palette maps each tile to a soft icon-chip color. Tiles themselves
+// stay pure white (Nexus aesthetic) — the tone is just for the icon chip
+// so the user gets a faint hint of category without busy gradient backdrops.
+const TILE_TONES: Record<string, { chipBg: string; chipFg: string; sparkRgb: string }> = {
+  emerald: { chipBg: "bg-emerald-500/12",  chipFg: "text-emerald-600",  sparkRgb: "16 185 129" },
+  violet:  { chipBg: "bg-violet-500/12",   chipFg: "text-violet-600",   sparkRgb: "139 92 246" },
+  cyan:    { chipBg: "bg-cyan-500/12",     chipFg: "text-cyan-600",     sparkRgb: "8 145 178" },
+  amber:   { chipBg: "bg-amber-500/15",    chipFg: "text-amber-600",    sparkRgb: "245 158 11" },
+  rose:    { chipBg: "bg-rose-500/12",     chipFg: "text-rose-600",     sparkRgb: "244 63 94" },
 };
 
+/** Clean white KPI tile — Nexus dashboard pattern.
+ *  Icon chip + label on one line, info (i) right; big number; pill % delta;
+ *  optional inline sparkline at the bottom. Hovering lifts a soft shadow. */
 function HeroTile({
-  tone, icon, label, value, delta, deltaSubtitle, sparkline, sparkColor, loading,
+  tone, icon, label, value, delta, deltaSubtitle, sparkline, loading,
 }: {
   tone: keyof typeof TILE_TONES;
   icon: React.ReactNode;
@@ -778,29 +886,50 @@ function HeroTile({
   delta: number | null;
   deltaSubtitle: string;
   sparkline: { x: string; y: number }[];
-  sparkColor: string;
+  sparkColor?: string;          // unused now; kept in API to avoid breaking callers
   loading: boolean;
 }) {
   const t = TILE_TONES[tone];
   return (
-    <div className={`relative rounded-xl border ${t.ring} bg-gradient-to-br ${t.bg} p-4 overflow-hidden`}>
+    <div className="group relative rounded-2xl border border-border bg-card p-5 transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-[0_10px_30px_-12px_rgba(0,0,0,0.10)]">
+      {/* Top row: icon chip + label, info hint right */}
       <div className="flex items-center justify-between">
-        <div className={`h-8 w-8 rounded-lg bg-secondary flex items-center justify-center ${t.text}`}>{icon}</div>
-        <div className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">{label}</div>
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className={`h-7 w-7 rounded-lg flex items-center justify-center shrink-0 ${t.chipBg} ${t.chipFg}`}>
+            {icon}
+          </span>
+          <span className="text-sm font-medium text-foreground/90 truncate">{label}</span>
+        </div>
+        <Info className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
       </div>
-      <div className="mt-3 text-3xl font-bold tabular-nums">
-        {loading ? <span className="inline-block h-7 w-24 rounded bg-secondary/50 animate-pulse" /> : value}
-      </div>
-      <div className="mt-2 flex items-center gap-1.5">
+
+      {/* Number + delta pill on the same baseline */}
+      <div className="mt-4 flex items-end gap-2.5 flex-wrap">
+        <span className="text-3xl font-bold tabular-nums leading-none">
+          {loading ? <span className="inline-block h-7 w-24 rounded bg-muted animate-pulse" /> : value}
+        </span>
         <DeltaBadge delta={delta} />
-        <span className="text-[10px] text-muted-foreground truncate">{deltaSubtitle}</span>
       </div>
-      {/* Inline sparkline — runs along the bottom of the tile */}
+      <div className="mt-1.5 text-[11px] text-muted-foreground truncate">{deltaSubtitle}</div>
+
+      {/* Sparkline — sits at the bottom, low contrast */}
       {sparkline.length > 0 && (
-        <div className="absolute bottom-0 left-0 right-0 h-10 opacity-60 pointer-events-none">
+        <div className="mt-3 -mx-2 h-10 pointer-events-none">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={sparkline} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-              <Area type="monotone" dataKey="y" stroke={sparkColor} strokeWidth={1.5} fill={sparkColor} fillOpacity={0.18} />
+            <AreaChart data={sparkline} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id={`spark-${tone}`} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={`rgb(${t.sparkRgb})`} stopOpacity={0.35} />
+                  <stop offset="100%" stopColor={`rgb(${t.sparkRgb})`} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <Area
+                type="monotone"
+                dataKey="y"
+                stroke={`rgb(${t.sparkRgb})`}
+                strokeWidth={1.75}
+                fill={`url(#spark-${tone})`}
+              />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -809,44 +938,47 @@ function HeroTile({
   );
 }
 
+/** Pastel pill for percentage change — Nexus pattern: bg tint + diagonal
+ *  arrow + percent, no leading sign (the arrow conveys direction). */
 function DeltaBadge({ delta }: { delta: number | null }) {
   if (delta === null) {
     return (
-      <span className="text-[10px] px-1.5 py-0.5 rounded bg-secondary text-muted-foreground inline-flex items-center gap-0.5">
+      <span className="text-[10px] px-2 py-1 rounded-full bg-muted text-muted-foreground inline-flex items-center gap-1 font-semibold">
         <Minus className="h-2.5 w-2.5" /> —
       </span>
     );
   }
   const positive = delta > 0;
   const negative = delta < 0;
-  const cls = positive ? "bg-emerald-500/15 text-emerald-400"
-    : negative ? "bg-rose-500/15 text-rose-400"
-    : "bg-secondary text-muted-foreground";
-  const Icon = positive ? TrendingUp : negative ? TrendingDown : Minus;
+  const cls = positive
+    ? "bg-emerald-500/12 text-emerald-600"
+    : negative
+      ? "bg-rose-500/12 text-rose-600"
+      : "bg-muted text-muted-foreground";
+  const Arrow = positive ? ArrowUpRight : negative ? ArrowDownRight : Minus;
   return (
-    <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium inline-flex items-center gap-0.5 ${cls}`}>
-      <Icon className="h-2.5 w-2.5" />
-      {positive && "+"}
-      {delta.toFixed(1)}%
+    <span className={`text-[10px] px-2 py-1 rounded-full font-semibold inline-flex items-center gap-0.5 tabular-nums ${cls}`}>
+      {Math.abs(delta).toFixed(1)}%
+      <Arrow className="h-2.5 w-2.5" />
     </span>
   );
 }
 
 function AlertRow({ alert: a }: { alert: Alert }) {
   const tone = a.level === "danger"
-    ? "border-rose-500/20 bg-rose-500/5 text-rose-400"
+    ? "border-rose-500/25 bg-rose-500/5 text-rose-600 dark:text-rose-400"
     : a.level === "warn"
-    ? "border-amber-500/20 bg-amber-500/5 text-amber-400"
-    : "border-border bg-secondary/30 text-muted-foreground";
+    ? "border-amber-500/30 bg-amber-500/5 text-amber-600 dark:text-amber-400"
+    : "border-border bg-muted/40 text-muted-foreground";
   return (
-    <div className={`flex items-center gap-3 rounded-lg border ${tone} px-3 py-2.5`}>
+    <div className={`flex items-center gap-3 rounded-xl border ${tone} px-3 py-2.5 transition-colors hover:bg-secondary/40`}>
       <div className="shrink-0">{a.icon}</div>
       <div className="min-w-0 flex-1">
         <div className="text-sm font-medium text-foreground">{a.label}</div>
         {a.detail && <div className="text-[11px] text-muted-foreground truncate">{a.detail}</div>}
       </div>
       {a.cta && (
-        <a href={a.cta.href} className="text-[11px] font-medium hover:underline inline-flex items-center gap-0.5 shrink-0">
+        <a href={a.cta.href} className="text-[11px] font-semibold hover:underline inline-flex items-center gap-0.5 shrink-0">
           {a.cta.label} <ChevronRight className="h-3 w-3" />
         </a>
       )}
@@ -859,19 +991,29 @@ function MoverRow({ mover, direction }: { mover: { id: string; name: string; tod
   return (
     <a
       href={`/creators/${mover.id}`}
-      className={`flex items-center gap-3 rounded-lg border p-2.5 transition-colors hover:bg-secondary/30 ${positive ? "border-emerald-500/20 bg-emerald-500/5" : "border-rose-500/20 bg-rose-500/5"}`}
+      className={`flex items-center gap-3 rounded-xl border p-3 transition-all duration-150 ease-out hover:-translate-y-0.5 hover:shadow-sm ${
+        positive
+          ? "border-emerald-500/25 bg-emerald-500/5 hover:bg-emerald-500/10"
+          : "border-rose-500/25 bg-rose-500/5 hover:bg-rose-500/10"
+      }`}
     >
-      <div className={`h-8 w-8 rounded-full flex items-center justify-center font-semibold text-xs ${positive ? "bg-emerald-500/20 text-emerald-400" : "bg-rose-500/20 text-rose-400"}`}>
+      <div className={`h-9 w-9 rounded-full flex items-center justify-center font-semibold text-xs shrink-0 ${
+        positive
+          ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-400"
+          : "bg-rose-500/20 text-rose-700 dark:text-rose-400"
+      }`}>
         {mover.name.slice(0, 2).toUpperCase()}
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium truncate">{mover.name}</div>
+        <div className="text-sm font-semibold truncate">{mover.name}</div>
         <div className="text-[10px] text-muted-foreground">
           today {formatMoney(mover.today)} · avg {formatMoney(mover.avg)}
         </div>
       </div>
       <div className="text-right">
-        <div className={`text-sm font-bold tabular-nums ${positive ? "text-emerald-400" : "text-rose-400"}`}>
+        <div className={`text-sm font-bold tabular-nums ${
+          positive ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400"
+        }`}>
           {positive ? "+" : ""}{formatMoney(mover.delta)}
         </div>
         {mover.deltaPct !== null && (
@@ -881,6 +1023,167 @@ function MoverRow({ mover, direction }: { mover: { id: string; name: string; tod
         )}
       </div>
     </a>
+  );
+}
+
+/** Donut + legend matching Nexus's "Sales Distribution" card.
+ *  Top 4 creators + "Others" bucket; center label shows the total. */
+const DONUT_PALETTE = [
+  "rgb(99 102 241)",   // indigo-500
+  "rgb(139 92 246)",   // violet-500
+  "rgb(20 184 166)",   // teal-500
+  "rgb(56 189 248)",   // sky-400
+  "rgb(244 114 182)",  // pink-400 (others)
+];
+
+function SalesDistributionCard({
+  slices, total, windowLabel,
+}: {
+  slices: { id: string; name: string; amount: number }[];
+  total: number;
+  windowLabel: string;
+}) {
+  // Recharts gives every slice the same gap by default; we want a thin
+  // divider so the donut reads as a clean ring on a white card.
+  const data = slices.map((s, i) => ({ ...s, color: DONUT_PALETTE[i % DONUT_PALETTE.length] }));
+  return (
+    <section className="rounded-2xl border border-border bg-card p-5 space-y-4">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2.5">
+          <span className="h-7 w-7 rounded-lg bg-violet-500/15 text-violet-600 flex items-center justify-center">
+            <Wallet className="h-4 w-4" />
+          </span>
+          <h3 className="text-sm font-semibold">Sales Distribution</h3>
+        </div>
+        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+          {windowLabel}
+        </span>
+      </div>
+
+      {data.length === 0 ? (
+        <div className="text-xs text-muted-foreground italic py-12 text-center border border-dashed border-border rounded-xl">
+          No revenue logged for {windowLabel.toLowerCase()} yet.
+        </div>
+      ) : (
+        <div className="flex items-center gap-5 flex-wrap">
+          {/* Donut */}
+          <div className="relative h-44 w-44 shrink-0">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={data}
+                  dataKey="amount"
+                  nameKey="name"
+                  innerRadius={56}
+                  outerRadius={84}
+                  paddingAngle={2}
+                  stroke="var(--card)"
+                  strokeWidth={3}
+                >
+                  {data.map((s) => (
+                    <Cell key={s.id} fill={s.color} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  contentStyle={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, fontSize: 11, boxShadow: "0 8px 24px -8px rgba(0,0,0,0.10)" }}
+                  formatter={(v: number, name: string) => [formatMoney(v), name]}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+            {/* Center label */}
+            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Total</div>
+              <div className="text-lg font-bold tabular-nums">{formatMoney(total)}</div>
+            </div>
+          </div>
+
+          {/* Legend list */}
+          <div className="flex-1 min-w-0 space-y-2">
+            {data.map((s) => {
+              const pct = total > 0 ? (s.amount / total) * 100 : 0;
+              return (
+                <div key={s.id} className="flex items-center gap-3 text-xs">
+                  <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
+                  <span className="flex-1 truncate font-medium">{s.name}</span>
+                  <span className="font-semibold tabular-nums">{formatMoney(s.amount)}</span>
+                  <span className="w-10 text-right text-muted-foreground tabular-nums">{pct.toFixed(0)}%</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** Leaderboard table — Nexus's "List of Integration" recast as the agency
+ *  top performers. Each row gets an avatar bubble + a thin progress bar
+ *  to make the relative scale obvious without reading the numbers. */
+function TopPerformersCard({
+  rows, windowLabel,
+}: {
+  rows: { creator_id: string; name: string; amount: number }[];
+  windowLabel: string;
+}) {
+  const max = rows.reduce((m, r) => Math.max(m, r.amount), 0);
+  return (
+    <section className="rounded-2xl border border-border bg-card p-5 space-y-4">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2.5">
+          <span className="h-7 w-7 rounded-lg bg-emerald-500/15 text-emerald-600 flex items-center justify-center">
+            <TrendingUp className="h-4 w-4" />
+          </span>
+          <h3 className="text-sm font-semibold">Top Performers</h3>
+        </div>
+        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+          {windowLabel}
+        </span>
+      </div>
+
+      {rows.length === 0 ? (
+        <div className="text-xs text-muted-foreground italic py-12 text-center border border-dashed border-border rounded-xl">
+          No earners {windowLabel.toLowerCase()} yet.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {/* Column header */}
+          <div className="grid grid-cols-[auto_1fr_minmax(120px,160px)_auto] items-center gap-3 px-1 pb-1 text-[10px] uppercase tracking-wider text-muted-foreground/70 font-bold">
+            <span className="w-9" />
+            <span>Creator</span>
+            <span>Share</span>
+            <span className="text-right">Revenue</span>
+          </div>
+          {rows.map((r, i) => {
+            const pct = max > 0 ? (r.amount / max) * 100 : 0;
+            return (
+              <a
+                key={r.creator_id}
+                href={`/creators/${r.creator_id}`}
+                className="grid grid-cols-[auto_1fr_minmax(120px,160px)_auto] items-center gap-3 rounded-xl border border-border bg-background/50 p-3 transition-all hover:-translate-y-0.5 hover:bg-secondary/40 hover:shadow-sm"
+              >
+                <div className="h-9 w-9 rounded-full bg-gradient-to-br from-violet-500 to-indigo-500 text-white flex items-center justify-center font-semibold text-xs shadow-sm">
+                  {r.name.slice(0, 2).toUpperCase()}
+                </div>
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold truncate">{r.name}</div>
+                  <div className="text-[10px] text-muted-foreground">#{i + 1} · top earner</div>
+                </div>
+                <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-violet-500 to-indigo-500 transition-all duration-500"
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                <div className="text-sm font-bold tabular-nums text-right">
+                  {formatMoney(r.amount)}
+                </div>
+              </a>
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
 }
 

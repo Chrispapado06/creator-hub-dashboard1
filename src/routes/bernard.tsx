@@ -24,6 +24,7 @@ import {
   type AgenticChatMessage,
 } from "@/lib/bernard";
 import { TOOLS, getTool, toolsForAnthropic, type Tool } from "@/lib/bernard-tools";
+import { detectBrain, buildBrainContext } from "@/lib/brains";
 import { logAudit } from "@/lib/audit";
 import { Wrench, ShieldCheck, ShieldAlert, Loader2 } from "lucide-react";
 
@@ -475,6 +476,21 @@ function BernardPage() {
         }
       }
 
+      // RAG: pull relevant chunks from Bernard's brains based on the user's
+      // message, splice them into the system prompt. Soft-fail — if no brain
+      // matches the query, or no chunks come back, Bernard runs as before.
+      let systemForTurn = BERNARD_AGENTIC_SYSTEM;
+      try {
+        const brainSlug = detectBrain(userMessage);
+        if (brainSlug) {
+          const brainContext = await buildBrainContext(brainSlug, userMessage, 5);
+          if (brainContext) systemForTurn = `${BERNARD_AGENTIC_SYSTEM}\n\n${brainContext}`;
+        }
+      } catch (err) {
+        // Don't block the conversation if RAG fails — log and carry on.
+        console.warn("[bernard] brain lookup failed:", err);
+      }
+
       // Agentic loop — keeps calling tools until Claude says "end_turn"
       const tools = toolsForAnthropic();
       let safety = 6; // Max round-trips per user turn (covers complex multi-tool flows)
@@ -504,7 +520,7 @@ function BernardPage() {
         for await (const evt of streamClaudeAgentic(apiKey, history, {
           signal: abortRef.current.signal,
           tools,
-          system: BERNARD_AGENTIC_SYSTEM,
+          system: systemForTurn,
         })) {
           if (evt.type === "text_delta") {
             appendAssistantText(convo.id, evt.text);

@@ -86,6 +86,40 @@ export async function ensureCurrentChatUser(): Promise<ChatUser | null> {
       .eq("id", session.chatter_id)
       .maybeSingle();
     if (data) return { id: data.id, name: data.name, role: data.role, is_admin: false };
+    // Their chatter row was deleted (paused → removed by an admin) but
+    // their session still references the old id. Fall back to looking up
+    // by name instead of stumbling into the admin branch below — that
+    // would create a NEW admin chatter row for the staff user, which is
+    // wrong (and silently breaks all chat permissions for them).
+    if (session.type === "staff") {
+      const { data: byName } = await supabase
+        .from("chatters")
+        .select("id, name, role")
+        .ilike("name", session.username)
+        .order("created_at", { ascending: true })
+        .limit(1);
+      const recovered = byName?.[0];
+      if (recovered) {
+        // Patch the session and access_codes so the next page load uses
+        // the correct id without going through this recovery path.
+        try {
+          const raw = localStorage.getItem("agency_session");
+          if (raw) {
+            const obj = JSON.parse(raw);
+            obj.chatter_id = recovered.id;
+            localStorage.setItem("agency_session", JSON.stringify(obj));
+          }
+        } catch { /* ignore */ }
+        await supabase
+          .from("access_codes")
+          .update({ chatter_id: recovered.id })
+          .eq("username", session.username);
+        return { id: recovered.id, name: recovered.name, role: recovered.role, is_admin: false };
+      }
+      // No chatter row for this staff user at all — fail closed instead
+      // of accidentally creating an admin row.
+      return null;
+    }
   }
 
   // Admin path: find an existing chatter by name (case-insensitive) so

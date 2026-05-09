@@ -1,7 +1,13 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { DollarSign, TrendingUp, Users, Plus, Trash2, RefreshCw, Wallet, Megaphone, Layers, Link2 } from "lucide-react";
+import {
+  DollarSign, TrendingUp, Users, Plus, Trash2, RefreshCw, Wallet,
+  Megaphone, Layers, Link2, Receipt, Calendar, Filter as FilterIcon,
+  Download,
+} from "lucide-react";
+import { PieChart, Pie, Cell as PieCell, ResponsiveContainer as PieRC, Tooltip as PieTooltip } from "recharts";
+import { StatTile, DeltaBadge } from "@/components/StatTile";
 import { SiOnlyfans } from "react-icons/si";
 import { OfDataInspector } from "@/components/OfDataInspector";
 import { runSyncJob } from "@/lib/sync";
@@ -703,257 +709,223 @@ function RevenuePage() {
   const linkLabel = (id: string | null) =>
     id ? (trackingLinks.find((l) => l.id === id)?.label ?? "—") : "—";
 
+  // ── Nexus-style KPIs for the active range ─────────────────────────────
+  // Three tiles match the dashboard contract: Revenue (gross), Net
+  // Revenue (after ad spend), Expenses (ad spend total). Sparklines pull
+  // from the existing chartData series so the bottom-of-tile mini-graph
+  // tracks the same shape as the big chart below.
+  const grossRevenue = overview.organic + overview.internal + overview.ads + overview.ofDirect;
+  const netRevenue = overview.total;          // = gross − adsSpend (already rolled up)
+  const totalExpenses = overview.adsSpend;
+  const headlineValue = (() => {
+    switch (metric) {
+      case "total": return overview.total;
+      case "net":   return overview.total - overview.adsSpend;
+      case "of":    return overview.ofDirect;
+      case "ads":   return overview.adsNet;
+    }
+  })();
+  // Sparkline data from the same chart series — turn `chartData` into the
+  // {x,y} shape StatTile expects.
+  const revenueSpark = chartData.map((d) => ({ x: d.date, y: d.value }));
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <Toaster />
 
-      {/* ── Modern hero ───────────────────────────────────────────────────
-          Big gradient panel with the live grand total front-and-centre,
-          plus the per-bucket breakdown as horizontal pills underneath.
-          Sync controls live here so admins don't have to bounce between
-          pages to refresh the numbers. */}
-      <div className="relative overflow-hidden rounded-3xl border border-border bg-gradient-to-br from-card via-card/80 to-primary/5 p-6 sm:p-8">
-        {/* Decorative gradient blobs */}
-        <div aria-hidden className="absolute -top-24 -right-24 h-72 w-72 rounded-full bg-primary/15 blur-3xl" />
-        <div aria-hidden className="absolute -bottom-24 -left-24 h-72 w-72 rounded-full bg-blue-500/10 blur-3xl" />
-
-        <div className="relative flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold">
-              <DollarSign className="h-3.5 w-3.5 text-primary" />
-              {metric === "total" ? "Total revenue" :
-                metric === "net" ? "Net earnings" :
-                metric === "of" ? "OnlyFans Direct" : "Ads (net)"}
-              <span className="text-muted-foreground/70 normal-case font-medium">· {dateRange.label.toLowerCase()}</span>
-            </div>
-            <div className="mt-2 flex items-baseline gap-2 flex-wrap">
-              <span className="text-4xl sm:text-5xl font-bold tracking-tight bg-gradient-to-r from-foreground to-primary/70 bg-clip-text text-transparent">
-                ${(() => {
-                  // Map the metric selector to the right value from the
-                  // already-computed overview rollup. Net earnings =
-                  // total revenue − ad spend (matches the Financials
-                  // page's "agency revenue, net of ads" framing).
-                  switch (metric) {
-                    case "total": return overview.total;
-                    case "net":   return overview.total - overview.adsSpend;
-                    case "of":    return overview.ofDirect;
-                    case "ads":   return overview.adsNet;
-                  }
-                })().toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-              </span>
-              {overview.adsSpend > 0 && metric !== "of" && (
-                <span className="text-xs text-muted-foreground">
-                  {metric === "net"
-                    ? `Total $${overview.total.toLocaleString("en-US", { maximumFractionDigits: 0 })}, less $${overview.adsSpend.toLocaleString("en-US", { maximumFractionDigits: 0 })} ads`
-                    : `Net of $${overview.adsSpend.toLocaleString("en-US", { maximumFractionDigits: 0 })} ad spend`}
-                </span>
-              )}
-            </div>
-            {/* Bucket pills */}
-            <div className="mt-4 flex flex-wrap gap-2">
-              <BucketPill icon={<SiOnlyfans className="h-3 w-3" />} label="OnlyFans Direct" value={overview.ofDirect} tone="of" />
-              <BucketPill icon={<Layers className="h-3 w-3" />} label="Organic" value={overview.organic} tone="organic" />
-              <BucketPill icon={<Wallet className="h-3 w-3" />} label="Internal" value={overview.internal} tone="internal" />
-              <BucketPill icon={<Megaphone className="h-3 w-3" />} label="Ads" value={overview.ads} tone="ads" />
-              {overview.ofTrackingTotal > 0 && (
-                <BucketPill icon={<Link2 className="h-3 w-3" />} label="OF tracking links" value={overview.ofTrackingTotal} tone="of-track" />
-              )}
-            </div>
-            {/* Metric + range picker — Infloww-style row.
-                Metric dropdown picks which headline number drives the
-                hero (total revenue / net earnings / OF direct / ads net).
-                Range pills are Yesterday / Today / This week / This
-                month / Custom and control the date window for both
-                the hero number and the per-creator breakdown. */}
-            <div className="mt-4 flex items-center gap-2 flex-wrap">
-              {/* Metric dropdown — uses the shadcn Select primitive
-                  so it matches the rest of the app's chrome (no
-                  native browser styling, proper hover/focus rings,
-                  Lucide chevron). Sits to the left of the range pills. */}
-              <Select value={metric} onValueChange={(v) => setMetric(v as Metric)}>
-                <SelectTrigger className="h-8 w-[180px] text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="total">Total revenue</SelectItem>
-                  <SelectItem value="net">Net earnings</SelectItem>
-                  <SelectItem value="of">OnlyFans Direct</SelectItem>
-                  <SelectItem value="ads">Ads (net)</SelectItem>
-                </SelectContent>
-              </Select>
-              {/* Range pills — Infloww layout */}
-              <div className="inline-flex rounded-md border border-border bg-secondary/30 p-0.5">
-                {([
-                  { v: "yesterday", label: "Yesterday" },
-                  { v: "today",     label: "Today" },
-                  { v: "week",      label: "This week" },
-                  { v: "month",     label: "This month" },
-                ] as const).map((p) => (
-                  <button
-                    key={p.v}
-                    onClick={() => setRangePreset(p.v)}
-                    className={`px-3 py-1 rounded text-xs transition-colors ${
-                      rangePreset === p.v
-                        ? "bg-background text-primary font-semibold shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    {p.label}
-                  </button>
-                ))}
-              </div>
-              {/* Custom range — separate so the pill row stays tight */}
+      {/* ── Page header — Nexus pattern: title left, action chips right.
+          The previous big gradient hero was replaced with a calmer header
+          + three KPI tiles below; the headline value still respects the
+          metric dropdown so the user can flip between Total / Net / OF /
+          Ads without losing the at-a-glance reading. */}
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="min-w-0">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Revenue</h1>
+          <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+            <Calendar className="h-3.5 w-3.5" />
+            <span>{dateRange.label}</span>
+            <span className="text-muted-foreground/40">·</span>
+            <span className="inline-flex items-center gap-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              Live data
+            </span>
+            {ofLastSync && (
+              <>
+                <span className="text-muted-foreground/40">·</span>
+                <span>OF synced {format(new Date(ofLastSync), "MMM d 'at' h:mm a")}</span>
+              </>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Range pills — Infloww-style row */}
+          <div className="inline-flex rounded-full border border-border bg-card p-0.5">
+            {([
+              { v: "yesterday", label: "Yesterday" },
+              { v: "today",     label: "Today" },
+              { v: "week",      label: "Week" },
+              { v: "month",     label: "Month" },
+            ] as const).map((p) => (
               <button
-                onClick={() => setRangePreset("custom")}
-                className={`px-3 py-1 rounded-md text-xs border transition-colors ${
-                  rangePreset === "custom"
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "border-border bg-secondary/30 hover:bg-secondary/60"
+                key={p.v}
+                onClick={() => setRangePreset(p.v)}
+                className={`px-3 py-1 rounded-full text-xs transition-all ${
+                  rangePreset === p.v
+                    ? "bg-primary text-primary-foreground shadow-sm font-semibold"
+                    : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                Custom
+                {p.label}
               </button>
-              {rangePreset === "custom" && (
-                <>
-                  <input
-                    type="date"
-                    value={customFrom}
-                    onChange={(e) => setCustomFrom(e.target.value)}
-                    className="text-xs border border-border bg-background rounded-md px-2 py-1 h-7"
-                  />
-                  <span className="text-xs text-muted-foreground">→</span>
-                  <input
-                    type="date"
-                    value={customTo}
-                    onChange={(e) => setCustomTo(e.target.value)}
-                    className="text-xs border border-border bg-background rounded-md px-2 py-1 h-7"
-                  />
-                </>
-              )}
-              {loadingRangeOf && (
-                <span className="text-[10px] text-muted-foreground inline-flex items-center gap-1 ml-2">
-                  <RefreshCw className="h-2.5 w-2.5 animate-spin" /> Updating…
-                </span>
-              )}
-            </div>
-            {/* Sync status strip */}
-            <div className="mt-2 text-[11px] text-muted-foreground flex items-center gap-3 flex-wrap">
-              {ofLastSync ? (
-                <span>OF synced {format(new Date(ofLastSync), "MMM d 'at' h:mm a")} · {ofStats.length} creator{ofStats.length === 1 ? "" : "s"} · showing <span className="text-foreground font-medium">{dateRange.label.toLowerCase()}</span></span>
-              ) : (
-                <span className="text-amber-400">⚠ No OF data synced yet — hit "Sync OnlyFans" →</span>
-              )}
-            </div>
+            ))}
+            <button
+              onClick={() => setRangePreset("custom")}
+              className={`px-3 py-1 rounded-full text-xs transition-all ${
+                rangePreset === "custom"
+                  ? "bg-primary text-primary-foreground shadow-sm font-semibold"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Custom
+            </button>
           </div>
+          {/* Metric dropdown */}
+          <Select value={metric} onValueChange={(v) => setMetric(v as Metric)}>
+            <SelectTrigger className="h-8 w-[160px] text-xs rounded-full border-border bg-card">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="total">Total revenue</SelectItem>
+              <SelectItem value="net">Net earnings</SelectItem>
+              <SelectItem value="of">OnlyFans Direct</SelectItem>
+              <SelectItem value="ads">Ads (net)</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onSyncOf}
+            disabled={syncingOf}
+            className="rounded-full border-border bg-card hover:bg-secondary"
+          >
+            <SiOnlyfans className={`h-3.5 w-3.5 mr-1.5 ${syncingOf ? "animate-spin" : ""}`} style={{ color: "#00AFF0" }} />
+            {syncingOf ? "Syncing OF…" : "Sync OF"}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onSyncInfloww}
+            disabled={syncingInfloww}
+            className="rounded-full border-border bg-card hover:bg-secondary"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${syncingInfloww ? "animate-spin" : ""}`} />
+            {syncingInfloww ? "Syncing…" : "Sync Infloww"}
+          </Button>
+        </div>
+      </div>
 
-          {/* Action column */}
-          <div className="flex flex-col gap-2 sm:items-end shrink-0">
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Revenue</h1>
-            <p className="text-xs text-muted-foreground sm:text-right max-w-[280px]">
-              All channels in one view. Sync directly from this page.
-            </p>
-            <div className="mt-3 flex items-center gap-2 flex-wrap">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onSyncOf}
-                disabled={syncingOf}
-                className="bg-blue-500/10 border-blue-500/30 text-blue-400 hover:bg-blue-500/20 hover:text-blue-300"
-              >
-                <SiOnlyfans className={`mr-1.5 h-3.5 w-3.5 ${syncingOf ? "animate-spin" : ""}`} />
-                {syncingOf ? "Syncing OF…" : "Sync OnlyFans"}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onSyncInfloww}
-                disabled={syncingInfloww}
-              >
-                <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${syncingInfloww ? "animate-spin" : ""}`} />
-                {syncingInfloww ? "Syncing…" : "Sync Infloww"}
-              </Button>
-          {/* Reddit entry dialog removed — admins log Reddit entries
-              directly on the creator detail page now. The block below
-              is kept commented-out rather than deleted so it's easy
-              to bring back if we change our mind. */}
-          {false && <Dialog open={open} onOpenChange={setOpen}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>Add revenue entry</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 py-2">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label>Amount (USD)</Label>
-                  <Input type="number" min="0" step="0.01" placeholder="49.99"
-                    value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Date</Label>
-                  <Input type="date" value={form.entry_date}
-                    onChange={(e) => setForm({ ...form, entry_date: e.target.value })} />
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Source</Label>
-                <Select value={form.source} onValueChange={(v) => setForm({ ...form, source: v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(sourceLabel).map(([v, l]) => (
-                      <SelectItem key={v} value={v}>{l}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Creator</Label>
-                <Select value={form.creator_id}
-                  onValueChange={(v) => setForm({ ...form, creator_id: v, reddit_account_id: "", tracking_link_id: "" })}>
-                  <SelectTrigger><SelectValue placeholder="Select creator" /></SelectTrigger>
-                  <SelectContent>
-                    {creators.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Reddit account <span className="text-muted-foreground">(optional)</span></Label>
-                <Select value={form.reddit_account_id}
-                  onValueChange={(v) => setForm({ ...form, reddit_account_id: v, tracking_link_id: "" })}
-                  disabled={!form.creator_id}>
-                  <SelectTrigger><SelectValue placeholder="Select account" /></SelectTrigger>
-                  <SelectContent>
-                    {accountsForCreator.map((a) => <SelectItem key={a.id} value={a.id}>u/{a.username}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Tracking link <span className="text-muted-foreground">(optional)</span></Label>
-                <Select value={form.tracking_link_id}
-                  onValueChange={(v) => setForm({ ...form, tracking_link_id: v })}
-                  disabled={!form.reddit_account_id}>
-                  <SelectTrigger><SelectValue placeholder="Select link" /></SelectTrigger>
-                  <SelectContent>
-                    {linksForAccount.map((l) => <SelectItem key={l.id} value={l.id}>{l.label}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Notes <span className="text-muted-foreground">(optional)</span></Label>
-                <Input placeholder="e.g. from r/gonewild push" value={form.notes}
-                  onChange={(e) => setForm({ ...form, notes: e.target.value })} />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-              <Button onClick={onAdd}>Add</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>}
-            </div> {/* end action buttons row */}
-          </div> {/* end action column */}
-        </div> {/* end hero flex container */}
-      </div> {/* end hero panel */}
+      {/* Custom range pickers (only when Custom is selected) */}
+      {rangePreset === "custom" && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <Label className="text-xs text-muted-foreground">From</Label>
+          <input
+            type="date"
+            value={customFrom}
+            onChange={(e) => setCustomFrom(e.target.value)}
+            className="text-xs border border-border bg-card rounded-md px-2 py-1 h-8"
+          />
+          <Label className="text-xs text-muted-foreground ml-2">To</Label>
+          <input
+            type="date"
+            value={customTo}
+            onChange={(e) => setCustomTo(e.target.value)}
+            className="text-xs border border-border bg-card rounded-md px-2 py-1 h-8"
+          />
+          {loadingRangeOf && (
+            <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1 ml-2">
+              <RefreshCw className="h-3 w-3 animate-spin" /> Loading OF…
+            </span>
+          )}
+        </div>
+      )}
 
+      {/* Top KPI row — Revenue / Net Revenue / Expenses (matches dashboard) */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <StatTile
+          tone="emerald"
+          icon={<Wallet className="h-4 w-4" />}
+          label="Revenue"
+          value={`$${grossRevenue.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}
+          delta={null}
+          deltaSubtitle={`${dateRange.label.toLowerCase()} · all channels gross`}
+          sparkline={revenueSpark}
+          loading={loading}
+        />
+        <StatTile
+          tone={netRevenue >= 0 ? "violet" : "rose"}
+          icon={<TrendingUp className="h-4 w-4" />}
+          label="Net Revenue"
+          value={`$${netRevenue.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}
+          delta={null}
+          deltaSubtitle={
+            overview.adsSpend > 0
+              ? `gross − $${overview.adsSpend.toLocaleString("en-US", { maximumFractionDigits: 0 })} ad spend`
+              : "after ad spend"
+          }
+          sparkline={revenueSpark}
+          loading={loading}
+        />
+        <StatTile
+          tone="amber"
+          icon={<Receipt className="h-4 w-4" />}
+          label="Expenses"
+          value={`$${totalExpenses.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}
+          delta={null}
+          deltaSubtitle="ad spend in this range"
+          loading={loading}
+        />
+      </div>
+
+      {/* Headline metric strip — small contextual value driven by the
+          Metric dropdown. Lives BELOW the 3-tile row so the standardized
+          KPIs always come first; this strip is the "pick your view" lens. */}
+      <div className="rounded-2xl border border-border bg-card p-5 flex items-center justify-between gap-4 flex-wrap">
+        <div className="min-w-0">
+          <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground/70 font-bold">
+            {metric === "total" ? "Total revenue" :
+             metric === "net" ? "Net earnings" :
+             metric === "of" ? "OnlyFans Direct" : "Ads net"}
+          </div>
+          <div className="mt-1 flex items-baseline gap-2 flex-wrap">
+            <span className="text-3xl font-bold tabular-nums leading-none">
+              ${headlineValue.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+            </span>
+            <span className="text-xs text-muted-foreground">{dateRange.label.toLowerCase()}</span>
+          </div>
+        </div>
+        {/* Bucket pills — same data, cleaner Nexus-flat style */}
+        <div className="flex flex-wrap gap-1.5">
+          <BucketPill icon={<SiOnlyfans className="h-3 w-3" />} label="OF Direct" value={overview.ofDirect} tone="of" />
+          <BucketPill icon={<Layers className="h-3 w-3" />} label="Organic" value={overview.organic} tone="organic" />
+          <BucketPill icon={<Wallet className="h-3 w-3" />} label="Internal" value={overview.internal} tone="internal" />
+          <BucketPill icon={<Megaphone className="h-3 w-3" />} label="Ads" value={overview.ads} tone="ads" />
+          {overview.ofTrackingTotal > 0 && (
+            <BucketPill icon={<Link2 className="h-3 w-3" />} label="OF tracking" value={overview.ofTrackingTotal} tone="of-track" />
+          )}
+        </div>
+      </div>
+
+      {/* Hidden legacy form — kept disabled so the file references for
+          `form` / `setForm` / `onAdd` still type-check, but rendered
+          nowhere. The new layout doesn't expose the manual entry dialog
+          here; admins log Reddit entries from the creator detail page. */}
+      <div className="hidden">
+        {false && (
+          <button onClick={() => { setOpen(true); setForm(emptyForm); onAdd(); }}>
+            placeholder
+          </button>
+        )}
+      </div>
       {/* ── OnlyFans data inspector ─────────────────────────────────────
           Collapsible diagnostic panel. Shows what's in the database vs
           what the OnlyFansAPI is actually returning, so a non-technical
@@ -961,54 +933,67 @@ function RevenuePage() {
           the browser dev tools. */}
       <OfDataInspector />
 
-      {/* ── Per-creator revenue breakdown ───────────────────────────────
-          Sortable mini-table showing every creator's revenue split
-          across OF Direct / Organic / Internal / Ads. Click a row to
-          jump to the creator's detail page. */}
-      {creatorBreakdown.length > 0 && (
-        <div className="rounded-2xl border border-border bg-card overflow-hidden">
-          <div className="px-5 py-4 border-b border-border flex items-center justify-between flex-wrap gap-2">
-            <div>
-              <h2 className="text-sm font-semibold flex items-center gap-2">
-                <Users className="h-4 w-4 text-primary" />
-                Revenue by creator
-              </h2>
-              <p className="text-[11px] text-muted-foreground mt-0.5">
-                All channels combined, sorted by total. Click a creator to drill in.
-              </p>
+      {/* ── Per-creator revenue breakdown — Nexus table pattern.
+          Avatar bubble + creator name + share bar (relative to top earner)
+          + revenue. Channel cells appear inline on lg+, stacked on mobile. */}
+      {creatorBreakdown.length > 0 && (() => {
+        const earningRows = creatorBreakdown.filter((b) => b.total > 0);
+        const maxTotal = earningRows.reduce((m, b) => {
+          const adsNetCreator = b.adsRev + b.inflowwRev - b.adsSpend;
+          const g = b.ofRev + b.orgRev + b.intRev + adsNetCreator;
+          return Math.max(m, g);
+        }, 0);
+        return (
+        <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
+          {/* Card header — icon chip + title + count pill */}
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2.5">
+              <span className="h-7 w-7 rounded-lg bg-emerald-500/15 text-emerald-600 flex items-center justify-center">
+                <Users className="h-4 w-4" />
+              </span>
+              <div>
+                <h2 className="text-sm font-semibold">Revenue by creator</h2>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  All channels combined · click to drill in
+                </p>
+              </div>
             </div>
-            <div className="text-[11px] text-muted-foreground">
-              {creatorBreakdown.filter((b) => b.total > 0).length} of {creatorBreakdown.length} creator{creatorBreakdown.length === 1 ? "" : "s"} earning
-            </div>
+            <span className="text-[10px] font-mono tabular-nums px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+              {earningRows.length} / {creatorBreakdown.length} earning
+            </span>
           </div>
-          {/* Header row — desktop only */}
-          <div className="hidden lg:grid lg:grid-cols-[2fr_1fr_1fr_1fr_1fr_1.2fr] px-5 py-2 text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold border-b border-border/50 bg-secondary/20">
-            <div>Creator</div>
-            <div className="text-right">OnlyFans</div>
-            <div className="text-right">Organic</div>
-            <div className="text-right">Internal</div>
-            <div className="text-right">Ads (net)</div>
-            <div className="text-right">Total</div>
+
+          {/* Column header row — desktop only */}
+          <div className="hidden lg:grid lg:grid-cols-[2fr_minmax(120px,160px)_repeat(4,1fr)_1.2fr] items-center gap-3 px-1 pb-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground/70 font-bold">
+            <span>Creator</span>
+            <span>Share</span>
+            <span className="text-right">OnlyFans</span>
+            <span className="text-right">Organic</span>
+            <span className="text-right">Internal</span>
+            <span className="text-right">Ads (net)</span>
+            <span className="text-right">Total</span>
           </div>
-          <div className="divide-y divide-border/40">
+
+          {/* Rows */}
+          <div className="space-y-2">
             {creatorBreakdown.map((b) => {
               const adsNetCreator = b.adsRev + b.inflowwRev - b.adsSpend;
               const grand = b.ofRev + b.orgRev + b.intRev + adsNetCreator;
-              const ofPct = grand > 0 ? (b.ofRev / grand) * 100 : 0;
+              const sharePct = maxTotal > 0 ? (grand / maxTotal) * 100 : 0;
               return (
                 <Link
                   key={b.creator.id}
                   to="/creators/$creatorId"
                   params={{ creatorId: b.creator.id }}
-                  className="block lg:grid lg:grid-cols-[2fr_1fr_1fr_1fr_1fr_1.2fr] px-5 py-3 hover:bg-secondary/30 transition-colors"
+                  className="block lg:grid lg:grid-cols-[2fr_minmax(120px,160px)_repeat(4,1fr)_1.2fr] items-center gap-3 rounded-xl border border-border bg-background/50 p-3 transition-all duration-150 ease-out hover:-translate-y-0.5 hover:border-border/80 hover:bg-secondary/30 hover:shadow-sm"
                 >
-                  {/* Creator — with sync status */}
-                  <div className="flex items-center gap-3 min-w-0 mb-2 lg:mb-0">
-                    <span className="h-8 w-8 rounded-full bg-gradient-to-br from-primary/20 to-blue-500/20 flex items-center justify-center text-[11px] font-bold text-foreground shrink-0">
+                  {/* Creator: avatar + name + sync timestamp */}
+                  <div className="flex items-center gap-3 min-w-0 mb-3 lg:mb-0">
+                    <span className="h-9 w-9 rounded-full bg-gradient-to-br from-violet-500 to-indigo-500 text-white flex items-center justify-center font-semibold text-xs shadow-sm shrink-0">
                       {b.creator.name.slice(0, 2).toUpperCase()}
                     </span>
                     <div className="min-w-0">
-                      <div className="text-sm font-medium truncate">{b.creator.name}</div>
+                      <div className="text-sm font-semibold truncate">{b.creator.name}</div>
                       <div className="text-[10px] text-muted-foreground truncate">
                         {b.synced_at
                           ? `OF synced ${format(new Date(b.synced_at), "MMM d, h:mm a")}`
@@ -1016,32 +1001,37 @@ function RevenuePage() {
                       </div>
                     </div>
                   </div>
+                  {/* Share bar — relative to the top earner */}
+                  <div className="hidden lg:block">
+                    {grand > 0 ? (
+                      <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-violet-500 to-indigo-500 transition-all duration-500"
+                          style={{ width: `${sharePct}%` }}
+                        />
+                      </div>
+                    ) : (
+                      <div className="h-1.5 rounded-full bg-muted/40" />
+                    )}
+                  </div>
                   {/* Channel cells */}
-                  <ChannelCell value={b.ofRev} accent="text-blue-400" />
-                  <ChannelCell value={b.orgRev} accent="text-success" />
-                  <ChannelCell value={b.intRev} accent="text-warning" />
-                  <ChannelCell value={adsNetCreator} accent="text-ads" />
-                  {/* Total + share-bar */}
-                  <div className="text-right">
+                  <ChannelCell value={b.ofRev} accent="text-blue-500" />
+                  <ChannelCell value={b.orgRev} accent="text-emerald-500" />
+                  <ChannelCell value={b.intRev} accent="text-amber-500" />
+                  <ChannelCell value={adsNetCreator} accent="text-violet-500" />
+                  {/* Total */}
+                  <div className="text-right mt-2 lg:mt-0">
                     <div className="text-sm font-bold tabular-nums">
                       ${grand.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </div>
-                    {grand > 0 && (
-                      <div className="mt-1.5 h-1 rounded-full bg-secondary/40 overflow-hidden">
-                        <div
-                          className="h-full bg-gradient-to-r from-blue-400 to-primary"
-                          style={{ width: `${Math.min(100, ofPct)}%` }}
-                          title={`OF share ${ofPct.toFixed(0)}%`}
-                        />
-                      </div>
-                    )}
                   </div>
                 </Link>
               );
             })}
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* ── Infloww (all-time totals from API) ──────────────────────────────── */}
       {inflowwStats.length > 0 && (() => {
@@ -1061,19 +1051,24 @@ function RevenuePage() {
         const grandTotal = inflowwByCreator.reduce((s, r) => s + r.totalRev, 0);
 
         return (
-          <div className="rounded-2xl border border-primary/20 bg-primary/5 p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-base font-semibold">Infloww — All-time totals</h2>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Cumulative revenue from tracking links. Synced per creator from Infloww.
-                </p>
+          <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2.5">
+                <span className="h-7 w-7 rounded-lg bg-violet-500/15 text-violet-600 flex items-center justify-center">
+                  <Link2 className="h-4 w-4" />
+                </span>
+                <div>
+                  <h2 className="text-sm font-semibold">Infloww · all-time totals</h2>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    Cumulative revenue from tracking links · synced per creator
+                  </p>
+                </div>
               </div>
               <div className="text-right">
-                <div className="text-2xl font-bold">
-                  ${grandTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                <div className="text-2xl font-bold tabular-nums leading-none">
+                  ${grandTotal.toLocaleString("en-US", { maximumFractionDigits: 0 })}
                 </div>
-                <div className="text-xs text-muted-foreground">grand total</div>
+                <div className="text-[11px] text-muted-foreground mt-1">grand total</div>
               </div>
             </div>
             <div className="space-y-3">
@@ -1143,23 +1138,24 @@ function RevenuePage() {
         }[];
         const grandTotal = grouped.reduce((s, g) => s + g.totalRev, 0);
         return (
-          <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-base font-semibold flex items-center gap-2">
-                  <SiOnlyfans className="h-4 w-4" style={{ color: "#00AFF0" }} />
-                  OnlyFans tracking links
-                </h2>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Real campaign-code revenue from OnlyFans → Statistics → Tracking links.
-                  Synced on every OF sync.
-                </p>
+          <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2.5">
+                <span className="h-7 w-7 rounded-lg bg-blue-500/15 text-blue-600 flex items-center justify-center">
+                  <SiOnlyfans className="h-4 w-4" />
+                </span>
+                <div>
+                  <h2 className="text-sm font-semibold">OnlyFans tracking links</h2>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    Campaign-code revenue from OnlyFans · Statistics · Tracking links
+                  </p>
+                </div>
               </div>
               <div className="text-right">
-                <div className="text-2xl font-bold">
-                  ${grandTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                <div className="text-2xl font-bold tabular-nums leading-none">
+                  ${grandTotal.toLocaleString("en-US", { maximumFractionDigits: 0 })}
                 </div>
-                <div className="text-xs text-muted-foreground">grand total</div>
+                <div className="text-[11px] text-muted-foreground mt-1">grand total</div>
               </div>
             </div>
             <div className="space-y-3">
@@ -1209,51 +1205,75 @@ function RevenuePage() {
         );
       })()}
 
-      {/* ── Performance Chart ──────────────────────────────────────────────── */}
-      <div className="rounded-2xl border border-border bg-[image:var(--gradient-surface)] p-6 space-y-5">
-        <div className="flex flex-wrap items-center gap-2 justify-between">
-          <h2 className="text-base font-semibold">Performance</h2>
+      {/* ── Sales Overview chart — Nexus pattern.
+          Big card with: icon-chip header, big total + delta, stat-pill
+          row, range pills, and the line chart. */}
+      <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
+        {/* Header — icon chip + title + headline number on the right */}
+        <div className="flex items-start justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-2.5">
+            <span className="h-7 w-7 rounded-lg bg-violet-500/15 text-violet-600 flex items-center justify-center">
+              <TrendingUp className="h-4 w-4" />
+            </span>
+            <div>
+              <h2 className="text-sm font-semibold">Sales Overview</h2>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                {statOption.label} · {chartRange === "custom" ? "custom range" : RANGE_OPTIONS.find((r) => r.value === chartRange)?.label}
+              </p>
+            </div>
+          </div>
+          {chartData.length > 0 && (
+            <div className="flex items-center gap-3">
+              <div className="text-right">
+                <div className="text-2xl font-bold tabular-nums leading-none">{fmt(chartTotal)}</div>
+                <div className="text-[11px] text-muted-foreground mt-1">range total</div>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Controls */}
-        <div className="flex flex-wrap gap-2">
-          {/* Stat pills */}
-          <div className="flex flex-wrap gap-1.5">
-            {STAT_OPTIONS.map((s) => (
-              <button
-                key={s.value}
-                onClick={() => setChartStat(s.value)}
-                className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-                  chartStat === s.value
-                    ? "border-primary bg-primary/15 text-primary"
-                    : "border-border text-muted-foreground hover:text-foreground hover:border-border/80"
-                }`}
-              >
-                {s.label}
-              </button>
-            ))}
-          </div>
+        {/* Stat pills */}
+        <div className="flex flex-wrap gap-1.5">
+          {STAT_OPTIONS.map((s) => (
+            <button
+              key={s.value}
+              onClick={() => setChartStat(s.value)}
+              className={`rounded-full border px-3 py-1 text-xs font-medium transition-all ${
+                chartStat === s.value
+                  ? "border-primary bg-primary/12 text-primary shadow-sm"
+                  : "border-border bg-card text-muted-foreground hover:text-foreground hover:border-border/80"
+              }`}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
 
-          <div className="flex items-center gap-2 ml-auto flex-wrap">
-            {/* Creator filter */}
+        {/* Filter row — creator + range, right-aligned */}
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <FilterIcon className="h-3.5 w-3.5" />
+            Filters:
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
             <Select value={chartCreator} onValueChange={setChartCreator}>
-              <SelectTrigger className="h-8 w-[150px] text-xs"><SelectValue placeholder="All creators" /></SelectTrigger>
+              <SelectTrigger className="h-8 w-[150px] text-xs rounded-full border-border">
+                <SelectValue placeholder="All creators" />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All creators</SelectItem>
                 {creators.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
               </SelectContent>
             </Select>
-
-            {/* Range presets */}
-            <div className="flex rounded-lg border border-border overflow-hidden">
+            <div className="inline-flex rounded-full border border-border bg-card p-0.5">
               {RANGE_OPTIONS.filter((r) => r.value !== "custom").map((r) => (
                 <button
                   key={r.value}
                   onClick={() => setChartRange(r.value)}
-                  className={`px-3 py-1.5 text-xs font-medium transition-colors border-r border-border last:border-0 ${
+                  className={`px-3 py-1 text-xs rounded-full font-medium transition-all ${
                     chartRange === r.value
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:text-foreground hover:bg-secondary/60"
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
                   {r.value}
@@ -1261,10 +1281,10 @@ function RevenuePage() {
               ))}
               <button
                 onClick={() => setChartRange("custom")}
-                className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                className={`px-3 py-1 text-xs rounded-full font-medium transition-all ${
                   chartRange === "custom"
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground hover:bg-secondary/60"
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
                 }`}
               >
                 Custom
@@ -1275,7 +1295,7 @@ function RevenuePage() {
 
         {/* Custom date pickers */}
         {chartRange === "custom" && (
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <div className="flex items-center gap-2">
               <Label className="text-xs whitespace-nowrap">From</Label>
               <Input type="date" className="h-8 text-xs w-36"
@@ -1289,25 +1309,25 @@ function RevenuePage() {
           </div>
         )}
 
-        {/* Summary stats */}
-        <div className="grid grid-cols-3 gap-4 text-sm">
-          <div>
-            <div className="text-xs text-muted-foreground">Total</div>
-            <div className="text-xl font-bold mt-0.5">{fmt(chartTotal)}</div>
+        {/* Mini-stats row — Total / Daily avg / Peak */}
+        <div className="grid grid-cols-3 gap-3 pt-2">
+          <div className="rounded-xl bg-muted/40 p-3">
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-bold">Total</div>
+            <div className="text-lg font-bold mt-1 tabular-nums">{fmt(chartTotal)}</div>
           </div>
-          <div>
-            <div className="text-xs text-muted-foreground">Daily avg</div>
-            <div className="text-xl font-bold mt-0.5">{fmt(chartAvg)}</div>
+          <div className="rounded-xl bg-muted/40 p-3">
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-bold">Daily avg</div>
+            <div className="text-lg font-bold mt-1 tabular-nums">{fmt(chartAvg)}</div>
           </div>
-          <div>
-            <div className="text-xs text-muted-foreground">Peak day</div>
-            <div className="text-xl font-bold mt-0.5">{fmt(chartPeak)}</div>
+          <div className="rounded-xl bg-muted/40 p-3">
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-bold">Peak day</div>
+            <div className="text-lg font-bold mt-1 tabular-nums">{fmt(chartPeak)}</div>
           </div>
         </div>
 
         {/* Chart */}
         {loading ? (
-          <div className="h-48 animate-pulse rounded-xl bg-card/60" />
+          <div className="h-48 animate-pulse rounded-xl bg-muted/30" />
         ) : (
           <PerformanceLineChart
             data={chartData}
@@ -1317,168 +1337,202 @@ function RevenuePage() {
         )}
       </div>
 
-      {/* ── OnlyFinder-attributed revenue (the Ads bucket's main feed) ────── */}
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div className="rounded-xl border border-border bg-card p-5">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <DollarSign className="h-4 w-4 text-primary" />
-            Manual revenue (filtered)
-          </div>
-          <div className="mt-2 text-2xl font-bold">
-            ${totalRevenue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </div>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-5">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <TrendingUp className="h-4 w-4 text-primary" />
-            Entries (filtered)
-          </div>
-          <div className="mt-2 text-2xl font-bold">{filtered.length}</div>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-5">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Users className="h-4 w-4 text-primary" />
-            Top account
-          </div>
-          <div className="mt-2 text-lg font-bold truncate">
-            {byAccount.length > 0
-              ? byAccount[0][0] === "__none__" ? "Unattributed" : `u/${accountName(byAccount[0][0])}`
-              : "—"}
-          </div>
-          {byAccount.length > 0 && (
-            <div className="text-xs text-muted-foreground">
-              ${byAccount[0][1].toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+      {/* ── Manual revenue entries — single Nexus-style card.
+          Replaces the previous loose 3-tile mini-grid + share-bar block +
+          filter row + table. Now everything lives inside one rounded
+          card with a clear icon-chip header. */}
+      <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-2.5">
+            <span className="h-7 w-7 rounded-lg bg-amber-500/15 text-amber-600 flex items-center justify-center">
+              <Receipt className="h-4 w-4" />
+            </span>
+            <div>
+              <h2 className="text-sm font-semibold">Manual revenue entries</h2>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                Reddit-attributed revenue logged from creator detail pages
+              </p>
             </div>
-          )}
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Select value={filterCreator} onValueChange={setFilterCreator}>
+              <SelectTrigger className="h-8 w-[150px] text-xs rounded-full border-border">
+                <SelectValue placeholder="Creator" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All creators</SelectItem>
+                {creators.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={filterSource} onValueChange={setFilterSource}>
+              <SelectTrigger className="h-8 w-[130px] text-xs rounded-full border-border">
+                <SelectValue placeholder="Source" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All sources</SelectItem>
+                {Object.entries(sourceLabel).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
-      </div>
 
-      {byAccount.length > 1 && (
-        <div className="rounded-xl border border-border bg-card p-5">
-          <div className="text-sm font-semibold mb-3">OnlyFinder revenue by account</div>
-          <div className="space-y-2">
+        {/* Mini-stats — Total / Entries / Top account */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="rounded-xl bg-muted/40 p-3.5">
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-bold flex items-center gap-1.5">
+              <DollarSign className="h-3 w-3" /> Filtered total
+            </div>
+            <div className="text-2xl font-bold mt-1 tabular-nums">
+              ${totalRevenue.toLocaleString("en-US", { maximumFractionDigits: 2 })}
+            </div>
+          </div>
+          <div className="rounded-xl bg-muted/40 p-3.5">
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-bold flex items-center gap-1.5">
+              <TrendingUp className="h-3 w-3" /> Entries
+            </div>
+            <div className="text-2xl font-bold mt-1 tabular-nums">{filtered.length}</div>
+          </div>
+          <div className="rounded-xl bg-muted/40 p-3.5">
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-bold flex items-center gap-1.5">
+              <Users className="h-3 w-3" /> Top account
+            </div>
+            <div className="text-base font-bold mt-1 truncate">
+              {byAccount.length > 0
+                ? byAccount[0][0] === "__none__" ? "Unattributed" : `u/${accountName(byAccount[0][0])}`
+                : "—"}
+            </div>
+            {byAccount.length > 0 && (
+              <div className="text-[11px] text-muted-foreground tabular-nums mt-0.5">
+                ${byAccount[0][1].toLocaleString("en-US", { maximumFractionDigits: 2 })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Per-account share bars */}
+        {byAccount.length > 1 && (
+          <div className="rounded-xl border border-border bg-background/50 p-4 space-y-2">
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-bold mb-1">
+              Revenue by account
+            </div>
             {byAccount.map(([id, total]) => {
               const pct = totalRevenue > 0 ? (total / totalRevenue) * 100 : 0;
               return (
-                <div key={id} className="flex items-center gap-3">
-                  <div className="w-28 text-xs text-muted-foreground truncate">
+                <div key={id} className="flex items-center gap-3 text-xs">
+                  <div className="w-28 text-muted-foreground truncate font-medium">
                     {id === "__none__" ? "Unattributed" : `u/${accountName(id)}`}
                   </div>
-                  <div className="flex-1 h-2 rounded-full bg-secondary overflow-hidden">
-                    <div className="h-full rounded-full bg-gradient-to-r from-primary to-primary-glow" style={{ width: `${pct}%` }} />
+                  <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-violet-500 to-indigo-500 transition-all duration-500"
+                      style={{ width: `${pct}%` }}
+                    />
                   </div>
-                  <div className="w-20 text-right text-xs font-medium">
-                    ${total.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  <div className="w-20 text-right font-semibold tabular-nums">
+                    ${total.toLocaleString("en-US", { maximumFractionDigits: 2 })}
+                  </div>
+                  <div className="w-10 text-right text-muted-foreground tabular-nums">
+                    {pct.toFixed(0)}%
                   </div>
                 </div>
               );
             })}
           </div>
-        </div>
-      )}
+        )}
 
-      <div className="flex flex-wrap gap-2">
-        <Select value={filterCreator} onValueChange={setFilterCreator}>
-          <SelectTrigger className="w-[160px]"><SelectValue placeholder="Creator" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All creators</SelectItem>
-            {creators.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Select value={filterSource} onValueChange={setFilterSource}>
-          <SelectTrigger className="w-[140px]"><SelectValue placeholder="Source" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All sources</SelectItem>
-            {Object.entries(sourceLabel).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {loading ? (
-        <div className="h-64 animate-pulse rounded-xl bg-card/60" />
-      ) : filtered.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border bg-card/40 p-12 text-center">
-          <p className="text-sm text-muted-foreground">No revenue entries yet. Add your first one.</p>
-        </div>
-      ) : (
-        <div className="overflow-hidden rounded-xl border border-border">
-          <table className="w-full text-sm">
-            <thead className="bg-secondary/40 text-xs uppercase tracking-wide text-muted-foreground">
-              <tr>
-                <th className="text-left font-medium px-4 py-3">Date</th>
-                <th className="text-left font-medium px-4 py-3">Creator</th>
-                <th className="text-left font-medium px-4 py-3">Account</th>
-                <th className="text-left font-medium px-4 py-3">Link</th>
-                <th className="text-left font-medium px-4 py-3">Source</th>
-                <th className="text-right font-medium px-4 py-3">Amount</th>
-                <th className="text-left font-medium px-4 py-3">Notes</th>
-                <th className="px-4 py-3" />
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((e) => (
-                <tr key={e.id} className="border-t border-border bg-card hover:bg-secondary/30 transition-colors">
-                  <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
-                    {format(new Date(e.entry_date), "MMM d, yyyy")}
-                  </td>
-                  <td className="px-4 py-3">
-                    <Link to="/creators/$creatorId" params={{ creatorId: e.creator_id }}
-                      className="hover:text-primary transition-colors">
-                      {creatorName(e.creator_id)}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    {e.reddit_account_id ? `u/${accountName(e.reddit_account_id)}` : "—"}
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground max-w-[140px] truncate">
-                    {e.tracking_link_id ? linkLabel(e.tracking_link_id) : "—"}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${sourceStyles[e.source] ?? sourceStyles.other}`}>
-                      {sourceLabel[e.source] ?? e.source}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-right font-semibold">
-                    ${e.amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground max-w-[180px] truncate">
-                    {e.notes ?? "—"}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <button className="text-muted-foreground hover:text-destructive transition-colors">
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Delete entry?</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            This removes the ${e.amount} entry. This cannot be undone.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Cancel</AlertDialogCancel>
-                          <AlertDialogAction onClick={() => onDelete(e.id)}>Delete</AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  </td>
+        {/* Entries table */}
+        {loading ? (
+          <div className="h-64 animate-pulse rounded-xl bg-muted/30" />
+        ) : filtered.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border bg-muted/20 p-10 text-center">
+            <p className="text-sm text-muted-foreground">
+              No revenue entries match the current filters.
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-xl border border-border">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/60 text-[10px] uppercase tracking-[0.14em] text-muted-foreground/70 font-bold">
+                <tr>
+                  <th className="text-left px-4 py-2.5">Date</th>
+                  <th className="text-left px-4 py-2.5">Creator</th>
+                  <th className="text-left px-4 py-2.5">Account</th>
+                  <th className="text-left px-4 py-2.5">Link</th>
+                  <th className="text-left px-4 py-2.5">Source</th>
+                  <th className="text-right px-4 py-2.5">Amount</th>
+                  <th className="text-left px-4 py-2.5">Notes</th>
+                  <th className="px-4 py-2.5" />
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+              </thead>
+              <tbody>
+                {filtered.map((e) => (
+                  <tr key={e.id} className="border-t border-border bg-card hover:bg-secondary/40 transition-colors">
+                    <td className="px-4 py-3 text-muted-foreground whitespace-nowrap text-xs">
+                      {format(new Date(e.entry_date), "MMM d, yyyy")}
+                    </td>
+                    <td className="px-4 py-3">
+                      <Link
+                        to="/creators/$creatorId"
+                        params={{ creatorId: e.creator_id }}
+                        className="font-medium hover:text-primary transition-colors"
+                      >
+                        {creatorName(e.creator_id)}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground text-xs">
+                      {e.reddit_account_id ? `u/${accountName(e.reddit_account_id)}` : "—"}
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground text-xs max-w-[140px] truncate">
+                      {e.tracking_link_id ? linkLabel(e.tracking_link_id) : "—"}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${sourceStyles[e.source] ?? sourceStyles.other}`}>
+                        {sourceLabel[e.source] ?? e.source}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right font-bold tabular-nums">
+                      ${e.amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground text-xs max-w-[180px] truncate">
+                      {e.notes ?? "—"}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <button className="text-muted-foreground hover:text-destructive transition-colors">
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete entry?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This removes the ${e.amount} entry. This cannot be undone.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => onDelete(e.id)}>Delete</AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
 // ── Reusable building blocks ────────────────────────────────────────────────
 
-/** Compact pill used in the hero to show a bucket's contribution. */
+/** Compact pastel pill used in the headline strip to show each bucket's
+ *  contribution. Pastel-tinted background + bold tabular value, matching
+ *  the Nexus delta-pill aesthetic. */
 function BucketPill({
   icon, label, value, tone,
 }: {
@@ -1488,16 +1542,16 @@ function BucketPill({
   tone: "of" | "of-track" | "organic" | "internal" | "ads";
 }) {
   const toneCls = {
-    of:        "border-blue-500/30 bg-blue-500/10 text-blue-300",
-    "of-track":"border-cyan-500/30 bg-cyan-500/10 text-cyan-300",
-    organic:   "border-success/30 bg-success/10 text-success",
-    internal:  "border-warning/30 bg-warning/10 text-warning",
-    ads:       "border-ads/30 bg-ads/10 text-ads",
+    of:        "bg-blue-500/12 text-blue-600",
+    "of-track":"bg-cyan-500/12 text-cyan-600",
+    organic:   "bg-emerald-500/12 text-emerald-600",
+    internal:  "bg-amber-500/15 text-amber-600",
+    ads:       "bg-violet-500/12 text-violet-600",
   }[tone];
   return (
-    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs ${toneCls}`}>
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold ${toneCls}`}>
       {icon}
-      <span className="font-medium">{label}</span>
+      <span>{label}</span>
       <span className="font-bold tabular-nums">
         ${value.toLocaleString("en-US", { maximumFractionDigits: 0 })}
       </span>
@@ -1509,11 +1563,11 @@ function BucketPill({
 function ChannelCell({ value, accent }: { value: number; accent: string }) {
   const zero = value === 0;
   return (
-    <div className="flex items-center justify-between lg:justify-end gap-2 lg:gap-0 text-xs lg:text-sm py-0.5 lg:py-0">
+    <div className="flex items-center justify-between lg:justify-end gap-2 lg:gap-0 text-xs py-0.5 lg:py-0">
       <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 lg:hidden">
-        {accent.includes("blue") ? "OF" : accent.includes("success") ? "Organic" : accent.includes("warning") ? "Internal" : "Ads"}
+        {accent.includes("blue") ? "OF" : accent.includes("emerald") ? "Organic" : accent.includes("amber") ? "Internal" : "Ads"}
       </span>
-      <span className={`tabular-nums ${zero ? "text-muted-foreground/40" : `${accent} font-medium`}`}>
+      <span className={`tabular-nums ${zero ? "text-muted-foreground/40" : `${accent} font-semibold`}`}>
         ${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
       </span>
     </div>

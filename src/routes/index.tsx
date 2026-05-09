@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Plus, Users, Activity, FileText, Search, Pencil, Trash2 } from "lucide-react";
+import { CreatorRail } from "@/components/CreatorRail";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -51,6 +52,10 @@ type CreatorRow = {
   name: string;
   of_username: string | null;
   avatar_url: string | null;
+  /** OnlyFans-synced avatar (from of_creator_stats). Used as a fallback
+   *  when the manually uploaded avatar_url is missing — same priority
+   *  rule the OnlyFans page uses on its creator cards. */
+  of_avatar_url: string | null;
   status: "active" | "paused" | "inactive";
   reddit_count: number;
   post_count: number;
@@ -140,29 +145,48 @@ function CreatorsPage() {
       mtdStart.setDate(1);
       mtdStart.setHours(0, 0, 0, 0);
       const mtdStartStr = mtdStart.toISOString().slice(0, 10);
-      const [{ data: revMtd }, { data: orgMtd }, { data: intMtd }, { data: adsMtd }] =
-        await Promise.all([
-          supabase
-            .from("revenue_entries")
-            .select("creator_id, amount")
-            .in("creator_id", ids)
-            .gte("entry_date", mtdStartStr),
-          supabase
-            .from("organic_entries")
-            .select("creator_id, amount")
-            .in("creator_id", ids)
-            .gte("entry_date", mtdStartStr),
-          supabase
-            .from("internal_entries")
-            .select("creator_id, amount")
-            .in("creator_id", ids)
-            .gte("entry_date", mtdStartStr),
-          supabase
-            .from("ad_campaigns")
-            .select("creator_id, amount_spent, revenue_generated")
-            .in("creator_id", ids)
-            .gte("start_date", mtdStartStr),
-        ]);
+      const [
+        { data: revMtd },
+        { data: orgMtd },
+        { data: intMtd },
+        { data: adsMtd },
+        { data: ofStats },
+      ] = await Promise.all([
+        supabase
+          .from("revenue_entries")
+          .select("creator_id, amount")
+          .in("creator_id", ids)
+          .gte("entry_date", mtdStartStr),
+        supabase
+          .from("organic_entries")
+          .select("creator_id, amount")
+          .in("creator_id", ids)
+          .gte("entry_date", mtdStartStr),
+        supabase
+          .from("internal_entries")
+          .select("creator_id, amount")
+          .in("creator_id", ids)
+          .gte("entry_date", mtdStartStr),
+        supabase
+          .from("ad_campaigns")
+          .select("creator_id, amount_spent, revenue_generated")
+          .in("creator_id", ids)
+          .gte("start_date", mtdStartStr),
+        // OnlyFans-synced profile photos. Used as a fallback when the
+        // manual avatar_url isn't set, so cards on the Creators tab show
+        // the real OF profile picture (same behaviour as the OnlyFans
+        // page). One row per creator — no need to dedupe.
+        supabase
+          .from("of_creator_stats")
+          .select("creator_id, avatar_url")
+          .in("creator_id", ids),
+      ]);
+      // Pre-bucket the OF avatars so we can merge them in below without
+      // an O(n²) lookup in the map() that builds CreatorRow.
+      const ofAvatarByCreator: Record<string, string | null> = {};
+      for (const r of (ofStats ?? []) as Array<{ creator_id: string; avatar_url: string | null }>) {
+        if (r.avatar_url) ofAvatarByCreator[r.creator_id] = r.avatar_url;
+      }
       const mtdReddit: Record<string, number> = {};
       const mtdOrganic: Record<string, number> = {};
       const mtdInternal: Record<string, number> = {};
@@ -224,6 +248,7 @@ function CreatorsPage() {
             : (raw as unknown as CreatorRow);
           return {
             ...c,
+            of_avatar_url: ofAvatarByCreator[c.id] ?? null,
             reddit_count: counts[c.id]?.reddit ?? 0,
             post_count: counts[c.id]?.posts ?? 0,
             sub_dots: subDots[c.id] ?? [],
@@ -243,6 +268,7 @@ function CreatorsPage() {
             : (raw as unknown as CreatorRow);
           return {
             ...c,
+            of_avatar_url: null,
             reddit_count: 0,
             post_count: 0,
             sub_dots: [],
@@ -351,7 +377,14 @@ function CreatorsPage() {
   const totalPosts = creators.reduce((s, c) => s + c.post_count, 0);
 
   return (
-    <div className="space-y-8">
+    <div className="flex items-stretch min-h-full">
+      {/* Creator rail — Golfy-style left list. Sits flush against the
+          admin sidebar (no gap). Pass empty activeId so nothing is
+          highlighted while we're on the overview; once a creator is
+          picked, the page navigates to /creators/$id and that page's
+          rail picks up the active highlight. */}
+      <CreatorRail activeId="" />
+      <div className="flex-1 min-w-0 px-4 py-5 sm:px-6 sm:py-7 lg:px-8 lg:py-10 space-y-8">
       <Toaster />
 
       {/* Edit dialog */}
@@ -501,180 +534,23 @@ function CreatorsPage() {
         />
       </div>
 
-      <div className="relative max-w-sm">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="Search creators…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-9"
-        />
+      {/* Welcome / empty-state panel.
+          The rail on the left is the primary nav now — pick a creator
+          there to dive into their detail page. We keep the
+          "New creator" button in the header above and surface the
+          headline KPIs here as agency-wide overview. */}
+      <div className="rounded-2xl border border-border bg-card p-8 text-center">
+        <div className="mx-auto h-12 w-12 rounded-2xl bg-primary/12 text-primary flex items-center justify-center mb-3">
+          <Users className="h-6 w-6" />
+        </div>
+        <div className="text-base font-semibold">Pick a creator from the left</div>
+        <p className="mt-1 text-xs text-muted-foreground max-w-md mx-auto">
+          Search the rail or click any name to see their detail — Reddit accounts,
+          posts, plan goals, payouts, and per-channel revenue.
+        </p>
       </div>
 
-      {loading ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="h-44 animate-pulse rounded-xl bg-card/60" />
-          ))}
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border bg-card/40 p-12 text-center">
-          <p className="text-sm text-muted-foreground">No creators yet. Add your first one.</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((c) => (
-            <div key={c.id} className="relative group">
-              <Link
-                to="/creators/$creatorId"
-                params={{ creatorId: c.id }}
-                className="block rounded-xl border border-border bg-[image:var(--gradient-surface)] p-5 transition-all hover:border-primary/50 hover:shadow-[var(--shadow-elegant)]"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    {c.avatar_url ? (
-                      <img
-                        src={c.avatar_url}
-                        alt=""
-                        className="h-11 w-11 shrink-0 rounded-full object-cover border border-border"
-                      />
-                    ) : (
-                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary-glow text-primary-foreground font-semibold">
-                        {c.name.charAt(0)}
-                      </div>
-                    )}
-                    <div>
-                      <div className="font-semibold leading-tight">{c.name}</div>
-                      {c.of_username && (
-                        <div className="text-xs text-muted-foreground">@{c.of_username}</div>
-                      )}
-                    </div>
-                  </div>
-                  <span
-                    className={`rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${statusStyles[c.status]}`}
-                  >
-                    {c.status}
-                  </span>
-                </div>
-                <div className="mt-5 border-t border-border pt-4 space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <div className="text-xs text-muted-foreground">Reddit accts</div>
-                      <div className="text-lg font-semibold">{c.reddit_count}</div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-muted-foreground">Posts</div>
-                      <div className="text-lg font-semibold">{c.post_count}</div>
-                    </div>
-                  </div>
-                  {c.sub_dots.length > 0 && (
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-[10px] text-muted-foreground uppercase tracking-wide">
-                        Subs
-                      </span>
-                      {c.sub_dots.map((d, i) => (
-                        <span
-                          key={i}
-                          title={`r/${d.name}`}
-                          className={`h-2.5 w-2.5 rounded-full shrink-0 ${
-                            d.color === "success"
-                              ? "bg-success"
-                              : d.color === "warning"
-                                ? "bg-warning"
-                                : "bg-destructive"
-                          }`}
-                        />
-                      ))}
-                    </div>
-                  )}
-                  {c.mtd_reddit + c.mtd_organic + c.mtd_internal + c.mtd_ads_net > 0 &&
-                    (() => {
-                      const total = c.mtd_reddit + c.mtd_organic + c.mtd_internal + c.mtd_ads_net;
-                      return (
-                        <div>
-                          <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-1">
-                            <span className="uppercase tracking-wide">MTD Revenue</span>
-                            <span className="font-medium text-foreground">
-                              $
-                              {total.toLocaleString("en-US", {
-                                minimumFractionDigits: 0,
-                                maximumFractionDigits: 0,
-                              })}
-                            </span>
-                          </div>
-                          <div className="h-2 rounded-full overflow-hidden flex bg-secondary">
-                            {c.mtd_reddit > 0 && (
-                              <div
-                                className="h-full bg-primary"
-                                style={{ width: `${(c.mtd_reddit / total) * 100}%` }}
-                                title={`Reddit $${c.mtd_reddit.toFixed(0)}`}
-                              />
-                            )}
-                            {c.mtd_organic > 0 && (
-                              <div
-                                className="h-full bg-success"
-                                style={{ width: `${(c.mtd_organic / total) * 100}%` }}
-                                title={`Organic $${c.mtd_organic.toFixed(0)}`}
-                              />
-                            )}
-                            {c.mtd_internal > 0 && (
-                              <div
-                                className="h-full bg-warning"
-                                style={{ width: `${(c.mtd_internal / total) * 100}%` }}
-                                title={`Internal $${c.mtd_internal.toFixed(0)}`}
-                              />
-                            )}
-                            {c.mtd_ads_net > 0 && (
-                              <div
-                                className="h-full bg-ads"
-                                style={{ width: `${(c.mtd_ads_net / total) * 100}%` }}
-                                title={`Ads net $${c.mtd_ads_net.toFixed(0)}`}
-                              />
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })()}
-                </div>
-              </Link>
-
-              {/* Edit / Delete buttons — appear on hover */}
-              <div className="absolute top-3 right-3 hidden group-hover:flex items-center gap-1 z-10">
-                <button
-                  onClick={(e) => openEdit(c, e)}
-                  className="rounded-md bg-background/90 border border-border p-1.5 text-muted-foreground hover:text-foreground transition-colors shadow-sm"
-                  title="Edit creator"
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                </button>
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <button
-                      className="rounded-md bg-background/90 border border-border p-1.5 text-muted-foreground hover:text-destructive transition-colors shadow-sm"
-                      title="Delete creator"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Delete {c.name}?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        This will permanently delete {c.name} and all their Reddit accounts, posts,
-                        content, and revenue entries. This cannot be undone.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction onClick={() => onDelete(c.id)}>Delete</AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+      </div>
     </div>
   );
 }
