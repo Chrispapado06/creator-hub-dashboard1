@@ -5,6 +5,7 @@ import {
   Plus, Trash2, Edit2, Check, X, ExternalLink, RefreshCw, Upload,
   Heart, MessageCircle, Eye, Image as ImageIcon, Video, Film, Layers,
   Camera, AlertTriangle, Link2, ArrowLeft, Link as LinkIcon, Unlink,
+  Users, TrendingUp, DollarSign,
 } from "lucide-react";
 import { SiMeta } from "react-icons/si";
 import { SiInstagram } from "react-icons/si";
@@ -346,7 +347,7 @@ function InstagramPage() {
             />
           </TabsContent>
           <TabsContent value="analytics" className="mt-6">
-            <AnalyticsTab accounts={accounts} posts={posts} />
+            <AnalyticsTab accounts={accounts} posts={posts} inflowwStats={inflowwStats} />
           </TabsContent>
         </Tabs>
       )}
@@ -365,58 +366,110 @@ function OverviewTab({
   onSyncInfloww: () => void;
 }) {
   const totalFollowers = accounts.reduce((s, a) => s + a.followers_count, 0);
+  const totalLikes = posts.reduce((s, p) => s + p.likes_count, 0);
   const totalRevenue = inflowwStats
     .filter((s) => accounts.some((a) => a.infloww_campaign_code === s.campaign_code))
     .reduce((s, i) => s + i.revenue_total, 0);
   const posts30d = posts.filter(
     (p) => Date.now() - new Date(p.posted_at).getTime() < 30 * 24 * 3600_000
   ).length;
+  const activeAccounts = accounts.filter((a) => a.status === "active").length;
   const topPost = posts.length > 0 ? posts.reduce((a, b) => (a.likes_count > b.likes_count ? a : b)) : null;
   const topPostAccount = topPost ? accounts.find((a) => a.id === topPost.instagram_account_id) : null;
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3 p-4 rounded-xl border border-border bg-card">
-        <span className="text-sm font-medium text-muted-foreground">Sync:</span>
-        <Button variant="outline" size="sm" onClick={onSyncInfloww} disabled={syncing}>
-          <Upload className={`h-3.5 w-3.5 mr-1.5 ${syncing ? "animate-pulse" : ""}`} />
-          {syncing ? "Syncing…" : "Sync Infloww"}
-        </Button>
+      {/* Brand hero — gradient panel with the headline numbers. */}
+      <div className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-card via-card/80 to-[#E1306C]/10 p-6">
+        <div aria-hidden className="absolute -top-20 -right-20 h-64 w-64 rounded-full bg-[#E1306C]/15 blur-3xl pointer-events-none" />
+        <div aria-hidden className="absolute -bottom-20 -left-20 h-64 w-64 rounded-full bg-[#F77737]/10 blur-3xl pointer-events-none" />
+        <div className="relative flex items-start justify-between gap-4 flex-wrap">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold">
+              <SiInstagram className="h-3.5 w-3.5" style={{ color: IG_PINK }} />
+              Instagram presence
+            </div>
+            <div className="mt-2 flex items-baseline gap-3 flex-wrap">
+              <span className="text-3xl sm:text-4xl font-bold tracking-tight">
+                {totalFollowers.toLocaleString()}
+              </span>
+              <span className="text-sm text-muted-foreground font-medium">followers</span>
+              <span className="text-muted-foreground/50">·</span>
+              <span className="text-sm">
+                <span className="font-semibold text-foreground">{activeAccounts}</span>
+                <span className="text-muted-foreground"> active </span>
+                <span className="text-muted-foreground">/ {accounts.length} total</span>
+              </span>
+            </div>
+            <div className="mt-1 text-xs text-muted-foreground">
+              {posts.length.toLocaleString()} posts tracked · {posts30d} in last 30d · {totalLikes.toLocaleString()} total likes
+            </div>
+          </div>
+          <Button variant="outline" size="sm" onClick={onSyncInfloww} disabled={syncing}>
+            <Upload className={`h-3.5 w-3.5 mr-1.5 ${syncing ? "animate-pulse" : ""}`} />
+            {syncing ? "Syncing…" : "Sync Infloww"}
+          </Button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <StatCard label="IG accounts" value={accounts.length} sub="linked" />
-        <StatCard label="Total followers" value={totalFollowers.toLocaleString()} sub={`across ${accounts.length} account${accounts.length === 1 ? "" : "s"}`} />
-        <StatCard label="Posts (30d)" value={posts30d} sub={`${posts.length} total tracked`} />
-        <StatCard label="Infloww revenue" value={`$${fmtMoney0(totalRevenue)}`} sub="from assigned codes" valueClass="text-success" />
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <ModernStat
+          icon={<Users className="h-3.5 w-3.5" />}
+          tone="pink"
+          label="Followers"
+          value={totalFollowers.toLocaleString()}
+          sub={`${activeAccounts} active`}
+        />
+        <ModernStat
+          icon={<Heart className="h-3.5 w-3.5" />}
+          tone="pink"
+          label="Total likes"
+          value={totalLikes.toLocaleString()}
+          sub={`${posts.length} posts`}
+        />
+        <ModernStat
+          icon={<TrendingUp className="h-3.5 w-3.5" />}
+          tone="amber"
+          label="Posts (30d)"
+          value={posts30d.toLocaleString()}
+          sub={`${posts.length} all-time`}
+        />
+        <ModernStat
+          icon={<DollarSign className="h-3.5 w-3.5" />}
+          tone="emerald"
+          label="Infloww revenue"
+          value={`$${fmtMoney0(totalRevenue)}`}
+          sub="from assigned codes"
+        />
       </div>
 
       {topPost && (
-        <div className="rounded-xl border border-border bg-card p-5">
-          <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+        <div className="rounded-2xl border border-border bg-card p-5">
+          <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
+            <span className="h-1 w-1 rounded-full bg-[#E1306C]" />
             Best performing post
           </div>
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <div className="font-medium truncate flex items-center gap-2">
-                <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded border border-border bg-secondary/40 text-muted-foreground capitalize">
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div className="min-w-0 flex-1">
+              <div className="font-medium truncate flex items-center gap-2 flex-wrap">
+                <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-border bg-secondary/40 text-muted-foreground capitalize">
                   {mediaTypeIcon[topPost.media_type]}
                   {topPost.media_type}
                 </span>
                 <span className="truncate">{topPost.caption ?? "(no caption)"}</span>
               </div>
-              <div className="text-xs text-muted-foreground mt-0.5">
+              <div className="text-xs text-muted-foreground mt-1">
                 {topPostAccount ? `@${topPostAccount.username} · ` : ""}
                 {formatDistanceToNow(new Date(topPost.posted_at), { addSuffix: true })}
               </div>
             </div>
             <div className="flex items-center gap-4 shrink-0">
               <div className="text-right">
-                <div className="font-semibold flex items-center gap-1 justify-end">
+                <div className="font-bold text-lg flex items-center gap-1 justify-end">
                   <Heart className="h-3.5 w-3.5" style={{ color: IG_PINK }} />
                   {topPost.likes_count.toLocaleString()}
                 </div>
-                <div className="text-xs text-muted-foreground">likes</div>
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider">likes</div>
               </div>
               {topPost.url && (
                 <a href={topPost.url} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-primary">
@@ -429,6 +482,36 @@ function OverviewTab({
       )}
 
       <HealthWarnings accounts={accounts} posts={posts} />
+    </div>
+  );
+}
+
+function ModernStat({
+  icon, label, value, sub, tone,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string | number;
+  sub: string;
+  tone: "pink" | "cyan" | "emerald" | "amber" | "violet";
+}) {
+  const toneCls = {
+    pink:    { chip: "bg-[#E1306C]/15 text-[#E1306C]",  value: "" },
+    cyan:    { chip: "bg-cyan-500/15 text-cyan-400",    value: "" },
+    emerald: { chip: "bg-emerald-500/15 text-emerald-400", value: "text-emerald-400" },
+    amber:   { chip: "bg-amber-500/15 text-amber-400",  value: "" },
+    violet:  { chip: "bg-violet-500/15 text-violet-400",value: "" },
+  }[tone];
+  return (
+    <div className="rounded-xl border border-border bg-card p-4 hover:border-border/80 transition-colors">
+      <div className="flex items-center gap-2 mb-2">
+        <span className={`h-7 w-7 rounded-lg flex items-center justify-center ${toneCls.chip}`}>
+          {icon}
+        </span>
+        <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold truncate">{label}</span>
+      </div>
+      <div className={`text-2xl font-bold tabular-nums ${toneCls.value}`}>{value}</div>
+      <div className="text-[11px] text-muted-foreground mt-1 truncate">{sub}</div>
     </div>
   );
 }
@@ -2008,7 +2091,30 @@ function RevenueTab({
 }
 
 // ── Analytics Tab ──────────────────────────────────────────────────────────────
-function AnalyticsTab({ accounts, posts }: { accounts: IGAccount[]; posts: IGPost[] }) {
+function AnalyticsTab({
+  accounts, posts, inflowwStats,
+}: {
+  accounts: IGAccount[];
+  posts: IGPost[];
+  inflowwStats: InflowwStat[];
+}) {
+  // Per-account Infloww attribution. Same shape as TikTok's
+  // analytics revenue strip — totals + per-account breakdown.
+  const revenueByAccount = useMemo(() => {
+    return accounts.map((a) => {
+      const stat = inflowwStats.find((s) => s.campaign_code === a.infloww_campaign_code);
+      return {
+        account: a,
+        revenue: stat?.revenue_total ?? 0,
+        clicks: stat?.clicks_count ?? 0,
+        subscribers: stat?.subscribers_count ?? 0,
+        hasCode: !!a.infloww_campaign_code,
+      };
+    }).sort((x, y) => y.revenue - x.revenue);
+  }, [accounts, inflowwStats]);
+  const totalPlatformRevenue = revenueByAccount.reduce((s, r) => s + r.revenue, 0);
+  const totalClicks = revenueByAccount.reduce((s, r) => s + r.clicks, 0);
+  const totalSubs = revenueByAccount.reduce((s, r) => s + r.subscribers, 0);
   const stats = useMemo(() => {
     const total = posts.length;
     const totalLikes = posts.reduce((s, p) => s + p.likes_count, 0);
@@ -2057,6 +2163,54 @@ function AnalyticsTab({ accounts, posts }: { accounts: IGAccount[]; posts: IGPos
 
   return (
     <div className="space-y-6">
+      {/* Revenue from Instagram — total platform income across every
+          account this creator runs, with per-account breakdown below. */}
+      <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-5 sm:p-6">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold">
+              <DollarSign className="h-3.5 w-3.5 text-emerald-400" />
+              Revenue from Instagram
+            </div>
+            <div className="mt-2 text-3xl sm:text-4xl font-bold tracking-tight tabular-nums">
+              ${fmtMoney0(totalPlatformRevenue)}
+            </div>
+            <div className="mt-1 text-xs text-muted-foreground">
+              Across {accounts.length} account{accounts.length === 1 ? "" : "s"} · {totalClicks.toLocaleString()} clicks · {totalSubs.toLocaleString()} subscribers
+            </div>
+          </div>
+        </div>
+        {revenueByAccount.length > 0 && (
+          <div className="mt-5 space-y-1.5">
+            {revenueByAccount.map(({ account, revenue, clicks, subscribers, hasCode }) => (
+              <div
+                key={account.id}
+                className="flex items-center justify-between gap-3 rounded-lg bg-card/60 px-3 py-2 text-sm"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-medium truncate">@{account.username}</span>
+                  {!hasCode && (
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                      no campaign code
+                    </span>
+                  )}
+                  <span className="text-[10px] text-muted-foreground capitalize">
+                    {statusLabels[account.status]}
+                  </span>
+                </div>
+                <div className="flex items-center gap-4 shrink-0 text-xs text-muted-foreground tabular-nums">
+                  <span>{clicks.toLocaleString()} clicks</span>
+                  <span>{subscribers.toLocaleString()} subs</span>
+                  <span className={`font-bold text-sm tabular-nums ${revenue > 0 ? "text-emerald-400" : "text-muted-foreground/60"}`}>
+                    ${fmtMoney0(revenue)}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <StatCard label="Total posts" value={stats.total} sub="tracked" />
         <StatCard label="Total likes" value={stats.totalLikes.toLocaleString()} sub="across posts" />
