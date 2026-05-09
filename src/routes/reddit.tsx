@@ -350,7 +350,15 @@ function OverviewTab({ creatorId, accounts, posts, subreddits, trackingLinks, in
   accounts: RedditAccount[]; posts: Post[]; subreddits: Subreddit[]; trackingLinks: TrackingLink[]; inflowwStats: InflowwStat[];
   syncing: boolean; syncingReddit: boolean; onSyncInfloww: () => void; onSyncReddit: () => void; onRefresh: () => void;
 }) {
-  const totalRevenue = inflowwStats.reduce((s, i) => s + i.revenue_total, 0);
+  // Only Infloww campaigns assigned to a Reddit account belong on the
+  // Reddit totals. Without this filter, campaigns wired to TikTok / IG /
+  // FB accounts (also stored in infloww_tracking_stats per creator) leak
+  // into Reddit's revenue rollup and inflate the number.
+  const redditCodeSet = new Set(
+    accounts.map((a) => a.infloww_campaign_code).filter((c): c is number => c !== null),
+  );
+  const redditInflowwStats = inflowwStats.filter((s) => redditCodeSet.has(s.campaign_code));
+  const totalRevenue = redditInflowwStats.reduce((s, i) => s + i.revenue_total, 0);
   const activeSubs = subreddits.filter((s) => s.status === "active").length;
   const posts30d = posts.filter((p) => Date.now() - new Date(p.posted_at).getTime() < 30 * 24 * 3600_000).length;
   const topPost = posts.length > 0 ? posts.reduce((a, b) => (a.upvotes > b.upvotes ? a : b)) : null;
@@ -1285,10 +1293,22 @@ function RevenueTab({ accounts, trackingLinks, inflowwStats, syncing, onSyncInfl
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkForm, setLinkForm] = useState({ reddit_account_id: "", label: "", url: "" });
 
-  const totalRevenue = inflowwStats.reduce((s, i) => s + i.revenue_total, 0);
-  const totalClicks = inflowwStats.reduce((s, i) => s + i.clicks_count, 0);
-  const totalSubs = inflowwStats.reduce((s, i) => s + i.subscribers_count, 0);
-  const lastSynced = inflowwStats.length > 0 ? inflowwStats.reduce((a, b) => (a.synced_at > b.synced_at ? a : b)).synced_at : null;
+  // Restrict the rollup to Infloww campaigns actually attached to a
+  // Reddit account. Without this filter, campaigns wired to other
+  // platforms for the same creator (TikTok / IG / FB / etc.) leaked
+  // into the Reddit page's totals and revenue/click/sub numbers were
+  // inflated. The per-account row below already filters correctly via
+  // .find(s => s.campaign_code === a.infloww_campaign_code).
+  const redditCodeSet = new Set(
+    accounts.map((a) => a.infloww_campaign_code).filter((c): c is number => c !== null),
+  );
+  const redditInflowwStats = inflowwStats.filter((s) => redditCodeSet.has(s.campaign_code));
+  const totalRevenue = redditInflowwStats.reduce((s, i) => s + i.revenue_total, 0);
+  const totalClicks = redditInflowwStats.reduce((s, i) => s + i.clicks_count, 0);
+  const totalSubs = redditInflowwStats.reduce((s, i) => s + i.subscribers_count, 0);
+  const lastSynced = redditInflowwStats.length > 0
+    ? redditInflowwStats.reduce((a, b) => (a.synced_at > b.synced_at ? a : b)).synced_at
+    : null;
 
   const onAddLink = async () => {
     if (!linkForm.reddit_account_id) return toast.error("Select an account");
