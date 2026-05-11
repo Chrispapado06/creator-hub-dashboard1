@@ -1,0 +1,1859 @@
+{
+  "seen": {
+    "acct_99db42bda91149f58fd68ecccde21fa8:85116961": {
+      "ts": "2026-05-11T19:17:32+00:00",
+      "amount": 13952,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:85003469": {
+      "ts": "2026-05-08T06:31:14+00:00",
+      "amount": 13605,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:84919945": {
+      "ts": "2026-05-05T10:06:40+00:00",
+      "amount": 7595,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:84847796": {
+      "ts": "2026-05-03T16:01:50+00:00",
+      "amount": 11021,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:84743882": {
+      "ts": "2026-04-30T01:11:34+00:00",
+      "amount": 12131,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:84621380": {
+      "ts": "2026-04-26T14:17:20+00:00",
+      "amount": 16107,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:84546173": {
+      "ts": "2026-04-23T12:55:32+00:00",
+      "amount": 20174,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:84394175": {
+      "ts": "2026-04-18T16:49:49+00:00",
+      "amount": 14630,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:84295953": {
+      "ts": "2026-04-15T00:49:04+00:00",
+      "amount": 14088,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:84164331": {
+      "ts": "2026-04-10T18:42:06+00:00",
+      "amount": 14372,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:84035841": {
+      "ts": "2026-04-06T12:49:52+00:00",
+      "amount": 26111,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:83902038": {
+      "ts": "2026-04-01T21:03:23+00:00",
+      "amount": 14954,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:83719807": {
+      "ts": "2026-03-27T08:54:36+00:00",
+      "amount": 12035,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:83628113": {
+      "ts": "2026-03-24T02:55:42+00:00",
+      "amount": 9065,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:83506204": {
+      "ts": "2026-03-20T07:49:55+00:00",
+      "amount": 10584,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:83398695": {
+      "ts": "2026-03-16T15:50:20+00:00",
+      "amount": 6360,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:83320959": {
+      "ts": "2026-03-14T09:56:05+00:00",
+      "amount": 9357,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:83238649": {
+      "ts": "2026-03-11T12:25:28+00:00",
+      "amount": 13559,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:83106977": {
+      "ts": "2026-03-07T18:02:34+00:00",
+      "amount": 17413,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:83030794": {
+      "ts": "2026-03-04T23:11:01+00:00",
+      "amount": 14374,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:82827344": {
+      "ts": "2026-02-26T20:02:07+00:00",
+      "amount": 11851,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:82590194": {
+      "ts": "2026-02-18T21:06:15+00:00",
+      "amount": 17320,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:82222325": {
+      "ts": "2026-02-07T00:40:22+00:00",
+      "amount": 11224,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:82040197": {
+      "ts": "2026-02-01T17:10:07+00:00",
+      "amount": 9270,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:81883797": {
+      "ts": "2026-01-27T10:18:19+00:00",
+      "amount": 10000,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:81667022": {
+      "ts": "2026-01-20T07:05:12+00:00",
+      "amount": 8518,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:81468275": {
+      "ts": "2026-01-13T19:59:02+00:00",
+      "amount": 10000,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:81261887": {
+      "ts": "2026-01-07T11:00:40+00:00",
+      "amount": 10000,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:81000175": {
+      "ts": "2025-12-30T14:28:49+00:00",
+      "amount": 10000,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:80825913": {
+      "ts": "2025-12-24T19:14:22+00:00",
+      "amount": 10000,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:80579254": {
+      "ts": "2025-12-16T18:55:05+00:00",
+      "amount": 10000,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:80302045": {
+      "ts": "2025-12-08T05:58:08+00:00",
+      "amount": 10000,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:80162386": {
+      "ts": "2025-12-03T19:18:55+00:00",
+      "amount": 10000,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:80033606": {
+      "ts": "2025-11-30T19:47:08+00:00",
+      "amount": 10000,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:79955653": {
+      "ts": "2025-11-27T18:47:57+00:00",
+      "amount": 15000,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:79906258": {
+      "ts": "2025-11-25T22:44:15+00:00",
+      "amount": 10000,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:79815627": {
+      "ts": "2025-11-23T17:45:38+00:00",
+      "amount": 9000,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:79773049": {
+      "ts": "2025-11-21T21:04:14+00:00",
+      "amount": 1000,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:79711547": {
+      "ts": "2025-11-19T19:11:36+00:00",
+      "amount": 6000,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:79631081": {
+      "ts": "2025-11-17T05:30:14+00:00",
+      "amount": 6000,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:79552809": {
+      "ts": "2025-11-14T19:09:19+00:00",
+      "amount": 3000,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:79549246": {
+      "ts": "2025-11-14T16:53:11+00:00",
+      "amount": 3000,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:79391312": {
+      "ts": "2025-11-10T01:30:09+00:00",
+      "amount": 6000,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:79342285": {
+      "ts": "2025-11-08T02:01:36+00:00",
+      "amount": 3000,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:79266947": {
+      "ts": "2025-11-05T14:13:38+00:00",
+      "amount": 4000,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:79168253": {
+      "ts": "2025-11-03T00:23:10+00:00",
+      "amount": 4000,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:79007613": {
+      "ts": "2025-10-28T17:14:38+00:00",
+      "amount": 5000,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:78803278": {
+      "ts": "2025-10-22T02:25:01+00:00",
+      "amount": 6000,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:78695063": {
+      "ts": "2025-10-19T01:10:04+00:00",
+      "amount": 4000,
+      "state": "approved"
+    },
+    "acct_99db42bda91149f58fd68ecccde21fa8:78601724": {
+      "ts": "2025-10-15T16:32:11+00:00",
+      "amount": 3000,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:85020206": {
+      "ts": "2026-05-08T19:15:22+00:00",
+      "amount": 110,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:84798965": {
+      "ts": "2026-05-01T14:47:28+00:00",
+      "amount": 90,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:84687028": {
+      "ts": "2026-04-28T02:03:16+00:00",
+      "amount": 630,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:84400935": {
+      "ts": "2026-04-18T23:27:11+00:00",
+      "amount": 356,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:84255840": {
+      "ts": "2026-04-13T17:27:50+00:00",
+      "amount": 300,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:83975963": {
+      "ts": "2026-04-04T16:42:26+00:00",
+      "amount": 416,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:83779283": {
+      "ts": "2026-03-29T20:08:06+00:00",
+      "amount": 718,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:83645713": {
+      "ts": "2026-03-24T18:13:24+00:00",
+      "amount": 658,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:83317763": {
+      "ts": "2026-03-14T04:56:51+00:00",
+      "amount": 85,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:83272371": {
+      "ts": "2026-03-12T15:14:51+00:00",
+      "amount": 351,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:83141266": {
+      "ts": "2026-03-09T00:22:47+00:00",
+      "amount": 350,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:83008761": {
+      "ts": "2026-03-04T05:29:35+00:00",
+      "amount": 190,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:82797987": {
+      "ts": "2026-02-25T19:53:02+00:00",
+      "amount": 121,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:82676626": {
+      "ts": "2026-02-22T05:15:15+00:00",
+      "amount": 270,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:82535013": {
+      "ts": "2026-02-16T23:43:27+00:00",
+      "amount": 1000,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:82259420": {
+      "ts": "2026-02-08T16:10:59+00:00",
+      "amount": 200,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:82150276": {
+      "ts": "2026-02-04T15:35:44+00:00",
+      "amount": 400,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:81928673": {
+      "ts": "2026-01-28T21:48:03+00:00",
+      "amount": 600,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:81778410": {
+      "ts": "2026-01-24T02:34:43+00:00",
+      "amount": 1000,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:81474980": {
+      "ts": "2026-01-14T00:48:27+00:00",
+      "amount": 200,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:81322847": {
+      "ts": "2026-01-09T09:55:26+00:00",
+      "amount": 700,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:81257278": {
+      "ts": "2026-01-07T06:14:32+00:00",
+      "amount": 200,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:81192574": {
+      "ts": "2026-01-05T09:04:47+00:00",
+      "amount": 1100,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:80957006": {
+      "ts": "2025-12-29T07:01:52+00:00",
+      "amount": 800,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:80812547": {
+      "ts": "2025-12-24T06:01:09+00:00",
+      "amount": 700,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:79913724": {
+      "ts": "2025-11-26T05:23:24+00:00",
+      "amount": 1142,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:74793481": {
+      "ts": "2025-06-24T02:21:40+00:00",
+      "amount": 213,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:74722444": {
+      "ts": "2025-06-22T15:52:00+00:00",
+      "amount": 877,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:74342573": {
+      "ts": "2025-06-10T17:25:29+00:00",
+      "amount": 1207,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:74253629": {
+      "ts": "2025-06-08T17:24:04+00:00",
+      "amount": 20,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:73983419": {
+      "ts": "2025-05-31T21:30:35+00:00",
+      "amount": 1421,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:73822842": {
+      "ts": "2025-05-26T20:44:32+00:00",
+      "amount": 1849,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:73683669": {
+      "ts": "2025-05-22T16:51:04+00:00",
+      "amount": 3109,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:73421222": {
+      "ts": "2025-05-14T21:50:28+00:00",
+      "amount": 3270,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:73102740": {
+      "ts": "2025-05-05T18:43:56+00:00",
+      "amount": 2337,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:72706228": {
+      "ts": "2025-04-24T18:52:09+00:00",
+      "amount": 4652,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:72271021": {
+      "ts": "2025-04-12T01:20:58+00:00",
+      "amount": 2805,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:72136642": {
+      "ts": "2025-04-08T02:43:10+00:00",
+      "amount": 5126,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:71875057": {
+      "ts": "2025-03-31T21:37:42+00:00",
+      "amount": 9602,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:71443600": {
+      "ts": "2025-03-19T13:43:51+00:00",
+      "amount": 15566,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:70772401": {
+      "ts": "2025-02-28T23:31:32+00:00",
+      "amount": 1625,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:70698039": {
+      "ts": "2025-02-26T19:13:19+00:00",
+      "amount": 12730,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:70282239": {
+      "ts": "2025-02-15T00:20:50+00:00",
+      "amount": 4516,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:70129857": {
+      "ts": "2025-02-10T13:21:35+00:00",
+      "amount": 12961,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:69781190": {
+      "ts": "2025-02-01T01:03:43+00:00",
+      "amount": 5086,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:69645011": {
+      "ts": "2025-01-28T01:00:28+00:00",
+      "amount": 8264,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:69394476": {
+      "ts": "2025-01-20T21:59:29+00:00",
+      "amount": 7755,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:69188995": {
+      "ts": "2025-01-15T00:21:01+00:00",
+      "amount": 2135,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:69148859": {
+      "ts": "2025-01-13T20:56:41+00:00",
+      "amount": 7013,
+      "state": "approved"
+    },
+    "acct_1678589302284fda84db6347409000b2:68902127": {
+      "ts": "2025-01-06T23:26:38+00:00",
+      "amount": 8864,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:85020200": {
+      "ts": "2026-05-08T19:15:10+00:00",
+      "amount": 640,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:84798968": {
+      "ts": "2026-05-01T14:47:38+00:00",
+      "amount": 378,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:84687033": {
+      "ts": "2026-04-28T02:03:33+00:00",
+      "amount": 410,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:84400942": {
+      "ts": "2026-04-18T23:27:23+00:00",
+      "amount": 1792,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:84255846": {
+      "ts": "2026-04-13T17:28:02+00:00",
+      "amount": 880,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:83975966": {
+      "ts": "2026-04-04T16:42:33+00:00",
+      "amount": 612,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:83779286": {
+      "ts": "2026-03-29T20:08:16+00:00",
+      "amount": 140,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:83645709": {
+      "ts": "2026-03-24T18:13:19+00:00",
+      "amount": 622,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:83317759": {
+      "ts": "2026-03-14T04:56:45+00:00",
+      "amount": 58,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:83272374": {
+      "ts": "2026-03-12T15:15:00+00:00",
+      "amount": 538,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:83141281": {
+      "ts": "2026-03-09T00:23:08+00:00",
+      "amount": 370,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:83008752": {
+      "ts": "2026-03-04T05:29:21+00:00",
+      "amount": 320,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:82797985": {
+      "ts": "2026-02-25T19:52:57+00:00",
+      "amount": 219,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:82676620": {
+      "ts": "2026-02-22T05:14:39+00:00",
+      "amount": 322,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:82535023": {
+      "ts": "2026-02-16T23:43:56+00:00",
+      "amount": 900,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:82259414": {
+      "ts": "2026-02-08T16:10:47+00:00",
+      "amount": 900,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:82150272": {
+      "ts": "2026-02-04T15:35:35+00:00",
+      "amount": 800,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:81928682": {
+      "ts": "2026-01-28T21:48:25+00:00",
+      "amount": 700,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:81778414": {
+      "ts": "2026-01-24T02:35:07+00:00",
+      "amount": 800,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:81474973": {
+      "ts": "2026-01-14T00:48:00+00:00",
+      "amount": 800,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:81322867": {
+      "ts": "2026-01-09T09:56:15+00:00",
+      "amount": 100,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:81257289": {
+      "ts": "2026-01-07T06:14:55+00:00",
+      "amount": 180,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:81192590": {
+      "ts": "2026-01-05T09:05:32+00:00",
+      "amount": 700,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:80957002": {
+      "ts": "2025-12-29T07:01:45+00:00",
+      "amount": 500,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:80812537": {
+      "ts": "2025-12-24T06:00:38+00:00",
+      "amount": 1200,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:80227033": {
+      "ts": "2025-12-05T23:04:42+00:00",
+      "amount": 1089,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:79655438": {
+      "ts": "2025-11-17T21:03:02+00:00",
+      "amount": 1200,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:79089560": {
+      "ts": "2025-10-31T10:17:18+00:00",
+      "amount": 1800,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:78330228": {
+      "ts": "2025-10-07T04:59:09+00:00",
+      "amount": 700,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:78071865": {
+      "ts": "2025-09-29T16:32:35+00:00",
+      "amount": 200,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:77975774": {
+      "ts": "2025-09-26T19:05:07+00:00",
+      "amount": 520,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:77773074": {
+      "ts": "2025-09-20T18:18:18+00:00",
+      "amount": 600,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:77614573": {
+      "ts": "2025-09-15T13:14:27+00:00",
+      "amount": 440,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:77522828": {
+      "ts": "2025-09-12T18:04:14+00:00",
+      "amount": 540,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:77390809": {
+      "ts": "2025-09-08T15:31:05+00:00",
+      "amount": 500,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:77288704": {
+      "ts": "2025-09-05T15:46:54+00:00",
+      "amount": 1000,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:76996159": {
+      "ts": "2025-08-28T02:20:13+00:00",
+      "amount": 2700,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:76303591": {
+      "ts": "2025-08-07T05:54:04+00:00",
+      "amount": 6000,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:75971615": {
+      "ts": "2025-07-28T18:04:37+00:00",
+      "amount": 2000,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:74101055": {
+      "ts": "2025-06-03T14:57:30+00:00",
+      "amount": 2400,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:73237209": {
+      "ts": "2025-05-09T17:01:53+00:00",
+      "amount": 1900,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:72608310": {
+      "ts": "2025-04-21T21:20:27+00:00",
+      "amount": 1300,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:71991645": {
+      "ts": "2025-04-03T21:54:06+00:00",
+      "amount": 1100,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:71692055": {
+      "ts": "2025-03-26T17:48:51+00:00",
+      "amount": 1000,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:70950295": {
+      "ts": "2025-03-05T15:25:58+00:00",
+      "amount": 2300,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:70414399": {
+      "ts": "2025-02-18T16:52:36+00:00",
+      "amount": 3600,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:69625949": {
+      "ts": "2025-01-27T15:22:09+00:00",
+      "amount": 2500,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:69215547": {
+      "ts": "2025-01-15T19:32:22+00:00",
+      "amount": 2800,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:68777815": {
+      "ts": "2025-01-03T19:24:27+00:00",
+      "amount": 2600,
+      "state": "approved"
+    },
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4:68433734": {
+      "ts": "2024-12-25T07:50:10+00:00",
+      "amount": 2130,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:85069766": {
+      "ts": "2026-05-10T21:48:14+00:00",
+      "amount": 388,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:85024300": {
+      "ts": "2026-05-08T22:24:50+00:00",
+      "amount": 604,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:84925325": {
+      "ts": "2026-05-05T14:21:38+00:00",
+      "amount": 542,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:84750595": {
+      "ts": "2026-04-30T07:53:24+00:00",
+      "amount": 175,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:84701102": {
+      "ts": "2026-04-28T15:19:49+00:00",
+      "amount": 451,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:84545327": {
+      "ts": "2026-04-23T12:22:28+00:00",
+      "amount": 340,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:84286300": {
+      "ts": "2026-04-14T17:38:02+00:00",
+      "amount": 1206,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:84069766": {
+      "ts": "2026-04-07T14:51:49+00:00",
+      "amount": 1176,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:83957453": {
+      "ts": "2026-04-03T20:15:58+00:00",
+      "amount": 299,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:83934842": {
+      "ts": "2026-04-02T23:38:49+00:00",
+      "amount": 884,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:83826988": {
+      "ts": "2026-03-30T18:53:44+00:00",
+      "amount": 860,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:83487548": {
+      "ts": "2026-03-19T16:19:21+00:00",
+      "amount": 517,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:83438558": {
+      "ts": "2026-03-17T21:59:49+00:00",
+      "amount": 368,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:83293284": {
+      "ts": "2026-03-13T07:45:58+00:00",
+      "amount": 308,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:83181947": {
+      "ts": "2026-03-09T16:32:57+00:00",
+      "amount": 2560,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:83010650": {
+      "ts": "2026-03-04T07:37:26+00:00",
+      "amount": 2247,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:82875511": {
+      "ts": "2026-02-28T16:49:16+00:00",
+      "amount": 607,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:82481505": {
+      "ts": "2026-02-15T21:20:56+00:00",
+      "amount": 107,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:82373265": {
+      "ts": "2026-02-11T17:45:47+00:00",
+      "amount": 328,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:82171487": {
+      "ts": "2026-02-05T08:21:44+00:00",
+      "amount": 27,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:82125807": {
+      "ts": "2026-02-03T18:30:54+00:00",
+      "amount": 103,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:82059345": {
+      "ts": "2026-02-02T01:50:56+00:00",
+      "amount": 106,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:82005252": {
+      "ts": "2026-01-31T17:24:03+00:00",
+      "amount": 115,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:81866685": {
+      "ts": "2026-01-26T19:49:19+00:00",
+      "amount": 228,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:81605274": {
+      "ts": "2026-01-18T20:42:21+00:00",
+      "amount": 163,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:81596372": {
+      "ts": "2026-01-18T13:53:55+00:00",
+      "amount": 116,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:81560121": {
+      "ts": "2026-01-16T21:50:45+00:00",
+      "amount": 109,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:81484805": {
+      "ts": "2026-01-14T10:44:49+00:00",
+      "amount": 278,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:81432551": {
+      "ts": "2026-01-12T17:32:21+00:00",
+      "amount": 237,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:81334933": {
+      "ts": "2026-01-09T18:59:53+00:00",
+      "amount": 148,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:81280068": {
+      "ts": "2026-01-07T23:02:08+00:00",
+      "amount": 98,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:81248366": {
+      "ts": "2026-01-06T22:46:59+00:00",
+      "amount": 208,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:81159330": {
+      "ts": "2026-01-04T21:01:37+00:00",
+      "amount": 112,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:81108592": {
+      "ts": "2026-01-02T22:04:22+00:00",
+      "amount": 94,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:81031736": {
+      "ts": "2025-12-31T15:24:15+00:00",
+      "amount": 291,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:80843516": {
+      "ts": "2025-12-25T16:32:32+00:00",
+      "amount": 273,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:80823942": {
+      "ts": "2025-12-24T17:41:03+00:00",
+      "amount": 140,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:80631986": {
+      "ts": "2025-12-18T13:55:58+00:00",
+      "amount": 249,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:80566984": {
+      "ts": "2025-12-16T10:25:34+00:00",
+      "amount": 231,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:80406861": {
+      "ts": "2025-12-11T11:05:59+00:00",
+      "amount": 217,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:80378974": {
+      "ts": "2025-12-10T13:42:56+00:00",
+      "amount": 398,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:80269917": {
+      "ts": "2025-12-07T19:15:51+00:00",
+      "amount": 199,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:80203665": {
+      "ts": "2025-12-05T03:12:51+00:00",
+      "amount": 326,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:80116368": {
+      "ts": "2025-12-02T08:42:10+00:00",
+      "amount": 128,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:80003520": {
+      "ts": "2025-11-29T15:32:12+00:00",
+      "amount": 577,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:79634031": {
+      "ts": "2025-11-17T08:17:26+00:00",
+      "amount": 96,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:79541428": {
+      "ts": "2025-11-14T10:59:35+00:00",
+      "amount": 209,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:79522703": {
+      "ts": "2025-11-13T18:31:04+00:00",
+      "amount": 71,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:79417570": {
+      "ts": "2025-11-10T10:33:15+00:00",
+      "amount": 32,
+      "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:79346823": {
+      "ts": "2025-11-08T07:51:51+00:00",
+      "amount": 365,
+      "state": "approved"
+    },
+    "acct_6bc9a3ee3d7f4bd38b354faff5f1b1bd:84710190": {
+      "ts": "2026-04-28T21:11:32+00:00",
+      "amount": 50,
+      "state": "approved"
+    },
+    "acct_6bc9a3ee3d7f4bd38b354faff5f1b1bd:84237677": {
+      "ts": "2026-04-13T05:08:32+00:00",
+      "amount": 26,
+      "state": "approved"
+    },
+    "acct_6bc9a3ee3d7f4bd38b354faff5f1b1bd:83879924": {
+      "ts": "2026-04-01T04:48:15+00:00",
+      "amount": 134,
+      "state": "approved"
+    },
+    "acct_6bc9a3ee3d7f4bd38b354faff5f1b1bd:83690906": {
+      "ts": "2026-03-26T08:55:38+00:00",
+      "amount": 260,
+      "state": "approved"
+    },
+    "acct_6bc9a3ee3d7f4bd38b354faff5f1b1bd:83053904": {
+      "ts": "2026-03-05T18:25:31+00:00",
+      "amount": 50,
+      "state": "approved"
+    },
+    "acct_6bc9a3ee3d7f4bd38b354faff5f1b1bd:82800325": {
+      "ts": "2026-02-25T21:33:50+00:00",
+      "amount": 188,
+      "state": "approved"
+    },
+    "acct_6bc9a3ee3d7f4bd38b354faff5f1b1bd:82437890": {
+      "ts": "2026-02-13T23:02:19+00:00",
+      "amount": 142,
+      "state": "approved"
+    },
+    "acct_6bc9a3ee3d7f4bd38b354faff5f1b1bd:82202265": {
+      "ts": "2026-02-06T09:04:42+00:00",
+      "amount": 196,
+      "state": "approved"
+    },
+    "acct_6bc9a3ee3d7f4bd38b354faff5f1b1bd:81692602": {
+      "ts": "2026-01-21T02:28:04+00:00",
+      "amount": 422,
+      "state": "approved"
+    },
+    "acct_6bc9a3ee3d7f4bd38b354faff5f1b1bd:80609672": {
+      "ts": "2025-12-17T18:55:35+00:00",
+      "amount": 227,
+      "state": "approved"
+    },
+    "acct_6bc9a3ee3d7f4bd38b354faff5f1b1bd:79468530": {
+      "ts": "2025-11-11T22:19:32+00:00",
+      "amount": 111,
+      "state": "approved"
+    },
+    "acct_6bc9a3ee3d7f4bd38b354faff5f1b1bd:78667221": {
+      "ts": "2025-10-17T20:15:06+00:00",
+      "amount": 222,
+      "state": "approved"
+    },
+    "acct_6bc9a3ee3d7f4bd38b354faff5f1b1bd:77678242": {
+      "ts": "2025-09-17T12:13:40+00:00",
+      "amount": 291,
+      "state": "approved"
+    },
+    "acct_6bc9a3ee3d7f4bd38b354faff5f1b1bd:77235492": {
+      "ts": "2025-09-03T22:21:10+00:00",
+      "amount": 144,
+      "state": "approved"
+    },
+    "acct_6bc9a3ee3d7f4bd38b354faff5f1b1bd:76692437": {
+      "ts": "2025-08-18T19:34:22+00:00",
+      "amount": 197,
+      "state": "approved"
+    },
+    "acct_6bc9a3ee3d7f4bd38b354faff5f1b1bd:75304008": {
+      "ts": "2025-07-08T20:08:34+00:00",
+      "amount": 130,
+      "state": "approved"
+    },
+    "acct_6bc9a3ee3d7f4bd38b354faff5f1b1bd:73505079": {
+      "ts": "2025-05-17T16:12:00+00:00",
+      "amount": 80,
+      "state": "approved"
+    },
+    "acct_6bc9a3ee3d7f4bd38b354faff5f1b1bd:73018239": {
+      "ts": "2025-05-03T16:25:18+00:00",
+      "amount": 152,
+      "state": "approved"
+    },
+    "acct_6bc9a3ee3d7f4bd38b354faff5f1b1bd:72391993": {
+      "ts": "2025-04-15T11:18:41+00:00",
+      "amount": 213,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:84907438": {
+      "ts": "2026-05-04T22:26:13+00:00",
+      "amount": 1337,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:84750263": {
+      "ts": "2026-04-30T07:28:21+00:00",
+      "amount": 429,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:84714627": {
+      "ts": "2026-04-29T00:48:32+00:00",
+      "amount": 220,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:84712304": {
+      "ts": "2026-04-28T22:48:37+00:00",
+      "amount": 1989,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:84333149": {
+      "ts": "2026-04-16T09:21:32+00:00",
+      "amount": 2601,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:83928742": {
+      "ts": "2026-04-02T19:06:47+00:00",
+      "amount": 2756,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:83736529": {
+      "ts": "2026-03-27T22:13:12+00:00",
+      "amount": 2038,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:83439783": {
+      "ts": "2026-03-17T22:57:25+00:00",
+      "amount": 4098,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:83003298": {
+      "ts": "2026-03-04T00:29:11+00:00",
+      "amount": 2794,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:82797502": {
+      "ts": "2026-02-25T19:34:43+00:00",
+      "amount": 2653,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:82422376": {
+      "ts": "2026-02-13T10:48:37+00:00",
+      "amount": 3172,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:82202263": {
+      "ts": "2026-02-06T09:04:16+00:00",
+      "amount": 1116,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:81970344": {
+      "ts": "2026-01-30T09:14:37+00:00",
+      "amount": 1336,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:81746851": {
+      "ts": "2026-01-22T22:57:33+00:00",
+      "amount": 3215,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:81529833": {
+      "ts": "2026-01-15T20:43:46+00:00",
+      "amount": 1500,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:81335056": {
+      "ts": "2026-01-09T19:04:21+00:00",
+      "amount": 1000,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:80882907": {
+      "ts": "2025-12-27T02:31:44+00:00",
+      "amount": 2425,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:80609664": {
+      "ts": "2025-12-17T18:55:19+00:00",
+      "amount": 1522,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:80136759": {
+      "ts": "2025-12-02T22:44:45+00:00",
+      "amount": 435,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:79991639": {
+      "ts": "2025-11-29T01:43:39+00:00",
+      "amount": 3709,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:79223705": {
+      "ts": "2025-11-04T01:40:18+00:00",
+      "amount": 1966,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:78667198": {
+      "ts": "2025-10-17T20:13:47+00:00",
+      "amount": 1898,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:78215993": {
+      "ts": "2025-10-03T18:28:47+00:00",
+      "amount": 2605,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:77729809": {
+      "ts": "2025-09-19T02:19:19+00:00",
+      "amount": 5200,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:77300694": {
+      "ts": "2025-09-06T00:03:59+00:00",
+      "amount": 2760,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:77029038": {
+      "ts": "2025-08-29T02:45:45+00:00",
+      "amount": 540,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:76692174": {
+      "ts": "2025-08-18T19:26:16+00:00",
+      "amount": 718,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:76366766": {
+      "ts": "2025-08-09T07:22:59+00:00",
+      "amount": 773,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:75777744": {
+      "ts": "2025-07-22T21:50:54+00:00",
+      "amount": 345,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:75275777": {
+      "ts": "2025-07-08T00:26:04+00:00",
+      "amount": 455,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:75018838": {
+      "ts": "2025-06-30T18:53:59+00:00",
+      "amount": 846,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:74254658": {
+      "ts": "2025-06-08T18:04:19+00:00",
+      "amount": 767,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:73836258": {
+      "ts": "2025-05-27T07:08:15+00:00",
+      "amount": 479,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:73505056": {
+      "ts": "2025-05-17T16:11:11+00:00",
+      "amount": 209,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:73395141": {
+      "ts": "2025-05-14T02:51:50+00:00",
+      "amount": 423,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:73047299": {
+      "ts": "2025-05-04T18:43:22+00:00",
+      "amount": 194,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:72997282": {
+      "ts": "2025-05-02T20:35:08+00:00",
+      "amount": 554,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:72723320": {
+      "ts": "2025-04-25T08:10:18+00:00",
+      "amount": 790,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:72391890": {
+      "ts": "2025-04-15T11:12:47+00:00",
+      "amount": 208,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:72094944": {
+      "ts": "2025-04-07T04:18:51+00:00",
+      "amount": 93,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:71839003": {
+      "ts": "2025-03-31T04:31:41+00:00",
+      "amount": 192,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:71596981": {
+      "ts": "2025-03-24T04:20:46+00:00",
+      "amount": 314,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:71356209": {
+      "ts": "2025-03-17T04:04:17+00:00",
+      "amount": 403,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:71109701": {
+      "ts": "2025-03-10T04:18:41+00:00",
+      "amount": 499,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:70858461": {
+      "ts": "2025-03-03T04:13:16+00:00",
+      "amount": 606,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:70598966": {
+      "ts": "2025-02-24T04:29:26+00:00",
+      "amount": 304,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:70427416": {
+      "ts": "2025-02-19T00:13:52+00:00",
+      "amount": 79,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:70355538": {
+      "ts": "2025-02-17T04:21:48+00:00",
+      "amount": 1182,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:70112167": {
+      "ts": "2025-02-10T04:00:46+00:00",
+      "amount": 806,
+      "state": "approved"
+    },
+    "acct_ebbd462d60fd4718ac0792deaac898bb:69865194": {
+      "ts": "2025-02-03T03:45:25+00:00",
+      "amount": 656,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:85100360": {
+      "ts": "2026-05-11T09:58:07+00:00",
+      "amount": 4826,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:84928119": {
+      "ts": "2026-05-05T16:02:45+00:00",
+      "amount": 15247,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:84678963": {
+      "ts": "2026-04-27T19:51:32+00:00",
+      "amount": 8122,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:84368392": {
+      "ts": "2026-04-17T15:08:29+00:00",
+      "amount": 8686,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:84138401": {
+      "ts": "2026-04-09T20:27:43+00:00",
+      "amount": 1739,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:84099355": {
+      "ts": "2026-04-08T15:14:57+00:00",
+      "amount": 1260,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:84068109": {
+      "ts": "2026-04-07T13:48:39+00:00",
+      "amount": 10748,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:83887005": {
+      "ts": "2026-04-01T11:41:09+00:00",
+      "amount": 21892,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:83612615": {
+      "ts": "2026-03-23T16:48:54+00:00",
+      "amount": 8078,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:83437346": {
+      "ts": "2026-03-17T21:03:54+00:00",
+      "amount": 10092,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:83121307": {
+      "ts": "2026-03-08T08:32:07+00:00",
+      "amount": 3676,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:83032677": {
+      "ts": "2026-03-05T00:40:26+00:00",
+      "amount": 14089,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:82763121": {
+      "ts": "2026-02-24T15:28:10+00:00",
+      "amount": 4545,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:82589572": {
+      "ts": "2026-02-18T20:41:24+00:00",
+      "amount": 2710,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:82475548": {
+      "ts": "2026-02-15T17:10:47+00:00",
+      "amount": 7892,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:82314256": {
+      "ts": "2026-02-09T18:48:25+00:00",
+      "amount": 7617,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:82056254": {
+      "ts": "2026-02-02T01:28:11+00:00",
+      "amount": 7617,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:81904280": {
+      "ts": "2026-01-28T01:22:42+00:00",
+      "amount": 7299,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:81683955": {
+      "ts": "2026-01-20T19:51:40+00:00",
+      "amount": 624,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:81590303": {
+      "ts": "2026-01-18T05:33:14+00:00",
+      "amount": 1357,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:81387480": {
+      "ts": "2026-01-11T21:31:50+00:00",
+      "amount": 184,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:81368730": {
+      "ts": "2026-01-11T02:59:29+00:00",
+      "amount": 116,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:81363890": {
+      "ts": "2026-01-10T22:13:42+00:00",
+      "amount": 136,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:81346768": {
+      "ts": "2026-01-10T05:00:57+00:00",
+      "amount": 32,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:81345611": {
+      "ts": "2026-01-10T03:39:55+00:00",
+      "amount": 316,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:81317605": {
+      "ts": "2026-01-09T03:53:41+00:00",
+      "amount": 36,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:81313318": {
+      "ts": "2026-01-09T00:20:21+00:00",
+      "amount": 56,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:81298998": {
+      "ts": "2026-01-08T15:45:16+00:00",
+      "amount": 120,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:81274615": {
+      "ts": "2026-01-07T19:29:53+00:00",
+      "amount": 1523,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:80976985": {
+      "ts": "2025-12-29T19:19:21+00:00",
+      "amount": 2174,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:80640071": {
+      "ts": "2025-12-18T18:56:08+00:00",
+      "amount": 1548,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:80268881": {
+      "ts": "2025-12-07T18:33:27+00:00",
+      "amount": 406,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:80236281": {
+      "ts": "2025-12-06T10:11:07+00:00",
+      "amount": 192,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:80208731": {
+      "ts": "2025-12-05T08:46:25+00:00",
+      "amount": 139,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:80198035": {
+      "ts": "2025-12-04T22:22:40+00:00",
+      "amount": 137,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:80175902": {
+      "ts": "2025-12-04T05:40:53+00:00",
+      "amount": 52,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:80170729": {
+      "ts": "2025-12-04T00:53:51+00:00",
+      "amount": 48,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:80157719": {
+      "ts": "2025-12-03T16:32:59+00:00",
+      "amount": 64,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:80146050": {
+      "ts": "2025-12-03T06:48:10+00:00",
+      "amount": 224,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:80143481": {
+      "ts": "2025-12-03T04:08:05+00:00",
+      "amount": 174,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:80133160": {
+      "ts": "2025-12-02T20:24:34+00:00",
+      "amount": 128,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:80113846": {
+      "ts": "2025-12-02T05:48:24+00:00",
+      "amount": 220,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:80109203": {
+      "ts": "2025-12-02T01:40:35+00:00",
+      "amount": 126,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:80099247": {
+      "ts": "2025-12-01T19:31:13+00:00",
+      "amount": 2811,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:79883704": {
+      "ts": "2025-11-25T05:23:03+00:00",
+      "amount": 2070,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:79215146": {
+      "ts": "2025-11-03T20:03:37+00:00",
+      "amount": 120,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:79006302": {
+      "ts": "2025-10-28T16:29:19+00:00",
+      "amount": 608,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:78132252": {
+      "ts": "2025-10-01T03:22:54+00:00",
+      "amount": 1425,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:77338632": {
+      "ts": "2025-09-07T15:49:27+00:00",
+      "amount": 466,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:77176513": {
+      "ts": "2025-09-02T04:27:20+00:00",
+      "amount": 121,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:85086247": {
+      "ts": "2026-05-11T02:27:32+00:00",
+      "amount": 23765,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:84871923": {
+      "ts": "2026-05-04T02:11:56+00:00",
+      "amount": 19706,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:84647942": {
+      "ts": "2026-04-27T02:24:10+00:00",
+      "amount": 19706,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:84438382": {
+      "ts": "2026-04-20T02:22:09+00:00",
+      "amount": 19908,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:84228888": {
+      "ts": "2026-04-13T02:17:39+00:00",
+      "amount": 20881,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:84019234": {
+      "ts": "2026-04-06T02:26:03+00:00",
+      "amount": 20501,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:83797336": {
+      "ts": "2026-03-30T02:13:51+00:00",
+      "amount": 23216,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:83586816": {
+      "ts": "2026-03-23T02:29:18+00:00",
+      "amount": 24704,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:83374764": {
+      "ts": "2026-03-16T02:24:00+00:00",
+      "amount": 17702,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:83155766": {
+      "ts": "2026-03-09T02:44:30+00:00",
+      "amount": 22353,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:82934465": {
+      "ts": "2026-03-02T02:30:41+00:00",
+      "amount": 18942,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:82710764": {
+      "ts": "2026-02-23T02:39:24+00:00",
+      "amount": 16439,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:82499723": {
+      "ts": "2026-02-16T02:33:39+00:00",
+      "amount": 12643,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:82285197": {
+      "ts": "2026-02-09T02:40:01+00:00",
+      "amount": 14789,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:82065443": {
+      "ts": "2026-02-02T02:34:59+00:00",
+      "amount": 11658,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:81836731": {
+      "ts": "2026-01-26T02:40:45+00:00",
+      "amount": 15746,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:81624284": {
+      "ts": "2026-01-19T02:36:31+00:00",
+      "amount": 18425,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:81406238": {
+      "ts": "2026-01-12T02:43:00+00:00",
+      "amount": 21452,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:81179641": {
+      "ts": "2026-01-05T02:55:49+00:00",
+      "amount": 19622,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:80946438": {
+      "ts": "2025-12-29T02:41:12+00:00",
+      "amount": 17861,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:80738636": {
+      "ts": "2025-12-22T02:35:38+00:00",
+      "amount": 20332,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:80518657": {
+      "ts": "2025-12-15T03:51:19+00:00",
+      "amount": 19979,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:80294220": {
+      "ts": "2025-12-08T03:58:55+00:00",
+      "amount": 19448,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:80067001": {
+      "ts": "2025-12-01T03:47:04+00:00",
+      "amount": 17167,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:79840750": {
+      "ts": "2025-11-24T03:37:05+00:00",
+      "amount": 16277,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:79623651": {
+      "ts": "2025-11-17T03:31:59+00:00",
+      "amount": 16788,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:79404451": {
+      "ts": "2025-11-10T03:32:37+00:00",
+      "amount": 21895,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:79183763": {
+      "ts": "2025-11-03T03:25:49+00:00",
+      "amount": 17286,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:78951190": {
+      "ts": "2025-10-27T03:21:48+00:00",
+      "amount": 23253,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:78734498": {
+      "ts": "2025-10-20T03:41:32+00:00",
+      "amount": 22259,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:78514906": {
+      "ts": "2025-10-13T03:30:51+00:00",
+      "amount": 23481,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:78287418": {
+      "ts": "2025-10-06T03:27:56+00:00",
+      "amount": 21226,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:78046790": {
+      "ts": "2025-09-29T03:16:45+00:00",
+      "amount": 26885,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:77821099": {
+      "ts": "2025-09-22T03:21:16+00:00",
+      "amount": 28141,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:77595942": {
+      "ts": "2025-09-15T03:13:50+00:00",
+      "amount": 26906,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:77367378": {
+      "ts": "2025-09-08T03:25:13+00:00",
+      "amount": 24915,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:77133144": {
+      "ts": "2025-09-01T03:16:38+00:00",
+      "amount": 21031,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:76891862": {
+      "ts": "2025-08-25T03:26:26+00:00",
+      "amount": 23976,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:76661420": {
+      "ts": "2025-08-18T03:17:29+00:00",
+      "amount": 22691,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:76429385": {
+      "ts": "2025-08-11T03:31:31+00:00",
+      "amount": 23273,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:76193946": {
+      "ts": "2025-08-04T03:19:57+00:00",
+      "amount": 24517,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:75942992": {
+      "ts": "2025-07-28T03:25:07+00:00",
+      "amount": 28063,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:75709495": {
+      "ts": "2025-07-21T03:14:15+00:00",
+      "amount": 27566,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:75476068": {
+      "ts": "2025-07-14T03:40:12+00:00",
+      "amount": 32961,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:75235425": {
+      "ts": "2025-07-07T03:22:23+00:00",
+      "amount": 30271,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:74988012": {
+      "ts": "2025-06-30T03:31:22+00:00",
+      "amount": 32684,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:74752063": {
+      "ts": "2025-06-23T03:32:41+00:00",
+      "amount": 29078,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:74517166": {
+      "ts": "2025-06-16T03:28:54+00:00",
+      "amount": 35040,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:74280749": {
+      "ts": "2025-06-09T03:23:34+00:00",
+      "amount": 34043,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:74043814": {
+      "ts": "2025-06-02T03:41:49+00:00",
+      "amount": 33626,
+      "state": "approved"
+    }
+  },
+  "bootstrapped": {
+    "acct_99db42bda91149f58fd68ecccde21fa8": true,
+    "acct_1678589302284fda84db6347409000b2": true,
+    "acct_2a8e65fcbce74c9eb314bdede6e73fb4": true,
+    "acct_996fbed6bab449af89f211b4851896ef": true,
+    "acct_6bc9a3ee3d7f4bd38b354faff5f1b1bd": true,
+    "acct_ebbd462d60fd4718ac0792deaac898bb": true,
+    "acct_9bae83ac547447798d39e2d816ecd339": true,
+    "acct_42e1c9678cfa4d379d44422a39ef7991": true
+  }
+}
