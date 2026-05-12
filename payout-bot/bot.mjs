@@ -26,7 +26,7 @@ const CREATORS = [
   { name: "Johnee",         username: "johnniejfree",     account_id: "acct_6bc9a3ee3d7f4bd38b354faff5f1b1bd", split_pct: 80 },
   { name: "Johhnie",        username: "johnniejohnson",   account_id: "acct_ebbd462d60fd4718ac0792deaac898bb", split_pct: 80 },
   { name: "Emma",           username: "emmasonne",        account_id: "acct_9bae83ac547447798d39e2d816ecd339", split_pct: 80 },
-  { name: "Marissa Munoz",  username: "marissa.munoz",    account_id: "acct_42e1c9678cfa4d379d44422a39ef7991", split_pct: 80 },
+  { name: "Marissa Munoz",  username: "marissa.munoz",    account_id: "acct_42e1c9678cfa4d379d44422a39ef7991", split_pct: 50 },
 ];
 // ────────────────────────────────────────────────────────────────────
 
