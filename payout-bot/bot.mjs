@@ -18,14 +18,17 @@ import { fileURLToPath } from "node:url";
 //   80 → 80% creator / 20% agency
 //   50 → 50/50
 //   40 → 40% creator / 60% agency
+// Default is 50/50 for every creator. Override individual creators
+// by changing their split_pct below. Blue is the one current exception
+// — agency takes 28% (creator keeps 72%).
 const CREATORS = [
-  { name: "Blue Bear",      username: "bluebeari3vip",    account_id: "acct_99db42bda91149f58fd68ecccde21fa8", split_pct: 80 },
-  { name: "Tess Free",      username: "emmaxtemptationn", account_id: "acct_1678589302284fda84db6347409000b2", split_pct: 80 },
-  { name: "Tess VIP",       username: "emmaxtemptation",  account_id: "acct_2a8e65fcbce74c9eb314bdede6e73fb4", split_pct: 80 },
-  { name: "Meg",            username: "flame_fantasy_xx", account_id: "acct_996fbed6bab449af89f211b4851896ef", split_pct: 80 },
-  { name: "Johnee",         username: "johnniejfree",     account_id: "acct_6bc9a3ee3d7f4bd38b354faff5f1b1bd", split_pct: 80 },
-  { name: "Johhnie",        username: "johnniejohnson",   account_id: "acct_ebbd462d60fd4718ac0792deaac898bb", split_pct: 80 },
-  { name: "Emma",           username: "emmasonne",        account_id: "acct_9bae83ac547447798d39e2d816ecd339", split_pct: 80 },
+  { name: "Blue Bear",      username: "bluebeari3vip",    account_id: "acct_99db42bda91149f58fd68ecccde21fa8", split_pct: 72 },
+  { name: "Tess Free",      username: "emmaxtemptationn", account_id: "acct_1678589302284fda84db6347409000b2", split_pct: 50 },
+  { name: "Tess VIP",       username: "emmaxtemptation",  account_id: "acct_2a8e65fcbce74c9eb314bdede6e73fb4", split_pct: 50 },
+  { name: "Meg",            username: "flame_fantasy_xx", account_id: "acct_996fbed6bab449af89f211b4851896ef", split_pct: 50 },
+  { name: "Johnee",         username: "johnniejfree",     account_id: "acct_6bc9a3ee3d7f4bd38b354faff5f1b1bd", split_pct: 50 },
+  { name: "Johhnie",        username: "johnniejohnson",   account_id: "acct_ebbd462d60fd4718ac0792deaac898bb", split_pct: 50 },
+  { name: "Emma",           username: "emmasonne",        account_id: "acct_9bae83ac547447798d39e2d816ecd339", split_pct: 50 },
   { name: "Marissa Munoz",  username: "marissa.munoz",    account_id: "acct_42e1c9678cfa4d379d44422a39ef7991", split_pct: 50 },
 ];
 // ────────────────────────────────────────────────────────────────────
