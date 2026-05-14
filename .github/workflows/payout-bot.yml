@@ -2,36 +2,63 @@ name: OF payout bot
 
 on:
   schedule:
-    - cron: "*/10 * * * *"     # every 10 minutes
-  workflow_dispatch:           # manual "Run" button in the Actions tab
+    - cron: "*/10 * * * *"     # every 10 min — real-time payout-request alerts
+    - cron: "0 9 * * 1"        # every Monday 09:00 UTC — weekly invoices (Blue, etc.)
+  workflow_dispatch:
+    inputs:
+      job:
+        description: "Which job to run manually"
+        required: true
+        default: "payouts"
+        type: choice
+        options: [payouts, weekly]
 
 permissions:
-  contents: write              # so the action can commit state.json back
+  contents: write
 
 concurrency:
   group: of-payout-bot
   cancel-in-progress: false
 
 jobs:
-  poll:
+  # Real-time payout-request poller. Fires every 10 min.
+  payouts:
+    if: |
+      (github.event_name == 'schedule' && github.event.schedule == '*/10 * * * *') ||
+      (github.event_name == 'workflow_dispatch' && inputs.job == 'payouts')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-
-      - name: Run watcher
+      - name: Poll payout requests
         env:
           ONLYFANSAPI_KEY: ${{ secrets.ONLYFANSAPI_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: node payout-bot/bot.mjs
-
       - name: Commit state if changed
         run: |
           git config user.name  'payout-bot'
           git config user.email 'payout-bot@users.noreply.github.com'
           git add payout-bot/state.json
           git diff --cached --quiet || (git commit -m "bot: update state.json [skip ci]" && git push)
+
+  # Weekly Monday invoice generator. Fires Mondays 09:00 UTC.
+  weekly:
+    if: |
+      (github.event_name == 'schedule' && github.event.schedule == '0 9 * * 1') ||
+      (github.event_name == 'workflow_dispatch' && inputs.job == 'weekly')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Generate weekly invoices
+        env:
+          ONLYFANSAPI_KEY: ${{ secrets.ONLYFANSAPI_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: node payout-bot/weekly.mjs
