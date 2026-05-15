@@ -51,10 +51,12 @@ async function fetchDayMetrics(acctId, dateStr) {
     fetch(`${OF_BASE}/${acctId}/statistics/subscriber-metrics?start_date=${dateStr}&end_date=${dateStr}`, { headers }),
     fetch(`${OF_BASE}/${acctId}/statistics/statements/earnings?type=total&start_date=${dateStr}%2000:00:00&end_date=${dateStr}%2023:59:59`, { headers }),
   ]);
-  let newSubs = 0, sales = 0;
+  let totalSubs = 0, newSubs = 0, renewSubs = 0, sales = 0;
   if (subR.ok) {
     const j = await subR.json();
+    totalSubs = Number(j?.data?.total_subscriptions ?? 0);
     newSubs = Number(j?.data?.new_subscriptions ?? 0);
+    renewSubs = Number(j?.data?.renewed_subscriptions ?? 0);
   } else {
     console.warn(`subscriber-metrics ${acctId} ${dateStr} → HTTP ${subR.status}`);
   }
@@ -65,7 +67,7 @@ async function fetchDayMetrics(acctId, dateStr) {
   } else {
     console.warn(`statements/earnings ${acctId} ${dateStr} → HTTP ${earnR.status}`);
   }
-  return { newSubs, sales };
+  return { totalSubs, newSubs, renewSubs, sales };
 }
 
 // Lifetime LTV. gross lifetime ÷ unique new subscribers ever.
@@ -97,17 +99,19 @@ function pctChangeLabel(today, prev) {
 }
 
 function buildCreatorBlock(c, yest, prev, lifetime) {
-  const subPctRaw = prev.newSubs > 0 ? ((yest.newSubs - prev.newSubs) / prev.newSubs) * 100 : null;
+  // Traffic spike uses *new* subs only — recurring subs aren't traffic.
+  const newSubPctRaw = prev.newSubs > 0 ? ((yest.newSubs - prev.newSubs) / prev.newSubs) * 100 : null;
   const ltvThreshold = c.page_type === "free" ? 5 : 30;
   const ltvFlagged = lifetime.uniqueSubs > 0 && lifetime.ltv < ltvThreshold;
-  const trafficSpike = subPctRaw !== null && subPctRaw >= 50;
+  const trafficSpike = newSubPctRaw !== null && newSubPctRaw >= 50;
   const suffix = [];
   if (trafficSpike) suffix.push("🚀");
   if (ltvFlagged) suffix.push(`🚩 LTV &lt; $${ltvThreshold}`);
 
+  // "Subs" matches OF's "All Subscribers" view (new + renews).
   return [
     `<b>${escHtml(c.name)}</b> <i>(${c.page_type})</i>${suffix.length ? " " + suffix.join(" ") : ""}`,
-    `  Subs: <b>${yest.newSubs}</b>  ${pctChangeLabel(yest.newSubs, prev.newSubs)}`,
+    `  Subs: <b>${yest.totalSubs}</b>  <i>(${yest.newSubs} new, ${yest.renewSubs} renew)</i>  ${pctChangeLabel(yest.totalSubs, prev.totalSubs)}`,
     `  Sales: <b>$${fmtMoney(yest.sales)}</b>  ${pctChangeLabel(yest.sales, prev.sales)}`,
     `  LTV (lifetime): <b>$${fmtMoney(lifetime.ltv)}</b>  <i>${lifetime.uniqueSubs.toLocaleString()} unique subs</i>`,
   ].join("\n");
