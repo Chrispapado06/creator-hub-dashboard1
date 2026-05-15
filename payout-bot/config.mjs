@@ -37,10 +37,13 @@ export const escHtml = (s) =>
 export const fmtMoney = (n) =>
   Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export async function sendTelegram(html) {
+// Sends to TELEGRAM_CHAT_ID by default. Pass a different chat ID
+// when a script (e.g. daily.mjs) should target a separate group like
+// UNCVRD Daily Stats instead of UNCVRD Payouts.
+export async function sendTelegram(html, chatId) {
   const TG_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-  const TG_CHAT  = process.env.TELEGRAM_CHAT_ID;
-  if (!TG_TOKEN || !TG_CHAT) throw new Error("TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID env missing");
+  const TG_CHAT  = chatId ?? process.env.TELEGRAM_CHAT_ID;
+  if (!TG_TOKEN || !TG_CHAT) throw new Error("TELEGRAM_BOT_TOKEN or chat ID missing");
   const r = await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

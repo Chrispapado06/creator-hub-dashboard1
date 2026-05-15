@@ -80,4 +80,5 @@ jobs:
           ONLYFANSAPI_KEY: ${{ secrets.ONLYFANSAPI_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_CHAT_ID_DAILY: ${{ secrets.TELEGRAM_CHAT_ID_DAILY }}
         run: node payout-bot/daily.mjs

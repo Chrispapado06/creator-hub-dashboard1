@@ -121,9 +121,13 @@ async function main() {
     "",
   ].join("\n");
 
+  // Daily report goes to its own group (UNCVRD Daily Stats), not the
+  // payouts group. Falls back to the main chat if the dedicated env
+  // var isn't set, so this still works on a single-secret setup.
+  const dailyChat = process.env.TELEGRAM_CHAT_ID_DAILY || process.env.TELEGRAM_CHAT_ID;
   const msg = header + blocks.join("\n\n");
-  const ok = await sendTelegram(msg);
-  console.log(JSON.stringify({ creators: CREATORS.length, sent: ok }));
+  const ok = await sendTelegram(msg, dailyChat);
+  console.log(JSON.stringify({ creators: CREATORS.length, sent: ok, chat: dailyChat }));
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });
