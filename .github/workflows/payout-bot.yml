@@ -4,6 +4,7 @@ on:
   schedule:
     - cron: "*/10 * * * *"     # every 10 min — real-time payout-request alerts
     - cron: "0 9 * * 1"        # every Monday 09:00 UTC — weekly invoices (Blue, etc.)
+    - cron: "0 8 * * *"        # every day 08:00 UTC — daily traffic report
   workflow_dispatch:
     inputs:
       job:
@@ -11,7 +12,7 @@ on:
         required: true
         default: "payouts"
         type: choice
-        options: [payouts, weekly]
+        options: [payouts, weekly, daily]
 
 permissions:
   contents: write
@@ -62,3 +63,21 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: node payout-bot/weekly.mjs
+
+  # Daily traffic report. Fires every morning 08:00 UTC.
+  daily:
+    if: |
+      (github.event_name == 'schedule' && github.event.schedule == '0 8 * * *') ||
+      (github.event_name == 'workflow_dispatch' && inputs.job == 'daily')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Run daily traffic report
+        env:
+          ONLYFANSAPI_KEY: ${{ secrets.ONLYFANSAPI_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: node payout-bot/daily.mjs

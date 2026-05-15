@@ -12,18 +12,21 @@
 //       cut = agency_pct of that sum. Subscription income is excluded.
 //
 // agency_pct = the AGENCY's percentage. e.g. 50 = "agency takes 50%."
+//
+// page_type = "free" or "paid". Used by daily.mjs for the LTV red-zone
+//   threshold: free pages flag if daily LTV < $5, paid pages flag if < $30.
 
 export const CREATORS = [
   // Blue Bear — weekly, agency takes 28% of net messages+tips only.
   // Subs are excluded from her invoicing entirely.
-  { name: "Blue Bear",      username: "bluebeari3vip",    account_id: "acct_99db42bda91149f58fd68ecccde21fa8", mode: "weekly_net_messages_tips", agency_pct: 28 },
+  { name: "Blue Bear",      username: "bluebeari3vip",    account_id: "acct_99db42bda91149f58fd68ecccde21fa8", mode: "weekly_net_messages_tips", agency_pct: 28, page_type: "paid" },
 
   // Standard creators — real-time alert on payout request, 50/50 split.
-  { name: "Meg",            username: "flame_fantasy_xx", account_id: "acct_996fbed6bab449af89f211b4851896ef", mode: "on_payout_request", agency_pct: 50 },
-  { name: "Johhnie",        username: "johnniejohnson",   account_id: "acct_ebbd462d60fd4718ac0792deaac898bb", mode: "on_payout_request", agency_pct: 50 },
-  { name: "Emma",           username: "emmasonne",        account_id: "acct_9bae83ac547447798d39e2d816ecd339", mode: "on_payout_request", agency_pct: 50 },
-  { name: "Marissa Munoz",  username: "marissa.munoz",    account_id: "acct_42e1c9678cfa4d379d44422a39ef7991", mode: "on_payout_request", agency_pct: 50 },
-  { name: "June - Sandra",  username: "thisisjunee",      account_id: "acct_9f27ee05d2554200a20c2711132fcbcd", mode: "on_payout_request", agency_pct: 50 },
+  { name: "Meg",            username: "flame_fantasy_xx", account_id: "acct_996fbed6bab449af89f211b4851896ef", mode: "on_payout_request", agency_pct: 50, page_type: "free" },
+  { name: "Johhnie",        username: "johnniejohnson",   account_id: "acct_ebbd462d60fd4718ac0792deaac898bb", mode: "on_payout_request", agency_pct: 50, page_type: "free" },
+  { name: "Emma",           username: "emmasonne",        account_id: "acct_9bae83ac547447798d39e2d816ecd339", mode: "on_payout_request", agency_pct: 50, page_type: "free" },
+  { name: "Marissa Munoz",  username: "marissa.munoz",    account_id: "acct_42e1c9678cfa4d379d44422a39ef7991", mode: "on_payout_request", agency_pct: 50, page_type: "free" },
+  { name: "June - Sandra",  username: "thisisjunee",      account_id: "acct_9f27ee05d2554200a20c2711132fcbcd", mode: "on_payout_request", agency_pct: 50, page_type: "paid" },
 ];
 
 // ── Shared utils (used by both bot.mjs and weekly.mjs) ─────────────
