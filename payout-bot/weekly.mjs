@@ -3,14 +3,22 @@
 //
 // Runs every Monday at 09:00 UTC via GitHub Actions. For each creator
 // whose mode is "weekly_net_messages_tips":
-//   1. Pulls all /transactions in the prior Mon 00:00 → Sun 23:59 UTC.
-//   2. Filters to type ∈ {"message", "tip"} (subs excluded).
-//   3. Sums the "net" field (post-OF-fee).
-//   4. Applies agency_pct.
-//   5. Posts a Telegram message with the invoice line items ready to
-//      paste into slash.com.
+//   1. Computes the prior Mon→Sun window in Europe/London wall time.
+//   2. Calls OF's /statistics/statements/earnings endpoint twice
+//      (type=messages, type=tips) — this is the SAME data the OF UI's
+//      stats page shows, so the numbers match what the agency owner
+//      sees on screen down to the cent.
+//   3. Sums the two `total` (net) fields, applies agency_pct, and
+//      posts the invoice line items to Telegram ready for slash.com.
+//
+// We deliberately use OF's stats endpoint instead of summing /transactions
+// ourselves: status-handling, refund treatment, and timezone bucketing
+// were diverging from the UI. The stats endpoint is the source of truth.
 
-import { CREATORS, escHtml, fmtMoney, sendTelegram, REPORT_TZ, wallTimeToUtc, partsInTz, fmtDateInTz } from "./config.mjs";
+import {
+  CREATORS, escHtml, fmtMoney, sendTelegram,
+  REPORT_TZ, wallTimeToUtc, partsInTz, fmtDateInTz,
+} from "./config.mjs";
 
 const OF_KEY = process.env.ONLYFANSAPI_KEY;
 if (!OF_KEY) {
@@ -19,94 +27,74 @@ if (!OF_KEY) {
 }
 
 // ── Date helpers ──────────────────────────────────────────────────
-// Last week's Mon→Sun window expressed in Europe/London wall time,
-// then converted to UTC for filtering. This is what the OF stats UI
-// shows the agency, so our numbers match Luca's spot-checks exactly.
+// Returns last week's UK calendar dates as the strings OF expects in
+// its earnings endpoint, plus Date objects for pretty labels.
 function lastWeekRange(now = new Date()) {
-  const here = partsInTz(now, REPORT_TZ);                  // today in London
+  const here = partsInTz(now, REPORT_TZ);
   const thisMonOffset = here.weekday === 0 ? -6 : 1 - here.weekday;
-  // London midnight of "this Monday" (today if Monday, else upcoming/past)
   const thisMondayUtc = wallTimeToUtc(here.year, here.month, here.day + thisMonOffset);
-  // Last Monday = this Monday - 7d (London midnight → UTC)
-  const lastWeekStart = new Date(thisMondayUtc.getTime() - 7 * 24 * 3600_000);
-  // Last Sunday 23:59:59 London = 1 second before this Monday London midnight (in UTC)
-  const lastWeekEnd = new Date(thisMondayUtc.getTime() - 1000);
-  // The OF API's `startDate` query param is interpreted as UTC.
-  const toApi = (d) => d.toISOString().slice(0, 19).replace("T", " ");
+  const lastMondayUtc = new Date(thisMondayUtc.getTime() - 7 * 24 * 3600_000);
+  const lastSundayUtc = new Date(thisMondayUtc.getTime() - 1000);
+  // OF earnings endpoint expects "YYYY-MM-DD HH:MM:SS" date strings.
+  // Use the UK calendar day numbers so the bucket matches the UI.
+  const lastMondayParts = partsInTz(lastMondayUtc, REPORT_TZ);
+  const lastSundayParts = partsInTz(lastSundayUtc, REPORT_TZ);
+  const ymd = (p) => `${p.year}-${String(p.month).padStart(2, "0")}-${String(p.day).padStart(2, "0")}`;
   return {
-    start: lastWeekStart,                  // UTC Date object
-    end: lastWeekEnd,                      // UTC Date object
-    startStr: toApi(lastWeekStart),        // string for OF startDate param
-    endStr: toApi(lastWeekEnd),
+    startStr: `${ymd(lastMondayParts)} 00:00:00`,
+    endStr:   `${ymd(lastSundayParts)} 23:59:59`,
+    startDate: lastMondayUtc,
+    endDate: lastSundayUtc,
   };
 }
 
-async function fetchTransactionsSince(acctId, startStr, hardCapMs) {
-  // Newest-first list. Paginate via marker until we cross hardCapMs
-  // (the start of our window) or the API tells us there's no more.
-  const out = [];
-  let marker = null;
-  for (let page = 0; page < 30; page++) {
-    const qs = new URLSearchParams({ limit: "100", startDate: startStr });
-    if (marker) qs.set("marker", marker);
-    const url = `https://app.onlyfansapi.com/api/${acctId}/transactions?${qs}`;
-    const r = await fetch(url, { headers: { Authorization: `Bearer ${OF_KEY}` } });
-    if (!r.ok) {
-      console.warn(`OF API ${acctId} transactions → HTTP ${r.status}`);
-      break;
-    }
-    const j = await r.json();
-    const list = j?.data?.list ?? [];
-    if (list.length === 0) break;
-    out.push(...list);
-
-    const oldest = list[list.length - 1];
-    const oldestMs = oldest ? new Date(oldest.createdAt).getTime() : 0;
-    if (oldestMs < hardCapMs) break;
-
-    const next = j?.data?.nextMarker ?? j?.data?.marker;
-    const hasMore = j?.data?.hasMore;
-    if (!next || hasMore === false) break;
-    marker = String(next);
+// Fetch net earnings for one transaction type in [startStr, endStr].
+// The response wraps the totals under a key that matches the type
+// (e.g. type=messages → data.chat_messages.{total, gross, chartCount}).
+async function fetchEarnings(acctId, type, startStr, endStr) {
+  const qs = new URLSearchParams({ type, start_date: startStr, end_date: endStr });
+  const url = `https://app.onlyfansapi.com/api/${acctId}/statistics/statements/earnings?${qs}`;
+  const r = await fetch(url, { headers: { Authorization: `Bearer ${OF_KEY}` } });
+  if (!r.ok) {
+    console.warn(`Earnings ${acctId} ${type} → HTTP ${r.status}`);
+    return { net: 0, gross: 0, count: 0 };
   }
-  return out;
+  const j = await r.json();
+  const inner = Object.values(j?.data ?? {})[0] ?? {};
+  const count = Array.isArray(inner.chartCount)
+    ? inner.chartCount.reduce((s, x) => s + Number(x.count || 0), 0)
+    : 0;
+  return {
+    net: Number(inner.total || 0),
+    gross: Number(inner.gross || 0),
+    count,
+  };
 }
 
 async function main() {
   const eligible = CREATORS.filter((c) => c.mode === "weekly_net_messages_tips");
-  const { start, end, startStr, endStr } = lastWeekRange();
-  const startMs = start.getTime();
-  const endMs = end.getTime();
+  const { startStr, endStr, startDate, endDate } = lastWeekRange();
 
   let alertCount = 0;
 
   for (const c of eligible) {
-    const tx = await fetchTransactionsSince(c.account_id, startStr, startMs);
+    const [msgs, tips] = await Promise.all([
+      fetchEarnings(c.account_id, "messages", startStr, endStr),
+      fetchEarnings(c.account_id, "tips", startStr, endStr),
+    ]);
 
-    // Keep only what's actually within last week's window.
-    const inWindow = tx.filter((t) => {
-      const ts = new Date(t.createdAt).getTime();
-      return ts >= startMs && ts <= endMs;
-    });
-
-    const messages = inWindow.filter((t) => t.type === "message");
-    const tips     = inWindow.filter((t) => t.type === "tip");
-
-    const msgNet = messages.reduce((s, t) => s + Number(t.net || 0), 0);
-    const tipNet = tips.reduce((s, t) => s + Number(t.net || 0), 0);
-    const totalNet = msgNet + tipNet;
+    const totalNet = msgs.net + tips.net;
     const agencyCut = (totalNet * c.agency_pct) / 100;
 
-    // Pretty labels in UK time so they line up with what Luca sees on OF.
-    const periodLabel = `${fmtDateInTz(start)} → ${fmtDateInTz(end)}`;
-    const weekOfLabel = fmtDateInTz(start);
+    const periodLabel = `${fmtDateInTz(startDate)} → ${fmtDateInTz(endDate)}`;
+    const weekOfLabel = fmtDateInTz(startDate);
 
     const lines = [
       `💸 <b>Weekly invoice — ${escHtml(c.name)}</b>`,
       `<i>${escHtml(periodLabel)} (UK time)</i>`,
       "",
-      `Net from messages: <b>$${fmtMoney(msgNet)}</b> <i>(${messages.length} tx)</i>`,
-      `Net from tips:     <b>$${fmtMoney(tipNet)}</b> <i>(${tips.length} tx)</i>`,
+      `Net from messages: <b>$${fmtMoney(msgs.net)}</b> <i>(${msgs.count} tx)</i>`,
+      `Net from tips:     <b>$${fmtMoney(tips.net)}</b> <i>(${tips.count} tx)</i>`,
       `<b>Total net (msg+tips): $${fmtMoney(totalNet)}</b>`,
       "",
       `<b>Agency cut (${c.agency_pct}%): $${fmtMoney(agencyCut)}</b>`,
@@ -124,7 +112,7 @@ async function main() {
   console.log(JSON.stringify({
     eligible: eligible.length,
     alerts: alertCount,
-    window_utc: `${startStr} → ${endStr}`,
+    window: `${startStr} → ${endStr}`,
     timezone: REPORT_TZ,
   }));
 }
