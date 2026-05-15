@@ -31,11 +31,71 @@ export const CREATORS = [
 
 // ── Shared utils (used by both bot.mjs and weekly.mjs) ─────────────
 
+// Wall-clock timezone every report is calculated in. OF's UI for our
+// users (UK-based agency) uses Europe/London, so all "Mon→Sun" windows
+// and "yesterday" boundaries are computed in London time and then
+// converted to UTC for the API call. Without this, the bot's numbers
+// would silently disagree with what Luca sees on the OF stats page by
+// ~1 hour of transactions per boundary.
+export const REPORT_TZ = "Europe/London";
+
 export const escHtml = (s) =>
   String(s).replace(/[&<>]/g, (c) => (c === "&" ? "&amp;" : c === "<" ? "&lt;" : "&gt;"));
 
 export const fmtMoney = (n) =>
   Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// How far ahead of UTC the given timezone is, in minutes, at the
+// moment of `date`. London: 60 in BST, 0 in GMT. Works for any IANA TZ.
+function tzOffsetMinutes(date, timeZone) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  const g = (t) => parseInt(parts.find((p) => p.type === t).value, 10);
+  const asIfUtc = Date.UTC(g("year"), g("month") - 1, g("day"), g("hour") % 24, g("minute"), g("second"));
+  return Math.round((asIfUtc - date.getTime()) / 60000);
+}
+
+// Treat (y, m, d, h, min, s) as a wall-clock time in `timeZone` and
+// return the corresponding UTC Date. DST-aware via tzOffsetMinutes.
+export function wallTimeToUtc(year, month, day, h = 0, min = 0, s = 0, timeZone = REPORT_TZ) {
+  const guess = new Date(Date.UTC(year, month - 1, day, h, min, s));
+  const offset = tzOffsetMinutes(guess, timeZone);
+  return new Date(guess.getTime() - offset * 60000);
+}
+
+// Return {year, month, day, hour, minute, second, weekday} of `date`
+// as seen in `timeZone`. weekday: 0=Sun, 1=Mon, ..., 6=Sat.
+export function partsInTz(date, timeZone = REPORT_TZ) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+    weekday: "short",
+    hour12: false,
+  }).formatToParts(date);
+  const g = (t) => parts.find((p) => p.type === t)?.value;
+  const wdMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  return {
+    year: parseInt(g("year"), 10),
+    month: parseInt(g("month"), 10),
+    day: parseInt(g("day"), 10),
+    hour: parseInt(g("hour"), 10) % 24,
+    minute: parseInt(g("minute"), 10),
+    second: parseInt(g("second"), 10),
+    weekday: wdMap[g("weekday")] ?? 0,
+  };
+}
+
+// Pretty "Mon, 04 May 2026" — formatted in REPORT_TZ.
+export function fmtDateInTz(date, timeZone = REPORT_TZ) {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone, weekday: "short", day: "2-digit", month: "short", year: "numeric",
+  }).format(date);
+}
 
 // Sends to TELEGRAM_CHAT_ID by default. Pass a different chat ID
 // when a script (e.g. daily.mjs) should target a separate group like

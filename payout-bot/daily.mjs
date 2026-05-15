@@ -10,25 +10,27 @@
 // Posts one combined Telegram message with every creator's row so the
 // agency owner can read the morning state at a glance.
 
-import { CREATORS, escHtml, fmtMoney, sendTelegram } from "./config.mjs";
+import { CREATORS, escHtml, fmtMoney, sendTelegram, REPORT_TZ, wallTimeToUtc, partsInTz, fmtDateInTz } from "./config.mjs";
 
 const OF_KEY = process.env.ONLYFANSAPI_KEY;
 if (!OF_KEY) { console.error("ONLYFANSAPI_KEY missing"); process.exit(1); }
 
 // ── Date helpers ──────────────────────────────────────────────────
-// Returns the two adjacent day windows in UTC: "yesterday" and "the
-// day before that". Used to compute % change.
+// Returns yesterday's window + the day-before's window, with each
+// "day" defined in Europe/London wall time but expressed in UTC.
+// Matches what Luca/the team sees on the OF stats UI.
 function dayWindows(now = new Date()) {
-  const todayMid = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const yStart = new Date(todayMid.getTime() - 24 * 3600_000);  // yesterday 00:00
-  const yEnd   = new Date(todayMid.getTime() - 1000);            // yesterday 23:59:59
-  const pStart = new Date(yStart.getTime() - 24 * 3600_000);     // day-before 00:00
-  const pEnd   = new Date(yStart.getTime() - 1000);              // day-before 23:59:59
+  const here = partsInTz(now, REPORT_TZ);
+  // London midnight today, in UTC
+  const todayMidUtc = wallTimeToUtc(here.year, here.month, here.day);
+  const yStart = new Date(todayMidUtc.getTime() - 24 * 3600_000);  // yesterday 00:00 London → UTC
+  const yEnd   = new Date(todayMidUtc.getTime() - 1000);            // yesterday 23:59:59 London → UTC
+  const pStart = new Date(yStart.getTime() - 24 * 3600_000);
+  const pEnd   = new Date(yStart.getTime() - 1000);
   return { yStart, yEnd, pStart, pEnd };
 }
 
-function isoDay(d) { return d.toISOString().slice(0, 10); }
-function asStartParam(d) { return isoDay(d) + " 00:00:00"; }
+function asStartParam(d) { return d.toISOString().slice(0, 19).replace("T", " "); }
 
 // Fetch newest-first, paginate via marker, stop once we're older than
 // hardCapMs (so we don't pull the entire history just to read 2 days).
@@ -131,7 +133,7 @@ async function main() {
   const yStartMs = yStart.getTime(), yEndMs = yEnd.getTime();
   const pStartMs = pStart.getTime(), pEndMs = pEnd.getTime();
 
-  const dateLabel = yStart.toUTCString().slice(0, 16); // "Mon, 13 May 2026"
+  const dateLabel = fmtDateInTz(yStart); // "Tue, 13 May 2026" — in UK time
 
   const blocks = [];
   for (const c of CREATORS) {
@@ -146,7 +148,7 @@ async function main() {
 
   const header = [
     `📊 <b>Daily traffic — ${escHtml(dateLabel)}</b>`,
-    `<i>vs day-before (UTC days)</i>`,
+    `<i>vs day-before (UK time)</i>`,
     "",
   ].join("\n");
 

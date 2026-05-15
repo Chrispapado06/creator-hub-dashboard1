@@ -10,7 +10,7 @@
 //   5. Posts a Telegram message with the invoice line items ready to
 //      paste into slash.com.
 
-import { CREATORS, escHtml, fmtMoney, sendTelegram } from "./config.mjs";
+import { CREATORS, escHtml, fmtMoney, sendTelegram, REPORT_TZ, wallTimeToUtc, partsInTz, fmtDateInTz } from "./config.mjs";
 
 const OF_KEY = process.env.ONLYFANSAPI_KEY;
 if (!OF_KEY) {
@@ -19,23 +19,25 @@ if (!OF_KEY) {
 }
 
 // ── Date helpers ──────────────────────────────────────────────────
-// Given "now", return last week's window — Monday 00:00:00 UTC through
-// Sunday 23:59:59 UTC. Designed to be called on the Monday after that
-// week ends (so the just-completed week is what's invoiced).
-function lastWeekRangeUTC(now = new Date()) {
-  const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const day = todayUTC.getUTCDay();              // 0=Sun, 1=Mon, ..., 6=Sat
-  const thisMonOffset = day === 0 ? -6 : 1 - day;
-  const thisMonday = new Date(todayUTC);
-  thisMonday.setUTCDate(todayUTC.getUTCDate() + thisMonOffset);
-  const lastMonday = new Date(thisMonday);
-  lastMonday.setUTCDate(thisMonday.getUTCDate() - 7);
-  const lastSundayEnd = new Date(thisMonday.getTime() - 1000); // 1 second before this Mon 00:00
+// Last week's Mon→Sun window expressed in Europe/London wall time,
+// then converted to UTC for filtering. This is what the OF stats UI
+// shows the agency, so our numbers match Luca's spot-checks exactly.
+function lastWeekRange(now = new Date()) {
+  const here = partsInTz(now, REPORT_TZ);                  // today in London
+  const thisMonOffset = here.weekday === 0 ? -6 : 1 - here.weekday;
+  // London midnight of "this Monday" (today if Monday, else upcoming/past)
+  const thisMondayUtc = wallTimeToUtc(here.year, here.month, here.day + thisMonOffset);
+  // Last Monday = this Monday - 7d (London midnight → UTC)
+  const lastWeekStart = new Date(thisMondayUtc.getTime() - 7 * 24 * 3600_000);
+  // Last Sunday 23:59:59 London = 1 second before this Monday London midnight (in UTC)
+  const lastWeekEnd = new Date(thisMondayUtc.getTime() - 1000);
+  // The OF API's `startDate` query param is interpreted as UTC.
+  const toApi = (d) => d.toISOString().slice(0, 19).replace("T", " ");
   return {
-    start: lastMonday,                                              // Mon 00:00:00 UTC
-    end: lastSundayEnd,                                             // Sun 23:59:59 UTC
-    startStr: lastMonday.toISOString().slice(0, 10) + " 00:00:00",  // for OF startDate param
-    endStr:   lastSundayEnd.toISOString().slice(0, 10) + " 23:59:59",
+    start: lastWeekStart,                  // UTC Date object
+    end: lastWeekEnd,                      // UTC Date object
+    startStr: toApi(lastWeekStart),        // string for OF startDate param
+    endStr: toApi(lastWeekEnd),
   };
 }
 
@@ -72,7 +74,7 @@ async function fetchTransactionsSince(acctId, startStr, hardCapMs) {
 
 async function main() {
   const eligible = CREATORS.filter((c) => c.mode === "weekly_net_messages_tips");
-  const { start, end, startStr, endStr } = lastWeekRangeUTC();
+  const { start, end, startStr, endStr } = lastWeekRange();
   const startMs = start.getTime();
   const endMs = end.getTime();
 
@@ -95,13 +97,13 @@ async function main() {
     const totalNet = msgNet + tipNet;
     const agencyCut = (totalNet * c.agency_pct) / 100;
 
-    // Pretty labels — "Mon, 06 May → Sun, 12 May"
-    const periodLabel = `${start.toUTCString().slice(0, 11)} → ${end.toUTCString().slice(0, 11)}`;
-    const weekOfLabel = start.toUTCString().slice(0, 11);
+    // Pretty labels in UK time so they line up with what Luca sees on OF.
+    const periodLabel = `${fmtDateInTz(start)} → ${fmtDateInTz(end)}`;
+    const weekOfLabel = fmtDateInTz(start);
 
     const lines = [
       `💸 <b>Weekly invoice — ${escHtml(c.name)}</b>`,
-      `<i>${escHtml(periodLabel)} (UTC)</i>`,
+      `<i>${escHtml(periodLabel)} (UK time)</i>`,
       "",
       `Net from messages: <b>$${fmtMoney(msgNet)}</b> <i>(${messages.length} tx)</i>`,
       `Net from tips:     <b>$${fmtMoney(tipNet)}</b> <i>(${tips.length} tx)</i>`,
@@ -123,6 +125,7 @@ async function main() {
     eligible: eligible.length,
     alerts: alertCount,
     window_utc: `${startStr} → ${endStr}`,
+    timezone: REPORT_TZ,
   }));
 }
 
