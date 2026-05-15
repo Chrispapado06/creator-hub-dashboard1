@@ -67,8 +67,33 @@ function metricsForWindow(txs, startMs, endMs) {
   });
   const newSubs = inWindow.filter((t) => t.type === "new_subscription").length;
   const sales = inWindow.reduce((s, t) => s + Number(t.amount || 0), 0);
-  const ltv = newSubs > 0 ? sales / newSubs : 0;
-  return { newSubs, sales, ltv };
+  return { newSubs, sales };
+}
+
+// Lifetime LTV. Pulled from two OF endpoints:
+//   /statistics/overview            → earning.gross (lifetime gross $)
+//   /statistics/subscriber-metrics  → new_subscriptions (unique subs ever)
+// LTV = lifetime gross / unique subs. Stable + meaningful for flagging.
+async function fetchLifetimeLtv(acctId) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [ovR, smR] = await Promise.all([
+    fetch(`https://app.onlyfansapi.com/api/${acctId}/statistics/overview`, {
+      headers: { Authorization: `Bearer ${OF_KEY}` },
+    }),
+    fetch(`https://app.onlyfansapi.com/api/${acctId}/statistics/subscriber-metrics?start_date=2020-01-01&end_date=${today}`, {
+      headers: { Authorization: `Bearer ${OF_KEY}` },
+    }),
+  ]);
+  if (!ovR.ok || !smR.ok) {
+    console.warn(`Lifetime stats ${acctId} → overview ${ovR.status}, sub-metrics ${smR.status}`);
+    return { gross: 0, uniqueSubs: 0, ltv: 0 };
+  }
+  const ovJ = await ovR.json();
+  const smJ = await smR.json();
+  const gross = Number(ovJ?.data?.earning?.gross ?? 0);
+  const uniqueSubs = Number(smJ?.data?.new_subscriptions ?? 0);
+  const ltv = uniqueSubs > 0 ? gross / uniqueSubs : 0;
+  return { gross, uniqueSubs, ltv };
 }
 
 // "▲40%", "▼15%", or "—" when prior was zero (no baseline).
@@ -79,10 +104,11 @@ function pctChangeLabel(today, prev) {
   return `${arrow}${Math.abs(pct).toFixed(0)}%`;
 }
 
-function buildCreatorBlock(c, yest, prev) {
+function buildCreatorBlock(c, yest, prev, lifetime) {
   const subPctRaw = prev.newSubs > 0 ? ((yest.newSubs - prev.newSubs) / prev.newSubs) * 100 : null;
   const ltvThreshold = c.page_type === "free" ? 5 : 30;
-  const ltvFlagged = yest.newSubs > 0 && yest.ltv < ltvThreshold;
+  // Flag on LIFETIME LTV — daily LTV is too volatile to use here.
+  const ltvFlagged = lifetime.uniqueSubs > 0 && lifetime.ltv < ltvThreshold;
   const trafficSpike = subPctRaw !== null && subPctRaw >= 50;
   const flagSuffix = [];
   if (trafficSpike) flagSuffix.push("🚀");
@@ -92,7 +118,7 @@ function buildCreatorBlock(c, yest, prev) {
     `<b>${escHtml(c.name)}</b> <i>(${c.page_type})</i>${flagSuffix.length ? " " + flagSuffix.join(" ") : ""}`,
     `  Subs: <b>${yest.newSubs}</b>  ${pctChangeLabel(yest.newSubs, prev.newSubs)}`,
     `  Sales: <b>$${fmtMoney(yest.sales)}</b>  ${pctChangeLabel(yest.sales, prev.sales)}`,
-    `  LTV: <b>$${fmtMoney(yest.ltv)}</b>`,
+    `  LTV (lifetime): <b>$${fmtMoney(lifetime.ltv)}</b>  <i>${lifetime.uniqueSubs.toLocaleString()} unique subs</i>`,
   ];
   return lines.join("\n");
 }
@@ -109,10 +135,13 @@ async function main() {
 
   const blocks = [];
   for (const c of CREATORS) {
-    const txs = await fetchTransactionsSince(c.account_id, startStr, hardCapMs);
+    const [txs, lifetime] = await Promise.all([
+      fetchTransactionsSince(c.account_id, startStr, hardCapMs),
+      fetchLifetimeLtv(c.account_id),
+    ]);
     const yest = metricsForWindow(txs, yStartMs, yEndMs);
     const prev = metricsForWindow(txs, pStartMs, pEndMs);
-    blocks.push(buildCreatorBlock(c, yest, prev));
+    blocks.push(buildCreatorBlock(c, yest, prev, lifetime));
   }
 
   const header = [

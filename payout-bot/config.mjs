@@ -26,7 +26,7 @@ export const CREATORS = [
   { name: "Johhnie",        username: "johnniejohnson",   account_id: "acct_ebbd462d60fd4718ac0792deaac898bb", mode: "on_payout_request", agency_pct: 50, page_type: "free" },
   { name: "Emma",           username: "emmasonne",        account_id: "acct_9bae83ac547447798d39e2d816ecd339", mode: "on_payout_request", agency_pct: 50, page_type: "free" },
   { name: "Marissa Munoz",  username: "marissa.munoz",    account_id: "acct_42e1c9678cfa4d379d44422a39ef7991", mode: "on_payout_request", agency_pct: 50, page_type: "free" },
-  { name: "June - Sandra",  username: "thisisjunee",      account_id: "acct_9f27ee05d2554200a20c2711132fcbcd", mode: "on_payout_request", agency_pct: 50, page_type: "paid" },
+  { name: "June - Sandra",  username: "thisisjunee",      account_id: "acct_9f27ee05d2554200a20c2711132fcbcd", mode: "on_payout_request", agency_pct: 50, page_type: "free" },
 ];
 
 // ── Shared utils (used by both bot.mjs and weekly.mjs) ─────────────
