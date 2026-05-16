@@ -1,0 +1,24 @@
+name: Daily traffic report
+
+# Fires once a day. Off-the-hour minute (8:07 UTC) so GitHub's busy-
+# hour scheduler is less likely to delay or drop it.
+on:
+  schedule:
+    - cron: "7 8 * * *"
+  workflow_dispatch:
+
+jobs:
+  daily:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Run daily traffic report
+        env:
+          ONLYFANSAPI_KEY: ${{ secrets.ONLYFANSAPI_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_CHAT_ID_DAILY: ${{ secrets.TELEGRAM_CHAT_ID_DAILY }}
+        run: node payout-bot/daily.mjs
