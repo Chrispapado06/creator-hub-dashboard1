@@ -1,0 +1,23 @@
+name: Weekly Monday invoice
+
+# Mondays 9:07 UTC = ~10:07 UK (BST) / 9:07 UK (GMT).
+# Off-the-hour minute so GitHub doesn't drop it during busy slots.
+on:
+  schedule:
+    - cron: "7 9 * * 1"
+  workflow_dispatch:
+
+jobs:
+  weekly:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Generate weekly invoices
+        env:
+          ONLYFANSAPI_KEY: ${{ secrets.ONLYFANSAPI_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: node payout-bot/weekly.mjs
