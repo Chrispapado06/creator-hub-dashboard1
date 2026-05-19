@@ -70,8 +70,10 @@ async function fetchDayMetrics(acctId, dateStr) {
   return { totalSubs, newSubs, renewSubs, sales };
 }
 
-// Lifetime LTV. gross lifetime ÷ unique new subscribers ever.
-// Stable, used for the red-zone flag rather than the noisy daily ratio.
+// Lifetime LTV. Revenue (NET — what the creator actually earns after
+// OF's 20% cut) ÷ unique new subscribers ever. Matches Luca's
+// "LTV = Rev / new subs" definition where "revenue" = the agency-side
+// money number, not the fan-side top-line.
 async function fetchLifetimeLtv(acctId) {
   const today = new Date().toISOString().slice(0, 10);
   const [ovR, smR] = await Promise.all([
@@ -80,13 +82,13 @@ async function fetchLifetimeLtv(acctId) {
   ]);
   if (!ovR.ok || !smR.ok) {
     console.warn(`Lifetime stats ${acctId} → overview ${ovR.status}, sub-metrics ${smR.status}`);
-    return { gross: 0, uniqueSubs: 0, ltv: 0 };
+    return { revenue: 0, uniqueSubs: 0, ltv: 0 };
   }
   const ovJ = await ovR.json();
   const smJ = await smR.json();
-  const gross = Number(ovJ?.data?.earning?.gross ?? 0);
+  const revenue = Number(ovJ?.data?.earning?.total ?? 0);  // net lifetime
   const uniqueSubs = Number(smJ?.data?.new_subscriptions ?? 0);
-  return { gross, uniqueSubs, ltv: uniqueSubs > 0 ? gross / uniqueSubs : 0 };
+  return { revenue, uniqueSubs, ltv: uniqueSubs > 0 ? revenue / uniqueSubs : 0 };
 }
 
 // ── Formatting ────────────────────────────────────────────────────
