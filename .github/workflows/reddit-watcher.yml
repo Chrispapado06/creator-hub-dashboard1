@@ -1,0 +1,36 @@
+name: Reddit watcher (every 15 min)
+
+# Drives shadowban + viral alerts. Cron is offset 3 min from the OF
+# 10-min cron so the two don't routinely hit Reddit + OnlyFans APIs
+# in lockstep.
+on:
+  schedule:
+    - cron: "3,18,33,48 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write   # commits reddit-state.json back to the repo
+
+concurrency:
+  group: reddit-watcher
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Run Reddit watcher
+        env:
+          DISCORD_WEBHOOK_REDDIT_SHADOWBAN: ${{ secrets.DISCORD_WEBHOOK_REDDIT_SHADOWBAN }}
+          DISCORD_WEBHOOK_REDDIT_VIRAL:     ${{ secrets.DISCORD_WEBHOOK_REDDIT_VIRAL }}
+        run: node payout-bot/reddit-watcher.mjs
+      - name: Commit state if changed
+        run: |
+          git config user.name  'reddit-bot'
+          git config user.email 'reddit-bot@users.noreply.github.com'
+          git add payout-bot/reddit-state.json
+          git diff --cached --quiet || (git commit -m "reddit: update state.json [skip ci]" && git push)
