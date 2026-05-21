@@ -1,0 +1,21 @@
+name: Reddit daily report
+
+# Daily 08:13 UTC. Off-the-hour so GitHub's busy-hour scheduler is
+# less likely to delay or drop it. ~09:13 UK in BST, 08:13 in GMT.
+on:
+  schedule:
+    - cron: "13 8 * * *"
+  workflow_dispatch:
+
+jobs:
+  daily:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Run Reddit daily report
+        env:
+          DISCORD_WEBHOOK_REDDIT_DAILY: ${{ secrets.DISCORD_WEBHOOK_REDDIT_DAILY }}
+        run: node payout-bot/reddit-daily.mjs

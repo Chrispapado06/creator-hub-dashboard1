@@ -100,6 +100,30 @@ export function fmtDateInTz(date, timeZone = REPORT_TZ) {
   }).format(date);
 }
 
+// POST a Discord-webhook payload. Pass a string for a plain message
+// or an object like { embeds: [...] } for rich formatting. Returns
+// false (with a console.warn) on failure rather than throwing — same
+// behaviour as sendTelegram.
+export async function sendDiscord(webhookUrl, payload) {
+  if (!webhookUrl) {
+    console.warn("Discord: webhook URL missing — skipping send");
+    return false;
+  }
+  const body = typeof payload === "string"
+    ? JSON.stringify({ content: payload, username: "Bernard" })
+    : JSON.stringify({ username: "Bernard", ...payload });
+  const r = await fetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body,
+  });
+  if (!r.ok) {
+    console.warn("Discord failed:", r.status, await r.text());
+    return false;
+  }
+  return true;
+}
+
 // Sends to TELEGRAM_CHAT_ID by default. Pass a different chat ID
 // when a script (e.g. daily.mjs) should target a separate group like
 // UNCVRD Daily Stats instead of UNCVRD Payouts.
