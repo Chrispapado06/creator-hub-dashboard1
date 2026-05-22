@@ -66,14 +66,16 @@ export const POINTS = {
   bonus_viral_1k:      30,    // bonus per post crossing 1,000 ↑
   bonus_viral_5k:      100,   // additional bonus per post crossing 5,000 ↑
   penalty_removed:     -10,   // per removed post (by mod / spam filter)
-  // Raw conversion rate. The pool cap below overrides this once total
-  // raw bonus would exceed the cap.
+  // Raw conversion rate. With current weights this lands an average
+  // good week (≈ 2,000 pts, mostly upvotes within the cap) around
+  // $20 per poster — matching the agency's "5,000 upvotes ≈ $20"
+  // intuition for a mid-tier account mix.
   points_per_dollar:   100,
-  // Hard cap on total weekly $$$ paid out across all posters. If raw
-  // bonuses sum above this, every poster's bonus is scaled down
-  // proportionally to fit. If they sum below, bonuses are paid at the
-  // raw rate. Set to 0 to disable the cap.
-  weekly_bonus_pool_cap_usd: 50,
+  // Per-poster weekly cap. No single poster's bonus exceeds this
+  // even on a banger week. Total payout scales with collective
+  // performance — bad week pays less, good week pays more, up to
+  // the per-poster cap × number of posters. Set to 0 to disable.
+  per_poster_weekly_cap_usd: 50,
 };
 
 // Account difficulty tiers. Smaller / younger accounts are harder

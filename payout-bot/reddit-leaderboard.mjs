@@ -127,16 +127,20 @@ async function main() {
   }
   rows.sort((a, b) => b.points - a.points);
 
-  // ── Bonus distribution ────────────────────────────────────────
-  // Each poster's raw bonus = points / points_per_dollar. If the
-  // pool of raw bonuses exceeds weekly_bonus_pool_cap_usd, scale
-  // everyone down proportionally so the total never exceeds the cap.
-  const cap = POINTS.weekly_bonus_pool_cap_usd;
-  for (const r of rows) r._raw_bonus = r.points / POINTS.points_per_dollar;
-  const rawTotal = rows.reduce((s, r) => s + Math.max(0, r._raw_bonus), 0);
-  const scaleFactor = (cap > 0 && rawTotal > cap) ? cap / rawTotal : 1;
-  for (const r of rows) r.bonus_usd = Math.max(0, r._raw_bonus * scaleFactor);
+  // ── Bonus per poster ──────────────────────────────────────────
+  // Raw bonus = points / points_per_dollar, floored at $0 (no
+  // negative paychecks), capped at per_poster_weekly_cap_usd. Bonus
+  // scales independently per poster — good performers earn what they
+  // earned; the cap is only a per-person ceiling.
+  const cap = POINTS.per_poster_weekly_cap_usd;
+  for (const r of rows) {
+    const raw = Math.max(0, r.points / POINTS.points_per_dollar);
+    r._raw_bonus = raw;
+    r.bonus_usd = cap > 0 ? Math.min(raw, cap) : raw;
+    r.bonus_capped = cap > 0 && raw > cap;
+  }
   const paidTotal = rows.reduce((s, r) => s + r.bonus_usd, 0);
+  const anyCapped = rows.some((r) => r.bonus_capped);
 
   const totals = {
     posts:    rows.reduce((s, r) => s + r.posts, 0),
@@ -160,10 +164,10 @@ async function main() {
   lines.push("");
   lines.push(`📊 Posts: **${fmtNum(totals.posts)}** · Comments: **${fmtNum(totals.comments)}** · Removed: **${totals.removed}**`);
   if (cap > 0) {
-    const capNote = scaleFactor < 1
-      ? `(raw $${rawTotal.toFixed(2)} scaled to cap)`
-      : `(under cap)`;
-    lines.push(`💰 Bonus pool paid: **$${paidTotal.toFixed(2)} / $${cap.toFixed(2)}** cap ${capNote}`);
+    const capNote = anyCapped ? ` *(at least one poster hit the cap)*` : "";
+    lines.push(`💰 Total payout: **$${paidTotal.toFixed(2)}** · per-poster cap: **$${cap.toFixed(2)}**${capNote}`);
+  } else {
+    lines.push(`💰 Total payout: **$${paidTotal.toFixed(2)}**`);
   }
   lines.push(`⚖️ Fair scoring: smaller accts have higher multipliers → ${tierLegend}`);
   lines.push(`⏰ Next update: tomorrow morning`);
