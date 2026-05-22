@@ -67,13 +67,19 @@ async function scoreAccount(account, startMs, endMs) {
     if (ups >= 1000) viral1k++;
   }
 
-  const raw =
-    n        * POINTS.per_post +       // 0 in current formula — kept for future flexibility
+  // Positive earnings get the tier multiplier (rewarding effort on
+  // small accts). Penalties don't — a removed post is a removed post
+  // regardless of tier, and warm-up accounts already attract more
+  // mod scrutiny so multiplying their penalty would double-punish.
+  const rawPositive =
+    n        * POINTS.per_post +       // 0 in current formula
     upvotes  * POINTS.per_upvote +
     comments * POINTS.per_comment +
     viral1k  * POINTS.bonus_viral_1k +
-    viral5k  * POINTS.bonus_viral_5k +
+    viral5k  * POINTS.bonus_viral_5k;
+  const rawPenalty =
     removed  * POINTS.penalty_removed;
+  const raw = rawPositive + rawPenalty;
 
   return {
     account, tier,
@@ -81,7 +87,7 @@ async function scoreAccount(account, startMs, endMs) {
     rawUpvotesCapped: upvotes,
     comments,
     viral_1k: viral1k, viral_5k: viral5k, removed,
-    points: raw * tier.multiplier,
+    points: rawPositive * tier.multiplier + rawPenalty,
   };
 }
 
