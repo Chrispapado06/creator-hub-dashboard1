@@ -1,140 +1,146 @@
 #!/usr/bin/env node
-// Daily Reddit poster leaderboard.
+// Weekly-cycle Reddit poster leaderboard, posted daily as a live
+// running total during the cycle and once more as the official close
+// just after the cycle ends.
 //
-// Runs every morning ~08:23 UTC (a few minutes after reddit-daily so
-// any in-flight rate-limit windows have reset). For each poster, sums
-// yesterday's posts across their assigned Reddit accounts, applies the
-// POINTS formula in reddit-lib, ranks them, and posts a Discord embed.
+// Cycle: Sun 00:00 → Fri 23:59 Dubai (Asia/Dubai, UTC+4 year-round).
+// Saturday is the rest day.
 //
-// Posters and their account assignments are in reddit-lib.mjs
-// (POSTERS const). Point formula is in POINTS const there too. Change
-// either and the next run picks it up automatically.
+// Posters + their account assignments + the point formula all live in
+// reddit-lib.mjs (POSTERS, POINTS). Edit there to rebalance.
 
 import {
-  POSTERS, POINTS, fetchSubmitted, isRemoved, fmtNum, fullUrl,
+  POSTERS, POINTS, fetchSubmitted, isRemoved, fmtNum,
 } from "./reddit-lib.mjs";
 import {
-  sendDiscord, REPORT_TZ, wallTimeToUtc, partsInTz, fmtDateInTz,
+  sendDiscord, partsInTz, wallTimeToUtc,
 } from "./config.mjs";
 
 const WEBHOOK = process.env.DISCORD_WEBHOOK_REDDIT_LEADERBOARD;
 if (!WEBHOOK) { console.error("DISCORD_WEBHOOK_REDDIT_LEADERBOARD missing"); process.exit(1); }
 
-function yesterdayWindow(now = new Date()) {
-  const here = partsInTz(now, REPORT_TZ);
-  const todayMid = wallTimeToUtc(here.year, here.month, here.day);
-  return {
-    start: new Date(todayMid.getTime() - 24 * 3600_000),
-    end:   new Date(todayMid.getTime() - 1000),
-  };
+const CYCLE_TZ = "Asia/Dubai";
+
+// ── Cycle math: Sun→Fri Dubai ─────────────────────────────────────
+// Returns the cycle that contains `now`, or — if `now` is on Saturday
+// — the cycle that just ended. We include Saturday in the previous
+// cycle's window so the Saturday post is a clean "final" recap.
+function currentCycle(now = new Date()) {
+  const here = partsInTz(now, CYCLE_TZ);
+  // weekday: 0=Sun, 1=Mon, ..., 5=Fri, 6=Sat
+  // Distance back to most recent Sunday in Dubai:
+  const daysBackToSun = here.weekday;             // 0..6
+  const cycleStartUtc = wallTimeToUtc(here.year, here.month, here.day - daysBackToSun, 0, 0, 0, CYCLE_TZ);
+  // Friday 23:59:59 Dubai = Saturday 00:00 - 1 sec
+  const cycleEndUtc = new Date(cycleStartUtc.getTime() + 6 * 24 * 3600_000 - 1000);
+  const closed = now.getTime() > cycleEndUtc.getTime();
+  // Day-of-cycle indicator (1..6 = Sun..Fri). 7 = Sat (after close).
+  const dayOfCycle = here.weekday === 6 ? 7 : here.weekday + 1;
+  return { startUtc: cycleStartUtc, endUtc: cycleEndUtc, dayOfCycle, closed };
 }
 
-// Per-poster aggregation across all their accounts in yesterday's window.
+function fmtCycleDate(d) {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: CYCLE_TZ, weekday: "short", month: "short", day: "numeric",
+  }).format(d);
+}
+
+function fmtWeekOfLabel(d) {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: CYCLE_TZ, month: "long", day: "numeric", year: "numeric",
+  }).format(d);
+}
+
+// ── Scoring ──────────────────────────────────────────────────────
 async function scorePoster(poster, startMs, endMs) {
   let posts = 0, upvotes = 0, comments = 0;
   let viral1k = 0, viral5k = 0, removed = 0;
-  let topPost = null;
-  const subreddits = new Set();
-  const accountStats = [];
 
   for (const account of poster.accounts) {
-    const list = await fetchSubmitted(account, { limit: 100 });
-    let acctPosts = 0, acctUp = 0;
+    // Up to 200 posts (2 pages) — enough for a 6-day cycle even at
+    // high posting volume.
+    const list = await fetchSubmitted(account, { limit: 100, pages: 2 });
     for (const p of list) {
       const t = Number(p.created_utc) * 1000;
       if (t < startMs || t > endMs) continue;
       posts++;
-      acctPosts++;
-      acctUp += Number(p.ups || 0);
-      upvotes += Number(p.ups || 0);
+      upvotes  += Number(p.ups || 0);
       comments += Number(p.num_comments || 0);
-      subreddits.add(`r/${p.subreddit}`);
       if (isRemoved(p)) removed++;
       if (Number(p.ups) >= 5000) viral5k++;
       if (Number(p.ups) >= 1000) viral1k++;
-      if (!topPost || Number(p.ups) > Number(topPost.ups)) topPost = { ...p, _account: account };
     }
-    accountStats.push({ account, posts: acctPosts, upvotes: acctUp });
   }
 
-  // Points calc
-  const breakdown = {
-    posts:        posts * POINTS.per_post,
-    upvotes:      upvotes * POINTS.per_upvote,
-    comments:     comments * POINTS.per_comment,
-    viral_1k:     viral1k * POINTS.bonus_viral_1k,
-    viral_5k:     viral5k * POINTS.bonus_viral_5k,
-    removed:      removed * POINTS.penalty_removed,
-  };
-  const totalPoints = Object.values(breakdown).reduce((s, x) => s + x, 0);
-  const bonusUsd = totalPoints / POINTS.points_per_dollar;
+  const points = Math.round(
+    posts    * POINTS.per_post +
+    upvotes  * POINTS.per_upvote +
+    comments * POINTS.per_comment +
+    viral1k  * POINTS.bonus_viral_1k +
+    viral5k  * POINTS.bonus_viral_5k +
+    removed  * POINTS.penalty_removed
+  );
 
   return {
     name: poster.name,
     accounts: poster.accounts.length,
     posts, upvotes, comments,
     viral_1k: viral1k, viral_5k: viral5k, removed,
-    topPost,
-    subreddits: subreddits.size,
-    breakdown,
-    points: totalPoints,
-    bonus_usd: bonusUsd,
-    accountStats,
+    points,
   };
 }
 
 const MEDAL = ["🥇", "🥈", "🥉"];
 
-function buildField(rank, row) {
-  const medal = MEDAL[rank] ?? `**${rank + 1}.**`;
-  const lines = [];
-  lines.push(`**${row.points.toFixed(0)} pts**   →   **$${row.bonus_usd.toFixed(2)} bonus**`);
-  lines.push(`${row.posts} posts · ${fmtNum(row.upvotes)} upvotes · ${fmtNum(row.comments)} comments · ${row.subreddits} subs`);
-  const flags = [];
-  if (row.viral_5k) flags.push(`🌟 ${row.viral_5k}× mega-viral (5k+)`);
-  if (row.viral_1k) flags.push(`🔥 ${row.viral_1k}× viral (1k+)`);
-  if (row.removed)  flags.push(`🚫 ${row.removed} removed`);
-  if (flags.length) lines.push(flags.join(" · "));
-  if (row.topPost) {
-    const title = String(row.topPost.title || "").slice(0, 90);
-    lines.push(`🏆 [${title}](${fullUrl(row.topPost)}) — ${fmtNum(row.topPost.ups)} ↑ (r/${row.topPost.subreddit}, u/${row.topPost._account})`);
-  }
-  return {
-    name: `${medal}  ${row.name}  ·  ${row.accounts} accts`,
-    value: lines.join("\n").slice(0, 1024),
-    inline: false,
-  };
+function rankLine(rank, r) {
+  const tag = rank < 3 ? MEDAL[rank] : `${rank + 1}.`;
+  const pts = `${r.points} pts`;
+  const extras = [];
+  if (r.viral_5k) extras.push(`🌟${r.viral_5k}`);
+  if (r.viral_1k) extras.push(`🔥${r.viral_1k}`);
+  if (r.removed)  extras.push(`🚫${r.removed}`);
+  const tail = extras.length ? `  (${extras.join(" · ")})` : "";
+  return `${tag} **${r.name}** — ${pts}${tail}`;
 }
 
 async function main() {
-  const { start, end } = yesterdayWindow();
-  const dateLabel = fmtDateInTz(start);
+  const now = new Date();
+  const { startUtc, endUtc, dayOfCycle, closed } = currentCycle(now);
 
   const rows = [];
   for (const p of POSTERS) {
-    rows.push(await scorePoster(p, start.getTime(), end.getTime()));
+    rows.push(await scorePoster(p, startUtc.getTime(), endUtc.getTime()));
   }
   rows.sort((a, b) => b.points - a.points);
 
-  const totalPts = rows.reduce((s, r) => s + r.points, 0);
-  const totalBon = rows.reduce((s, r) => s + r.bonus_usd, 0);
+  const totalPosts    = rows.reduce((s, r) => s + r.posts, 0);
+  const totalUpvotes  = rows.reduce((s, r) => s + r.upvotes, 0);
+  const totalComments = rows.reduce((s, r) => s + r.comments, 0);
+  const totalRemoved  = rows.reduce((s, r) => s + r.removed, 0);
 
-  const embed = {
-    title: `🏆 Reddit poster leaderboard — ${dateLabel}`,
-    description:
-      `*Yesterday's performance, UK time*\n` +
-      `Pool: **${totalPts.toFixed(0)} pts** = **$${totalBon.toFixed(2)}** across ${rows.length} posters\n` +
-      `Formula: +1 post · +0.01/upvote · +0.1/comment · viral bonuses · −10/removed · ${POINTS.points_per_dollar} pts = $1`,
-    color: 0xFFD700,
-    fields: rows.map((r, i) => buildField(i, r)),
-    timestamp: new Date().toISOString(),
-  };
+  // Status line — mirrors the style of the Chatter Points Bot example
+  // the agency wants this leaderboard to look like.
+  const dayLabels = ["", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const status = closed
+    ? `✅ Cycle closed`
+    : `Day ${dayOfCycle} of 6 (${dayLabels[dayOfCycle]}) · in progress`;
 
-  const ok = await sendDiscord(WEBHOOK, { embeds: [embed] });
+  const lines = [];
+  lines.push(`🏆 **REDDIT POSTER POINTS — WEEK OF ${fmtWeekOfLabel(startUtc)}**`);
+  lines.push(`Cycle: ${fmtCycleDate(startUtc)} → ${fmtCycleDate(endUtc)} · Closes Friday 23:59 Dubai`);
+  lines.push(`*${status}*`);
+  lines.push("");
+  rows.forEach((r, i) => lines.push(rankLine(i, r)));
+  lines.push("");
+  lines.push(`📊 Posts: **${fmtNum(totalPosts)}** · Upvotes: **${fmtNum(totalUpvotes)}** · Comments: **${fmtNum(totalComments)}** · Removed: **${totalRemoved}**`);
+  lines.push(`⏰ ${closed ? "Final standings — new cycle starts Sunday 00:00 Dubai" : "Next update: tomorrow morning"}`);
+
+  const ok = await sendDiscord(WEBHOOK, lines.join("\n"));
   console.log(JSON.stringify({
     posters: rows.length,
     sent: ok,
-    leaderboard: rows.map((r) => ({ name: r.name, points: +r.points.toFixed(1), bonus: +r.bonus_usd.toFixed(2) })),
+    cycle: { start: startUtc.toISOString(), end: endUtc.toISOString(), day: dayOfCycle, closed },
+    leaderboard: rows.map((r) => ({ name: r.name, pts: r.points })),
   }));
 }
 
