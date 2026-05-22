@@ -45,16 +45,45 @@ export const POSTERS = [
 
 // Reward formula. Tweak any field and the leaderboard math
 // recomputes — no other code changes needed.
+//
+// FAIRNESS NOTES
+//   • per_post is the dominant effort signal — every post counts the
+//     same regardless of how it performed.
+//   • Upvotes contribute per_upvote, but capped at upvote_cap_per_post
+//     so a single 50k-upvote post on a mature account can't single-
+//     handedly dominate the leaderboard.
+//   • Viral milestones still bonus separately — they're real wins.
+//   • All point values are then multiplied by the account's tier
+//     multiplier (see ACCOUNT_TIERS) so growing a small/warm-up
+//     account is rewarded as much as coasting on a mega one.
 export const POINTS = {
-  per_post:        1,        // each post submitted
-  per_upvote:      0.01,     // each upvote received
-  per_comment:     0.1,      // each comment received
-  bonus_viral_1k:  50,       // one-time bonus per post crossing 1,000 ↑
-  bonus_viral_5k:  200,      // additional bonus per post crossing 5,000 ↑
-  penalty_removed: -10,      // each removed post (by mod / spam filter)
-  // Convert raw points → $ bonus. e.g. 20 points = $1.
-  points_per_dollar: 20,
+  per_post:            5,    // base effort signal — same for every post
+  per_upvote:          0.01, // per upvote received (capped — see below)
+  upvote_cap_per_post: 500,  // max upvotes credited per post (caps outliers)
+  bonus_viral_1k:      30,   // bonus per post crossing 1,000 ↑
+  bonus_viral_5k:      100,  // additional bonus per post crossing 5,000 ↑
+  penalty_removed:     -10,  // per removed post (by mod / spam filter)
+  // Convert raw points → $ bonus. e.g. 10 points = $1.
+  points_per_dollar:   10,
 };
+
+// Account difficulty tiers. Smaller / younger accounts are harder
+// to grow → posters running them earn a higher multiplier on every
+// point they generate. Lookup is by link_karma, picking the first
+// tier whose max_karma the account is below.
+export const ACCOUNT_TIERS = [
+  { name: "warm-up",     max_karma: 5_000,    multiplier: 3.0 },
+  { name: "growing",     max_karma: 25_000,   multiplier: 2.0 },
+  { name: "established", max_karma: 100_000,  multiplier: 1.5 },
+  { name: "mature",      max_karma: Infinity, multiplier: 1.0 },
+];
+
+export function tierFor(linkKarma) {
+  for (const t of ACCOUNT_TIERS) {
+    if (linkKarma <= t.max_karma) return t;
+  }
+  return ACCOUNT_TIERS[ACCOUNT_TIERS.length - 1];
+}
 
 // ── Reddit fetch ─────────────────────────────────────────────────
 // Reddit BLOCKS the default fetch User-Agent. Always send a custom
