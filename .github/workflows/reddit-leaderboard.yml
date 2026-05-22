@@ -1,0 +1,21 @@
+name: Reddit poster leaderboard
+
+# Daily 08:23 UTC — fires ~10 min after reddit-daily so it picks up
+# yesterday's complete data and respects Reddit's per-IP rate window.
+on:
+  schedule:
+    - cron: "23 8 * * *"
+  workflow_dispatch:
+
+jobs:
+  leaderboard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Run poster leaderboard
+        env:
+          DISCORD_WEBHOOK_REDDIT_LEADERBOARD: ${{ secrets.DISCORD_WEBHOOK_REDDIT_LEADERBOARD }}
+        run: node payout-bot/reddit-leaderboard.mjs
