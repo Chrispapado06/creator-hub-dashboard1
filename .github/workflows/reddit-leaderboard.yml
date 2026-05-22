@@ -17,5 +17,6 @@ jobs:
           node-version: "22"
       - name: Run poster leaderboard
         env:
+          ONLYFANSAPI_KEY: ${{ secrets.ONLYFANSAPI_KEY }}
           DISCORD_WEBHOOK_REDDIT_LEADERBOARD: ${{ secrets.DISCORD_WEBHOOK_REDDIT_LEADERBOARD }}
         run: node payout-bot/reddit-leaderboard.mjs

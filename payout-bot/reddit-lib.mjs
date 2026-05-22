@@ -74,6 +74,12 @@ export const POINTS = {
   // 1,000 pts = $1. So 1,000 upvotes = $1, 5,000 = $5, 10,000 = $10.
   // Tier multiplier applies on top: warm-up upvotes count ×3 etc.
   points_per_dollar:   1000,
+  // Share of attributable OF revenue paid out to the poster. e.g.
+  // 0.005 = 0.5%, so $2,000 of attributable revenue → $10 bonus.
+  // "Attributable" means: revenue of the creator this poster's
+  // Reddit accounts represent, weighted by the poster's share of
+  // posts to that creator's Reddit accounts in the cycle.
+  revenue_rate:        0.005,
   // Per-poster weekly cap. No single poster's bonus exceeds this
   // even on a banger week.
   per_poster_weekly_cap_usd: 50,
