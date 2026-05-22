@@ -57,24 +57,25 @@ export const POSTERS = [
 //     multiplier (see ACCOUNT_TIERS) so growing a small/warm-up
 //     account is rewarded as much as coasting on a mega one.
 export const POINTS = {
-  per_post:            5,     // base effort signal — same for every post
-  per_upvote:          0.01,  // per upvote received (capped — see below)
-  upvote_cap_per_post: 2000,  // max upvotes credited per post — a 50k-
-                              // upvote outlier still counts as 2k for
-                              // the per_upvote calc (viral bonuses fire
-                              // separately on top).
-  bonus_viral_1k:      30,    // bonus per post crossing 1,000 ↑
-  bonus_viral_5k:      100,   // additional bonus per post crossing 5,000 ↑
-  penalty_removed:     -10,   // per removed post (by mod / spam filter)
-  // Raw conversion rate. With current weights this lands an average
-  // good week (≈ 2,000 pts, mostly upvotes within the cap) around
-  // $20 per poster — matching the agency's "5,000 upvotes ≈ $20"
-  // intuition for a mid-tier account mix.
-  points_per_dollar:   100,
+  // Performance-only formula — posting is the job, not the payout.
+  // We reward what posts EARNED (engagement), not how many were made.
+  per_post:            0,     // no flat per-post payment
+  per_upvote:          1,     // each upvote received (capped — see below)
+  per_comment:         5,     // each comment ≈ 5× an upvote (rarer, more engaged)
+  upvote_cap_per_post: 2000,  // max upvotes credited per post — caps outliers
+                              // so a single 50k-upvote post can't single-
+                              // handedly win the cycle.
+  bonus_viral_1k:      500,   // ≈ $1 bonus per post crossing 1,000 ↑
+  bonus_viral_5k:      2000,  // ≈ $4 bonus per post crossing 5,000 ↑
+  penalty_removed:     -100,  // ≈ −$0.20 per removed post (compliance signal)
+  // 500 raw points = $1. Calibration: 5,000 mature-account upvotes
+  // (raw, no tier boost) ≈ $10. With tier ×3 for warm-up accounts,
+  // the same 5,000 upvotes ≈ $30 — rewarding posters running small
+  // accts since each upvote is harder-earned there.
+  points_per_dollar:   500,
   // Per-poster weekly cap. No single poster's bonus exceeds this
   // even on a banger week. Total payout scales with collective
-  // performance — bad week pays less, good week pays more, up to
-  // the per-poster cap × number of posters. Set to 0 to disable.
+  // performance — bad week pays less, good week pays more.
   per_poster_weekly_cap_usd: 50,
 };
 

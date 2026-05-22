@@ -68,8 +68,9 @@ async function scoreAccount(account, startMs, endMs) {
   }
 
   const raw =
-    n        * POINTS.per_post +
+    n        * POINTS.per_post +       // 0 in current formula — kept for future flexibility
     upvotes  * POINTS.per_upvote +
+    comments * POINTS.per_comment +
     viral1k  * POINTS.bonus_viral_1k +
     viral5k  * POINTS.bonus_viral_5k +
     removed  * POINTS.penalty_removed;
