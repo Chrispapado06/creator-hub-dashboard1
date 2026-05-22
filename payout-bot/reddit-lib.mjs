@@ -57,14 +57,23 @@ export const POSTERS = [
 //     multiplier (see ACCOUNT_TIERS) so growing a small/warm-up
 //     account is rewarded as much as coasting on a mega one.
 export const POINTS = {
-  per_post:            5,    // base effort signal — same for every post
-  per_upvote:          0.01, // per upvote received (capped — see below)
-  upvote_cap_per_post: 500,  // max upvotes credited per post (caps outliers)
-  bonus_viral_1k:      30,   // bonus per post crossing 1,000 ↑
-  bonus_viral_5k:      100,  // additional bonus per post crossing 5,000 ↑
-  penalty_removed:     -10,  // per removed post (by mod / spam filter)
-  // Convert raw points → $ bonus. e.g. 10 points = $1.
-  points_per_dollar:   10,
+  per_post:            5,     // base effort signal — same for every post
+  per_upvote:          0.01,  // per upvote received (capped — see below)
+  upvote_cap_per_post: 2000,  // max upvotes credited per post — a 50k-
+                              // upvote outlier still counts as 2k for
+                              // the per_upvote calc (viral bonuses fire
+                              // separately on top).
+  bonus_viral_1k:      30,    // bonus per post crossing 1,000 ↑
+  bonus_viral_5k:      100,   // additional bonus per post crossing 5,000 ↑
+  penalty_removed:     -10,   // per removed post (by mod / spam filter)
+  // Raw conversion rate. The pool cap below overrides this once total
+  // raw bonus would exceed the cap.
+  points_per_dollar:   100,
+  // Hard cap on total weekly $$$ paid out across all posters. If raw
+  // bonuses sum above this, every poster's bonus is scaled down
+  // proportionally to fit. If they sum below, bonuses are paid at the
+  // raw rate. Set to 0 to disable the cap.
+  weekly_bonus_pool_cap_usd: 50,
 };
 
 // Account difficulty tiers. Smaller / younger accounts are harder

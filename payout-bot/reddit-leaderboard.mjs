@@ -113,7 +113,8 @@ function rankLine(rank, r) {
   if (r.viral_1k) extras.push(`🔥${r.viral_1k}`);
   if (r.removed)  extras.push(`🚫${r.removed}`);
   const tail = extras.length ? `  (${extras.join(" · ")})` : "";
-  return `${tag} **${r.name}** — ${r.points} pts${tail}`;
+  const bonus = r.bonus_usd != null ? `  →  **$${r.bonus_usd.toFixed(2)}**` : "";
+  return `${tag} **${r.name}** — ${r.points} pts${bonus}${tail}`;
 }
 
 async function main() {
@@ -125,6 +126,17 @@ async function main() {
     rows.push(await scorePoster(p, startUtc.getTime(), endUtc.getTime()));
   }
   rows.sort((a, b) => b.points - a.points);
+
+  // ── Bonus distribution ────────────────────────────────────────
+  // Each poster's raw bonus = points / points_per_dollar. If the
+  // pool of raw bonuses exceeds weekly_bonus_pool_cap_usd, scale
+  // everyone down proportionally so the total never exceeds the cap.
+  const cap = POINTS.weekly_bonus_pool_cap_usd;
+  for (const r of rows) r._raw_bonus = r.points / POINTS.points_per_dollar;
+  const rawTotal = rows.reduce((s, r) => s + Math.max(0, r._raw_bonus), 0);
+  const scaleFactor = (cap > 0 && rawTotal > cap) ? cap / rawTotal : 1;
+  for (const r of rows) r.bonus_usd = Math.max(0, r._raw_bonus * scaleFactor);
+  const paidTotal = rows.reduce((s, r) => s + r.bonus_usd, 0);
 
   const totals = {
     posts:    rows.reduce((s, r) => s + r.posts, 0),
@@ -147,6 +159,12 @@ async function main() {
   rows.forEach((r, i) => lines.push(rankLine(i, r)));
   lines.push("");
   lines.push(`📊 Posts: **${fmtNum(totals.posts)}** · Comments: **${fmtNum(totals.comments)}** · Removed: **${totals.removed}**`);
+  if (cap > 0) {
+    const capNote = scaleFactor < 1
+      ? `(raw $${rawTotal.toFixed(2)} scaled to cap)`
+      : `(under cap)`;
+    lines.push(`💰 Bonus pool paid: **$${paidTotal.toFixed(2)} / $${cap.toFixed(2)}** cap ${capNote}`);
+  }
   lines.push(`⚖️ Fair scoring: smaller accts have higher multipliers → ${tierLegend}`);
   lines.push(`⏰ Next update: tomorrow morning`);
 
