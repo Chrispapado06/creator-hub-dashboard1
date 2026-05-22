@@ -8,17 +8,53 @@
 // individually by the watcher.
 
 // ── Who do we track ──────────────────────────────────────────────
+// One block per creator. The "Unattributed" group holds warm-up
+// accounts whose owning creator isn't confirmed yet — they still
+// get scored on the poster leaderboard, just not aggregated under
+// a creator in the daily/weekly reports.
 export const REDDIT_CREATORS = [
   { name: "Marissa Munoz", accounts: ["blondejuliaaa", "MissMarissaBlonde", "Caalythraa"] },
   { name: "Maylee",        accounts: ["KiraaaaNest", "IvyyyyPocket"] },
   { name: "Meg",           accounts: ["Lextaaa"] },
   { name: "Bella Leah",    accounts: ["NoriChimes", "Seraphynne11"] },
+  { name: "June - Sandra", accounts: ["velvetariiia"] },
+  // TODO: confirm which creator owns each of these and migrate up.
+  { name: "Unattributed (warm-up)", accounts: [
+    "RareArea11", "Valerizzee", "duskkymira", "Lumiiivrae",
+    "EntireFace00", "Jessieecorner", "Zephyyyrella",
+  ] },
 ];
 
 // Returns every (creator, account) pair so scripts can iterate flat.
 export function eachAccount() {
   return REDDIT_CREATORS.flatMap((c) => c.accounts.map((a) => ({ creator: c.name, account: a })));
 }
+
+// ── Posters ─────────────────────────────────────────────────────
+// Fixed assignment of Reddit accounts → the poster who runs them.
+// Used by reddit-leaderboard.mjs to score performance per poster.
+// If the same account ever has multiple posters in a day, the
+// leaderboard still attributes its points only to the listed owner —
+// rotations need to be reflected here when they change.
+export const POSTERS = [
+  { name: "Cha",    accounts: ["blondejuliaaa", "IvyyyyPocket", "Lextaaa", "NoriChimes", "Caalythraa"] },
+  { name: "Reylee", accounts: ["KiraaaaNest", "Seraphynne11", "MissMarissaBlonde", "velvetariiia"] },
+  { name: "Dabi",   accounts: ["RareArea11", "Valerizzee", "duskkymira", "Lumiiivrae"] },
+  { name: "Xy",     accounts: ["EntireFace00", "Jessieecorner", "Zephyyyrella"] },
+];
+
+// Reward formula. Tweak any field and the leaderboard math
+// recomputes — no other code changes needed.
+export const POINTS = {
+  per_post:        1,        // each post submitted
+  per_upvote:      0.01,     // each upvote received
+  per_comment:     0.1,      // each comment received
+  bonus_viral_1k:  50,       // one-time bonus per post crossing 1,000 ↑
+  bonus_viral_5k:  200,      // additional bonus per post crossing 5,000 ↑
+  penalty_removed: -10,      // each removed post (by mod / spam filter)
+  // Convert raw points → $ bonus. e.g. 20 points = $1.
+  points_per_dollar: 20,
+};
 
 // ── Reddit fetch ─────────────────────────────────────────────────
 // Reddit BLOCKS the default fetch User-Agent. Always send a custom
