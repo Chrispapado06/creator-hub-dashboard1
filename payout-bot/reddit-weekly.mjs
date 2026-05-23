@@ -1,13 +1,11 @@
 #!/usr/bin/env node
-// Weekly Reddit ROI summary.
+// Weekly Reddit ROI summary — plain-text Discord style, matching
+// the Chatter Points Bot look. Runs Sunday evenings ~18:17 UTC.
 //
-// Runs Sunday evenings ~18:17 UTC. For each creator, sums the last 7
-// UK days of posts grouped by subreddit:
-//   • posts published
-//   • total upvotes
-//   • avg upvotes per post
-// …so Luca can see which subreddits are pulling weight and which to
-// drop. Also lists the top 5 individual posts of the week.
+// For each creator, sums the last 7 UK days of posts grouped by
+// subreddit (posts, upvotes, avg upvotes/post) plus the top 5
+// individual posts. Sent as one message per creator (so each fits
+// inside Discord's 2,000-char content cap with breathing room).
 
 import {
   REDDIT_CREATORS, fetchSubmitted, isRemoved, fmtNum, fullUrl,
@@ -19,7 +17,6 @@ import {
 const WEBHOOK = process.env.DISCORD_WEBHOOK_REDDIT_WEEKLY;
 if (!WEBHOOK) { console.error("DISCORD_WEBHOOK_REDDIT_WEEKLY missing"); process.exit(1); }
 
-// Last 7 UK days ending tonight.
 function lastWeekRange(now = new Date()) {
   const here = partsInTz(now, REPORT_TZ);
   const todayMidUtc = wallTimeToUtc(here.year, here.month, here.day);
@@ -31,18 +28,15 @@ function lastWeekRange(now = new Date()) {
 async function gatherCreator(creator, accounts, startMs, endMs) {
   const allPosts = [];
   for (const a of accounts) {
-    // Paginate: in a busy week an account can have >100 posts.
     const list = await fetchSubmitted(a, { limit: 100, pages: 4 });
     for (const p of list) {
       const t = Number(p.created_utc) * 1000;
       if (t < startMs) continue;
-      if (t > endMs) continue;
+      if (t > endMs)   continue;
       if (isRemoved(p)) continue;
       allPosts.push({ ...p, _account: a });
     }
   }
-
-  // Group by subreddit
   const bySub = new Map();
   for (const p of allPosts) {
     const k = `r/${p.subreddit}`;
@@ -54,81 +48,63 @@ async function gatherCreator(creator, accounts, startMs, endMs) {
   const subStats = [...bySub.values()]
     .map((s) => ({ ...s, avg: s.upvotes / s.posts }))
     .sort((a, b) => b.upvotes - a.upvotes);
-
-  const topPosts = allPosts
-    .slice()
-    .sort((a, b) => Number(b.ups) - Number(a.ups))
-    .slice(0, 5);
-
-  const totalUp = allPosts.reduce((s, p) => s + Number(p.ups || 0), 0);
-  const totalCm = allPosts.reduce((s, p) => s + Number(p.num_comments || 0), 0);
-
+  const topPosts = allPosts.slice().sort((a, b) => Number(b.ups) - Number(a.ups)).slice(0, 5);
   return {
     creator,
     accountCount: accounts.length,
     posts: allPosts.length,
-    upvotes: totalUp,
-    comments: totalCm,
+    upvotes: allPosts.reduce((s, p) => s + Number(p.ups || 0), 0),
+    comments: allPosts.reduce((s, p) => s + Number(p.num_comments || 0), 0),
     subStats,
     topPosts,
   };
 }
 
-function buildCreatorEmbed(row, periodLabel) {
-  const subTable = row.subStats.slice(0, 8).map((s) =>
-    `• ${s.sub} — **${fmtNum(s.upvotes)}** upvotes across ${s.posts} posts *(avg ${s.avg.toFixed(0)})*`
-  ).join("\n");
+function buildCreatorMessage(row, periodLabel) {
+  const lines = [];
+  lines.push(`📊 **WEEKLY REDDIT ROI — ${row.creator}**`);
+  lines.push(`*${periodLabel} (UK time) · ${row.accountCount} ${row.accountCount === 1 ? "account" : "accounts"}*`);
+  lines.push("");
+  lines.push(`**Totals**`);
+  lines.push(`  Posts: **${fmtNum(row.posts)}** · Upvotes: **${fmtNum(row.upvotes)}** · Comments: **${fmtNum(row.comments)}**`);
 
-  const topTable = row.topPosts.map((p, i) => {
-    const title = String(p.title || "").slice(0, 90);
-    return `${i + 1}. [${title}](${fullUrl(p)}) — **${fmtNum(p.ups)}** ↑ (r/${p.subreddit}, u/${p._account})`;
-  }).join("\n");
-
-  const fields = [];
-  fields.push({
-    name: "Totals",
-    value: `Posts: **${row.posts}** · Upvotes: **${fmtNum(row.upvotes)}** · Comments: **${fmtNum(row.comments)}**`,
-    inline: false,
-  });
-  if (subTable) {
-    fields.push({ name: "Subreddit ROI (ranked by upvotes)", value: subTable.slice(0, 1024), inline: false });
-  }
-  if (topTable) {
-    fields.push({ name: "🏆 Top 5 posts of the week", value: topTable.slice(0, 1024), inline: false });
-  }
   if (row.posts === 0) {
-    fields.push({ name: "Note", value: "No posts in the window — investigate.", inline: false });
+    lines.push("");
+    lines.push(`⚠️ No posts this week — investigate.`);
+    return lines.join("\n");
   }
 
-  return {
-    title: `${row.creator}  ·  ${row.accountCount} ${row.accountCount === 1 ? "account" : "accounts"}`,
-    description: `*${periodLabel} (UK time)*`,
-    color: 0xFF4500,
-    fields,
-  };
+  lines.push("");
+  lines.push(`**🏆 Subreddit ROI** *(ranked by upvotes)*`);
+  for (const s of row.subStats.slice(0, 8)) {
+    lines.push(`  • ${s.sub} — **${fmtNum(s.upvotes)}** ↑ across ${s.posts} posts *(avg ${s.avg.toFixed(0)})*`);
+  }
+  if (row.subStats.length > 8) lines.push(`  *…and ${row.subStats.length - 8} more*`);
+
+  lines.push("");
+  lines.push(`**🏆 Top 5 posts of the week**`);
+  row.topPosts.forEach((p, i) => {
+    const title = String(p.title || "").slice(0, 80);
+    lines.push(`  ${i + 1}. [${title}](<${fullUrl(p)}>) — **${fmtNum(p.ups)}** ↑ *(r/${p.subreddit}, u/${p._account})*`);
+  });
+
+  return lines.join("\n");
 }
 
 async function main() {
   const { start, end } = lastWeekRange();
   const periodLabel = `${fmtDateInTz(start)} → ${fmtDateInTz(end)}`;
 
-  // Send a lead header first, then ONE message per creator. Discord
-  // caps total embed payload at 6000 chars per message — too tight
-  // when we cram all 4 creators into one. One-creator-per-message
-  // scales cleanly and keeps each block readable on its own.
+  // Lead message
   let sent = 0;
-  const lead = await sendDiscord(WEBHOOK, {
-    embeds: [{
-      title: "📊 Weekly Reddit ROI",
-      description: `${periodLabel}\n${REDDIT_CREATORS.length} creators · breakdown below`,
-      color: 0x2ECC71,
-    }],
-  });
-  if (lead) sent++;
+  const leadOk = await sendDiscord(WEBHOOK,
+    `📊 **WEEKLY REDDIT ROI**\n${periodLabel}\n*${REDDIT_CREATORS.length} creators · breakdown below*`
+  );
+  if (leadOk) sent++;
 
   for (const c of REDDIT_CREATORS) {
     const row = await gatherCreator(c.name, c.accounts, start.getTime(), end.getTime());
-    const ok = await sendDiscord(WEBHOOK, { embeds: [buildCreatorEmbed(row, periodLabel)] });
+    const ok = await sendDiscord(WEBHOOK, buildCreatorMessage(row, periodLabel));
     if (ok) sent++;
   }
 
