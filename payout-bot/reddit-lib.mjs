@@ -45,16 +45,57 @@ export const POSTERS = [
 
 // Reward formula. Tweak any field and the leaderboard math
 // recomputes — no other code changes needed.
+//
+// FAIRNESS NOTES
+//   • per_post is the dominant effort signal — every post counts the
+//     same regardless of how it performed.
+//   • Upvotes contribute per_upvote, but capped at upvote_cap_per_post
+//     so a single 50k-upvote post on a mature account can't single-
+//     handedly dominate the leaderboard.
+//   • Viral milestones still bonus separately — they're real wins.
+//   • All point values are then multiplied by the account's tier
+//     multiplier (see ACCOUNT_TIERS) so growing a small/warm-up
+//     account is rewarded as much as coasting on a mega one.
 export const POINTS = {
-  per_post:        1,        // each post submitted
-  per_upvote:      0.01,     // each upvote received
-  per_comment:     0.1,      // each comment received
-  bonus_viral_1k:  50,       // one-time bonus per post crossing 1,000 ↑
-  bonus_viral_5k:  200,      // additional bonus per post crossing 5,000 ↑
-  penalty_removed: -10,      // each removed post (by mod / spam filter)
-  // Convert raw points → $ bonus. e.g. 20 points = $1.
-  points_per_dollar: 20,
+  // Pure upvote-driven formula — agency owner spec'd it:
+  //   $1 per 1,000 upvotes · $5 per 5,000 upvotes (same linear rate).
+  // Nothing for raw posting volume, nothing for comments. Account
+  // tier multipliers still apply for fairness (a warm-up upvote is
+  // 3× harder to earn than a mature one).
+  per_post:            0,    // no payment for posting itself
+  per_upvote:          1,    // 1 pt = 1 upvote (capped 2000/post below)
+  per_comment:         0,    // disabled
+  upvote_cap_per_post: 2000, // single post can't dominate (e.g. a
+                             // 50k-upvote outlier still credits 2k)
+  bonus_viral_1k:      0,    // disabled — linear $/upvote covers it
+  bonus_viral_5k:      0,    // disabled
+  penalty_removed:     -100, // ≈ −$0.10 per removed post (mods rejecting
+                             // work is a real performance signal)
+  // 1,000 pts = $1. So 1,000 upvotes = $1, 5,000 = $5, 10,000 = $10.
+  // Tier multiplier applies on top: warm-up upvotes count ×3 etc.
+  points_per_dollar:   1000,
+  // Per-poster weekly cap. No single poster's bonus exceeds this
+  // even on a banger week.
+  per_poster_weekly_cap_usd: 50,
 };
+
+// Account difficulty tiers. Smaller / younger accounts are harder
+// to grow → posters running them earn a higher multiplier on every
+// point they generate. Lookup is by link_karma, picking the first
+// tier whose max_karma the account is below.
+export const ACCOUNT_TIERS = [
+  { name: "warm-up",     max_karma: 5_000,    multiplier: 3.0 },
+  { name: "growing",     max_karma: 25_000,   multiplier: 2.0 },
+  { name: "established", max_karma: 100_000,  multiplier: 1.5 },
+  { name: "mature",      max_karma: Infinity, multiplier: 1.0 },
+];
+
+export function tierFor(linkKarma) {
+  for (const t of ACCOUNT_TIERS) {
+    if (linkKarma <= t.max_karma) return t;
+  }
+  return ACCOUNT_TIERS[ACCOUNT_TIERS.length - 1];
+}
 
 // ── Reddit fetch ─────────────────────────────────────────────────
 // Reddit BLOCKS the default fetch User-Agent. Always send a custom

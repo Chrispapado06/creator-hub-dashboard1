@@ -1,140 +1,161 @@
 #!/usr/bin/env node
-// Daily Reddit poster leaderboard.
+// Reddit poster leaderboard — upvote-only formula.
 //
-// Runs every morning ~08:23 UTC (a few minutes after reddit-daily so
-// any in-flight rate-limit windows have reset). For each poster, sums
-// yesterday's posts across their assigned Reddit accounts, applies the
-// POINTS formula in reddit-lib, ranks them, and posts a Discord embed.
+//   • $1 per 1,000 upvotes (capped 2,000/post) × tier multiplier
+//     (warm-up ×3 → mature ×1 — rewards work on small accts)
+//   • Flat −$0.10 per removed post (no tier — small accts already
+//     attract more mod scrutiny, don't double-punish)
+//   • Capped at $50 per poster per week, floored at $0
 //
-// Posters and their account assignments are in reddit-lib.mjs
-// (POSTERS const). Point formula is in POINTS const there too. Change
-// either and the next run picks it up automatically.
+// Cycle = Sun 00:00 → Sat 23:59 Dubai (7 days).
+// Posts daily as a running total during the cycle.
 
 import {
-  POSTERS, POINTS, fetchSubmitted, isRemoved, fmtNum, fullUrl,
+  POSTERS, POINTS, ACCOUNT_TIERS, tierFor,
+  fetchSubmitted, fetchAccountAbout, isRemoved, fmtNum,
 } from "./reddit-lib.mjs";
 import {
-  sendDiscord, REPORT_TZ, wallTimeToUtc, partsInTz, fmtDateInTz,
+  sendDiscord, partsInTz, wallTimeToUtc,
 } from "./config.mjs";
 
 const WEBHOOK = process.env.DISCORD_WEBHOOK_REDDIT_LEADERBOARD;
 if (!WEBHOOK) { console.error("DISCORD_WEBHOOK_REDDIT_LEADERBOARD missing"); process.exit(1); }
 
-function yesterdayWindow(now = new Date()) {
-  const here = partsInTz(now, REPORT_TZ);
-  const todayMid = wallTimeToUtc(here.year, here.month, here.day);
+const CYCLE_TZ = "Asia/Dubai";
+
+// ── Cycle math (Sun→Sat Dubai) ───────────────────────────────────
+function currentCycle(now = new Date()) {
+  const here = partsInTz(now, CYCLE_TZ);
+  const daysBackToSun = here.weekday;
+  const startUtc = wallTimeToUtc(here.year, here.month, here.day - daysBackToSun, 0, 0, 0, CYCLE_TZ);
+  const endUtc   = new Date(startUtc.getTime() + 7 * 24 * 3600_000 - 1000);
+  const dayOfCycle = here.weekday + 1; // 1..7 (Sun..Sat)
+  return { startUtc, endUtc, dayOfCycle };
+}
+
+const fmtShort  = (d) => new Intl.DateTimeFormat("en-US", { timeZone: CYCLE_TZ, weekday: "short", month: "short", day: "numeric" }).format(d);
+const fmtWeekOf = (d) => new Intl.DateTimeFormat("en-US", { timeZone: CYCLE_TZ, month: "long", day: "numeric", year: "numeric" }).format(d);
+
+// ── Per-account scoring ──────────────────────────────────────────
+async function scoreAccount(account, startMs, endMs) {
+  const [about, posts] = await Promise.all([
+    fetchAccountAbout(account),
+    fetchSubmitted(account, { limit: 100, pages: 2 }),
+  ]);
+  const tier = tierFor(about?.link_karma ?? 0);
+
+  let n = 0, upvotes = 0, removed = 0;
+  for (const p of posts) {
+    const t = Number(p.created_utc) * 1000;
+    if (t < startMs || t > endMs) continue;
+    n++;
+    upvotes += Math.min(Number(p.ups || 0), POINTS.upvote_cap_per_post);
+    if (isRemoved(p)) removed++;
+  }
+
+  // Positive earnings get tier multiplier (rewards small-acct work).
+  // Penalty is flat — same -10 pts per removed regardless of tier.
+  const positivePts = upvotes * POINTS.per_upvote;
+  const penaltyPts  = removed * POINTS.penalty_removed;
+
   return {
-    start: new Date(todayMid.getTime() - 24 * 3600_000),
-    end:   new Date(todayMid.getTime() - 1000),
+    account, tier,
+    posts: n,
+    upvotesCapped: upvotes,
+    removed,
+    positive_pts: positivePts * tier.multiplier,
+    penalty_pts:  penaltyPts,
   };
 }
 
-// Per-poster aggregation across all their accounts in yesterday's window.
 async function scorePoster(poster, startMs, endMs) {
-  let posts = 0, upvotes = 0, comments = 0;
-  let viral1k = 0, viral5k = 0, removed = 0;
-  let topPost = null;
-  const subreddits = new Set();
-  const accountStats = [];
-
+  const accs = [];
   for (const account of poster.accounts) {
-    const list = await fetchSubmitted(account, { limit: 100 });
-    let acctPosts = 0, acctUp = 0;
-    for (const p of list) {
-      const t = Number(p.created_utc) * 1000;
-      if (t < startMs || t > endMs) continue;
-      posts++;
-      acctPosts++;
-      acctUp += Number(p.ups || 0);
-      upvotes += Number(p.ups || 0);
-      comments += Number(p.num_comments || 0);
-      subreddits.add(`r/${p.subreddit}`);
-      if (isRemoved(p)) removed++;
-      if (Number(p.ups) >= 5000) viral5k++;
-      if (Number(p.ups) >= 1000) viral1k++;
-      if (!topPost || Number(p.ups) > Number(topPost.ups)) topPost = { ...p, _account: account };
-    }
-    accountStats.push({ account, posts: acctPosts, upvotes: acctUp });
+    accs.push(await scoreAccount(account, startMs, endMs));
   }
-
-  // Points calc
-  const breakdown = {
-    posts:        posts * POINTS.per_post,
-    upvotes:      upvotes * POINTS.per_upvote,
-    comments:     comments * POINTS.per_comment,
-    viral_1k:     viral1k * POINTS.bonus_viral_1k,
-    viral_5k:     viral5k * POINTS.bonus_viral_5k,
-    removed:      removed * POINTS.penalty_removed,
-  };
-  const totalPoints = Object.values(breakdown).reduce((s, x) => s + x, 0);
-  const bonusUsd = totalPoints / POINTS.points_per_dollar;
-
+  const sum = (k) => accs.reduce((s, a) => s + a[k], 0);
   return {
     name: poster.name,
-    accounts: poster.accounts.length,
-    posts, upvotes, comments,
-    viral_1k: viral1k, viral_5k: viral5k, removed,
-    topPost,
-    subreddits: subreddits.size,
-    breakdown,
-    points: totalPoints,
-    bonus_usd: bonusUsd,
-    accountStats,
+    accountCount: poster.accounts.length,
+    posts:        sum("posts"),
+    upvotes:      sum("upvotesCapped"),
+    removed:      sum("removed"),
+    positive_pts: sum("positive_pts"),
+    penalty_pts:  sum("penalty_pts"),
   };
 }
 
+// ── Output ───────────────────────────────────────────────────────
 const MEDAL = ["🥇", "🥈", "🥉"];
 
-function buildField(rank, row) {
-  const medal = MEDAL[rank] ?? `**${rank + 1}.**`;
+function rankBlock(rank, r) {
+  const tag = rank < 3 ? MEDAL[rank] : `${rank + 1}.`;
   const lines = [];
-  lines.push(`**${row.points.toFixed(0)} pts**   →   **$${row.bonus_usd.toFixed(2)} bonus**`);
-  lines.push(`${row.posts} posts · ${fmtNum(row.upvotes)} upvotes · ${fmtNum(row.comments)} comments · ${row.subreddits} subs`);
-  const flags = [];
-  if (row.viral_5k) flags.push(`🌟 ${row.viral_5k}× mega-viral (5k+)`);
-  if (row.viral_1k) flags.push(`🔥 ${row.viral_1k}× viral (1k+)`);
-  if (row.removed)  flags.push(`🚫 ${row.removed} removed`);
-  if (flags.length) lines.push(flags.join(" · "));
-  if (row.topPost) {
-    const title = String(row.topPost.title || "").slice(0, 90);
-    lines.push(`🏆 [${title}](${fullUrl(row.topPost)}) — ${fmtNum(row.topPost.ups)} ↑ (r/${row.topPost.subreddit}, u/${row.topPost._account})`);
-  }
-  return {
-    name: `${medal}  ${row.name}  ·  ${row.accounts} accts`,
-    value: lines.join("\n").slice(0, 1024),
-    inline: false,
-  };
+  const capFlag = r.capped ? " 🧢" : "";
+  lines.push(`${tag} **${r.name}** — **$${r.bonus_usd.toFixed(2)}**${capFlag}`);
+  const parts = [`${fmtNum(r.upvotes)} upvotes`];
+  if (r.removed) parts.push(`${r.removed} removed (−$${Math.abs(r.penalty_usd).toFixed(2)})`);
+  lines.push(`     ${parts.join(" · ")}`);
+  return lines.join("\n");
 }
 
 async function main() {
-  const { start, end } = yesterdayWindow();
-  const dateLabel = fmtDateInTz(start);
+  const now = new Date();
+  const { startUtc, endUtc, dayOfCycle } = currentCycle(now);
 
   const rows = [];
   for (const p of POSTERS) {
-    rows.push(await scorePoster(p, start.getTime(), end.getTime()));
+    rows.push(await scorePoster(p, startUtc.getTime(), endUtc.getTime()));
   }
-  rows.sort((a, b) => b.points - a.points);
 
-  const totalPts = rows.reduce((s, r) => s + r.points, 0);
-  const totalBon = rows.reduce((s, r) => s + r.bonus_usd, 0);
+  // Final $ tally per poster — upvote-only formula.
+  const cap = POINTS.per_poster_weekly_cap_usd;
+  for (const r of rows) {
+    r.upvote_usd  = r.positive_pts / POINTS.points_per_dollar;
+    r.penalty_usd = r.penalty_pts  / POINTS.points_per_dollar;
+    const raw = r.upvote_usd + r.penalty_usd;
+    const floored = Math.max(0, raw);
+    r.bonus_usd = cap > 0 ? Math.min(cap, floored) : floored;
+    r.capped = cap > 0 && floored > cap;
+  }
+  rows.sort((a, b) => b.bonus_usd - a.bonus_usd);
 
-  const embed = {
-    title: `🏆 Reddit poster leaderboard — ${dateLabel}`,
-    description:
-      `*Yesterday's performance, UK time*\n` +
-      `Pool: **${totalPts.toFixed(0)} pts** = **$${totalBon.toFixed(2)}** across ${rows.length} posters\n` +
-      `Formula: +1 post · +0.01/upvote · +0.1/comment · viral bonuses · −10/removed · ${POINTS.points_per_dollar} pts = $1`,
-    color: 0xFFD700,
-    fields: rows.map((r, i) => buildField(i, r)),
-    timestamp: new Date().toISOString(),
+  const totals = {
+    posts:   rows.reduce((s, r) => s + r.posts, 0),
+    upvotes: rows.reduce((s, r) => s + r.upvotes, 0),
+    removed: rows.reduce((s, r) => s + r.removed, 0),
+    payout:  rows.reduce((s, r) => s + r.bonus_usd, 0),
   };
 
-  const ok = await sendDiscord(WEBHOOK, { embeds: [embed] });
+  const dayNames = ["", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const status = dayOfCycle === 7
+    ? `Day 7 of 7 (Sat) · FINAL DAY · cycle closes tonight 23:59 Dubai`
+    : `Day ${dayOfCycle} of 7 (${dayNames[dayOfCycle]}) · in progress`;
+
+  const tierLegend = ACCOUNT_TIERS.map((t) => `${t.name} ×${t.multiplier}`).join(" · ");
+
+  const lines = [];
+  lines.push(`🏆 **REDDIT POSTER POINTS — WEEK OF ${fmtWeekOf(startUtc)}**`);
+  lines.push(`Cycle: ${fmtShort(startUtc)} → ${fmtShort(endUtc)} · Closes Saturday 23:59 Dubai`);
+  lines.push(`*${status}*`);
+  lines.push("");
+  rows.forEach((r, i) => lines.push(rankBlock(i, r)));
+  lines.push("");
+  lines.push(`📊 Posts: **${fmtNum(totals.posts)}** · Upvotes: **${fmtNum(totals.upvotes)}** · Removed: **${totals.removed}**`);
+  lines.push(`💰 Payout this cycle: **$${totals.payout.toFixed(2)}** · per-poster cap: **$${cap.toFixed(2)}** ${rows.some(r => r.capped) ? "*(someone hit it)*" : ""}`);
+  lines.push(`⚖️ Tier multipliers (upvotes only): ${tierLegend}`);
+  lines.push(`⏰ Next update: tomorrow morning`);
+
+  const ok = await sendDiscord(WEBHOOK, lines.join("\n"));
   console.log(JSON.stringify({
-    posters: rows.length,
-    sent: ok,
-    leaderboard: rows.map((r) => ({ name: r.name, points: +r.points.toFixed(1), bonus: +r.bonus_usd.toFixed(2) })),
+    posters: rows.length, sent: ok,
+    cycle: { start: startUtc.toISOString(), end: endUtc.toISOString(), day: dayOfCycle },
+    leaderboard: rows.map((r) => ({
+      name: r.name,
+      bonus: +r.bonus_usd.toFixed(2),
+      upvotes: r.upvotes,
+      removed: r.removed,
+    })),
   }));
 }
 
