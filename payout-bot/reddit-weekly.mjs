@@ -11,8 +11,9 @@ import {
   REDDIT_CREATORS, fetchSubmitted, isRemoved, fmtNum, fullUrl,
 } from "./reddit-lib.mjs";
 import {
-  sendDiscord, REPORT_TZ, wallTimeToUtc, partsInTz, fmtDateInTz,
+  sendDiscord, sendDiscordWithFile, REPORT_TZ, wallTimeToUtc, partsInTz, fmtDateInTz,
 } from "./config.mjs";
+import { buildWeeklyRoiPdf } from "./pdf-report.mjs";
 
 const WEBHOOK = process.env.DISCORD_WEBHOOK_REDDIT_WEEKLY;
 if (!WEBHOOK) { console.error("DISCORD_WEBHOOK_REDDIT_WEEKLY missing"); process.exit(1); }
@@ -104,7 +105,27 @@ async function main() {
 
   for (const c of REDDIT_CREATORS) {
     const row = await gatherCreator(c.name, c.accounts, start.getTime(), end.getTime());
-    const ok = await sendDiscord(WEBHOOK, buildCreatorMessage(row, periodLabel));
+    const text = buildCreatorMessage(row, periodLabel);
+    // Attach a per-creator PDF with the same numbers, more readable
+    // and archive-able. Falls back to text-only on PDF failure.
+    let ok;
+    try {
+      const pdfBytes = await buildWeeklyRoiPdf({
+        creator: row.creator,
+        periodLabel,
+        totals: { posts: row.posts, upvotes: row.upvotes, comments: row.comments },
+        subStats: row.subStats,
+        topPosts: row.topPosts,
+      });
+      const slug = row.creator.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+      const dateTag = start.toISOString().slice(0, 10);
+      ok = await sendDiscordWithFile(
+        WEBHOOK, text, `uncvrd-weekly-roi-${slug}-${dateTag}.pdf`, pdfBytes,
+      );
+    } catch (e) {
+      console.warn(`PDF attach failed for ${row.creator}, sending text-only:`, e);
+      ok = await sendDiscord(WEBHOOK, text);
+    }
     if (ok) sent++;
   }
 

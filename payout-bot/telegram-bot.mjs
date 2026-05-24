@@ -15,7 +15,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   CREATORS, REPORT_TZ, wallTimeToUtc, partsInTz, fmtDateInTz, escHtml, fmtMoney,
+  sendTelegramDocument,
 } from "./config.mjs";
+import { buildDailyStatsPdf } from "./pdf-report.mjs";
 
 const TG_TOKEN  = process.env.TELEGRAM_BOT_TOKEN;
 const TG_CHAT   = process.env.TELEGRAM_CHAT_ID_DAILY || process.env.TELEGRAM_CHAT_ID;
@@ -134,6 +136,26 @@ async function handleUpdate(msg) {
   lines.push(`📈 <b>Day total so far:</b> ${totals.subs} subs · $${fmtMoney(totals.sales)}`);
 
   await tgSend(replyChat, lines.join("\n"));
+
+  // Attach a polished PDF version of the same data so it can be
+  // downloaded / forwarded / saved.
+  try {
+    const pdfBytes = await buildDailyStatsPdf({
+      title: "Live Stats",
+      subtitle: `${dateLabel} · Today so far (UK midnight → ${nowLabel} UK) · requested by ${requester}`,
+      headerRight: "Live Stats Report",
+      rows,
+      totals: { subs: totals.subs, sales: totals.sales },
+    });
+    await sendTelegramDocument(
+      replyChat,
+      `uncvrd-live-stats-${dateStr}.pdf`,
+      pdfBytes,
+      `📄 Live stats report — ${escHtml(dateLabel)}`,
+    );
+  } catch (e) {
+    console.warn("PDF attach failed:", e);
+  }
 }
 
 // ── Main poll loop (single invocation per cron run) ───────────────

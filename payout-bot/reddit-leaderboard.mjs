@@ -15,8 +15,9 @@ import {
   fetchSubmitted, fetchAccountAbout, isRemoved, fmtNum,
 } from "./reddit-lib.mjs";
 import {
-  sendDiscord, partsInTz, wallTimeToUtc,
+  sendDiscord, sendDiscordWithFile, partsInTz, wallTimeToUtc,
 } from "./config.mjs";
+import { buildLeaderboardPdf } from "./pdf-report.mjs";
 
 const WEBHOOK = process.env.DISCORD_WEBHOOK_REDDIT_LEADERBOARD;
 if (!WEBHOOK) { console.error("DISCORD_WEBHOOK_REDDIT_LEADERBOARD missing"); process.exit(1); }
@@ -146,7 +147,29 @@ async function main() {
   lines.push(`⚖️ Tier multipliers (upvotes only): ${tierLegend}`);
   lines.push(`⏰ Next update: tomorrow morning`);
 
-  const ok = await sendDiscord(WEBHOOK, lines.join("\n"));
+  // Build the PDF and post it together with the message so posters
+  // can download a professional snapshot of the cycle.
+  let ok = false;
+  try {
+    const pdfBytes = await buildLeaderboardPdf({
+      cycleLabel: `${fmtShort(startUtc)} → ${fmtShort(endUtc)}`,
+      status,
+      capUsd: cap,
+      totalPayout: totals.payout,
+      rows,
+    });
+    const dateTag = startUtc.toISOString().slice(0, 10);
+    ok = await sendDiscordWithFile(
+      WEBHOOK,
+      lines.join("\n"),
+      `uncvrd-leaderboard-${dateTag}.pdf`,
+      pdfBytes,
+    );
+  } catch (e) {
+    console.warn("PDF attach failed, sending text-only fallback:", e);
+    ok = await sendDiscord(WEBHOOK, lines.join("\n"));
+  }
+
   console.log(JSON.stringify({
     posters: rows.length, sent: ok,
     cycle: { start: startUtc.toISOString(), end: endUtc.toISOString(), day: dayOfCycle },

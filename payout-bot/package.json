@@ -1,0 +1,10 @@
+{
+  "name": "uncvrd-bots",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "description": "Standalone OnlyFans + Reddit + Telegram bots (PDF reports).",
+  "dependencies": {
+    "pdf-lib": "^1.17.1"
+  }
+}
