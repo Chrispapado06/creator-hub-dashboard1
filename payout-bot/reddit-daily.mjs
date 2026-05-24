@@ -94,20 +94,30 @@ async function main() {
     ));
   }
 
-  const totalAccts  = rows.reduce((s, r) => s + r.accountCount, 0);
-  const totalPosts  = rows.reduce((s, r) => s + r.yPostCount, 0);
-  const totalUp     = rows.reduce((s, r) => s + r.yUpvotes, 0);
+  const totalAccts = rows.reduce((s, r) => s + r.accountCount, 0);
+  const totalPosts = rows.reduce((s, r) => s + r.yPostCount, 0);
+  const totalUp    = rows.reduce((s, r) => s + r.yUpvotes, 0);
 
-  const lines = [];
-  lines.push(`📊 **REDDIT DAILY REPORT — ${dateLabel}**`);
-  lines.push(`*vs day-before (UK time) · ${rows.length} creators · ${totalAccts} accounts*`);
-  lines.push("");
-  lines.push(rows.map(buildCreatorBlock).join("\n\n"));
-  lines.push("");
-  lines.push(`📈 **Day total:** ${totalPosts} posts · ${fmtNum(totalUp)} upvotes`);
+  // Discord webhook content has a 2,000-char cap per message — with
+  // 6 creators the combined block blows past it. Send a header
+  // message, then one message per creator (each comfortably under
+  // the cap), then a footer with day totals.
+  let sent = 0;
 
-  const ok = await sendDiscord(WEBHOOK, lines.join("\n"));
-  console.log(JSON.stringify({ creators: rows.length, sent: ok }));
+  const header = [
+    `📊 **REDDIT DAILY REPORT — ${dateLabel}**`,
+    `*vs day-before (UK time) · ${rows.length} creators · ${totalAccts} accounts*`,
+  ].join("\n");
+  if (await sendDiscord(WEBHOOK, header)) sent++;
+
+  for (const r of rows) {
+    if (await sendDiscord(WEBHOOK, buildCreatorBlock(r))) sent++;
+  }
+
+  const footer = `📈 **Day total:** ${totalPosts} posts · ${fmtNum(totalUp)} upvotes`;
+  if (await sendDiscord(WEBHOOK, footer)) sent++;
+
+  console.log(JSON.stringify({ creators: rows.length, messages_sent: sent }));
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });
