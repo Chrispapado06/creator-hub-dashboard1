@@ -1,11 +1,12 @@
 name: Telegram /update command bot
 
-# Polls Telegram every 5 minutes for new /update commands in the
+# Polls Telegram every 2 minutes for new /update commands in the
 # UNCVRD Daily Stats group and replies with today-so-far OF stats.
-# Off-minute (:02/:07/...) so it doesn't collide with the other crons.
+# Every-other-minute schedule (odd minutes) so it doesn't routinely
+# collide with the other 10-min OF / 15-min Reddit crons.
 on:
   schedule:
-    - cron: "2,7,12,17,22,27,32,37,42,47,52,57 * * * *"
+    - cron: "1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35,37,39,41,43,45,47,49,51,53,55,57,59 * * * *"
   workflow_dispatch:
 
 permissions:
