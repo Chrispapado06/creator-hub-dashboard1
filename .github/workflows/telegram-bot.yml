@@ -1,11 +1,16 @@
 name: Telegram /update command bot
 
-# Polls Telegram every 5 minutes for new /update commands in the
+# Polls Telegram every 2 minutes for new /update commands in the
 # UNCVRD Daily Stats group and replies with today-so-far OF stats.
-# Off-minute (:02/:07/...) so it doesn't collide with the other crons.
+# Every-other-minute schedule (odd minutes) so it doesn't routinely
+# collide with the other 10-min OF / 15-min Reddit crons.
+# Cron disabled — /update and /24 are now handled in real-time by
+# the supabase/functions/telegram-webhook edge function (deployed to
+# Supabase project nyolewfgobbfroweaxtr). Telegram pushes new
+# messages directly to the function instead of being polled. Kept
+# workflow_dispatch around as a manual fallback in case the webhook
+# is ever disabled and we need to drain the queue via getUpdates.
 on:
-  schedule:
-    - cron: "2,7,12,17,22,27,32,37,42,47,52,57 * * * *"
   workflow_dispatch:
 
 permissions:
