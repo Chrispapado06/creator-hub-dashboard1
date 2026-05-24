@@ -1,0 +1,38 @@
+name: Telegram /update command bot
+
+# Polls Telegram every 5 minutes for new /update commands in the
+# UNCVRD Daily Stats group and replies with today-so-far OF stats.
+# Off-minute (:02/:07/...) so it doesn't collide with the other crons.
+on:
+  schedule:
+    - cron: "2,7,12,17,22,27,32,37,42,47,52,57 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write   # commits telegram-bot-state.json back to the repo
+
+concurrency:
+  group: telegram-bot
+  cancel-in-progress: false
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Poll for /update commands
+        env:
+          ONLYFANSAPI_KEY: ${{ secrets.ONLYFANSAPI_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_CHAT_ID_DAILY: ${{ secrets.TELEGRAM_CHAT_ID_DAILY }}
+        run: node payout-bot/telegram-bot.mjs
+      - name: Commit state if changed
+        run: |
+          git config user.name  'telegram-bot'
+          git config user.email 'telegram-bot@users.noreply.github.com'
+          git add payout-bot/telegram-bot-state.json
+          git diff --cached --quiet || (git commit -m "bot: telegram-bot-state [skip ci]" && git push)
