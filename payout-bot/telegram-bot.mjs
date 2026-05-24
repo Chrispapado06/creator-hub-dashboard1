@@ -57,13 +57,24 @@ function todayUkWindow(now = new Date()) {
 }
 
 // ── Rolling 24h (or N-hour) metrics ──────────────────────────────
-// The OF stats endpoints bucket by whole calendar days, so they
-// can't give us true "last N hours" precision. We sum /transactions
-// in the window directly — newest-first, paginating via marker
-// until the oldest fetched is older than `fromMs`.
+// Two-source approach so we get the most accurate numbers possible
+// for the requested window:
+//
+//   • Sales      → /transactions, summing net of non-refunded
+//                  transactions in the precise window (hour-precise,
+//                  matches what was actually charged).
+//
+//   • Sub count  → /statistics/subscriber-metrics on the calendar
+//                  days the window overlaps, then pro-rated to the
+//                  fraction of each day inside the window.
+//                  This is the SAME endpoint the daily report uses,
+//                  so it counts FREE Trial Link sign-ups too — the
+//                  /transactions endpoint misses these because no
+//                  money is exchanged.
 async function fetchRollingMetrics(acctId, fromMs, toMs) {
+  // ── Sales (precise via /transactions) ─────────────────────────
   const fromDateStr = new Date(fromMs).toISOString().slice(0, 19).replace("T", " ");
-  let totalSubs = 0, newSubs = 0, renewSubs = 0, sales = 0, txCount = 0;
+  let sales = 0;
   let marker = null;
   for (let page = 0; page < 20; page++) {
     const qs = new URLSearchParams({ limit: "100", startDate: fromDateStr });
@@ -77,20 +88,67 @@ async function fetchRollingMetrics(acctId, fromMs, toMs) {
     for (const t of list) {
       const ts = new Date(t.createdAt).getTime();
       if (ts < fromMs || ts > toMs) continue;
-      if (t.status === "undo") continue;  // refunded — exclude
-      txCount++;
-      if (t.type === "new_subscription")        { newSubs++;   totalSubs++; }
-      else if (t.type === "recurring_subscription") { renewSubs++; totalSubs++; }
-      sales += Number(t.net || 0);  // net to match daily.mjs / OF UI
+      if (t.status === "undo") continue;
+      sales += Number(t.net || 0);
     }
-    // Stop once we've paged past the window.
     const oldest = list[list.length - 1];
     if (oldest && new Date(oldest.createdAt).getTime() < fromMs) break;
     const next = j?.data?.nextMarker ?? j?.data?.marker;
     if (!next || j?.data?.hasMore === false) break;
     marker = String(next);
   }
-  return { totalSubs, newSubs, renewSubs, sales, txCount };
+
+  // ── Sub count (subscriber-metrics + pro-ration) ───────────────
+  const subs = await fetchProratedSubs(acctId, fromMs, toMs);
+  return { ...subs, sales };
+}
+
+async function fetchSubMetricsDay(acctId, dateStr) {
+  const url = `${OF_BASE}/${acctId}/statistics/subscriber-metrics?start_date=${dateStr}&end_date=${dateStr}`;
+  const r = await fetch(url, { headers });
+  if (!r.ok) {
+    console.warn(`subscriber-metrics ${acctId} ${dateStr} → HTTP ${r.status}`);
+    return { totalSubs: 0, newSubs: 0, renewSubs: 0 };
+  }
+  const j = await r.json();
+  return {
+    totalSubs: Number(j?.data?.total_subscriptions ?? 0),
+    newSubs:   Number(j?.data?.new_subscriptions ?? 0),
+    renewSubs: Number(j?.data?.renewed_subscriptions ?? 0),
+  };
+}
+
+// Pro-rated 24h sub counts: today's subs (full count of partial day)
+// + the slice of yesterday's subs that fall after the window start.
+// Assumes uniform distribution within a day — small error in practice
+// but vastly better than ignoring FTL signups entirely.
+async function fetchProratedSubs(acctId, fromMs, toMs) {
+  const fromParts = partsInTz(new Date(fromMs), REPORT_TZ);
+  const toParts   = partsInTz(new Date(toMs),   REPORT_TZ);
+  const ymd = (p) => `${p.year}-${String(p.month).padStart(2,"0")}-${String(p.day).padStart(2,"0")}`;
+  const fromStr = ymd(fromParts);
+  const toStr   = ymd(toParts);
+
+  if (fromStr === toStr) {
+    return await fetchSubMetricsDay(acctId, toStr);
+  }
+
+  const [yest, today] = await Promise.all([
+    fetchSubMetricsDay(acctId, fromStr),
+    fetchSubMetricsDay(acctId, toStr),
+  ]);
+
+  // Hours of "yesterday" included in the window: from fromMs to the
+  // start of "today" in UK time (i.e. UK midnight today, in UTC).
+  const ukMidnightToday = wallTimeToUtc(toParts.year, toParts.month, toParts.day);
+  const yestHours = Math.max(0, (ukMidnightToday.getTime() - fromMs) / 3600_000);
+  const yestFraction = Math.max(0, Math.min(1, yestHours / 24));
+
+  return {
+    totalSubs: Math.round(today.totalSubs + yest.totalSubs * yestFraction),
+    newSubs:   Math.round(today.newSubs   + yest.newSubs   * yestFraction),
+    renewSubs: Math.round(today.renewSubs + yest.renewSubs * yestFraction),
+  };
 }
 
 // ── OF endpoints (same as daily.mjs uses, just today as the window) ─
