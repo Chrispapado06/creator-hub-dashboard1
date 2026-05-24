@@ -56,6 +56,43 @@ function todayUkWindow(now = new Date()) {
   };
 }
 
+// ── Rolling 24h (or N-hour) metrics ──────────────────────────────
+// The OF stats endpoints bucket by whole calendar days, so they
+// can't give us true "last N hours" precision. We sum /transactions
+// in the window directly — newest-first, paginating via marker
+// until the oldest fetched is older than `fromMs`.
+async function fetchRollingMetrics(acctId, fromMs, toMs) {
+  const fromDateStr = new Date(fromMs).toISOString().slice(0, 19).replace("T", " ");
+  let totalSubs = 0, newSubs = 0, renewSubs = 0, sales = 0, txCount = 0;
+  let marker = null;
+  for (let page = 0; page < 20; page++) {
+    const qs = new URLSearchParams({ limit: "100", startDate: fromDateStr });
+    if (marker) qs.set("marker", marker);
+    const url = `${OF_BASE}/${acctId}/transactions?${qs}`;
+    const r = await fetch(url, { headers });
+    if (!r.ok) { console.warn(`OF tx ${acctId} → HTTP ${r.status}`); break; }
+    const j = await r.json();
+    const list = j?.data?.list ?? [];
+    if (list.length === 0) break;
+    for (const t of list) {
+      const ts = new Date(t.createdAt).getTime();
+      if (ts < fromMs || ts > toMs) continue;
+      if (t.status === "undo") continue;  // refunded — exclude
+      txCount++;
+      if (t.type === "new_subscription")        { newSubs++;   totalSubs++; }
+      else if (t.type === "recurring_subscription") { renewSubs++; totalSubs++; }
+      sales += Number(t.net || 0);  // net to match daily.mjs / OF UI
+    }
+    // Stop once we've paged past the window.
+    const oldest = list[list.length - 1];
+    if (oldest && new Date(oldest.createdAt).getTime() < fromMs) break;
+    const next = j?.data?.nextMarker ?? j?.data?.marker;
+    if (!next || j?.data?.hasMore === false) break;
+    marker = String(next);
+  }
+  return { totalSubs, newSubs, renewSubs, sales, txCount };
+}
+
 // ── OF endpoints (same as daily.mjs uses, just today as the window) ─
 async function fetchDayMetrics(acctId, dateStr) {
   const [subR, earnR] = await Promise.all([
@@ -98,6 +135,72 @@ async function tgSend(chatId, html) {
     parse_mode: "HTML",
     disable_web_page_preview: true,
   });
+}
+
+// ── /24 handler — rolling last 24 hours, no midnight snapping ────
+async function handle24h(msg) {
+  const replyChat = msg.chat.id;
+  const requester = msg.from?.username ? `@${msg.from.username}` : (msg.from?.first_name ?? "someone");
+
+  await tgSend(replyChat, `⏳ Fetching last 24h stats — back in a few seconds...`);
+
+  const toUtc = new Date();
+  const fromUtc = new Date(toUtc.getTime() - 24 * 3600_000);
+
+  // Pretty time labels (UK time so they match the daily reports).
+  const tzFmt = new Intl.DateTimeFormat("en-GB", {
+    timeZone: REPORT_TZ, weekday: "short", day: "2-digit", month: "short",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  });
+  const fromLabel = tzFmt.format(fromUtc);
+  const toLabel = tzFmt.format(toUtc);
+  const windowLabel = `${fromLabel} → ${toLabel} UK`;
+
+  const rows = [];
+  for (const c of CREATORS) {
+    rows.push({ name: c.name, ...(await fetchRollingMetrics(c.account_id, fromUtc.getTime(), toUtc.getTime())) });
+  }
+
+  const totals = rows.reduce(
+    (a, r) => ({ subs: a.subs + r.totalSubs, sales: a.sales + r.sales }),
+    { subs: 0, sales: 0 },
+  );
+
+  const lines = [];
+  lines.push(`📊 <b>LAST 24 HOURS</b>`);
+  lines.push(`<i>${escHtml(windowLabel)} · requested by ${escHtml(requester)}</i>`);
+  lines.push("");
+  for (const r of rows) {
+    lines.push(
+      `<b>${escHtml(r.name)}</b>\n` +
+      `  Subs: <b>${r.totalSubs}</b> <i>(${r.newSubs} new, ${r.renewSubs} renew)</i>\n` +
+      `  Sales: <b>$${fmtMoney(r.sales)}</b>`,
+    );
+  }
+  lines.push("");
+  lines.push(`📈 <b>24h total:</b> ${totals.subs} subs · $${fmtMoney(totals.sales)}`);
+
+  await tgSend(replyChat, lines.join("\n"));
+
+  // Attach PDF too.
+  try {
+    const pdfBytes = await buildDailyStatsPdf({
+      title: "Last 24 Hours",
+      subtitle: `${windowLabel} · requested by ${requester}`,
+      headerRight: "Rolling 24h Report",
+      rows,
+      totals,
+    });
+    const stamp = toUtc.toISOString().slice(0, 16).replace(/[:T]/g, "-");
+    await sendTelegramDocument(
+      replyChat,
+      `uncvrd-24h-${stamp}.pdf`,
+      pdfBytes,
+      `📄 Last 24h report — ${escHtml(toLabel)} UK`,
+    );
+  } catch (e) {
+    console.warn("PDF attach failed:", e);
+  }
 }
 
 // ── /update handler ───────────────────────────────────────────────
@@ -181,15 +284,18 @@ async function main() {
     // Telegram chat IDs are negative for groups; compare as numbers.
     if (Number(msg.chat.id) !== Number(TG_CHAT)) continue;
 
-    // Detect /update (with or without @botname suffix and any args).
+    // Detect supported commands (with or without @botname suffix).
     const text = (msg.text ?? "").trim();
-    if (!/^\/update(@\w+)?(\s|$)/i.test(text)) continue;
+    const isUpdate = /^\/update(@\w+)?(\s|$)/i.test(text);
+    const is24h    = /^\/24(@\w+)?(\s|$)/i.test(text);
+    if (!isUpdate && !is24h) continue;
 
     try {
-      await handleUpdate(msg);
+      if (isUpdate) await handleUpdate(msg);
+      else if (is24h) await handle24h(msg);
       handled++;
     } catch (e) {
-      console.warn("handleUpdate error:", e);
+      console.warn("command handler error:", e);
       await tgSend(msg.chat.id, `⚠️ Couldn't fetch stats: ${escHtml(String(e))}`);
     }
   }
