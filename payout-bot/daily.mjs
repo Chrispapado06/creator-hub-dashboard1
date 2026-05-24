@@ -16,8 +16,9 @@
 // bucketing, status filtering, refund handling). One stat endpoint per
 // metric is the source of truth.
 
+import { buildDailyStatsPdf } from "./pdf-report.mjs";
 import {
-  CREATORS, escHtml, fmtMoney, sendTelegram,
+  CREATORS, escHtml, fmtMoney, sendTelegram, sendTelegramDocument,
   REPORT_TZ, wallTimeToUtc, partsInTz, fmtDateInTz,
 } from "./config.mjs";
 
@@ -140,6 +141,42 @@ async function main() {
 
   const dailyChat = process.env.TELEGRAM_CHAT_ID_DAILY || process.env.TELEGRAM_CHAT_ID;
   const ok = await sendTelegram(header + blocks.join("\n\n"), dailyChat);
+
+  // Polished PDF version of the same data — sent right after the
+  // text message so the group can download / forward / archive.
+  try {
+    const pdfRows = [];
+    for (const c of CREATORS) {
+      const yest = await fetchDayMetrics(c.account_id, yDate);
+      pdfRows.push({
+        name: c.name,
+        sales: yest.sales,
+        newSubs: yest.newSubs,
+        renewSubs: yest.renewSubs,
+        totalSubs: yest.totalSubs,
+      });
+    }
+    const pdfTotals = pdfRows.reduce(
+      (a, r) => ({ subs: a.subs + r.totalSubs, sales: a.sales + r.sales }),
+      { subs: 0, sales: 0 },
+    );
+    const pdfBytes = await buildDailyStatsPdf({
+      title: "Daily Report",
+      subtitle: `${yLabel} · vs day-before (UK time)`,
+      headerRight: "Daily Stats Report",
+      rows: pdfRows,
+      totals: pdfTotals,
+    });
+    await sendTelegramDocument(
+      dailyChat,
+      `uncvrd-daily-${yDate}.pdf`,
+      pdfBytes,
+      `📄 Daily report — ${escHtml(yLabel)}`,
+    );
+  } catch (e) {
+    console.warn("PDF attach failed:", e);
+  }
+
   console.log(JSON.stringify({ creators: CREATORS.length, sent: ok, chat: dailyChat, day: yDate }));
 }
 

@@ -100,6 +100,66 @@ export function fmtDateInTz(date, timeZone = REPORT_TZ) {
   }).format(date);
 }
 
+// POST a Discord-webhook message AND attach a PDF (or any binary)
+// in one go. Uses multipart/form-data — Discord lets webhooks send
+// content + up to 10 files in a single request.
+//   payload : same as sendDiscord (string or object)
+//   filename: e.g. "daily-report-2026-05-24.pdf"
+//   buffer  : Uint8Array | Buffer of the file contents
+export async function sendDiscordWithFile(webhookUrl, payload, filename, buffer) {
+  if (!webhookUrl) {
+    console.warn("Discord: webhook URL missing — skipping send");
+    return false;
+  }
+  const form = new FormData();
+  const payloadJson = typeof payload === "string"
+    ? { content: payload, username: "Bernard" }
+    : { username: "Bernard", ...payload };
+  form.append("payload_json", JSON.stringify(payloadJson));
+  form.append(
+    "files[0]",
+    new Blob([buffer], { type: "application/pdf" }),
+    filename,
+  );
+  const r = await fetch(webhookUrl, { method: "POST", body: form });
+  if (!r.ok) {
+    console.warn("Discord (with file) failed:", r.status, await r.text());
+    return false;
+  }
+  return true;
+}
+
+// POST a Telegram sendDocument — uploads `buffer` as a PDF (or any
+// file) into a chat, with an optional HTML caption. Same retry-less
+// behaviour as sendTelegram.
+export async function sendTelegramDocument(chatId, filename, buffer, caption) {
+  const TG_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+  if (!TG_TOKEN || !chatId) {
+    console.warn("Telegram: token or chat ID missing — skipping doc send");
+    return false;
+  }
+  const form = new FormData();
+  form.append("chat_id", String(chatId));
+  if (caption) {
+    form.append("caption", caption);
+    form.append("parse_mode", "HTML");
+  }
+  form.append(
+    "document",
+    new Blob([buffer], { type: "application/pdf" }),
+    filename,
+  );
+  const r = await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendDocument`, {
+    method: "POST",
+    body: form,
+  });
+  if (!r.ok) {
+    console.warn("Telegram sendDocument failed:", r.status, await r.text());
+    return false;
+  }
+  return true;
+}
+
 // POST a Discord-webhook payload. Pass a string for a plain message
 // or an object like { embeds: [...] } for rich formatting. Returns
 // false (with a console.warn) on failure rather than throwing — same

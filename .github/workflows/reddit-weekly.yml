@@ -15,6 +15,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+          cache: "npm"
+          cache-dependency-path: payout-bot/package-lock.json
+      - name: Install bot deps (pdf-lib)
+        run: npm ci --prefix payout-bot
       - name: Run Reddit weekly ROI
         env:
           DISCORD_WEBHOOK_REDDIT_WEEKLY: ${{ secrets.DISCORD_WEBHOOK_REDDIT_WEEKLY }}
