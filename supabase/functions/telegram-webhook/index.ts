@@ -60,14 +60,6 @@ function platformFromTagsOrName(tags: string[] | null | undefined, name: string 
   return normalizePlatform(name);
 }
 
-const REVENUE_TYPES = [
-  { api: "subscribes", label: "Subs",    icon: "💎" },
-  { api: "messages",   label: "Msgs",    icon: "📨" },
-  { api: "tips",       label: "Tips",    icon: "💰" },
-  { api: "post",       label: "Posts",   icon: "📌" },
-  { api: "stream",     label: "Streams", icon: "📺" },
-];
-
 // Mirror of CREATORS from payout-bot/config.mjs. Keep in sync.
 const CREATORS = [
   { name: "Blue Bear",     account_id: "acct_99db42bda91149f58fd68ecccde21fa8" },
@@ -161,19 +153,6 @@ async function fetchDayEarnings(acctId: string, dateStr: string) {
   const j = await r.json();
   const inner = Object.values(j?.data ?? {})[0] as any ?? {};
   return Number(inner.total ?? 0);
-}
-
-// Revenue split by type (subs/messages/tips/post/stream) for a day.
-async function fetchTypeBreakdown(acctId: string, dateStr: string) {
-  const results = await Promise.all(REVENUE_TYPES.map(async (t) => {
-    const url = `${OF_BASE}/${acctId}/statistics/statements/earnings?type=${t.api}&start_date=${encodeURIComponent(dateStr + " 00:00:00")}&end_date=${encodeURIComponent(dateStr + " 23:59:59")}`;
-    const r = await fetch(url, { headers: ofHeaders });
-    if (!r.ok) return [t.api, 0] as const;
-    const j = await r.json();
-    const inner = Object.values(j?.data ?? {})[0] as any ?? {};
-    return [t.api, Number(inner.total ?? 0)] as const;
-  }));
-  return Object.fromEntries(results) as Record<string, number>;
 }
 
 // Per-source-platform revenue + subs combining OF /tracking-links
@@ -345,17 +324,12 @@ function buildBreakdownBlock(
   name: string,
   totalSubs: number, newSubs: number, renewSubs: number,
   sales: number,
-  types: Record<string, number>,
   platforms: Record<string, { revenue: number; subs: number; clicks: number }>,
 ): string {
   const lines: string[] = [];
   lines.push(`<b>${escHtml(name)}</b>`);
   lines.push(`  Subs: <b>${totalSubs}</b> <i>(${newSubs} new, ${renewSubs} renew)</i>`);
   lines.push(`  Sales: <b>$${fmtMoney(sales)}</b>`);
-  const typeLine = REVENUE_TYPES
-    .map((t) => `${t.icon} ${t.label} $${fmtMoney(types[t.api] ?? 0)}`)
-    .join(" · ");
-  lines.push(`  <i>By type:</i> ${typeLine}`);
   const platformEntries = Object.entries(platforms).sort((a, b) => b[1].revenue - a[1].revenue);
   if (platformEntries.length > 0) {
     const pl = platformEntries.map(([p, s]) => `${escHtml(p)} $${fmtMoney(s.revenue)} <i>(${s.subs}s)</i>`).join(" · ");
@@ -400,19 +374,18 @@ async function handleUpdate(chatId: number | string, requester: string) {
   const endIso = now.toISOString();
 
   const rows = await Promise.all(CREATORS.map(async (c) => {
-    const [subs, sales, types, platforms] = await Promise.all([
+    const [subs, sales, platforms] = await Promise.all([
       fetchSubMetricsDay(c.account_id, dateStr),
       fetchDayEarnings(c.account_id, dateStr),
-      fetchTypeBreakdown(c.account_id, dateStr),
       fetchPlatformBreakdown(c.account_id, startIso, endIso),
     ]);
-    return { name: c.name, ...subs, sales, types, platforms };
+    return { name: c.name, ...subs, sales, platforms };
   }));
   const totalSubs = rows.reduce((s, r) => s + r.totalSubs, 0);
   const totalSales = rows.reduce((s, r) => s + r.sales, 0);
 
   const header = `📊 <b>LIVE STATS — ${escHtml(dateLabel)}</b>\n<i>Today so far (UK midnight → ${escHtml(nowLabel)} UK) · requested by ${escHtml(requester)}</i>`;
-  const blocks = rows.map((r) => buildBreakdownBlock(r.name, r.totalSubs, r.newSubs, r.renewSubs, r.sales, r.types, r.platforms));
+  const blocks = rows.map((r) => buildBreakdownBlock(r.name, r.totalSubs, r.newSubs, r.renewSubs, r.sales, r.platforms));
   const footer = `📈 <b>Day total so far:</b> ${totalSubs} subs · $${fmtMoney(totalSales)}`;
   await tgSendCombined(chatId, header, blocks, footer);
 
@@ -440,19 +413,18 @@ async function handle24h(chatId: number | string, requester: string) {
   const endIso = toUtc.toISOString();
 
   const rows = await Promise.all(CREATORS.map(async (c) => {
-    const [subs, sales, types, platforms] = await Promise.all([
+    const [subs, sales, platforms] = await Promise.all([
       fetchProratedSubs(c.account_id, fromUtc.getTime(), toUtc.getTime()),
       fetchRollingSales(c.account_id, fromUtc.getTime(), toUtc.getTime()),
-      fetchTypeBreakdown(c.account_id, dateStr),
       fetchPlatformBreakdown(c.account_id, startIso, endIso),
     ]);
-    return { name: c.name, ...subs, sales, types, platforms };
+    return { name: c.name, ...subs, sales, platforms };
   }));
   const totalSubs = rows.reduce((s, r) => s + r.totalSubs, 0);
   const totalSales = rows.reduce((s, r) => s + r.sales, 0);
 
   const header = `📊 <b>LAST 24 HOURS</b>\n<i>${escHtml(window_)} · requested by ${escHtml(requester)}</i>`;
-  const blocks = rows.map((r) => buildBreakdownBlock(r.name, r.totalSubs, r.newSubs, r.renewSubs, r.sales, r.types, r.platforms));
+  const blocks = rows.map((r) => buildBreakdownBlock(r.name, r.totalSubs, r.newSubs, r.renewSubs, r.sales, r.platforms));
   const footer = `📈 <b>24h total:</b> ${totalSubs} subs · $${fmtMoney(totalSales)}`;
   await tgSendCombined(chatId, header, blocks, footer);
 
