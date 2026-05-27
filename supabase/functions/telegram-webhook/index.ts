@@ -261,7 +261,7 @@ async function fetchProratedSubs(acctId: string, fromMs: number, toMs: number) {
   };
 }
 
-// ── PDF generation (inlined — Node-style pdf-lib but ESM-safe) ────
+// ── PDF generation (inlined — multi-page Deno port of pdf-report.mjs)
 function safeText(s: any) {
   return String(s ?? "")
     .replace(/→|↣|⇒/g, ">").replace(/←|↢|⇐/g, "<")
@@ -270,56 +270,200 @@ function safeText(s: any) {
     .replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}]/gu, "")
     .replace(/[^\x00-\xFF]/g, "");
 }
+const PDF_C = {
+  brand:    rgb(0.063, 0.388, 0.149),
+  brand2:   rgb(0.32, 0.62, 0.40),
+  ink:      rgb(0.08, 0.08, 0.08),
+  muted:    rgb(0.42, 0.42, 0.42),
+  rule:     rgb(0.84, 0.84, 0.84),
+  band:     rgb(0.965, 0.978, 0.965),
+  panel:    rgb(0.945, 0.965, 0.945),
+};
+const PDF_PAGE = { w: 595, h: 842, margin: 50 };
+const BRAND_HEX = "#10632c";
+const BRAND2_HEX = "#52a366";
 
-async function buildPdf(title: string, subtitle: string, rows: any[], totalSubs: number, totalSales: number, headerRight: string) {
-  const doc = await PDFDocument.create();
-  const helv = await doc.embedFont(StandardFonts.Helvetica);
-  const bold = await doc.embedFont(StandardFonts.HelveticaBold);
-  const italic = await doc.embedFont(StandardFonts.HelveticaOblique);
-  const page = doc.addPage([595, 842]);
-  const brand = rgb(0.063, 0.388, 0.149);
-  const ink = rgb(0.08, 0.08, 0.08);
-  const muted = rgb(0.42, 0.42, 0.42);
-  const rule = rgb(0.84, 0.84, 0.84);
-  const band = rgb(0.95, 0.97, 0.95);
-  const draw = (s: string, opts: any) => page.drawText(safeText(s), opts);
-  const M = 50;
-  let y = 792;
-  draw("UNCVRD", { x: M, y, size: 22, font: bold, color: brand });
-  const hrW = helv.widthOfTextAtSize(headerRight, 10);
-  draw(headerRight, { x: 595 - M - hrW, y: y + 6, size: 10, font: helv, color: muted });
-  page.drawLine({ start: { x: M, y: y - 10 }, end: { x: 595 - M, y: y - 10 }, thickness: 1.5, color: brand });
-  y -= 30;
-  draw(title, { x: M, y, size: 18, font: bold, color: ink });
-  y -= 22;
-  draw(subtitle, { x: M, y, size: 10, font: italic, color: muted });
-  y -= 30;
-  page.drawLine({ start: { x: M, y }, end: { x: 595 - M, y }, thickness: 0.6, color: rule });
-  y -= 14;
-  rows.forEach((r, i) => {
-    const rowH = 40;
-    if (i % 2 === 1) {
-      page.drawRectangle({ x: M - 4, y: y - rowH + 4, width: 595 - 2 * M + 8, height: rowH, color: band });
+// Free chart rendering via QuickChart (HTTP, no key). Returns PNG
+// bytes or null on failure so the PDF degrades gracefully.
+async function fetchChartPng(config: any, width = 700, height = 400): Promise<Uint8Array | null> {
+  try {
+    const url = `https://quickchart.io/chart?w=${width}&h=${height}&bkg=white&c=${encodeURIComponent(JSON.stringify(config))}`;
+    if (url.length > 16000) {
+      const cr = await fetch("https://quickchart.io/chart/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chart: config, width, height, backgroundColor: "white" }),
+      });
+      if (!cr.ok) return null;
+      const { url: hosted } = await cr.json();
+      const img = await fetch(hosted);
+      return img.ok ? new Uint8Array(await img.arrayBuffer()) : null;
     }
-    draw(r.name, { x: M, y: y - 4, size: 13, font: bold, color: ink });
-    draw(`${r.totalSubs} subscribers · ${r.newSubs} new, ${r.renewSubs} renew`, { x: M, y: y - 22, size: 9.5, font: helv, color: muted });
-    const v = `$${fmtMoney(r.sales)}`;
-    const vW = bold.widthOfTextAtSize(v, 13);
-    draw(v, { x: 595 - M - vW, y: y - 4, size: 13, font: bold, color: brand });
-    const vs = "sales";
-    const vsW = helv.widthOfTextAtSize(vs, 9.5);
-    draw(vs, { x: 595 - M - vsW, y: y - 22, size: 9.5, font: helv, color: muted });
-    y -= rowH + 4;
-  });
-  y -= 6;
-  page.drawLine({ start: { x: M, y }, end: { x: 595 - M, y }, thickness: 0.6, color: rule });
-  y -= 14;
-  draw("Total", { x: M, y: y - 6, size: 13, font: bold, color: ink });
-  const tot = `${totalSubs} subs · $${fmtMoney(totalSales)}`;
-  const totW = bold.widthOfTextAtSize(tot, 16);
-  draw(tot, { x: 595 - M - totW, y: y - 8, size: 16, font: bold, color: brand });
+    const r = await fetch(url);
+    return r.ok ? new Uint8Array(await r.arrayBuffer()) : null;
+  } catch (e) {
+    console.warn("QuickChart failed:", e);
+    return null;
+  }
+}
+
+function pdfHeader(page: any, fonts: any, kind: string) {
+  page.drawRectangle({ x: 0, y: PDF_PAGE.h - 18, width: PDF_PAGE.w, height: 18, color: PDF_C.brand });
+  page.drawText("UNCVRD", { x: PDF_PAGE.margin, y: PDF_PAGE.h - 50, size: 24, font: fonts.bold, color: PDF_C.brand });
+  if (kind) {
+    const w = fonts.regular.widthOfTextAtSize(kind, 10);
+    page.drawText(kind, { x: PDF_PAGE.w - PDF_PAGE.margin - w, y: PDF_PAGE.h - 42, size: 10, font: fonts.regular, color: PDF_C.muted });
+  }
+  page.drawLine({ start: { x: PDF_PAGE.margin, y: PDF_PAGE.h - 60 }, end: { x: PDF_PAGE.w - PDF_PAGE.margin, y: PDF_PAGE.h - 60 }, thickness: 0.6, color: PDF_C.rule });
+  return PDF_PAGE.h - 78;
+}
+function pdfFooter(page: any, fonts: any, pn: number, total: number) {
   const ts = new Date().toISOString().slice(0, 16).replace("T", " ");
-  draw(`Generated ${ts} UTC · Bernard · @bernarduncvrdbot`, { x: M, y: 28, size: 8, font: helv, color: muted });
+  page.drawText(safeText(`Generated ${ts} UTC · Bernard · @bernarduncvrdbot`), { x: PDF_PAGE.margin, y: 28, size: 8, font: fonts.regular, color: PDF_C.muted });
+  const right = `Page ${pn} of ${total}`;
+  const w = fonts.regular.widthOfTextAtSize(right, 8);
+  page.drawText(right, { x: PDF_PAGE.w - PDF_PAGE.margin - w, y: 28, size: 8, font: fonts.regular, color: PDF_C.muted });
+}
+
+async function buildPdf(
+  title: string, subtitle: string,
+  rows: Array<{ name: string; totalSubs: number; newSubs: number; renewSubs: number; sales: number; platforms?: Record<string, { revenue: number; subs: number; clicks: number }> }>,
+  totalSubs: number, totalSales: number, headerRight: string,
+) {
+  const doc = await PDFDocument.create();
+  const fonts = {
+    regular: await doc.embedFont(StandardFonts.Helvetica),
+    bold:    await doc.embedFont(StandardFonts.HelveticaBold),
+    italic:  await doc.embedFont(StandardFonts.HelveticaOblique),
+  };
+
+  // Aggregate platforms across creators (for cover + chart).
+  const aggregatedPlatforms: Record<string, { revenue: number; subs: number; clicks: number }> = {};
+  for (const r of rows) {
+    for (const [p, s] of Object.entries(r.platforms ?? {})) {
+      aggregatedPlatforms[p] ??= { revenue: 0, subs: 0, clicks: 0 };
+      aggregatedPlatforms[p].revenue += Number(s.revenue || 0);
+      aggregatedPlatforms[p].subs    += Number(s.subs || 0);
+      aggregatedPlatforms[p].clicks  += Number(s.clicks || 0);
+    }
+  }
+  const topCreator = [...rows].sort((a, b) => b.sales - a.sales)[0];
+  const topSourceEntry = Object.entries(aggregatedPlatforms).sort((a, b) => b[1].revenue - a[1].revenue)[0];
+  const topSource = topSourceEntry ? { platform: topSourceEntry[0], revenue: topSourceEntry[1].revenue, subs: topSourceEntry[1].subs } : null;
+  const fmt$ = (n: number) => Number(n || 0).toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
+  const fmtN = (n: number) => Number(n || 0).toLocaleString("en-US");
+  const M = PDF_PAGE.margin;
+
+  // ── Page 1: cover ──────────────────────────────────────────────
+  const p1 = doc.addPage([PDF_PAGE.w, PDF_PAGE.h]);
+  let y = pdfHeader(p1, fonts, headerRight);
+  p1.drawText(safeText(title), { x: M, y, size: 26, font: fonts.bold, color: PDF_C.ink }); y -= 22;
+  p1.drawText(safeText(subtitle), { x: M, y, size: 11, font: fonts.italic, color: PDF_C.muted }); y -= 50;
+
+  const panelW = (PDF_PAGE.w - 2 * M - 20) / 3;
+  const panelH = 90;
+  const tiles = [
+    { l: "TOTAL SUBSCRIBERS", v: fmtN(totalSubs), s: "new today" },
+    { l: "TOTAL SALES",       v: fmt$(totalSales), s: "net revenue" },
+    { l: "CREATORS REPORTED", v: String(rows.length), s: "active accounts" },
+  ];
+  for (let i = 0; i < tiles.length; i++) {
+    const x = M + i * (panelW + 10);
+    p1.drawRectangle({ x, y: y - panelH, width: panelW, height: panelH, color: PDF_C.panel });
+    p1.drawRectangle({ x, y: y - panelH, width: 3, height: panelH, color: PDF_C.brand });
+    p1.drawText(safeText(tiles[i].l), { x: x + 14, y: y - 22, size: 8, font: fonts.bold, color: PDF_C.muted });
+    p1.drawText(safeText(tiles[i].v), { x: x + 14, y: y - 52, size: 22, font: fonts.bold, color: PDF_C.ink });
+    p1.drawText(safeText(tiles[i].s), { x: x + 14, y: y - 70, size: 9, font: fonts.italic, color: PDF_C.muted });
+  }
+  y -= panelH + 32;
+  p1.drawText("HIGHLIGHTS", { x: M, y, size: 10, font: fonts.bold, color: PDF_C.muted });
+  y -= 18;
+  p1.drawLine({ start: { x: M, y }, end: { x: PDF_PAGE.w - M, y }, thickness: 0.6, color: PDF_C.rule });
+  y -= 18;
+  if (topCreator) {
+    p1.drawText("TOP CREATOR", { x: M, y, size: 8, font: fonts.bold, color: PDF_C.muted });
+    p1.drawText(safeText(`${topCreator.name} — ${fmt$(topCreator.sales)} · ${fmtN(topCreator.totalSubs)} subs`),
+      { x: M, y: y - 18, size: 13, font: fonts.bold, color: PDF_C.brand });
+    y -= 42;
+  }
+  p1.drawText("TOP SOURCE PLATFORM", { x: M, y, size: 8, font: fonts.bold, color: PDF_C.muted });
+  if (topSource) {
+    p1.drawText(safeText(`${topSource.platform} — ${fmt$(topSource.revenue)} · ${fmtN(topSource.subs)} subs from ${topSource.platform}`),
+      { x: M, y: y - 18, size: 13, font: fonts.bold, color: PDF_C.brand });
+  } else {
+    p1.drawText("No platform-tagged tracking links — see appendix",
+      { x: M, y: y - 18, size: 11, font: fonts.italic, color: PDF_C.muted });
+  }
+
+  // ── Page 2: per-creator detail ─────────────────────────────────
+  const p2 = doc.addPage([PDF_PAGE.w, PDF_PAGE.h]);
+  let y2 = pdfHeader(p2, fonts, headerRight);
+  p2.drawText("Creator detail", { x: M, y: y2, size: 18, font: fonts.bold, color: PDF_C.ink }); y2 -= 18;
+  p2.drawText(safeText(subtitle), { x: M, y: y2, size: 10, font: fonts.italic, color: PDF_C.muted }); y2 -= 22;
+  p2.drawRectangle({ x: M - 4, y: y2 - 4, width: PDF_PAGE.w - 2 * M + 8, height: 22, color: PDF_C.panel });
+  p2.drawText("CREATOR", { x: M,           y: y2 + 5, size: 8, font: fonts.bold, color: PDF_C.muted });
+  p2.drawText("SUBS",    { x: M + 240,     y: y2 + 5, size: 8, font: fonts.bold, color: PDF_C.muted });
+  p2.drawText("SALES",   { x: M + 360,     y: y2 + 5, size: 8, font: fonts.bold, color: PDF_C.muted });
+  y2 -= 12;
+  rows.forEach((r, i) => {
+    const rowH = 38;
+    if (i % 2 === 1) p2.drawRectangle({ x: M - 4, y: y2 - rowH + 4, width: PDF_PAGE.w - 2 * M + 8, height: rowH, color: PDF_C.band });
+    p2.drawText(safeText(r.name), { x: M, y: y2 - 6, size: 12, font: fonts.bold, color: PDF_C.ink });
+    p2.drawText(safeText(`${fmtN(r.newSubs)} new · ${fmtN(r.renewSubs)} renew`), { x: M, y: y2 - 22, size: 9, font: fonts.regular, color: PDF_C.muted });
+    p2.drawText(fmtN(r.totalSubs), { x: M + 240, y: y2 - 6, size: 13, font: fonts.bold, color: PDF_C.ink });
+    p2.drawText(fmt$(r.sales),     { x: M + 360, y: y2 - 6, size: 13, font: fonts.bold, color: PDF_C.brand });
+    y2 -= rowH + 2;
+  });
+
+  // ── Page 3: analytics charts ───────────────────────────────────
+  const p3 = doc.addPage([PDF_PAGE.w, PDF_PAGE.h]);
+  let y3 = pdfHeader(p3, fonts, "Analytics");
+  p3.drawText("Analytics", { x: M, y: y3, size: 18, font: fonts.bold, color: PDF_C.ink }); y3 -= 18;
+  p3.drawText(safeText(`${subtitle} · revenue and traffic insights`), { x: M, y: y3, size: 10, font: fonts.italic, color: PDF_C.muted }); y3 -= 16;
+
+  const platformEntries = Object.entries(aggregatedPlatforms).sort((a, b) => b[1].revenue - a[1].revenue);
+  p3.drawText("REVENUE BY SOURCE PLATFORM", { x: M, y: y3, size: 9, font: fonts.bold, color: PDF_C.muted });
+  y3 -= 14;
+  if (platformEntries.length > 0) {
+    const cfg = {
+      type: "horizontalBar",
+      data: { labels: platformEntries.map(([p]) => p), datasets: [{ label: "Revenue (USD)", data: platformEntries.map(([, s]) => Number(s.revenue.toFixed(2))), backgroundColor: BRAND_HEX, borderRadius: 4 }] },
+      options: { plugins: { legend: { display: false }, datalabels: { anchor: "end", align: "right", color: "#333", font: { size: 11, weight: "bold" }, formatter: (v: number) => "$" + Number(v).toLocaleString("en-US") } } },
+    };
+    const png = await fetchChartPng(cfg, 1000, 360);
+    if (png) {
+      const img = await doc.embedPng(png);
+      const drawW = PDF_PAGE.w - 2 * M;
+      const drawH = drawW * (360 / 1000);
+      p3.drawImage(img, { x: M, y: y3 - drawH, width: drawW, height: drawH });
+      y3 -= drawH + 20;
+    } else { p3.drawText("(chart unavailable)", { x: M, y: y3 - 14, size: 10, font: fonts.italic, color: PDF_C.muted }); y3 -= 30; }
+  } else {
+    p3.drawText(safeText("No platform-tagged tracking links yet — tag links with Reddit, Ig, Ads etc. in the OF API dashboard to enable source attribution."), { x: M, y: y3 - 14, size: 10, font: fonts.italic, color: PDF_C.muted });
+    y3 -= 36;
+  }
+
+  p3.drawText("REVENUE BY CREATOR", { x: M, y: y3, size: 9, font: fonts.bold, color: PDF_C.muted });
+  y3 -= 14;
+  if (rows.length > 0) {
+    const sorted = [...rows].sort((a, b) => b.sales - a.sales);
+    const cfg = {
+      type: "horizontalBar",
+      data: { labels: sorted.map((r) => r.name), datasets: [{ label: "Sales (USD)", data: sorted.map((r) => Number(Number(r.sales).toFixed(2))), backgroundColor: BRAND2_HEX, borderRadius: 4 }] },
+      options: { plugins: { legend: { display: false }, datalabels: { anchor: "end", align: "right", color: "#333", font: { size: 11, weight: "bold" }, formatter: (v: number) => "$" + Number(v).toLocaleString("en-US") } } },
+    };
+    const png = await fetchChartPng(cfg, 1000, 400);
+    if (png) {
+      const img = await doc.embedPng(png);
+      const drawW = PDF_PAGE.w - 2 * M;
+      const drawH = drawW * (400 / 1000);
+      p3.drawImage(img, { x: M, y: y3 - drawH, width: drawW, height: drawH });
+    }
+  }
+
+  // Footers on every page
+  const pages = doc.getPages();
+  pages.forEach((pg, i) => pdfFooter(pg, fonts, i + 1, pages.length));
   return await doc.save();
 }
 
