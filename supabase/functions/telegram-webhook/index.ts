@@ -183,18 +183,22 @@ async function fetchPlatformBreakdown(acctId: string, startIso: string, endIso: 
   }
   if (tagged.length === 0) return {};
 
+  // IMPORTANT: summary.*_total fields are LIFETIME even when
+  // date_start/date_end are passed. Per-window numbers live in
+  // daily_metrics (one row per UTC day in window). Sum those.
   const stats = await Promise.all(tagged.map(async (l) => {
     const url = `${OF_BASE}/${acctId}/${l.kind}/${l.id}/stats?date_start=${encodeURIComponent(startIso)}&date_end=${encodeURIComponent(endIso)}`;
     const r = await fetch(url, { headers: ofHeaders });
     if (!r.ok) return null;
     const sj = await r.json();
-    const s = sj?.data?.summary ?? {};
-    return {
-      platform: l.platform,
-      revenue: Number(s.revenue_total ?? 0),
-      subs:    Number(s.subs_total ?? 0),
-      clicks:  Number(s.clicks_total ?? 0),
-    };
+    const daily: any[] = sj?.data?.daily_metrics ?? [];
+    let revenue = 0, subs = 0, clicks = 0;
+    for (const d of daily) {
+      revenue += Number(d.revenue ?? 0);
+      subs    += Number(d.subs    ?? 0);
+      clicks  += Number(d.clicks  ?? 0);
+    }
+    return { platform: l.platform, revenue, subs, clicks };
   }));
 
   const agg: Record<string, { revenue: number; subs: number; clicks: number }> = {};

@@ -99,18 +99,23 @@ async function fetchPlatformBreakdown(acctId, startIso, endIso) {
   if (tagged.length === 0) return {};
 
   // 2. Fetch stats per matched link, scoped to the window.
+  // IMPORTANT: summary.*_total fields are LIFETIME counts even when
+  // date_start/date_end are passed. The correctly-scoped numbers
+  // live in `daily_metrics` (one row per UTC day in the window).
+  // Sum those instead.
   const stats = await Promise.all(tagged.map(async (l) => {
     const url = `${OF_BASE}/${acctId}/${l.kind}/${l.id}/stats?date_start=${encodeURIComponent(startIso)}&date_end=${encodeURIComponent(endIso)}`;
     const r = await fetch(url, { headers });
     if (!r.ok) return null;
     const j = await r.json();
-    const s = j?.data?.summary ?? {};
-    return {
-      platform: l.platform,
-      revenue: Number(s.revenue_total ?? 0),
-      subs:    Number(s.subs_total ?? 0),
-      clicks:  Number(s.clicks_total ?? 0),
-    };
+    const daily = j?.data?.daily_metrics ?? [];
+    let revenue = 0, subs = 0, clicks = 0;
+    for (const d of daily) {
+      revenue += Number(d.revenue ?? 0);
+      subs    += Number(d.subs    ?? 0);
+      clicks  += Number(d.clicks  ?? 0);
+    }
+    return { platform: l.platform, revenue, subs, clicks };
   }));
 
   // 3. Aggregate per platform (multiple links can roll up to one).
@@ -250,6 +255,7 @@ async function main() {
       headerRight: "Daily Stats Report",
       rows: pdfRows,
       totals: pdfTotals,
+      perCreatorPlatforms: rows.map((r) => ({ name: r.c.name, platforms: r.platforms })),
     });
     await sendTelegramDocument(
       dailyChat,
