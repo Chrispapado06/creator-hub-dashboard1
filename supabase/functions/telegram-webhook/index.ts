@@ -25,6 +25,35 @@ const WEBHOOK_SECRET = Deno.env.get("TG_WEBHOOK_SECRET") || ""; // optional, rec
 
 const OF_BASE = "https://app.onlyfansapi.com/api";
 
+// Trial-link name → canonical platform (mirror of PLATFORM_ALIASES
+// in payout-bot/config.mjs; keep in sync).
+const PLATFORM_ALIASES: Record<string, string> = {
+  "ig": "Instagram", "instagram": "Instagram", "insta": "Instagram",
+  "reddit": "Reddit", "r": "Reddit",
+  "x": "X", "twitter": "X",
+  "tt": "TikTok", "tiktok": "TikTok",
+  "ads": "Ads", "ad": "Ads",
+  "tg": "Telegram", "telegram": "Telegram",
+  "fb": "Facebook", "facebook": "Facebook",
+  "snap": "Snapchat", "snapchat": "Snapchat",
+  "yt": "YouTube", "youtube": "YouTube",
+};
+function normalizePlatform(name: string | null | undefined): string | null {
+  if (!name) return null;
+  const t = String(name).toLowerCase().trim();
+  if (PLATFORM_ALIASES[t]) return PLATFORM_ALIASES[t];
+  const first = t.split(/[\s_\-]+/)[0];
+  return PLATFORM_ALIASES[first] ?? null;
+}
+
+const REVENUE_TYPES = [
+  { api: "subscribes", label: "Subs",    icon: "💎" },
+  { api: "messages",   label: "Msgs",    icon: "📨" },
+  { api: "tips",       label: "Tips",    icon: "💰" },
+  { api: "post",       label: "Posts",   icon: "📌" },
+  { api: "stream",     label: "Streams", icon: "📺" },
+];
+
 // Mirror of CREATORS from payout-bot/config.mjs. Keep in sync.
 const CREATORS = [
   { name: "Blue Bear",     account_id: "acct_99db42bda91149f58fd68ecccde21fa8" },
@@ -33,6 +62,9 @@ const CREATORS = [
   { name: "Emma",          account_id: "acct_9bae83ac547447798d39e2d816ecd339" },
   { name: "Marissa Munoz", account_id: "acct_42e1c9678cfa4d379d44422a39ef7991" },
   { name: "June - Sandra", account_id: "acct_9f27ee05d2554200a20c2711132fcbcd" },
+  { name: "Julie",         account_id: "acct_7aa411ae5ab947feba989fe9f63f7a60" },
+  { name: "Tess",          account_id: "acct_4f7732b4f8bc4a6abbca1c6620ceb49b" },
+  { name: "Amara",         account_id: "acct_bdfdc404c17e49b9b1c810b14bff6967" },
 ];
 
 const REPORT_TZ = "Europe/London";
@@ -115,6 +147,57 @@ async function fetchDayEarnings(acctId: string, dateStr: string) {
   const j = await r.json();
   const inner = Object.values(j?.data ?? {})[0] as any ?? {};
   return Number(inner.total ?? 0);
+}
+
+// Revenue split by type (subs/messages/tips/post/stream) for a day.
+async function fetchTypeBreakdown(acctId: string, dateStr: string) {
+  const results = await Promise.all(REVENUE_TYPES.map(async (t) => {
+    const url = `${OF_BASE}/${acctId}/statistics/statements/earnings?type=${t.api}&start_date=${encodeURIComponent(dateStr + " 00:00:00")}&end_date=${encodeURIComponent(dateStr + " 23:59:59")}`;
+    const r = await fetch(url, { headers: ofHeaders });
+    if (!r.ok) return [t.api, 0] as const;
+    const j = await r.json();
+    const inner = Object.values(j?.data ?? {})[0] as any ?? {};
+    return [t.api, Number(inner.total ?? 0)] as const;
+  }));
+  return Object.fromEntries(results) as Record<string, number>;
+}
+
+// Per-source-platform revenue + subs via OF trial-links tagged with
+// platform aliases. Returns {} if no tagged links exist for the
+// account.
+async function fetchPlatformBreakdown(acctId: string, startIso: string, endIso: string) {
+  const linksR = await fetch(`${OF_BASE}/${acctId}/trial-links?limit=50`, { headers: ofHeaders });
+  if (!linksR.ok) return {};
+  const j = await linksR.json();
+  const links: any[] = j?.data?.list ?? [];
+  const tagged = links
+    .map((l) => ({ id: l.id as number, platform: normalizePlatform(l.trialLinkName) }))
+    .filter((l) => l.platform);
+  if (tagged.length === 0) return {};
+
+  const stats = await Promise.all(tagged.map(async (l) => {
+    const url = `${OF_BASE}/${acctId}/trial-links/${l.id}/stats?date_start=${encodeURIComponent(startIso)}&date_end=${encodeURIComponent(endIso)}`;
+    const r = await fetch(url, { headers: ofHeaders });
+    if (!r.ok) return null;
+    const sj = await r.json();
+    const s = sj?.data?.summary ?? {};
+    return {
+      platform: l.platform!,
+      revenue: Number(s.revenue_total ?? 0),
+      subs:    Number(s.subs_total ?? 0),
+      clicks:  Number(s.clicks_total ?? 0),
+    };
+  }));
+
+  const agg: Record<string, { revenue: number; subs: number; clicks: number }> = {};
+  for (const s of stats) {
+    if (!s) continue;
+    agg[s.platform] ??= { revenue: 0, subs: 0, clicks: 0 };
+    agg[s.platform].revenue += s.revenue;
+    agg[s.platform].subs    += s.subs;
+    agg[s.platform].clicks  += s.clicks;
+  }
+  return agg;
 }
 
 // Sum non-undo transactions in a precise window for sales.
@@ -228,6 +311,30 @@ async function buildPdf(title: string, subtitle: string, rows: any[], totalSubs:
   return await doc.save();
 }
 
+// ── Block formatting (reused by /update and /24) ─────────────────
+function buildBreakdownBlock(
+  name: string,
+  totalSubs: number, newSubs: number, renewSubs: number,
+  sales: number,
+  types: Record<string, number>,
+  platforms: Record<string, { revenue: number; subs: number; clicks: number }>,
+): string {
+  const lines: string[] = [];
+  lines.push(`<b>${escHtml(name)}</b>`);
+  lines.push(`  Subs: <b>${totalSubs}</b> <i>(${newSubs} new, ${renewSubs} renew)</i>`);
+  lines.push(`  Sales: <b>$${fmtMoney(sales)}</b>`);
+  const typeLine = REVENUE_TYPES
+    .map((t) => `${t.icon} ${t.label.slice(0,4)} $${fmtMoney(types[t.api] ?? 0)}`)
+    .join(" · ");
+  lines.push(`  <i>By type:</i> ${typeLine}`);
+  const platformEntries = Object.entries(platforms).sort((a, b) => b[1].revenue - a[1].revenue);
+  if (platformEntries.length > 0) {
+    const pl = platformEntries.map(([p, s]) => `${escHtml(p)} $${fmtMoney(s.revenue)} <i>(${s.subs}s)</i>`).join(" · ");
+    lines.push(`  <i>By source:</i> ${pl}`);
+  }
+  return lines.join("\n");
+}
+
 // ── Command handlers ─────────────────────────────────────────────
 async function handleUpdate(chatId: number | string, requester: string) {
   await tgSend(chatId, "⏳ Fetching today's stats — back in a second...");
@@ -236,25 +343,33 @@ async function handleUpdate(chatId: number | string, requester: string) {
   const dateStr = `${here.year}-${String(here.month).padStart(2,"0")}-${String(here.day).padStart(2,"0")}`;
   const dateLabel = fmtDateInTz(now);
   const nowLabel = new Intl.DateTimeFormat("en-GB", { timeZone: REPORT_TZ, hour: "2-digit", minute: "2-digit", hour12: false }).format(now);
+  const todayMidUtc = wallTimeToUtc(here.year, here.month, here.day);
+  const startIso = todayMidUtc.toISOString();
+  const endIso = now.toISOString();
 
   const rows = await Promise.all(CREATORS.map(async (c) => {
-    const subs = await fetchSubMetricsDay(c.account_id, dateStr);
-    const sales = await fetchDayEarnings(c.account_id, dateStr);
-    return { name: c.name, ...subs, sales };
+    const [subs, sales, types, platforms] = await Promise.all([
+      fetchSubMetricsDay(c.account_id, dateStr),
+      fetchDayEarnings(c.account_id, dateStr),
+      fetchTypeBreakdown(c.account_id, dateStr),
+      fetchPlatformBreakdown(c.account_id, startIso, endIso),
+    ]);
+    return { name: c.name, ...subs, sales, types, platforms };
   }));
   const totalSubs = rows.reduce((s, r) => s + r.totalSubs, 0);
   const totalSales = rows.reduce((s, r) => s + r.sales, 0);
 
-  const msg: string[] = [];
-  msg.push(`📊 <b>LIVE STATS — ${escHtml(dateLabel)}</b>`);
-  msg.push(`<i>Today so far (UK midnight → ${escHtml(nowLabel)} UK) · requested by ${escHtml(requester)}</i>`);
-  msg.push("");
+  // Header
+  await tgSend(chatId,
+    `📊 <b>LIVE STATS — ${escHtml(dateLabel)}</b>\n` +
+    `<i>Today so far (UK midnight → ${escHtml(nowLabel)} UK) · requested by ${escHtml(requester)}</i>`,
+  );
+  // One message per creator (so we stay under Telegram's 4096-char cap)
   for (const r of rows) {
-    msg.push(`<b>${escHtml(r.name)}</b>\n  Subs: <b>${r.totalSubs}</b> <i>(${r.newSubs} new, ${r.renewSubs} renew)</i>\n  Sales: <b>$${fmtMoney(r.sales)}</b>`);
+    await tgSend(chatId, buildBreakdownBlock(r.name, r.totalSubs, r.newSubs, r.renewSubs, r.sales, r.types, r.platforms));
   }
-  msg.push("");
-  msg.push(`📈 <b>Day total so far:</b> ${totalSubs} subs · $${fmtMoney(totalSales)}`);
-  await tgSend(chatId, msg.join("\n"));
+  // Footer with totals
+  await tgSend(chatId, `📈 <b>Day total so far:</b> ${totalSubs} subs · $${fmtMoney(totalSales)}`);
 
   try {
     const pdf = await buildPdf("Live Stats", `${dateLabel} · UK midnight → ${nowLabel} UK · requested by ${requester}`, rows, totalSubs, totalSales, "Live Stats Report");
@@ -270,26 +385,34 @@ async function handle24h(chatId: number | string, requester: string) {
   const tzFmt = new Intl.DateTimeFormat("en-GB", { timeZone: REPORT_TZ, weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: false });
   const window_ = `${tzFmt.format(fromUtc)} → ${tzFmt.format(toUtc)} UK`;
 
+  // /24 uses calendar-day date strings for type/platform breakdowns
+  // (those endpoints only bucket by full days). The breakdowns
+  // therefore cover "today" calendar-wise, while sub counts +
+  // sales are precisely scoped to the 24h window.
+  const todayHere = partsInTz(toUtc, REPORT_TZ);
+  const dateStr = `${todayHere.year}-${String(todayHere.month).padStart(2,"0")}-${String(todayHere.day).padStart(2,"0")}`;
+  const startIso = fromUtc.toISOString();
+  const endIso = toUtc.toISOString();
+
   const rows = await Promise.all(CREATORS.map(async (c) => {
-    const [subs, sales] = await Promise.all([
+    const [subs, sales, types, platforms] = await Promise.all([
       fetchProratedSubs(c.account_id, fromUtc.getTime(), toUtc.getTime()),
       fetchRollingSales(c.account_id, fromUtc.getTime(), toUtc.getTime()),
+      fetchTypeBreakdown(c.account_id, dateStr),
+      fetchPlatformBreakdown(c.account_id, startIso, endIso),
     ]);
-    return { name: c.name, ...subs, sales };
+    return { name: c.name, ...subs, sales, types, platforms };
   }));
   const totalSubs = rows.reduce((s, r) => s + r.totalSubs, 0);
   const totalSales = rows.reduce((s, r) => s + r.sales, 0);
 
-  const msg: string[] = [];
-  msg.push(`📊 <b>LAST 24 HOURS</b>`);
-  msg.push(`<i>${escHtml(window_)} · requested by ${escHtml(requester)}</i>`);
-  msg.push("");
+  await tgSend(chatId,
+    `📊 <b>LAST 24 HOURS</b>\n<i>${escHtml(window_)} · requested by ${escHtml(requester)}</i>`,
+  );
   for (const r of rows) {
-    msg.push(`<b>${escHtml(r.name)}</b>\n  Subs: <b>${r.totalSubs}</b> <i>(${r.newSubs} new, ${r.renewSubs} renew)</i>\n  Sales: <b>$${fmtMoney(r.sales)}</b>`);
+    await tgSend(chatId, buildBreakdownBlock(r.name, r.totalSubs, r.newSubs, r.renewSubs, r.sales, r.types, r.platforms));
   }
-  msg.push("");
-  msg.push(`📈 <b>24h total:</b> ${totalSubs} subs · $${fmtMoney(totalSales)}`);
-  await tgSend(chatId, msg.join("\n"));
+  await tgSend(chatId, `📈 <b>24h total:</b> ${totalSubs} subs · $${fmtMoney(totalSales)}`);
 
   try {
     const stamp = toUtc.toISOString().slice(0, 16).replace(/[:T]/g, "-");
