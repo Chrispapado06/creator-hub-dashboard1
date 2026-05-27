@@ -324,7 +324,7 @@ function buildBreakdownBlock(
   lines.push(`  Subs: <b>${totalSubs}</b> <i>(${newSubs} new, ${renewSubs} renew)</i>`);
   lines.push(`  Sales: <b>$${fmtMoney(sales)}</b>`);
   const typeLine = REVENUE_TYPES
-    .map((t) => `${t.icon} ${t.label.slice(0,4)} $${fmtMoney(types[t.api] ?? 0)}`)
+    .map((t) => `${t.icon} ${t.label} $${fmtMoney(types[t.api] ?? 0)}`)
     .join(" · ");
   lines.push(`  <i>By type:</i> ${typeLine}`);
   const platformEntries = Object.entries(platforms).sort((a, b) => b[1].revenue - a[1].revenue);
@@ -333,6 +333,29 @@ function buildBreakdownBlock(
     lines.push(`  <i>By source:</i> ${pl}`);
   }
   return lines.join("\n");
+}
+
+// Combine header + per-creator blocks + footer into one Telegram
+// message when it fits, batching only when it actually exceeds the
+// 4096-char-per-message Telegram cap.
+async function tgSendCombined(chatId: number | string, header: string, parts: string[], footer = "") {
+  const SOFT_LIMIT = 3800;
+  const sep = "\n\n";
+  const all = [header, ...parts, footer].filter(Boolean).join(sep);
+  if (all.length <= SOFT_LIMIT) { await tgSend(chatId, all); return; }
+  let buf = header;
+  for (const p of parts) {
+    const next = buf ? buf + sep + p : p;
+    if (next.length > SOFT_LIMIT && buf) {
+      await tgSend(chatId, buf);
+      buf = p;
+    } else {
+      buf = next;
+    }
+  }
+  if (footer && (buf + sep + footer).length <= SOFT_LIMIT) buf = buf + sep + footer;
+  if (buf) await tgSend(chatId, buf);
+  if (footer && !buf.endsWith(footer)) await tgSend(chatId, footer);
 }
 
 // ── Command handlers ─────────────────────────────────────────────
@@ -359,17 +382,10 @@ async function handleUpdate(chatId: number | string, requester: string) {
   const totalSubs = rows.reduce((s, r) => s + r.totalSubs, 0);
   const totalSales = rows.reduce((s, r) => s + r.sales, 0);
 
-  // Header
-  await tgSend(chatId,
-    `📊 <b>LIVE STATS — ${escHtml(dateLabel)}</b>\n` +
-    `<i>Today so far (UK midnight → ${escHtml(nowLabel)} UK) · requested by ${escHtml(requester)}</i>`,
-  );
-  // One message per creator (so we stay under Telegram's 4096-char cap)
-  for (const r of rows) {
-    await tgSend(chatId, buildBreakdownBlock(r.name, r.totalSubs, r.newSubs, r.renewSubs, r.sales, r.types, r.platforms));
-  }
-  // Footer with totals
-  await tgSend(chatId, `📈 <b>Day total so far:</b> ${totalSubs} subs · $${fmtMoney(totalSales)}`);
+  const header = `📊 <b>LIVE STATS — ${escHtml(dateLabel)}</b>\n<i>Today so far (UK midnight → ${escHtml(nowLabel)} UK) · requested by ${escHtml(requester)}</i>`;
+  const blocks = rows.map((r) => buildBreakdownBlock(r.name, r.totalSubs, r.newSubs, r.renewSubs, r.sales, r.types, r.platforms));
+  const footer = `📈 <b>Day total so far:</b> ${totalSubs} subs · $${fmtMoney(totalSales)}`;
+  await tgSendCombined(chatId, header, blocks, footer);
 
   try {
     const pdf = await buildPdf("Live Stats", `${dateLabel} · UK midnight → ${nowLabel} UK · requested by ${requester}`, rows, totalSubs, totalSales, "Live Stats Report");
@@ -406,13 +422,10 @@ async function handle24h(chatId: number | string, requester: string) {
   const totalSubs = rows.reduce((s, r) => s + r.totalSubs, 0);
   const totalSales = rows.reduce((s, r) => s + r.sales, 0);
 
-  await tgSend(chatId,
-    `📊 <b>LAST 24 HOURS</b>\n<i>${escHtml(window_)} · requested by ${escHtml(requester)}</i>`,
-  );
-  for (const r of rows) {
-    await tgSend(chatId, buildBreakdownBlock(r.name, r.totalSubs, r.newSubs, r.renewSubs, r.sales, r.types, r.platforms));
-  }
-  await tgSend(chatId, `📈 <b>24h total:</b> ${totalSubs} subs · $${fmtMoney(totalSales)}`);
+  const header = `📊 <b>LAST 24 HOURS</b>\n<i>${escHtml(window_)} · requested by ${escHtml(requester)}</i>`;
+  const blocks = rows.map((r) => buildBreakdownBlock(r.name, r.totalSubs, r.newSubs, r.renewSubs, r.sales, r.types, r.platforms));
+  const footer = `📈 <b>24h total:</b> ${totalSubs} subs · $${fmtMoney(totalSales)}`;
+  await tgSendCombined(chatId, header, blocks, footer);
 
   try {
     const stamp = toUtc.toISOString().slice(0, 16).replace(/[:T]/g, "-");
