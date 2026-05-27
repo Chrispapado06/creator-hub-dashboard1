@@ -33,6 +33,9 @@ const CREATORS = [
   { name: "Emma",          account_id: "acct_9bae83ac547447798d39e2d816ecd339" },
   { name: "Marissa Munoz", account_id: "acct_42e1c9678cfa4d379d44422a39ef7991" },
   { name: "June - Sandra", account_id: "acct_9f27ee05d2554200a20c2711132fcbcd" },
+  { name: "Julie",         account_id: "acct_7aa411ae5ab947feba989fe9f63f7a60" },
+  { name: "Tess",          account_id: "acct_4f7732b4f8bc4a6abbca1c6620ceb49b" },
+  { name: "Amara",         account_id: "acct_bdfdc404c17e49b9b1c810b14bff6967" },
 ];
 
 const REPORT_TZ = "Europe/London";

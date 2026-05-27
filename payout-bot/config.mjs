@@ -30,6 +30,16 @@ export const CREATORS = [
   { name: "Emma",           username: "emmasonne",        account_id: "acct_9bae83ac547447798d39e2d816ecd339", mode: "on_payout_request", agency_pct: 50, page_type: "paid" },
   { name: "Marissa Munoz",  username: "marissa.munoz",    account_id: "acct_42e1c9678cfa4d379d44422a39ef7991", mode: "on_payout_request", agency_pct: 50, page_type: "paid" },
   { name: "June - Sandra",  username: "thisisjunee",      account_id: "acct_9f27ee05d2554200a20c2711132fcbcd", mode: "on_payout_request", agency_pct: 50, page_type: "free" },
+
+  // New creators added after OF API reconnect (defaults: paid 50/50,
+  // real-time payout alerts). Update split / page_type below as
+  // contracts are confirmed.
+  { name: "Julie",          username: "juliejswan",       account_id: "acct_7aa411ae5ab947feba989fe9f63f7a60", mode: "on_payout_request", agency_pct: 50, page_type: "paid" },
+  { name: "Tess",           username: "emmaxtemptationn", account_id: "acct_4f7732b4f8bc4a6abbca1c6620ceb49b", mode: "on_payout_request", agency_pct: 50, page_type: "paid" },
+  { name: "Amara",          username: "kttiemilk",        account_id: "acct_bdfdc404c17e49b9b1c810b14bff6967", mode: "on_payout_request", agency_pct: 50, page_type: "paid" },
+  // Bella Leah is connected on OF API but NOT authenticated — re-link
+  // her account in the OF API dashboard before adding her here so the
+  // daily report doesn't 404 every fetch.
 ];
 
 // ── Shared utils (used by both bot.mjs and weekly.mjs) ─────────────
