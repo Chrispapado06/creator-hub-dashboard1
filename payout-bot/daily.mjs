@@ -69,27 +69,6 @@ async function fetchDayMetrics(acctId, dateStr) {
   return { totalSubs, newSubs, renewSubs, sales };
 }
 
-// Revenue split by source within OF (subscriptions vs messages vs
-// tips vs PPV posts vs live streams).
-const REVENUE_TYPES = [
-  { api: "subscribes", label: "Subs",    icon: "💎" },
-  { api: "messages",   label: "Msgs",    icon: "📨" },
-  { api: "tips",       label: "Tips",    icon: "💰" },
-  { api: "post",       label: "Posts",   icon: "📌" },
-  { api: "stream",     label: "Streams", icon: "📺" },
-];
-async function fetchTypeBreakdown(acctId, dateStr) {
-  const results = await Promise.all(REVENUE_TYPES.map(async (t) => {
-    const url = `${OF_BASE}/${acctId}/statistics/statements/earnings?type=${t.api}&start_date=${dateStr}%2000:00:00&end_date=${dateStr}%2023:59:59`;
-    const r = await fetch(url, { headers });
-    if (!r.ok) return [t.api, 0];
-    const j = await r.json();
-    const inner = Object.values(j?.data ?? {})[0] ?? {};
-    return [t.api, Number(inner.total ?? 0)];
-  }));
-  return Object.fromEntries(results);
-}
-
 // Revenue + subs grouped by source PLATFORM, combining OF
 // /tracking-links and /trial-links. Each link is mapped to a
 // platform via its tags first, then by parsing its name/title for
@@ -169,7 +148,7 @@ function pctChangeLabel(today, prev) {
   return `${pct >= 0 ? "▲" : "▼"}${Math.abs(pct).toFixed(0)}%`;
 }
 
-function buildCreatorBlock(c, yest, prev, lifetime, types, platforms) {
+function buildCreatorBlock(c, yest, prev, lifetime, platforms) {
   const newSubPctRaw = prev.newSubs > 0 ? ((yest.newSubs - prev.newSubs) / prev.newSubs) * 100 : null;
   const ltvThreshold = c.page_type === "free" ? 5 : 30;
   const ltvFlagged = lifetime.uniqueSubs > 0 && lifetime.ltv < ltvThreshold;
@@ -183,14 +162,8 @@ function buildCreatorBlock(c, yest, prev, lifetime, types, platforms) {
   lines.push(`  Subs: <b>${yest.totalSubs}</b> <i>(${yest.newSubs} new, ${yest.renewSubs} renew)</i>  ${pctChangeLabel(yest.totalSubs, prev.totalSubs)}`);
   lines.push(`  Sales: <b>$${fmtMoney(yest.sales)}</b>  ${pctChangeLabel(yest.sales, prev.sales)}`);
 
-  // Type breakdown — always show with full labels.
-  const typeLine = REVENUE_TYPES
-    .map((t) => `${t.icon} ${t.label} $${fmtMoney(types[t.api] ?? 0)}`)
-    .join(" · ");
-  lines.push(`  <i>By type:</i> ${typeLine}`);
-
   // Platform breakdown — only show when there's at least one
-  // tagged link (skipped entirely otherwise to keep messages tight).
+  // tagged link (skipped entirely otherwise).
   const platformEntries = Object.entries(platforms).sort((a, b) => b[1].revenue - a[1].revenue);
   if (platformEntries.length > 0) {
     const platformLine = platformEntries
@@ -240,14 +213,13 @@ async function main() {
   const startIso = yStartUtc.toISOString();
   const endIso   = yEndUtc.toISOString();
   const rows = await Promise.all(CREATORS.map(async (c) => {
-    const [yest, prev, lifetime, types, platforms] = await Promise.all([
+    const [yest, prev, lifetime, platforms] = await Promise.all([
       fetchDayMetrics(c.account_id, yDate),
       fetchDayMetrics(c.account_id, pDate),
       fetchLifetimeLtv(c.account_id),
-      fetchTypeBreakdown(c.account_id, yDate),
       fetchPlatformBreakdown(c.account_id, startIso, endIso),
     ]);
-    return { c, yest, prev, lifetime, types, platforms };
+    return { c, yest, prev, lifetime, platforms };
   }));
 
   // ── One combined message (auto-splits only if total exceeds
@@ -256,7 +228,7 @@ async function main() {
     `📊 <b>Daily traffic — ${escHtml(yLabel)}</b>`,
     `<i>vs day-before (UK time)</i>`,
   ].join("\n");
-  const blocks = rows.map((r) => buildCreatorBlock(r.c, r.yest, r.prev, r.lifetime, r.types, r.platforms));
+  const blocks = rows.map((r) => buildCreatorBlock(r.c, r.yest, r.prev, r.lifetime, r.platforms));
   const sent = await sendCombined(dailyChat, header, blocks);
 
   // ── Polished PDF with the same data
