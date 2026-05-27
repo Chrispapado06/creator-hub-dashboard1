@@ -51,31 +51,56 @@ const fmt$ = (n) => Number(n || 0).toLocaleString("en-US",
 const fmtN = (n) => Number(n || 0).toLocaleString("en-US");
 
 // ── QuickChart helper — fetches a chart image as PNG ─────────────
-// QuickChart is free, no key required. Caller passes a Chart.js
-// config object; we URL-encode it. Returns null on failure so the
-// PDF gracefully renders without the chart rather than crashing.
+// QuickChart is free, no key required. Always POST so we can keep
+// the config readable and don't hit URL-length caps. Chart.js v4 is
+// used so the modern axis-callback / datalabel syntax works.
+// Returns null on failure so the PDF degrades gracefully.
 async function fetchChartPng(config, width = 700, height = 400) {
   try {
-    const url = "https://quickchart.io/chart"
-      + `?w=${width}&h=${height}&bkg=white&c=${encodeURIComponent(JSON.stringify(config))}`;
-    if (url.length > 16000) {
-      // QuickChart caps URL length. Fall back to POST for big configs.
-      const r = await fetch("https://quickchart.io/chart/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chart: config, width, height, backgroundColor: "white" }),
-      });
-      if (!r.ok) return null;
-      const { url: hosted } = await r.json();
-      const img = await fetch(hosted);
-      return img.ok ? new Uint8Array(await img.arrayBuffer()) : null;
-    }
-    const r = await fetch(url);
-    return r.ok ? new Uint8Array(await r.arrayBuffer()) : null;
+    const r = await fetch("https://quickchart.io/chart/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chart: config, width, height,
+        backgroundColor: "white", version: "4", devicePixelRatio: 2,
+      }),
+    });
+    if (!r.ok) return null;
+    const { url: hosted } = await r.json();
+    const img = await fetch(hosted);
+    return img.ok ? new Uint8Array(await img.arrayBuffer()) : null;
   } catch (e) {
     console.warn("QuickChart fetch failed:", e);
     return null;
   }
+}
+
+// Build a horizontal-bar money chart whose y-axis labels have the
+// $ value baked in ("Reddit  —  $1,820"). That way we don't depend
+// on QuickChart's flaky datalabels-formatter string evaluation.
+function moneyBarChart(rows, color) {
+  const sorted = [...rows].sort((a, b) => b.value - a.value);
+  return {
+    type: "bar",
+    data: {
+      labels: sorted.map((r) => `${r.label}  —  $${Number(r.value).toLocaleString("en-US", { maximumFractionDigits: 0 })}`),
+      datasets: [{
+        data: sorted.map((r) => Number(Number(r.value).toFixed(2))),
+        backgroundColor: color,
+        borderRadius: 4,
+        borderSkipped: false,
+      }],
+    },
+    options: {
+      indexAxis: "y",
+      plugins: { legend: { display: false }, title: { display: false } },
+      scales: {
+        x: { grid: { color: "#e9ecef" }, ticks: { display: false } },
+        y: { ticks: { font: { size: 12, weight: "bold" } }, grid: { display: false } },
+      },
+      layout: { padding: { right: 30, left: 10 } },
+    },
+  };
 }
 
 const BRAND_HEX = "#10632c";       // hex form of C.brand for chart bg
@@ -193,29 +218,50 @@ function drawCoverPage(page, fonts, { title, subtitle, totals, topCreator, topSo
 }
 
 // ── Page 2 — Per-creator detail rows ─────────────────────────────
-function drawDetailPage(page, fonts, rows, subtitle) {
+// Each row shows the creator's totals (subs / sales) plus a
+// breakdown of "From Reddit / Ig / Ads" attribution beneath the
+// new/renew line when tracking-link data is available. Row height
+// auto-grows with the number of platform lines, and we spill to a
+// new page when we run out of space.
+function drawDetailRows(doc, startPage, fonts, rows, subtitle) {
+  let page = startPage;
   let y = drawPageHeader(page, fonts, "Per-Creator Detail");
   y -= 8;
   safeDraw(page, "Creator detail", { x: PAGE.margin, y, size: 18, font: fonts.bold, color: C.ink });
   y -= 18;
   safeDraw(page, subtitle, { x: PAGE.margin, y, size: 10, font: fonts.italic, color: C.muted });
   y -= 22;
-  // column headers
-  page.drawRectangle({
-    x: PAGE.margin - 4, y: y - 4, width: PAGE.w - 2 * PAGE.margin + 8, height: 22, color: C.panel,
-  });
-  const colX = {
-    name: PAGE.margin,
-    subs: PAGE.margin + 240,
-    sales: PAGE.margin + 360,
+
+  const colX = { name: PAGE.margin, subs: PAGE.margin + 270, sales: PAGE.margin + 390 };
+  const drawHeaderRow = () => {
+    page.drawRectangle({
+      x: PAGE.margin - 4, y: y - 4, width: PAGE.w - 2 * PAGE.margin + 8, height: 22, color: C.panel,
+    });
+    safeDraw(page, "CREATOR", { x: colX.name,  y: y + 5, size: 8, font: fonts.bold, color: C.muted });
+    safeDraw(page, "SUBS",    { x: colX.subs,  y: y + 5, size: 8, font: fonts.bold, color: C.muted });
+    safeDraw(page, "SALES",   { x: colX.sales, y: y + 5, size: 8, font: fonts.bold, color: C.muted });
+    y -= 12;
   };
-  safeDraw(page, "CREATOR",   { x: colX.name,  y: y + 5, size: 8, font: fonts.bold, color: C.muted });
-  safeDraw(page, "SUBS",      { x: colX.subs,  y: y + 5, size: 8, font: fonts.bold, color: C.muted });
-  safeDraw(page, "SALES",     { x: colX.sales, y: y + 5, size: 8, font: fonts.bold, color: C.muted });
-  y -= 12;
+  drawHeaderRow();
 
   rows.forEach((r, i) => {
-    const rowH = 38;
+    const platformEntries = Object.entries(r.platforms || {})
+      .filter(([, s]) => (s.subs ?? 0) > 0 || (s.revenue ?? 0) > 0)
+      .sort((a, b) => b[1].revenue - a[1].revenue);
+    const baseH = 40;
+    const platformH = platformEntries.length * 13;
+    const rowH = baseH + platformH;
+
+    // Page-break: if this row would overflow the bottom margin,
+    // start a fresh page with the same header strip + column band.
+    if (y - rowH < 80) {
+      drawPageFooter(page, fonts, doc.getPages().indexOf(page) + 1, doc.getPages().length);
+      page = newPage(doc);
+      y = drawPageHeader(page, fonts, "Per-Creator Detail (cont.)");
+      y -= 18;
+      drawHeaderRow();
+    }
+
     if (i % 2 === 1) {
       page.drawRectangle({
         x: PAGE.margin - 4, y: y - rowH + 4,
@@ -230,8 +276,19 @@ function drawDetailPage(page, fonts, rows, subtitle) {
       { x: colX.subs, y: y - 6, size: 13, font: fonts.bold, color: C.ink });
     safeDraw(page, fmt$(r.sales),
       { x: colX.sales, y: y - 6, size: 13, font: fonts.bold, color: C.brand });
+
+    // Per-platform breakdown indented under the name
+    let py = y - 36;
+    for (const [platform, s] of platformEntries) {
+      safeDraw(page,
+        `· From ${platform}: ${fmtN(s.subs)} sub${s.subs === 1 ? "" : "s"} · ${fmt$(s.revenue)}${s.clicks ? ` · ${fmtN(s.clicks)} clicks` : ""}`,
+        { x: colX.name + 8, y: py, size: 9, font: fonts.regular, color: C.muted },
+      );
+      py -= 13;
+    }
     y -= rowH + 2;
   });
+  return page;
 }
 
 // ── Page 3 — Analytics charts ────────────────────────────────────
@@ -254,28 +311,10 @@ async function drawChartsPage(doc, fonts, { rows, aggregatedPlatforms, dateLabel
   y -= 14;
 
   if (platformEntries.length > 0) {
-    const chartConfig = {
-      type: "horizontalBar",
-      data: {
-        labels: platformEntries.map(([p]) => p),
-        datasets: [{
-          label: "Revenue (USD)",
-          data: platformEntries.map(([, s]) => Number(s.revenue.toFixed(2))),
-          backgroundColor: BRAND_HEX,
-          borderRadius: 4,
-        }],
-      },
-      options: {
-        plugins: {
-          legend: { display: false },
-          datalabels: {
-            anchor: "end", align: "right",
-            color: "#333", font: { size: 11, weight: "bold" },
-            formatter: (v) => "$" + Number(v).toLocaleString("en-US"),
-          },
-        },
-      },
-    };
+    const chartConfig = moneyBarChart(
+      platformEntries.map(([p, s]) => ({ label: p, value: s.revenue })),
+      BRAND_HEX,
+    );
     const png = await fetchChartPng(chartConfig, 1000, 360);
     if (png) {
       const img = await doc.embedPng(png);
@@ -299,29 +338,10 @@ async function drawChartsPage(doc, fonts, { rows, aggregatedPlatforms, dateLabel
   y -= 14;
 
   if (rows.length > 0) {
-    const sorted = [...rows].sort((a, b) => b.sales - a.sales);
-    const chartConfig = {
-      type: "horizontalBar",
-      data: {
-        labels: sorted.map((r) => r.name),
-        datasets: [{
-          label: "Sales (USD)",
-          data: sorted.map((r) => Number(Number(r.sales).toFixed(2))),
-          backgroundColor: BRAND2_HEX,
-          borderRadius: 4,
-        }],
-      },
-      options: {
-        plugins: {
-          legend: { display: false },
-          datalabels: {
-            anchor: "end", align: "right",
-            color: "#333", font: { size: 11, weight: "bold" },
-            formatter: (v) => "$" + Number(v).toLocaleString("en-US"),
-          },
-        },
-      },
-    };
+    const chartConfig = moneyBarChart(
+      rows.map((r) => ({ label: r.name, value: r.sales })),
+      BRAND2_HEX,
+    );
     const png = await fetchChartPng(chartConfig, 1000, 400);
     if (png) {
       const img = await doc.embedPng(png);
@@ -350,17 +370,22 @@ export async function buildDailyStatsPdf({
   const doc = await PDFDocument.create();
   const fonts = await loadFonts(doc);
 
-  // Aggregate platforms across all creators for the chart.
+  // Merge platforms onto each row by name so page 2 can render
+  // "From Reddit: X subs" lines under each creator.
+  const platformsByName = Object.fromEntries(perCreatorPlatforms.map((c) => [c.name, c.platforms || {}]));
+  const enrichedRows = rows.map((r) => ({ ...r, platforms: r.platforms ?? platformsByName[r.name] ?? {} }));
+
+  // Aggregate platforms across all creators for the cover + chart.
   const aggregatedPlatforms = {};
-  for (const c of perCreatorPlatforms) {
-    for (const [p, s] of Object.entries(c.platforms || {})) {
+  for (const r of enrichedRows) {
+    for (const [p, s] of Object.entries(r.platforms || {})) {
       aggregatedPlatforms[p] ??= { revenue: 0, subs: 0, clicks: 0 };
       aggregatedPlatforms[p].revenue += Number(s.revenue || 0);
       aggregatedPlatforms[p].subs    += Number(s.subs || 0);
       aggregatedPlatforms[p].clicks  += Number(s.clicks || 0);
     }
   }
-  const topCreator = rows.slice().sort((a, b) => b.sales - a.sales)[0];
+  const topCreator = enrichedRows.slice().sort((a, b) => b.sales - a.sales)[0];
   const topSourceEntry = Object.entries(aggregatedPlatforms).sort((a, b) => b[1].revenue - a[1].revenue)[0];
   const topSource = topSourceEntry
     ? { platform: topSourceEntry[0], revenue: topSourceEntry[1].revenue, subs: topSourceEntry[1].subs }
@@ -370,17 +395,16 @@ export async function buildDailyStatsPdf({
   const p1 = newPage(doc);
   drawCoverPage(p1, fonts, {
     title, subtitle,
-    totals: { ...totals, creators: rows.length },
+    totals: { ...totals, creators: enrichedRows.length },
     topCreator, topSource,
   });
 
-  // Page 2: detail rows
+  // Page 2 (auto-overflow): detail rows with per-platform breakdown
   const p2 = newPage(doc);
-  drawDetailPage(p2, fonts, rows, subtitle);
+  drawDetailRows(doc, p2, fonts, enrichedRows, subtitle);
 
-  // Page 3: analytics charts (skipped if QuickChart fails for both,
-  // but normally renders both bars).
-  await drawChartsPage(doc, fonts, { rows, aggregatedPlatforms, dateLabel: subtitle });
+  // Page 3: analytics charts
+  await drawChartsPage(doc, fonts, { rows: enrichedRows, aggregatedPlatforms, dateLabel: subtitle });
 
   // Footers
   const pages = doc.getPages();

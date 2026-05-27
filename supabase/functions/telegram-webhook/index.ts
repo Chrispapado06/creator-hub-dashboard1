@@ -283,28 +283,53 @@ const PDF_PAGE = { w: 595, h: 842, margin: 50 };
 const BRAND_HEX = "#10632c";
 const BRAND2_HEX = "#52a366";
 
-// Free chart rendering via QuickChart (HTTP, no key). Returns PNG
-// bytes or null on failure so the PDF degrades gracefully.
+// Free chart rendering via QuickChart (HTTP, no key). Always POST
+// so we can avoid URL-length caps and use modern Chart.js. Returns
+// PNG bytes or null so the PDF degrades gracefully on failure.
 async function fetchChartPng(config: any, width = 700, height = 400): Promise<Uint8Array | null> {
   try {
-    const url = `https://quickchart.io/chart?w=${width}&h=${height}&bkg=white&c=${encodeURIComponent(JSON.stringify(config))}`;
-    if (url.length > 16000) {
-      const cr = await fetch("https://quickchart.io/chart/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chart: config, width, height, backgroundColor: "white" }),
-      });
-      if (!cr.ok) return null;
-      const { url: hosted } = await cr.json();
-      const img = await fetch(hosted);
-      return img.ok ? new Uint8Array(await img.arrayBuffer()) : null;
-    }
-    const r = await fetch(url);
-    return r.ok ? new Uint8Array(await r.arrayBuffer()) : null;
+    const cr = await fetch("https://quickchart.io/chart/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chart: config, width, height, backgroundColor: "white", devicePixelRatio: 2 }),
+    });
+    if (!cr.ok) return null;
+    const { url: hosted } = await cr.json();
+    const img = await fetch(hosted);
+    return img.ok ? new Uint8Array(await img.arrayBuffer()) : null;
   } catch (e) {
     console.warn("QuickChart failed:", e);
     return null;
   }
+}
+
+// Horizontal money-bar chart with $ values baked into the y-axis
+// labels (most reliable approach — QuickChart's datalabels-formatter
+// string-eval is unreliable across versions, and JSON can't pass
+// real JS callbacks).
+function moneyBarChart(rows: Array<{ label: string; value: number }>, color: string) {
+  const sorted = [...rows].sort((a, b) => b.value - a.value);
+  return {
+    type: "bar",
+    data: {
+      labels: sorted.map((r) => `${r.label}  —  $${Number(r.value).toLocaleString("en-US", { maximumFractionDigits: 0 })}`),
+      datasets: [{
+        data: sorted.map((r) => Number(Number(r.value).toFixed(2))),
+        backgroundColor: color,
+        borderRadius: 4,
+        borderSkipped: false,
+      }],
+    },
+    options: {
+      indexAxis: "y",
+      plugins: { legend: { display: false }, title: { display: false } },
+      scales: {
+        x: { grid: { color: "#e9ecef" }, ticks: { display: false } },
+        y: { ticks: { font: { size: 12, weight: "bold" } }, grid: { display: false } },
+      },
+      layout: { padding: { right: 30, left: 10 } },
+    },
+  };
 }
 
 function pdfHeader(page: any, fonts: any, kind: string) {
@@ -395,23 +420,44 @@ async function buildPdf(
       { x: M, y: y - 18, size: 11, font: fonts.italic, color: PDF_C.muted });
   }
 
-  // ── Page 2: per-creator detail ─────────────────────────────────
-  const p2 = doc.addPage([PDF_PAGE.w, PDF_PAGE.h]);
+  // ── Page 2: per-creator detail with platform breakdown ─────────
+  let p2 = doc.addPage([PDF_PAGE.w, PDF_PAGE.h]);
   let y2 = pdfHeader(p2, fonts, headerRight);
   p2.drawText("Creator detail", { x: M, y: y2, size: 18, font: fonts.bold, color: PDF_C.ink }); y2 -= 18;
   p2.drawText(safeText(subtitle), { x: M, y: y2, size: 10, font: fonts.italic, color: PDF_C.muted }); y2 -= 22;
-  p2.drawRectangle({ x: M - 4, y: y2 - 4, width: PDF_PAGE.w - 2 * M + 8, height: 22, color: PDF_C.panel });
-  p2.drawText("CREATOR", { x: M,           y: y2 + 5, size: 8, font: fonts.bold, color: PDF_C.muted });
-  p2.drawText("SUBS",    { x: M + 240,     y: y2 + 5, size: 8, font: fonts.bold, color: PDF_C.muted });
-  p2.drawText("SALES",   { x: M + 360,     y: y2 + 5, size: 8, font: fonts.bold, color: PDF_C.muted });
-  y2 -= 12;
+  const colXName = M, colXSubs = M + 270, colXSales = M + 390;
+  const drawDetailHeader = () => {
+    p2.drawRectangle({ x: M - 4, y: y2 - 4, width: PDF_PAGE.w - 2 * M + 8, height: 22, color: PDF_C.panel });
+    p2.drawText("CREATOR", { x: colXName,  y: y2 + 5, size: 8, font: fonts.bold, color: PDF_C.muted });
+    p2.drawText("SUBS",    { x: colXSubs,  y: y2 + 5, size: 8, font: fonts.bold, color: PDF_C.muted });
+    p2.drawText("SALES",   { x: colXSales, y: y2 + 5, size: 8, font: fonts.bold, color: PDF_C.muted });
+    y2 -= 12;
+  };
+  drawDetailHeader();
   rows.forEach((r, i) => {
-    const rowH = 38;
+    const platformEntries = Object.entries(r.platforms ?? {})
+      .filter(([, s]) => (s.subs ?? 0) > 0 || (s.revenue ?? 0) > 0)
+      .sort((a, b) => b[1].revenue - a[1].revenue);
+    const baseH = 40;
+    const rowH = baseH + platformEntries.length * 13;
+    if (y2 - rowH < 80) {
+      pdfFooter(p2, fonts, doc.getPages().indexOf(p2) + 1, doc.getPages().length);
+      p2 = doc.addPage([PDF_PAGE.w, PDF_PAGE.h]);
+      y2 = pdfHeader(p2, fonts, "Per-Creator Detail (cont.)") - 18;
+      drawDetailHeader();
+    }
     if (i % 2 === 1) p2.drawRectangle({ x: M - 4, y: y2 - rowH + 4, width: PDF_PAGE.w - 2 * M + 8, height: rowH, color: PDF_C.band });
-    p2.drawText(safeText(r.name), { x: M, y: y2 - 6, size: 12, font: fonts.bold, color: PDF_C.ink });
-    p2.drawText(safeText(`${fmtN(r.newSubs)} new · ${fmtN(r.renewSubs)} renew`), { x: M, y: y2 - 22, size: 9, font: fonts.regular, color: PDF_C.muted });
-    p2.drawText(fmtN(r.totalSubs), { x: M + 240, y: y2 - 6, size: 13, font: fonts.bold, color: PDF_C.ink });
-    p2.drawText(fmt$(r.sales),     { x: M + 360, y: y2 - 6, size: 13, font: fonts.bold, color: PDF_C.brand });
+    p2.drawText(safeText(r.name), { x: colXName, y: y2 - 6, size: 12, font: fonts.bold, color: PDF_C.ink });
+    p2.drawText(safeText(`${fmtN(r.newSubs)} new · ${fmtN(r.renewSubs)} renew`),
+      { x: colXName, y: y2 - 22, size: 9, font: fonts.regular, color: PDF_C.muted });
+    p2.drawText(fmtN(r.totalSubs), { x: colXSubs,  y: y2 - 6, size: 13, font: fonts.bold, color: PDF_C.ink });
+    p2.drawText(fmt$(r.sales),     { x: colXSales, y: y2 - 6, size: 13, font: fonts.bold, color: PDF_C.brand });
+    let py = y2 - 36;
+    for (const [platform, s] of platformEntries) {
+      p2.drawText(safeText(`· From ${platform}: ${fmtN(s.subs)} sub${s.subs === 1 ? "" : "s"} · ${fmt$(s.revenue)}${s.clicks ? ` · ${fmtN(s.clicks)} clicks` : ""}`),
+        { x: colXName + 8, y: py, size: 9, font: fonts.regular, color: PDF_C.muted });
+      py -= 13;
+    }
     y2 -= rowH + 2;
   });
 
@@ -425,12 +471,10 @@ async function buildPdf(
   p3.drawText("REVENUE BY SOURCE PLATFORM", { x: M, y: y3, size: 9, font: fonts.bold, color: PDF_C.muted });
   y3 -= 14;
   if (platformEntries.length > 0) {
-    const cfg = {
-      type: "horizontalBar",
-      data: { labels: platformEntries.map(([p]) => p), datasets: [{ label: "Revenue (USD)", data: platformEntries.map(([, s]) => Number(s.revenue.toFixed(2))), backgroundColor: BRAND_HEX, borderRadius: 4 }] },
-      options: { plugins: { legend: { display: false }, datalabels: { anchor: "end", align: "right", color: "#333", font: { size: 11, weight: "bold" }, formatter: (v: number) => "$" + Number(v).toLocaleString("en-US") } } },
-    };
-    const png = await fetchChartPng(cfg, 1000, 360);
+    const png = await fetchChartPng(
+      moneyBarChart(platformEntries.map(([p, s]) => ({ label: p, value: s.revenue })), BRAND_HEX),
+      1000, 360,
+    );
     if (png) {
       const img = await doc.embedPng(png);
       const drawW = PDF_PAGE.w - 2 * M;
@@ -439,20 +483,18 @@ async function buildPdf(
       y3 -= drawH + 20;
     } else { p3.drawText("(chart unavailable)", { x: M, y: y3 - 14, size: 10, font: fonts.italic, color: PDF_C.muted }); y3 -= 30; }
   } else {
-    p3.drawText(safeText("No platform-tagged tracking links yet — tag links with Reddit, Ig, Ads etc. in the OF API dashboard to enable source attribution."), { x: M, y: y3 - 14, size: 10, font: fonts.italic, color: PDF_C.muted });
+    p3.drawText(safeText("No platform-tagged tracking links yet — tag links with Reddit, Ig, Ads etc. in the OF API dashboard to enable source attribution."),
+      { x: M, y: y3 - 14, size: 10, font: fonts.italic, color: PDF_C.muted });
     y3 -= 36;
   }
 
   p3.drawText("REVENUE BY CREATOR", { x: M, y: y3, size: 9, font: fonts.bold, color: PDF_C.muted });
   y3 -= 14;
   if (rows.length > 0) {
-    const sorted = [...rows].sort((a, b) => b.sales - a.sales);
-    const cfg = {
-      type: "horizontalBar",
-      data: { labels: sorted.map((r) => r.name), datasets: [{ label: "Sales (USD)", data: sorted.map((r) => Number(Number(r.sales).toFixed(2))), backgroundColor: BRAND2_HEX, borderRadius: 4 }] },
-      options: { plugins: { legend: { display: false }, datalabels: { anchor: "end", align: "right", color: "#333", font: { size: 11, weight: "bold" }, formatter: (v: number) => "$" + Number(v).toLocaleString("en-US") } } },
-    };
-    const png = await fetchChartPng(cfg, 1000, 400);
+    const png = await fetchChartPng(
+      moneyBarChart(rows.map((r) => ({ label: r.name, value: r.sales })), BRAND2_HEX),
+      1000, 400,
+    );
     if (png) {
       const img = await doc.embedPng(png);
       const drawW = PDF_PAGE.w - 2 * M;
