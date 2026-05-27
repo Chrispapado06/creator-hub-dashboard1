@@ -42,6 +42,44 @@ export const CREATORS = [
   // daily report doesn't 404 every fetch.
 ];
 
+// ── Platform aliases for trial-link source attribution ───────────
+// Trial links named with any of these tags (case-insensitive, on
+// either side) get bucketed under the canonical display name.
+// Add more aliases here as your team starts naming links by source.
+export const PLATFORM_ALIASES = {
+  "ig":         "Instagram",
+  "instagram":  "Instagram",
+  "insta":      "Instagram",
+  "reddit":     "Reddit",
+  "r":          "Reddit",
+  "x":          "X",
+  "twitter":    "X",
+  "tt":         "TikTok",
+  "tiktok":     "TikTok",
+  "ads":        "Ads",
+  "ad":         "Ads",
+  "tg":         "Telegram",
+  "telegram":   "Telegram",
+  "fb":         "Facebook",
+  "facebook":   "Facebook",
+  "snap":       "Snapchat",
+  "snapchat":   "Snapchat",
+  "yt":         "YouTube",
+  "youtube":    "YouTube",
+};
+
+// Normalise a trial-link name to a canonical platform. Returns null
+// if the name doesn't match any known alias (so the link is ignored
+// for source attribution — typically internal/personal promo links).
+export function normalizePlatform(name) {
+  if (!name) return null;
+  const trimmed = String(name).toLowerCase().trim();
+  if (PLATFORM_ALIASES[trimmed]) return PLATFORM_ALIASES[trimmed];
+  // Also match aliases appearing as the first word (e.g. "Ig sale", "Reddit warm")
+  const first = trimmed.split(/[\s_\-]+/)[0];
+  return PLATFORM_ALIASES[first] ?? null;
+}
+
 // ── Shared utils (used by both bot.mjs and weekly.mjs) ─────────────
 
 // Wall-clock timezone every report is calculated in. OF's UI for our
