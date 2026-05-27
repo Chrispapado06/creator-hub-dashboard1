@@ -68,16 +68,38 @@ export const PLATFORM_ALIASES = {
   "youtube":    "YouTube",
 };
 
-// Normalise a trial-link name to a canonical platform. Returns null
-// if the name doesn't match any known alias (so the link is ignored
-// for source attribution — typically internal/personal promo links).
+// Normalise a name (or tag) to a canonical platform. Returns null
+// if no known alias appears anywhere in the string. Match rules in
+// order of preference:
+//   1. Exact match    ("Reddit"        → Reddit)
+//   2. First-word     ("Ig sale"       → Instagram)
+//   3. Whole-word substring ("MissMarissaBlonde Reddit" → Reddit)
+// Falls back to null for unrecognised names (internal links etc.).
 export function normalizePlatform(name) {
   if (!name) return null;
   const trimmed = String(name).toLowerCase().trim();
   if (PLATFORM_ALIASES[trimmed]) return PLATFORM_ALIASES[trimmed];
-  // Also match aliases appearing as the first word (e.g. "Ig sale", "Reddit warm")
-  const first = trimmed.split(/[\s_\-]+/)[0];
-  return PLATFORM_ALIASES[first] ?? null;
+  const tokens = trimmed.split(/[\s_\-/]+/).filter(Boolean);
+  if (tokens.length === 0) return null;
+  if (PLATFORM_ALIASES[tokens[0]]) return PLATFORM_ALIASES[tokens[0]];
+  for (const t of tokens) {
+    if (PLATFORM_ALIASES[t]) return PLATFORM_ALIASES[t];
+  }
+  return null;
+}
+
+// Pick the best platform from a tracking-link's tags array first
+// (most explicit), falling back to its campaignName. Tags are
+// canonical (Reddit, Instagram, etc.); names tend to be longer like
+// "velvetariiia - Reddit".
+export function platformFromTagsOrName(tags, name) {
+  if (Array.isArray(tags)) {
+    for (const t of tags) {
+      const p = normalizePlatform(t);
+      if (p) return p;
+    }
+  }
+  return normalizePlatform(name);
 }
 
 // ── Shared utils (used by both bot.mjs and weekly.mjs) ─────────────

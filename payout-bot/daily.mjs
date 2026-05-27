@@ -18,7 +18,8 @@
 import { buildDailyStatsPdf } from "./pdf-report.mjs";
 import {
   CREATORS, escHtml, fmtMoney, sendTelegram, sendTelegramDocument,
-  REPORT_TZ, wallTimeToUtc, partsInTz, fmtDateInTz, normalizePlatform,
+  REPORT_TZ, wallTimeToUtc, partsInTz, fmtDateInTz,
+  normalizePlatform, platformFromTagsOrName,
 } from "./config.mjs";
 
 const OF_KEY = process.env.ONLYFANSAPI_KEY;
@@ -89,21 +90,38 @@ async function fetchTypeBreakdown(acctId, dateStr) {
   return Object.fromEntries(results);
 }
 
-// Revenue + subs grouped by source PLATFORM, via OF trial-links
-// whose name matches a known platform alias (Ig, Reddit, X, etc.).
-// Returns { Reddit: {revenue, subs, clicks}, Instagram: {...}, ... }.
+// Revenue + subs grouped by source PLATFORM, combining OF
+// /tracking-links and /trial-links. Each link is mapped to a
+// platform via its tags first, then by parsing its name/title for
+// known aliases (Reddit, Ig, Ads, etc.). Per-platform numbers come
+// from each link's /stats endpoint with the day window applied.
 async function fetchPlatformBreakdown(acctId, startIso, endIso) {
-  const linksR = await fetch(`${OF_BASE}/${acctId}/trial-links?limit=50`, { headers });
-  if (!linksR.ok) return {};
-  const linksJ = await linksR.json();
-  const links = linksJ?.data?.list ?? [];
-  const tagged = links
-    .map((l) => ({ id: l.id, platform: normalizePlatform(l.trialLinkName) }))
-    .filter((l) => l.platform);
+  // 1. List both link types in parallel.
+  const [trackR, trialR] = await Promise.all([
+    fetch(`${OF_BASE}/${acctId}/tracking-links?limit=50`, { headers }),
+    fetch(`${OF_BASE}/${acctId}/trial-links?limit=50`,    { headers }),
+  ]);
+
+  const tagged = [];
+  if (trackR.ok) {
+    const j = await trackR.json();
+    for (const l of (j?.data?.list ?? [])) {
+      const platform = platformFromTagsOrName(l.tags, l.campaignName);
+      if (platform) tagged.push({ kind: "tracking-links", id: l.id, platform });
+    }
+  }
+  if (trialR.ok) {
+    const j = await trialR.json();
+    for (const l of (j?.data?.list ?? [])) {
+      const platform = platformFromTagsOrName(l.tags, l.trialLinkName);
+      if (platform) tagged.push({ kind: "trial-links", id: l.id, platform });
+    }
+  }
   if (tagged.length === 0) return {};
 
+  // 2. Fetch stats per matched link, scoped to the window.
   const stats = await Promise.all(tagged.map(async (l) => {
-    const url = `${OF_BASE}/${acctId}/trial-links/${l.id}/stats?date_start=${encodeURIComponent(startIso)}&date_end=${encodeURIComponent(endIso)}`;
+    const url = `${OF_BASE}/${acctId}/${l.kind}/${l.id}/stats?date_start=${encodeURIComponent(startIso)}&date_end=${encodeURIComponent(endIso)}`;
     const r = await fetch(url, { headers });
     if (!r.ok) return null;
     const j = await r.json();
@@ -116,6 +134,7 @@ async function fetchPlatformBreakdown(acctId, startIso, endIso) {
     };
   }));
 
+  // 3. Aggregate per platform (multiple links can roll up to one).
   const agg = {};
   for (const s of stats) {
     if (!s) continue;

@@ -40,10 +40,24 @@ const PLATFORM_ALIASES: Record<string, string> = {
 };
 function normalizePlatform(name: string | null | undefined): string | null {
   if (!name) return null;
-  const t = String(name).toLowerCase().trim();
-  if (PLATFORM_ALIASES[t]) return PLATFORM_ALIASES[t];
-  const first = t.split(/[\s_\-]+/)[0];
-  return PLATFORM_ALIASES[first] ?? null;
+  const trimmed = String(name).toLowerCase().trim();
+  if (PLATFORM_ALIASES[trimmed]) return PLATFORM_ALIASES[trimmed];
+  const tokens = trimmed.split(/[\s_\-/]+/).filter(Boolean);
+  if (tokens.length === 0) return null;
+  if (PLATFORM_ALIASES[tokens[0]]) return PLATFORM_ALIASES[tokens[0]];
+  for (const t of tokens) {
+    if (PLATFORM_ALIASES[t]) return PLATFORM_ALIASES[t];
+  }
+  return null;
+}
+function platformFromTagsOrName(tags: string[] | null | undefined, name: string | null | undefined): string | null {
+  if (Array.isArray(tags)) {
+    for (const t of tags) {
+      const p = normalizePlatform(t);
+      if (p) return p;
+    }
+  }
+  return normalizePlatform(name);
 }
 
 const REVENUE_TYPES = [
@@ -162,27 +176,42 @@ async function fetchTypeBreakdown(acctId: string, dateStr: string) {
   return Object.fromEntries(results) as Record<string, number>;
 }
 
-// Per-source-platform revenue + subs via OF trial-links tagged with
-// platform aliases. Returns {} if no tagged links exist for the
-// account.
+// Per-source-platform revenue + subs combining OF /tracking-links
+// AND /trial-links. Each link is mapped to a platform via its tags
+// first, then by parsing its name. Returns {} when no link matches.
 async function fetchPlatformBreakdown(acctId: string, startIso: string, endIso: string) {
-  const linksR = await fetch(`${OF_BASE}/${acctId}/trial-links?limit=50`, { headers: ofHeaders });
-  if (!linksR.ok) return {};
-  const j = await linksR.json();
-  const links: any[] = j?.data?.list ?? [];
-  const tagged = links
-    .map((l) => ({ id: l.id as number, platform: normalizePlatform(l.trialLinkName) }))
-    .filter((l) => l.platform);
+  const [trackR, trialR] = await Promise.all([
+    fetch(`${OF_BASE}/${acctId}/tracking-links?limit=50`, { headers: ofHeaders }),
+    fetch(`${OF_BASE}/${acctId}/trial-links?limit=50`,    { headers: ofHeaders }),
+  ]);
+
+  type Tagged = { kind: "tracking-links" | "trial-links"; id: number; platform: string };
+  const tagged: Tagged[] = [];
+
+  if (trackR.ok) {
+    const j = await trackR.json();
+    for (const l of (j?.data?.list ?? []) as any[]) {
+      const platform = platformFromTagsOrName(l.tags, l.campaignName);
+      if (platform) tagged.push({ kind: "tracking-links", id: l.id, platform });
+    }
+  }
+  if (trialR.ok) {
+    const j = await trialR.json();
+    for (const l of (j?.data?.list ?? []) as any[]) {
+      const platform = platformFromTagsOrName(l.tags, l.trialLinkName);
+      if (platform) tagged.push({ kind: "trial-links", id: l.id, platform });
+    }
+  }
   if (tagged.length === 0) return {};
 
   const stats = await Promise.all(tagged.map(async (l) => {
-    const url = `${OF_BASE}/${acctId}/trial-links/${l.id}/stats?date_start=${encodeURIComponent(startIso)}&date_end=${encodeURIComponent(endIso)}`;
+    const url = `${OF_BASE}/${acctId}/${l.kind}/${l.id}/stats?date_start=${encodeURIComponent(startIso)}&date_end=${encodeURIComponent(endIso)}`;
     const r = await fetch(url, { headers: ofHeaders });
     if (!r.ok) return null;
     const sj = await r.json();
     const s = sj?.data?.summary ?? {};
     return {
-      platform: l.platform!,
+      platform: l.platform,
       revenue: Number(s.revenue_total ?? 0),
       subs:    Number(s.subs_total ?? 0),
       clicks:  Number(s.clicks_total ?? 0),
