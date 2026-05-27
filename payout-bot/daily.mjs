@@ -164,25 +164,53 @@ function buildCreatorBlock(c, yest, prev, lifetime, types, platforms) {
   lines.push(`  Subs: <b>${yest.totalSubs}</b> <i>(${yest.newSubs} new, ${yest.renewSubs} renew)</i>  ${pctChangeLabel(yest.totalSubs, prev.totalSubs)}`);
   lines.push(`  Sales: <b>$${fmtMoney(yest.sales)}</b>  ${pctChangeLabel(yest.sales, prev.sales)}`);
 
-  // Type breakdown — always show, even if zeros (for completeness)
+  // Type breakdown — always show with full labels.
   const typeLine = REVENUE_TYPES
-    .map((t) => `${t.icon} ${t.label.slice(0,4)} $${fmtMoney(types[t.api] ?? 0)}`)
+    .map((t) => `${t.icon} ${t.label} $${fmtMoney(types[t.api] ?? 0)}`)
     .join(" · ");
   lines.push(`  <i>By type:</i> ${typeLine}`);
 
-  // Platform breakdown — only show when there's at least one tagged link
+  // Platform breakdown — only show when there's at least one
+  // tagged link (skipped entirely otherwise to keep messages tight).
   const platformEntries = Object.entries(platforms).sort((a, b) => b[1].revenue - a[1].revenue);
   if (platformEntries.length > 0) {
     const platformLine = platformEntries
       .map(([p, s]) => `${escHtml(p)} $${fmtMoney(s.revenue)} <i>(${s.subs}s)</i>`)
       .join(" · ");
     lines.push(`  <i>By source:</i> ${platformLine}`);
-  } else {
-    lines.push(`  <i>By source:</i> <i>no platform-tagged trial links</i>`);
   }
 
   lines.push(`  LTV (lifetime): <b>$${fmtMoney(lifetime.ltv)}</b>  <i>${lifetime.uniqueSubs.toLocaleString()} unique subs</i>`);
   return lines.join("\n");
+}
+
+// Send `parts` as ONE Telegram message if it fits under the limit,
+// otherwise pack as many sequential parts as will fit into each
+// message and send a few. Always preserves order.
+async function sendCombined(chat, header, parts, footer = "") {
+  const SOFT_LIMIT = 3800; // give 296 chars of headroom under Telegram's 4096
+  const sep = "\n\n";
+  const all = [header, ...parts, footer].filter(Boolean).join(sep);
+  if (all.length <= SOFT_LIMIT) {
+    await sendTelegram(all, chat);
+    return 1;
+  }
+  // Doesn't fit — batch.
+  let sent = 0;
+  let buf = header;
+  for (const p of parts) {
+    const next = buf ? buf + sep + p : p;
+    if (next.length > SOFT_LIMIT && buf) {
+      await sendTelegram(buf, chat); sent++;
+      buf = p;
+    } else {
+      buf = next;
+    }
+  }
+  if (footer && (buf + sep + footer).length <= SOFT_LIMIT) buf = buf + sep + footer;
+  if (buf) { await sendTelegram(buf, chat); sent++; }
+  if (footer && !buf.endsWith(footer)) { await sendTelegram(footer, chat); sent++; }
+  return sent;
 }
 
 async function main() {
@@ -203,18 +231,14 @@ async function main() {
     return { c, yest, prev, lifetime, types, platforms };
   }));
 
-  // ── Header
+  // ── One combined message (auto-splits only if total exceeds
+  //    Telegram's per-message char cap — usually fits fine).
   const header = [
     `📊 <b>Daily traffic — ${escHtml(yLabel)}</b>`,
-    `<i>vs day-before (UK time) · revenue type + source breakdowns below</i>`,
+    `<i>vs day-before (UK time)</i>`,
   ].join("\n");
-  await sendTelegram(header, dailyChat);
-
-  // ── Per-creator messages (split to dodge Telegram's 4096 limit)
-  let sent = 0;
-  for (const r of rows) {
-    if (await sendTelegram(buildCreatorBlock(r.c, r.yest, r.prev, r.lifetime, r.types, r.platforms), dailyChat)) sent++;
-  }
+  const blocks = rows.map((r) => buildCreatorBlock(r.c, r.yest, r.prev, r.lifetime, r.types, r.platforms));
+  const sent = await sendCombined(dailyChat, header, blocks);
 
   // ── Polished PDF with the same data
   try {
