@@ -40,9 +40,17 @@ const POSTERS = [
   { name: "Dabi",   accounts: ["RareArea11", "Valerizzee", "duskkymira", "Lumiiivrae"] },
   { name: "Xy",     accounts: ["EntireFace00", "Jessieecorner", "Zephyyyrella"] },
 ];
-// discord_user_id → poster_name. Filled by manager via /poster_map (TBD)
-// or by hand below. Empty start; gets populated post-deploy.
-const DISCORD_TO_POSTER: Record<string, string> = {};
+// discord_user_id → role mapping. Posters get a Reddit cross-check
+// based on their accounts; schedulers skip the cross-check since
+// their work (captions/media prep) doesn't surface as Reddit posts.
+type RoleMap = { name: string; role: "poster" | "scheduler" };
+const DISCORD_TO_POSTER: Record<string, RoleMap> = {
+  "1444680433806606552": { name: "Cha",    role: "poster" },
+  "1450503999513034816": { name: "Reylee", role: "poster" },
+  "1506894077562585179": { name: "Dabi",   role: "poster" }, // aka "Dannah" in payroll spreadsheet
+  "1145243881013792788": { name: "Xy",     role: "poster" },
+  "748084934689947651":  { name: "John",   role: "scheduler" }, // no Reddit posts — caption/media prep
+};
 
 const RATE_USD_PER_HOUR = 3.00;
 
@@ -166,28 +174,35 @@ const TOL_EMOJI: Record<string, string> = {
 function shiftEmbed(shift: any) {
   const claimedH = shift.claimed_minutes / 60;
   const estH     = (shift.estimated_minutes ?? 0) / 60;
+  const isScheduler = shift.tolerance === "scheduler";
   const lines: string[] = [];
   lines.push(`**Window:** ${new Date(shift.start_at).toUTCString().slice(0, 22)} → ${new Date(shift.end_at).toUTCString().slice(17, 22)}`);
   lines.push(`**Claimed:** ${claimedH.toFixed(2)}h  (${fmt$(claimedH * RATE_USD_PER_HOUR)})`);
   if (shift.accounts?.length) lines.push(`**Accounts:** ${shift.accounts.map((a: string) => `u/${a}`).join(", ")}`);
   lines.push("");
-  lines.push(`**Cross-check (Reddit, last ${claimedH.toFixed(1)}h):**`);
-  lines.push(`  ${shift.reddit_post_count ?? 0} posts in ${shift.reddit_session_count ?? 0} session(s)`);
-  lines.push(`  Estimated active time: **${estH.toFixed(2)}h**`);
-  lines.push(`  ${TOL_EMOJI[shift.tolerance] ?? "❓"} ${
-    shift.tolerance === "within"        ? "Within tolerance — likely accurate"
-    : shift.tolerance === "slightly_over"? "Slightly above estimate (20–50%)"
-    : shift.tolerance === "flagged"      ? "Significant gap (>50% over) — check proof"
-    : shift.tolerance === "under"        ? "Claim is BELOW the Reddit-observed time"
-    : "Estimate unavailable"
-  }`);
+  if (isScheduler) {
+    lines.push(`**Cross-check:** 🛠️ Scheduler role — no Reddit posts to verify against.`);
+    lines.push(`Manager judges from the attached proof of work.`);
+  } else {
+    lines.push(`**Cross-check (Reddit, last ${claimedH.toFixed(1)}h):**`);
+    lines.push(`  ${shift.reddit_post_count ?? 0} posts in ${shift.reddit_session_count ?? 0} session(s)`);
+    lines.push(`  Estimated active time: **${estH.toFixed(2)}h**`);
+    lines.push(`  ${TOL_EMOJI[shift.tolerance] ?? "❓"} ${
+      shift.tolerance === "within"        ? "Within tolerance — likely accurate"
+      : shift.tolerance === "slightly_over"? "Slightly above estimate (20–50%)"
+      : shift.tolerance === "flagged"      ? "Significant gap (>50% over) — check proof"
+      : shift.tolerance === "under"        ? "Claim is BELOW the Reddit-observed time"
+      : "Estimate unavailable"
+    }`);
+  }
   if (shift.proof_discord_url) lines.push(`\n**Proof:** [attached](${shift.proof_discord_url})`);
   return {
     title: `🕐 Shift — ${shift.discord_username ?? shift.discord_user_id}`,
     description: lines.join("\n"),
-    color: shift.tolerance === "flagged" ? 0xE74C3C
-         : shift.tolerance === "slightly_over" ? 0xF39C12
-         : shift.tolerance === "under" ? 0x3498DB
+    color: shift.tolerance === "flagged"        ? 0xE74C3C
+         : shift.tolerance === "slightly_over"  ? 0xF39C12
+         : shift.tolerance === "under"          ? 0x3498DB
+         : shift.tolerance === "scheduler"      ? 0x9B59B6 // distinct purple for scheduler shifts
          : 0x2ECC71,
     footer: { text: `Shift ID: ${shift.id} · status: ${shift.status}` },
     timestamp: new Date().toISOString(),
@@ -240,9 +255,14 @@ async function processShiftSubmission(interaction: any, opts: any, userId: strin
   const accountsStr = String(opts.accounts ?? "").trim();
   let accounts: string[] = accountsStr ? accountsStr.split(/[,\s]+/).map((a) => a.replace(/^u\//i, "").trim()).filter(Boolean) : [];
 
-  // If they didn't specify accounts, fall back to their poster's full roster.
-  const posterName = DISCORD_TO_POSTER[userId] ?? null;
-  if (accounts.length === 0 && posterName) {
+  // Look up the user's role + poster mapping.
+  const mapping = DISCORD_TO_POSTER[userId];
+  const posterName = mapping?.name ?? null;
+  const role = mapping?.role ?? "poster";
+
+  // If a poster didn't specify accounts, fall back to their full
+  // roster from POSTERS. Schedulers skip the cross-check entirely.
+  if (role === "poster" && accounts.length === 0 && posterName) {
     accounts = POSTERS.find((p) => p.name === posterName)?.accounts ?? [];
   }
 
@@ -250,9 +270,16 @@ async function processShiftSubmission(interaction: any, opts: any, userId: strin
   const proofAttachment = interaction.data?.resolved?.attachments?.[opts.proof];
   const proofUrl: string | null = proofAttachment?.url ?? null;
 
-  // Cross-check Reddit activity.
-  const { minutes: estimatedMin, sessions, postCount } = await crossCheckShift(accounts, startD.getTime(), endD.getTime());
-  const tolerance = classifyTolerance(claimedMin, estimatedMin);
+  // Cross-check Reddit activity — skipped for schedulers.
+  let estimatedMin = 0, sessions = 0, postCount = 0;
+  let tolerance = "scheduler";
+  if (role === "poster") {
+    const cc = await crossCheckShift(accounts, startD.getTime(), endD.getTime());
+    estimatedMin = cc.minutes;
+    sessions     = cc.sessions;
+    postCount    = cc.postCount;
+    tolerance    = classifyTolerance(claimedMin, estimatedMin);
+  }
 
   // Upload the proof to permanent storage (Supabase). Discord CDN
   // links expire so we keep a local copy.
