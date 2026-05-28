@@ -29,6 +29,22 @@ const commands = [
     name: "shifts",
     description: "See your last 14 days of submitted shifts.",
   },
+  {
+    name: "payroll",
+    description: "Manager only — approved hours + pay per VA over the chosen window.",
+    options: [
+      {
+        name: "period",
+        description: "Time window",
+        type: 3, // STRING
+        required: true,
+        choices: [
+          { name: "Last 7 days",  value: "week"  },
+          { name: "Last 30 days", value: "month" },
+        ],
+      },
+    ],
+  },
 ];
 
 const url = `https://discord.com/api/v10/applications/${APP_ID}/commands`;

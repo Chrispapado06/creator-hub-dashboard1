@@ -360,6 +360,53 @@ function replyEmbed(embed: any, components?: any[]): Response {
   }), { headers: { "Content-Type": "application/json" } });
 }
 
+// ── /payroll — manager-only summary per VA ──────────────────────
+// Pulls every approved/adjusted shift in the window, groups by
+// Discord user, and reports the totals + $$ at the global rate.
+async function handlePayroll(interaction: any): Promise<Response> {
+  if (!userIsManager(interaction)) {
+    return replyEphemeral("Manager-only command. Ask CHRIS to run this.");
+  }
+  const opts = Object.fromEntries((interaction.data.options ?? []).map((o: any) => [o.name, o.value]));
+  const periodLabel = opts.period === "month" ? "Last 30 days" : "Last 7 days";
+  const days = opts.period === "month" ? 30 : 7;
+  const since = new Date(Date.now() - days * 24 * 3600_000).toISOString();
+
+  const { data: rows, error } = await supa
+    .from("shifts")
+    .select("discord_user_id, discord_username, approved_minutes, status")
+    .in("status", ["approved", "adjusted"])
+    .gte("start_at", since);
+  if (error) return replyEphemeral(`DB error: ${error.message}`);
+
+  const agg = new Map<string, { name: string; minutes: number; shifts: number }>();
+  for (const r of rows ?? []) {
+    const id = r.discord_user_id;
+    const display = DISCORD_TO_POSTER[id]?.name ?? r.discord_username ?? "Unknown";
+    const cur = agg.get(id) ?? { name: display, minutes: 0, shifts: 0 };
+    cur.minutes += r.approved_minutes ?? 0;
+    cur.shifts += 1;
+    agg.set(id, cur);
+  }
+
+  const sorted = [...agg.values()].sort((a, b) => b.minutes - a.minutes);
+  const lines = sorted.map((v) => {
+    const h = v.minutes / 60;
+    return `**${v.name}** — ${h.toFixed(2)}h × \$${RATE_USD_PER_HOUR.toFixed(2)}/h = ${fmt$(h * RATE_USD_PER_HOUR)}  *(${v.shifts} shift${v.shifts === 1 ? "" : "s"})*`;
+  });
+  const totalH = sorted.reduce((s, v) => s + v.minutes / 60, 0);
+  const total$ = totalH * RATE_USD_PER_HOUR;
+
+  const embed = {
+    title: `💼 Payroll — ${periodLabel}`,
+    description: lines.length ? lines.join("\n") : "*No approved shifts in this window.*",
+    color: 0x2ECC71,
+    footer: { text: `TOTAL: ${totalH.toFixed(2)}h · ${fmt$(total$)} · since ${since.slice(0, 10)} UTC` },
+    timestamp: new Date().toISOString(),
+  };
+  return replyEmbed(embed);
+}
+
 // ── /shifts mine — last 14 days history ─────────────────────────
 async function handleMyShifts(interaction: any): Promise<Response> {
   const userId = interaction.member?.user?.id ?? interaction.user?.id;
@@ -511,8 +558,9 @@ Deno.serve(async (req) => {
   // Type 2 — slash commands
   if (interaction.type === 2) {
     const name = interaction.data?.name;
-    if (name === "shift")  return handleShiftSubmit(interaction);
-    if (name === "shifts") return handleMyShifts(interaction);
+    if (name === "shift")   return handleShiftSubmit(interaction);
+    if (name === "shifts")  return handleMyShifts(interaction);
+    if (name === "payroll") return handlePayroll(interaction);
     return replyEphemeral("Unknown command.");
   }
 
