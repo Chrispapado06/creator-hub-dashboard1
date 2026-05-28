@@ -19,8 +19,8 @@ const commands = [
     name: "shift",
     description: "Submit a completed shift for manager approval.",
     options: [
-      { name: "in",       description: "Clock-in time, UK time (e.g. 19:00 or 7:30pm)",  type: 3, required: true },
-      { name: "out",      description: "Clock-out time, UK time (e.g. 21:30 or 9:30pm)", type: 3, required: true },
+      { name: "in",       description: "Clock-in time, PHT / Philippine time (e.g. 19:00 or 7:30pm)",  type: 3, required: true },
+      { name: "out",      description: "Clock-out time, PHT / Philippine time (e.g. 21:30 or 9:30pm)", type: 3, required: true },
       { name: "proof",    description: "Screenshot of your work (proof of shift)",       type: 11, required: true }, // 11 = ATTACHMENT
       { name: "accounts", description: "Comma-separated Reddit accounts you posted on (optional)", type: 3, required: false },
     ],

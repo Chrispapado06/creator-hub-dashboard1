@@ -144,7 +144,26 @@ function classifyTolerance(claimedMin: number, estimatedMin: number) {
 }
 
 // ── Time-string parsing (accepts 19:00, 7pm, 7:30 PM) ────────────
-function parseTimeStr(s: string, dateRef: Date): Date | null {
+// All clock-in / clock-out times are entered in Philippine time
+// (PHT / Asia/Manila, UTC+8, no DST). We parse the wall time, then
+// anchor it to "today" in PHT and convert to UTC for storage.
+const SHIFT_TZ = "Asia/Manila";
+const SHIFT_TZ_LABEL = "PHT";
+const SHIFT_TZ_OFFSET_HOURS = 8;  // PHT is UTC+8 (no DST switches)
+
+function getTodayInPht(now: Date = new Date()): { y: number; mo: number; d: number } {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: SHIFT_TZ,
+    year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(now);
+  return {
+    y:  parseInt(parts.find((p) => p.type === "year")!.value, 10),
+    mo: parseInt(parts.find((p) => p.type === "month")!.value, 10),
+    d:  parseInt(parts.find((p) => p.type === "day")!.value, 10),
+  };
+}
+
+function parseTimeStr(s: string, _dateRef?: Date): Date | null {
   const trimmed = s.trim().toLowerCase().replace(/\s+/g, "");
   let m = trimmed.match(/^(\d{1,2}):(\d{2})(am|pm)?$/);
   let h = NaN, min = NaN, ampm: string | undefined;
@@ -157,9 +176,20 @@ function parseTimeStr(s: string, dateRef: Date): Date | null {
   if (ampm === "pm" && h < 12) h += 12;
   if (ampm === "am" && h === 12) h = 0;
   if (h < 0 || h > 23 || min < 0 || min > 59) return null;
-  const d = new Date(dateRef);
-  d.setUTCHours(h, min, 0, 0);
-  return d;
+
+  // Today's date in PHT (what's on the poster's wall clock right now).
+  const today = getTodayInPht();
+  // Convert PHT wall time → UTC by subtracting the +8h offset.
+  return new Date(Date.UTC(today.y, today.mo - 1, today.d, h - SHIFT_TZ_OFFSET_HOURS, min, 0));
+}
+
+// Pretty-print a UTC Date as PHT wall clock ("Wed, 28 May 19:00").
+function fmtPht(d: Date): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: SHIFT_TZ,
+    weekday: "short", day: "2-digit", month: "short",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  }).format(d);
 }
 
 // ── Embed builders ───────────────────────────────────────────────
@@ -176,7 +206,7 @@ function shiftEmbed(shift: any) {
   const estH     = (shift.estimated_minutes ?? 0) / 60;
   const isScheduler = shift.tolerance === "scheduler";
   const lines: string[] = [];
-  lines.push(`**Window:** ${new Date(shift.start_at).toUTCString().slice(0, 22)} → ${new Date(shift.end_at).toUTCString().slice(17, 22)}`);
+  lines.push(`**Window:** ${fmtPht(new Date(shift.start_at))} → ${fmtPht(new Date(shift.end_at)).slice(-5)} ${SHIFT_TZ_LABEL}`);
   lines.push(`**Claimed:** ${claimedH.toFixed(2)}h  (${fmt$(claimedH * RATE_USD_PER_HOUR)})`);
   if (shift.accounts?.length) lines.push(`**Accounts:** ${shift.accounts.map((a: string) => `u/${a}`).join(", ")}`);
   lines.push("");
@@ -247,9 +277,9 @@ async function processShiftSubmission(interaction: any, opts: any, userId: strin
   const startD = parseTimeStr(opts.in, today);
   const endD   = parseTimeStr(opts.out, today);
   if (!startD || !endD) {
-    return editInteractionResponse(interaction, "Couldn't parse the time(s). Use 24h format like `19:00` or `7:30pm`.");
+    return editInteractionResponse(interaction, "Couldn't parse the time(s). Use 24h format like `19:00` or `7:30pm`. All times are in **PHT (Philippine time)**.");
   }
-  if (endD < startD) endD.setUTCDate(endD.getUTCDate() + 1); // shift crossed midnight
+  if (endD <= startD) endD = new Date(endD.getTime() + 24 * 3600_000); // overnight shift crossed PHT midnight
 
   const claimedMin = Math.round((endD.getTime() - startD.getTime()) / 60000);
   const accountsStr = String(opts.accounts ?? "").trim();
@@ -420,7 +450,7 @@ async function handleMyShifts(interaction: any): Promise<Response> {
   const lines = (rows ?? []).map((r) => {
     const claimed = (r.claimed_minutes / 60).toFixed(2);
     const approved = r.approved_minutes != null ? `${(r.approved_minutes / 60).toFixed(2)}h` : "—";
-    return `• ${new Date(r.start_at).toUTCString().slice(0, 16)} · claimed ${claimed}h · approved ${approved} · ${r.status}`;
+    return `• ${fmtPht(new Date(r.start_at))} ${SHIFT_TZ_LABEL} · claimed ${claimed}h · approved ${approved} · ${r.status}`;
   });
   return replyEphemeral(lines.length ? lines.join("\n") : "No shifts submitted in the last 14 days.");
 }
