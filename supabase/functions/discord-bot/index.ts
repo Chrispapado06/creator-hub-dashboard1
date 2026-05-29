@@ -307,6 +307,25 @@ function shiftEmbed(shift: any) {
   const estH     = (shift.estimated_minutes ?? 0) / 60;
   const skipCheck = shift.tolerance === "scheduler" || shift.tolerance === "unmapped";
   const lines: string[] = [];
+
+  // Decision banner — surfaces the approve/adjust/reject outcome
+  // at the very top so it's the first thing the manager sees on a
+  // glance, with the dollar amount that's actually being paid.
+  if (shift.status && shift.status !== "pending") {
+    const by = shift.approved_by_username ?? "unknown";
+    const apprH = (shift.approved_minutes ?? 0) / 60;
+    const apprPay = fmt$(apprH * RATE_USD_PER_HOUR);
+    if (shift.status === "approved") {
+      lines.push(`**✅ APPROVED — paid ${apprH.toFixed(2)}h (${apprPay}) by ${by}**`);
+    } else if (shift.status === "adjusted") {
+      lines.push(`**✏️ ADJUSTED to ${apprH.toFixed(2)}h (${apprPay}) by ${by}** *(claimed ${claimedH.toFixed(2)}h)*`);
+    } else if (shift.status === "rejected") {
+      lines.push(`**❌ REJECTED by ${by}**`);
+      if (shift.reject_reason) lines.push(`> ${shift.reject_reason}`);
+    }
+    lines.push("");
+  }
+
   lines.push(`**Window:** ${fmtPht(new Date(shift.start_at))} → ${fmtPht(new Date(shift.end_at)).slice(-5)} ${SHIFT_TZ_LABEL}`);
   lines.push(`**Claimed:** ${claimedH.toFixed(2)}h  (${fmt$(claimedH * RATE_USD_PER_HOUR)})`);
   if (shift.accounts?.length) lines.push(`**Accounts:** ${shift.accounts.map((a: string) => `u/${a}`).join(", ")}`);
@@ -347,7 +366,12 @@ function shiftEmbed(shift: any) {
   return {
     title: `🕐 Shift — ${shift.discord_username ?? shift.discord_user_id}`,
     description: lines.join("\n"),
-    color: shift.tolerance === "flagged"        ? 0xE74C3C
+    // Decided shifts override the tolerance-based color so the
+    // left bar reflects the outcome at a glance.
+    color: shift.status === "approved"          ? 0x2ECC71 // green
+         : shift.status === "adjusted"          ? 0x3498DB // blue
+         : shift.status === "rejected"          ? 0xE74C3C // red
+         : shift.tolerance === "flagged"        ? 0xE74C3C
          : shift.tolerance === "slightly_over"  ? 0xF39C12
          : shift.tolerance === "under"          ? 0x3498DB
          : shift.tolerance === "scheduler"      ? 0x9B59B6 // distinct purple for scheduler shifts
@@ -734,11 +758,12 @@ async function handleButton(interaction: any): Promise<Response> {
   const userName = interaction.member?.user?.username ?? interaction.user?.username ?? "unknown";
 
   if (action === "approve") {
+    const claimed = (await supa.from("shifts").select("claimed_minutes").eq("id", shiftId).single()).data?.claimed_minutes;
     const { data: shift } = await supa
       .from("shifts")
       .update({
         status: "approved",
-        approved_minutes: (await supa.from("shifts").select("claimed_minutes").eq("id", shiftId).single()).data?.claimed_minutes,
+        approved_minutes: claimed,
         approved_by_discord_user_id: userId,
         approved_by_username: userName,
         approved_at: new Date().toISOString(),
@@ -746,10 +771,12 @@ async function handleButton(interaction: any): Promise<Response> {
       .eq("id", shiftId)
       .select()
       .single();
-    return replyEmbed({
-      ...shiftEmbed(shift),
-      footer: { text: `Shift ${shiftId} · approved by ${userName}` },
-    });
+    // type 7 UPDATE_MESSAGE — edits the original message in place
+    // and removes the buttons by sending an empty components array.
+    return new Response(JSON.stringify({
+      type: 7,
+      data: { embeds: [shiftEmbed(shift)], components: [] },
+    }), { headers: { "Content-Type": "application/json" } });
   }
 
   if (action === "adjust") {
@@ -816,7 +843,10 @@ async function handleModal(interaction: any): Promise<Response> {
       .eq("id", shiftId)
       .select()
       .single();
-    return replyEmbed({ ...shiftEmbed(shift), footer: { text: `Shift ${shiftId} · adjusted to ${hours}h by ${userName}` } });
+    return new Response(JSON.stringify({
+      type: 7, // UPDATE_MESSAGE — edits the parent message in place
+      data: { embeds: [shiftEmbed(shift)], components: [] },
+    }), { headers: { "Content-Type": "application/json" } });
   }
 
   if (kind === "reject_modal") {
@@ -832,7 +862,10 @@ async function handleModal(interaction: any): Promise<Response> {
       .eq("id", shiftId)
       .select()
       .single();
-    return replyEmbed({ ...shiftEmbed(shift), footer: { text: `Shift ${shiftId} · rejected by ${userName} — ${values.reason}` } });
+    return new Response(JSON.stringify({
+      type: 7,
+      data: { embeds: [shiftEmbed(shift)], components: [] },
+    }), { headers: { "Content-Type": "application/json" } });
   }
 
   return replyEphemeral("Unknown modal.");
