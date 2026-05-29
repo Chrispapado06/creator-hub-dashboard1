@@ -1,0 +1,28 @@
+name: Reddit RSS poll
+
+# Polls each poster's Reddit submitted feed every 5 minutes and
+# upserts new posts into the `reddit_posts` Supabase table. The
+# Discord shift bot reads from that table because Reddit blocks
+# Supabase Edge Function IPs from fetching directly.
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install --no-package-lock @supabase/supabase-js@2.45.0
+        working-directory: payout-bot
+      - run: node reddit-poll.mjs
+        working-directory: payout-bot
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

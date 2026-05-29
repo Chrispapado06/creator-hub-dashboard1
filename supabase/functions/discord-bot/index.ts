@@ -28,6 +28,12 @@ const MANAGER_ROLE_ID    = Deno.env.get("DISCORD_MANAGER_ROLE_ID") || "";
 const MANAGER_CHANNEL_ID = Deno.env.get("DISCORD_MANAGER_CHANNEL_ID") || "";
 const SUPABASE_URL       = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE   = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const AIRTABLE_PAT       = Deno.env.get("AIRTABLE_PAT") || "";
+const AIRTABLE_BASE_ID   = Deno.env.get("AIRTABLE_BASE_ID") || "";
+const AIRTABLE_WEBHOOK_ID = Deno.env.get("AIRTABLE_WEBHOOK_ID") || "";
+// John's Airtable user id, looked up from the base collaborators
+// list. Hard-coded because there's only one scheduler today.
+const JOHN_AIRTABLE_USER_ID = "usrrMlmwpEehMtPgZ";
 
 const supa = createClient(SUPABASE_URL, SUPABASE_SERVICE, {
   auth: { persistSession: false, autoRefreshToken: false },
@@ -43,13 +49,14 @@ const POSTERS = [
 // discord_user_id → role mapping. Posters get a Reddit cross-check
 // based on their accounts; schedulers skip the cross-check since
 // their work (captions/media prep) doesn't surface as Reddit posts.
-type RoleMap = { name: string; role: "poster" | "scheduler" };
+type RoleMap = { name: string; role: "poster" | "scheduler" | "manager" };
 const DISCORD_TO_POSTER: Record<string, RoleMap> = {
   "1444680433806606552": { name: "Cha",    role: "poster" },
   "1450503999513034816": { name: "Reylee", role: "poster" },
   "1506894077562585179": { name: "Dabi",   role: "poster" }, // aka "Dannah" in payroll spreadsheet
   "1145243881013792788": { name: "Xy",     role: "poster" },
   "748084934689947651":  { name: "John",   role: "scheduler" }, // no Reddit posts — caption/media prep
+  "1128210622891438161": { name: "Chris",  role: "manager"   }, // owner — test submissions skip cross-check
 };
 
 const RATE_USD_PER_HOUR = 3.00;
@@ -79,28 +86,26 @@ const UA = "Bernard-UNCVRD-bot/1.0 (by /u/Chrispapado06)";
 const SESSION_GAP_MIN = 60;    // posts >60 min apart = different sessions
 const SESSION_BUFFER_MIN = 15; // padding before first + after last post
 
+// Reddit blocks Supabase Edge Function IPs from fetching either
+// the JSON or RSS endpoints (HTTP 403). So instead of hitting
+// Reddit live, we read from the `reddit_posts` table which a
+// GitHub Actions cron polls every 5 minutes (GH's IPs are not
+// blocked). The bot's view can be up to ~5 min stale.
 async function fetchPostsInWindow(account: string, fromMs: number, toMs: number) {
-  const out: any[] = [];
-  let after: string | null = null;
-  for (let i = 0; i < 6; i++) {
-    const qs = new URLSearchParams({ limit: "100" });
-    if (after) qs.set("after", after);
-    const r = await fetch(`https://www.reddit.com/user/${account}/submitted.json?${qs}`, { headers: { "User-Agent": UA } });
-    if (!r.ok) return out;
-    const j = await r.json();
-    const children: any[] = j?.data?.children ?? [];
-    if (children.length === 0) break;
-    for (const c of children) {
-      const ts = Number(c.data.created_utc) * 1000;
-      if (ts >= fromMs && ts <= toMs) out.push(c.data);
-    }
-    const oldest = children[children.length - 1].data;
-    if (Number(oldest.created_utc) * 1000 < fromMs) break;
-    after = j?.data?.after;
-    if (!after) break;
-    await new Promise((r) => setTimeout(r, 250));
+  const fromISO = new Date(fromMs).toISOString();
+  const toISO   = new Date(toMs).toISOString();
+  const { data, error } = await supa
+    .from("reddit_posts")
+    .select("created_at")
+    .eq("account", account)
+    .gte("created_at", fromISO)
+    .lte("created_at", toISO);
+  if (error) {
+    console.warn(`[reddit] DB error u/${account}: ${error.message}`);
+    return [];
   }
-  return out;
+  // Shape that the session estimator expects.
+  return (data ?? []).map((r) => ({ created_utc: new Date(r.created_at).getTime() / 1000 }));
 }
 
 // Session-based estimate: groups posts into sessions where the gap
@@ -132,6 +137,99 @@ async function crossCheckShift(accounts: string[], fromMs: number, toMs: number)
   }
   const { minutes, sessions } = estimateSessionMinutes(allPosts);
   return { minutes, sessions, postCount: allPosts.length };
+}
+
+// ── Airtable cross-check (for John, the scheduler) ───────────────
+// John's work doesn't surface as Reddit posts — he edits caption
+// rows inside the UNCVRD Reddit Table base. We subscribed to the
+// base's webhooks API on setup; each cell-change emits a payload
+// with the user id of whoever changed it. On every /shift we sync
+// new payloads into Supabase (advancing the cursor), then query
+// the rows where user_id = John's id in the shift window.
+async function syncAirtablePayloads(): Promise<void> {
+  if (!AIRTABLE_PAT || !AIRTABLE_BASE_ID || !AIRTABLE_WEBHOOK_ID) return;
+
+  // Get the last-known cursor, or start at 1 (the very beginning).
+  const { data: stateRow } = await supa
+    .from("airtable_webhook_state")
+    .select("cursor")
+    .eq("webhook_id", AIRTABLE_WEBHOOK_ID)
+    .maybeSingle();
+  let cursor: number = stateRow?.cursor ?? 1;
+
+  // Walk the payloads endpoint until mightHaveMore=false.
+  for (let i = 0; i < 50; i++) {
+    const url = `https://api.airtable.com/v0/bases/${AIRTABLE_BASE_ID}/webhooks/${AIRTABLE_WEBHOOK_ID}/payloads?cursor=${cursor}`;
+    const r = await fetch(url, { headers: { "Authorization": `Bearer ${AIRTABLE_PAT}` } });
+    if (!r.ok) {
+      console.warn(`[airtable] payloads HTTP ${r.status}`);
+      return;
+    }
+    const j = await r.json();
+    const payloads: any[] = j?.payloads ?? [];
+
+    // Flatten each payload into one row per (user, table, record, kind).
+    const rows: any[] = [];
+    for (const p of payloads) {
+      const ts = p.timestamp;
+      const userId = p?.actionMetadata?.sourceMetadata?.user?.id;
+      if (!ts || !userId) continue;
+      const tables = p.changedTablesById ?? {};
+      for (const [tableId, tbl] of Object.entries<any>(tables)) {
+        const updated = tbl.changedRecordsById ?? {};
+        const created = tbl.createdRecordsById ?? {};
+        for (const recordId of Object.keys(updated)) {
+          rows.push({ user_id: userId, ts, table_id: tableId, record_id: recordId, change_kind: "updated" });
+        }
+        for (const recordId of Object.keys(created)) {
+          rows.push({ user_id: userId, ts, table_id: tableId, record_id: recordId, change_kind: "created" });
+        }
+      }
+    }
+    if (rows.length > 0) {
+      // upsert with onConflict on the unique tuple — safe to re-run.
+      await supa.from("airtable_activity").upsert(rows, {
+        onConflict: "user_id,ts,table_id,record_id,change_kind",
+        ignoreDuplicates: true,
+      });
+    }
+
+    cursor = j?.cursor ?? cursor;
+    if (!j?.mightHaveMore) break;
+  }
+
+  // Save cursor for next time.
+  await supa
+    .from("airtable_webhook_state")
+    .upsert({ webhook_id: AIRTABLE_WEBHOOK_ID, cursor, updated_at: new Date().toISOString() }, {
+      onConflict: "webhook_id",
+    });
+
+  // Airtable webhooks expire after 7 days unless refreshed; this
+  // call (free, idempotent) pushes the expiry out another 7 days.
+  try {
+    await fetch(`https://api.airtable.com/v0/bases/${AIRTABLE_BASE_ID}/webhooks/${AIRTABLE_WEBHOOK_ID}/refresh`, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${AIRTABLE_PAT}` },
+    });
+  } catch (e) { console.warn("[airtable] refresh failed", e); }
+}
+
+async function crossCheckAirtable(userId: string, fromMs: number, toMs: number) {
+  await syncAirtablePayloads();
+  const fromISO = new Date(fromMs).toISOString();
+  const toISO   = new Date(toMs).toISOString();
+  const { data: rows } = await supa
+    .from("airtable_activity")
+    .select("ts")
+    .eq("user_id", userId)
+    .gte("ts", fromISO)
+    .lte("ts", toISO);
+  // Reuse the same session estimator the Reddit path uses — feed it
+  // a list of pseudo-posts with the right created_utc field.
+  const pseudoPosts = (rows ?? []).map((r) => ({ created_utc: new Date(r.ts).getTime() / 1000 }));
+  const { minutes, sessions } = estimateSessionMinutes(pseudoPosts);
+  return { minutes, sessions, eventCount: pseudoPosts.length };
 }
 
 function classifyTolerance(claimedMin: number, estimatedMin: number) {
@@ -199,29 +297,49 @@ const TOL_EMOJI: Record<string, string> = {
   slightly_over: "⚠️",
   flagged: "🚩",
   under: "ℹ️",
+  scheduler: "🛠️",
+  unmapped: "ℹ️",
+  manual: "📸",
 };
 
 function shiftEmbed(shift: any) {
   const claimedH = shift.claimed_minutes / 60;
   const estH     = (shift.estimated_minutes ?? 0) / 60;
-  const isScheduler = shift.tolerance === "scheduler";
+  const skipCheck = shift.tolerance === "scheduler" || shift.tolerance === "unmapped";
   const lines: string[] = [];
   lines.push(`**Window:** ${fmtPht(new Date(shift.start_at))} → ${fmtPht(new Date(shift.end_at)).slice(-5)} ${SHIFT_TZ_LABEL}`);
   lines.push(`**Claimed:** ${claimedH.toFixed(2)}h  (${fmt$(claimedH * RATE_USD_PER_HOUR)})`);
   if (shift.accounts?.length) lines.push(`**Accounts:** ${shift.accounts.map((a: string) => `u/${a}`).join(", ")}`);
   lines.push("");
-  if (isScheduler) {
-    lines.push(`**Cross-check:** 🛠️ Scheduler role — no Reddit posts to verify against.`);
+  if (shift.tolerance === "scheduler") {
+    // Legacy fallback — schedulers are now Airtable-cross-checked
+    // and won't land here unless AIRTABLE_PAT is missing.
+    lines.push(`**Cross-check:** 🛠️ Scheduler role — Airtable check unavailable.`);
     lines.push(`Manager judges from the attached proof of work.`);
+  } else if (shift.tolerance === "manual") {
+    lines.push(`**Cross-check:** 📸 Manager judges from the attached proof of work.`);
+  } else if (shift.tolerance === "manager") {
+    lines.push(`**Cross-check:** 👔 Manager test submission — cross-check skipped.`);
+  } else if (shift.tolerance === "unmapped") {
+    lines.push(`**Cross-check:** ℹ️ No Reddit accounts on file for this Discord user.`);
+    lines.push(`Resubmit with \`accounts:handle1,handle2\` to enable the Reddit cross-check,`);
+    lines.push(`or the manager can approve based on the attached proof.`);
   } else {
-    lines.push(`**Cross-check (Reddit, last ${claimedH.toFixed(1)}h):**`);
-    lines.push(`  ${shift.reddit_post_count ?? 0} posts in ${shift.reddit_session_count ?? 0} session(s)`);
+    // Pick the label/units based on the user's role: schedulers
+    // (John) are checked against Airtable edits, posters against
+    // Reddit posts. Same numeric fields underneath.
+    const role = DISCORD_TO_POSTER[shift.discord_user_id]?.role ?? "poster";
+    const isScheduler = role === "scheduler";
+    const sourceLabel = isScheduler ? "Airtable" : "Reddit";
+    const unitLabel   = isScheduler ? "edits" : "posts";
+    lines.push(`**Cross-check (${sourceLabel}, last ${claimedH.toFixed(1)}h):**`);
+    lines.push(`  ${shift.reddit_post_count ?? 0} ${unitLabel} in ${shift.reddit_session_count ?? 0} session(s)`);
     lines.push(`  Estimated active time: **${estH.toFixed(2)}h**`);
     lines.push(`  ${TOL_EMOJI[shift.tolerance] ?? "❓"} ${
       shift.tolerance === "within"        ? "Within tolerance — likely accurate"
       : shift.tolerance === "slightly_over"? "Slightly above estimate (20–50%)"
-      : shift.tolerance === "flagged"      ? "Significant gap (>50% over) — check proof"
-      : shift.tolerance === "under"        ? "Claim is BELOW the Reddit-observed time"
+      : shift.tolerance === "flagged"      ? `Significant gap (>50% over) — check proof`
+      : shift.tolerance === "under"        ? `Claim is BELOW the ${sourceLabel}-observed time`
       : "Estimate unavailable"
     }`);
   }
@@ -233,6 +351,9 @@ function shiftEmbed(shift: any) {
          : shift.tolerance === "slightly_over"  ? 0xF39C12
          : shift.tolerance === "under"          ? 0x3498DB
          : shift.tolerance === "scheduler"      ? 0x9B59B6 // distinct purple for scheduler shifts
+         : shift.tolerance === "manager"        ? 0x607D8B // slate — owner/test submission
+         : shift.tolerance === "unmapped"       ? 0x95A5A6 // grey — manager decides from proof
+         : shift.tolerance === "manual"         ? 0x95A5A6 // grey — poster, judged from proof
          : 0x2ECC71,
     footer: { text: `Shift ID: ${shift.id} · status: ${shift.status}` },
     timestamp: new Date().toISOString(),
@@ -274,12 +395,27 @@ async function handleShiftSubmit(interaction: any): Promise<Response> {
 
 async function processShiftSubmission(interaction: any, opts: any, userId: string, userName: string) {
   const today = new Date();
-  const startD = parseTimeStr(opts.in, today);
-  const endD   = parseTimeStr(opts.out, today);
+  let startD = parseTimeStr(opts.in, today);
+  let endD   = parseTimeStr(opts.out, today);
   if (!startD || !endD) {
     return editInteractionResponse(interaction, "Couldn't parse the time(s). Use 24h format like `19:00` or `7:30pm`. All times are in **PHT (Philippine time)**.");
   }
-  if (endD <= startD) endD = new Date(endD.getTime() + 24 * 3600_000); // overnight shift crossed PHT midnight
+  // Handle overnight shifts FIRST — if `out` time < `in` time the
+  // shift crossed PHT midnight, so bump `out` by 24h.
+  if (endD <= startD) endD = new Date(endD.getTime() + 24 * 3600_000);
+
+  // Then: if the resulting window is more than 1h in the future
+  // (PHT), the VA almost certainly meant yesterday's shift — e.g.
+  // they submit at 02:42 AM for a 19:00 → 21:30 shift that ended
+  // a few hours ago, or at 7:33 PM UK for a 17:30 → 00:30 PHT
+  // shift that's still hours away on the PHT calendar. Roll both
+  // ends back 24h so the cross-check covers the actual work.
+  const nowMs = Date.now();
+  const oneHourMs = 60 * 60 * 1000;
+  if (endD.getTime() > nowMs + oneHourMs) {
+    startD = new Date(startD.getTime() - 24 * 3600_000);
+    endD   = new Date(endD.getTime()   - 24 * 3600_000);
+  }
 
   const claimedMin = Math.round((endD.getTime() - startD.getTime()) / 60000);
   const accountsStr = String(opts.accounts ?? "").trim();
@@ -291,7 +427,7 @@ async function processShiftSubmission(interaction: any, opts: any, userId: strin
   const role = mapping?.role ?? "poster";
 
   // If a poster didn't specify accounts, fall back to their full
-  // roster from POSTERS. Schedulers skip the cross-check entirely.
+  // roster from POSTERS. Schedulers/managers skip the cross-check.
   if (role === "poster" && accounts.length === 0 && posterName) {
     accounts = POSTERS.find((p) => p.name === posterName)?.accounts ?? [];
   }
@@ -300,10 +436,23 @@ async function processShiftSubmission(interaction: any, opts: any, userId: strin
   const proofAttachment = interaction.data?.resolved?.attachments?.[opts.proof];
   const proofUrl: string | null = proofAttachment?.url ?? null;
 
-  // Cross-check Reddit activity — skipped for schedulers.
+  // Cross-check — schedulers (John) → Airtable edits, posters →
+  // Reddit posts via the RSS feed. Managers skip the check; posters
+  // we can't map to any accounts also skip ("unmapped").
   let estimatedMin = 0, sessions = 0, postCount = 0;
-  let tolerance = "scheduler";
-  if (role === "poster") {
+  let tolerance: string;
+  if (role === "manager") tolerance = "manager";
+  else if (role === "scheduler") {
+    // John's the only one mapped right now; the Airtable user id
+    // is hard-coded since there's just one scheduler.
+    const cc = await crossCheckAirtable(JOHN_AIRTABLE_USER_ID, startD.getTime(), endD.getTime());
+    estimatedMin = cc.minutes;
+    sessions     = cc.sessions;
+    postCount    = cc.eventCount;
+    tolerance    = classifyTolerance(claimedMin, estimatedMin);
+  }
+  else if (accounts.length === 0) tolerance = "unmapped";
+  else {
     const cc = await crossCheckShift(accounts, startD.getTime(), endD.getTime());
     estimatedMin = cc.minutes;
     sessions     = cc.sessions;
@@ -435,6 +584,120 @@ async function handlePayroll(interaction: any): Promise<Response> {
     timestamp: new Date().toISOString(),
   };
   return replyEmbed(embed);
+}
+
+// ── /activity — Reddit-derived hours per poster (no /shift needed) ──
+// On-demand audit so managers can see what a poster actually did on
+// Reddit, independent of whether the poster filed a /shift. Useful
+// for spotting under-claimers ("worked but didn't submit"), over-
+// claimers, and no-shows. Window is either "today" (00:00 PHT → now)
+// or "week" (rolling last 7 days).
+async function handleActivity(interaction: any): Promise<Response> {
+  if (!userIsManager(interaction)) {
+    return replyEphemeral("Manager-only command.");
+  }
+  const opts = Object.fromEntries((interaction.data.options ?? []).map((o: any) => [o.name, o.value]));
+  const target = String(opts.poster ?? "all");
+  const period = String(opts.period ?? "today");
+
+  // Defer the response — Reddit fetches take several seconds per
+  // poster (multiple accounts each, ~250ms per page request).
+  queueMicrotask(() => runActivityAudit(interaction, target, period).catch(console.error));
+  return new Response(JSON.stringify({ type: 5, data: { flags: 1 << 6 } }), {
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function activityWindow(period: string): { fromMs: number; toMs: number; label: string } {
+  const now = Date.now();
+  if (period === "week") {
+    return { fromMs: now - 7 * 24 * 3600_000, toMs: now, label: "Last 7 days" };
+  }
+  // "today" — 00:00 PHT (today's date in Manila) → now.
+  const today = getTodayInPht();
+  const phtMidnightUtcMs = Date.UTC(today.y, today.mo - 1, today.d, 0 - SHIFT_TZ_OFFSET_HOURS, 0, 0);
+  return { fromMs: phtMidnightUtcMs, toMs: now, label: `Today (since 00:00 ${SHIFT_TZ_LABEL})` };
+}
+
+async function runActivityAudit(interaction: any, target: string, period: string) {
+  const { fromMs, toMs, label } = activityWindow(period);
+
+  // Figure out which VAs to audit. "all" = every poster + John;
+  // "John" alone = just John (Airtable); else = one poster (Reddit).
+  type Auditee =
+    | { name: string; kind: "reddit"; accounts: string[] }
+    | { name: string; kind: "airtable"; airtableUserId: string };
+  let targets: Auditee[];
+  if (target === "all") {
+    targets = [
+      ...POSTERS.map((p) => ({ name: p.name, kind: "reddit" as const, accounts: p.accounts })),
+      { name: "John", kind: "airtable" as const, airtableUserId: JOHN_AIRTABLE_USER_ID },
+    ];
+  } else if (target === "John") {
+    targets = [{ name: "John", kind: "airtable", airtableUserId: JOHN_AIRTABLE_USER_ID }];
+  } else {
+    const p = POSTERS.find((p) => p.name === target);
+    if (!p) return editInteractionResponse(interaction, `Unknown VA "${target}".`);
+    targets = [{ name: p.name, kind: "reddit", accounts: p.accounts }];
+  }
+
+  const rows: Array<{ name: string; kind: "reddit" | "airtable"; posts: number; sessions: number; minutes: number; accounts: string[] }> = [];
+  for (const t of targets) {
+    if (t.kind === "airtable") {
+      const cc = await crossCheckAirtable(t.airtableUserId, fromMs, toMs);
+      rows.push({ name: t.name, kind: "airtable", posts: cc.eventCount, sessions: cc.sessions, minutes: cc.minutes, accounts: [] });
+    } else {
+      const cc = await crossCheckShift(t.accounts, fromMs, toMs);
+      rows.push({ name: t.name, kind: "reddit", posts: cc.postCount, sessions: cc.sessions, minutes: cc.minutes, accounts: t.accounts });
+    }
+  }
+
+  // Also pull what each poster actually claimed in the same window
+  // so the manager sees claimed vs Reddit-derived side-by-side.
+  const { data: shiftRows } = await supa
+    .from("shifts")
+    .select("poster_name, claimed_minutes, approved_minutes, status")
+    .in("status", ["pending", "approved", "adjusted"])
+    .gte("start_at", new Date(fromMs).toISOString())
+    .lte("start_at", new Date(toMs).toISOString());
+  const claimedByPoster = new Map<string, number>();
+  for (const r of shiftRows ?? []) {
+    if (!r.poster_name) continue;
+    const mins = r.approved_minutes ?? r.claimed_minutes ?? 0;
+    claimedByPoster.set(r.poster_name, (claimedByPoster.get(r.poster_name) ?? 0) + mins);
+  }
+
+  rows.sort((a, b) => b.minutes - a.minutes);
+  const lines = rows.map((r) => {
+    const h = r.minutes / 60;
+    const claimedMin = claimedByPoster.get(r.name) ?? 0;
+    const claimedH = claimedMin / 60;
+    const sourceLabel = r.kind === "airtable" ? "Airtable" : "Reddit";
+    const unitLabel   = r.kind === "airtable" ? "edits" : "posts";
+    let verdict = "";
+    if (r.posts === 0 && claimedMin === 0) verdict = "💤 nothing this window";
+    else if (claimedMin === 0)             verdict = `🚩 worked, never filed a shift`;
+    else if (claimedH > h * 1.5)           verdict = `⚠️ claimed > 1.5× ${sourceLabel} estimate`;
+    else if (claimedH < h * 0.7)           verdict = `ℹ️ claimed below ${sourceLabel} estimate`;
+    else                                   verdict = "✅ in line";
+    const claimedTxt = claimedMin > 0 ? `claimed ${claimedH.toFixed(2)}h (${fmt$(claimedH * RATE_USD_PER_HOUR)})` : "no /shift filed";
+    return `**${r.name}** — ${sourceLabel} ${h.toFixed(2)}h · ${r.posts} ${unitLabel} · ${r.sessions} session(s)\n   ${claimedTxt} · ${verdict}`;
+  });
+
+  const totalH = rows.reduce((s, r) => s + r.minutes / 60, 0);
+  const embed = {
+    title: `📊 Activity audit — ${target === "all" ? "all VAs" : target}`,
+    description: lines.length ? lines.join("\n\n") : "*No VAs matched.*",
+    color: 0x3498DB,
+    footer: { text: `Window: ${label} · Σ ${totalH.toFixed(2)}h ≈ ${fmt$(totalH * RATE_USD_PER_HOUR)} at $${RATE_USD_PER_HOUR}/h` },
+    timestamp: new Date().toISOString(),
+  };
+  const url = `https://discord.com/api/v10/webhooks/${DISCORD_APP_ID}/${interaction.token}/messages/@original`;
+  await fetch(url, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ embeds: [embed] }),
+  });
 }
 
 // ── /shifts mine — last 14 days history ─────────────────────────
@@ -588,9 +851,10 @@ Deno.serve(async (req) => {
   // Type 2 — slash commands
   if (interaction.type === 2) {
     const name = interaction.data?.name;
-    if (name === "shift")   return handleShiftSubmit(interaction);
-    if (name === "shifts")  return handleMyShifts(interaction);
-    if (name === "payroll") return handlePayroll(interaction);
+    if (name === "shift")    return handleShiftSubmit(interaction);
+    if (name === "shifts")   return handleMyShifts(interaction);
+    if (name === "payroll")  return handlePayroll(interaction);
+    if (name === "activity") return handleActivity(interaction);
     return replyEphemeral("Unknown command.");
   }
 
