@@ -45,6 +45,36 @@ const commands = [
       },
     ],
   },
+  {
+    name: "activity",
+    description: "Manager only — Reddit-derived hours per poster (no /shift needed).",
+    options: [
+      {
+        name: "poster",
+        description: "Which VA to audit",
+        type: 3, // STRING
+        required: true,
+        choices: [
+          { name: "All VAs",             value: "all"    },
+          { name: "Cha (Reddit)",        value: "Cha"    },
+          { name: "Reylee (Reddit)",     value: "Reylee" },
+          { name: "Dabi (Reddit)",       value: "Dabi"   },
+          { name: "Xy (Reddit)",         value: "Xy"     },
+          { name: "John (Airtable)",     value: "John"   },
+        ],
+      },
+      {
+        name: "period",
+        description: "Time window",
+        type: 3, // STRING
+        required: true,
+        choices: [
+          { name: "Today (PHT)", value: "today" },
+          { name: "Last 7 days", value: "week"  },
+        ],
+      },
+    ],
+  },
 ];
 
 const url = `https://discord.com/api/v10/applications/${APP_ID}/commands`;
