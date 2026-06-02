@@ -724,6 +724,101 @@ async function runActivityAudit(interaction: any, target: string, period: string
   });
 }
 
+// ── /check-subreddits — flag new vs already-in-list ─────────────
+// When the agency picks up new subreddits to push to, John has to
+// hand-check whether they're already in the 17 Airtable tables.
+// This command pulls the master list, diffs against the input, and
+// shows NEW vs EXISTS so he can skip the manual scan entirely.
+async function handleCheckSubreddits(interaction: any): Promise<Response> {
+  const opts = Object.fromEntries((interaction.data.options ?? []).map((o: any) => [o.name, o.value]));
+  const rawInput = String(opts.subs ?? "");
+  if (!rawInput.trim()) {
+    return replyEphemeral("Pass a list, e.g. `/check-subreddits subs:r/sub1, r/sub2`");
+  }
+  // Acknowledge first — Airtable schema + record fetches take a
+  // few seconds and we need to respond within 3.
+  queueMicrotask(() => runCheckSubreddits(interaction, rawInput).catch(console.error));
+  return new Response(JSON.stringify({ type: 5, data: { flags: 0 } }), {
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function normalizeSub(s: string): string {
+  return s.trim().toLowerCase().replace(/^\/?r\//, "").replace(/\/$/, "");
+}
+
+async function runCheckSubreddits(interaction: any, rawInput: string) {
+  if (!AIRTABLE_PAT || !AIRTABLE_BASE_ID) {
+    return editInteractionResponse(interaction, "Airtable not configured.");
+  }
+  const inputs = rawInput
+    .split(/[,\s]+/)
+    .map(normalizeSub)
+    .filter(Boolean);
+  if (inputs.length === 0) {
+    return editInteractionResponse(interaction, "No subreddits parsed from input.");
+  }
+
+  // Pull the master list: every table → fetch every record's Subreddit field.
+  const tablesRes = await fetch(`https://api.airtable.com/v0/meta/bases/${AIRTABLE_BASE_ID}/tables`, {
+    headers: { "Authorization": `Bearer ${AIRTABLE_PAT}` },
+  });
+  if (!tablesRes.ok) {
+    return editInteractionResponse(interaction, `Airtable schema fetch failed (HTTP ${tablesRes.status}).`);
+  }
+  const tablesJson = await tablesRes.json();
+  const tables = tablesJson?.tables ?? [];
+
+  // sub → [table names that have it]
+  const subToTables = new Map<string, string[]>();
+  for (const t of tables) {
+    let offset = "";
+    do {
+      const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${t.id}?pageSize=100&fields[]=Subreddit${offset ? "&offset=" + offset : ""}`;
+      const r = await fetch(url, { headers: { "Authorization": `Bearer ${AIRTABLE_PAT}` } });
+      if (!r.ok) break;
+      const j = await r.json();
+      for (const rec of j.records ?? []) {
+        const sub = normalizeSub(String(rec.fields?.Subreddit ?? ""));
+        if (!sub) continue;
+        if (!subToTables.has(sub)) subToTables.set(sub, []);
+        const arr = subToTables.get(sub)!;
+        if (!arr.includes(t.name)) arr.push(t.name);
+      }
+      offset = j.offset || "";
+    } while (offset);
+  }
+
+  const lines: string[] = [];
+  let newCount = 0, existsCount = 0;
+  for (const sub of inputs) {
+    const where = subToTables.get(sub);
+    if (where && where.length > 0) {
+      existsCount++;
+      // Trim the table names so the line stays readable (drop the
+      // " | <creator name>" suffix on each).
+      const short = where.map((n) => n.split("|")[0].trim()).join(", ");
+      lines.push(`❌ **r/${sub}** — already in: ${short}`);
+    } else {
+      newCount++;
+      lines.push(`✅ **r/${sub}** — NEW (safe to add)`);
+    }
+  }
+  const embed = {
+    title: `🔎 Subreddit check — ${inputs.length} input`,
+    description: lines.join("\n"),
+    color: existsCount === 0 ? 0x2ECC71 : (newCount === 0 ? 0xE74C3C : 0xF39C12),
+    footer: { text: `${newCount} new · ${existsCount} already exists · checked against ${subToTables.size} known subs` },
+    timestamp: new Date().toISOString(),
+  };
+  const url = `https://discord.com/api/v10/webhooks/${DISCORD_APP_ID}/${interaction.token}/messages/@original`;
+  await fetch(url, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ embeds: [embed] }),
+  });
+}
+
 // ── /shifts mine — last 14 days history ─────────────────────────
 async function handleMyShifts(interaction: any): Promise<Response> {
   const userId = interaction.member?.user?.id ?? interaction.user?.id;
@@ -884,10 +979,11 @@ Deno.serve(async (req) => {
   // Type 2 — slash commands
   if (interaction.type === 2) {
     const name = interaction.data?.name;
-    if (name === "shift")    return handleShiftSubmit(interaction);
-    if (name === "shifts")   return handleMyShifts(interaction);
-    if (name === "payroll")  return handlePayroll(interaction);
-    if (name === "activity") return handleActivity(interaction);
+    if (name === "shift")            return handleShiftSubmit(interaction);
+    if (name === "shifts")           return handleMyShifts(interaction);
+    if (name === "payroll")          return handlePayroll(interaction);
+    if (name === "activity")         return handleActivity(interaction);
+    if (name === "check-subreddits") return handleCheckSubreddits(interaction);
     return replyEphemeral("Unknown command.");
   }
 
