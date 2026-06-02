@@ -728,16 +728,23 @@ async function runActivityAudit(interaction: any, target: string, period: string
 // When the agency picks up new subreddits to push to, John has to
 // hand-check whether they're already in the 17 Airtable tables.
 // This command pulls the master list, diffs against the input, and
-// shows NEW vs EXISTS so he can skip the manual scan entirely.
+// classifies each input sub three ways:
+//   🔴 DUPLICATE for THIS creator (already in one of their accounts) — don't add
+//   🟡 USED BY ANOTHER creator (different girl posts there) — info only
+//   🟢 NEW                                                  — safe to add
 async function handleCheckSubreddits(interaction: any): Promise<Response> {
   const opts = Object.fromEntries((interaction.data.options ?? []).map((o: any) => [o.name, o.value]));
+  const creator = String(opts.creator ?? "").trim();
   const rawInput = String(opts.subs ?? "");
+  if (!creator) {
+    return replyEphemeral("Pick a creator from the dropdown.");
+  }
   if (!rawInput.trim()) {
-    return replyEphemeral("Pass a list, e.g. `/check-subreddits subs:r/sub1, r/sub2`");
+    return replyEphemeral("Pass a list, e.g. `creator:Marissa subs:r/sub1, r/sub2`");
   }
   // Acknowledge first — Airtable schema + record fetches take a
   // few seconds and we need to respond within 3.
-  queueMicrotask(() => runCheckSubreddits(interaction, rawInput).catch(console.error));
+  queueMicrotask(() => runCheckSubreddits(interaction, creator, rawInput).catch(console.error));
   return new Response(JSON.stringify({ type: 5, data: { flags: 0 } }), {
     headers: { "Content-Type": "application/json" },
   });
@@ -747,7 +754,21 @@ function normalizeSub(s: string): string {
   return s.trim().toLowerCase().replace(/^\/?r\//, "").replace(/\/$/, "");
 }
 
-async function runCheckSubreddits(interaction: any, rawInput: string) {
+// Match the chosen creator name against table names. Table names
+// look like "blondejuliaaa | Marrisa #1" — we split on `|` and look
+// for the creator name in the right-hand side, case-insensitively,
+// also tolerating the "Marrisa"/"Marissa" typo and "Tess TS" → "Tess".
+function tableMatchesCreator(tableName: string, creator: string): boolean {
+  const right = (tableName.split("|")[1] ?? "").trim().toLowerCase();
+  const needle = creator.toLowerCase().replace(/\s+/g, " ");
+  // Tolerate the Marrisa/Marissa typo and Tess vs Tess TS.
+  const variants = [needle];
+  if (needle === "marissa") variants.push("marrisa");
+  if (needle === "tess")    variants.push("tess ts");
+  return variants.some((v) => right.startsWith(v));
+}
+
+async function runCheckSubreddits(interaction: any, creator: string, rawInput: string) {
   if (!AIRTABLE_PAT || !AIRTABLE_BASE_ID) {
     return editInteractionResponse(interaction, "Airtable not configured.");
   }
@@ -768,6 +789,11 @@ async function runCheckSubreddits(interaction: any, rawInput: string) {
   }
   const tablesJson = await tablesRes.json();
   const tables = tablesJson?.tables ?? [];
+
+  const thisCreatorTables = new Set(tables.filter((t: any) => tableMatchesCreator(t.name, creator)).map((t: any) => t.name));
+  if (thisCreatorTables.size === 0) {
+    return editInteractionResponse(interaction, `No Airtable tables matched creator "${creator}". (Tables tried: ${tables.map((t: any) => t.name).join(", ")})`);
+  }
 
   // sub → [table names that have it]
   const subToTables = new Map<string, string[]>();
@@ -790,25 +816,32 @@ async function runCheckSubreddits(interaction: any, rawInput: string) {
   }
 
   const lines: string[] = [];
-  let newCount = 0, existsCount = 0;
+  let newCount = 0, dupOwnCount = 0, dupOtherCount = 0;
   for (const sub of inputs) {
-    const where = subToTables.get(sub);
-    if (where && where.length > 0) {
-      existsCount++;
-      // Trim the table names so the line stays readable (drop the
-      // " | <creator name>" suffix on each).
-      const short = where.map((n) => n.split("|")[0].trim()).join(", ");
-      lines.push(`❌ **r/${sub}** — already in: ${short}`);
+    const where = subToTables.get(sub) ?? [];
+    const ownHits   = where.filter((n) => thisCreatorTables.has(n));
+    const otherHits = where.filter((n) => !thisCreatorTables.has(n));
+    if (ownHits.length > 0) {
+      dupOwnCount++;
+      const short = ownHits.map((n) => n.split("|").map((s) => s.trim()).reverse().join(" / ")).join(", ");
+      const otherTxt = otherHits.length > 0
+        ? `  *(also used by ${otherHits.length} other creator account${otherHits.length === 1 ? "" : "s"})*` : "";
+      lines.push(`🔴 **r/${sub}** — DUPLICATE in ${creator}'s own list: ${short}${otherTxt}`);
+    } else if (otherHits.length > 0) {
+      dupOtherCount++;
+      const short = otherHits.map((n) => n.split("|")[1]?.trim() ?? n).join(", ");
+      lines.push(`🟡 **r/${sub}** — used by ${short} *(different girl, still OK to add to ${creator})*`);
     } else {
       newCount++;
-      lines.push(`✅ **r/${sub}** — NEW (safe to add)`);
+      lines.push(`🟢 **r/${sub}** — NEW (safe to add to ${creator})`);
     }
   }
   const embed = {
-    title: `🔎 Subreddit check — ${inputs.length} input`,
+    title: `🔎 Subreddit check — ${inputs.length} input · for ${creator}`,
     description: lines.join("\n"),
-    color: existsCount === 0 ? 0x2ECC71 : (newCount === 0 ? 0xE74C3C : 0xF39C12),
-    footer: { text: `${newCount} new · ${existsCount} already exists · checked against ${subToTables.size} known subs` },
+    // Red if any same-creator duplicates, yellow if only other-creator overlaps, green if all-new.
+    color: dupOwnCount > 0 ? 0xE74C3C : (dupOtherCount > 0 ? 0xF39C12 : 0x2ECC71),
+    footer: { text: `🟢 ${newCount} new · 🔴 ${dupOwnCount} ${creator}-dup · 🟡 ${dupOtherCount} other-creator · ${subToTables.size} subs in master list` },
     timestamp: new Date().toISOString(),
   };
   const url = `https://discord.com/api/v10/webhooks/${DISCORD_APP_ID}/${interaction.token}/messages/@original`;
