@@ -47,8 +47,24 @@ const commands = [
   },
   {
     name: "check-subreddits",
-    description: "Check if subreddits are already in the Airtable list (saves John a manual check).",
+    description: "Check if subreddits are already used (per-creator + global). Saves John a manual check.",
     options: [
+      {
+        name: "creator",
+        description: "Which creator are you adding these to?",
+        type: 3, // STRING
+        required: true,
+        choices: [
+          { name: "Marissa",    value: "Marissa"    },
+          { name: "Maylee",     value: "Maylee"     },
+          { name: "Bella Leah", value: "Bella Leah" },
+          { name: "Meg",        value: "Meg"        },
+          { name: "Apple",      value: "Apple"      },
+          { name: "Emma",       value: "Emma"       },
+          { name: "June",       value: "June"       },
+          { name: "Tess",       value: "Tess"       },
+        ],
+      },
       {
         name: "subs",
         description: "Comma- or space-separated list (e.g. r/NewSub1, r/AnotherNew, freshsub)",
