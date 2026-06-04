@@ -2654,6 +2654,11 @@
       "ts": "2026-06-04T03:28:57+00:00",
       "amount": 1994,
       "state": "approved"
+    },
+    "acct_bdfdc404c17e49b9b1c810b14bff6967:85829463": {
+      "ts": "2026-06-04T07:15:55+00:00",
+      "amount": 492,
+      "state": "pending"
     }
   },
   "bootstrapped": {
