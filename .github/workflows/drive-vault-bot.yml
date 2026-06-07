@@ -1,0 +1,39 @@
+name: Drive → OF vault bot (every 5 min)
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"   # near-real-time: pull new Drive uploads into the vault
+  workflow_dispatch:
+
+permissions:
+  contents: write   # commits state.json back to the repo
+
+concurrency:
+  group: drive-vault-bot
+  cancel-in-progress: false   # let an in-flight upload finish before the next run
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install deps
+        working-directory: drive-vault-bot
+        run: npm install --no-audit --no-fund
+      - name: Sync Drive → vault
+        working-directory: drive-vault-bot
+        env:
+          ONLYFANSAPI_KEY: ${{ secrets.ONLYFANSAPI_KEY }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: node bot.mjs
+      - name: Commit state if changed
+        run: |
+          git config user.name  'drive-vault-bot'
+          git config user.email 'drive-vault-bot@users.noreply.github.com'
+          git add drive-vault-bot/state.json
+          git diff --cached --quiet || (git commit -m "drive-vault-bot: update state.json [skip ci]" && git push)
