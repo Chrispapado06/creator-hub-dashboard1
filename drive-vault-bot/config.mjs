@@ -50,29 +50,83 @@ export const MAX_FILES_PER_CREATOR_PER_RUN = 25;
 export const ALLOWED_MIME_PREFIXES = ["image/", "video/"];
 
 // ── OnlyFans vault upload ──────────────────────────────────────────
-// Node port of src/lib/of-api.ts → uploadMedia(). Multipart POST; the
-// Content-Type boundary is set automatically by FormData. Returns the
-// new vault media id.
+// OnlyFans has NO "upload straight to vault" API. To make media persist
+// in the vault we do the documented 3-step dance:
+//   1. Upload the file to the OnlyFans CDN        → POST /media/upload
+//   2. Attach it to a post scheduled FAR in the   → POST /posts
+//      future (never publishes, no fan
+//      notification, invisible to subscribers)
+//   3. Delete that scheduled post                 → DELETE /posts/{id}
+//      → OnlyFans keeps the media in the vault.
+//
+// Step 3 is the one we must never skip: a leftover scheduled post is the
+// only thing that could ever go live. We retry the delete hard, and if it
+// somehow still fails we report it loudly for manual cleanup (the post is
+// scheduled ~10 months out, so there's a huge safety margin — it cannot
+// publish in the meantime).
+
+const OF_BASE = "https://app.onlyfansapi.com/api";
+
+// Text on the throwaway staging post. Only ever visible for the split
+// second before deletion; worded so a human who ever finds a leftover
+// knows it's safe to delete.
+const VAULT_POST_TEXT = "[auto vault staging — safe to delete]";
+
+// How far in the future to schedule the throwaway post. Far enough that a
+// leftover can't publish for months; well within OnlyFans' scheduling
+// window (tested ~1yr ok). Computed at run time so it never drifts close.
+function farFutureSchedule() {
+  const d = new Date();
+  d.setDate(d.getDate() + 300); // ~10 months out
+  return d.toISOString().replace(/\.\d+Z$/, ".000Z");
+}
+
+async function ofErr(res) {
+  try { return (await res.json())?.message ?? `HTTP ${res.status}`; }
+  catch { return `HTTP ${res.status}`; }
+}
+
+// Returns { mediaId, postId, deleted }. Throws ONLY if the media never
+// reached the vault (CDN upload or staging-post creation failed) — those
+// are safe to retry. If the media DID reach the vault but the cleanup
+// delete failed, it returns deleted:false (so the caller marks the file
+// done — no duplicate re-upload — but alerts a human to remove the post).
 export async function uploadToVault(accountId, bytes, filename, mimeType) {
   const OF_KEY = process.env.ONLYFANSAPI_KEY;
   if (!OF_KEY) throw new Error("ONLYFANSAPI_KEY missing");
+  const H = { Authorization: `Bearer ${OF_KEY}` };
 
+  // 1) Upload to CDN.
   const fd = new FormData();
   fd.set("file", new Blob([bytes], { type: mimeType || "application/octet-stream" }), filename);
+  const up = await fetch(`${OF_BASE}/${accountId}/media/upload`, { method: "POST", headers: H, body: fd });
+  if (!up.ok) throw new Error(`CDN upload failed for ${accountId}: ${await ofErr(up)}`);
+  const mediaId = (await up.json())?.prefixed_id;
+  if (!mediaId) throw new Error(`CDN upload returned no media id for ${accountId}`);
 
-  const res = await fetch(`https://app.onlyfansapi.com/api/${accountId}/vault/media`, {
+  // 2) Attach to a far-future scheduled post (never goes live).
+  const post = await fetch(`${OF_BASE}/${accountId}/posts`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${OF_KEY}` },
-    body: fd,
+    headers: { ...H, "Content-Type": "application/json" },
+    body: JSON.stringify({ text: VAULT_POST_TEXT, mediaFiles: [mediaId], scheduledDate: farFutureSchedule() }),
   });
-  if (!res.ok) {
-    let msg = `HTTP ${res.status}`;
-    try { msg = (await res.json())?.message ?? msg; } catch { /* keep status */ }
-    throw new Error(`OF vault upload failed for ${accountId}: ${msg}`);
+  if (!post.ok) throw new Error(`vault staging post failed for ${accountId}: ${await ofErr(post)}`);
+  const postId = (await post.json())?.data?.id;
+  if (!postId) throw new Error(`vault staging post returned no id for ${accountId}`);
+  // ← media is now in the vault from this point on.
+
+  // 3) Delete the staging post. Retry hard — a leftover is the only risk.
+  let deleted = false, lastErr = "";
+  for (let i = 0; i < 4 && !deleted; i++) {
+    try {
+      const del = await fetch(`${OF_BASE}/${accountId}/posts/${postId}`, { method: "DELETE", headers: H });
+      if (del.ok) { const j = await del.json(); if (j?.data?.success !== false) { deleted = true; break; } }
+      lastErr = `HTTP ${del.status}`;
+    } catch (e) { lastErr = e.message; }
+    if (!deleted) await new Promise((r) => setTimeout(r, 1500 * (i + 1)));
   }
-  const j = await res.json();
-  const data = j?.data ?? j;
-  return { id: data?.id, url: data?.url };
+
+  return { mediaId, postId, deleted, deleteError: deleted ? null : lastErr };
 }
 
 // ── Telegram notify (optional) ─────────────────────────────────────

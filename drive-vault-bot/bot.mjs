@@ -151,18 +151,28 @@ async function main() {
       }
       try {
         const bytes = await downloadBytes(drive, f.id);
-        const { id: mediaId } = await uploadToVault(c.account_id, bytes, f.name, f.mimeType);
+        const r = await uploadToVault(c.account_id, bytes, f.name, f.mimeType);
+        // Media reached the vault → record it so it's never re-uploaded,
+        // even if the staging-post cleanup below failed.
         state.processed[f.id] = {
           name: f.name,
           folder: f.trail || "(root)",
           creator: c.name,
           account_id: c.account_id,
-          vault_media_id: mediaId ?? null,
+          vault_media_id: r.mediaId ?? null,
           uploaded_at: new Date().toISOString(),
         };
         uploaded++;
-        console.log(`  ✓ ${where} → vault media ${mediaId ?? "?"}`);
-        // Persist after every success so a mid-run crash never re-uploads.
+        if (!r.deleted) {
+          // Media is in the vault, but the throwaway scheduled post could
+          // not be deleted. It's scheduled ~10 months out (cannot publish
+          // meanwhile), but a human should remove it. Flag it loudly.
+          console.warn(`  ⚠️ ${where}: in vault, but staging post ${r.postId} NOT deleted (${r.deleteError}) — remove it manually`);
+          failures.push(`${c.name}: ⚠️ <code>${escHtml(where)}</code> is in the vault, but staging post <code>${r.postId}</code> couldn't be deleted — delete it manually in OnlyFans`);
+        } else {
+          console.log(`  ✓ ${where} → vault (media ${r.mediaId})`);
+        }
+        // Persist after every file so a mid-run crash never re-uploads.
         await saveState(state);
       } catch (e) {
         failed++;

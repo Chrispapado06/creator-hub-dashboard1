@@ -10,12 +10,24 @@ remembers what it already uploaded so it never doubles up.
 model drops file anywhere in their Drive folder tree
         │   (within ~5 min)
         ▼
-  GitHub Actions cron  ──►  walk folder + subfolders
-        │                          │
-        │                   download new bytes
-        │                          │
-        └──►  POST /api/{acct}/vault/media  ──►  record file id in state.json
+  GitHub Actions cron  ──►  walk folder + subfolders ──►  download new bytes
+                                                              │
+   ┌──────────────────────────────────────────────────────────┘
+   ▼   OnlyFans has no "save to vault" API, so per file:
+   1. POST /media/upload                 (upload to OnlyFans CDN)
+   2. POST /posts  (scheduledDate ~10mo)  (attach to a post far in the
+                                           future — never live, no fan
+                                           notification)
+   3. DELETE /posts/{id}                  (delete it → media stays in vault)
+   →  record Drive file id in state.json so it's never re-done
 ```
+
+> **Why the dance?** OnlyFans does not allow uploading media straight into
+> the vault (the API docs say so explicitly). The only way to make media
+> persist there is to attach it to a post or message and then delete that —
+> OnlyFans keeps the media. We use a post scheduled ~10 months out so it can
+> never publish and no subscriber is ever notified, then delete it within the
+> same second. Nothing appears on the creator's page.
 
 - **Host:** GitHub Actions (`.github/workflows/drive-vault-bot.yml`), cron `*/5`.
 - **Subfolders:** the whole folder tree is scanned (depth-guarded by
@@ -71,7 +83,13 @@ appear in that creator's OnlyFans vault. The file stays put in Drive.
   ignored (see `ALLOWED_MIME_PREFIXES`).
 - **Throughput:** up to `MAX_FILES_PER_CREATOR_PER_RUN` (default 25) files per
   model per run; any backlog is picked up on the next 5-min run.
-- **Vault behaviour:** OnlyFans has no native "save straight to vault" upload;
-  the OnlyFans API handles the upload-and-store flow behind
-  `/vault/media`. This bot relies on that same endpoint the dashboard uses
-  (`src/lib/of-api.ts → uploadMedia`).
+- **Vault behaviour:** OnlyFans has no native "save straight to vault" upload.
+  The bot uses the documented workaround (CDN upload → far-future scheduled
+  post → delete). The delete is retried hard; if it ever fails, the file is
+  still marked done (so it isn't uploaded twice) and the leftover post is
+  reported (console + Telegram) for manual removal. The post is scheduled
+  ~10 months out, so a leftover cannot publish in the meantime.
+  - NOTE: the dashboard's `src/lib/of-api.ts → uploadMedia` posts to
+    `/{acct}/vault/media`, which 404s on the current API — that path no longer
+    exists. This bot does NOT use it; if you wire vault upload into the
+    dashboard UI later, port this `media/upload → posts → delete` flow.
