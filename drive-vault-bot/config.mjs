@@ -23,7 +23,7 @@ export const DRIVE_MAP = [
   // name                account_id (OF)                              folder_id (Google Drive)
   { name: "Blue Bear",     account_id: "acct_99db42bda91149f58fd68ecccde21fa8", folder_id: "REPLACE_WITH_DRIVE_FOLDER_ID" },
   { name: "Meg",           account_id: "acct_996fbed6bab449af89f211b4851896ef", folder_id: "REPLACE_WITH_DRIVE_FOLDER_ID" },
-  { name: "Emma",          account_id: "acct_9bae83ac547447798d39e2d816ecd339", folder_id: "REPLACE_WITH_DRIVE_FOLDER_ID" },
+  { name: "Emma",          account_id: "acct_9bae83ac547447798d39e2d816ecd339", folder_id: "1thqHGaI9jEkwbkjxU7RqLYC6wxNIsywi" },
   { name: "Marissa Munoz", account_id: "acct_42e1c9678cfa4d379d44422a39ef7991", folder_id: "1x4T-jb2eElCilO8oi6Tfh_VAdqP4nYza" },
   // …add the rest of the roster as their folders are created & shared.
 ];
