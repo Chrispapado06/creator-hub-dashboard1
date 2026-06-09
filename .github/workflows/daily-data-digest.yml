@@ -20,8 +20,8 @@ jobs:
       - name: Send daily digest
         working-directory: daily-data-bot
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_RECIPIENT_CHAT_ID: ${{ secrets.TELEGRAM_RECIPIENT_CHAT_ID }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.OUTREACH_BOT_TOKEN }}
+          TELEGRAM_RECIPIENT_CHAT_ID: ${{ secrets.OUTREACH_RECIPIENT_CHAT_ID }}
+          SUPABASE_URL: ${{ secrets.OUTREACH_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.OUTREACH_SUPABASE_KEY }}
         run: node digest.mjs
