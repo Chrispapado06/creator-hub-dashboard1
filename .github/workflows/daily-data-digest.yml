@@ -1,0 +1,27 @@
+name: Daily data digest (send)
+
+# Fires once a day at end of day and sends the compiled outreach summary
+# to one person. 22:00 UTC = 23:00 UK (BST) / 22:00 UK (GMT) — late
+# enough to capture the day's shifts. Off-the-hour minute so GitHub's
+# busy-hour scheduler is less likely to delay it.
+on:
+  schedule:
+    - cron: "3 22 * * *"
+  workflow_dispatch:
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Send daily digest
+        working-directory: daily-data-bot
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_RECIPIENT_CHAT_ID: ${{ secrets.TELEGRAM_RECIPIENT_CHAT_ID }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node digest.mjs

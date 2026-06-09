@@ -1,0 +1,11 @@
+{
+  "name": "uncvrd-daily-data-bot",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "description": "VAs log daily outreach (follows/comments/likes/posts) via a guided Telegram Q&A; one end-of-day digest goes to one person.",
+  "scripts": {
+    "bot": "node bot.mjs",
+    "digest": "node digest.mjs"
+  }
+}

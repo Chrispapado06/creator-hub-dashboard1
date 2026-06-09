@@ -1,0 +1,34 @@
+name: Daily data bot (collect)
+
+# Runs the guided-Q&A collector in ~5.5h shifts. A new shift starts
+# every 6h (and on demand); concurrency stops two pollers overlapping
+# (Telegram only allows one getUpdates consumer). Telegram queues any
+# messages sent during the short gap between shifts, so nothing is lost.
+#
+# For zero-latency 24/7, run `node bot.mjs` on an always-on host instead
+# and disable this workflow.
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: daily-data-bot
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Run collector shift
+        working-directory: daily-data-bot
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node bot.mjs
