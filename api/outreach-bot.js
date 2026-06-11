@@ -203,7 +203,13 @@ async function handleMessage(msg) {
 
 // ── Vercel handler ───────────────────────────────────────────────────
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(200).send("daily-outreach-bot webhook up");
+  if (req.method !== "POST") {
+    // Health check — booleans only, never leaks secret values.
+    return res.status(200).json({
+      up: true,
+      env: { token: !!TOKEN, supabase: !!SB_URL && !!SB_KEY, secret: !!SECRET },
+    });
+  }
 
   // Verify the request really is from Telegram.
   if (SECRET && req.headers["x-telegram-bot-api-secret-token"] !== SECRET) {
