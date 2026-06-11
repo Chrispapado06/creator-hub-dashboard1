@@ -59,6 +59,9 @@ type Shift = {
   target_account_id: string | null;
   target_account_name: string | null;
   notes: string | null;
+  /** All creators covered in this shift — creator_id holds the first
+   *  for backward compatibility; this array is the full set. */
+  creator_ids?: string[] | null;
   /** Written at clock-out; surfaced to the next person clocking in on
    *  the same creator. */
   handover_note: string | null;
@@ -108,7 +111,7 @@ type AvailabilityRow = {
   end_time: string;
 };
 /** Latest handover left on a creator by whoever worked the previous shift. */
-type Handover = { note: string; by: string | null; at: string };
+type Handover = { creatorId: string; note: string; by: string | null; at: string };
 
 type Announcement = {
   id: string;
@@ -225,7 +228,10 @@ function ClockPage() {
   const [instagramAccounts, setInstagramAccounts] = useState<PlatformAccount[]>([]);
   const [facebookAccounts, setFacebookAccounts] = useState<PlatformAccount[]>([]);
 
-  const [pickedCreatorId, setPickedCreatorId] = useState("");
+  // Multiple creators can be covered in one shift (chatters often run
+  // several inboxes at once). VA roles stay single-pick because their
+  // shift targets one platform account.
+  const [pickedCreatorIds, setPickedCreatorIds] = useState<string[]>([]);
   const [pickedAccountId, setPickedAccountId] = useState("");
   const [clockingIn, setClockingIn] = useState(false);
   const [clockOutShift, setClockOutShift] = useState<Shift | null>(null);
@@ -253,8 +259,8 @@ function ClockPage() {
   const [bonusTiers, setBonusTiers] = useState<BonusTier[]>([]);
   const [onboardingItems, setOnboardingItems] = useState<OnboardingItem[]>([]);
   const [onboardingProgress, setOnboardingProgress] = useState<OnboardingProgress[]>([]);
-  // Latest handover note for the creator picked in the clock-in form.
-  const [handover, setHandover] = useState<Handover | null>(null);
+  // Latest handover note per creator picked in the clock-in form.
+  const [handovers, setHandovers] = useState<Handover[]>([]);
   // Planned shifts from the admin rota, mapped onto the Shift shape so the
   // existing schedule UI can render them unchanged.
   const [rotaShifts, setRotaShifts] = useState<Shift[]>([]);
@@ -460,10 +466,11 @@ function ClockPage() {
     setOnboardingProgress((obProg ?? []) as unknown as OnboardingProgress[]);
     // Map rota rows onto the Shift shape (zeroed metrics) so the existing
     // schedule grouping + cards render them without special-casing.
-    setRotaShifts(((rota ?? []) as unknown as { id: string; chatter_id: string; creator_id: string | null; start_at: string; end_at: string; notes: string | null }[]).map((r) => ({
+    setRotaShifts(((rota ?? []) as unknown as { id: string; chatter_id: string; creator_id: string | null; creator_ids: string[] | null; start_at: string; end_at: string; notes: string | null }[]).map((r) => ({
       id: `rota-${r.id}`,
       chatter_id: r.chatter_id,
       creator_id: r.creator_id ?? "",
+      creator_ids: r.creator_ids ?? (r.creator_id ? [r.creator_id] : null),
       start_at: r.start_at,
       end_at: r.end_at,
       ppv_count: 0, ppv_revenue: 0, tips_revenue: 0, custom_revenue: 0,
@@ -537,35 +544,42 @@ function ClockPage() {
   }, []);
 
   // ── Handover lookup ─────────────────────────────────────────────────────
-  // When the staff member picks a creator to clock in on, fetch the most
-  // recent handover note anyone left on that creator in the last 7 days.
+  // When the staff member picks creators to clock in on, fetch the most
+  // recent handover note anyone left on EACH of them in the last 7 days.
   useEffect(() => {
-    if (!pickedCreatorId) {
-      setHandover(null);
+    if (pickedCreatorIds.length === 0) {
+      setHandovers([]);
       return;
     }
     let cancelled = false;
     (async () => {
       const { data } = await supabase
         .from("shifts")
-        .select("handover_note, end_at, chatters(name)")
-        .eq("creator_id", pickedCreatorId)
+        .select("creator_id, handover_note, end_at, chatters(name)")
+        .in("creator_id", pickedCreatorIds)
         .not("handover_note", "is", null)
         .not("end_at", "is", null)
         .gte("end_at", subDays(new Date(), 7).toISOString())
         .order("end_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .limit(20);
       if (cancelled) return;
-      if (data?.handover_note) {
-        const by = (data as { chatters?: { name?: string } | null }).chatters?.name ?? null;
-        setHandover({ note: data.handover_note, by, at: data.end_at as string });
-      } else {
-        setHandover(null);
+      // Keep only the newest note per creator (rows arrive newest-first).
+      const seen = new Set<string>();
+      const out: Handover[] = [];
+      for (const row of (data ?? []) as unknown as { creator_id: string; handover_note: string | null; end_at: string; chatters?: { name?: string } | null }[]) {
+        if (!row.handover_note || seen.has(row.creator_id)) continue;
+        seen.add(row.creator_id);
+        out.push({
+          creatorId: row.creator_id,
+          note: row.handover_note,
+          by: row.chatters?.name ?? null,
+          at: row.end_at,
+        });
       }
+      setHandovers(out);
     })();
     return () => { cancelled = true; };
-  }, [pickedCreatorId]);
+  }, [pickedCreatorIds]);
 
   // ── Onboarding checklist (self-check) ──────────────────────────────────
   const myOnboardingItems = useMemo(
@@ -682,15 +696,15 @@ function ClockPage() {
     if (chatter.role === "reddit_va") pool = redditAccounts;
     else if (chatter.role === "instagram_va") pool = instagramAccounts;
     else if (chatter.role === "facebook_va") pool = facebookAccounts;
-    if (!pickedCreatorId) return pool;
-    return pool.filter((a) => a.creator_id === pickedCreatorId);
-  }, [chatter, pickedCreatorId, redditAccounts, instagramAccounts, facebookAccounts]);
+    if (pickedCreatorIds.length === 0) return pool;
+    return pool.filter((a) => a.creator_id === pickedCreatorIds[0]);
+  }, [chatter, pickedCreatorIds, redditAccounts, instagramAccounts, facebookAccounts]);
 
   const needsAccountPicker = !!chatter && ["reddit_va", "instagram_va", "facebook_va"].includes(chatter.role);
 
   const onClockIn = async () => {
     if (!chatter) return;
-    if (!pickedCreatorId) return toast.error("Pick a creator before clocking in.");
+    if (pickedCreatorIds.length === 0) return toast.error("Pick at least one creator before clocking in.");
     if (needsAccountPicker && !pickedAccountId) {
       return toast.error(`Pick which ${roleLabels[chatter.role]?.replace(" VA", "") ?? "platform"} account.`);
     }
@@ -699,7 +713,10 @@ function ClockPage() {
     const acct = availableAccounts.find((a) => a.id === pickedAccountId);
     const { error } = await supabase.from("shifts").insert({
       chatter_id: chatter.id,
-      creator_id: pickedCreatorId,
+      // creator_id keeps the first pick for backward compatibility;
+      // creator_ids carries the full set covered this shift.
+      creator_id: pickedCreatorIds[0],
+      creator_ids: pickedCreatorIds,
       start_at: new Date().toISOString(),
       target_platform: platform,
       target_account_id: pickedAccountId || null,
@@ -707,14 +724,17 @@ function ClockPage() {
     });
     setClockingIn(false);
     if (error) return toast.error(error.message);
+    const pickedNames = pickedCreatorIds
+      .map((id) => creators.find((c) => c.id === id)?.name ?? "creator")
+      .join(", ");
     void logAudit({
       action: "clock_in",
       entity_type: "shift",
-      entity_name: `${chatter.name} → ${creators.find((c) => c.id === pickedCreatorId)?.name ?? "creator"}`,
+      entity_name: `${chatter.name} → ${pickedNames}`,
       details: acct?.label ? `on ${acct.label}` : null,
     });
     toast.success("Clocked in");
-    setPickedCreatorId("");
+    setPickedCreatorIds([]);
     setPickedAccountId("");
     refresh();
   };
@@ -782,6 +802,11 @@ function ClockPage() {
   };
 
   const creatorName = (id: string) => creators.find((c) => c.id === id)?.name ?? "—";
+  // Joined display names for a shift covering one or many creators.
+  const creatorNames = (s: Shift) => {
+    const ids = s.creator_ids && s.creator_ids.length > 0 ? s.creator_ids : [s.creator_id];
+    return ids.map((id) => creators.find((c) => c.id === id)?.name ?? "—").join(", ");
+  };
 
   if (loading) {
     return (
@@ -815,8 +840,8 @@ function ClockPage() {
       announcements={announcements}
       activeShifts={activeShifts}
       groupedSchedule={groupedSchedule}
-      pickedCreatorId={pickedCreatorId}
-      setPickedCreatorId={setPickedCreatorId}
+      pickedCreatorIds={pickedCreatorIds}
+      setPickedCreatorIds={setPickedCreatorIds}
       pickedAccountId={pickedAccountId}
       setPickedAccountId={setPickedAccountId}
       availableAccounts={availableAccounts}
@@ -826,10 +851,11 @@ function ClockPage() {
       openClockOut={openClockOut}
       elapsed={elapsed}
       creatorName={creatorName}
+      creatorNames={creatorNames}
       localTzAbbr={localTzAbbr}
       now={now}
       maxShiftHours={maxShiftHours}
-      handover={handover}
+      handovers={handovers}
       bonusTiers={bonusTiers}
       allShifts={allShifts}
       onboardingItems={myOnboardingItems}
@@ -855,6 +881,7 @@ function ClockPage() {
       groupedSchedule={groupedSchedule}
       closedShifts={closedShifts}
       creatorName={creatorName}
+      creatorNames={creatorNames}
       chatter={chatter}
     />
   );
@@ -1194,8 +1221,8 @@ function TodayTab(props: {
   announcements: Announcement[];
   activeShifts: Shift[];
   groupedSchedule: { label: string; shifts: Shift[] }[];
-  pickedCreatorId: string;
-  setPickedCreatorId: (v: string) => void;
+  pickedCreatorIds: string[];
+  setPickedCreatorIds: React.Dispatch<React.SetStateAction<string[]>>;
   pickedAccountId: string;
   setPickedAccountId: (v: string) => void;
   availableAccounts: PlatformAccount[];
@@ -1205,13 +1232,14 @@ function TodayTab(props: {
   openClockOut: (s: Shift) => void;
   elapsed: (s: string) => string;
   creatorName: (id: string) => string;
+  creatorNames: (s: Shift) => string;
   localTzAbbr: string;
   // Current epoch ms — driven by the parent's 1s ticker so the
   // shift-limit banner re-renders smoothly as time passes.
   now: number;
   // Effective per-staff cap (hours). Used for the time-left banner.
   maxShiftHours: number;
-  handover: Handover | null;
+  handovers: Handover[];
   bonusTiers: BonusTier[];
   allShifts: Shift[];
   onboardingItems: OnboardingItem[];
@@ -1220,11 +1248,16 @@ function TodayTab(props: {
 }) {
   const {
     chatter, creators, assignments, announcements, activeShifts, groupedSchedule,
-    pickedCreatorId, setPickedCreatorId, pickedAccountId, setPickedAccountId,
+    pickedCreatorIds, setPickedCreatorIds, pickedAccountId, setPickedAccountId,
     availableAccounts, needsAccountPicker, clockingIn, onClockIn, openClockOut,
-    elapsed, creatorName, localTzAbbr, now, maxShiftHours,
-    handover, bonusTiers, allShifts, onboardingItems, onboardingProgress, toggleOnboardingItem,
+    elapsed, creatorName, creatorNames, localTzAbbr, now, maxShiftHours,
+    handovers, bonusTiers, allShifts, onboardingItems, onboardingProgress, toggleOnboardingItem,
   } = props;
+
+  const togglePickedCreator = (id: string) =>
+    setPickedCreatorIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
 
   // ── Bonus progress for the current period ─────────────────────────────
   const myTiers = bonusTiers.filter((t) => !t.role || t.role === chatter.role);
@@ -1366,7 +1399,7 @@ function TodayTab(props: {
                 <div className="flex items-start justify-between gap-3 flex-wrap">
                   <div>
                     <div className="text-xs text-muted-foreground mb-1">Working with</div>
-                    <div className="text-2xl font-bold">{creatorName(s.creator_id)}</div>
+                    <div className="text-2xl font-bold">{creatorNames(s)}</div>
                     {s.target_account_name && (
                       <div className="text-xs text-primary mt-0.5 font-medium">on {s.target_account_name}</div>
                     )}
@@ -1446,17 +1479,62 @@ function TodayTab(props: {
         </h2>
         <div className="rounded-2xl border border-border bg-card p-6 space-y-4">
           <div className="space-y-1.5">
-            <Label>Working for which creator?</Label>
-            <Select value={pickedCreatorId} onValueChange={(v) => { setPickedCreatorId(v); setPickedAccountId(""); }}>
-              <SelectTrigger className="h-11"><SelectValue placeholder="Pick a creator" /></SelectTrigger>
-              <SelectContent>
-                {creators.length === 0 ? (
-                  <SelectItem value="none" disabled>No creators available</SelectItem>
-                ) : (
-                  creators.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)
-                )}
-              </SelectContent>
-            </Select>
+            {needsAccountPicker ? (
+              /* VA roles work one platform account per shift → single pick. */
+              <>
+                <Label>Working for which creator?</Label>
+                <Select
+                  value={pickedCreatorIds[0] ?? ""}
+                  onValueChange={(v) => { setPickedCreatorIds([v]); setPickedAccountId(""); }}
+                >
+                  <SelectTrigger className="h-11"><SelectValue placeholder="Pick a creator" /></SelectTrigger>
+                  <SelectContent>
+                    {creators.length === 0 ? (
+                      <SelectItem value="none" disabled>No creators available</SelectItem>
+                    ) : (
+                      creators.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)
+                    )}
+                  </SelectContent>
+                </Select>
+              </>
+            ) : (
+              /* Chatters & everyone else can cover several creators in one
+                 shift — tap to toggle. */
+              <>
+                <Label>
+                  Working for which creator{creators.length === 1 ? "" : "s"}?
+                  {pickedCreatorIds.length > 1 && (
+                    <span className="ml-1.5 text-[11px] font-normal text-primary">
+                      {pickedCreatorIds.length} selected
+                    </span>
+                  )}
+                </Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {creators.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">No creators available</div>
+                  ) : (
+                    creators.map((c) => {
+                      const on = pickedCreatorIds.includes(c.id);
+                      return (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => togglePickedCreator(c.id)}
+                          className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-all ${
+                            on
+                              ? "border-primary/40 bg-primary/10 text-primary font-medium"
+                              : "border-border bg-card text-muted-foreground hover:border-primary/30 hover:text-foreground"
+                          }`}
+                        >
+                          {on && <Check className="h-3.5 w-3.5" />}
+                          {c.name}
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </>
+            )}
             {assignments.length === 0 && (
               <div className="text-[11px] text-muted-foreground">No specific creators assigned to you — pick any.</div>
             )}
@@ -1470,15 +1548,15 @@ function TodayTab(props: {
               <Select
                 value={pickedAccountId}
                 onValueChange={setPickedAccountId}
-                disabled={!pickedCreatorId}
+                disabled={pickedCreatorIds.length === 0}
               >
                 <SelectTrigger className="h-11">
-                  <SelectValue placeholder={pickedCreatorId ? "Pick an account" : "Pick a creator first"} />
+                  <SelectValue placeholder={pickedCreatorIds.length > 0 ? "Pick an account" : "Pick a creator first"} />
                 </SelectTrigger>
                 <SelectContent>
                   {availableAccounts.length === 0 ? (
                     <SelectItem value="none" disabled>
-                      {pickedCreatorId ? "No accounts available for this creator" : "Pick a creator first"}
+                      {pickedCreatorIds.length > 0 ? "No accounts available for this creator" : "Pick a creator first"}
                     </SelectItem>
                   ) : (
                     availableAccounts.map((a) => (
@@ -1495,31 +1573,35 @@ function TodayTab(props: {
             </div>
           )}
 
-          {/* Handover from the previous shift on this creator */}
-          {handover && (
-            <div className="rounded-xl border border-amber-500/30 bg-amber-500/8 p-3.5 space-y-1">
+          {/* Handover from the previous shift on each picked creator */}
+          {handovers.map((h) => (
+            <div key={h.creatorId} className="rounded-xl border border-amber-500/30 bg-amber-500/8 p-3.5 space-y-1">
               <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-400">
                 <NotebookPen className="h-3.5 w-3.5" />
                 <span className="text-[11px] font-bold uppercase tracking-wider">
-                  Handover from the last shift
+                  Handover — {creatorName(h.creatorId)}
                 </span>
               </div>
-              <p className="text-sm whitespace-pre-wrap text-foreground/90">{handover.note}</p>
+              <p className="text-sm whitespace-pre-wrap text-foreground/90">{h.note}</p>
               <p className="text-[11px] text-muted-foreground">
-                {handover.by ? `— ${handover.by}, ` : "— "}
-                {formatDistanceToNow(new Date(handover.at), { addSuffix: true })}
+                {h.by ? `— ${h.by}, ` : "— "}
+                {formatDistanceToNow(new Date(h.at), { addSuffix: true })}
               </p>
             </div>
-          )}
+          ))}
 
           <Button
             size="lg"
             className="w-full"
-            disabled={!pickedCreatorId || (needsAccountPicker && !pickedAccountId) || clockingIn}
+            disabled={pickedCreatorIds.length === 0 || (needsAccountPicker && !pickedAccountId) || clockingIn}
             onClick={onClockIn}
           >
             <Play className="h-4 w-4 mr-2" fill="currentColor" />
-            {clockingIn ? "Starting…" : "Clock in"}
+            {clockingIn
+              ? "Starting…"
+              : pickedCreatorIds.length > 1
+                ? `Clock in (${pickedCreatorIds.length} creators)`
+                : "Clock in"}
           </Button>
         </div>
       </section>
@@ -1536,7 +1618,7 @@ function TodayTab(props: {
                 <div>
                   <div className="text-sm font-semibold">{format(new Date(s.start_at), "h:mm a")}</div>
                   <div className="text-xs text-muted-foreground">
-                    for {creatorName(s.creator_id)}
+                    for {creatorNames(s)}
                     {s.target_account_name && <> · on {s.target_account_name}</>}
                   </div>
                 </div>
@@ -1856,11 +1938,12 @@ function PayTab({ chatter, payouts, shifts }: { chatter: Chatter; payouts: Payou
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 function ScheduleTab({
-  groupedSchedule, closedShifts, creatorName, chatter,
+  groupedSchedule, closedShifts, creatorName, creatorNames, chatter,
 }: {
   groupedSchedule: { label: string; shifts: Shift[] }[];
   closedShifts: Shift[];
   creatorName: (id: string) => string;
+  creatorNames: (s: Shift) => string;
   chatter: Chatter;
 }) {
   // ── Self-contained: weekly availability + time-off requests ────────────
@@ -2078,7 +2161,7 @@ function ScheduleTab({
                         {end && <> – {format(end, "h:mm a")}</>}
                       </div>
                       <div className="text-[11px] text-muted-foreground">
-                        for {creatorName(s.creator_id)}
+                        for {creatorNames(s)}
                         {s.target_account_name && <> · on {s.target_account_name}</>}
                       </div>
                     </div>
@@ -2108,7 +2191,7 @@ function ScheduleTab({
               return (
                 <div key={s.id} className="rounded-xl border border-border bg-card p-3 flex items-center justify-between gap-3 flex-wrap">
                   <div>
-                    <div className="text-sm font-semibold">{creatorName(s.creator_id)}</div>
+                    <div className="text-sm font-semibold">{creatorNames(s)}</div>
                     <div className="text-[11px] text-muted-foreground">
                       {format(new Date(s.start_at), "EEE, MMM d · h:mm a")}
                       {s.end_at && <> → {format(new Date(s.end_at), "h:mm a")}</>}

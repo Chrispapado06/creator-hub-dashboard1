@@ -111,6 +111,8 @@ type Shift = {
   avg_response_seconds: number | null;
   quality_flag: QualityFlag;
   notes: string | null;
+  /** Full set of creators covered this shift; creator_id holds the first. */
+  creator_ids?: string[] | null;
   /** Relay note for the next shift on the same creator. */
   handover_note: string | null;
   /** Verified-hours signals — minutes the staff portal tab was open /
@@ -119,6 +121,18 @@ type Shift = {
   visible_minutes: number;
   last_heartbeat_at: string | null;
 };
+
+/** Joined creator names for a shift covering one or many creators. */
+function shiftCreatorNames(s: Shift, creators: Creator[]): string {
+  const ids = s.creator_ids && s.creator_ids.length > 0 ? s.creator_ids : [s.creator_id];
+  return ids.map((id) => creators.find((c) => c.id === id)?.name ?? "—").join(", ");
+}
+
+/** Does this shift cover the given creator (primary or in the array)? */
+function shiftCoversCreator(s: Shift, creatorId: string): boolean {
+  if (s.creator_id === creatorId) return true;
+  return !!s.creator_ids?.includes(creatorId);
+}
 
 /** Verified-hours assessment for a closed shift. `null` when the shift
  *  predates the heartbeat feature (no signal — don't flag it). */
@@ -1335,6 +1349,7 @@ type RotaShift = {
   id: string;
   chatter_id: string;
   creator_id: string | null;
+  creator_ids: string[] | null;
   start_at: string;
   end_at: string;
   notes: string | null;
@@ -1374,7 +1389,7 @@ function RotaTab({
 
   // Add-shift dialog context: which staff member + which day cell.
   const [addCtx, setAddCtx] = useState<{ chatterId: string; day: Date } | null>(null);
-  const [addForm, setAddForm] = useState({ creator_id: "", start: "18:00", end: "02:00", notes: "" });
+  const [addForm, setAddForm] = useState({ creator_ids: [] as string[], start: "18:00", end: "02:00", notes: "" });
 
   const days = useMemo(
     () => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)),
@@ -1424,12 +1439,20 @@ function RotaTab({
     setAddCtx({ chatterId, day });
     const av = availFor(chatterId, (day.getDay() + 6) % 7);
     setAddForm({
-      creator_id: "",
+      creator_ids: [],
       start: av ? av.start_time.slice(0, 5) : "18:00",
       end: av ? av.end_time.slice(0, 5) : "02:00",
       notes: "",
     });
   };
+
+  const toggleAddCreator = (id: string) =>
+    setAddForm((f) => ({
+      ...f,
+      creator_ids: f.creator_ids.includes(id)
+        ? f.creator_ids.filter((x) => x !== id)
+        : [...f.creator_ids, id],
+    }));
 
   const onAddShift = async () => {
     if (!addCtx) return;
@@ -1445,7 +1468,8 @@ function RotaTab({
       .from("rota_shifts")
       .insert({
         chatter_id: addCtx.chatterId,
-        creator_id: addForm.creator_id || null,
+        creator_id: addForm.creator_ids[0] ?? null,
+        creator_ids: addForm.creator_ids.length > 0 ? addForm.creator_ids : null,
         start_at: startAt.toISOString(),
         end_at: endAt.toISOString(),
         notes: addForm.notes.trim() || null,
@@ -1482,6 +1506,7 @@ function RotaTab({
       .map((r) => ({
         chatter_id: r.chatter_id,
         creator_id: r.creator_id,
+        creator_ids: r.creator_ids,
         start_at: addDays(new Date(r.start_at), 7).toISOString(),
         end_at: addDays(new Date(r.end_at), 7).toISOString(),
         notes: r.notes,
@@ -1517,6 +1542,12 @@ function RotaTab({
 
   const chatterName = (id: string) => chatters.find((c) => c.id === id)?.name ?? "—";
   const creatorName = (id: string | null) => id ? (creators.find((c) => c.id === id)?.name ?? "—") : null;
+  // Joined names for a rota row covering one or many creators.
+  const rotaCreatorNames = (r: RotaShift): string | null => {
+    const ids = r.creator_ids && r.creator_ids.length > 0 ? r.creator_ids : (r.creator_id ? [r.creator_id] : []);
+    if (ids.length === 0) return null;
+    return ids.map((id) => creators.find((c) => c.id === id)?.name ?? "—").join(", ");
+  };
   const isThisWeekShown = format(weekStart, "yyyy-MM-dd") === format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd");
 
   return (
@@ -1631,8 +1662,10 @@ function RotaTab({
                               <div className="font-bold tabular-nums">
                                 {format(new Date(r.start_at), "HH:mm")}–{format(new Date(r.end_at), "HH:mm")}
                               </div>
-                              {creatorName(r.creator_id) && (
-                                <div className="text-muted-foreground truncate">{creatorName(r.creator_id)}</div>
+                              {rotaCreatorNames(r) && (
+                                <div className="text-muted-foreground truncate" title={rotaCreatorNames(r)!}>
+                                  {rotaCreatorNames(r)}
+                                </div>
                               )}
                               <button
                                 onClick={() => onDeleteRota(r.id)}
@@ -1676,14 +1709,29 @@ function RotaTab({
           </DialogHeader>
           <div className="space-y-3 py-2">
             <div className="space-y-1.5">
-              <Label>Creator <span className="text-muted-foreground text-xs">(optional)</span></Label>
-              <Select value={addForm.creator_id || "none"} onValueChange={(v) => setAddForm({ ...addForm, creator_id: v === "none" ? "" : v })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No specific creator</SelectItem>
-                  {creators.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <Label>
+                Creators <span className="text-muted-foreground text-xs">(optional — pick one or several)</span>
+              </Label>
+              <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
+                {creators.map((c) => {
+                  const on = addForm.creator_ids.includes(c.id);
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => toggleAddCreator(c.id)}
+                      className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-all ${
+                        on
+                          ? "border-primary/40 bg-primary/10 text-primary font-medium"
+                          : "border-border bg-card text-muted-foreground hover:border-primary/30 hover:text-foreground"
+                      }`}
+                    >
+                      {on && <Check className="h-3 w-3" />}
+                      {c.name}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
@@ -1728,7 +1776,7 @@ function ShiftsTab({
   const filtered = useMemo(() => {
     return shifts.filter((s) => {
       if (filterChatter !== "all" && s.chatter_id !== filterChatter) return false;
-      if (filterCreator !== "all" && s.creator_id !== filterCreator) return false;
+      if (filterCreator !== "all" && !shiftCoversCreator(s, filterCreator)) return false;
       return true;
     });
   }, [shifts, filterChatter, filterCreator]);
@@ -1966,13 +2014,12 @@ function ShiftsTab({
             <tbody>
               {filtered.map((s) => {
                 const chatter = chatters.find((c) => c.id === s.chatter_id);
-                const creator = creators.find((c) => c.id === s.creator_id);
                 const hours = shiftHours(s);
                 const perHour = hours > 0 ? s.total_revenue / hours : null;
                 return (
                   <tr key={s.id} className="border-t border-border bg-card hover:bg-secondary/20 transition-colors">
                     <td className="px-4 py-3 font-medium">{chatter?.name ?? "—"}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{creator?.name ?? "—"}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{shiftCreatorNames(s, creators)}</td>
                     <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
                       {format(new Date(s.start_at), "MMM d, h:mm a")}
                       {s.end_at ? <> → {format(new Date(s.end_at), "h:mm a")}</> : <span className="text-success"> · ongoing</span>}
@@ -3021,7 +3068,7 @@ function TimeClockTab({
                       <div className="text-xs text-muted-foreground">
                         {chatterName(s.chatter_id)} · for
                       </div>
-                      <div className="text-lg font-bold truncate">{creatorName(s.creator_id)}</div>
+                      <div className="text-lg font-bold truncate">{shiftCreatorNames(s, creators)}</div>
                       <div className="text-[11px] text-muted-foreground mt-0.5">
                         Started {format(new Date(s.start_at), "h:mm a")}
                       </div>
@@ -3134,7 +3181,7 @@ function TimeClockTab({
                   return (
                     <tr key={s.id} className="border-t border-border bg-card">
                       <td className="px-4 py-3 font-medium">{chatterName(s.chatter_id)}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{creatorName(s.creator_id)}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{shiftCreatorNames(s, creators)}</td>
                       <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
                         {format(new Date(s.start_at), "h:mm a")}
                       </td>
