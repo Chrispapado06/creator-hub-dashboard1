@@ -40,12 +40,16 @@ export function useUnreadChatMentions() {
 
   // Polling fallback. Even with Realtime enabled the websocket can
   // hiccup (proxy timeouts, browser tab sleeping, app waking from
-  // background). A 30s poll keeps the badge accurate when realtime
-  // misses an event. It also bridges the gap if the user hasn't
-  // enabled Realtime replication for team_message_mentions yet.
+  // background). A short poll keeps the badge accurate when realtime
+  // misses an event. It also bridges the gap if the table isn't yet
+  // in the supabase_realtime publication.
+  //
+  // Tightened from 30s → 8s — Discord-style "show up fast" matters
+  // more than the trivial extra request count. The query is a single
+  // count() with a head request, so it's tiny even at 8s cadence.
   useEffect(() => {
     if (!userId) return;
-    const t = setInterval(() => { void refresh(); }, 30_000);
+    const t = setInterval(() => { void refresh(); }, 8_000);
     // Re-fetch when the tab becomes visible again — covers the common
     // case of leaving the dashboard open in a background tab for
     // hours then coming back.
@@ -53,6 +57,9 @@ export function useUnreadChatMentions() {
       if (document.visibilityState === "visible") void refresh();
     };
     document.addEventListener("visibilitychange", onVis);
+    // Re-fetch when the window regains focus — fires before
+    // visibilitychange does in some browsers and helps Safari.
+    window.addEventListener("focus", () => { void refresh(); });
     return () => {
       clearInterval(t);
       document.removeEventListener("visibilitychange", onVis);

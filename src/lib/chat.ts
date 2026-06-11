@@ -536,11 +536,50 @@ export async function sendMessage(input: {
  * rest of the app uses; tighten later with proper Supabase auth.)
  */
 export async function deleteMessage(messageId: string): Promise<boolean> {
-  const { error } = await supabase
+  const { error, count } = await supabase
     .from("team_messages")
-    .update({ deleted_at: new Date().toISOString() })
+    .update({ deleted_at: new Date().toISOString() }, { count: "exact" })
     .eq("id", messageId);
-  return !error;
+  if (error) {
+    console.error("[chat] deleteMessage error:", error);
+    return false;
+  }
+  // PostgREST returns count=0 when the WHERE matched no rows — usually
+  // an RLS issue (the user can't see / update this row). Treat that
+  // as a failure too so the UI can roll back the optimistic remove
+  // instead of silently leaving the message gone locally.
+  if (count === 0) {
+    console.warn("[chat] deleteMessage matched 0 rows for", messageId);
+    return false;
+  }
+  return true;
+}
+
+/** Edit an existing message — sets `edited_at` so the UI can render
+ *  the "(edited)" suffix Discord-style. Realtime subscribers receive
+ *  the UPDATE event and re-render the row in place. */
+export async function editMessage(
+  messageId: string,
+  newContent: string,
+): Promise<boolean> {
+  const trimmed = newContent.trim();
+  if (!trimmed) return false; // refuse blank edits — use deleteMessage
+  const { error, count } = await supabase
+    .from("team_messages")
+    .update(
+      { content: trimmed, edited_at: new Date().toISOString() },
+      { count: "exact" },
+    )
+    .eq("id", messageId);
+  if (error) {
+    console.error("[chat] editMessage error:", error);
+    return false;
+  }
+  if (count === 0) {
+    console.warn("[chat] editMessage matched 0 rows for", messageId);
+    return false;
+  }
+  return true;
 }
 
 export async function markChannelRead(channelId: string, userId: string): Promise<void> {

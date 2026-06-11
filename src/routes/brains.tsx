@@ -393,44 +393,35 @@ function BrainsPage() {
     <div className="min-h-screen p-4 md:p-6 space-y-6">
       <Toaster richColors closeButton position="bottom-right" />
 
-      {/* ── Brand hero ─────────────────────────────────────────────
-          Gradient panel that shifts with the active brain. Inline
-          stats so the user sees the total knowledge surface at a glance. */}
-      <div
-        className={`relative overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-card via-card/80 to-transparent p-6 transition-colors`}
-        style={{ backgroundImage: `linear-gradient(135deg, var(--card) 0%, color-mix(in srgb, ${activeTone.hex} 12%, var(--card)) 100%)` }}
-      >
-        <div aria-hidden className="absolute -top-20 -right-20 h-64 w-64 rounded-full blur-3xl pointer-events-none" style={{ backgroundColor: `${activeTone.hex}22` }} />
-        <div aria-hidden className="absolute -bottom-20 -left-20 h-64 w-64 rounded-full bg-violet-500/10 blur-3xl pointer-events-none" />
-
-        <div className="relative flex items-start gap-4 flex-wrap">
-          <div className={`flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br ${activeTone.gradient} text-white shadow-lg ${activeTone.glow}`}>
-            <BrainIcon className="h-7 w-7" />
+      {/* ── Header — Crawl-4o flat style.
+          Title + subtitle + inline stat strip. No decorative blobs, no
+          gradient panel — same calmer aesthetic as the rest of the app. */}
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-muted-foreground/70 font-bold">
+            <Sparkles className="h-3 w-3" style={{ color: activeTone.hex }} />
+            Bernard's memory
           </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold">
-              <Sparkles className="h-3.5 w-3.5" style={{ color: activeTone.hex }} />
-              Bernard's memory
-            </div>
-            <div className="mt-1.5 flex items-baseline gap-3 flex-wrap">
-              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Brains</h1>
-              <span className="text-muted-foreground/50">·</span>
-              <span className="text-sm">
-                <span className="font-semibold text-foreground tabular-nums">{brains.length}</span>
-                <span className="text-muted-foreground"> domains </span>
-                <span className="text-muted-foreground/50">·</span>
-                <span className="font-semibold text-foreground tabular-nums"> {totalDocs}</span>
-                <span className="text-muted-foreground"> docs </span>
-                <span className="text-muted-foreground/50">·</span>
-                <span className="font-semibold text-foreground tabular-nums"> {totalChunks}</span>
-                <span className="text-muted-foreground"> chunks indexed</span>
-              </span>
-            </div>
-            <p className="mt-2 text-sm text-muted-foreground max-w-2xl">
-              Drop in playbooks, scripts, SOPs. When you ask Bernard about a domain,
-              he automatically pulls the relevant pieces and cites them in his answers.
-            </p>
-          </div>
+          <h1 className="mt-1 text-2xl sm:text-3xl font-bold tracking-tight">Brains</h1>
+          <p className="mt-1 text-sm text-muted-foreground max-w-2xl">
+            Drop in playbooks, scripts, SOPs. When you ask Bernard about a domain,
+            he automatically pulls the relevant pieces and cites them in his answers.
+          </p>
+        </div>
+        {/* Right-side stat pill row — at-a-glance knowledge surface */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-xs">
+            <span className="font-bold tabular-nums">{brains.length}</span>
+            <span className="text-muted-foreground">domains</span>
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-xs">
+            <span className="font-bold tabular-nums">{totalDocs}</span>
+            <span className="text-muted-foreground">docs</span>
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-xs">
+            <span className="font-bold tabular-nums">{totalChunks}</span>
+            <span className="text-muted-foreground">chunks</span>
+          </span>
         </div>
       </div>
 
@@ -453,41 +444,42 @@ function BrainsPage() {
                 <button
                   key={b.id}
                   onClick={() => setActiveBrainId(b.id)}
-                  style={{
-                    // Subtle on rest, brand-tinted glow on hover. We attach
-                    // both transitions so scale + shadow animate together.
-                    "--hover-glow": `0 0 0 1px ${t.hex}55, 0 8px 24px -8px ${t.hex}66`,
-                  } as React.CSSProperties}
-                  className={`group relative w-full overflow-hidden rounded-xl border p-3.5 text-left transition-all duration-200 ease-out hover:scale-[1.02] hover:-translate-y-0.5 hover:[box-shadow:var(--hover-glow)] ${
+                  className={`group relative w-full overflow-hidden rounded-2xl border p-3.5 text-left transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-[0_10px_30px_-12px_rgba(0,0,0,0.10)] hover:border-border/80 ${
                     active
-                      ? `${t.ring} ${t.softBg} shadow-sm scale-[1.01]`
-                      : "border-border bg-card hover:bg-secondary/40"
+                      ? "border-foreground/15 bg-card shadow-sm"
+                      : "border-border bg-card"
                   }`}
                 >
+                  {/* Brand-color accent stripe on the left when active —
+                      subtle nod to the brain's identity without making
+                      the whole card explode in color. */}
                   {active && (
                     <span
                       aria-hidden
-                      className="absolute inset-y-0 left-0 w-1 rounded-l-xl"
+                      className="absolute inset-y-2 left-0 w-1 rounded-r-full"
                       style={{ backgroundColor: t.hex }}
                     />
                   )}
                   <div className="flex items-start gap-3">
-                    <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br ${t.gradient} text-white shadow-sm`}>
+                    <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${t.chip}`}>
                       {t.icon}
                     </span>
                     <div className="min-w-0 flex-1">
-                      <div className="font-semibold leading-tight">{b.name}</div>
+                      <div className="text-sm font-semibold leading-tight">{b.name}</div>
                       {b.description && (
                         <p className="mt-0.5 text-[11px] text-muted-foreground line-clamp-2 leading-snug">
                           {b.description}
                         </p>
                       )}
-                      <div className="mt-1.5 flex items-center gap-2 text-[10px] text-muted-foreground">
-                        <span className="font-mono tabular-nums">{counts.docs}</span>
-                        <span>doc{counts.docs === 1 ? "" : "s"}</span>
-                        <span className="text-muted-foreground/40">·</span>
-                        <span className="font-mono tabular-nums">{counts.chunks}</span>
-                        <span>chunks</span>
+                      <div className="mt-1.5 flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5">
+                          <span className="font-mono font-semibold tabular-nums text-foreground/80">{counts.docs}</span>
+                          <span>{counts.docs === 1 ? "doc" : "docs"}</span>
+                        </span>
+                        <span className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5">
+                          <span className="font-mono font-semibold tabular-nums text-foreground/80">{counts.chunks}</span>
+                          <span>chunks</span>
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -524,27 +516,30 @@ function BrainsPage() {
                 />
               </div>
 
-              {/* Action card: prominent CTA to add a doc */}
-              <div className="relative overflow-hidden rounded-2xl border border-border bg-card p-5">
-                <div
-                  aria-hidden
-                  className="absolute -top-16 -right-16 h-40 w-40 rounded-full blur-3xl pointer-events-none"
-                  style={{ backgroundColor: `${activeTone.hex}1a` }}
-                />
-                <div className="relative flex flex-wrap items-center justify-between gap-4">
-                  <div className="min-w-0">
-                    <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
-                      Active brain
+              {/* Action card — clean Crawl-4o flat row.
+                  Active-brain label + name on the left, dark rounded
+                  CTA on the right (matches Bernard's send button +
+                  the rest of the modern app). */}
+              <div className="rounded-2xl border border-border bg-card p-5">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${activeTone.chip}`}>
+                      {activeTone.icon}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
+                        Active brain
+                      </div>
+                      <div className="mt-0.5 text-lg font-bold leading-tight">{activeBrain.name}</div>
+                      {activeBrain.description && (
+                        <p className="text-xs text-muted-foreground line-clamp-1">{activeBrain.description}</p>
+                      )}
                     </div>
-                    <div className="mt-1 text-lg font-bold">{activeBrain.name}</div>
-                    {activeBrain.description && (
-                      <p className="text-xs text-muted-foreground">{activeBrain.description}</p>
-                    )}
                   </div>
                   <Dialog open={uploadOpen} onOpenChange={closeUploadDialog}>
                     <DialogTrigger asChild>
                       <Button
-                        className={`bg-gradient-to-br ${activeTone.gradient} text-white border-0 ${activeTone.glow} shadow-lg transition-all duration-200 ease-out hover:scale-105 hover:shadow-xl hover:brightness-110 active:scale-95`}
+                        className="rounded-full bg-foreground text-background hover:bg-foreground/90 transition-all duration-200 ease-out hover:scale-105 active:scale-95"
                       >
                         <Plus className="h-4 w-4 mr-1.5" />
                         Add document
@@ -560,11 +555,12 @@ function BrainsPage() {
                         </DialogTitle>
                       </DialogHeader>
 
-                      {/* Mode toggle: Files vs Paste — like Claude Projects */}
-                      <div className="flex gap-1 p-1 rounded-lg bg-muted/50 w-fit">
+                      {/* Mode toggle: Files vs Paste — rounded-pill segmented
+                          control, matches the rest of the app's chip language */}
+                      <div className="inline-flex gap-1 p-1 rounded-full bg-muted/60 w-fit">
                         <button
                           onClick={() => setUploadMode("files")}
-                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                          className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all ${
                             uploadMode === "files"
                               ? "bg-background shadow-sm text-foreground"
                               : "text-muted-foreground hover:text-foreground"
@@ -575,7 +571,7 @@ function BrainsPage() {
                         </button>
                         <button
                           onClick={() => setUploadMode("paste")}
-                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                          className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all ${
                             uploadMode === "paste"
                               ? "bg-background shadow-sm text-foreground"
                               : "text-muted-foreground hover:text-foreground"
@@ -727,14 +723,19 @@ function BrainsPage() {
                       )}
 
                       <DialogFooter>
-                        <Button variant="outline" onClick={() => closeUploadDialog(false)} disabled={uploading}>
+                        <Button
+                          variant="outline"
+                          onClick={() => closeUploadDialog(false)}
+                          disabled={uploading}
+                          className="rounded-full"
+                        >
                           Cancel
                         </Button>
                         {uploadMode === "files" ? (
                           <Button
                             onClick={onUploadFiles}
                             disabled={uploading || queue.filter((q) => q.status === "pending" || q.status === "error").length === 0}
-                            className={`bg-gradient-to-br ${activeTone.gradient} text-white border-0 shadow-lg ${activeTone.glow} transition-all duration-200 ease-out hover:scale-105 hover:shadow-xl hover:brightness-110 active:scale-95 disabled:opacity-70 disabled:hover:scale-100`}
+                            className="rounded-full bg-foreground text-background hover:bg-foreground/90 transition-all duration-200 ease-out hover:scale-105 active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
                           >
                             {uploading ? (
                               <>
@@ -752,7 +753,7 @@ function BrainsPage() {
                           <Button
                             onClick={onUploadPaste}
                             disabled={uploading}
-                            className={`bg-gradient-to-br ${activeTone.gradient} text-white border-0 shadow-lg ${activeTone.glow} transition-all duration-200 ease-out hover:scale-105 hover:shadow-xl hover:brightness-110 active:scale-95 disabled:opacity-70 disabled:hover:scale-100`}
+                            className="rounded-full bg-foreground text-background hover:bg-foreground/90 transition-all duration-200 ease-out hover:scale-105 active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
                           >
                             {uploading ? "Embedding…" : (
                               <>
@@ -794,7 +795,7 @@ function BrainsPage() {
                     onClick={() => onTestSearch()}
                     disabled={testing || !testQuery.trim()}
                     size="sm"
-                    className={`absolute right-1.5 top-1/2 -translate-y-1/2 h-8 bg-gradient-to-br ${activeTone.gradient} text-white border-0 shadow-md transition-all duration-200 ease-out hover:scale-105 hover:shadow-lg hover:brightness-110 active:scale-95 disabled:opacity-60 disabled:hover:scale-100`}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 h-8 rounded-full bg-foreground text-background hover:bg-foreground/90 transition-all duration-200 ease-out hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100"
                   >
                     <Zap className="h-3.5 w-3.5 mr-1" />
                     {testing ? "Searching…" : "Test"}
@@ -859,7 +860,7 @@ function BrainsPage() {
                     <Button
                       onClick={() => setUploadOpen(true)}
                       size="sm"
-                      className={`mt-4 bg-gradient-to-br ${activeTone.gradient} text-white border-0 shadow-lg ${activeTone.glow} transition-all duration-200 ease-out hover:scale-105 hover:shadow-xl hover:brightness-110 active:scale-95`}
+                      className="mt-4 rounded-full bg-foreground text-background hover:bg-foreground/90 transition-all duration-200 ease-out hover:scale-105 active:scale-95"
                     >
                       <Plus className="h-3.5 w-3.5 mr-1" />
                       Add first document

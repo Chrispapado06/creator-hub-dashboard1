@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   Plus, Trash2, Edit2, Check, X, MessageCircle, AlertTriangle,
   DollarSign, Clock, Award, TrendingUp, Flag, Eye, EyeOff, Copy, KeyRound,
-  Download, Wallet, History,
+  Download, Wallet, History, Search, Briefcase, Globe2, MapPin, Activity,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,7 +23,8 @@ import { Toaster } from "@/components/ui/sonner";
 import { format, formatDistanceToNow, startOfMonth, endOfMonth, startOfWeek, endOfWeek, subWeeks, subMonths, addDays } from "date-fns";
 import { logAudit } from "@/lib/audit";
 import { StaffPortalAdmin, CoachingDialog } from "@/components/StaffPortalAdmin";
-import { GraduationCap, Sparkles } from "lucide-react";
+import { GraduationCap, Sparkles, LayoutGrid, Table2, MoreHorizontal, Heart } from "lucide-react";
+import { COUNTRIES, flagEmoji, countryByCode } from "@/lib/countries";
 
 export const Route = createFileRoute("/chatters")({ component: ChattersPage });
 
@@ -35,7 +36,8 @@ const fmtNum = (n: number) => n.toLocaleString();
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type Creator = { id: string; name: string };
-type ChatterStatus = "active" | "paused" | "inactive";
+type ChatterStatus = "active" | "paused" | "inactive" | "onboarding";
+type Gender = "male" | "female" | "other" | null;
 type StaffRole =
   | "chatter"
   | "reddit_va"
@@ -69,6 +71,11 @@ type Chatter = {
   languages: string | null;
   hire_date: string | null;
   notes: string | null;
+  /** ISO 3166-1 alpha-2 country code. Drives the flag chip on the
+   *  Subly-style staff card. */
+  country: string | null;
+  /** Renders ♂ / ♀ next to the name on the card. Optional. */
+  gender: Gender;
 };
 type Assignment = { id: string; chatter_id: string; creator_id: string; active: boolean };
 type StaffLogin = { id: string; chatter_id: string | null; username: string; password: string; active: boolean };
@@ -105,14 +112,16 @@ type Shift = {
 };
 
 const statusStyles: Record<ChatterStatus, string> = {
-  active: "bg-success/15 text-success border-success/30",
-  paused: "bg-warning/15 text-warning border-warning/30",
-  inactive: "bg-muted text-muted-foreground border-border",
+  active:     "bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border-emerald-500/30",
+  paused:     "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30",
+  inactive:   "bg-muted text-muted-foreground border-border",
+  onboarding: "bg-blue-500/12 text-blue-700 dark:text-blue-400 border-blue-500/30",
 };
 const statusLabels: Record<ChatterStatus, string> = {
-  active: "Active",
-  paused: "Paused",
-  inactive: "Inactive",
+  active:     "Active",
+  paused:     "Paused",
+  inactive:   "Terminated",
+  onboarding: "Onboarding",
 };
 const flagLabels: Record<NonNullable<QualityFlag>, string> = {
   off_brand: "Off-brand",
@@ -298,12 +307,21 @@ function RosterTab({
     status: "active" as ChatterStatus,
     commission_pct: "10", hourly_rate: "",
     languages: "", hire_date: "", notes: "",
+    country: "" as string,
+    gender: "" as "" | "male" | "female" | "other",
     create_login: false,
     login_username: "",
     login_password: "",
   });
   const [assignDialogOpen, setAssignDialogOpen] = useState<string | null>(null);
   const [filterRole, setFilterRole] = useState<string>("all");
+  // View toggle — table (existing detail-rich layout) or card grid
+  // (new Subly-style layout the user just asked for).
+  const [viewMode, setViewMode] = useState<"table" | "card">("card");
+  // Top-level status filter pills, Subly pattern. "current" = active +
+  // onboarding (i.e. not yet terminated/paused).
+  const [statusFilter, setStatusFilter] = useState<"current" | ChatterStatus | "all">("current");
+  const [searchQuery, setSearchQuery] = useState("");
   const [revealedLogin, setRevealedLogin] = useState<Record<string, boolean>>({});
   const [copied, setCopied] = useState<string | null>(null);
   const [genLoginFor, setGenLoginFor] = useState<Chatter | null>(null);
@@ -314,10 +332,24 @@ function RosterTab({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
-  const visibleChatters = useMemo(
-    () => chatters.filter((c) => filterRole === "all" || c.role === filterRole),
-    [chatters, filterRole],
-  );
+  const visibleChatters = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return chatters.filter((c) => {
+      if (filterRole !== "all" && c.role !== filterRole) return false;
+      if (statusFilter !== "all") {
+        if (statusFilter === "current") {
+          if (c.status !== "active" && c.status !== "onboarding") return false;
+        } else if (c.status !== statusFilter) {
+          return false;
+        }
+      }
+      if (q) {
+        const hay = `${c.name} ${c.email ?? ""} ${roleLabels[c.role]} ${c.country ?? ""}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [chatters, filterRole, statusFilter, searchQuery]);
   const allVisibleSelected = visibleChatters.length > 0
     && visibleChatters.every((c) => selectedIds.has(c.id));
   const toggleOne = (id: string) => {
@@ -366,6 +398,8 @@ function RosterTab({
       languages: c.languages ?? "",
       hire_date: c.hire_date ?? "",
       notes: c.notes ?? "",
+      country: c.country ?? "",
+      gender: (c.gender ?? "") as "" | "male" | "female" | "other",
       create_login: false,
       login_username: "",
       login_password: "",
@@ -389,6 +423,8 @@ function RosterTab({
       languages: form.languages.trim() || null,
       hire_date: form.hire_date || null,
       notes: form.notes.trim() || null,
+      country: form.country || null,
+      gender: form.gender || null,
     };
     let chatterId: string | null = editingId;
     if (editingId) {
@@ -415,7 +451,7 @@ function RosterTab({
         toast.success(`Login created — ${form.login_username.trim()}`);
       }
     }
-    setForm({ name: "", email: "", role: "chatter" as StaffRole, status: "active" as ChatterStatus, commission_pct: "10", hourly_rate: "", languages: "", hire_date: "", notes: "", create_login: false, login_username: "", login_password: "" });
+    setForm({ name: "", email: "", role: "chatter" as StaffRole, status: "active" as ChatterStatus, commission_pct: "10", hourly_rate: "", languages: "", hire_date: "", notes: "", country: "", gender: "", create_login: false, login_username: "", login_password: "" });
     setEditingId(null);
     setOpen(false);
     onRefresh();
@@ -484,8 +520,94 @@ function RosterTab({
   const assignmentsFor = (chatterId: string) =>
     assignments.filter((a) => a.chatter_id === chatterId && a.active);
 
+  // Status counts feed the filter pills' tooltips + the empty-state copy.
+  const statusCounts = {
+    current: chatters.filter((c) => c.status === "active" || c.status === "onboarding").length,
+    active: chatters.filter((c) => c.status === "active").length,
+    onboarding: chatters.filter((c) => c.status === "onboarding").length,
+    paused: chatters.filter((c) => c.status === "paused").length,
+    inactive: chatters.filter((c) => c.status === "inactive").length,
+    all: chatters.length,
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
+      {/* ── Subly-style toolbar — search + view toggle + filter pills + role + Add Staff. */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap min-w-0 flex-1">
+          {/* Search */}
+          <div className="relative w-56">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/60 pointer-events-none" />
+            <Input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search…"
+              className="pl-8 h-9 rounded-full"
+            />
+          </div>
+          {/* View toggle: table | card */}
+          <div className="inline-flex rounded-full border border-border bg-card p-0.5">
+            <button
+              type="button"
+              onClick={() => setViewMode("table")}
+              title="Table view"
+              className={`h-7 w-9 rounded-full flex items-center justify-center transition-all ${
+                viewMode === "table" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Table2 className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("card")}
+              title="Card grid view"
+              className={`h-7 w-9 rounded-full flex items-center justify-center transition-all ${
+                viewMode === "card" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <LayoutGrid className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          {/* Status filter pills */}
+          <div className="flex items-center gap-1 flex-wrap">
+            {([
+              { v: "current",    label: "Current Staff" },
+              { v: "active",     label: "Active" },
+              { v: "onboarding", label: "Onboarding" },
+              { v: "paused",     label: "Paused" },
+              { v: "inactive",   label: "Terminated" },
+              { v: "all",        label: "All Staff" },
+            ] as const).map((p) => (
+              <button
+                key={p.v}
+                onClick={() => setStatusFilter(p.v)}
+                className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                  statusFilter === p.v
+                    ? "bg-foreground text-background"
+                    : "text-muted-foreground hover:bg-secondary"
+                }`}
+              >
+                {p.label}
+                <span className="ml-1.5 text-[10px] opacity-70 tabular-nums">
+                  {statusCounts[p.v as keyof typeof statusCounts]}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+        {/* Add Staff button — the actual Dialog is rendered further
+            down (with its full DialogContent). This button just opens
+            the same `open` state. */}
+        <Button
+          size="sm"
+          className="rounded-full h-9"
+          onClick={() => { setEditingId(null); setOpen(true); }}
+        >
+          <Plus className="h-4 w-4 mr-1.5" />Add Staff
+        </Button>
+      </div>
+
+      {/* ── Secondary toolbar — role filter + count summary. */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3 flex-wrap">
           <Select value={filterRole} onValueChange={setFilterRole}>
@@ -526,7 +648,7 @@ function RosterTab({
             {chatters.length} staff · {chatters.filter((c) => c.status === "active").length} active
           </p>
         </div>
-        <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) { setEditingId(null); setForm({ name: "", email: "", role: "chatter" as StaffRole, status: "active" as ChatterStatus, commission_pct: "10", hourly_rate: "", languages: "", hire_date: "", notes: "", create_login: false, login_username: "", login_password: "" }); } }}>
+        <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) { setEditingId(null); setForm({ name: "", email: "", role: "chatter" as StaffRole, status: "active" as ChatterStatus, commission_pct: "10", hourly_rate: "", languages: "", hire_date: "", notes: "", country: "", gender: "", create_login: false, login_username: "", login_password: "" }); } }}>
           <DialogTrigger asChild>
             <Button size="sm"><Plus className="h-4 w-4 mr-1.5" />Add staff</Button>
           </DialogTrigger>
@@ -585,8 +707,9 @@ function RosterTab({
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="onboarding">Onboarding</SelectItem>
                       <SelectItem value="paused">Paused</SelectItem>
-                      <SelectItem value="inactive">Inactive</SelectItem>
+                      <SelectItem value="inactive">Terminated</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -622,6 +745,42 @@ function RosterTab({
                 <div className="space-y-1.5">
                   <Label>Hire date</Label>
                   <Input type="date" value={form.hire_date} onChange={(e) => setForm({ ...form, hire_date: e.target.value })} />
+                </div>
+              </div>
+              {/* Country + gender — drives the flag chip + ♂/♀ icon
+                  on the new staff card layout. Both optional. */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Country</Label>
+                  <Select
+                    value={form.country || "none"}
+                    onValueChange={(v) => setForm({ ...form, country: v === "none" ? "" : v })}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Pick a country" /></SelectTrigger>
+                    <SelectContent className="max-h-72">
+                      <SelectItem value="none">— Not set —</SelectItem>
+                      {COUNTRIES.map((c) => (
+                        <SelectItem key={c.code} value={c.code}>
+                          {flagEmoji(c.code)}  {c.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Gender</Label>
+                  <Select
+                    value={form.gender || "none"}
+                    onValueChange={(v) => setForm({ ...form, gender: (v === "none" ? "" : v) as typeof form.gender })}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Pick a gender" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">— Not set —</SelectItem>
+                      <SelectItem value="male">♂ Male</SelectItem>
+                      <SelectItem value="female">♀ Female</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
               <div className="space-y-1.5">
@@ -708,6 +867,18 @@ function RosterTab({
             </div>
           )}
 
+          {viewMode === "card" && (
+            <StaffCardGrid
+              chatters={visibleChatters}
+              logins={logins}
+              onEdit={startEdit}
+              onDelete={onDelete}
+              onCreateLogin={(c) => setGenLoginFor(c)}
+              onCoaching={(c) => setCoachingFor(c)}
+            />
+          )}
+
+          {viewMode === "table" && (
           <div className="overflow-hidden rounded-xl border border-border">
           <table className="w-full text-sm">
             <thead className="bg-secondary/40 text-xs uppercase tracking-wide text-muted-foreground">
@@ -923,6 +1094,7 @@ function RosterTab({
             </tbody>
           </table>
           </div>
+          )}
         </>
       )}
 
@@ -2199,6 +2371,203 @@ function TimeClockTab({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ── Staff card grid (Subly pattern) ───────────────────────────────────────
+//
+// Per-staff card with avatar bubble + name + gender chip + heart + ⋯ menu,
+// then job title / nationality / location / status rows, and the staff
+// member's login credentials (username + show/hide password) tucked under
+// the status row. 1-col on mobile → 2-col sm → 3-col md → 4-col lg.
+
+function StaffCardGrid({
+  chatters, logins, onEdit, onDelete, onCreateLogin, onCoaching,
+}: {
+  chatters: Chatter[];
+  logins: StaffLogin[];
+  onEdit: (c: Chatter) => void;
+  onDelete: (id: string) => void;
+  onCreateLogin: (c: Chatter) => void;
+  onCoaching: (c: Chatter) => void;
+}) {
+  if (chatters.length === 0) {
+    return (
+      <div className="rounded-2xl border border-dashed border-border bg-muted/20 p-12 text-center text-sm text-muted-foreground">
+        No staff match the current filters. Adjust the search or status pills above.
+      </div>
+    );
+  }
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+      {chatters.map((c) => (
+        <StaffCard
+          key={c.id}
+          chatter={c}
+          loginsForChatter={logins.filter((l) => l.chatter_id === c.id && l.active)}
+          onEdit={() => onEdit(c)}
+          onDelete={() => onDelete(c.id)}
+          onCreateLogin={() => onCreateLogin(c)}
+          onCoaching={() => onCoaching(c)}
+        />
+      ))}
+    </div>
+  );
+}
+
+function StaffCard({
+  chatter, loginsForChatter, onEdit, onDelete, onCreateLogin, onCoaching,
+}: {
+  chatter: Chatter;
+  loginsForChatter: StaffLogin[];
+  onEdit: () => void;
+  onDelete: () => void;
+  onCreateLogin: () => void;
+  onCoaching: () => void;
+}) {
+  const [showPwd, setShowPwd] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [favorite, setFavorite] = useState(false);
+  const country = countryByCode(chatter.country);
+  const genderIcon =
+    chatter.gender === "male" ? "♂"
+    : chatter.gender === "female" ? "♀"
+    : null;
+  const initials = chatter.name.slice(0, 2).toUpperCase();
+  const login = loginsForChatter[0] ?? null;
+
+  return (
+    <div className="group relative rounded-2xl border border-border bg-card p-4 transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-[0_10px_30px_-12px_rgba(0,0,0,0.10)]">
+      <div className="flex items-start gap-2">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <div className="h-8 w-8 rounded-full bg-gradient-to-br from-violet-500 to-indigo-500 text-white flex items-center justify-center font-semibold text-xs shrink-0">
+            {initials}
+          </div>
+          <div className="font-semibold text-sm truncate">{chatter.name}</div>
+          {genderIcon && (
+            <span
+              className={`text-sm shrink-0 ${chatter.gender === "male" ? "text-blue-500" : "text-pink-500"}`}
+              title={chatter.gender ?? undefined}
+            >
+              {genderIcon}
+            </span>
+          )}
+        </div>
+        <button
+          onClick={() => setFavorite((v) => !v)}
+          className={`shrink-0 h-7 w-7 rounded-full flex items-center justify-center transition-colors ${
+            favorite ? "text-rose-500" : "text-muted-foreground/40 hover:text-rose-500"
+          }`}
+          title={favorite ? "Unfavorite" : "Favorite"}
+        >
+          <Heart className={`h-4 w-4 ${favorite ? "fill-current" : ""}`} />
+        </button>
+        <div className="relative shrink-0">
+          <button
+            onClick={() => setMenuOpen((v) => !v)}
+            className="h-7 w-7 rounded-full flex items-center justify-center text-muted-foreground/60 hover:text-foreground hover:bg-secondary transition-colors"
+            aria-label="More actions"
+          >
+            <MoreHorizontal className="h-4 w-4" />
+          </button>
+          {menuOpen && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setMenuOpen(false)} />
+              <div className="absolute right-0 top-full mt-1 z-40 min-w-[160px] rounded-xl border border-border bg-card shadow-lg overflow-hidden text-xs">
+                <button onClick={() => { onEdit(); setMenuOpen(false); }} className="w-full text-left px-3 py-2 hover:bg-secondary">
+                  Edit details
+                </button>
+                {!login && (
+                  <button onClick={() => { onCreateLogin(); setMenuOpen(false); }} className="w-full text-left px-3 py-2 hover:bg-secondary">
+                    Create login
+                  </button>
+                )}
+                <button onClick={() => { onCoaching(); setMenuOpen(false); }} className="w-full text-left px-3 py-2 hover:bg-secondary">
+                  Coaching note
+                </button>
+                <div className="h-px bg-border" />
+                <button onClick={() => { onDelete(); setMenuOpen(false); }} className="w-full text-left px-3 py-2 hover:bg-rose-500/10 text-rose-500">
+                  Remove staff
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-4 space-y-2 text-xs">
+        <CardRow icon={<Briefcase className="h-3.5 w-3.5" />} label="Job Title" value={roleLabels[chatter.role]} />
+        <CardRow
+          icon={<Globe2 className="h-3.5 w-3.5" />}
+          label="Nationality"
+          value={country ? `${flagEmoji(country.code)}  ${country.name}` : "—"}
+        />
+        <CardRow
+          icon={<MapPin className="h-3.5 w-3.5" />}
+          label="Location"
+          value={country ? `${flagEmoji(country.code)}  ${country.name}` : "—"}
+        />
+        <div className="flex items-center justify-between gap-3">
+          <span className="flex items-center gap-1.5 text-muted-foreground">
+            <Activity className="h-3.5 w-3.5" />
+            Status
+          </span>
+          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider border ${statusStyles[chatter.status]}`}>
+            ● {statusLabels[chatter.status]}
+          </span>
+        </div>
+      </div>
+
+      {login && (
+        <div className="mt-3 pt-3 border-t border-border space-y-1.5">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70 flex items-center gap-1">
+            <KeyRound className="h-3 w-3" />
+            Login
+          </div>
+          <div className="flex items-center gap-1.5 text-xs">
+            <span className="font-mono text-muted-foreground truncate flex-1">{login.username}</span>
+            <button
+              onClick={() => navigator.clipboard.writeText(login.username)}
+              className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:bg-secondary"
+              title="Copy username"
+            >
+              <Copy className="h-3 w-3" />
+            </button>
+          </div>
+          <div className="flex items-center gap-1.5 text-xs">
+            <span className="font-mono text-muted-foreground truncate flex-1">
+              {showPwd ? login.password : "•".repeat(Math.min(login.password.length, 12))}
+            </span>
+            <button
+              onClick={() => setShowPwd((v) => !v)}
+              className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:bg-secondary"
+              title={showPwd ? "Hide" : "Reveal"}
+            >
+              {showPwd ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+            </button>
+            <button
+              onClick={() => navigator.clipboard.writeText(login.password)}
+              className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:bg-secondary"
+              title="Copy password"
+            >
+              <Copy className="h-3 w-3" />
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CardRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="flex items-center gap-1.5 text-muted-foreground">
+        {icon}
+        {label}
+      </span>
+      <span className="font-medium truncate" title={value}>{value}</span>
     </div>
   );
 }

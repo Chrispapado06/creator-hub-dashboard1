@@ -5,7 +5,7 @@ import {
   Plus, Trash2, Edit2, Check, X, ExternalLink, RefreshCw,
   Heart, MessageCircle, Eye, Image as ImageIcon, Video, Film, Layers,
   Camera, AlertTriangle, Link2, ArrowLeft, Link as LinkIcon, Unlink,
-  Users, TrendingUp, DollarSign,
+  Users, TrendingUp, DollarSign, Zap,
 } from "lucide-react";
 import { SiMeta } from "react-icons/si";
 import { SiInstagram } from "react-icons/si";
@@ -27,6 +27,7 @@ import { format, formatDistanceToNow } from "date-fns";
 import {
   Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Cell,
 } from "recharts";
+import { AccountAnalyticsHero, ContentTypeBreakdown } from "@/components/AccountAnalyticsHero";
 
 export const Route = createFileRoute("/instagram")({ component: InstagramPage });
 
@@ -54,6 +55,15 @@ type IGAccount = {
   meta_access_token: string | null;
   meta_ig_user_id: string | null;
   meta_connected_at: string | null;
+  /** ScrapeCreators provider — paste an API key from
+   *  https://scrapecreators.com instead of going through Meta. No app
+   *  review, no IG-User-ID lookup. Works on any public IG handle. */
+  scrapecreators_key: string | null;
+  scrapecreators_connected_at: string | null;
+  /** Profile picture pulled from the connected provider — drives the
+   *  avatar circle in the Detailed Analytics hero. Either platform
+   *  populates it; the URL is stored as-is. */
+  avatar_url: string | null;
 };
 type IGMediaType = "image" | "video" | "reel" | "carousel" | "story";
 type IGPost = {
@@ -550,6 +560,41 @@ function StatCard({
   );
 }
 
+// ── Modern KPI tile shared by Revenue Performance + Engagement Performance.
+// Sister component to ModernStat — but uses background/60 instead of bg-card
+// so it nests cleanly *inside* a parent card section.
+function RevKpiCard({
+  icon, tone, label, value, sub,
+}: {
+  icon: React.ReactNode;
+  tone: "emerald" | "violet" | "cyan" | "amber" | "pink";
+  label: string;
+  value: string | number;
+  sub: string;
+}) {
+  const TONE_CLS = {
+    emerald: "bg-emerald-500/12 text-emerald-600",
+    violet:  "bg-violet-500/12 text-violet-600",
+    cyan:    "bg-cyan-500/12 text-cyan-600",
+    amber:   "bg-amber-500/15 text-amber-600",
+    pink:    "bg-pink-500/12 text-pink-600",
+  }[tone];
+  return (
+    <div className="rounded-xl border border-border bg-background/60 p-4 transition-all hover:bg-background hover:shadow-sm">
+      <div className="flex items-center gap-2 mb-2">
+        <span className={`h-7 w-7 rounded-lg flex items-center justify-center ${TONE_CLS}`}>
+          {icon}
+        </span>
+        <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-bold truncate">
+          {label}
+        </span>
+      </div>
+      <div className="text-2xl font-bold tabular-nums leading-none">{value}</div>
+      <div className="text-[11px] text-muted-foreground mt-1.5 truncate">{sub}</div>
+    </div>
+  );
+}
+
 function ChartCard({
   title, sub, children,
 }: {
@@ -973,11 +1018,28 @@ function AccountDetailView({
     [account, posts]
   );
 
+  // Two providers can coexist on one account, but we render one as
+  // active in the header. Pick whichever has credentials saved; if both
+  // do, prefer ScrapeCreators (newer/simpler). Sync direction follows.
   const [metaDialogOpen, setMetaDialogOpen] = useState(false);
   const [metaForm, setMetaForm] = useState({ ig_user_id: "", access_token: "" });
   const [metaSyncing, setMetaSyncing] = useState(false);
 
-  const isConnected = !!(account.meta_access_token && account.meta_ig_user_id);
+  // ScrapeCreators state — separate dialog, separate form.
+  const [scDialogOpen, setScDialogOpen] = useState(false);
+  const [scForm, setScForm] = useState({ key: "" });
+  const [scSyncing, setScSyncing] = useState(false);
+
+  const isMetaConnected = !!(account.meta_access_token && account.meta_ig_user_id);
+  const isScConnected = !!account.scrapecreators_key;
+  const isConnected = isMetaConnected || isScConnected;
+  // Which provider's pill we show in the header. ScrapeCreators wins
+  // when both are set (less friction = preferred path).
+  const activeProvider: "meta" | "scrapecreators" | null = isScConnected
+    ? "scrapecreators"
+    : isMetaConnected
+      ? "meta"
+      : null;
 
   const runMetaSync = async (
     igUserId: string,
@@ -1112,6 +1174,308 @@ function AccountDetailView({
       .eq("id", account.id);
     if (error) return toast.error(error.message);
     toast.success("Disconnected from Meta");
+    onRefresh();
+  };
+
+  // ── ScrapeCreators provider ───────────────────────────────────────
+  // Documented endpoints (https://docs.scrapecreators.com):
+  //   GET /v1/instagram/profile?handle=USERNAME
+  //   GET /v2/instagram/user/posts?handle=USERNAME
+  // Both require an `x-api-key` header. We're conservative parsing
+  // the response — ScrapeCreators occasionally rotates field names,
+  // so every read uses ?? fallbacks across a few common shapes.
+  const runScrapeCreatorsSync = async (
+    key: string,
+    username: string,
+  ): Promise<{ ok: true; postCount: number } | { ok: false; error: string }> => {
+    const base = "https://api.scrapecreators.com";
+    const headers = { "x-api-key": key };
+    // Defensive sanitize — strip any leading "@", trailing slashes,
+    // surrounding whitespace, or full instagram.com/ URL prefix the
+    // user may have pasted accidentally. ScrapeCreators wants the
+    // bare handle.
+    const cleanHandle = username
+      .trim()
+      .replace(/^https?:\/\/(www\.)?instagram\.com\//i, "")
+      .replace(/\/.*$/, "")
+      .replace(/^@/, "");
+    try {
+      // ── Profile ──
+      const profRes = await fetch(
+        `${base}/v1/instagram/profile?handle=${encodeURIComponent(cleanHandle)}`,
+        { headers },
+      );
+      const profText = await profRes.text();
+      let profJson: Record<string, unknown> = {};
+      try { profJson = JSON.parse(profText); } catch { /* fallthrough */ }
+      console.log("[scrapecreators IG] profile response:", profJson);
+      if (!profRes.ok) {
+        const msg = (profJson as { error?: string; message?: string }).error
+          ?? (profJson as { message?: string }).message
+          ?? `${profRes.status} ${profRes.statusText}`;
+        return { ok: false, error: `ScrapeCreators profile: ${msg}` };
+      }
+      // ScrapeCreators returns HTTP 200 even when it logically failed —
+      // surface those cases as real errors so the UI explains what's
+      // actually wrong instead of pretending we synced 0 posts.
+      const profErr = String((profJson as { error?: string }).error ?? "").toLowerCase();
+      const profMsg = String((profJson as { message?: string }).message ?? "").toLowerCase();
+      if (profErr === "not_found" || profMsg.includes("not found")) {
+        return { ok: false, error:
+          `Instagram says @${cleanHandle} doesn't exist. Try opening https://instagram.com/${cleanHandle} in a fresh browser tab to confirm. Common gotchas: missing/extra dot, missing underscore, .official vs .official_, or the account was renamed.`
+        };
+      }
+      if (profMsg.includes("restricted") || profMsg.includes("private") || profErr.includes("private")) {
+        return { ok: false, error:
+          `This Instagram account is set to Private. ScrapeCreators can only read public accounts. Either flip the IG account to Public in its settings, or connect this account via Meta API instead (works on private accounts you own).`
+        };
+      }
+      // ScrapeCreators returns IG's GraphQL shape — nested `.count`
+      // on follower/following/media. Walk the object aggressively.
+      const candidates: Record<string, unknown>[] = [];
+      const collect = (o: unknown) => {
+        if (!o || typeof o !== "object") return;
+        candidates.push(o as Record<string, unknown>);
+      };
+      collect(profJson);
+      collect((profJson as { data?: unknown }).data);
+      collect((profJson as { user?: unknown }).user);
+      collect(((profJson as { data?: { user?: unknown } }).data ?? {}).user);
+      // Pick the first object that has at least one IG-ish field
+      const userObj = candidates.find((o) =>
+        "username" in o || "biography" in o || "edge_followed_by" in o
+        || "follower_count" in o || "followers" in o
+      ) ?? (profJson as Record<string, unknown>);
+
+      const num = (v: unknown): number => {
+        if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+        if (typeof v === "string") {
+          const n = Number(v);
+          return Number.isFinite(n) ? n : 0;
+        }
+        // Nested IG GraphQL: { count: 1234 }
+        if (v && typeof v === "object" && "count" in (v as object)) {
+          const c = (v as { count?: unknown }).count;
+          return num(c);
+        }
+        return 0;
+      };
+      const followers = num(
+        userObj.follower_count ?? userObj.followers ?? userObj.followersCount ?? userObj.edge_followed_by
+      );
+      const following = num(
+        userObj.following_count ?? userObj.following ?? userObj.followingCount ?? userObj.edge_follow
+      );
+      const mediaCount = num(
+        userObj.media_count ?? userObj.posts ?? userObj.post_count ?? userObj.postsCount
+        ?? userObj.edge_owner_to_timeline_media
+      );
+      const biography = (userObj.biography ?? userObj.bio ?? null) as string | null;
+      const externalUrl = (userObj.external_url ?? userObj.website ?? userObj.externalUrl ?? null) as string | null;
+      // Pull the profile picture — try the most common field names
+      // ScrapeCreators uses across IG response shapes. We store the
+      // URL as-is; React renders it in an <img>.
+      const avatarUrl = (() => {
+        const candidates = [
+          userObj.profile_pic_url,
+          userObj.profile_picture_url,
+          userObj.profile_picture,
+          userObj.profile_pic_url_hd,
+          userObj.avatar_url,
+          (userObj.profile_pic as { url?: string } | undefined)?.url,
+        ];
+        const v = candidates.find((c) => typeof c === "string" && c.length > 0);
+        return (v as string | undefined) ?? null;
+      })();
+      console.log("[scrapecreators IG] parsed profile:", { followers, following, mediaCount, hasAvatar: !!avatarUrl });
+
+      // ── Posts (v2 endpoint per ScrapeCreators docs) ──
+      const postsRes = await fetch(
+        `${base}/v2/instagram/user/posts?handle=${encodeURIComponent(cleanHandle)}`,
+        { headers },
+      );
+      const postsText = await postsRes.text();
+      let postsJson: Record<string, unknown> = {};
+      try { postsJson = JSON.parse(postsText); } catch { /* fallthrough */ }
+      console.log("[scrapecreators IG] posts response:", postsJson);
+      // Same logical-error detection as the profile endpoint — even
+      // when posts return HTTP 200, the body can say "Profile is
+      // restricted" and we should surface that instead of saying "0
+      // posts" silently.
+      const postsErr = String((postsJson as { error?: string }).error ?? "").toLowerCase();
+      const postsMsg = String((postsJson as { message?: string }).message ?? "").toLowerCase();
+      if (postsErr === "not_found" || postsMsg.includes("not found")) {
+        return { ok: false, error:
+          `Instagram says @${cleanHandle} doesn't exist (no posts). Check the spelling.`
+        };
+      }
+      if (postsMsg.includes("restricted") || postsMsg.includes("private")) {
+        return { ok: false, error:
+          `This Instagram account is set to Private. ScrapeCreators can't read private posts. Flip the account to Public in IG settings, or use Meta API.`
+        };
+      }
+      // Walk a few likely paths — ScrapeCreators returns one of these.
+      const postsArr =
+           (postsJson.items as Array<Record<string, unknown>> | undefined)
+        ?? (postsJson.posts as Array<Record<string, unknown>> | undefined)
+        ?? (postsJson.data as Array<Record<string, unknown>> | undefined)
+        ?? ((postsJson.data as { items?: unknown })?.items as Array<Record<string, unknown>> | undefined)
+        ?? ((postsJson.user as { edge_owner_to_timeline_media?: { edges?: Array<{ node?: Record<string, unknown> }> } })
+              ?.edge_owner_to_timeline_media?.edges?.map((e) => e.node ?? {}))
+        ?? [];
+      console.log("[scrapecreators IG] posts found:", postsArr.length);
+      const posts = postsArr.slice(0, 25).map((p) => {
+        // ID can live in many places depending on response shape:
+        // - flat `id`, `pk`, `code`, `shortcode`
+        // - GraphQL `node.id`
+        // - sometimes a numeric pk we coerce to string
+        const idCandidate =
+             p.id
+          ?? p.pk
+          ?? p.code
+          ?? p.shortcode
+          ?? (p.node && (p.node as Record<string, unknown>).id)
+          ?? (p.node && (p.node as Record<string, unknown>).pk)
+          ?? "";
+        const id = String(idCandidate);
+        const caption = (() => {
+          const c = p.caption ?? (p.node && (p.node as Record<string, unknown>).caption);
+          if (!c) return null;
+          if (typeof c === "string") return c;
+          if (typeof c === "object") {
+            return ((c as { text?: string }).text ?? null) as string | null;
+          }
+          return null;
+        })();
+        const mt = String(p.media_type ?? p.type ?? p.product_type ?? "").toLowerCase();
+        let media_type: IGMediaType = "image";
+        if (p.product_type === "clips" || mt.includes("video") || mt === "2") media_type = "video";
+        else if (mt === "reel" || mt.includes("reel")) media_type = "reel";
+        else if (mt.includes("carousel") || mt === "8") media_type = "carousel";
+        else if (mt.includes("story")) media_type = "story";
+        const tsRaw =
+             p.taken_at
+          ?? p.timestamp
+          ?? p.created_at
+          ?? p.posted_at
+          ?? p.taken_at_timestamp
+          ?? (p.node && (p.node as Record<string, unknown>).taken_at);
+        const ts = typeof tsRaw === "number"
+          ? new Date(tsRaw * (tsRaw > 1e12 ? 1 : 1000)).toISOString()
+          : typeof tsRaw === "string"
+            ? new Date(tsRaw).toISOString()
+            : new Date().toISOString();
+        const likes = num(
+          p.like_count
+          ?? p.likes
+          ?? p.likes_count
+          ?? (p.edge_liked_by as { count?: number } | undefined)?.count
+          ?? (p.edge_media_preview_like as { count?: number } | undefined)?.count,
+        );
+        const comments = num(
+          p.comment_count
+          ?? p.comments
+          ?? p.comments_count
+          ?? (p.edge_media_to_comment as { count?: number } | undefined)?.count,
+        );
+        return {
+          id,
+          caption,
+          media_type,
+          posted_at: ts,
+          likes,
+          comments,
+          shortcode: (p.code ?? p.shortcode ?? id) as string,
+        };
+      }).filter((p) => p.id);
+      console.log("[scrapecreators IG] parsed posts:", posts.length);
+
+      // ── Persist to Supabase ──
+      const updatePayload = {
+        followers_count: followers || account.followers_count,
+        following_count: following || account.following_count,
+        posts_count: mediaCount || account.posts_count,
+        bio_link: externalUrl ?? biography ?? account.bio_link,
+        avatar_url: avatarUrl ?? account.avatar_url,
+        scrapecreators_key: key,
+        scrapecreators_connected_at: account.scrapecreators_connected_at ?? new Date().toISOString(),
+        last_synced_at: new Date().toISOString(),
+      };
+      const { error: updErr } = await supabase
+        .from("instagram_accounts")
+        .update(updatePayload)
+        .eq("id", account.id);
+      if (updErr) return { ok: false, error: updErr.message };
+
+      if (posts.length > 0) {
+        const upserts = posts.map((p) => ({
+          instagram_account_id: account.id,
+          post_id: p.id,
+          caption: p.caption,
+          media_type: p.media_type,
+          posted_at: p.posted_at,
+          likes_count: p.likes,
+          comments_count: p.comments,
+          url: `https://www.instagram.com/p/${p.shortcode}/`,
+        }));
+        const { error: postErr } = await supabase
+          .from("instagram_posts")
+          .upsert(upserts, { onConflict: "instagram_account_id,post_id" });
+        if (postErr) return { ok: false, error: postErr.message };
+      }
+      return { ok: true, postCount: posts.length };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Network error" };
+    }
+  };
+
+  const onConnectScrapeCreators = async () => {
+    const key = scForm.key.trim();
+    if (!key) {
+      toast.error("Paste your ScrapeCreators API key.");
+      return;
+    }
+    setScSyncing(true);
+    const result = await runScrapeCreatorsSync(key, account.username);
+    setScSyncing(false);
+    if (!result.ok) {
+      toast.error(`ScrapeCreators connect failed: ${result.error}`);
+      return;
+    }
+    if (result.postCount === 0) {
+      toast.warning("Connected — but 0 posts came back. Open the browser console (F12) to see the raw API response so we can adjust the parser.");
+    } else {
+      toast.success(`Connected — ${result.postCount} post${result.postCount === 1 ? "" : "s"} synced`);
+    }
+    setScDialogOpen(false);
+    setScForm({ key: "" });
+    onRefresh();
+  };
+
+  const onRefreshFromScrapeCreators = async () => {
+    if (!account.scrapecreators_key) return;
+    setScSyncing(true);
+    const result = await runScrapeCreatorsSync(account.scrapecreators_key, account.username);
+    setScSyncing(false);
+    if (!result.ok) {
+      toast.error(`ScrapeCreators sync failed: ${result.error}`);
+      return;
+    }
+    if (result.postCount === 0) {
+      toast.warning("Synced profile — but 0 posts came back. Check the browser console for the raw response.");
+    } else {
+      toast.success(`Synced — ${result.postCount} post${result.postCount === 1 ? "" : "s"}`);
+    }
+    onRefresh();
+  };
+
+  const onDisconnectScrapeCreators = async () => {
+    const { error } = await supabase
+      .from("instagram_accounts")
+      .update({ scrapecreators_key: null, scrapecreators_connected_at: null })
+      .eq("id", account.id);
+    if (error) return toast.error(error.message);
+    toast.success("Disconnected from ScrapeCreators");
     onRefresh();
   };
 
@@ -1301,8 +1665,43 @@ function AccountDetailView({
           {statusLabels[account.status]}
         </span>
 
-        <div className="ml-auto flex items-center gap-2">
-          {isConnected ? (
+        <div className="ml-auto flex items-center gap-2 flex-wrap">
+          {activeProvider === "scrapecreators" ? (
+            <>
+              <span className="text-xs text-muted-foreground inline-flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-success" />
+                Connected via ScrapeCreators
+                {account.scrapecreators_connected_at && (
+                  <span className="text-muted-foreground/60">
+                    · {formatDistanceToNow(new Date(account.scrapecreators_connected_at), { addSuffix: true })}
+                  </span>
+                )}
+              </span>
+              <Button variant="outline" size="sm" onClick={onRefreshFromScrapeCreators} disabled={scSyncing}>
+                <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${scSyncing ? "animate-spin" : ""}`} />
+                {scSyncing ? "Syncing…" : "Refresh"}
+              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive">
+                    <Unlink className="h-3.5 w-3.5" />
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Disconnect from ScrapeCreators?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      We'll clear the saved API key. Synced posts stay; auto-refresh stops.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={onDisconnectScrapeCreators}>Disconnect</AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </>
+          ) : activeProvider === "meta" ? (
             <>
               <span className="text-xs text-muted-foreground inline-flex items-center gap-1.5">
                 <span className="h-1.5 w-1.5 rounded-full bg-success" />
@@ -1338,10 +1737,16 @@ function AccountDetailView({
               </AlertDialog>
             </>
           ) : (
-            <Button size="sm" onClick={() => setMetaDialogOpen(true)}>
-              <SiMeta className="h-3.5 w-3.5 mr-1.5" />
-              Connect with Meta
-            </Button>
+            <>
+              <Button size="sm" onClick={() => setScDialogOpen(true)}>
+                <Zap className="h-3.5 w-3.5 mr-1.5" />
+                Connect ScrapeCreators
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setMetaDialogOpen(true)}>
+                <SiMeta className="h-3.5 w-3.5 mr-1.5" />
+                Connect with Meta
+              </Button>
+            </>
           )}
         </div>
       </div>
@@ -1403,17 +1808,121 @@ function AccountDetailView({
         </DialogContent>
       </Dialog>
 
-      {/* Headline stats */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <StatCard label="Followers" value={account.followers_count.toLocaleString()} sub="current count" />
-            <StatCard label="Following" value={account.following_count.toLocaleString()} sub="" />
-            <StatCard label="Posts on IG" value={account.posts_count.toLocaleString()} sub="reported count" />
-            <StatCard
-              label="Tracked posts"
-              value={accountPosts.length}
-              sub={stats ? `${stats.last30d} in last 30d` : "none yet"}
-            />
+      {/* ── ScrapeCreators connect dialog ─────────────────────────────
+          Easier path that skips Meta App Review / Business Manager.
+          Just pastes an API key from scrapecreators.com — same flow
+          the TikTok page already uses. */}
+      <Dialog open={scDialogOpen} onOpenChange={setScDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Zap className="h-5 w-5" />
+              Connect @{account.username} via ScrapeCreators
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2 text-sm">
+            <div className="rounded-lg border border-border bg-secondary/40 p-3 text-xs text-muted-foreground space-y-2">
+              <div>
+                Pulls profile + recent posts (caption, likes, comments,
+                media type, posted-at) from ScrapeCreators' Instagram
+                endpoints. No Meta paperwork — just an API key.
+              </div>
+              <div className="font-medium text-foreground">How to get a key</div>
+              <ul className="list-disc pl-4 space-y-0.5">
+                <li>
+                  Sign up at{" "}
+                  <a className="text-primary hover:underline" href="https://scrapecreators.com" target="_blank" rel="noreferrer">
+                    scrapecreators.com
+                  </a>
+                </li>
+                <li>Add a card → top up with $5 (≈ thousands of syncs)</li>
+                <li>Copy your API key from the dashboard</li>
+              </ul>
+              <div className="text-foreground font-medium pt-1">Same key works across Instagram, Facebook, and TikTok pages.</div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>API key</Label>
+              <Input
+                type="password"
+                placeholder="sk-..."
+                value={scForm.key}
+                onChange={(e) => setScForm({ key: e.target.value })}
+              />
+              <div className="text-xs text-muted-foreground">
+                Stored in your Supabase DB. Treat like a password.
+              </div>
+            </div>
           </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setScDialogOpen(false)}>Cancel</Button>
+            <Button onClick={onConnectScrapeCreators} disabled={scSyncing}>
+              {scSyncing ? "Connecting…" : "Connect & sync"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Flux-style Detailed Analytics hero (matches TikTok / FB). */}
+      {(() => {
+        const accountRevenue = account.infloww_campaign_code != null
+          ? inflowwStats
+              .filter((s) => s.campaign_code === account.infloww_campaign_code)
+              .reduce((sum, s) => sum + (s.revenue_total ?? 0), 0)
+          : 0;
+        const totalLikes = accountPosts.reduce((s, p) => s + (p.likes_count ?? 0), 0);
+        const totalComments = accountPosts.reduce((s, p) => s + (p.comments_count ?? 0), 0);
+        const avgLikes = accountPosts.length > 0 ? totalLikes / accountPosts.length : 0;
+        const avgComments = accountPosts.length > 0 ? totalComments / accountPosts.length : 0;
+        const engagementPct = stats?.engagement ?? 0;
+        return (
+          <>
+            <AccountAnalyticsHero
+              avatarUrl={account.avatar_url ?? null}
+              displayName={account.username.toUpperCase()}
+              username={account.username}
+              verified={account.followers_count >= 10000}
+              bio={account.bio_link ?? account.notes ?? null}
+              joinedLabel={null}
+              brandIcon={<SiInstagram className="h-3.5 w-3.5" style={{ color: IG_PINK }} />}
+              brandColor={IG_PINK}
+              totalLikes={{
+                value: totalLikes >= 1_000_000
+                  ? `${(totalLikes / 1_000_000).toFixed(1)}M`
+                  : totalLikes >= 1_000
+                    ? `${(totalLikes / 1_000).toFixed(1)}K`
+                    : totalLikes.toLocaleString(),
+                delta: null,
+              }}
+              engagementRate={{
+                value: engagementPct > 0 ? `${engagementPct.toFixed(2)}%` : "—",
+                delta: null,
+              }}
+              revenue={{
+                value: `$${fmtMoney0(accountRevenue)}`,
+                delta: null,
+                deltaLabel: account.infloww_campaign_code
+                  ? `from campaign ${account.infloww_campaign_code}`
+                  : "no campaign linked",
+              }}
+            />
+            <ContentTypeBreakdown
+              brandColor={IG_PINK}
+              leftStats={[
+                { label: "Followers", value: account.followers_count.toLocaleString() },
+                { label: "Following", value: account.following_count.toLocaleString() },
+                { label: "Posts on IG", value: account.posts_count.toLocaleString() },
+                { label: "Tracked posts", value: accountPosts.length.toLocaleString() },
+              ]}
+              rightStats={[
+                { label: "Total Likes", value: totalLikes.toLocaleString() },
+                { label: "Total Comments", value: totalComments.toLocaleString() },
+                { label: "Avg Likes / post", value: Math.round(avgLikes).toLocaleString() },
+                { label: "Avg Comments / post", value: Math.round(avgComments).toLocaleString() },
+              ]}
+            />
+          </>
+        );
+      })()}
 
           {accountPosts.length === 0 && (
             <div className="rounded-xl border border-dashed border-border bg-card/40 p-4 text-center text-sm text-muted-foreground">
@@ -1421,20 +1930,186 @@ function AccountDetailView({
             </div>
           )}
 
-          {/* Performance */}
-          <div>
-            <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Performance</div>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <StatCard label="Avg likes" value={stats ? Math.round(stats.avgLikes).toLocaleString() : "—"} sub={stats ? `${stats.totalLikes.toLocaleString()} total` : "no posts yet"} />
-              <StatCard label="Avg comments" value={stats ? Math.round(stats.avgComments).toLocaleString() : "—"} sub={stats ? `${stats.totalComments.toLocaleString()} total` : ""} />
-              <StatCard label="Avg reach" value={stats ? Math.round(stats.avgReach).toLocaleString() : "—"} sub={stats ? `${stats.totalReach.toLocaleString()} total` : ""} />
-              <StatCard
-                label="Engagement"
+          {/* ── Revenue performance card ───────────────────────────────
+              Big modern Boxera-style panel showing every dollar this
+              specific account has driven. Pulls all infloww tracking-link
+              rows whose campaign_code matches the account's
+              infloww_campaign_code and rolls them up. Empty state when
+              no campaign is linked. */}
+          {(() => {
+            const accountLinks = account.infloww_campaign_code != null
+              ? inflowwStats.filter((s) => s.campaign_code === account.infloww_campaign_code)
+              : [];
+            const totalRevenue = accountLinks.reduce((s, r) => s + (r.revenue_total ?? 0), 0);
+            const totalClicks = accountLinks.reduce((s, r) => s + (r.clicks_count ?? 0), 0);
+            const totalSubs = accountLinks.reduce((s, r) => s + (r.subscribers_count ?? 0), 0);
+            const totalSpenders = accountLinks.reduce((s, r) => s + (r.spenders_count ?? 0), 0);
+            const conversion = totalClicks > 0 ? (totalSubs / totalClicks) * 100 : 0;
+            const revenuePerSub = totalSubs > 0 ? totalRevenue / totalSubs : 0;
+            const revenuePerClick = totalClicks > 0 ? totalRevenue / totalClicks : 0;
+            const isLinked = account.infloww_campaign_code != null;
+            return (
+              <section className="rounded-2xl border border-border bg-card p-5 sm:p-6 space-y-4">
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div className="flex items-center gap-2.5">
+                    <span className="h-7 w-7 rounded-lg bg-emerald-500/15 text-emerald-600 flex items-center justify-center">
+                      <DollarSign className="h-4 w-4" />
+                    </span>
+                    <div>
+                      <h3 className="text-sm font-bold tracking-tight">Revenue Performance</h3>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        Every dollar tied to this Instagram account via Infloww campaign
+                        {isLinked && (
+                          <> code <span className="font-mono font-semibold text-foreground">{account.infloww_campaign_code}</span></>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                  {!isLinked && (
+                    <span className="text-[10px] font-bold uppercase tracking-wider rounded-full px-2 py-1 bg-amber-500/15 text-amber-700 dark:text-amber-300">
+                      No campaign linked
+                    </span>
+                  )}
+                </div>
+                {!isLinked ? (
+                  <div className="rounded-xl border border-dashed border-border bg-muted/20 p-8 text-center text-sm text-muted-foreground">
+                    Set this account's <strong>Infloww campaign code</strong> in the Edit dialog to attribute revenue here.
+                  </div>
+                ) : accountLinks.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-border bg-muted/20 p-8 text-center text-sm text-muted-foreground">
+                    Campaign <span className="font-mono">{account.infloww_campaign_code}</span> is linked but Infloww hasn't returned any traffic for it yet. Click <strong>Sync Infloww</strong> on the Revenue page to refresh.
+                  </div>
+                ) : (
+                  <>
+                    {/* KPI strip — 4 metric cards */}
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                      <RevKpiCard
+                        icon={<DollarSign className="h-4 w-4" />}
+                        tone="emerald"
+                        label="Total Revenue"
+                        value={`$${fmtMoney0(totalRevenue)}`}
+                        sub={`${accountLinks.length} link${accountLinks.length === 1 ? "" : "s"} active`}
+                      />
+                      <RevKpiCard
+                        icon={<Users className="h-4 w-4" />}
+                        tone="violet"
+                        label="Subscribers"
+                        value={totalSubs.toLocaleString()}
+                        sub={`${totalSpenders.toLocaleString()} spent money`}
+                      />
+                      <RevKpiCard
+                        icon={<Eye className="h-4 w-4" />}
+                        tone="cyan"
+                        label="Total Clicks"
+                        value={totalClicks.toLocaleString()}
+                        sub={`$${revenuePerClick.toFixed(2)} per click`}
+                      />
+                      <RevKpiCard
+                        icon={<TrendingUp className="h-4 w-4" />}
+                        tone="amber"
+                        label="Click → Sub"
+                        value={`${conversion.toFixed(2)}%`}
+                        sub={`$${revenuePerSub.toFixed(2)} per sub`}
+                      />
+                    </div>
+                    {/* Per-link breakdown — clean table */}
+                    {accountLinks.length > 1 && (
+                      <div className="overflow-hidden rounded-xl border border-border">
+                        <div className="px-3 py-2 border-b border-border bg-muted/30">
+                          <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/70">
+                            Per-link breakdown
+                          </div>
+                        </div>
+                        <table className="w-full text-xs">
+                          <thead className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-bold">
+                            <tr>
+                              <th className="text-left px-3 py-2">Campaign</th>
+                              <th className="text-right px-3 py-2">Clicks</th>
+                              <th className="text-right px-3 py-2">Subs</th>
+                              <th className="text-right px-3 py-2">CVR</th>
+                              <th className="text-right px-3 py-2">Revenue</th>
+                              <th className="text-right px-3 py-2">$ / sub</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {accountLinks
+                              .slice()
+                              .sort((a, b) => b.revenue_total - a.revenue_total)
+                              .map((l) => {
+                                const cvr = l.clicks_count > 0
+                                  ? (l.subscribers_count / l.clicks_count) * 100
+                                  : 0;
+                                return (
+                                  <tr key={l.id} className="border-t border-border bg-card hover:bg-secondary/30">
+                                    <td className="px-3 py-2 font-mono">c{l.campaign_code}</td>
+                                    <td className="px-3 py-2 text-right tabular-nums">{l.clicks_count.toLocaleString()}</td>
+                                    <td className="px-3 py-2 text-right tabular-nums">{l.subscribers_count.toLocaleString()}</td>
+                                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{cvr.toFixed(2)}%</td>
+                                    <td className="px-3 py-2 text-right font-bold tabular-nums">${fmtMoney0(l.revenue_total)}</td>
+                                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+                                      {l.subscribers_count > 0 ? `$${(l.revenue_total / l.subscribers_count).toFixed(2)}` : "—"}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </>
+                )}
+              </section>
+            );
+          })()}
+
+          {/* ── Engagement Performance ─────────────────────────────────
+              Modern 4-tile KPI strip — Avg Likes / Avg Comments / Avg
+              Reach / Engagement Rate. Replaces the old plain
+              StatCard row with the same brand-tinted icon-chip
+              pattern used on the dashboard. */}
+          <section className="rounded-2xl border border-border bg-card p-5 sm:p-6 space-y-4">
+            <div className="flex items-center gap-2.5">
+              <span className="h-7 w-7 rounded-lg bg-pink-500/15 text-pink-600 flex items-center justify-center">
+                <Heart className="h-4 w-4" />
+              </span>
+              <div>
+                <h3 className="text-sm font-bold tracking-tight">Engagement Performance</h3>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  Per-post averages and engagement rate across {accountPosts.length} tracked post{accountPosts.length === 1 ? "" : "s"}
+                </p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <RevKpiCard
+                icon={<Heart className="h-4 w-4" />}
+                tone="pink"
+                label="Avg Likes"
+                value={stats ? Math.round(stats.avgLikes).toLocaleString() : "—"}
+                sub={stats ? `${stats.totalLikes.toLocaleString()} total` : "no posts yet"}
+              />
+              <RevKpiCard
+                icon={<MessageCircle className="h-4 w-4" />}
+                tone="violet"
+                label="Avg Comments"
+                value={stats ? Math.round(stats.avgComments).toLocaleString() : "—"}
+                sub={stats ? `${stats.totalComments.toLocaleString()} total` : ""}
+              />
+              <RevKpiCard
+                icon={<Eye className="h-4 w-4" />}
+                tone="cyan"
+                label="Avg Reach"
+                value={stats ? Math.round(stats.avgReach).toLocaleString() : "—"}
+                sub={stats ? `${stats.totalReach.toLocaleString()} total` : ""}
+              />
+              <RevKpiCard
+                icon={<TrendingUp className="h-4 w-4" />}
+                tone="emerald"
+                label="Engagement Rate"
                 value={stats?.engagement != null ? `${stats.engagement.toFixed(2)}%` : "—"}
-                sub="(likes+comments)/reach"
+                sub="(likes + comments) / reach"
               />
             </div>
-          </div>
+          </section>
 
               {/* Insights */}
               {insights.length > 0 && (

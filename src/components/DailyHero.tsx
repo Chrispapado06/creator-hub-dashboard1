@@ -35,6 +35,7 @@ import {
   format, parseISO, subDays, startOfDay, endOfDay, startOfMonth,
   endOfMonth, isSameDay, eachDayOfInterval, differenceInCalendarDays,
 } from "date-fns";
+import { getCached, setCached, getCachedAge, TTL_2H } from "@/lib/cache";
 
 // ── Types we map Supabase rows into ─────────────────────────────────────
 
@@ -59,31 +60,83 @@ type Alert = {
 
 // ── Public API ───────────────────────────────────────────────────────────
 
+// ── Snapshot types persisted to localStorage ───────────────────────
+// Versioned in the cache key (`daily-main:v1`) so future shape changes
+// invalidate cleanly — readers that don't recognize the schema return
+// null and the page does a fresh fetch instead of crashing on the
+// stale shape.
+type DailyMainSnapshot = {
+  revenueRows: RevenueRow[];
+  creators: Creator[];
+  pausedCampaigns: CampaignRow[];
+  expiringDocs: DocumentRow[];
+  staleLeads: LeadRow[];
+  unpaidPayouts: PayoutRow[];
+  monthGoal: RevenueGoalRow | null;
+  todayClicks: number;
+  todaySubs: number;
+  yesterdayClicks: number;
+  yesterdaySubs: number;
+  subs7d: { date: string; count: number }[];
+  adSpend14d: { date: string; spend: number }[];
+  staffSpend14d: { date: string; amount: number }[];
+  opsSpend14d: { date: string; amount: number }[];
+};
+type DailyOfSnapshot = {
+  ofDaily14: Record<string, number>;
+  ofToday: number;
+  ofYesterday: number;
+};
+// Bumped to v2 when the subs/clicks math switched from cumulative-sum
+// to per-link delta. Old cache entries had the cumulative numbers which
+// don't make sense as a "today" KPI — bumping invalidates them so
+// users see the corrected math on next load.
+const CACHE_MAIN = "daily-main:v2";
+const CACHE_OF = "daily-of:v1";
+
 export function DailyHero() {
-  // Source data (raw)
-  const [revenueRows, setRevenueRows] = useState<RevenueRow[]>([]);
-  const [creators, setCreators] = useState<Creator[]>([]);
-  const [pausedCampaigns, setPausedCampaigns] = useState<CampaignRow[]>([]);
-  const [expiringDocs, setExpiringDocs] = useState<DocumentRow[]>([]);
-  const [staleLeads, setStaleLeads] = useState<LeadRow[]>([]);
-  const [unpaidPayouts, setUnpaidPayouts] = useState<PayoutRow[]>([]);
-  const [monthGoal, setMonthGoal] = useState<RevenueGoalRow | null>(null);
-  const [todayClicks, setTodayClicks] = useState<number>(0);
-  const [todaySubs, setTodaySubs] = useState<number>(0);
-  const [yesterdayClicks, setYesterdayClicks] = useState<number>(0);
-  const [yesterdaySubs, setYesterdaySubs] = useState<number>(0);
+  // ── Cache hydration on first render ────────────────────────────────
+  // We read the snapshot SYNCHRONOUSLY before the first paint so the
+  // dashboard appears instantly with the last-known numbers — no
+  // skeleton flash, no spinner. The fetch effects below decide whether
+  // to revalidate (cache fresh = skip; cache stale = re-fetch in the
+  // background, which then writes the new snapshot).
+  const cachedMain = getCached<DailyMainSnapshot>(CACHE_MAIN, Infinity);
+  const cachedOf = getCached<DailyOfSnapshot>(CACHE_OF, Infinity);
+
+  // Source data (raw) — initial values come from the cache when present.
+  const [revenueRows, setRevenueRows] = useState<RevenueRow[]>(cachedMain?.revenueRows ?? []);
+  const [creators, setCreators] = useState<Creator[]>(cachedMain?.creators ?? []);
+  const [pausedCampaigns, setPausedCampaigns] = useState<CampaignRow[]>(cachedMain?.pausedCampaigns ?? []);
+  const [expiringDocs, setExpiringDocs] = useState<DocumentRow[]>(cachedMain?.expiringDocs ?? []);
+  const [staleLeads, setStaleLeads] = useState<LeadRow[]>(cachedMain?.staleLeads ?? []);
+  const [unpaidPayouts, setUnpaidPayouts] = useState<PayoutRow[]>(cachedMain?.unpaidPayouts ?? []);
+  const [monthGoal, setMonthGoal] = useState<RevenueGoalRow | null>(cachedMain?.monthGoal ?? null);
+  const [todayClicks, setTodayClicks] = useState<number>(cachedMain?.todayClicks ?? 0);
+  const [todaySubs, setTodaySubs] = useState<number>(cachedMain?.todaySubs ?? 0);
+  const [yesterdayClicks, setYesterdayClicks] = useState<number>(cachedMain?.yesterdayClicks ?? 0);
+  const [yesterdaySubs, setYesterdaySubs] = useState<number>(cachedMain?.yesterdaySubs ?? 0);
   // 7-day subscriber count, bucketed by snapshot_date — feeds the
   // "Total Subscriber" weekly bar chart (Nexus pattern).
-  const [subs7d, setSubs7d] = useState<{ date: string; count: number }[]>([]);
-  const [adSpend14d, setAdSpend14d] = useState<{ date: string; spend: number }[]>([]);
+  const [subs7d, setSubs7d] = useState<{ date: string; count: number }[]>(cachedMain?.subs7d ?? []);
+  const [adSpend14d, setAdSpend14d] = useState<{ date: string; spend: number }[]>(cachedMain?.adSpend14d ?? []);
   // Same 14-day series for staff payouts + agency operating expenses,
   // bucketed by their natural date columns (staff_payouts.period_end,
   // agency_expenses.expense_date). Used so "Net profit today" matches
   // the formula on the Financials page instead of only deducting ad spend.
-  const [staffSpend14d, setStaffSpend14d] = useState<{ date: string; amount: number }[]>([]);
-  const [opsSpend14d, setOpsSpend14d] = useState<{ date: string; amount: number }[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [staffSpend14d, setStaffSpend14d] = useState<{ date: string; amount: number }[]>(cachedMain?.staffSpend14d ?? []);
+  const [opsSpend14d, setOpsSpend14d] = useState<{ date: string; amount: number }[]>(cachedMain?.opsSpend14d ?? []);
+  // Loading is `false` whenever we have ANY cached data — the user
+  // sees real numbers immediately and a tiny "syncing…" indicator
+  // appears only while a background revalidation is in flight.
+  const [loading, setLoading] = useState(!cachedMain);
   const [refreshKey, setRefreshKey] = useState(0);
+  // The "synced X ago" pill in the header reads this. Updated after
+  // every successful fetch.
+  const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(() => {
+    const age = getCachedAge(CACHE_MAIN);
+    return age == null ? null : Date.now() - age;
+  });
 
   // Greeting name from the localStorage session (same source as Bernard)
   const userName = useMemo(() => {
@@ -112,9 +165,25 @@ export function DailyHero() {
   const monthEnd = format(endOfMonth(today), "yyyy-MM-dd");
 
   useEffect(() => {
+    // TTL gate: skip the fetch when the cache is < 2h old and the
+    // user hasn't manually clicked Refresh. Manual refresh increments
+    // refreshKey so we always re-fetch on click.
+    if (refreshKey === 0) {
+      const age = getCachedAge(CACHE_MAIN);
+      if (age !== null && age < TTL_2H) {
+        // We already hydrated from cache in the useState initializers
+        // — nothing to do. Keep loading = false (already is).
+        setLoading(false);
+        return;
+      }
+    }
     let cancelled = false;
     (async () => {
-      setLoading(true);
+      // Only show the loading skeleton when there's NO cached data.
+      // If we have a stale cache, the page shows the old numbers
+      // while we refresh in the background — much smoother than
+      // wiping back to a spinner.
+      if (!cachedMain) setLoading(true);
       // Fan out all of the dashboard queries in parallel so the panel
       // appears as one cohesive load rather than waterfalling.
       const [
@@ -141,9 +210,19 @@ export function DailyHero() {
         supabase.from("lead_activities").select("lead_id, occurred_at"),
         supabase.from("creator_payouts").select("id, creator_id, net_to_creator, status, period_end").neq("status", "paid").limit(20),
         supabase.from("revenue_goals").select("target_amount, period_start, period_end, channel").lte("period_start", monthEnd).gte("period_end", monthStart).limit(5),
-        // Pull a full 7 days of link snapshots — used both for today/yesterday
-        // KPI deltas AND the "Total Subscriber" weekly bar chart.
-        supabase.from("daily_link_snapshots").select("clicks_count, subscribers_count, snapshot_date").gte("snapshot_date", sevenDaysAgoStr),
+        // Pull a full 8 days of link snapshots — used for the "new subs
+        // today" KPI deltas AND the "Total Subscriber" weekly bar chart.
+        // We need 8 days (not 7) because each day's "new subs" is
+        // computed as today's cumulative count minus yesterday's, so the
+        // first chart day needs a previous-day baseline.
+        //
+        // We also pull `creator_id` + `campaign_code` so we can group by
+        // link — each link's subscribers_count is cumulative lifetime,
+        // so the only correct way to get "new subs today" is per-link
+        // deltas summed across links.
+        supabase.from("daily_link_snapshots")
+          .select("creator_id, campaign_code, clicks_count, subscribers_count, snapshot_date")
+          .gte("snapshot_date", format(subDays(today, 7), "yyyy-MM-dd")),
         supabase.from("meta_insights_daily").select("date_start, spend").eq("level", "account").eq("breakdown_key", "").gte("date_start", fourteenDaysAgoStr),
         // Staff payouts + agency operating expenses, last 14 days. Used
         // so the "Net profit today" tile matches the formula on /financials
@@ -179,30 +258,84 @@ export function DailyHero() {
       const totalGoal = monthGoals.find((g) => g.channel === "total") ?? monthGoals[0] ?? null;
       setMonthGoal(totalGoal);
 
-      // Daily link snapshots — today + yesterday for KPIs, plus a 7-day
-      // bucketed series for the Total Subscriber bar chart.
-      type Snap = { clicks_count: number; subscribers_count: number; snapshot_date: string };
+      // Daily link snapshots → "new subs / new clicks per day".
+      //
+      // Each (creator_id, campaign_code) row stores CUMULATIVE lifetime
+      // counts (that's what OnlyFansAPI's /tracking-links returns). So
+      // summing today's rows would tell us "lifetime subs across all
+      // tracked links", which is what was glitching the dashboard —
+      // the number barely moved day-to-day.
+      //
+      // The fix: bucket snapshots by (creator, campaign), then for each
+      // link compute today_total − yesterday_total. Sum those deltas
+      // across links to get the real "new today" number. Same for
+      // clicks. Negative deltas (rare — OF cumulative is gross, not
+      // net) are clamped to 0 so churn on one link doesn't fake-drag
+      // gains on another. Brand-new links default to a yesterday
+      // baseline of 0 — every sub on day 1 counts as new.
+      type Snap = {
+        creator_id: string;
+        campaign_code: number;
+        clicks_count: number;
+        subscribers_count: number;
+        snapshot_date: string;
+      };
       const snaps = (dailySnaps ?? []) as Snap[];
-      let tc = 0, ts = 0, yc = 0, ys = 0;
-      const subsByDay = new Map<string, number>();
-      for (const s of snaps) {
-        const subs = Number(s.subscribers_count || 0);
-        const clicks = Number(s.clicks_count || 0);
-        subsByDay.set(s.snapshot_date, (subsByDay.get(s.snapshot_date) ?? 0) + subs);
-        if (s.snapshot_date === todayStr) {
-          tc += clicks; ts += subs;
-        } else if (s.snapshot_date === yesterdayStr) {
-          yc += clicks; ys += subs;
+
+      // linkKey → date → { clicks, subs }
+      const byLink = new Map<string, Map<string, { c: number; s: number }>>();
+      for (const r of snaps) {
+        const key = `${r.creator_id}:${r.campaign_code}`;
+        const day = byLink.get(key) ?? new Map();
+        day.set(r.snapshot_date, {
+          c: Number(r.clicks_count || 0),
+          s: Number(r.subscribers_count || 0),
+        });
+        byLink.set(key, day);
+      }
+
+      // Sum per-link deltas across the 7-day window we want to chart.
+      // Always emit a row for every day so the chart x-axis is stable
+      // (otherwise sparse days would compress the bars).
+      const days = eachDayOfInterval({ start: subDays(today, 6), end: today })
+        .map((d) => format(d, "yyyy-MM-dd"));
+      const newSubsByDay = new Map<string, number>();
+      const newClicksByDay = new Map<string, number>();
+      for (const d of days) {
+        newSubsByDay.set(d, 0);
+        newClicksByDay.set(d, 0);
+      }
+      for (const [, day] of byLink) {
+        for (const d of days) {
+          const cur = day.get(d);
+          if (!cur) continue;            // no snapshot for that day, no delta
+          const yKey = format(subDays(parseISO(d), 1), "yyyy-MM-dd");
+          const prev = day.get(yKey);
+          // First-ever snapshot for this link → use 0 baseline; any other
+          // missing yesterday treats today's count as fully new.
+          const baseS = prev?.s ?? 0;
+          const baseC = prev?.c ?? 0;
+          const dS = Math.max(0, cur.s - baseS);
+          const dC = Math.max(0, cur.c - baseC);
+          newSubsByDay.set(d, (newSubsByDay.get(d) ?? 0) + dS);
+          newClicksByDay.set(d, (newClicksByDay.get(d) ?? 0) + dC);
         }
       }
+
+      const tc = newClicksByDay.get(todayStr) ?? 0;
+      const ts = newSubsByDay.get(todayStr) ?? 0;
+      const yc = newClicksByDay.get(yesterdayStr) ?? 0;
+      const ys = newSubsByDay.get(yesterdayStr) ?? 0;
       setTodayClicks(tc); setTodaySubs(ts);
       setYesterdayClicks(yc); setYesterdaySubs(ys);
-      // Build the 7-day series (always include all 7 days — even zeros)
-      const subsSeries = eachDayOfInterval({ start: subDays(today, 6), end: today })
-        .map((d) => {
-          const key = format(d, "yyyy-MM-dd");
-          return { date: key, count: subsByDay.get(key) ?? 0 };
-        });
+
+      // 7-day series for the "Total Subscriber" weekly bar chart — now
+      // counts NEW subs each day instead of cumulative totals, which
+      // matches the chart's intent (visualize the spike days).
+      const subsSeries = days.map((d) => ({
+        date: d,
+        count: newSubsByDay.get(d) ?? 0,
+      }));
       setSubs7d(subsSeries);
 
       // Ad spend (14-day series) for the cost line
@@ -235,10 +368,34 @@ export function DailyHero() {
         .map((d) => ({ date: format(d, "yyyy-MM-dd"), amount: opsByDay.get(format(d, "yyyy-MM-dd")) ?? 0 }));
       setOpsSpend14d(opsSeries);
 
+      // ── Persist to localStorage cache ────────────────────────────
+      // Snapshot every state we just set so the next page load can
+      // hydrate from disk and skip this whole batch (until the 2h
+      // TTL expires or the user clicks Refresh).
+      const snapshot: DailyMainSnapshot = {
+        revenueRows: allRev,
+        creators: (cs ?? []) as Creator[],
+        pausedCampaigns: (paused ?? []) as CampaignRow[],
+        expiringDocs: (docs ?? []) as DocumentRow[],
+        staleLeads: stale,
+        unpaidPayouts: (payouts ?? []) as PayoutRow[],
+        monthGoal: totalGoal,
+        todayClicks: tc,
+        todaySubs: ts,
+        yesterdayClicks: yc,
+        yesterdaySubs: ys,
+        subs7d: subsSeries,
+        adSpend14d: adsSeries,
+        staffSpend14d: staffSeries,
+        opsSpend14d: opsSeries,
+      };
+      setCached(CACHE_MAIN, snapshot);
+      setLastSyncedAt(Date.now());
+
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [refreshKey]);
+  }, [refreshKey, cachedMain]);
 
   // ── Derived: revenue rollups + sparklines + movers ────────────────────
 
@@ -248,13 +405,13 @@ export function DailyHero() {
   // reference it in its deps array. Moving these declarations after
   // the useMemo would trigger a TDZ error ("cannot access uninitialized
   // variable") because deps are evaluated immediately.
-  const [ofToday, setOfToday] = useState(0);
-  const [ofYesterday, setOfYesterday] = useState(0);
+  const [ofToday, setOfToday] = useState<number>(cachedOf?.ofToday ?? 0);
+  const [ofYesterday, setOfYesterday] = useState<number>(cachedOf?.ofYesterday ?? 0);
   // Daily OF earnings series for the last 14 days, used to enrich the
   // revenue chart so it shows actual money flowing through OnlyFans
   // each day (was empty before because the chart only summed manual
   // entry tables). Keyed by date string `yyyy-MM-dd`.
-  const [ofDaily14, setOfDaily14] = useState<Record<string, number>>({});
+  const [ofDaily14, setOfDaily14] = useState<Record<string, number>>(cachedOf?.ofDaily14 ?? {});
 
   // Revenue per day (last 14)
   const dailyRevenue = useMemo(() => {
@@ -289,6 +446,14 @@ export function DailyHero() {
   // dailyRevenue (see top of this component) — the effect that
   // populates it lives below for readability.
   useEffect(() => {
+    // Same TTL gate as the main fetch — the OF earnings call is the
+    // expensive one (14 sequential API calls = ~2s) so caching this
+    // is what actually makes the dashboard "instant". Bypassed when
+    // the user hits Refresh.
+    if (refreshKey === 0) {
+      const age = getCachedAge(CACHE_OF);
+      if (age !== null && age < TTL_2H) return;
+    }
     let cancelled = false;
     void (async () => {
       // Pull every OF page (multi-account + legacy fallback)
@@ -356,10 +521,16 @@ export function DailyHero() {
         setOfDaily14(dayBuckets);
         setOfToday(dayBuckets[todayStr] ?? 0);
         setOfYesterday(dayBuckets[yesterdayStr] ?? 0);
+        setCached<DailyOfSnapshot>(CACHE_OF, {
+          ofDaily14: dayBuckets,
+          ofToday: dayBuckets[todayStr] ?? 0,
+          ofYesterday: dayBuckets[yesterdayStr] ?? 0,
+        });
       }
     })();
     return () => { cancelled = true; };
-  }, [todayStr, yesterdayStr, today]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [todayStr, yesterdayStr, today, refreshKey]);
   const sevenDayAvgRevenue = useMemo(() => {
     const last7 = dailyRevenue.filter((d) => d.date >= sevenDaysAgoStr && d.date < todayStr);
     if (last7.length === 0) return 0;
@@ -578,9 +749,16 @@ export function DailyHero() {
             <Calendar className="h-3.5 w-3.5" />
             <span>{format(today, "EEEE, MMMM d, yyyy")}</span>
             <span className="text-muted-foreground/40">·</span>
+            {/* Sync-state pill: shows when we last fetched + how soon
+                the cache will auto-revalidate. Loading dot pulses while
+                a background refresh is in flight. */}
             <span className="inline-flex items-center gap-1">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              Live data
+              <span className={`h-1.5 w-1.5 rounded-full ${loading ? "bg-amber-500 animate-pulse" : "bg-emerald-500"}`} />
+              {loading
+                ? "Syncing…"
+                : lastSyncedAt
+                  ? `Synced ${formatRelativeAge(Date.now() - lastSyncedAt)} ago`
+                  : "Live data"}
             </span>
           </div>
         </div>
@@ -590,9 +768,10 @@ export function DailyHero() {
           onClick={() => setRefreshKey((k) => k + 1)}
           disabled={loading}
           className="rounded-full border-border bg-card hover:bg-secondary"
+          title="Force-refresh now (otherwise auto-updates every 2 hours)"
         >
           <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${loading ? "animate-spin" : ""}`} />
-          {loading ? "Refreshing…" : "Refresh"}
+          {loading ? "Syncing…" : "Refresh"}
         </Button>
       </div>
 
@@ -1232,4 +1411,14 @@ function timeOfDay(): string {
   if (h < 12) return "morning";
   if (h < 17) return "afternoon";
   return "evening";
+}
+
+/** Compact "30s" / "5m" / "2h" / "1d" formatter for the cached-age
+ *  pill. Avoids the heavier date-fns formatDistance dependency for
+ *  this one tiny use case. */
+function formatRelativeAge(ms: number): string {
+  if (ms < 60_000) return `${Math.max(1, Math.round(ms / 1000))}s`;
+  if (ms < 3600_000) return `${Math.round(ms / 60_000)}m`;
+  if (ms < 86_400_000) return `${Math.round(ms / 3600_000)}h`;
+  return `${Math.round(ms / 86_400_000)}d`;
 }

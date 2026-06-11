@@ -13,6 +13,7 @@ import {
   TrendingUp, TrendingDown, Megaphone, ListChecks, MessageCircle,
   Lightbulb, Send, Trash2, Plus, X, Target, BarChart3,
   Users as UsersIcon, ChevronRight, ChevronDown, History, LineChart,
+  ArrowUp,
 } from "lucide-react";
 import {
   Popover, PopoverContent, PopoverTrigger,
@@ -786,30 +787,35 @@ function BernardPage() {
     <div className="flex flex-col h-[calc(100vh-5rem)] -mx-2 sm:-mx-4 -mt-4">
       <Toaster />
 
-      {/* ── Header ─────────────────────────────────────────────────────── */}
-      {/* Compact, ChatGPT/Claude-style — small avatar + name + actions on the right.
-          pr-44 leaves room for the absolute-positioned sync + notif badges in __root.tsx */}
-      <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-3 border-b border-border/60 bg-card/40 backdrop-blur-md pr-44">
+      {/* ── Header — minimalist, Crawl-4o style.
+          Logo + name on the left, history/new-chat actions on the right.
+          pr-44 reserves room for the sync + notif badges in __root.tsx */}
+      <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-3 pr-44">
         <div className="flex items-center gap-2.5 min-w-0">
-          <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary to-primary-glow flex items-center justify-center shadow-[0_2px_12px_-3px_oklch(0.6_0.15_35/0.5)] shrink-0">
+          <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-primary to-primary-glow flex items-center justify-center shadow-[0_2px_12px_-3px_oklch(0.56_0.14_150/0.4)] shrink-0">
             <Sparkles className="h-4 w-4 text-primary-foreground" />
           </div>
           <div className="min-w-0">
-            <h1 className="text-base font-semibold tracking-tight leading-tight">Bernard</h1>
-            <div className="flex items-center gap-2 text-[10px] text-muted-foreground -mt-0.5">
+            <h1 className="text-base font-bold tracking-tight leading-tight">Bernard</h1>
+            <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground -mt-0.5">
               {snapshotInfo ? (
                 <>
-                  <span className="inline-block h-1 w-1 rounded-full bg-success" />
+                  <span className="inline-block h-1 w-1 rounded-full bg-emerald-500" />
                   <span>{snapshotInfo.range.start} → {snapshotInfo.range.end}</span>
                 </>
               ) : (
-                <span>OFM strategist · live data</span>
+                <span>Your OFM strategist</span>
               )}
             </div>
           </div>
         </div>
         <div className="flex items-center gap-1.5">
-          <Button size="sm" variant="ghost" onClick={newChat} className="text-xs h-8">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={newChat}
+            className="text-xs h-8 rounded-full border-border bg-card hover:bg-secondary"
+          >
             <Plus className="h-3.5 w-3.5 mr-1" /> New chat
           </Button>
           <ConversationsPopover
@@ -899,24 +905,22 @@ function BernardPage() {
         </div>
       </div>
 
-      {/* ── Composer ───────────────────────────────────────────────────── */}
-      {/* Sticky composer at the bottom of the chat column, soft shadow and
-          rounded-2xl to match Claude/ChatGPT. The textarea has no inner
-          border — the wrapper carries the visuals. */}
+      {/* ── Composer — Crawl-4o "Ask anything" pill pattern.
+          Single rounded-2xl card, big input, action chips below the
+          textarea, dark circular send button on the right. Stays sticky
+          at the bottom of the chat column. */}
       <div className="border-t border-border/40 bg-gradient-to-b from-background/0 via-background/80 to-background pt-3 pb-4">
         <div className="max-w-3xl mx-auto w-full px-4 sm:px-6">
-          <div className="rounded-2xl border border-border bg-card shadow-[0_8px_24px_-12px_rgba(0,0,0,0.4)] focus-within:border-primary/40 focus-within:shadow-[0_8px_28px_-10px_oklch(0.6_0.15_35/0.25)] transition-all">
+          <div className="relative rounded-3xl border border-border bg-card shadow-[0_10px_30px_-12px_rgba(0,0,0,0.12)] focus-within:border-primary/40 focus-within:shadow-[0_12px_36px_-10px_oklch(0.56_0.14_150/0.2)] transition-all">
             <Textarea
               placeholder={
                 activeConvo
                   ? "Reply to Bernard…"
-                  : "Ask Bernard about the business…"
+                  : "Ask anything"
               }
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
-                // Enter to send (Shift+Enter for newline) — matches Claude.
-                // Cmd/Ctrl+Enter still works as a power-user fallback.
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
                   if (activeConvo) sendFollowup();
@@ -925,15 +929,17 @@ function BernardPage() {
               }}
               rows={1}
               disabled={hasKey === false}
-              className="resize-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 px-4 pt-3.5 pb-1 shadow-none text-[15px] leading-6 max-h-48 overflow-y-auto bg-transparent"
+              className="resize-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 px-5 pt-4 pb-2 shadow-none text-[15px] leading-6 max-h-48 overflow-y-auto bg-transparent placeholder:text-muted-foreground/50"
             />
-            <div className="flex items-center justify-between gap-3 px-3 pb-2.5 pt-1">
-              <div className="flex items-center gap-2 min-w-0 flex-1">
+            <div className="flex items-center justify-between gap-2 px-3 pb-2.5 pt-1">
+              {/* Action chips — Crawl-4o pattern: rounded-full pills with
+                  small icon + label, faint border, hover deepens it. */}
+              <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-x-auto">
                 {!activeConvo ? (
-                  <div className="flex items-center gap-1.5">
-                    <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">Window</Label>
+                  <ComposerChip>
+                    <Label className="text-[11px] text-muted-foreground/80 cursor-pointer">Window</Label>
                     <Select value={String(dataWindow)} onValueChange={(v) => setDataWindow(Number(v) as 7 | 30 | 90)}>
-                      <SelectTrigger className="w-28 h-7 text-[11px] border-border/60">
+                      <SelectTrigger className="h-6 w-[88px] text-[11px] border-0 bg-transparent shadow-none focus:ring-0 px-0 py-0 font-semibold">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -942,45 +948,50 @@ function BernardPage() {
                         <SelectItem value="90">Last 90 days</SelectItem>
                       </SelectContent>
                     </Select>
-                  </div>
+                  </ComposerChip>
                 ) : (
-                  <div className="text-[10px] text-muted-foreground truncate">
-                    Continuing chat ·{" "}
-                    <button onClick={newChat} className="text-primary hover:underline">new chat</button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={newChat}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-[11px] font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+                  >
+                    <Plus className="h-3 w-3" /> New chat
+                  </button>
                 )}
+                <span className="text-[10px] text-muted-foreground/60 hidden lg:inline ml-1">
+                  <kbd className="font-mono text-[9px] bg-muted/60 px-1 py-0.5 rounded">↵</kbd>
+                  <span className="ml-1">send</span>
+                  <span className="mx-1">·</span>
+                  <kbd className="font-mono text-[9px] bg-muted/60 px-1 py-0.5 rounded">⇧↵</kbd>
+                  <span className="ml-1">newline</span>
+                </span>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                <span className="text-[10px] text-muted-foreground hidden sm:inline">
-                  <kbd className="font-mono text-[9px] bg-secondary/60 px-1 py-0.5 rounded">↵</kbd> send · <kbd className="font-mono text-[9px] bg-secondary/60 px-1 py-0.5 rounded">⇧↵</kbd> newline
-                </span>
                 {streaming ? (
                   <Button
                     size="sm"
-                    variant="outline"
                     onClick={cancelStreaming}
-                    className="h-8 px-3 rounded-full bg-rose-500/10 border-rose-500/40 text-rose-400 hover:bg-rose-500/20 hover:text-rose-300"
+                    className="h-9 w-9 p-0 rounded-full bg-foreground text-background hover:bg-foreground/90"
                     aria-label="Stop Bernard"
                   >
-                    <X className="h-4 w-4 mr-1" />
-                    Stop
+                    <X className="h-4 w-4" />
                   </Button>
                 ) : (
                   <Button
                     size="icon"
                     onClick={() => activeConvo ? sendFollowup() : startConversation(null, input)}
                     disabled={hasKey === false || !input.trim()}
-                    className="h-8 w-8 rounded-full"
+                    className="h-9 w-9 rounded-full bg-foreground text-background hover:bg-foreground/90 disabled:opacity-30 disabled:bg-muted disabled:text-muted-foreground"
                     aria-label="Send"
                   >
-                    <Send className="h-3.5 w-3.5" />
+                    <ArrowUp className="h-4 w-4" />
                   </Button>
                 )}
               </div>
             </div>
           </div>
-          <div className="text-[10px] text-muted-foreground/70 text-center mt-1.5">
-            Bernard sees your live agency data — verify before acting on financial decisions.
+          <div className="text-[10px] text-muted-foreground/60 text-center mt-2">
+            Bernard reads your live agency data — verify before acting on financial decisions.
           </div>
         </div>
       </div>
@@ -1077,6 +1088,26 @@ function ConversationsPopover({
 // "Show all" toggle so the empty-state isn't a wall of cards.
 const FEATURED_PRESET_IDS = ["weekly_digest", "monthly_review", "top_performers", "revenue_forecast"];
 
+/** Pill-shaped chip used inside the composer's action row. Matches
+ *  Crawl-4o's "Deep Search / Reason" buttons under the input. */
+function ComposerChip({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background hover:bg-secondary/40 transition-colors px-3 py-1.5 text-[11px] font-semibold text-foreground/80">
+      {children}
+    </span>
+  );
+}
+
+// Per-tone gradient + chip styles for the modern preset cards. Each
+// preset gets a soft pastel-tinted icon chip that matches the rest of
+// the Nexus/Script aesthetic — same chip style used on the dashboard.
+const TONE_CHIP: Record<Preset["tone"], { bg: string; fg: string; ring: string }> = {
+  primary: { bg: "bg-amber-500/15",   fg: "text-amber-600",   ring: "ring-amber-500/20" },
+  success: { bg: "bg-emerald-500/15", fg: "text-emerald-600", ring: "ring-emerald-500/20" },
+  info:    { bg: "bg-sky-500/15",     fg: "text-sky-600",     ring: "ring-sky-500/20" },
+  warning: { bg: "bg-rose-500/15",    fg: "text-rose-600",    ring: "ring-rose-500/20" },
+};
+
 function PresetGrid({
   disabled, onPick, userName,
 }: {
@@ -1087,89 +1118,108 @@ function PresetGrid({
   const [showAll, setShowAll] = useState(false);
   const featured = PRESETS.filter((p) => FEATURED_PRESET_IDS.includes(p.id));
   const rest = PRESETS.filter((p) => !FEATURED_PRESET_IDS.includes(p.id));
+  const greeting = (() => {
+    const h = new Date().getHours();
+    if (h < 5) return "Good evening";
+    if (h < 12) return "Good morning";
+    if (h < 17) return "Good afternoon";
+    return "Good evening";
+  })();
 
   return (
-    <div className="space-y-8 py-4">
-      {/* Personal greeting — feels like Claude.ai's home screen */}
-      <div className="text-center space-y-2 pt-4">
-        <div className="inline-flex items-center justify-center h-12 w-12 rounded-2xl bg-gradient-to-br from-primary to-primary-glow shadow-[0_4px_20px_-4px_oklch(0.6_0.15_35/0.5)] mb-2">
-          <Sparkles className="h-6 w-6 text-primary-foreground" />
-        </div>
-        <h2 className="text-2xl font-bold tracking-tight">
-          Hey {userName}, what can I help you with?
+    <div className="space-y-10 py-8 sm:py-12">
+      {/* ── Hero — Script-style centered welcome.
+          Bigger headline, soft subtitle, no decorative icon (cleaner) */}
+      <div className="text-center space-y-3 max-w-2xl mx-auto">
+        <h2 className="text-3xl sm:text-4xl font-bold tracking-tight">
+          {greeting}, <span className="capitalize">{userName}</span>
         </h2>
-        <p className="text-sm text-muted-foreground">
-          Pick a shortcut or just type a question.
+        <p className="text-sm sm:text-base text-muted-foreground">
+          Tap a quick-start below or just ask anything about your agency.
+          Bernard reads your live data automatically.
         </p>
       </div>
 
-      {/* Featured 4 — compact chips, 2x2 on mobile, 4-across on desktop */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+      {/* ── Quick-starts — Script's 2x2 grid pattern.
+          Wider cards, colored icon chip + label + sub-blurb + "+" arrow.
+          Hover lifts and brightens the chip for a tactile feel. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-3xl mx-auto">
         {featured.map((p) => {
           const Icon = p.icon;
+          const chip = TONE_CHIP[p.tone];
           return (
             <button
               key={p.id}
               onClick={() => onPick(p)}
               disabled={disabled}
-              className={`group rounded-xl border p-3 text-left transition-all duration-150 ease-out hover:-translate-y-px hover:shadow-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 ${TONE_BORDER[p.tone]}`}
+              className="group flex items-center gap-3 rounded-2xl border border-border bg-card p-4 text-left transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-[0_10px_30px_-12px_rgba(0,0,0,0.10)] hover:border-border/80 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
             >
-              <div className={`h-7 w-7 rounded-md bg-background/50 flex items-center justify-center mb-2 ${TONE_ICON[p.tone]}`}>
-                <Icon className="h-3.5 w-3.5" />
+              <span className={`h-10 w-10 shrink-0 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 ${chip.bg} ${chip.fg}`}>
+                <Icon className="h-5 w-5" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-semibold leading-tight truncate">{p.title}</div>
+                <div className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">
+                  {p.blurb}
+                </div>
               </div>
-              <div className="text-xs font-semibold leading-tight">{p.title}</div>
-              <div className="text-[10px] text-muted-foreground/70 uppercase tracking-wider mt-1.5">
-                {p.days}d
-              </div>
+              <span className="h-7 w-7 shrink-0 rounded-full border border-border flex items-center justify-center text-muted-foreground group-hover:border-primary/40 group-hover:text-primary transition-colors">
+                <Plus className="h-3.5 w-3.5" />
+              </span>
             </button>
           );
         })}
       </div>
 
-      {/* Show-all toggle — hides the long tail until asked for */}
+      {/* Show-all toggle */}
       {!showAll && rest.length > 0 && (
         <div className="flex justify-center">
           <button
             onClick={() => setShowAll(true)}
             disabled={disabled}
-            className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md hover:bg-secondary/50 transition-colors disabled:opacity-50"
+            className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border bg-card hover:bg-secondary transition-colors disabled:opacity-50"
           >
-            <ChevronDown className="h-3.5 w-3.5" /> Show {rest.length} more presets
+            <ChevronDown className="h-3.5 w-3.5" />
+            Browse {rest.length} more prompts
           </button>
         </div>
       )}
 
-      {/* Long-tail presets — same compact treatment, scrollable if many */}
+      {/* Long-tail presets — same Script row treatment as featured */}
       {showAll && (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-              All presets
+        <div className="space-y-3 max-w-3xl mx-auto">
+          <div className="flex items-center justify-between px-1">
+            <h3 className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
+              All prompts
             </h3>
             <button
               onClick={() => setShowAll(false)}
-              className="text-[11px] text-muted-foreground hover:text-primary"
+              className="text-[11px] text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
             >
               Hide
             </button>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {rest.map((p) => {
               const Icon = p.icon;
+              const chip = TONE_CHIP[p.tone];
               return (
                 <button
                   key={p.id}
                   onClick={() => onPick(p)}
                   disabled={disabled}
-                  className={`group rounded-xl border p-3 text-left transition-all duration-150 ease-out hover:-translate-y-px hover:shadow-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 ${TONE_BORDER[p.tone]}`}
+                  className="group flex items-center gap-3 rounded-2xl border border-border bg-card p-4 text-left transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-[0_10px_30px_-12px_rgba(0,0,0,0.10)] hover:border-border/80 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
                 >
-                  <div className={`h-7 w-7 rounded-md bg-background/50 flex items-center justify-center mb-2 ${TONE_ICON[p.tone]}`}>
-                    <Icon className="h-3.5 w-3.5" />
+                  <span className={`h-10 w-10 shrink-0 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 ${chip.bg} ${chip.fg}`}>
+                    <Icon className="h-5 w-5" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-semibold leading-tight truncate">{p.title}</div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">{p.blurb}</div>
                   </div>
-                  <div className="text-xs font-semibold leading-tight">{p.title}</div>
-                  <div className="text-[10px] text-muted-foreground/70 uppercase tracking-wider mt-1.5">
-                    {p.days}d
-                  </div>
+                  <span className="h-7 w-7 shrink-0 rounded-full border border-border flex items-center justify-center text-muted-foreground group-hover:border-primary/40 group-hover:text-primary transition-colors">
+                    <Plus className="h-3.5 w-3.5" />
+                  </span>
                 </button>
               );
             })}

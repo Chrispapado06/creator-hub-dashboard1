@@ -5,7 +5,7 @@ import {
   Plus, Trash2, Edit2, Check, X, ExternalLink, RefreshCw,
   ThumbsUp, MessageCircle, Eye, Image as ImageIcon, Video, Film,
   Link as LinkIcon, FileText, AlertTriangle, Link2, ArrowLeft, Unlink,
-  Share2, Users, TrendingUp, DollarSign,
+  Share2, Users, TrendingUp, DollarSign, Zap,
 } from "lucide-react";
 import { SiFacebook, SiMeta } from "react-icons/si";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,7 @@ import { format, formatDistanceToNow } from "date-fns";
 import {
   Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Cell,
 } from "recharts";
+import { AccountAnalyticsHero, ContentTypeBreakdown } from "@/components/AccountAnalyticsHero";
 
 export const Route = createFileRoute("/facebook")({ component: FacebookPage });
 
@@ -54,6 +55,11 @@ type FBAccount = {
   meta_access_token: string | null;
   meta_page_id: string | null;
   meta_connected_at: string | null;
+  /** ScrapeCreators provider (alternative to Meta token). */
+  scrapecreators_key: string | null;
+  scrapecreators_connected_at: string | null;
+  /** Profile picture pulled from the connected provider. */
+  avatar_url: string | null;
 };
 type FBMediaType = "photo" | "video" | "reel" | "link" | "status";
 type FBPost = {
@@ -550,6 +556,42 @@ function StatCard({
   );
 }
 
+// ── Modern KPI tile shared by Revenue Performance + Engagement Performance.
+// Mirrors the IG version — nested inside a parent card section so it uses
+// bg-background/60 instead of bg-card.
+function RevKpiCard({
+  icon, tone, label, value, sub,
+}: {
+  icon: React.ReactNode;
+  tone: "emerald" | "violet" | "cyan" | "amber" | "pink" | "blue";
+  label: string;
+  value: string | number;
+  sub: string;
+}) {
+  const TONE_CLS = {
+    emerald: "bg-emerald-500/12 text-emerald-600",
+    violet:  "bg-violet-500/12 text-violet-600",
+    cyan:    "bg-cyan-500/12 text-cyan-600",
+    amber:   "bg-amber-500/15 text-amber-600",
+    pink:    "bg-pink-500/12 text-pink-600",
+    blue:    "bg-blue-500/12 text-blue-600",
+  }[tone];
+  return (
+    <div className="rounded-xl border border-border bg-background/60 p-4 transition-all hover:bg-background hover:shadow-sm">
+      <div className="flex items-center gap-2 mb-2">
+        <span className={`h-7 w-7 rounded-lg flex items-center justify-center ${TONE_CLS}`}>
+          {icon}
+        </span>
+        <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-bold truncate">
+          {label}
+        </span>
+      </div>
+      <div className="text-2xl font-bold tabular-nums leading-none">{value}</div>
+      <div className="text-[11px] text-muted-foreground mt-1.5 truncate">{sub}</div>
+    </div>
+  );
+}
+
 function ChartCard({
   title, sub, children,
 }: {
@@ -998,7 +1040,19 @@ function AccountDetailView({
   const [metaForm, setMetaForm] = useState({ page_id: "", access_token: "" });
   const [metaSyncing, setMetaSyncing] = useState(false);
 
-  const isConnected = !!(account.meta_access_token && account.meta_page_id);
+  // ScrapeCreators state — separate dialog, separate form.
+  const [scDialogOpen, setScDialogOpen] = useState(false);
+  const [scForm, setScForm] = useState({ key: "" });
+  const [scSyncing, setScSyncing] = useState(false);
+
+  const isMetaConnected = !!(account.meta_access_token && account.meta_page_id);
+  const isScConnected = !!account.scrapecreators_key;
+  const isConnected = isMetaConnected || isScConnected;
+  const activeProvider: "meta" | "scrapecreators" | null = isScConnected
+    ? "scrapecreators"
+    : isMetaConnected
+      ? "meta"
+      : null;
 
   const stats = useMemo(() => {
     if (accountPosts.length === 0) return null;
@@ -1043,12 +1097,8 @@ function AccountDetailView({
     [accountPosts]
   );
 
-  const revenueStat = useMemo(
-    () => account?.infloww_campaign_code != null
-      ? inflowwStats.find((s) => s.campaign_code === account.infloww_campaign_code) ?? null
-      : null,
-    [account, inflowwStats]
-  );
+  // (revenueStat memo removed — the new Revenue Performance card
+  // computes its own roll-up across *all* matching tracking-link rows.)
 
   const cadenceData = useMemo(() => {
     const weeks: { label: string; posts: number; avgReactions: number; weekStart: number }[] = [];
@@ -1295,6 +1345,244 @@ function AccountDetailView({
     onRefresh();
   };
 
+  // ── ScrapeCreators provider ───────────────────────────────────────
+  // ScrapeCreators FB endpoints (per docs.scrapecreators.com):
+  //   GET /v1/facebook/profile?url=https://www.facebook.com/PAGE
+  //   GET /v1/facebook/profile/posts?url=...
+  //
+  // FB requires a full Page URL (not a username) because Meta's URL
+  // patterns vary. We build it from page_url if set, otherwise fall
+  // back to facebook.com/<name>.
+  const runScrapeCreatorsSyncFB = async (
+    key: string,
+  ): Promise<{ ok: true; postCount: number } | { ok: false; error: string }> => {
+    const base = "https://api.scrapecreators.com";
+    const headers = { "x-api-key": key };
+    // Construct a public Page URL ScrapeCreators can hit. Defensive
+    // sanitize — accept either a full URL or a bare page name in
+    // page_url, and strip any "@" if user pasted handle-style.
+    const pageUrl = (() => {
+      const raw = (account.page_url ?? "").trim().replace(/^@/, "");
+      if (!raw) {
+        const cleanName = account.name.trim().replace(/^@/, "");
+        return `https://www.facebook.com/${encodeURIComponent(cleanName)}`;
+      }
+      if (raw.startsWith("http://") || raw.startsWith("https://")) return raw;
+      return `https://www.facebook.com/${encodeURIComponent(raw)}`;
+    })();
+    try {
+      const profRes = await fetch(
+        `${base}/v1/facebook/profile?url=${encodeURIComponent(pageUrl)}`,
+        { headers },
+      );
+      const profText = await profRes.text();
+      let profJson: Record<string, unknown> = {};
+      try { profJson = JSON.parse(profText); } catch { /* ignore */ }
+      console.log("[scrapecreators FB] profile response:", profJson);
+      if (!profRes.ok) {
+        const msg = (profJson as { error?: string; message?: string }).error
+          ?? (profJson as { message?: string }).message
+          ?? `${profRes.status} ${profRes.statusText}`;
+        return { ok: false, error: `ScrapeCreators FB profile: ${msg}` };
+      }
+      // Surface "logical" 200-OK errors with a clear message.
+      const profErr = String((profJson as { error?: string }).error ?? "").toLowerCase();
+      const profMsg = String((profJson as { message?: string }).message ?? "").toLowerCase();
+      if (profErr === "not_found" || profMsg.includes("not found")) {
+        return { ok: false, error:
+          `Facebook says this Page URL doesn't exist publicly. Make sure the Page URL on the account is correct (e.g. https://www.facebook.com/your-page).`
+        };
+      }
+      if (profMsg.includes("restricted") || profMsg.includes("private")
+          || profErr.includes("private") || profErr.includes("restricted")) {
+        return { ok: false, error:
+          `This Facebook Page is private or restricted. ScrapeCreators can only read public Pages. Either set the Page visibility to Public, or use Meta API.`
+        };
+      }
+      // Try several nested paths — FB scraper response shapes vary.
+      const pageCandidates: Record<string, unknown>[] = [];
+      const collect = (o: unknown) => {
+        if (o && typeof o === "object") pageCandidates.push(o as Record<string, unknown>);
+      };
+      collect(profJson);
+      collect((profJson as { data?: unknown }).data);
+      collect((profJson as { page?: unknown }).page);
+      collect((profJson as { profile?: unknown }).profile);
+      collect(((profJson as { data?: { page?: unknown } }).data ?? {}).page);
+      const pageObj = pageCandidates.find((o) =>
+        "name" in o || "followers" in o || "fan_count" in o || "likes" in o
+      ) ?? (profJson as Record<string, unknown>);
+      const num = (v: unknown): number => {
+        if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+        if (typeof v === "string") {
+          const n = Number(v);
+          return Number.isFinite(n) ? n : 0;
+        }
+        if (v && typeof v === "object" && "count" in (v as object)) {
+          return num((v as { count?: unknown }).count);
+        }
+        return 0;
+      };
+      const followers = num(
+        pageObj.followers ?? pageObj.followers_count ?? pageObj.followersCount
+        ?? pageObj.fan_count ?? pageObj.fanCount
+      );
+      const likes = num(
+        pageObj.likes ?? pageObj.likes_count ?? pageObj.likesCount
+        ?? pageObj.fan_count ?? pageObj.fanCount
+      );
+      const aboutLink = (pageObj.website ?? pageObj.url ?? pageObj.link ?? null) as string | null;
+      const avatarUrl = (() => {
+        const candidates = [
+          pageObj.profile_picture,
+          pageObj.profile_picture_url,
+          pageObj.profile_pic_url,
+          pageObj.avatar_url,
+          (pageObj.picture as { data?: { url?: string } } | undefined)?.data?.url,
+          (pageObj.profile_pic as { url?: string } | undefined)?.url,
+        ];
+        const v = candidates.find((c) => typeof c === "string" && c.length > 0);
+        return (v as string | undefined) ?? null;
+      })();
+      console.log("[scrapecreators FB] parsed profile:", { followers, likes, hasAvatar: !!avatarUrl });
+
+      // Posts — endpoint is best-effort. If 404 we still saved the
+      // profile data above.
+      let posts: Array<{
+        id: string; message: string | null; media_type: FBMediaType; posted_at: string;
+        reactions: number; comments: number; shares: number; permalink: string | null;
+      }> = [];
+      try {
+        const postsRes = await fetch(
+          `${base}/v1/facebook/profile/posts?url=${encodeURIComponent(pageUrl)}`,
+          { headers },
+        );
+        const postsJson = (await postsRes.json()) as Record<string, unknown>;
+        console.log("[scrapecreators FB] posts response:", postsJson);
+        if (postsRes.ok) {
+          const arr =
+               (postsJson.posts as Array<Record<string, unknown>> | undefined)
+            ?? (postsJson.data as Array<Record<string, unknown>> | undefined)
+            ?? (postsJson.items as Array<Record<string, unknown>> | undefined)
+            ?? ((postsJson.data as { posts?: unknown })?.posts as Array<Record<string, unknown>> | undefined)
+            ?? ((postsJson.data as { items?: unknown })?.items as Array<Record<string, unknown>> | undefined)
+            ?? [];
+          console.log("[scrapecreators FB] posts found:", arr.length);
+          posts = arr.slice(0, 25).map((p) => {
+            const id = String(p.id ?? p.post_id ?? "");
+            const mt = String(p.media_type ?? p.type ?? "").toLowerCase();
+            let media_type: FBMediaType = "status";
+            if (mt.includes("video") || mt === "reel") media_type = mt === "reel" ? "reel" : "video";
+            else if (mt.includes("photo") || mt.includes("image")) media_type = "photo";
+            else if (mt.includes("link")) media_type = "link";
+            const tsRaw = p.posted_at ?? p.created_time ?? p.timestamp;
+            const ts = typeof tsRaw === "number"
+              ? new Date(tsRaw * (tsRaw > 1e12 ? 1 : 1000)).toISOString()
+              : typeof tsRaw === "string"
+                ? new Date(tsRaw).toISOString()
+                : new Date().toISOString();
+            return {
+              id,
+              message: (p.message ?? p.text ?? null) as string | null,
+              media_type,
+              posted_at: ts,
+              reactions: num(p.reactions ?? p.reactions_count ?? p.like_count),
+              comments: num(p.comments ?? p.comments_count ?? p.comment_count),
+              shares: num(p.shares ?? p.shares_count ?? p.share_count),
+              permalink: (p.permalink ?? p.url ?? null) as string | null,
+            };
+          }).filter((p) => p.id);
+        }
+      } catch { /* posts endpoint failures are non-fatal */ }
+
+      const updatePayload = {
+        followers_count: followers || account.followers_count,
+        likes_count: likes || account.likes_count,
+        about_link: aboutLink ?? account.about_link,
+        avatar_url: avatarUrl ?? account.avatar_url,
+        scrapecreators_key: key,
+        scrapecreators_connected_at: account.scrapecreators_connected_at ?? new Date().toISOString(),
+        last_synced_at: new Date().toISOString(),
+      };
+      const { error: updErr } = await supabase
+        .from("facebook_accounts")
+        .update(updatePayload)
+        .eq("id", account.id);
+      if (updErr) return { ok: false, error: updErr.message };
+
+      if (posts.length > 0) {
+        const upserts = posts.map((p) => ({
+          facebook_account_id: account.id,
+          post_id: p.id,
+          message: p.message,
+          media_type: p.media_type,
+          posted_at: p.posted_at,
+          reactions_count: p.reactions,
+          comments_count: p.comments,
+          shares_count: p.shares,
+          url: p.permalink,
+        }));
+        const { error: postErr } = await supabase
+          .from("facebook_posts")
+          .upsert(upserts, { onConflict: "facebook_account_id,post_id" });
+        if (postErr) return { ok: false, error: postErr.message };
+      }
+      return { ok: true, postCount: posts.length };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Network error" };
+    }
+  };
+
+  const onConnectScrapeCreators = async () => {
+    const key = scForm.key.trim();
+    if (!key) {
+      toast.error("Paste your ScrapeCreators API key.");
+      return;
+    }
+    setScSyncing(true);
+    const result = await runScrapeCreatorsSyncFB(key);
+    setScSyncing(false);
+    if (!result.ok) {
+      toast.error(`ScrapeCreators connect failed: ${result.error}`);
+      return;
+    }
+    if (result.postCount === 0) {
+      toast.warning("Connected — but 0 posts came back. Open the browser console (F12) to see the raw API response so we can adjust the parser.");
+    } else {
+      toast.success(`Connected — ${result.postCount} post${result.postCount === 1 ? "" : "s"} synced`);
+    }
+    setScDialogOpen(false);
+    setScForm({ key: "" });
+    onRefresh();
+  };
+
+  const onRefreshFromScrapeCreators = async () => {
+    if (!account.scrapecreators_key) return;
+    setScSyncing(true);
+    const result = await runScrapeCreatorsSyncFB(account.scrapecreators_key);
+    setScSyncing(false);
+    if (!result.ok) {
+      toast.error(`ScrapeCreators sync failed: ${result.error}`);
+      return;
+    }
+    if (result.postCount === 0) {
+      toast.warning("Synced page — but 0 posts came back. Check the browser console.");
+    } else {
+      toast.success(`Synced — ${result.postCount} post${result.postCount === 1 ? "" : "s"}`);
+    }
+    onRefresh();
+  };
+
+  const onDisconnectScrapeCreators = async () => {
+    const { error } = await supabase
+      .from("facebook_accounts")
+      .update({ scrapecreators_key: null, scrapecreators_connected_at: null })
+      .eq("id", account.id);
+    if (error) return toast.error(error.message);
+    toast.success("Disconnected from ScrapeCreators");
+    onRefresh();
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -1322,8 +1610,43 @@ function AccountDetailView({
           {statusLabels[account.status]}
         </span>
 
-        <div className="ml-auto flex items-center gap-2">
-          {isConnected ? (
+        <div className="ml-auto flex items-center gap-2 flex-wrap">
+          {activeProvider === "scrapecreators" ? (
+            <>
+              <span className="text-xs text-muted-foreground inline-flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-success" />
+                Connected via ScrapeCreators
+                {account.scrapecreators_connected_at && (
+                  <span className="text-muted-foreground/60">
+                    · {formatDistanceToNow(new Date(account.scrapecreators_connected_at), { addSuffix: true })}
+                  </span>
+                )}
+              </span>
+              <Button variant="outline" size="sm" onClick={onRefreshFromScrapeCreators} disabled={scSyncing}>
+                <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${scSyncing ? "animate-spin" : ""}`} />
+                {scSyncing ? "Syncing…" : "Refresh"}
+              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive">
+                    <Unlink className="h-3.5 w-3.5" />
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Disconnect from ScrapeCreators?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      We'll clear the saved API key. Synced posts stay; auto-refresh stops.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={onDisconnectScrapeCreators}>Disconnect</AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </>
+          ) : activeProvider === "meta" ? (
             <>
               <span className="text-xs text-muted-foreground inline-flex items-center gap-1.5">
                 <span className="h-1.5 w-1.5 rounded-full bg-success" />
@@ -1359,10 +1682,16 @@ function AccountDetailView({
               </AlertDialog>
             </>
           ) : (
-            <Button size="sm" onClick={() => setMetaDialogOpen(true)}>
-              <SiMeta className="h-3.5 w-3.5 mr-1.5" />
-              Connect with Meta
-            </Button>
+            <>
+              <Button size="sm" onClick={() => setScDialogOpen(true)}>
+                <Zap className="h-3.5 w-3.5 mr-1.5" />
+                Connect ScrapeCreators
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setMetaDialogOpen(true)}>
+                <SiMeta className="h-3.5 w-3.5 mr-1.5" />
+                Connect with Meta
+              </Button>
+            </>
           )}
         </div>
       </div>
@@ -1423,17 +1752,127 @@ function AccountDetailView({
         </DialogContent>
       </Dialog>
 
-      {/* Headline stats */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <StatCard label="Followers" value={account.followers_count.toLocaleString()} sub="page followers" />
-        <StatCard label="Page likes" value={account.likes_count.toLocaleString()} sub="fan count" />
-        <StatCard label="Posts on FB" value={account.posts_count.toLocaleString()} sub="reported count" />
-        <StatCard
-          label="Tracked posts"
-          value={accountPosts.length}
-          sub={stats ? `${stats.last30d} in last 30d` : "none yet"}
-        />
-      </div>
+      {/* ── ScrapeCreators connect dialog (FB) ─────────────────────── */}
+      <Dialog open={scDialogOpen} onOpenChange={setScDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Zap className="h-5 w-5" />
+              Connect {account.name} via ScrapeCreators
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2 text-sm">
+            <div className="rounded-lg border border-border bg-secondary/40 p-3 text-xs text-muted-foreground space-y-2">
+              <div>
+                Pulls page profile + recent public posts (caption,
+                reactions, comments, shares) from ScrapeCreators' Facebook
+                endpoints. No Meta paperwork — just an API key.
+              </div>
+              <div className="font-medium text-foreground">How to get a key</div>
+              <ul className="list-disc pl-4 space-y-0.5">
+                <li>
+                  Sign up at{" "}
+                  <a className="text-primary hover:underline" href="https://scrapecreators.com" target="_blank" rel="noreferrer">
+                    scrapecreators.com
+                  </a>
+                </li>
+                <li>Add a card → top up with $5</li>
+                <li>Copy your API key from the dashboard</li>
+              </ul>
+              <div className="text-foreground font-medium pt-1">Same key works across IG, FB, and TikTok.</div>
+              {!account.page_url && (
+                <div className="rounded border border-amber-500/30 bg-amber-500/10 p-2 text-amber-700 dark:text-amber-300">
+                  ⚠ This page has no <strong>Page URL</strong> set. ScrapeCreators
+                  needs it to find the page. Add it in the account's edit dialog
+                  (e.g. <code className="bg-card px-1 rounded">https://www.facebook.com/&lt;your-page&gt;</code>).
+                </div>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              <Label>API key</Label>
+              <Input
+                type="password"
+                placeholder="sk-..."
+                value={scForm.key}
+                onChange={(e) => setScForm({ key: e.target.value })}
+              />
+              <div className="text-xs text-muted-foreground">
+                Stored in your Supabase DB. Treat like a password.
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setScDialogOpen(false)}>Cancel</Button>
+            <Button onClick={onConnectScrapeCreators} disabled={scSyncing}>
+              {scSyncing ? "Connecting…" : "Connect & sync"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Flux-style Detailed Analytics hero (matches TikTok / IG). */}
+      {(() => {
+        const accountRevenue = account.infloww_campaign_code != null
+          ? inflowwStats
+              .filter((s) => s.campaign_code === account.infloww_campaign_code)
+              .reduce((sum, s) => sum + (s.revenue_total ?? 0), 0)
+          : 0;
+        const totalReactions = accountPosts.reduce((s, p) => s + (p.reactions_count ?? 0), 0);
+        const totalComments = accountPosts.reduce((s, p) => s + (p.comments_count ?? 0), 0);
+        const totalShares = accountPosts.reduce((s, p) => s + (p.shares_count ?? 0), 0);
+        const avgReactions = accountPosts.length > 0 ? totalReactions / accountPosts.length : 0;
+        const engagementPct = stats?.engagement ?? 0;
+        return (
+          <>
+            <AccountAnalyticsHero
+              avatarUrl={account.avatar_url ?? null}
+              displayName={(account.name ?? "Untitled Page").toUpperCase()}
+              username={account.page_url
+                ? account.page_url.replace(/^https?:\/\/(?:www\.)?facebook\.com\//i, "").replace(/\/$/, "")
+                : (account.name ?? "page")}
+              verified={account.followers_count >= 10000}
+              bio={account.about_link ?? account.notes ?? null}
+              joinedLabel={null}
+              brandIcon={<SiFacebook className="h-3.5 w-3.5" style={{ color: FB_BLUE }} />}
+              brandColor={FB_BLUE}
+              totalLikes={{
+                value: account.likes_count >= 1_000_000
+                  ? `${(account.likes_count / 1_000_000).toFixed(1)}M`
+                  : account.likes_count >= 1_000
+                    ? `${(account.likes_count / 1_000).toFixed(1)}K`
+                    : account.likes_count.toLocaleString(),
+                delta: null,
+              }}
+              engagementRate={{
+                value: engagementPct > 0 ? `${engagementPct.toFixed(2)}%` : "—",
+                delta: null,
+              }}
+              revenue={{
+                value: `$${fmtMoney0(accountRevenue)}`,
+                delta: null,
+                deltaLabel: account.infloww_campaign_code
+                  ? `from campaign ${account.infloww_campaign_code}`
+                  : "no campaign linked",
+              }}
+            />
+            <ContentTypeBreakdown
+              brandColor={FB_BLUE}
+              leftStats={[
+                { label: "Followers", value: account.followers_count.toLocaleString() },
+                { label: "Page Likes", value: account.likes_count.toLocaleString() },
+                { label: "Posts on FB", value: account.posts_count.toLocaleString() },
+                { label: "Tracked posts", value: accountPosts.length.toLocaleString() },
+              ]}
+              rightStats={[
+                { label: "Total Reactions", value: totalReactions.toLocaleString() },
+                { label: "Total Comments", value: totalComments.toLocaleString() },
+                { label: "Total Shares", value: totalShares.toLocaleString() },
+                { label: "Avg Reactions / post", value: Math.round(avgReactions).toLocaleString() },
+              ]}
+            />
+          </>
+        );
+      })()}
 
       {accountPosts.length === 0 && (
         <div className="rounded-xl border border-dashed border-border bg-card/40 p-4 text-center text-sm text-muted-foreground">
@@ -1441,20 +1880,175 @@ function AccountDetailView({
         </div>
       )}
 
-      {/* Performance */}
-      <div>
-        <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Performance</div>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <StatCard label="Avg reactions" value={stats ? Math.round(stats.avgReactions).toLocaleString() : "—"} sub={stats ? `${stats.totalReactions.toLocaleString()} total` : "no posts yet"} />
-          <StatCard label="Avg comments" value={stats ? Math.round(stats.avgComments).toLocaleString() : "—"} sub={stats ? `${stats.totalComments.toLocaleString()} total` : ""} />
-          <StatCard label="Avg reach" value={stats ? Math.round(stats.avgReach).toLocaleString() : "—"} sub={stats ? `${stats.totalReach.toLocaleString()} total` : ""} />
-          <StatCard
-            label="Engagement"
+      {/* ── Revenue performance card ───────────────────────────────
+          Big modern Boxera-style panel showing every dollar this
+          specific FB Page has driven. Pulls all infloww tracking-link
+          rows whose campaign_code matches the account's
+          infloww_campaign_code and rolls them up. */}
+      {(() => {
+        const accountLinks = account.infloww_campaign_code != null
+          ? inflowwStats.filter((s) => s.campaign_code === account.infloww_campaign_code)
+          : [];
+        const totalRevenue = accountLinks.reduce((s, r) => s + (r.revenue_total ?? 0), 0);
+        const totalClicks = accountLinks.reduce((s, r) => s + (r.clicks_count ?? 0), 0);
+        const totalSubs = accountLinks.reduce((s, r) => s + (r.subscribers_count ?? 0), 0);
+        const totalSpenders = accountLinks.reduce((s, r) => s + (r.spenders_count ?? 0), 0);
+        const conversion = totalClicks > 0 ? (totalSubs / totalClicks) * 100 : 0;
+        const revenuePerSub = totalSubs > 0 ? totalRevenue / totalSubs : 0;
+        const revenuePerClick = totalClicks > 0 ? totalRevenue / totalClicks : 0;
+        return (
+          <section className="rounded-2xl border border-border bg-card p-5 sm:p-6 space-y-4">
+            <div className="flex items-center gap-2.5">
+              <span
+                className="h-7 w-7 rounded-lg flex items-center justify-center"
+                style={{ backgroundColor: `${FB_BLUE}20`, color: FB_BLUE }}
+              >
+                <DollarSign className="h-4 w-4" />
+              </span>
+              <div>
+                <h3 className="text-sm font-bold tracking-tight">Revenue Performance</h3>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  Every dollar this Page has driven, sourced from Infloww tracking
+                </p>
+              </div>
+            </div>
+            {account.infloww_campaign_code == null ? (
+              <div className="rounded-xl border border-dashed border-border bg-muted/20 p-8 text-center text-sm text-muted-foreground">
+                Set this Page's <strong>Infloww campaign code</strong> in the Edit dialog to attribute revenue here.
+              </div>
+            ) : accountLinks.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border bg-muted/20 p-8 text-center text-sm text-muted-foreground">
+                Campaign <span className="font-mono">{account.infloww_campaign_code}</span> is linked but Infloww hasn't returned any traffic for it yet. Click <strong>Sync Infloww</strong> on the Revenue page to refresh.
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  <RevKpiCard
+                    icon={<DollarSign className="h-4 w-4" />}
+                    tone="emerald"
+                    label="Total Revenue"
+                    value={`$${fmtMoney0(totalRevenue)}`}
+                    sub={`${accountLinks.length} link${accountLinks.length === 1 ? "" : "s"} active`}
+                  />
+                  <RevKpiCard
+                    icon={<Users className="h-4 w-4" />}
+                    tone="violet"
+                    label="Subscribers"
+                    value={totalSubs.toLocaleString()}
+                    sub={`${totalSpenders.toLocaleString()} spent money`}
+                  />
+                  <RevKpiCard
+                    icon={<Eye className="h-4 w-4" />}
+                    tone="cyan"
+                    label="Total Clicks"
+                    value={totalClicks.toLocaleString()}
+                    sub={`$${revenuePerClick.toFixed(2)} per click`}
+                  />
+                  <RevKpiCard
+                    icon={<TrendingUp className="h-4 w-4" />}
+                    tone="amber"
+                    label="Click → Sub"
+                    value={`${conversion.toFixed(2)}%`}
+                    sub={`$${revenuePerSub.toFixed(2)} per sub`}
+                  />
+                </div>
+                {accountLinks.length > 1 && (
+                  <div className="overflow-hidden rounded-xl border border-border">
+                    <div className="px-3 py-2 border-b border-border bg-muted/30">
+                      <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/70">
+                        Per-link breakdown
+                      </div>
+                    </div>
+                    <table className="w-full text-xs">
+                      <thead className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-bold">
+                        <tr>
+                          <th className="text-left px-3 py-2">Campaign</th>
+                          <th className="text-right px-3 py-2">Clicks</th>
+                          <th className="text-right px-3 py-2">Subs</th>
+                          <th className="text-right px-3 py-2">CVR</th>
+                          <th className="text-right px-3 py-2">Revenue</th>
+                          <th className="text-right px-3 py-2">$ / sub</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {accountLinks
+                          .slice()
+                          .sort((a, b) => b.revenue_total - a.revenue_total)
+                          .map((l) => {
+                            const cvr = l.clicks_count > 0
+                              ? (l.subscribers_count / l.clicks_count) * 100
+                              : 0;
+                            return (
+                              <tr key={l.id} className="border-t border-border bg-card hover:bg-secondary/30">
+                                <td className="px-3 py-2 font-mono">c{l.campaign_code}</td>
+                                <td className="px-3 py-2 text-right tabular-nums">{l.clicks_count.toLocaleString()}</td>
+                                <td className="px-3 py-2 text-right tabular-nums">{l.subscribers_count.toLocaleString()}</td>
+                                <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{cvr.toFixed(2)}%</td>
+                                <td className="px-3 py-2 text-right font-bold tabular-nums">${fmtMoney0(l.revenue_total)}</td>
+                                <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+                                  {l.subscribers_count > 0 ? `$${(l.revenue_total / l.subscribers_count).toFixed(2)}` : "—"}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            )}
+          </section>
+        );
+      })()}
+
+      {/* ── Engagement Performance ─────────────────────────────────
+          Modern 4-tile KPI strip — Avg Reactions / Avg Comments / Avg
+          Reach / Engagement Rate. Replaces the old plain StatCard
+          row with the same brand-tinted icon-chip pattern used on the
+          dashboard. */}
+      <section className="rounded-2xl border border-border bg-card p-5 sm:p-6 space-y-4">
+        <div className="flex items-center gap-2.5">
+          <span className="h-7 w-7 rounded-lg bg-blue-500/15 text-blue-600 flex items-center justify-center">
+            <ThumbsUp className="h-4 w-4" />
+          </span>
+          <div>
+            <h3 className="text-sm font-bold tracking-tight">Engagement Performance</h3>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              Per-post averages and engagement rate across {accountPosts.length} tracked post{accountPosts.length === 1 ? "" : "s"}
+            </p>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <RevKpiCard
+            icon={<ThumbsUp className="h-4 w-4" />}
+            tone="blue"
+            label="Avg Reactions"
+            value={stats ? Math.round(stats.avgReactions).toLocaleString() : "—"}
+            sub={stats ? `${stats.totalReactions.toLocaleString()} total` : "no posts yet"}
+          />
+          <RevKpiCard
+            icon={<MessageCircle className="h-4 w-4" />}
+            tone="violet"
+            label="Avg Comments"
+            value={stats ? Math.round(stats.avgComments).toLocaleString() : "—"}
+            sub={stats ? `${stats.totalComments.toLocaleString()} total` : ""}
+          />
+          <RevKpiCard
+            icon={<Eye className="h-4 w-4" />}
+            tone="cyan"
+            label="Avg Reach"
+            value={stats ? Math.round(stats.avgReach).toLocaleString() : "—"}
+            sub={stats ? `${stats.totalReach.toLocaleString()} total` : ""}
+          />
+          <RevKpiCard
+            icon={<TrendingUp className="h-4 w-4" />}
+            tone="emerald"
+            label="Engagement Rate"
             value={stats?.engagement != null ? `${stats.engagement.toFixed(2)}%` : "—"}
             sub="(reactions+comments+shares)/reach"
           />
         </div>
-      </div>
+      </section>
 
       {/* Insights */}
       {insights.length > 0 && (
@@ -1692,49 +2286,9 @@ function AccountDetailView({
         </div>
       )}
 
-      {/* Revenue */}
-      {account.infloww_campaign_code != null && (
-        <div>
-          <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Infloww revenue</div>
-          <div className="rounded-xl border border-border bg-card p-4">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <div className="text-xs text-muted-foreground">Campaign code</div>
-                <div className="font-mono font-semibold">c{account.infloww_campaign_code}</div>
-                {revenueStat?.campaign_url && (
-                  <a
-                    href={revenueStat.campaign_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1 mt-1"
-                  >
-                    <Link2 className="h-3 w-3" />
-                    {revenueStat.campaign_url.replace(/^https?:\/\//, "")}
-                  </a>
-                )}
-              </div>
-              {revenueStat ? (
-                <div className="grid grid-cols-3 gap-4 text-right">
-                  <div>
-                    <div className="text-xs text-muted-foreground">Clicks</div>
-                    <div className="font-semibold">{revenueStat.clicks_count.toLocaleString()}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">Subs</div>
-                    <div className="font-semibold">{revenueStat.subscribers_count.toLocaleString()}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">Revenue</div>
-                    <div className="font-semibold text-success">${fmtMoney2(revenueStat.revenue_total)}</div>
-                  </div>
-                </div>
-              ) : (
-                <div className="text-xs text-muted-foreground italic">Sync Infloww to load stats</div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      {/* (Old "Infloww revenue" card removed — superseded by the
+          Revenue Performance section above, which shows the same
+          campaign data in a fuller, modernized layout.) */}
 
       {account.notes && (
         <div>

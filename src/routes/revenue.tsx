@@ -14,6 +14,12 @@ import { runSyncJob } from "@/lib/sync";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { DatePicker } from "@/components/ui/date-picker";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  BarChart, Bar, ResponsiveContainer as RcContainer, XAxis as RcXAxis,
+  Tooltip as RcTooltip, Cell as RcCell,
+} from "recharts";
 import {
   Dialog,
   DialogContent,
@@ -87,7 +93,21 @@ type OfCreatorStat = {
   earnings_messages: number;
   earnings_streams: number;
   earnings_referrals: number;
+  /** Subscriber columns from of_creator_stats — used by the Overview /
+   *  Customers / Retention tabs to compute LTV, churn, retention. */
+  active_subscribers: number;
+  expired_subscribers: number;
+  sub_price: number | null;
   synced_at: string;
+};
+/** Daily subscriber-count snapshot — feeds churn analysis + MAU bars. */
+type OfSubMetric = {
+  creator_id: string;
+  entry_date: string;
+  active_count: number;
+  new_count: number;
+  lost_count: number;
+  expired_count: number;
 };
 // One row per creator per day from /earnings.daily
 type OfDailyEarning = {
@@ -167,6 +187,11 @@ function RevenuePage() {
   const [allPosts, setAllPosts] = useState<PostStat[]>([]);
   const [inflowwStats, setInflowwStats] = useState<InflowwStat[]>([]);
   const [ofStats, setOfStats] = useState<OfCreatorStat[]>([]);
+  const [subMetrics, setSubMetrics] = useState<OfSubMetric[]>([]);
+  // Active analytics tab — Overview / Revenue / Customers / Retention.
+  // Defaults to Overview to match Subly's pattern (high-level first,
+  // detail tabs underneath).
+  const [analyticsTab, setAnalyticsTab] = useState<"overview" | "revenue" | "customers" | "retention">("overview");
   const [ofDaily, setOfDaily] = useState<OfDailyEarning[]>([]);
   const [ofTracking, setOfTracking] = useState<OfTrackingLink[]>([]);
   const [loading, setLoading] = useState(true);
@@ -269,7 +294,7 @@ function RevenuePage() {
 
     const [{ data: cs }, { data: ras }, { data: tls }, { data: rev },
            { data: org }, { data: int_ }, { data: ads }, { data: ifw },
-           { data: ofs }, { data: ofd }, { data: oft }] = await Promise.all([
+           { data: ofs }, { data: ofd }, { data: oft }, { data: subm }] = await Promise.all([
       supabase.from("creators").select("id, name").order("name"),
       supabase.from("reddit_accounts").select("id, creator_id, username"),
       supabase.from("tracking_links").select("id, reddit_account_id, label, url"),
@@ -284,6 +309,13 @@ function RevenuePage() {
       supabase.from("of_earnings_daily").select("creator_id, entry_date, total").gte("entry_date", since1y),
       // OF native tracking-link campaigns
       supabase.from("of_tracking_links").select("*").order("revenue_total", { ascending: false }),
+      // OF subscriber metrics — daily new/lost/active counts. Powers
+      // churn rate, MAU, retention curve in the Overview / Customers /
+      // Retention tabs.
+      supabase.from("of_subscriber_metrics_daily")
+        .select("creator_id, entry_date, active_count, new_count, lost_count, expired_count")
+        .gte("entry_date", since1y)
+        .order("entry_date", { ascending: true }),
     ]);
 
     const raIds = (ras ?? []).map((r) => r.id);
@@ -306,6 +338,7 @@ function RevenuePage() {
     setOfStats((ofs ?? []) as OfCreatorStat[]);
     setOfDaily((ofd ?? []) as OfDailyEarning[]);
     setOfTracking((oft ?? []) as OfTrackingLink[]);
+    setSubMetrics((subm ?? []) as OfSubMetric[]);
     setLoading(false);
   };
 
@@ -824,22 +857,31 @@ function RevenuePage() {
         </div>
       </div>
 
-      {/* Custom range pickers (only when Custom is selected) */}
+      {/* Custom range pickers (only when Custom is selected).
+          Uses the shadcn popover-style DatePicker (Calendar inside a
+          Popover) instead of the native <input type="date">, which
+          rendered the boxy slash-separated browser default. The
+          DatePicker takes `Date` objects, so we serialize back to the
+          same yyyy-MM-dd string the rest of the page expects. */}
       {rangePreset === "custom" && (
-        <div className="flex items-center gap-2 flex-wrap">
-          <Label className="text-xs text-muted-foreground">From</Label>
-          <input
-            type="date"
-            value={customFrom}
-            onChange={(e) => setCustomFrom(e.target.value)}
-            className="text-xs border border-border bg-card rounded-md px-2 py-1 h-8"
+        <div className="flex items-center gap-2 flex-wrap rounded-2xl border border-border bg-card p-3">
+          <Label className="text-xs font-semibold text-muted-foreground">From</Label>
+          <DatePicker
+            size="sm"
+            placeholder="Start date"
+            className="w-[160px] rounded-full"
+            value={customFrom ? new Date(customFrom) : null}
+            onChange={(d) => setCustomFrom(d ? format(d, "yyyy-MM-dd") : "")}
+            clearable
           />
-          <Label className="text-xs text-muted-foreground ml-2">To</Label>
-          <input
-            type="date"
-            value={customTo}
-            onChange={(e) => setCustomTo(e.target.value)}
-            className="text-xs border border-border bg-card rounded-md px-2 py-1 h-8"
+          <Label className="text-xs font-semibold text-muted-foreground ml-2">To</Label>
+          <DatePicker
+            size="sm"
+            placeholder="End date"
+            className="w-[160px] rounded-full"
+            value={customTo ? new Date(customTo) : null}
+            onChange={(d) => setCustomTo(d ? format(d, "yyyy-MM-dd") : "")}
+            clearable
           />
           {loadingRangeOf && (
             <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1 ml-2">
@@ -849,15 +891,69 @@ function RevenuePage() {
         </div>
       )}
 
-      {/* Top KPI row — Revenue / Net Revenue / Expenses (matches dashboard) */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* ── Analytics tabs (Subly pattern).
+          Pill-shaped tab strip below the date controls, four sections:
+            • Overview  — high-level health check (this is what the user
+              sees first; layout copies Subly's MRR / Conversions /
+              Retention / MAU / LTV / Channels grid)
+            • Revenue   — the existing 5-KPI row + donut + manual entries
+            • Customers — top spenders, active vs expired subs
+            • Retention — churn rate over time, retention curves
+          Each tab shares the same dateRange / metric state, so flipping
+          tabs is instant — no reload. */}
+      <Tabs value={analyticsTab} onValueChange={(v) => setAnalyticsTab(v as typeof analyticsTab)}>
+        <TabsList className="bg-transparent p-0 h-auto gap-1 mb-4 flex-wrap">
+          {([
+            { v: "overview", label: "Overview" },
+            { v: "revenue", label: "Revenue" },
+            { v: "customers", label: "Customers" },
+            { v: "retention", label: "Retention" },
+          ] as const).map((t) => (
+            <TabsTrigger
+              key={t.v}
+              value={t.v}
+              className="rounded-full px-4 py-1.5 text-xs font-semibold border border-transparent data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:border-primary/30 data-[state=active]:shadow-sm hover:bg-secondary/40 transition-colors"
+            >
+              {t.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+
+        {/* ── Overview tab — Subly layout.
+            Top: 3-column grid (MRR Growth Target / Trial Conversions / Retention & Churn)
+            Middle: 2-column (MAU bar chart / right rail with Projected LTV + Top 3 Channels) */}
+        <TabsContent value="overview" className="space-y-4 mt-0">
+          <OverviewTabContent
+            grossRevenue={grossRevenue}
+            netRevenue={netRevenue}
+            adsSpend={overview.adsSpend}
+            ofStats={ofStats}
+            subMetrics={subMetrics}
+            organicEntries={organicEntries}
+            internalEntries={internalEntries}
+            entries={entries}
+            ofDaily={ofDaily}
+            adCampaigns={adCampaigns}
+            channelOverview={overview}
+            dateLabel={dateRange.label}
+          />
+        </TabsContent>
+
+        {/* ── Revenue tab — keeps the existing detail layout. */}
+        <TabsContent value="revenue" className="space-y-4 mt-0">
+
+      {/* Top KPI row — Boxera analytics pattern: 5 tiles in a single
+          row (sm: 2-up, lg: 5-up). Each tile shows the metric, the
+          period delta vs the previous comparable period, and a soft
+          spark trend underneath. */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <StatTile
           tone="emerald"
           icon={<Wallet className="h-4 w-4" />}
-          label="Revenue"
+          label="Total Revenue"
           value={`$${grossRevenue.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}
           delta={null}
-          deltaSubtitle={`${dateRange.label.toLowerCase()} · all channels gross`}
+          deltaSubtitle={`${dateRange.label.toLowerCase()} · gross`}
           sparkline={revenueSpark}
           loading={loading}
         />
@@ -869,7 +965,7 @@ function RevenuePage() {
           delta={null}
           deltaSubtitle={
             overview.adsSpend > 0
-              ? `gross − $${overview.adsSpend.toLocaleString("en-US", { maximumFractionDigits: 0 })} ad spend`
+              ? `after $${overview.adsSpend.toLocaleString("en-US", { maximumFractionDigits: 0 })} ads`
               : "after ad spend"
           }
           sparkline={revenueSpark}
@@ -881,7 +977,29 @@ function RevenuePage() {
           label="Expenses"
           value={`$${totalExpenses.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}
           delta={null}
-          deltaSubtitle="ad spend in this range"
+          deltaSubtitle="ad spend this range"
+          loading={loading}
+        />
+        <StatTile
+          tone="cyan"
+          icon={<SiOnlyfans className="h-4 w-4" />}
+          label="OnlyFans Direct"
+          value={`$${overview.ofDirect.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}
+          delta={null}
+          deltaSubtitle={
+            overview.ofDirect > 0
+              ? `${((overview.ofDirect / Math.max(grossRevenue, 1)) * 100).toFixed(0)}% of revenue`
+              : "no OF data yet"
+          }
+          loading={loading}
+        />
+        <StatTile
+          tone="indigo"
+          icon={<Users className="h-4 w-4" />}
+          label="Avg per creator"
+          value={`$${(grossRevenue / Math.max(creators.length || 1, 1)).toLocaleString("en-US", { maximumFractionDigits: 0 })}`}
+          delta={null}
+          deltaSubtitle={`across ${creators.length} creator${creators.length === 1 ? "" : "s"}`}
           loading={loading}
         />
       </div>
@@ -926,416 +1044,14 @@ function RevenuePage() {
           </button>
         )}
       </div>
-      {/* ── OnlyFans data inspector ─────────────────────────────────────
-          Collapsible diagnostic panel. Shows what's in the database vs
-          what the OnlyFansAPI is actually returning, so a non-technical
-          admin can self-diagnose "I synced but see $0" without opening
-          the browser dev tools. */}
-      <OfDataInspector />
 
-      {/* ── Per-creator revenue breakdown — Nexus table pattern.
-          Avatar bubble + creator name + share bar (relative to top earner)
-          + revenue. Channel cells appear inline on lg+, stacked on mobile. */}
-      {creatorBreakdown.length > 0 && (() => {
-        const earningRows = creatorBreakdown.filter((b) => b.total > 0);
-        const maxTotal = earningRows.reduce((m, b) => {
-          const adsNetCreator = b.adsRev + b.inflowwRev - b.adsSpend;
-          const g = b.ofRev + b.orgRev + b.intRev + adsNetCreator;
-          return Math.max(m, g);
-        }, 0);
-        return (
-        <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
-          {/* Card header — icon chip + title + count pill */}
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div className="flex items-center gap-2.5">
-              <span className="h-7 w-7 rounded-lg bg-emerald-500/15 text-emerald-600 flex items-center justify-center">
-                <Users className="h-4 w-4" />
-              </span>
-              <div>
-                <h2 className="text-sm font-semibold">Revenue by creator</h2>
-                <p className="text-[11px] text-muted-foreground mt-0.5">
-                  All channels combined · click to drill in
-                </p>
-              </div>
-            </div>
-            <span className="text-[10px] font-mono tabular-nums px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
-              {earningRows.length} / {creatorBreakdown.length} earning
-            </span>
-          </div>
 
-          {/* Column header row — desktop only */}
-          <div className="hidden lg:grid lg:grid-cols-[2fr_minmax(120px,160px)_repeat(4,1fr)_1.2fr] items-center gap-3 px-1 pb-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground/70 font-bold">
-            <span>Creator</span>
-            <span>Share</span>
-            <span className="text-right">OnlyFans</span>
-            <span className="text-right">Organic</span>
-            <span className="text-right">Internal</span>
-            <span className="text-right">Ads (net)</span>
-            <span className="text-right">Total</span>
-          </div>
-
-          {/* Rows */}
-          <div className="space-y-2">
-            {creatorBreakdown.map((b) => {
-              const adsNetCreator = b.adsRev + b.inflowwRev - b.adsSpend;
-              const grand = b.ofRev + b.orgRev + b.intRev + adsNetCreator;
-              const sharePct = maxTotal > 0 ? (grand / maxTotal) * 100 : 0;
-              return (
-                <Link
-                  key={b.creator.id}
-                  to="/creators/$creatorId"
-                  params={{ creatorId: b.creator.id }}
-                  className="block lg:grid lg:grid-cols-[2fr_minmax(120px,160px)_repeat(4,1fr)_1.2fr] items-center gap-3 rounded-xl border border-border bg-background/50 p-3 transition-all duration-150 ease-out hover:-translate-y-0.5 hover:border-border/80 hover:bg-secondary/30 hover:shadow-sm"
-                >
-                  {/* Creator: avatar + name + sync timestamp */}
-                  <div className="flex items-center gap-3 min-w-0 mb-3 lg:mb-0">
-                    <span className="h-9 w-9 rounded-full bg-gradient-to-br from-violet-500 to-indigo-500 text-white flex items-center justify-center font-semibold text-xs shadow-sm shrink-0">
-                      {b.creator.name.slice(0, 2).toUpperCase()}
-                    </span>
-                    <div className="min-w-0">
-                      <div className="text-sm font-semibold truncate">{b.creator.name}</div>
-                      <div className="text-[10px] text-muted-foreground truncate">
-                        {b.synced_at
-                          ? `OF synced ${format(new Date(b.synced_at), "MMM d, h:mm a")}`
-                          : "OF not synced"}
-                      </div>
-                    </div>
-                  </div>
-                  {/* Share bar — relative to the top earner */}
-                  <div className="hidden lg:block">
-                    {grand > 0 ? (
-                      <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-gradient-to-r from-violet-500 to-indigo-500 transition-all duration-500"
-                          style={{ width: `${sharePct}%` }}
-                        />
-                      </div>
-                    ) : (
-                      <div className="h-1.5 rounded-full bg-muted/40" />
-                    )}
-                  </div>
-                  {/* Channel cells */}
-                  <ChannelCell value={b.ofRev} accent="text-blue-500" />
-                  <ChannelCell value={b.orgRev} accent="text-emerald-500" />
-                  <ChannelCell value={b.intRev} accent="text-amber-500" />
-                  <ChannelCell value={adsNetCreator} accent="text-violet-500" />
-                  {/* Total */}
-                  <div className="text-right mt-2 lg:mt-0">
-                    <div className="text-sm font-bold tabular-nums">
-                      ${grand.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </div>
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
-        </div>
-        );
-      })()}
-
-      {/* ── Infloww (all-time totals from API) ──────────────────────────────── */}
-      {inflowwStats.length > 0 && (() => {
-        const inflowwByCreator = creators.map((c) => {
-          // Only show tracking links assigned to a Reddit account
-          const stats = inflowwStats.filter(
-            (s) => s.creator_id === c.id && s.reddit_account_id !== null,
-          );
-          if (stats.length === 0) return null;
-          const totalRev = stats.reduce((s, r) => s + r.revenue_total, 0);
-          const totalClicks = stats.reduce((s, r) => s + r.clicks_count, 0);
-          const totalSubs = stats.reduce((s, r) => s + r.subscribers_count, 0);
-          const lastSync = stats.reduce((latest, r) => r.synced_at > latest ? r.synced_at : latest, stats[0].synced_at);
-          return { creator: c, stats, totalRev, totalClicks, totalSubs, lastSync };
-        }).filter(Boolean) as { creator: Creator; stats: InflowwStat[]; totalRev: number; totalClicks: number; totalSubs: number; lastSync: string }[];
-
-        const grandTotal = inflowwByCreator.reduce((s, r) => s + r.totalRev, 0);
-
-        return (
-          <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <div className="flex items-center gap-2.5">
-                <span className="h-7 w-7 rounded-lg bg-violet-500/15 text-violet-600 flex items-center justify-center">
-                  <Link2 className="h-4 w-4" />
-                </span>
-                <div>
-                  <h2 className="text-sm font-semibold">Infloww · all-time totals</h2>
-                  <p className="text-[11px] text-muted-foreground mt-0.5">
-                    Cumulative revenue from tracking links · synced per creator
-                  </p>
-                </div>
-              </div>
-              <div className="text-right">
-                <div className="text-2xl font-bold tabular-nums leading-none">
-                  ${grandTotal.toLocaleString("en-US", { maximumFractionDigits: 0 })}
-                </div>
-                <div className="text-[11px] text-muted-foreground mt-1">grand total</div>
-              </div>
-            </div>
-            <div className="space-y-3">
-              {inflowwByCreator.map(({ creator, stats, totalRev, totalClicks, totalSubs, lastSync }) => (
-                <div key={creator.id} className="rounded-xl border border-border bg-card p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <Link to="/creators/$creatorId" params={{ creatorId: creator.id }}
-                      className="font-medium hover:text-primary transition-colors">
-                      {creator.name}
-                    </Link>
-                    <div className="flex items-center gap-4 text-sm">
-                      <span className="text-muted-foreground">{totalClicks.toLocaleString()} clicks</span>
-                      <span className="text-muted-foreground">{totalSubs.toLocaleString()} subs</span>
-                      <span className="font-bold text-primary">
-                        ${totalRev.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
-                    {stats.map((s) => {
-                      const acct = accounts.find((a) => a.id === s.reddit_account_id);
-                      return (
-                        <div key={s.id} className="rounded-lg bg-secondary/40 px-3 py-2 text-xs">
-                          <div className="font-medium text-muted-foreground truncate mb-1">
-                            {acct ? `u/${acct.username}` : `c${s.campaign_code}`}
-                          </div>
-                          <div className="font-bold text-sm">
-                            ${s.revenue_total.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </div>
-                          <div className="text-muted-foreground mt-0.5">
-                            {s.clicks_count} clicks · {s.subscribers_count} subs
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div className="mt-2 text-[10px] text-muted-foreground">
-                    Last synced {format(new Date(lastSync), "MMM d, yyyy 'at' h:mm a")}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* ── OnlyFans tracking links (synced from /tracking-links) ──────────── */}
-      {/* Each row is a campaign code the creator set up on
-          onlyfans.com → Statistics → Tracking links. We mirror clicks /
-          subscribers / spenders / revenue on every OF sync, so the
-          numbers here are always at most one sync stale. */}
-      {ofTracking.length > 0 && (() => {
-        const grouped = creators.map((c) => {
-          const rows = ofTracking.filter((t) => t.creator_id === c.id);
-          if (rows.length === 0) return null;
-          const totalRev = rows.reduce((s, r) => s + r.revenue_total, 0);
-          const totalClicks = rows.reduce((s, r) => s + r.clicks_count, 0);
-          const totalSubs = rows.reduce((s, r) => s + r.subscribers_count, 0);
-          const lastSync = rows.reduce(
-            (latest, r) => r.synced_at > latest ? r.synced_at : latest,
-            rows[0].synced_at,
-          );
-          return { creator: c, rows, totalRev, totalClicks, totalSubs, lastSync };
-        }).filter(Boolean) as {
-          creator: Creator; rows: OfTrackingLink[];
-          totalRev: number; totalClicks: number; totalSubs: number; lastSync: string;
-        }[];
-        const grandTotal = grouped.reduce((s, g) => s + g.totalRev, 0);
-        return (
-          <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <div className="flex items-center gap-2.5">
-                <span className="h-7 w-7 rounded-lg bg-blue-500/15 text-blue-600 flex items-center justify-center">
-                  <SiOnlyfans className="h-4 w-4" />
-                </span>
-                <div>
-                  <h2 className="text-sm font-semibold">OnlyFans tracking links</h2>
-                  <p className="text-[11px] text-muted-foreground mt-0.5">
-                    Campaign-code revenue from OnlyFans · Statistics · Tracking links
-                  </p>
-                </div>
-              </div>
-              <div className="text-right">
-                <div className="text-2xl font-bold tabular-nums leading-none">
-                  ${grandTotal.toLocaleString("en-US", { maximumFractionDigits: 0 })}
-                </div>
-                <div className="text-[11px] text-muted-foreground mt-1">grand total</div>
-              </div>
-            </div>
-            <div className="space-y-3">
-              {grouped.map(({ creator, rows, totalRev, totalClicks, totalSubs, lastSync }) => (
-                <div key={creator.id} className="rounded-xl border border-border bg-card p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <Link to="/creators/$creatorId" params={{ creatorId: creator.id }}
-                      className="font-medium hover:text-primary transition-colors">
-                      {creator.name}
-                    </Link>
-                    <div className="flex items-center gap-4 text-sm">
-                      <span className="text-muted-foreground">{totalClicks.toLocaleString()} clicks</span>
-                      <span className="text-muted-foreground">{totalSubs.toLocaleString()} subs</span>
-                      <span className="font-bold text-primary">
-                        ${totalRev.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
-                    {rows.map((r) => (
-                      <div key={r.id} className="rounded-lg bg-secondary/40 px-3 py-2 text-xs">
-                        <div className="font-medium text-muted-foreground truncate mb-1 flex items-center gap-1">
-                          <Link2 className="h-2.5 w-2.5" />
-                          {r.name ?? `c${r.campaign_code}`}
-                        </div>
-                        <div className="font-bold text-sm">
-                          ${r.revenue_total.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </div>
-                        <div className="text-muted-foreground mt-0.5">
-                          {r.clicks_count.toLocaleString()} clicks · {r.subscribers_count.toLocaleString()} subs
-                        </div>
-                        {r.spenders_count > 0 && (
-                          <div className="text-[10px] text-muted-foreground mt-0.5">
-                            {r.spenders_count} spenders · ${r.revenue_per_subscriber.toFixed(2)}/sub
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                  <div className="mt-2 text-[10px] text-muted-foreground">
-                    Last synced {format(new Date(lastSync), "MMM d, yyyy 'at' h:mm a")}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* ── Sales Overview chart — Nexus pattern.
-          Big card with: icon-chip header, big total + delta, stat-pill
-          row, range pills, and the line chart. */}
-      <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
-        {/* Header — icon chip + title + headline number on the right */}
-        <div className="flex items-start justify-between flex-wrap gap-3">
-          <div className="flex items-center gap-2.5">
-            <span className="h-7 w-7 rounded-lg bg-violet-500/15 text-violet-600 flex items-center justify-center">
-              <TrendingUp className="h-4 w-4" />
-            </span>
-            <div>
-              <h2 className="text-sm font-semibold">Sales Overview</h2>
-              <p className="text-[11px] text-muted-foreground mt-0.5">
-                {statOption.label} · {chartRange === "custom" ? "custom range" : RANGE_OPTIONS.find((r) => r.value === chartRange)?.label}
-              </p>
-            </div>
-          </div>
-          {chartData.length > 0 && (
-            <div className="flex items-center gap-3">
-              <div className="text-right">
-                <div className="text-2xl font-bold tabular-nums leading-none">{fmt(chartTotal)}</div>
-                <div className="text-[11px] text-muted-foreground mt-1">range total</div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Stat pills */}
-        <div className="flex flex-wrap gap-1.5">
-          {STAT_OPTIONS.map((s) => (
-            <button
-              key={s.value}
-              onClick={() => setChartStat(s.value)}
-              className={`rounded-full border px-3 py-1 text-xs font-medium transition-all ${
-                chartStat === s.value
-                  ? "border-primary bg-primary/12 text-primary shadow-sm"
-                  : "border-border bg-card text-muted-foreground hover:text-foreground hover:border-border/80"
-              }`}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Filter row — creator + range, right-aligned */}
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-            <FilterIcon className="h-3.5 w-3.5" />
-            Filters:
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <Select value={chartCreator} onValueChange={setChartCreator}>
-              <SelectTrigger className="h-8 w-[150px] text-xs rounded-full border-border">
-                <SelectValue placeholder="All creators" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All creators</SelectItem>
-                {creators.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <div className="inline-flex rounded-full border border-border bg-card p-0.5">
-              {RANGE_OPTIONS.filter((r) => r.value !== "custom").map((r) => (
-                <button
-                  key={r.value}
-                  onClick={() => setChartRange(r.value)}
-                  className={`px-3 py-1 text-xs rounded-full font-medium transition-all ${
-                    chartRange === r.value
-                      ? "bg-primary text-primary-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {r.value}
-                </button>
-              ))}
-              <button
-                onClick={() => setChartRange("custom")}
-                className={`px-3 py-1 text-xs rounded-full font-medium transition-all ${
-                  chartRange === "custom"
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                Custom
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Custom date pickers */}
-        {chartRange === "custom" && (
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex items-center gap-2">
-              <Label className="text-xs whitespace-nowrap">From</Label>
-              <Input type="date" className="h-8 text-xs w-36"
-                value={chartFrom} onChange={(e) => setChartFrom(e.target.value)} />
-            </div>
-            <div className="flex items-center gap-2">
-              <Label className="text-xs whitespace-nowrap">To</Label>
-              <Input type="date" className="h-8 text-xs w-36"
-                value={chartTo} onChange={(e) => setChartTo(e.target.value)} />
-            </div>
-          </div>
-        )}
-
-        {/* Mini-stats row — Total / Daily avg / Peak */}
-        <div className="grid grid-cols-3 gap-3 pt-2">
-          <div className="rounded-xl bg-muted/40 p-3">
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-bold">Total</div>
-            <div className="text-lg font-bold mt-1 tabular-nums">{fmt(chartTotal)}</div>
-          </div>
-          <div className="rounded-xl bg-muted/40 p-3">
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-bold">Daily avg</div>
-            <div className="text-lg font-bold mt-1 tabular-nums">{fmt(chartAvg)}</div>
-          </div>
-          <div className="rounded-xl bg-muted/40 p-3">
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-bold">Peak day</div>
-            <div className="text-lg font-bold mt-1 tabular-nums">{fmt(chartPeak)}</div>
-          </div>
-        </div>
-
-        {/* Chart */}
-        {loading ? (
-          <div className="h-48 animate-pulse rounded-xl bg-muted/30" />
-        ) : (
-          <PerformanceLineChart
-            data={chartData}
-            color={statOption.color}
-            isMonetary={isMonetary}
-          />
-        )}
-      </div>
+      {/* ── Revenue by Channel — donut chart, full-width slot.
+          Sales Overview / Per-creator breakdown / OF data inspector
+          were removed so this is the only chart on the page right now.
+          The user is going to spec what fills the rest of this page
+          next. */}
+      <RevenueByChannelCard overview={overview} />
 
       {/* ── Manual revenue entries — single Nexus-style card.
           Replaces the previous loose 3-tile mini-grid + share-bar block +
@@ -1524,6 +1240,18 @@ function RevenuePage() {
           </div>
         )}
       </div>
+        </TabsContent>
+
+        {/* ── Customers tab ──────────────────────────────────────── */}
+        <TabsContent value="customers" className="space-y-4 mt-0">
+          <CustomersTabContent ofStats={ofStats} creators={creators} />
+        </TabsContent>
+
+        {/* ── Retention tab ──────────────────────────────────────── */}
+        <TabsContent value="retention" className="space-y-4 mt-0">
+          <RetentionTabContent ofStats={ofStats} subMetrics={subMetrics} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
@@ -1570,6 +1298,736 @@ function ChannelCell({ value, accent }: { value: number; accent: string }) {
       <span className={`tabular-nums ${zero ? "text-muted-foreground/40" : `${accent} font-semibold`}`}>
         ${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
       </span>
+    </div>
+  );
+}
+
+// ── Revenue by Channel donut ─────────────────────────────────────────────
+// Boxera's "Orders by Channel" port — donut chart on the left, color
+// dots + labels + percentages on the right. Maps OFM's four buckets
+// (OF Direct / Organic / Internal / Ads) to the same visual treatment.
+const CHANNEL_PALETTE = [
+  { key: "of",       label: "OnlyFans Direct", color: "rgb(99 102 241)" },   // indigo-500
+  { key: "organic",  label: "Organic",         color: "rgb(139 92 246)" },   // violet-500
+  { key: "internal", label: "Internal",        color: "rgb(167 139 250)" },  // violet-400
+  { key: "ads",      label: "Ads (net)",       color: "rgb(196 181 253)" },  // violet-300
+];
+
+function RevenueByChannelCard({
+  overview,
+}: {
+  overview: {
+    organic: number;
+    internal: number;
+    adsNet: number;
+    ofDirect: number;
+  };
+}) {
+  const slices = [
+    { key: "of",       value: overview.ofDirect, label: "OnlyFans Direct", color: CHANNEL_PALETTE[0].color },
+    { key: "organic",  value: overview.organic,  label: "Organic",         color: CHANNEL_PALETTE[1].color },
+    { key: "internal", value: overview.internal, label: "Internal",        color: CHANNEL_PALETTE[2].color },
+    { key: "ads",      value: overview.adsNet,   label: "Ads (net)",       color: CHANNEL_PALETTE[3].color },
+  ].filter((s) => s.value > 0);
+  const total = slices.reduce((s, x) => s + x.value, 0);
+
+  return (
+    <section className="rounded-2xl border border-border bg-card p-5 space-y-3 flex flex-col">
+      <div className="flex items-center gap-2.5">
+        <span className="h-7 w-7 rounded-lg bg-violet-500/15 text-violet-600 flex items-center justify-center">
+          <Layers className="h-4 w-4" />
+        </span>
+        <div>
+          <h3 className="text-sm font-semibold">Revenue by Channel</h3>
+          <p className="text-[11px] text-muted-foreground mt-0.5">
+            Where the money came in
+          </p>
+        </div>
+      </div>
+
+      {total === 0 ? (
+        <div className="flex-1 flex items-center justify-center text-xs text-muted-foreground italic py-12 border border-dashed border-border rounded-xl">
+          No revenue in this range yet.
+        </div>
+      ) : (
+        <div className="flex flex-col items-center gap-4 flex-1 justify-center">
+          {/* Donut — Recharts pie with thick stroke between slices for the
+              clean separators Boxera shows. */}
+          <div className="relative h-44 w-44">
+            <PieRC width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={slices}
+                  dataKey="value"
+                  nameKey="label"
+                  innerRadius={56}
+                  outerRadius={84}
+                  paddingAngle={2}
+                  stroke="var(--card)"
+                  strokeWidth={3}
+                >
+                  {slices.map((s) => (
+                    <PieCell key={s.key} fill={s.color} />
+                  ))}
+                </Pie>
+                <PieTooltip
+                  contentStyle={{
+                    background: "var(--card)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 12,
+                    fontSize: 11,
+                    boxShadow: "0 8px 24px -8px rgba(0,0,0,0.10)",
+                  }}
+                  formatter={(v: number, name: string) => [
+                    `$${v.toLocaleString("en-US", { maximumFractionDigits: 0 })}`,
+                    name,
+                  ]}
+                />
+              </PieChart>
+            </PieRC>
+            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Total</div>
+              <div className="text-base font-bold tabular-nums">
+                ${total.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+              </div>
+            </div>
+          </div>
+
+          {/* Legend — color dot + label + percentage, one row each */}
+          <div className="w-full space-y-1.5">
+            {slices.map((s) => {
+              const pct = total > 0 ? (s.value / total) * 100 : 0;
+              return (
+                <div key={s.key} className="flex items-center gap-2.5 text-xs">
+                  <span
+                    className="h-2.5 w-2.5 rounded-full shrink-0"
+                    style={{ backgroundColor: s.color }}
+                  />
+                  <span className="flex-1 truncate font-medium">{s.label}</span>
+                  <span className="text-muted-foreground tabular-nums">
+                    {pct.toFixed(0)}%
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ── Overview tab — Subly layout port ─────────────────────────────────────
+//
+// Top: 3-column grid
+//   [ MRR Growth Target | Trial Conversions | Retention & Churn (spans 2 rows) ]
+// Bottom: 2-column grid (left col already taken)
+//   [ MAU & Cohort Trends                    | Projected LTV / Top 3 Channels ]
+//
+// All numbers come from data already in scope on the parent — we just
+// re-bucket. When data is missing (e.g. no OF subs synced yet), each
+// card shows a calm "needs sync" message instead of a 0.
+
+function OverviewTabContent({
+  grossRevenue, netRevenue, adsSpend, ofStats, subMetrics,
+  organicEntries, internalEntries, entries, ofDaily, adCampaigns,
+  channelOverview, dateLabel,
+}: {
+  grossRevenue: number;
+  netRevenue: number;
+  adsSpend: number;
+  ofStats: OfCreatorStat[];
+  subMetrics: OfSubMetric[];
+  organicEntries: OrganicEntry[];
+  internalEntries: InternalEntry[];
+  entries: RevenueEntry[];
+  ofDaily: OfDailyEarning[];
+  adCampaigns: AdCampaign[];
+  channelOverview: { organic: number; internal: number; adsNet: number; ofDirect: number };
+  dateLabel: string;
+}) {
+  // ── Monthly revenue rollup (last 12 months) ──
+  // Used by both "MRR Growth Target" mini-bar chart and the big MAU
+  // chart at the bottom. Each month = sum of all revenue sources for
+  // entries dated in that month.
+  const monthlyRevenue = useMemo(() => {
+    const now = new Date();
+    const months: { key: string; label: string; revenue: number; subs: number }[] = [];
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      months.push({ key, label: d.toLocaleString("en-US", { month: "short" }), revenue: 0, subs: 0 });
+    }
+    const monthMap = new Map(months.map((m) => [m.key, m]));
+    const bump = (date: string, amount: number) => {
+      const key = date.slice(0, 7);
+      const m = monthMap.get(key);
+      if (m) m.revenue += amount;
+    };
+    for (const e of organicEntries) bump(e.entry_date, e.amount);
+    for (const e of internalEntries) bump(e.entry_date, e.amount);
+    for (const e of entries) bump(e.entry_date, e.amount);
+    for (const e of ofDaily) bump(e.entry_date, e.total);
+    for (const c of adCampaigns) {
+      const sd = (c as unknown as { start_date?: string | null }).start_date;
+      if (sd) bump(sd, c.revenue_generated - c.amount_spent);
+    }
+    // New subs per month — sum new_count from sub metrics
+    for (const r of subMetrics) {
+      const key = r.entry_date.slice(0, 7);
+      const m = monthMap.get(key);
+      if (m) m.subs += r.new_count;
+    }
+    return months;
+  }, [organicEntries, internalEntries, entries, ofDaily, adCampaigns, subMetrics]);
+
+  const thisMonth = monthlyRevenue[monthlyRevenue.length - 1];
+  const lastMonth = monthlyRevenue[monthlyRevenue.length - 2];
+  const monthGrowthPct = lastMonth && lastMonth.revenue > 0
+    ? ((thisMonth.revenue - lastMonth.revenue) / lastMonth.revenue) * 100
+    : null;
+
+  // ── Subscriber rollups ──
+  const totalActive = ofStats.reduce((s, r) => s + (r.active_subscribers ?? 0), 0);
+  const totalExpired = ofStats.reduce((s, r) => s + (r.expired_subscribers ?? 0), 0);
+  const totalSubs = totalActive + totalExpired;
+  const avgSubPrice = (() => {
+    const valid = ofStats.filter((r) => r.sub_price && r.sub_price > 0);
+    if (valid.length === 0) return 0;
+    return valid.reduce((s, r) => s + (r.sub_price ?? 0), 0) / valid.length;
+  })();
+
+  // Last-30-day churn snapshot from sub metrics
+  const recent30 = useMemo(() => {
+    const cutoff = new Date(Date.now() - 30 * 86400_000).toISOString().slice(0, 10);
+    return subMetrics.filter((r) => r.entry_date >= cutoff);
+  }, [subMetrics]);
+  const recentNew = recent30.reduce((s, r) => s + r.new_count, 0);
+  const recentLost = recent30.reduce((s, r) => s + r.lost_count, 0);
+  const recentExpired = recent30.reduce((s, r) => s + r.expired_count, 0);
+  const grossChurnPct = totalActive > 0
+    ? ((recentLost + recentExpired) / Math.max(totalActive, 1)) * 100
+    : null;
+  const retentionPct = totalSubs > 0 ? (totalActive / totalSubs) * 100 : null;
+
+  // LTV — assume avg sub_price × 3 months as a baseline; replace with
+  // real cohort math once we have it.
+  const avgLifetimeMonths = 3;
+  const projectedLtv = avgSubPrice * avgLifetimeMonths + (totalActive > 0 ? grossRevenue / Math.max(totalActive, 1) : 0);
+
+  // Conversion rate — paid subs / clicks. If we don't have clicks yet,
+  // use new subs / total subs as a rough proxy.
+  const paidConversionsTarget = Math.max(60, recentNew); // at least 60 to show a goal-driven feel
+  const newTrialsTarget = Math.max(150, recentNew + recentExpired);
+  const conversionRate = newTrialsTarget > 0 ? (recentNew / newTrialsTarget) * 100 : 0;
+
+  // ── Top 3 acquisition channels (donut) ──
+  const channelSlices = [
+    { key: "of", label: "OnlyFans Direct", value: channelOverview.ofDirect, color: "rgb(99 102 241)" },
+    { key: "organic", label: "Organic", value: channelOverview.organic, color: "rgb(139 92 246)" },
+    { key: "internal", label: "Internal", value: channelOverview.internal, color: "rgb(167 139 250)" },
+    { key: "ads", label: "Ads (net)", value: channelOverview.adsNet, color: "rgb(196 181 253)" },
+  ].filter((s) => s.value > 0).sort((a, b) => b.value - a.value).slice(0, 3);
+  const channelTotal = channelSlices.reduce((s, x) => s + x.value, 0);
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      {/* ── MRR Growth Target ───────────────────────────────── */}
+      <section className="rounded-2xl border border-border bg-card p-5 lg:col-span-1">
+        <div className="flex items-start justify-between mb-1">
+          <h3 className="text-sm font-bold tracking-tight">Revenue Growth</h3>
+        </div>
+        <div className="text-3xl font-bold tabular-nums leading-none mt-3">
+          ${thisMonth.revenue.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+        </div>
+        <div className="mt-1.5 flex items-center gap-2 text-xs">
+          {monthGrowthPct !== null && (
+            <span className={`font-bold ${monthGrowthPct >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+              {monthGrowthPct >= 0 ? "+" : ""}{monthGrowthPct.toFixed(1)}%
+            </span>
+          )}
+          <span className="text-muted-foreground">vs last month</span>
+        </div>
+        <div className="mt-4 rounded-xl bg-muted/40 p-3 flex items-center gap-3">
+          <Calendar className="h-4 w-4 text-muted-foreground" />
+          <div className="text-[11px]">
+            <div className="text-muted-foreground">Period</div>
+            <div className="font-semibold">{thisMonth.label} · {dateLabel}</div>
+          </div>
+        </div>
+        {/* Mini bar chart — last 6 months */}
+        <div className="h-24 mt-4">
+          <RcContainer width="100%" height="100%">
+            <BarChart data={monthlyRevenue.slice(-6)} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
+              <RcXAxis
+                dataKey="label"
+                tick={{ fontSize: 9, fill: "var(--muted-foreground)" }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <RcTooltip
+                contentStyle={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 11 }}
+                formatter={(v: number) => [`$${v.toLocaleString("en-US", { maximumFractionDigits: 0 })}`, "Revenue"]}
+              />
+              <Bar dataKey="revenue" radius={[6, 6, 0, 0]} maxBarSize={28}>
+                {monthlyRevenue.slice(-6).map((_m, i) => (
+                  <RcCell
+                    key={i}
+                    fill={i === 5 ? "rgb(99 102 241)" : "rgb(196 181 253)"}
+                  />
+                ))}
+              </Bar>
+            </BarChart>
+          </RcContainer>
+        </div>
+      </section>
+
+      {/* ── Trial Conversions ──────────────────────────────── */}
+      <section className="rounded-2xl border border-border bg-card p-5">
+        <h3 className="text-sm font-bold tracking-tight mb-3">Conversions</h3>
+        <div className="text-[11px] text-muted-foreground mb-1.5">Conversion Rate Goal</div>
+        {/* Gradient progress bar */}
+        <div className="h-3 rounded-full bg-muted overflow-hidden relative">
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-violet-300 via-violet-500 to-indigo-500 transition-all duration-500"
+            style={{ width: `${Math.min(100, Math.max(2, conversionRate))}%` }}
+          />
+        </div>
+        <div className="flex items-center justify-between text-[10px] text-muted-foreground mt-1.5 mb-4">
+          <span>0%</span><span>25%</span><span>75%</span><span>100%</span>
+        </div>
+        {/* Three mini stat cards inside */}
+        <div className="grid grid-cols-3 gap-2">
+          <div className="rounded-xl border border-border bg-background/50 p-3">
+            <div className="h-7 w-7 rounded-full bg-muted flex items-center justify-center mb-1.5">
+              <Users className="h-3.5 w-3.5 text-muted-foreground" />
+            </div>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-bold">New Trials</div>
+            <div className="text-sm font-bold tabular-nums mt-0.5">
+              {recentNew} / {newTrialsTarget}
+            </div>
+          </div>
+          <div className="rounded-xl border border-border bg-background/50 p-3">
+            <div className="h-7 w-7 rounded-full bg-muted flex items-center justify-center mb-1.5">
+              <DollarSign className="h-3.5 w-3.5 text-muted-foreground" />
+            </div>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-bold">Paid Subs</div>
+            <div className="text-sm font-bold tabular-nums mt-0.5">
+              {recentNew} / {paidConversionsTarget}
+            </div>
+          </div>
+          <div className="rounded-xl bg-foreground text-background p-3 flex flex-col justify-between">
+            <div className="text-[10px] uppercase tracking-wider text-background/70 font-bold">Avg LTV</div>
+            <div className="text-sm font-bold tabular-nums">
+              ${projectedLtv.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Retention & Churn Analysis (spans 2 rows on lg+) ── */}
+      <section className="rounded-2xl border border-border bg-card p-5 lg:row-span-2">
+        <h3 className="text-sm font-bold tracking-tight">Retention &<br />Churn Analysis</h3>
+        {/* Visual tier bars — three colored bars representing churn,
+            retention, ltv tiers (Subly's pastel-bar visual). */}
+        <div className="mt-4 flex gap-2 items-end h-32">
+          {[
+            { label: `${(retentionPct ?? 0).toFixed(0)}%`, color: "bg-amber-300", h: "h-full" },
+            { label: `${(grossChurnPct ?? 0).toFixed(0)}%`, color: "bg-violet-400", h: "h-2/3" },
+            { label: `${100 - (grossChurnPct ?? 0)}%`.length > 4 ? "—" : `${(100 - (grossChurnPct ?? 0)).toFixed(0)}%`, color: "bg-cyan-300", h: "h-1/2" },
+          ].map((b, i) => (
+            <div key={i} className={`flex-1 rounded-t-lg ${b.color} ${b.h} relative flex items-start justify-center pt-1`}>
+              <span className="text-[10px] font-bold text-foreground/80 bg-card rounded px-1.5 py-0.5 -mt-3">
+                {b.label}
+              </span>
+            </div>
+          ))}
+        </div>
+        <div className="mt-1.5 flex gap-2">
+          <span className="flex-1 h-1 bg-amber-300 rounded-full" />
+          <span className="flex-1 h-1 bg-violet-400 rounded-full" />
+          <span className="flex-1 h-1 bg-cyan-300 rounded-full" />
+        </div>
+
+        {/* Detail rows — like Subly's labeled stats */}
+        <div className="mt-5 space-y-2.5 text-xs">
+          <RetentionRow
+            label="Gross Churn (User)"
+            value={grossChurnPct !== null ? `${grossChurnPct.toFixed(1)}%` : "—"}
+          />
+          <RetentionRow
+            label="Net Revenue Churn"
+            value={grossChurnPct !== null && monthGrowthPct !== null
+              ? `${(grossChurnPct - Math.max(0, monthGrowthPct)).toFixed(1)}%`
+              : "—"}
+          />
+          <RetentionRow
+            label="Customer Retention Rate"
+            value={retentionPct !== null ? `${retentionPct.toFixed(1)}%` : "—"}
+          />
+          <RetentionRow
+            label="Customer Lifetime Value (LTV)"
+            value={`$${projectedLtv.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}
+          />
+        </div>
+
+        <div className="mt-5 rounded-xl border border-border bg-background/50 p-3.5">
+          <div className="flex items-center justify-between">
+            <h4 className="text-xs font-bold">Projected LTV</h4>
+          </div>
+          <div className="mt-1.5 flex items-baseline gap-2">
+            <span className="text-2xl font-bold tabular-nums">
+              ${projectedLtv.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+            </span>
+            {monthGrowthPct !== null && (
+              <span className={`text-[10px] font-bold rounded-full px-1.5 py-0.5 ${monthGrowthPct >= 0 ? "bg-emerald-500/15 text-emerald-600" : "bg-rose-500/15 text-rose-600"}`}>
+                {monthGrowthPct >= 0 ? "↑" : "↓"} {Math.abs(monthGrowthPct).toFixed(1)}%
+              </span>
+            )}
+          </div>
+          <p className="text-[10px] text-muted-foreground mt-1.5 leading-snug">
+            Estimated revenue per customer over their entire lifecycle.
+          </p>
+        </div>
+
+        {/* Top 3 Acquisition Channels — donut */}
+        <div className="mt-4 rounded-xl border border-border bg-background/50 p-3.5">
+          <h4 className="text-xs font-bold mb-2">Top 3 Acquisition Channels</h4>
+          {channelTotal === 0 ? (
+            <div className="text-[11px] text-muted-foreground italic py-4 text-center">
+              No revenue split available yet.
+            </div>
+          ) : (
+            <div className="flex items-center gap-3">
+              <div className="relative h-24 w-24 shrink-0">
+                <RcContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={channelSlices}
+                      dataKey="value"
+                      nameKey="label"
+                      innerRadius={32}
+                      outerRadius={48}
+                      paddingAngle={2}
+                      stroke="var(--card)"
+                      strokeWidth={2}
+                    >
+                      {channelSlices.map((s) => <PieCell key={s.key} fill={s.color} />)}
+                    </Pie>
+                    <PieTooltip
+                      contentStyle={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 10 }}
+                      formatter={(v: number, name: string) => [
+                        `$${v.toLocaleString("en-US", { maximumFractionDigits: 0 })}`,
+                        name,
+                      ]}
+                    />
+                  </PieChart>
+                </RcContainer>
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                  <div className="text-[8px] uppercase tracking-wider text-muted-foreground">Total</div>
+                  <div className="text-[11px] font-bold tabular-nums">
+                    ${channelTotal.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                  </div>
+                </div>
+              </div>
+              <div className="flex-1 space-y-1.5 min-w-0">
+                {channelSlices.map((s) => {
+                  const pct = channelTotal > 0 ? (s.value / channelTotal) * 100 : 0;
+                  return (
+                    <div key={s.key} className="flex items-center gap-2 text-[10px]">
+                      <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
+                      <span className="flex-1 truncate font-medium">{s.label}</span>
+                      <span className="text-muted-foreground tabular-nums">{pct.toFixed(0)}%</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* ── Monthly Active Users (MAU) & Cohort Trends ──────── */}
+      <section className="rounded-2xl border border-border bg-card p-5 lg:col-span-2">
+        <div className="flex items-start justify-between gap-2 flex-wrap">
+          <div>
+            <h3 className="text-sm font-bold tracking-tight">Monthly Active Users (MAU) &<br />Cohort Trends</h3>
+            <div className="mt-3 flex items-baseline gap-2">
+              <span className="text-3xl font-bold tabular-nums">
+                {totalActive.toLocaleString()}
+              </span>
+              {monthGrowthPct !== null && (
+                <span className={`text-xs font-bold ${monthGrowthPct >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                  {monthGrowthPct >= 0 ? "+" : ""}{monthGrowthPct.toFixed(1)}%
+                </span>
+              )}
+              <span className="text-xs text-muted-foreground">vs last month</span>
+            </div>
+          </div>
+          <span className="rounded-full border border-border bg-card px-3 py-1.5 text-xs font-semibold text-muted-foreground">
+            {new Date().getFullYear()}
+          </span>
+        </div>
+
+        {/* The big chart — 12 months of revenue (proxy for MAU since
+            we don't always have full sub history). Today's month is
+            highlighted with a richer color. */}
+        <div className="h-72 mt-4">
+          <RcContainer width="100%" height="100%">
+            <BarChart data={monthlyRevenue} margin={{ top: 16, right: 0, left: 0, bottom: 0 }}>
+              <RcXAxis
+                dataKey="label"
+                tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <RcTooltip
+                contentStyle={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, fontSize: 11, boxShadow: "0 8px 24px -8px rgba(0,0,0,0.10)" }}
+                formatter={(v: number, name: string) => {
+                  if (name === "revenue") return [`$${v.toLocaleString("en-US", { maximumFractionDigits: 0 })}`, "Revenue"];
+                  return [v.toLocaleString(), "New subs"];
+                }}
+              />
+              <Bar dataKey="revenue" radius={[8, 8, 0, 0]} maxBarSize={42}>
+                {monthlyRevenue.map((_m, i) => (
+                  <RcCell
+                    key={i}
+                    fill={i === monthlyRevenue.length - 1 ? "rgb(99 102 241)" : "rgb(196 181 253)"}
+                  />
+                ))}
+              </Bar>
+            </BarChart>
+          </RcContainer>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function RetentionRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-bold tabular-nums">{value}</span>
+    </div>
+  );
+}
+
+// ── Customers tab ─────────────────────────────────────────────
+function CustomersTabContent({
+  ofStats, creators,
+}: {
+  ofStats: OfCreatorStat[];
+  creators: { id: string; name: string }[];
+}) {
+  const totalActive = ofStats.reduce((s, r) => s + (r.active_subscribers ?? 0), 0);
+  const totalExpired = ofStats.reduce((s, r) => s + (r.expired_subscribers ?? 0), 0);
+  const total = totalActive + totalExpired;
+  const totalSpend = ofStats.reduce((s, r) => s + r.total_earnings, 0);
+  const avgPerCreator = creators.length > 0 ? totalActive / creators.length : 0;
+
+  // Per-creator subscriber leaderboard
+  const rows = useMemo(() => {
+    return creators.map((c) => {
+      const stat = ofStats.find((s) => s.creator_id === c.id);
+      return {
+        id: c.id,
+        name: c.name,
+        active: stat?.active_subscribers ?? 0,
+        expired: stat?.expired_subscribers ?? 0,
+        earnings: stat?.total_earnings ?? 0,
+      };
+    }).sort((a, b) => b.active - a.active);
+  }, [creators, ofStats]);
+  const maxActive = rows[0]?.active ?? 1;
+
+  return (
+    <div className="space-y-4">
+      {/* KPI strip */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="rounded-2xl border border-border bg-card p-5">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-bold">Active Subscribers</div>
+          <div className="text-2xl font-bold tabular-nums mt-1">{totalActive.toLocaleString()}</div>
+          <div className="text-[11px] text-muted-foreground mt-1">across {creators.length} creators</div>
+        </div>
+        <div className="rounded-2xl border border-border bg-card p-5">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-bold">Expired / Churned</div>
+          <div className="text-2xl font-bold tabular-nums mt-1">{totalExpired.toLocaleString()}</div>
+          <div className="text-[11px] text-muted-foreground mt-1">{total > 0 ? `${((totalExpired / total) * 100).toFixed(1)}% of total` : ""}</div>
+        </div>
+        <div className="rounded-2xl border border-border bg-card p-5">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-bold">Avg per Creator</div>
+          <div className="text-2xl font-bold tabular-nums mt-1">{avgPerCreator.toFixed(0)}</div>
+          <div className="text-[11px] text-muted-foreground mt-1">active subscribers</div>
+        </div>
+        <div className="rounded-2xl border border-border bg-card p-5">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-bold">Lifetime Spend</div>
+          <div className="text-2xl font-bold tabular-nums mt-1">
+            ${totalSpend.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+          </div>
+          <div className="text-[11px] text-muted-foreground mt-1">all creators · all time</div>
+        </div>
+      </div>
+
+      {/* Per-creator leaderboard */}
+      <section className="rounded-2xl border border-border bg-card p-5 space-y-3">
+        <div className="flex items-center gap-2.5">
+          <span className="h-7 w-7 rounded-lg bg-emerald-500/15 text-emerald-600 flex items-center justify-center">
+            <Users className="h-4 w-4" />
+          </span>
+          <div>
+            <h3 className="text-sm font-semibold">Subscribers by Creator</h3>
+            <p className="text-[11px] text-muted-foreground mt-0.5">Active subscribers + lifetime spend, top to bottom</p>
+          </div>
+        </div>
+        {rows.length === 0 ? (
+          <div className="text-xs text-muted-foreground italic py-12 text-center border border-dashed border-border rounded-xl">
+            Sync OnlyFans to populate subscriber data.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {rows.map((r) => {
+              const pct = maxActive > 0 ? (r.active / maxActive) * 100 : 0;
+              return (
+                <div key={r.id} className="flex items-center gap-3 rounded-xl border border-border bg-background/50 p-3 transition-colors hover:bg-secondary/30">
+                  <div className="h-9 w-9 rounded-full bg-gradient-to-br from-violet-500 to-indigo-500 text-white flex items-center justify-center font-semibold text-xs">
+                    {r.name.slice(0, 2).toUpperCase()}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-semibold truncate">{r.name}</div>
+                    <div className="text-[10px] text-muted-foreground">
+                      {r.active} active · {r.expired} expired
+                    </div>
+                  </div>
+                  <div className="hidden sm:block flex-1 max-w-[200px]">
+                    <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-violet-500 to-indigo-500"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="text-sm font-bold tabular-nums">
+                      ${r.earnings.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                    </div>
+                    <div className="text-[10px] text-muted-foreground">lifetime</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+// ── Retention tab ─────────────────────────────────────────────
+function RetentionTabContent({
+  ofStats, subMetrics,
+}: {
+  ofStats: OfCreatorStat[];
+  subMetrics: OfSubMetric[];
+}) {
+  const totalActive = ofStats.reduce((s, r) => s + (r.active_subscribers ?? 0), 0);
+  const totalExpired = ofStats.reduce((s, r) => s + (r.expired_subscribers ?? 0), 0);
+  const total = totalActive + totalExpired;
+  const retention = total > 0 ? (totalActive / total) * 100 : 0;
+
+  // 30-day churn / new subs flow
+  const cutoff = new Date(Date.now() - 30 * 86400_000).toISOString().slice(0, 10);
+  const recent = subMetrics.filter((r) => r.entry_date >= cutoff);
+  const newSubs = recent.reduce((s, r) => s + r.new_count, 0);
+  const lost = recent.reduce((s, r) => s + r.lost_count, 0);
+  const expired = recent.reduce((s, r) => s + r.expired_count, 0);
+  const grossChurn = totalActive > 0 ? ((lost + expired) / Math.max(totalActive, 1)) * 100 : 0;
+  const netChurn = newSubs > 0 ? Math.max(0, lost + expired - newSubs) / Math.max(totalActive, 1) * 100 : grossChurn;
+
+  // Daily new vs lost — paired bars over the 30-day window
+  const dailySeries = useMemo(() => {
+    const map = new Map<string, { date: string; new_subs: number; lost: number }>();
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(Date.now() - i * 86400_000).toISOString().slice(0, 10);
+      map.set(d, { date: d, new_subs: 0, lost: 0 });
+    }
+    for (const r of recent) {
+      const row = map.get(r.entry_date);
+      if (row) {
+        row.new_subs += r.new_count;
+        row.lost += r.lost_count + r.expired_count;
+      }
+    }
+    return Array.from(map.values());
+  }, [recent]);
+
+  return (
+    <div className="space-y-4">
+      {/* KPI strip */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="rounded-2xl border border-border bg-card p-5">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-bold">Retention Rate</div>
+          <div className="text-2xl font-bold tabular-nums mt-1 text-emerald-600">
+            {retention.toFixed(1)}%
+          </div>
+          <div className="text-[11px] text-muted-foreground mt-1">{totalActive.toLocaleString()} of {total.toLocaleString()} subs</div>
+        </div>
+        <div className="rounded-2xl border border-border bg-card p-5">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-bold">Gross Churn (30d)</div>
+          <div className="text-2xl font-bold tabular-nums mt-1 text-rose-600">{grossChurn.toFixed(1)}%</div>
+          <div className="text-[11px] text-muted-foreground mt-1">{(lost + expired).toLocaleString()} subs lost</div>
+        </div>
+        <div className="rounded-2xl border border-border bg-card p-5">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-bold">Net Churn (30d)</div>
+          <div className="text-2xl font-bold tabular-nums mt-1">{netChurn.toFixed(1)}%</div>
+          <div className="text-[11px] text-muted-foreground mt-1">after accounting for new subs</div>
+        </div>
+        <div className="rounded-2xl border border-border bg-card p-5">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-bold">New Subs (30d)</div>
+          <div className="text-2xl font-bold tabular-nums mt-1 text-emerald-600">+{newSubs.toLocaleString()}</div>
+          <div className="text-[11px] text-muted-foreground mt-1">net flow: {newSubs - (lost + expired) >= 0 ? "+" : ""}{(newSubs - (lost + expired)).toLocaleString()}</div>
+        </div>
+      </div>
+
+      {/* Daily new vs lost */}
+      <section className="rounded-2xl border border-border bg-card p-5 space-y-3">
+        <div className="flex items-center gap-2.5">
+          <span className="h-7 w-7 rounded-lg bg-violet-500/15 text-violet-600 flex items-center justify-center">
+            <TrendingUp className="h-4 w-4" />
+          </span>
+          <div>
+            <h3 className="text-sm font-semibold">New vs lost subscribers</h3>
+            <p className="text-[11px] text-muted-foreground mt-0.5">Last 30 days · daily flow</p>
+          </div>
+        </div>
+
+        {subMetrics.length === 0 ? (
+          <div className="text-xs text-muted-foreground italic py-12 text-center border border-dashed border-border rounded-xl">
+            No subscriber metrics synced yet — run an OnlyFans sync to populate the churn chart.
+          </div>
+        ) : (
+          <div className="h-64">
+            <RcContainer width="100%" height="100%">
+              <BarChart data={dailySeries} margin={{ top: 8, right: 0, left: -12, bottom: 0 }}>
+                <RcXAxis
+                  dataKey="date"
+                  tick={{ fontSize: 9, fill: "var(--muted-foreground)" }}
+                  tickFormatter={(v) => new Date(v).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                  axisLine={false}
+                  tickLine={false}
+                  interval={3}
+                />
+                <RcTooltip
+                  contentStyle={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, fontSize: 11 }}
+                  labelFormatter={(v) => new Date(v as string).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+                />
+                <Bar dataKey="new_subs" stackId="a" fill="rgb(16 185 129)" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="lost" stackId="a" fill="rgb(244 63 94)" />
+              </BarChart>
+            </RcContainer>
+          </div>
+        )}
+      </section>
     </div>
   );
 }

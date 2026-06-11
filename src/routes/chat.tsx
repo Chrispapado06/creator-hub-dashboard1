@@ -23,8 +23,13 @@ import {
 import {
   Hash, Lock, Megaphone, Users as UsersIcon, MessageCircle, Plus,
   Send, Paperclip, Smile, Search, ArrowLeft, ChevronRight,
-  Check, X, Edit2, Trash2, AlertCircle, Volume2,
+  Check, X, Edit2, Trash2, AlertCircle, Volume2, Copy, Reply,
+  MoreHorizontal,
 } from "lucide-react";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { VoiceCallTray } from "@/components/VoiceCallTray";
 import { VoiceJoinBar } from "@/components/VoiceJoinBar";
 import {
@@ -34,7 +39,7 @@ import {
 import { format, formatDistanceToNow, isToday, isYesterday, parseISO } from "date-fns";
 import {
   ensureCurrentChatUser, listChannelsForUser, listMessages, sendMessage,
-  deleteMessage, markChannelRead, markAllMentionsRead,
+  deleteMessage, editMessage, markChannelRead, markAllMentionsRead,
   ensureCreatorChannels, ensureDmChannel, createChannel,
   extractMentions, resolveMentions, uploadChatAttachment,
   hasBroadcastMention, expandBroadcastMention,
@@ -662,13 +667,40 @@ function ChatPage() {
                 <MessageList
                   messages={messages}
                   currentUserId={user.id}
+                  isAdmin={user.is_admin}
                   onDeleteMessage={async (id) => {
-                    if (!confirm("Delete this message? This can't be undone.")) return;
-                    // Optimistic remove — realtime UPDATE will arrive
-                    // shortly and confirm for everyone else.
-                    setMessages((prev) => prev.filter((m) => m.id !== id));
+                    // Snapshot the row before optimistically removing so
+                    // we can roll back if the DB write actually fails.
+                    const prev = messages.find((m) => m.id === id);
+                    setMessages((cur) => cur.filter((m) => m.id !== id));
                     const ok = await deleteMessage(id);
-                    if (!ok) toast.error("Couldn't delete the message");
+                    if (!ok) {
+                      // Roll back the optimistic remove and surface the
+                      // failure so the user knows it didn't actually
+                      // delete (was previously silent — looked like the
+                      // delete worked but reappeared on next open).
+                      if (prev) {
+                        setMessages((cur) =>
+                          [...cur, prev].sort(
+                            (a, b) => a.created_at.localeCompare(b.created_at),
+                          ),
+                        );
+                      }
+                      toast.error("Couldn't delete — message restored. Try again or check console.");
+                      console.error("[chat] deleteMessage failed for", id);
+                    }
+                  }}
+                  onEditMessage={async (id, newContent) => {
+                    setMessages((prev) => prev.map((m) =>
+                      m.id === id
+                        ? { ...m, content: newContent, edited_at: new Date().toISOString() }
+                        : m,
+                    ));
+                    const ok = await editMessage(id, newContent);
+                    if (!ok) {
+                      toast.error("Couldn't save the edit. Try again.");
+                      console.error("[chat] editMessage failed for", id);
+                    }
                   }}
                 />
               )}
@@ -864,11 +896,15 @@ function ChannelIcon({ channel, small }: { channel: ChannelWithMeta | Channel; s
 // ── Message list ─────────────────────────────────────────────────────────
 
 function MessageList({
-  messages, currentUserId, onDeleteMessage,
+  messages, currentUserId, isAdmin, onDeleteMessage, onEditMessage,
 }: {
   messages: Message[];
   currentUserId: string;
+  /** Admins (auto-created chatter row) can delete anyone's message —
+   *  Discord-equivalent of "Manage Messages" permission. */
+  isAdmin: boolean;
   onDeleteMessage: (id: string) => void;
+  onEditMessage: (id: string, newContent: string) => void;
 }) {
   // Group consecutive messages from the same author within 5 minutes
   const groups: Message[][] = [];
@@ -882,14 +918,16 @@ function MessageList({
     else groups.push([m]);
   }
   return (
-    <div className="space-y-3">
+    <div className="space-y-1.5">
       {groups.map((g, i) => (
         <MessageGroup
           key={g[0].id}
           messages={g}
           mine={g[0].author_chatter_id === currentUserId}
+          isAdmin={isAdmin}
           showDateHeader={i === 0 || !sameDay(groups[i - 1][0].created_at, g[0].created_at)}
           onDeleteMessage={onDeleteMessage}
+          onEditMessage={onEditMessage}
         />
       ))}
     </div>
@@ -902,47 +940,62 @@ function sameDay(a: string, b: string) {
 }
 
 function MessageGroup({
-  messages, mine, showDateHeader, onDeleteMessage,
+  messages, mine, isAdmin, showDateHeader, onDeleteMessage, onEditMessage,
 }: {
   messages: Message[];
   mine: boolean;
+  isAdmin: boolean;
   showDateHeader: boolean;
   onDeleteMessage: (id: string) => void;
+  onEditMessage: (id: string, newContent: string) => void;
 }) {
   const first = messages[0];
   return (
     <>
       {showDateHeader && (
-        <div className="flex items-center gap-2 my-2">
+        <div className="flex items-center gap-2 my-3">
           <div className="flex-1 h-px bg-border" />
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+          <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground font-bold">
             {humanDate(first.created_at)}
           </div>
           <div className="flex-1 h-px bg-border" />
         </div>
       )}
-      <div className="flex gap-3">
-        {/* Avatar (initials) */}
-        <div className={`h-8 w-8 rounded-full flex items-center justify-center text-[11px] font-semibold shrink-0 ${
-          mine ? "bg-primary/20 text-primary" : "bg-secondary text-foreground"
+      {/* Group header — avatar + name + first row, then siblings nest beneath */}
+      <div className="group/group flex gap-3 px-2 py-1.5 -mx-2 rounded-md hover:bg-secondary/30 transition-colors">
+        {/* Discord-style avatar */}
+        <div className={`h-9 w-9 rounded-full flex items-center justify-center text-[12px] font-bold shrink-0 ring-2 ring-card transition-transform group-hover/group:scale-105 ${
+          mine
+            ? "bg-gradient-to-br from-primary to-primary-glow text-primary-foreground"
+            : "bg-gradient-to-br from-violet-500 to-indigo-500 text-white"
         }`}>
           {(first.author_name || "??").slice(0, 2).toUpperCase()}
         </div>
         <div className="flex-1 min-w-0">
-          <div className="flex items-baseline gap-2">
-            <span className="text-sm font-semibold">{first.author_name}</span>
+          <div className="flex items-baseline gap-2 flex-wrap">
+            <span className="text-sm font-bold text-foreground">{first.author_name}</span>
             {first.author_role && (
-              <span className="text-[10px] text-muted-foreground uppercase tracking-wide">{first.author_role}</span>
+              <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-primary/80 bg-primary/10 rounded-full px-1.5 py-0.5">
+                {first.author_role}
+              </span>
             )}
-            <span className="text-[10px] text-muted-foreground">{format(parseISO(first.created_at), "h:mm a")}</span>
+            <span className="text-[10px] text-muted-foreground/70" title={format(parseISO(first.created_at), "PPpp")}>
+              {format(parseISO(first.created_at), "h:mm a")}
+            </span>
           </div>
-          <div className="space-y-1.5 mt-0.5">
-            {messages.map((m) => (
+          <div className="space-y-0.5 mt-0.5">
+            {messages.map((m, idx) => (
               <MessageRow
                 key={m.id}
                 message={m}
-                canDelete={mine}
+                /* Admins can delete anyone's message; only authors can
+                   edit (Discord parity — moderators can remove but not
+                   rewrite someone else's words). */
+                canDelete={mine || isAdmin}
+                canEdit={mine}
                 onDelete={() => onDeleteMessage(m.id)}
+                onEdit={(newContent) => onEditMessage(m.id, newContent)}
+                showTimestamp={idx > 0}
               />
             ))}
           </div>
@@ -960,32 +1013,184 @@ function humanDate(iso: string): string {
 }
 
 function MessageRow({
-  message, canDelete, onDelete,
+  message, canDelete, canEdit, onDelete, onEdit, showTimestamp,
 }: {
   message: Message;
   canDelete: boolean;
+  canEdit: boolean;
   onDelete: () => void;
+  onEdit: (newContent: string) => void;
+  /** Sibling rows (not the group's first) get a hover-only inline timestamp
+   *  on the left edge, Discord-style. */
+  showTimestamp?: boolean;
 }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(message.content);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  // Reset draft when entering edit mode (in case the message changed
+  // since we last viewed it, e.g. someone else's optimistic edit).
+  useEffect(() => {
+    if (editing) setDraft(message.content);
+  }, [editing, message.content]);
+
+  const onSave = () => {
+    const trimmed = draft.trim();
+    if (!trimmed) return; // refuse blank — user should hit delete instead
+    if (trimmed !== message.content) onEdit(trimmed);
+    setEditing(false);
+  };
+  const onCancel = () => {
+    setDraft(message.content);
+    setEditing(false);
+  };
+  const onCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    } catch {
+      toast.error("Couldn't copy");
+    }
+  };
+
   return (
-    <div className="group relative">
-      {canDelete && (
-        <button
-          onClick={onDelete}
-          aria-label="Delete message"
-          title="Delete message"
-          className="absolute -top-1.5 right-0 opacity-0 group-hover:opacity-100 transition-opacity inline-flex items-center justify-center h-6 w-6 rounded-md bg-card border border-border text-muted-foreground hover:text-rose-400 hover:border-rose-500/40 hover:bg-rose-500/5"
-        >
-          <Trash2 className="h-3 w-3" />
-        </button>
-      )}
-      {message.content && (
-        <div className="text-sm whitespace-pre-wrap leading-relaxed">
-          <RenderedContent content={message.content} />
-          {message.edited_at && (
-            <span className="text-[10px] text-muted-foreground/60 ml-1">(edited)</span>
+    <div
+      className="group/row relative animate-in fade-in slide-in-from-top-1 duration-200"
+      onKeyDown={(e) => {
+        if (editing && e.key === "Escape") onCancel();
+      }}
+    >
+      {/* Hover toolbar — Discord-style. Floats top-right of the row.
+          Visible only when hovering the row AND not currently editing. */}
+      {!editing && (
+        <div className="absolute -top-3 right-2 opacity-0 group-hover/row:opacity-100 transition-opacity z-10 flex items-center rounded-lg border border-border bg-card shadow-md overflow-hidden">
+          <button
+            onClick={onCopy}
+            aria-label="Copy text"
+            title={copied ? "Copied!" : "Copy text"}
+            className="h-7 w-7 flex items-center justify-center text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+          >
+            {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+          </button>
+          {canEdit && message.content && (
+            <button
+              onClick={() => setEditing(true)}
+              aria-label="Edit message"
+              title="Edit"
+              className="h-7 w-7 flex items-center justify-center text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors border-l border-border"
+            >
+              <Edit2 className="h-3.5 w-3.5" />
+            </button>
+          )}
+          {canDelete && (
+            <button
+              onClick={() => setConfirmDelete(true)}
+              aria-label="Delete message"
+              title="Delete"
+              className="h-7 w-7 flex items-center justify-center text-muted-foreground hover:bg-rose-500/10 hover:text-rose-500 transition-colors border-l border-border"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
           )}
         </div>
       )}
+
+      {/* Sibling-row hover timestamp — only shown for non-first rows in
+          a group, mirrors Discord's left-edge time-on-hover. */}
+      {showTimestamp && (
+        <span
+          className="absolute -left-14 top-0.5 hidden lg:inline text-[10px] tabular-nums text-muted-foreground/50 opacity-0 group-hover/row:opacity-100 transition-opacity"
+          title={format(parseISO(message.created_at), "PPpp")}
+        >
+          {format(parseISO(message.created_at), "h:mm a")}
+        </span>
+      )}
+
+      {/* Inline editor when in edit mode — Discord pattern */}
+      {editing ? (
+        <div className="space-y-1.5">
+          <textarea
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                onSave();
+              } else if (e.key === "Escape") {
+                e.preventDefault();
+                onCancel();
+              }
+            }}
+            rows={Math.min(8, Math.max(1, draft.split("\n").length))}
+            className="w-full resize-none rounded-lg border border-primary/40 bg-background px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-primary/30"
+          />
+          <div className="text-[10px] text-muted-foreground flex items-center gap-2">
+            <span>
+              <kbd className="font-mono bg-muted px-1 py-0.5 rounded">Esc</kbd> cancel · <kbd className="font-mono bg-muted px-1 py-0.5 rounded">↵</kbd> save
+            </span>
+            <button
+              type="button"
+              onClick={onCancel}
+              className="ml-auto px-2 py-0.5 rounded hover:bg-secondary/60"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={onSave}
+              disabled={!draft.trim() || draft.trim() === message.content}
+              className="px-2 py-0.5 rounded bg-primary text-primary-foreground font-semibold disabled:opacity-50"
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      ) : (
+        message.content && (
+          <div className="text-sm whitespace-pre-wrap leading-relaxed text-foreground/90">
+            <RenderedContent content={message.content} />
+            {message.edited_at && (
+              <span
+                className="text-[10px] text-muted-foreground/60 ml-1"
+                title={`Edited ${format(parseISO(message.edited_at), "PPpp")}`}
+              >
+                (edited)
+              </span>
+            )}
+          </div>
+        )
+      )}
+
+      {/* Delete confirm — replaces the old window.confirm() */}
+      <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete message?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will remove the message for everyone in this channel.
+              This can't be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {message.content && (
+            <div className="rounded-lg border border-border bg-muted/40 p-3 text-xs text-muted-foreground line-clamp-3 italic">
+              "{message.content}"
+            </div>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-full">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => { onDelete(); setConfirmDelete(false); }}
+              className="rounded-full bg-rose-500 text-white hover:bg-rose-600"
+            >
+              <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {message.attachments.length > 0 && (
         <div className="mt-1.5 flex flex-wrap gap-2">
           {message.attachments.map((a, i) => <AttachmentPreview key={i} attachment={a} />)}
@@ -1036,18 +1241,27 @@ function MentionParts({ text }: { text: string }) {
     const handle = match[0];
     const isBroadcast = BROADCAST_HANDLES.has(handle.toLowerCase());
     const roleLabel = !isBroadcast ? roleLabelFor(handle.slice(1)) : null;
-    let className = "text-primary font-medium bg-primary/10 px-1 rounded";
+    // Discord-style mention pills — pastel-tinted background, full
+    // rounded, slight emphasis on hover. Tone changes based on what
+    // kind of mention it is.
+    const baseCls =
+      "inline-flex items-center font-semibold rounded px-1.5 py-0.5 transition-colors cursor-default mx-0.5 first:ml-0";
+    let className = `${baseCls} bg-primary/15 text-primary hover:bg-primary/25`;
     let display: string = handle;
     if (isBroadcast) {
-      className = "font-bold bg-amber-500/15 text-amber-400 px-1 rounded";
+      className = `${baseCls} bg-amber-500/15 text-amber-700 dark:text-amber-300 hover:bg-amber-500/25`;
     } else if (roleLabel) {
       // Show the friendly label so the message reads "@Reddit VA"
       // instead of "@redditva" / "@reddit_va" / etc.
-      className = "font-semibold bg-violet-500/15 text-violet-400 px-1 rounded";
+      className = `${baseCls} bg-violet-500/15 text-violet-700 dark:text-violet-300 hover:bg-violet-500/25`;
       display = `@${roleLabel}`;
     }
     parts.push(
-      <span key={match.index} className={className} title={isBroadcast ? "Notifies everyone" : roleLabel ? `Notifies all ${roleLabel}s` : undefined}>
+      <span
+        key={match.index}
+        className={className}
+        title={isBroadcast ? "Notifies everyone" : roleLabel ? `Notifies all ${roleLabel}s` : `Mentions ${handle}`}
+      >
         {display}
       </span>,
     );

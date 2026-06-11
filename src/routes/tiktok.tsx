@@ -26,6 +26,7 @@ import { format, formatDistanceToNow } from "date-fns";
 import {
   Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Cell,
 } from "recharts";
+import { AccountAnalyticsHero, ContentTypeBreakdown } from "@/components/AccountAnalyticsHero";
 
 export const Route = createFileRoute("/tiktok")({ component: TikTokPage });
 
@@ -557,6 +558,42 @@ function StatCard({
       <div className="text-xs text-muted-foreground mb-2">{label}</div>
       <div className={`text-2xl font-bold ${valueClass ?? ""}`}>{value}</div>
       <div className="text-xs text-muted-foreground mt-1">{sub}</div>
+    </div>
+  );
+}
+
+// ── Modern KPI tile shared by Revenue Performance + Engagement Performance.
+// Mirrors IG/FB version — uses bg-background/60 to nest cleanly inside a
+// parent card section.
+function RevKpiCard({
+  icon, tone, label, value, sub,
+}: {
+  icon: React.ReactNode;
+  tone: "emerald" | "violet" | "cyan" | "amber" | "pink" | "rose";
+  label: string;
+  value: string | number;
+  sub: string;
+}) {
+  const TONE_CLS = {
+    emerald: "bg-emerald-500/12 text-emerald-600",
+    violet:  "bg-violet-500/12 text-violet-600",
+    cyan:    "bg-cyan-500/12 text-cyan-600",
+    amber:   "bg-amber-500/15 text-amber-600",
+    pink:    "bg-pink-500/12 text-pink-600",
+    rose:    "bg-rose-500/12 text-rose-600",
+  }[tone];
+  return (
+    <div className="rounded-xl border border-border bg-background/60 p-4 transition-all hover:bg-background hover:shadow-sm">
+      <div className="flex items-center gap-2 mb-2">
+        <span className={`h-7 w-7 rounded-lg flex items-center justify-center ${TONE_CLS}`}>
+          {icon}
+        </span>
+        <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-bold truncate">
+          {label}
+        </span>
+      </div>
+      <div className="text-2xl font-bold tabular-nums leading-none">{value}</div>
+      <div className="text-[11px] text-muted-foreground mt-1.5 truncate">{sub}</div>
     </div>
   );
 }
@@ -1196,12 +1233,8 @@ function AccountDetailView({
     [accountPosts]
   );
 
-  const revenueStat = useMemo(
-    () => account?.infloww_campaign_code != null
-      ? inflowwStats.find((s) => s.campaign_code === account.infloww_campaign_code) ?? null
-      : null,
-    [account, inflowwStats]
-  );
+  // (revenueStat memo removed — the new Revenue Performance card
+  // computes its own roll-up across *all* matching tracking-link rows.)
 
   // Posting cadence: posts per week, last 12 weeks
   const cadenceData = useMemo(() => {
@@ -1439,13 +1472,81 @@ function AccountDetailView({
         </DialogContent>
       </Dialog>
 
-      {/* Headline stats */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <StatCard label="Followers" value={account.followers_count.toLocaleString()} sub="current count" />
-        <StatCard label="Following" value={account.following_count.toLocaleString()} sub="" />
-        <StatCard label="Videos" value={account.posts_count.toLocaleString()} sub="reported count" />
-        <StatCard label="Total likes" value={account.total_likes.toLocaleString()} sub="profile lifetime" valueClass="text-primary" />
-      </div>
+      {/* ── Flux-style Detailed Analytics hero.
+          Profile photo + handle + bio on the left, stat cards (Total Likes
+          / Engagement Rate / Revenue) on the right. Drops a Content Type
+          Breakdown panel below. */}
+      {(() => {
+        // Revenue per account = sum of revenue_total from infloww
+        // tracking-link rows whose campaign_code matches this account's
+        // infloww_campaign_code.
+        const accountRevenue = account.infloww_campaign_code != null
+          ? inflowwStats
+              .filter((s) => s.campaign_code === account.infloww_campaign_code)
+              .reduce((sum, s) => sum + (s.revenue_total ?? 0), 0)
+          : 0;
+        // Aggregate post-level metrics for the breakdown panel.
+        const totalViews = accountPosts.reduce((s, p) => s + (p.views_count ?? 0), 0);
+        const totalLikes = accountPosts.reduce((s, p) => s + (p.likes_count ?? 0), 0);
+        const totalComments = accountPosts.reduce((s, p) => s + (p.comments_count ?? 0), 0);
+        const totalShares = accountPosts.reduce((s, p) => s + (p.shares_count ?? 0), 0);
+        const totalSaves = accountPosts.reduce((s, p) => s + (p.saves_count ?? 0), 0);
+        const avgViews = accountPosts.length > 0 ? totalViews / accountPosts.length : 0;
+        const avgEngagementPerPost = accountPosts.length > 0
+          ? (totalLikes + totalComments + totalShares + totalSaves) / accountPosts.length
+          : 0;
+        const engagementPct = stats?.engagement ?? 0;
+        return (
+          <>
+            <AccountAnalyticsHero
+              avatarUrl={null}
+              displayName={account.username.toUpperCase()}
+              username={account.username}
+              verified={account.followers_count >= 10000}
+              bio={account.bio_link ?? account.notes ?? null}
+              joinedLabel={account.api_connected_at
+                ? `Connected ${format(new Date(account.api_connected_at), "MMM yyyy")}`
+                : null}
+              brandIcon={<SiTiktok className="h-3.5 w-3.5" style={{ color: TT_PINK }} />}
+              brandColor={TT_PINK}
+              totalLikes={{
+                value: account.total_likes >= 1_000_000
+                  ? `${(account.total_likes / 1_000_000).toFixed(1)}M`
+                  : account.total_likes >= 1_000
+                    ? `${(account.total_likes / 1_000).toFixed(1)}K`
+                    : account.total_likes.toLocaleString(),
+                delta: null,
+              }}
+              engagementRate={{
+                value: engagementPct > 0 ? `${engagementPct.toFixed(2)}%` : "—",
+                delta: null,
+              }}
+              revenue={{
+                value: `$${fmtMoney0(accountRevenue)}`,
+                delta: null,
+                deltaLabel: account.infloww_campaign_code
+                  ? `from campaign ${account.infloww_campaign_code}`
+                  : "no campaign linked",
+              }}
+            />
+            <ContentTypeBreakdown
+              brandColor={TT_PINK}
+              leftStats={[
+                { label: "Total Views", value: totalViews.toLocaleString() },
+                { label: "Unique Posts", value: accountPosts.length.toLocaleString() },
+                { label: "Avg Views", value: Math.round(avgViews).toLocaleString() },
+                { label: "Followers", value: account.followers_count.toLocaleString() },
+              ]}
+              rightStats={[
+                { label: "Avg Likes", value: stats ? Math.round(stats.avgLikes).toLocaleString() : "—" },
+                { label: "Avg Comments", value: stats ? Math.round(stats.avgComments).toLocaleString() : "—" },
+                { label: "Total Shares", value: totalShares.toLocaleString() },
+                { label: "Avg Engagement", value: Math.round(avgEngagementPerPost).toLocaleString() },
+              ]}
+            />
+          </>
+        );
+      })()}
 
       {accountPosts.length === 0 && (
         <div className="rounded-xl border border-dashed border-border bg-card/40 p-4 text-center text-sm text-muted-foreground">
@@ -1453,20 +1554,177 @@ function AccountDetailView({
         </div>
       )}
 
-      {/* Performance */}
-      <div>
-        <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Performance</div>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <StatCard label="Avg views" value={stats ? Math.round(stats.avgViews).toLocaleString() : "—"} sub={stats ? `${stats.totalViews.toLocaleString()} total` : "no posts yet"} />
-          <StatCard label="Avg likes" value={stats ? Math.round(stats.avgLikes).toLocaleString() : "—"} sub={stats ? `${stats.totalLikes.toLocaleString()} total` : ""} />
-          <StatCard label="Avg comments" value={stats ? Math.round(stats.avgComments).toLocaleString() : "—"} sub={stats ? `${stats.totalComments.toLocaleString()} total` : ""} />
-          <StatCard
-            label="Engagement"
+      {/* ── Revenue performance card ───────────────────────────────
+          Big modern panel showing every dollar this specific account
+          has driven via Infloww tracking links matched on
+          campaign_code. Empty state when no campaign is linked. */}
+      {(() => {
+        const accountLinks = account.infloww_campaign_code != null
+          ? inflowwStats.filter((s) => s.campaign_code === account.infloww_campaign_code)
+          : [];
+        const totalRevenue = accountLinks.reduce((s, r) => s + (r.revenue_total ?? 0), 0);
+        const totalClicks = accountLinks.reduce((s, r) => s + (r.clicks_count ?? 0), 0);
+        const totalSubs = accountLinks.reduce((s, r) => s + (r.subscribers_count ?? 0), 0);
+        const totalSpenders = accountLinks.reduce((s, r) => s + (r.spenders_count ?? 0), 0);
+        const conversion = totalClicks > 0 ? (totalSubs / totalClicks) * 100 : 0;
+        const revenuePerSub = totalSubs > 0 ? totalRevenue / totalSubs : 0;
+        const revenuePerClick = totalClicks > 0 ? totalRevenue / totalClicks : 0;
+        return (
+          <section className="rounded-2xl border border-border bg-card p-5 sm:p-6 space-y-4">
+            <div className="flex items-center gap-2.5">
+              <span
+                className="h-7 w-7 rounded-lg flex items-center justify-center"
+                style={{ backgroundColor: `${TT_PINK}20`, color: TT_PINK }}
+              >
+                <DollarSign className="h-4 w-4" />
+              </span>
+              <div>
+                <h3 className="text-sm font-bold tracking-tight">Revenue Performance</h3>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  Every dollar this account has driven, sourced from Infloww tracking
+                </p>
+              </div>
+            </div>
+            {account.infloww_campaign_code == null ? (
+              <div className="rounded-xl border border-dashed border-border bg-muted/20 p-8 text-center text-sm text-muted-foreground">
+                Set this account's <strong>Infloww campaign code</strong> in the Edit dialog to attribute revenue here.
+              </div>
+            ) : accountLinks.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border bg-muted/20 p-8 text-center text-sm text-muted-foreground">
+                Campaign <span className="font-mono">{account.infloww_campaign_code}</span> is linked but Infloww hasn't returned any traffic for it yet. Click <strong>Sync Infloww</strong> on the Revenue page to refresh.
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  <RevKpiCard
+                    icon={<DollarSign className="h-4 w-4" />}
+                    tone="emerald"
+                    label="Total Revenue"
+                    value={`$${fmtMoney0(totalRevenue)}`}
+                    sub={`${accountLinks.length} link${accountLinks.length === 1 ? "" : "s"} active`}
+                  />
+                  <RevKpiCard
+                    icon={<Users className="h-4 w-4" />}
+                    tone="violet"
+                    label="Subscribers"
+                    value={totalSubs.toLocaleString()}
+                    sub={`${totalSpenders.toLocaleString()} spent money`}
+                  />
+                  <RevKpiCard
+                    icon={<Eye className="h-4 w-4" />}
+                    tone="cyan"
+                    label="Total Clicks"
+                    value={totalClicks.toLocaleString()}
+                    sub={`$${revenuePerClick.toFixed(2)} per click`}
+                  />
+                  <RevKpiCard
+                    icon={<TrendingUp className="h-4 w-4" />}
+                    tone="amber"
+                    label="Click → Sub"
+                    value={`${conversion.toFixed(2)}%`}
+                    sub={`$${revenuePerSub.toFixed(2)} per sub`}
+                  />
+                </div>
+                {accountLinks.length > 1 && (
+                  <div className="overflow-hidden rounded-xl border border-border">
+                    <div className="px-3 py-2 border-b border-border bg-muted/30">
+                      <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/70">
+                        Per-link breakdown
+                      </div>
+                    </div>
+                    <table className="w-full text-xs">
+                      <thead className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-bold">
+                        <tr>
+                          <th className="text-left px-3 py-2">Campaign</th>
+                          <th className="text-right px-3 py-2">Clicks</th>
+                          <th className="text-right px-3 py-2">Subs</th>
+                          <th className="text-right px-3 py-2">CVR</th>
+                          <th className="text-right px-3 py-2">Revenue</th>
+                          <th className="text-right px-3 py-2">$ / sub</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {accountLinks
+                          .slice()
+                          .sort((a, b) => b.revenue_total - a.revenue_total)
+                          .map((l) => {
+                            const cvr = l.clicks_count > 0
+                              ? (l.subscribers_count / l.clicks_count) * 100
+                              : 0;
+                            return (
+                              <tr key={l.id} className="border-t border-border bg-card hover:bg-secondary/30">
+                                <td className="px-3 py-2 font-mono">c{l.campaign_code}</td>
+                                <td className="px-3 py-2 text-right tabular-nums">{l.clicks_count.toLocaleString()}</td>
+                                <td className="px-3 py-2 text-right tabular-nums">{l.subscribers_count.toLocaleString()}</td>
+                                <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{cvr.toFixed(2)}%</td>
+                                <td className="px-3 py-2 text-right font-bold tabular-nums">${fmtMoney0(l.revenue_total)}</td>
+                                <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+                                  {l.subscribers_count > 0 ? `$${(l.revenue_total / l.subscribers_count).toFixed(2)}` : "—"}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            )}
+          </section>
+        );
+      })()}
+
+      {/* ── Engagement Performance ─────────────────────────────────
+          Modern 4-tile KPI strip — Avg Views / Avg Likes / Avg
+          Comments / Engagement Rate. Replaces the old plain
+          StatCard row with the same brand-tinted icon-chip pattern
+          used on the dashboard. */}
+      <section className="rounded-2xl border border-border bg-card p-5 sm:p-6 space-y-4">
+        <div className="flex items-center gap-2.5">
+          <span
+            className="h-7 w-7 rounded-lg flex items-center justify-center"
+            style={{ backgroundColor: `${TT_PINK}20`, color: TT_PINK }}
+          >
+            <Heart className="h-4 w-4" />
+          </span>
+          <div>
+            <h3 className="text-sm font-bold tracking-tight">Engagement Performance</h3>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              Per-post averages and engagement rate across {accountPosts.length} tracked post{accountPosts.length === 1 ? "" : "s"}
+            </p>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <RevKpiCard
+            icon={<Eye className="h-4 w-4" />}
+            tone="cyan"
+            label="Avg Views"
+            value={stats ? Math.round(stats.avgViews).toLocaleString() : "—"}
+            sub={stats ? `${stats.totalViews.toLocaleString()} total` : "no posts yet"}
+          />
+          <RevKpiCard
+            icon={<Heart className="h-4 w-4" />}
+            tone="rose"
+            label="Avg Likes"
+            value={stats ? Math.round(stats.avgLikes).toLocaleString() : "—"}
+            sub={stats ? `${stats.totalLikes.toLocaleString()} total` : ""}
+          />
+          <RevKpiCard
+            icon={<MessageCircle className="h-4 w-4" />}
+            tone="violet"
+            label="Avg Comments"
+            value={stats ? Math.round(stats.avgComments).toLocaleString() : "—"}
+            sub={stats ? `${stats.totalComments.toLocaleString()} total` : ""}
+          />
+          <RevKpiCard
+            icon={<TrendingUp className="h-4 w-4" />}
+            tone="emerald"
+            label="Engagement Rate"
             value={stats?.engagement != null ? `${stats.engagement.toFixed(2)}%` : "—"}
-            sub="(L+C+S+Sv)/views"
+            sub="(L+C+S+Sv) / views"
           />
         </div>
-      </div>
+      </section>
 
       {/* Insights */}
       {insights.length > 0 && (
@@ -1706,49 +1964,9 @@ function AccountDetailView({
         </div>
       )}
 
-      {/* Revenue */}
-      {account.infloww_campaign_code != null && (
-        <div>
-          <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Infloww revenue</div>
-          <div className="rounded-xl border border-border bg-card p-4">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <div className="text-xs text-muted-foreground">Campaign code</div>
-                <div className="font-mono font-semibold">c{account.infloww_campaign_code}</div>
-                {revenueStat?.campaign_url && (
-                  <a
-                    href={revenueStat.campaign_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1 mt-1"
-                  >
-                    <Link2 className="h-3 w-3" />
-                    {revenueStat.campaign_url.replace(/^https?:\/\//, "")}
-                  </a>
-                )}
-              </div>
-              {revenueStat ? (
-                <div className="grid grid-cols-3 gap-4 text-right">
-                  <div>
-                    <div className="text-xs text-muted-foreground">Clicks</div>
-                    <div className="font-semibold">{revenueStat.clicks_count.toLocaleString()}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">Subs</div>
-                    <div className="font-semibold">{revenueStat.subscribers_count.toLocaleString()}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">Revenue</div>
-                    <div className="font-semibold text-success">${fmtMoney2(revenueStat.revenue_total)}</div>
-                  </div>
-                </div>
-              ) : (
-                <div className="text-xs text-muted-foreground italic">Sync Infloww to load stats</div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      {/* (Old "Infloww revenue" card removed — superseded by the
+          Revenue Performance section above, which shows the same
+          campaign data in a fuller, modernized layout.) */}
 
       {account.notes && (
         <div>
