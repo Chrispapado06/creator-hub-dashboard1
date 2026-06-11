@@ -5,6 +5,8 @@ import {
   Plus, Trash2, Edit2, Check, X, MessageCircle, AlertTriangle,
   DollarSign, Clock, Award, TrendingUp, Flag, Eye, EyeOff, Copy, KeyRound,
   Download, Wallet, History, Search, Briefcase, Globe2, MapPin, Activity,
+  NotebookPen, Gift, CalendarOff, Calculator, ListChecks, CalendarDays,
+  ChevronLeft, ChevronRight, CheckCircle2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,7 +22,7 @@ import {
 import { DatePicker, DateTimePicker } from "@/components/ui/date-picker";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
-import { format, formatDistanceToNow, startOfMonth, endOfMonth, startOfWeek, endOfWeek, subWeeks, subMonths, addDays } from "date-fns";
+import { format, formatDistanceToNow, startOfMonth, endOfMonth, startOfWeek, endOfWeek, subWeeks, subMonths, addDays, parseISO } from "date-fns";
 import { logAudit } from "@/lib/audit";
 import { StaffPortalAdmin, CoachingDialog } from "@/components/StaffPortalAdmin";
 import { GraduationCap, Sparkles, LayoutGrid, Table2, MoreHorizontal, Heart } from "lucide-react";
@@ -109,6 +111,54 @@ type Shift = {
   avg_response_seconds: number | null;
   quality_flag: QualityFlag;
   notes: string | null;
+  /** Relay note for the next shift on the same creator. */
+  handover_note: string | null;
+  /** Verified-hours signals — minutes the staff portal tab was open /
+   *  focused during the shift, written by the portal heartbeat. */
+  heartbeat_minutes: number;
+  visible_minutes: number;
+  last_heartbeat_at: string | null;
+};
+
+/** Verified-hours assessment for a closed shift. `null` when the shift
+ *  predates the heartbeat feature (no signal — don't flag it). */
+function verifiedHours(s: Shift): { pct: number; loggedH: number; verifiedH: number; tone: "good" | "warn" | "bad" } | null {
+  if (!s.end_at) return null;
+  if (!s.last_heartbeat_at && (s.heartbeat_minutes ?? 0) === 0) return null;
+  const loggedMin = (new Date(s.end_at).getTime() - new Date(s.start_at).getTime()) / 60_000;
+  if (loggedMin <= 0) return null;
+  const verifiedMin = Math.min(s.heartbeat_minutes ?? 0, loggedMin);
+  const pct = (verifiedMin / loggedMin) * 100;
+  return {
+    pct,
+    loggedH: loggedMin / 60,
+    verifiedH: verifiedMin / 60,
+    tone: pct >= 90 ? "good" : pct >= 60 ? "warn" : "bad",
+  };
+}
+
+const VERIFIED_TONE_CLS: Record<"good" | "warn" | "bad", string> = {
+  good: "bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border-emerald-500/30",
+  warn: "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30",
+  bad:  "bg-destructive/10 text-destructive border-destructive/30",
+};
+
+type AdminBonusTier = {
+  id: string;
+  label: string;
+  role: string | null;
+  metric: "ppv_revenue" | "total_revenue" | "messages" | "hours";
+  threshold: number;
+  bonus_amount: number;
+  period: "week" | "month";
+  active: boolean;
+};
+
+const BONUS_METRIC_LABELS: Record<AdminBonusTier["metric"], string> = {
+  ppv_revenue: "PPV revenue",
+  total_revenue: "Total revenue",
+  messages: "Messages sent",
+  hours: "Hours worked",
 };
 
 const statusStyles: Record<ChatterStatus, string> = {
@@ -244,6 +294,9 @@ function ChattersPage() {
           <TabsList>
             <TabsTrigger value="timeclock">Time Clock</TabsTrigger>
             <TabsTrigger value="roster">Roster</TabsTrigger>
+            <TabsTrigger value="rota" className="flex items-center gap-1.5">
+              <CalendarDays className="h-3.5 w-3.5" /> Rota
+            </TabsTrigger>
             <TabsTrigger value="shifts">Shifts</TabsTrigger>
             <TabsTrigger value="leaderboard">Leaderboard</TabsTrigger>
             <TabsTrigger value="pay">Pay</TabsTrigger>
@@ -262,6 +315,14 @@ function ChattersPage() {
               assignments={assignments}
               shifts={shifts}
               logins={logins}
+              onRefresh={refresh}
+            />
+          </TabsContent>
+          <TabsContent value="rota" className="mt-6">
+            <RotaTab
+              chatters={chatters}
+              creators={creators}
+              shifts={shifts}
               onRefresh={refresh}
             />
           </TabsContent>
@@ -1263,6 +1324,393 @@ const emptyShiftForm = {
   notes: "",
 };
 
+// ── Rota Tab (weekly schedule builder) ─────────────────────────────────────────
+//
+// Planned shifts live in rota_shifts — separate from worked `shifts` so
+// payroll never double-counts. Grid: staff rows × Mon–Sun columns for the
+// displayed week. Cells show planned chips; approved time-off shades the
+// cell; staff availability shows as a hint inside the add dialog.
+
+type RotaShift = {
+  id: string;
+  chatter_id: string;
+  creator_id: string | null;
+  start_at: string;
+  end_at: string;
+  notes: string | null;
+};
+type AdminTimeOff = {
+  id: string;
+  chatter_id: string;
+  start_date: string;
+  end_date: string;
+  reason: string | null;
+  status: "pending" | "approved" | "denied";
+  created_at: string;
+};
+type AdminAvailability = {
+  id: string;
+  chatter_id: string;
+  weekday: number; // 0 = Monday … 6 = Sunday
+  start_time: string;
+  end_time: string;
+};
+
+const ROTA_WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+function RotaTab({
+  chatters, creators, onRefresh,
+}: {
+  chatters: Chatter[];
+  creators: Creator[];
+  shifts: Shift[];
+  onRefresh: () => void;
+}) {
+  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
+  const [rota, setRota] = useState<RotaShift[]>([]);
+  const [availability, setAvailability] = useState<AdminAvailability[]>([]);
+  const [timeOff, setTimeOff] = useState<AdminTimeOff[]>([]);
+  const [copying, setCopying] = useState(false);
+
+  // Add-shift dialog context: which staff member + which day cell.
+  const [addCtx, setAddCtx] = useState<{ chatterId: string; day: Date } | null>(null);
+  const [addForm, setAddForm] = useState({ creator_id: "", start: "18:00", end: "02:00", notes: "" });
+
+  const days = useMemo(
+    () => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)),
+    [weekStart],
+  );
+
+  const loadRota = async () => {
+    // Pull a generous window around the displayed week so navigation is instant
+    // for ±1 week, plus all availability + non-denied time-off.
+    const winFrom = addDays(weekStart, -7).toISOString();
+    const winTo = addDays(weekStart, 14).toISOString();
+    const [{ data: ro }, { data: av }, { data: to }] = await Promise.all([
+      supabase.from("rota_shifts").select("*").gte("start_at", winFrom).lt("start_at", winTo).order("start_at"),
+      supabase.from("staff_availability").select("*"),
+      supabase.from("time_off_requests").select("*").neq("status", "denied").order("created_at", { ascending: false }),
+    ]);
+    setRota((ro ?? []) as unknown as RotaShift[]);
+    setAvailability((av ?? []) as unknown as AdminAvailability[]);
+    setTimeOff((to ?? []) as unknown as AdminTimeOff[]);
+  };
+  useEffect(() => { void loadRota(); }, [weekStart]);
+
+  const rosterStaff = chatters
+    .filter((c) => c.status === "active" || c.status === "onboarding")
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  const pendingRequests = timeOff.filter((r) => r.status === "pending");
+
+  const cellShifts = (chatterId: string, day: Date) =>
+    rota.filter((r) =>
+      r.chatter_id === chatterId &&
+      format(new Date(r.start_at), "yyyy-MM-dd") === format(day, "yyyy-MM-dd"),
+    );
+
+  const dayOff = (chatterId: string, day: Date): AdminTimeOff | null => {
+    const key = format(day, "yyyy-MM-dd");
+    return timeOff.find(
+      (r) => r.chatter_id === chatterId && r.status === "approved" &&
+        r.start_date <= key && key <= r.end_date,
+    ) ?? null;
+  };
+
+  const availFor = (chatterId: string, weekday: number) =>
+    availability.find((a) => a.chatter_id === chatterId && a.weekday === weekday) ?? null;
+
+  const openAdd = (chatterId: string, day: Date) => {
+    setAddCtx({ chatterId, day });
+    const av = availFor(chatterId, (day.getDay() + 6) % 7);
+    setAddForm({
+      creator_id: "",
+      start: av ? av.start_time.slice(0, 5) : "18:00",
+      end: av ? av.end_time.slice(0, 5) : "02:00",
+      notes: "",
+    });
+  };
+
+  const onAddShift = async () => {
+    if (!addCtx) return;
+    if (!addForm.start || !addForm.end) return toast.error("Pick start and end times.");
+    const dayKey = format(addCtx.day, "yyyy-MM-dd");
+    const startAt = new Date(`${dayKey}T${addForm.start}`);
+    let endAt = new Date(`${dayKey}T${addForm.end}`);
+    // Overnight shift (e.g. 18:00 → 02:00) rolls into the next day.
+    if (endAt <= startAt) endAt = addDays(endAt, 1);
+    const off = dayOff(addCtx.chatterId, addCtx.day);
+    if (off && !window.confirm("This person has approved time off that day. Schedule anyway?")) return;
+    const { data, error } = await supabase
+      .from("rota_shifts")
+      .insert({
+        chatter_id: addCtx.chatterId,
+        creator_id: addForm.creator_id || null,
+        start_at: startAt.toISOString(),
+        end_at: endAt.toISOString(),
+        notes: addForm.notes.trim() || null,
+      })
+      .select()
+      .single();
+    if (error) return toast.error(error.message);
+    setRota((prev) => [...prev, data as unknown as RotaShift]);
+    setAddCtx(null);
+    toast.success("Shift scheduled");
+  };
+
+  const onDeleteRota = async (id: string) => {
+    const { error } = await supabase.from("rota_shifts").delete().eq("id", id);
+    if (error) return toast.error(error.message);
+    setRota((prev) => prev.filter((r) => r.id !== id));
+  };
+
+  const onCopyPrevWeek = async () => {
+    setCopying(true);
+    const prevFrom = addDays(weekStart, -7);
+    const { data: prev } = await supabase
+      .from("rota_shifts")
+      .select("*")
+      .gte("start_at", prevFrom.toISOString())
+      .lt("start_at", weekStart.toISOString());
+    const prevRows = (prev ?? []) as unknown as RotaShift[];
+    if (prevRows.length === 0) {
+      setCopying(false);
+      return toast.info("Last week has no rota to copy.");
+    }
+    // Skip rows that already have an identical copy this week.
+    const inserts = prevRows
+      .map((r) => ({
+        chatter_id: r.chatter_id,
+        creator_id: r.creator_id,
+        start_at: addDays(new Date(r.start_at), 7).toISOString(),
+        end_at: addDays(new Date(r.end_at), 7).toISOString(),
+        notes: r.notes,
+      }))
+      .filter((ins) => !rota.some(
+        (ex) => ex.chatter_id === ins.chatter_id && ex.start_at === ins.start_at,
+      ));
+    if (inserts.length === 0) {
+      setCopying(false);
+      return toast.info("This week already mirrors last week.");
+    }
+    const { error } = await supabase.from("rota_shifts").insert(inserts);
+    setCopying(false);
+    if (error) return toast.error(error.message);
+    await loadRota();
+    toast.success(`Copied ${inserts.length} shift${inserts.length === 1 ? "" : "s"} from last week`);
+  };
+
+  const reviewTimeOff = async (req: AdminTimeOff, status: "approved" | "denied") => {
+    const actor = (() => {
+      try { return JSON.parse(localStorage.getItem("agency_session") ?? "{}")?.username ?? null; }
+      catch { return null; }
+    })();
+    const { error } = await supabase
+      .from("time_off_requests")
+      .update({ status, reviewed_by: actor, reviewed_at: new Date().toISOString() })
+      .eq("id", req.id);
+    if (error) return toast.error(error.message);
+    setTimeOff((prev) => prev.map((r) => r.id === req.id ? { ...r, status } : r));
+    toast.success(status === "approved" ? "Time off approved" : "Time off denied");
+    onRefresh();
+  };
+
+  const chatterName = (id: string) => chatters.find((c) => c.id === id)?.name ?? "—";
+  const creatorName = (id: string | null) => id ? (creators.find((c) => c.id === id)?.name ?? "—") : null;
+  const isThisWeekShown = format(weekStart, "yyyy-MM-dd") === format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd");
+
+  return (
+    <div className="space-y-6">
+      {/* Pending time-off approvals */}
+      {pendingRequests.length > 0 && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 space-y-2">
+          <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400">
+            <CalendarOff className="h-4 w-4" />
+            <span className="text-sm font-semibold">
+              {pendingRequests.length} time-off request{pendingRequests.length === 1 ? "" : "s"} waiting
+            </span>
+          </div>
+          <div className="space-y-1.5">
+            {pendingRequests.map((r) => (
+              <div key={r.id} className="flex items-center justify-between gap-3 rounded-lg bg-card border border-border px-3 py-2 flex-wrap">
+                <div className="min-w-0">
+                  <span className="text-sm font-medium">{chatterName(r.chatter_id)}</span>
+                  <span className="text-xs text-muted-foreground ml-2">
+                    {format(parseISO(r.start_date), "MMM d")}
+                    {r.end_date !== r.start_date && <> – {format(parseISO(r.end_date), "MMM d")}</>}
+                  </span>
+                  {r.reason && <span className="text-xs text-muted-foreground/70 ml-2">· {r.reason}</span>}
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => reviewTimeOff(r, "approved")}>
+                    <Check className="h-3 w-3 mr-1" /> Approve
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground hover:text-destructive" onClick={() => reviewTimeOff(r, "denied")}>
+                    <X className="h-3 w-3 mr-1" /> Deny
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Week navigation */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => setWeekStart((w) => addDays(w, -7))}>
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <div className="text-sm font-semibold min-w-[180px] text-center">
+            {format(weekStart, "MMM d")} – {format(addDays(weekStart, 6), "MMM d, yyyy")}
+            {isThisWeekShown && <span className="ml-1.5 text-[10px] text-primary font-bold uppercase">this week</span>}
+          </div>
+          <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => setWeekStart((w) => addDays(w, 7))}>
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+          {!isThisWeekShown && (
+            <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => setWeekStart(startOfWeek(new Date(), { weekStartsOn: 1 }))}>
+              Today
+            </Button>
+          )}
+        </div>
+        <Button size="sm" variant="outline" onClick={onCopyPrevWeek} disabled={copying}>
+          <Copy className="h-3.5 w-3.5 mr-1.5" />
+          {copying ? "Copying…" : "Copy last week"}
+        </Button>
+      </div>
+
+      {/* The grid */}
+      {rosterStaff.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-border bg-card/40 p-12 text-center text-sm text-muted-foreground">
+          Add staff on the Roster tab to start scheduling.
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-xl border border-border">
+          <table className="w-full text-sm border-collapse min-w-[860px]">
+            <thead>
+              <tr className="bg-secondary/40">
+                <th className="text-left text-xs font-medium uppercase tracking-wide text-muted-foreground px-3 py-2.5 w-40 sticky left-0 bg-secondary/40 backdrop-blur">Staff</th>
+                {days.map((d, i) => {
+                  const isToday = format(d, "yyyy-MM-dd") === format(new Date(), "yyyy-MM-dd");
+                  return (
+                    <th key={i} className={`text-center text-xs font-medium uppercase tracking-wide px-2 py-2.5 ${isToday ? "text-primary" : "text-muted-foreground"}`}>
+                      {ROTA_WEEKDAYS[i]} <span className="font-bold">{format(d, "d")}</span>
+                    </th>
+                  );
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {rosterStaff.map((c) => (
+                <tr key={c.id} className="border-t border-border">
+                  <td className="px-3 py-2 sticky left-0 bg-card">
+                    <div className="font-medium text-xs truncate max-w-[140px]">{c.name}</div>
+                    <div className="text-[10px] text-muted-foreground truncate">{roleLabels[c.role]}</div>
+                  </td>
+                  {days.map((day, i) => {
+                    const off = dayOff(c.id, day);
+                    const list = cellShifts(c.id, day);
+                    const av = availFor(c.id, i);
+                    return (
+                      <td
+                        key={i}
+                        className={`align-top px-1.5 py-1.5 border-l border-border/50 min-w-[100px] ${off ? "bg-destructive/5" : ""}`}
+                      >
+                        <div className="space-y-1">
+                          {off && (
+                            <div className="text-[9px] font-bold uppercase text-destructive/80 text-center rounded bg-destructive/10 py-0.5">
+                              Off
+                            </div>
+                          )}
+                          {list.map((r) => (
+                            <div
+                              key={r.id}
+                              className="group rounded-md bg-primary/10 border border-primary/25 px-1.5 py-1 text-[10px] leading-tight relative"
+                            >
+                              <div className="font-bold tabular-nums">
+                                {format(new Date(r.start_at), "HH:mm")}–{format(new Date(r.end_at), "HH:mm")}
+                              </div>
+                              {creatorName(r.creator_id) && (
+                                <div className="text-muted-foreground truncate">{creatorName(r.creator_id)}</div>
+                              )}
+                              <button
+                                onClick={() => onDeleteRota(r.id)}
+                                className="absolute -top-1 -right-1 hidden group-hover:flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-white"
+                                title="Remove"
+                              >
+                                <X className="h-2.5 w-2.5" />
+                              </button>
+                            </div>
+                          ))}
+                          <button
+                            onClick={() => openAdd(c.id, day)}
+                            className="w-full rounded-md border border-dashed border-border/60 text-muted-foreground/40 hover:text-primary hover:border-primary/40 transition-colors py-0.5"
+                            title={av ? `Available ${av.start_time.slice(0, 5)}–${av.end_time.slice(0, 5)}` : "No availability set"}
+                          >
+                            <Plus className="h-3 w-3 mx-auto" />
+                          </button>
+                          {av && list.length === 0 && !off && (
+                            <div className="text-[8.5px] text-muted-foreground/50 text-center leading-none">
+                              av {av.start_time.slice(0, 5)}–{av.end_time.slice(0, 5)}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Add dialog */}
+      <Dialog open={addCtx !== null} onOpenChange={(o) => { if (!o) setAddCtx(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>
+              Schedule {addCtx ? chatterName(addCtx.chatterId) : ""} — {addCtx ? format(addCtx.day, "EEE, MMM d") : ""}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label>Creator <span className="text-muted-foreground text-xs">(optional)</span></Label>
+              <Select value={addForm.creator_id || "none"} onValueChange={(v) => setAddForm({ ...addForm, creator_id: v === "none" ? "" : v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No specific creator</SelectItem>
+                  {creators.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Start</Label>
+                <Input type="time" value={addForm.start} onChange={(e) => setAddForm({ ...addForm, start: e.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>End</Label>
+                <Input type="time" value={addForm.end} onChange={(e) => setAddForm({ ...addForm, end: e.target.value })} />
+                <p className="text-[10px] text-muted-foreground">Earlier than start = overnight shift</p>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Note <span className="text-muted-foreground text-xs">(optional)</span></Label>
+              <Input value={addForm.notes} onChange={(e) => setAddForm({ ...addForm, notes: e.target.value })} placeholder="Cover for Maria, focus on whales…" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setAddCtx(null)}>Cancel</Button>
+            <Button onClick={onAddShift}>Schedule</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
 function ShiftsTab({
   chatters, creators, shifts, onRefresh,
 }: {
@@ -1510,6 +1958,7 @@ function ShiftsTab({
                 <th className="text-right font-medium px-4 py-3">PPVs</th>
                 <th className="text-right font-medium px-4 py-3">Revenue</th>
                 <th className="text-right font-medium px-4 py-3">$/hr</th>
+                <th className="text-left font-medium px-4 py-3">Verified</th>
                 <th className="text-left font-medium px-4 py-3">Flag</th>
                 <th className="px-4 py-3" />
               </tr>
@@ -1537,14 +1986,36 @@ function ShiftsTab({
                       {perHour != null ? fmt$0(perHour) : "—"}
                     </td>
                     <td className="px-4 py-3">
-                      {s.quality_flag ? (
-                        <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-warning/30 bg-warning/10 text-warning">
-                          <Flag className="h-2.5 w-2.5" />
-                          {flagLabels[s.quality_flag]}
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground/40 text-xs">—</span>
-                      )}
+                      {(() => {
+                        const v = verifiedHours(s);
+                        return v ? (
+                          <span
+                            className={`inline-flex text-[10px] px-1.5 py-0.5 rounded border font-semibold tabular-nums ${VERIFIED_TONE_CLS[v.tone]}`}
+                            title={`Portal tracked ${v.verifiedH.toFixed(1)}h of ${v.loggedH.toFixed(1)}h logged (${v.pct.toFixed(0)}%)`}
+                          >
+                            {v.pct.toFixed(0)}%
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground/40 text-xs">—</span>
+                        );
+                      })()}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1">
+                        {s.quality_flag ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-warning/30 bg-warning/10 text-warning">
+                            <Flag className="h-2.5 w-2.5" />
+                            {flagLabels[s.quality_flag]}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground/40 text-xs">—</span>
+                        )}
+                        {s.handover_note && (
+                          <span title={`Handover: ${s.handover_note}`}>
+                            <NotebookPen className="h-3.5 w-3.5 text-primary/70" />
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
@@ -1758,6 +2229,17 @@ function PayTab({
   const today = new Date();
   const [from, setFrom] = useState(format(startOfMonth(today), "yyyy-MM-dd"));
   const [to, setTo] = useState(format(endOfMonth(today), "yyyy-MM-dd"));
+  // When on, the hourly portion is computed from portal-verified minutes
+  // (heartbeats) instead of the logged clock-in/out duration. Shifts that
+  // predate the heartbeat feature fall back to logged hours.
+  const [payVerified, setPayVerified] = useState(false);
+  // Bonus tiers — evaluated against the selected pay period's totals.
+  const [tiers, setTiers] = useState<AdminBonusTier[]>([]);
+  useEffect(() => {
+    supabase.from("staff_bonus_tiers").select("*").eq("active", true).then(({ data }) => {
+      setTiers((data ?? []) as unknown as AdminBonusTier[]);
+    });
+  }, []);
 
   const presets: { label: string; range: () => [Date, Date] }[] = [
     { label: "This week", range: () => [startOfWeek(new Date(), { weekStartsOn: 1 }), endOfWeek(new Date(), { weekStartsOn: 1 })] },
@@ -1806,15 +2288,39 @@ function PayTab({
       .map((c) => {
         const chShifts = periodShifts.filter((s) => s.chatter_id === c.id);
         const revenue = chShifts.reduce((s, sh) => s + sh.total_revenue, 0);
-        const hours = chShifts.reduce((s, sh) => s + shiftHours(sh), 0);
+        const loggedHours = chShifts.reduce((s, sh) => s + shiftHours(sh), 0);
+        // Verified = portal-tracked minutes where the heartbeat ran;
+        // shifts without heartbeat data fall back to their logged hours.
+        const verifiedHoursSum = chShifts.reduce((s, sh) => {
+          const v = verifiedHours(sh);
+          return s + (v ? v.verifiedH : shiftHours(sh));
+        }, 0);
+        const hours = payVerified ? verifiedHoursSum : loggedHours;
         const commission = revenue * (c.commission_pct / 100);
         const hourly = c.hourly_rate != null ? hours * c.hourly_rate : 0;
-        const total = commission + hourly;
-        return { chatter: c, shifts: chShifts.length, revenue, hours, commission, hourly, total };
+        // Bonus tiers achieved on this period's totals (role-matched).
+        const messages = chShifts.reduce((s, sh) => s + sh.message_count, 0);
+        const ppvRevenue = chShifts.reduce((s, sh) => s + sh.ppv_revenue, 0);
+        const earnedTiers = tiers.filter((t) => {
+          if (t.role && t.role !== c.role) return false;
+          const value =
+            t.metric === "ppv_revenue" ? ppvRevenue
+            : t.metric === "total_revenue" ? revenue
+            : t.metric === "messages" ? messages
+            : hours;
+          return value >= t.threshold;
+        });
+        const bonus = earnedTiers.reduce((s, t) => s + t.bonus_amount, 0);
+        const total = commission + hourly + bonus;
+        return {
+          chatter: c, shifts: chShifts.length, revenue,
+          hours, loggedHours, verifiedHoursSum,
+          commission, hourly, bonus, earnedTiers, total,
+        };
       })
       .filter((r) => r.shifts > 0 || r.total > 0)
       .sort((a, b) => b.total - a.total);
-  }, [chatters, periodShifts]);
+  }, [chatters, periodShifts, payVerified, tiers]);
 
   const grandTotal = payRows.reduce((s, r) => s + r.total, 0);
   const grandRevenue = payRows.reduce((s, r) => s + r.revenue, 0);
@@ -1840,6 +2346,12 @@ function PayTab({
         return localStorage.getItem("agency_session");
       }
     })();
+    // Auto-note documents how the number was produced — which hours mode
+    // was used and any bonuses folded into the amount.
+    const autoNotes: string[] = [];
+    if (payVerified) autoNotes.push("hourly from portal-verified hours");
+    if (row.bonus > 0) autoNotes.push(`incl. ${fmt$(row.bonus)} bonus (${row.earnedTiers.map((t) => t.label).join(", ")})`);
+    if (note) autoNotes.push(note);
     const { error } = await supabase.from("staff_payouts").insert({
       chatter_id: row.chatter.id,
       period_start: from,
@@ -1850,7 +2362,7 @@ function PayTab({
       hourly_amount: Number(row.hourly.toFixed(2)),
       shifts_count: row.shifts,
       paid_by: adminUsername,
-      notes: note ?? null,
+      notes: autoNotes.length > 0 ? autoNotes.join(" · ") : null,
     });
     if (error) return toast.error(error.message);
     void logAudit({
@@ -1880,18 +2392,21 @@ function PayTab({
   };
 
   const onExportCSV = () => {
-    const header = ["Staff", "Role", "Shifts", "Hours", "Revenue", "Commission %", "Commission $", "Hourly $", "Total payout", "Period start", "Period end", "Status"];
+    const header = ["Staff", "Role", "Shifts", "Logged hours", "Verified hours", "Hours paid", "Revenue", "Commission %", "Commission $", "Hourly $", "Bonus $", "Total payout", "Period start", "Period end", "Status"];
     const rows = payRows.map((r) => {
       const paid = findExistingPayout(r.chatter.id);
       return [
         r.chatter.name,
         r.chatter.role,
         r.shifts,
+        r.loggedHours.toFixed(2),
+        r.verifiedHoursSum.toFixed(2),
         r.hours.toFixed(2),
         r.revenue.toFixed(2),
         r.chatter.commission_pct.toFixed(2),
         r.commission.toFixed(2),
         r.hourly.toFixed(2),
+        r.bonus.toFixed(2),
         r.total.toFixed(2),
         from,
         to,
@@ -1955,6 +2470,20 @@ function PayTab({
             </Button>
           </div>
         </div>
+        {/* Anti-cheat toggle — pay on portal-verified time instead of the
+            raw clock-in/out duration. */}
+        <label className="flex items-center gap-2 text-xs cursor-pointer select-none w-fit">
+          <input
+            type="checkbox"
+            checked={payVerified}
+            onChange={(e) => setPayVerified(e.target.checked)}
+            className="h-3.5 w-3.5 accent-[oklch(0.56_0.14_150)]"
+          />
+          <span className={payVerified ? "font-semibold text-primary" : "text-muted-foreground"}>
+            Compute hourly pay from portal-verified hours
+          </span>
+          <span className="text-muted-foreground/60">(shifts without heartbeat data use logged hours)</span>
+        </label>
       </div>
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -1985,6 +2514,7 @@ function PayTab({
                 <th className="text-right font-medium px-4 py-3">Revenue</th>
                 <th className="text-right font-medium px-4 py-3">Commission</th>
                 <th className="text-right font-medium px-4 py-3">Hourly</th>
+                <th className="text-right font-medium px-4 py-3">Bonus</th>
                 <th className="text-right font-medium px-4 py-3">Total payout</th>
                 <th className="text-right font-medium px-4 py-3">Status</th>
                 <th className="px-4 py-3" />
@@ -1994,6 +2524,10 @@ function PayTab({
               {payRows.map((r) => {
                 const paid = findExistingPayout(r.chatter.id);
                 const lastPaid = lastPaidAt(r.chatter.id);
+                // Surface padding: verified hours meaningfully below logged.
+                const hoursGapPct = r.loggedHours > 0
+                  ? ((r.loggedHours - r.verifiedHoursSum) / r.loggedHours) * 100
+                  : 0;
                 return (
                   <tr key={r.chatter.id} className={`border-t border-border ${paid ? "bg-success/5" : "bg-card"}`}>
                     <td className="px-4 py-3 align-top">
@@ -2009,10 +2543,33 @@ function PayTab({
                       )}
                     </td>
                     <td className="px-4 py-3 text-right text-muted-foreground align-top">{r.shifts}</td>
-                    <td className="px-4 py-3 text-right text-muted-foreground align-top">{r.hours.toFixed(1)}</td>
+                    <td className="px-4 py-3 text-right text-muted-foreground align-top">
+                      {r.hours.toFixed(1)}
+                      {hoursGapPct > 10 && (
+                        <div
+                          className="text-[10px] text-destructive font-medium"
+                          title={`Logged ${r.loggedHours.toFixed(1)}h but the portal only verified ${r.verifiedHoursSum.toFixed(1)}h`}
+                        >
+                          ⚠ {r.verifiedHoursSum.toFixed(1)}h verified
+                        </div>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-right align-top">{fmt$(r.revenue)}</td>
                     <td className="px-4 py-3 text-right align-top">{fmt$(r.commission)}</td>
                     <td className="px-4 py-3 text-right text-muted-foreground align-top">{r.hourly > 0 ? fmt$(r.hourly) : "—"}</td>
+                    <td className="px-4 py-3 text-right align-top">
+                      {r.bonus > 0 ? (
+                        <span
+                          className="inline-flex items-center gap-1 font-semibold text-primary"
+                          title={r.earnedTiers.map((t) => `${t.label}: ${fmt$(t.bonus_amount)}`).join("\n")}
+                        >
+                          <Gift className="h-3 w-3" />
+                          {fmt$(r.bonus)}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground/40">—</span>
+                      )}
+                    </td>
                     <td className={`px-4 py-3 text-right font-bold align-top ${paid ? "text-success" : ""}`}>{fmt$(r.total)}</td>
                     <td className="px-4 py-3 text-right align-top">
                       {paid ? (
@@ -2055,6 +2612,9 @@ function PayTab({
                 <td className="px-4 py-3 text-right font-bold">{fmt$(grandRevenue)}</td>
                 <td className="px-4 py-3 text-right font-bold">{fmt$(grandCommission)}</td>
                 <td className="px-4 py-3 text-right font-bold">{fmt$(grandHourly)}</td>
+                <td className="px-4 py-3 text-right font-bold">
+                  {fmt$(payRows.reduce((s, r) => s + r.bonus, 0))}
+                </td>
                 <td className="px-4 py-3 text-right font-bold text-success">{fmt$(grandTotal)}</td>
                 <td className="px-4 py-3" colSpan={2} />
               </tr>
@@ -2132,6 +2692,184 @@ function PayTab({
           </div>
         )}
       </div>
+
+      {/* Bonus tier manager */}
+      <BonusTiersManager tiers={tiers} setTiers={setTiers} />
+    </div>
+  );
+}
+
+// ── Bonus tiers manager (inside Pay tab) ───────────────────────────────────────
+//
+// Admin CRUD for incentive tiers. Staff see live progress bars toward
+// these in their portal; the Pay tab folds achieved tiers into payouts.
+
+function BonusTiersManager({
+  tiers, setTiers,
+}: {
+  tiers: AdminBonusTier[];
+  setTiers: React.Dispatch<React.SetStateAction<AdminBonusTier[]>>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({
+    label: "", role: "all", metric: "ppv_revenue" as AdminBonusTier["metric"],
+    threshold: "", bonus_amount: "", period: "week" as "week" | "month",
+  });
+
+  const onAdd = async () => {
+    if (!form.label.trim()) return toast.error("Give the bonus a name.");
+    const threshold = parseFloat(form.threshold);
+    const bonus = parseFloat(form.bonus_amount);
+    if (!threshold || threshold <= 0) return toast.error("Threshold must be a positive number.");
+    if (!bonus || bonus <= 0) return toast.error("Bonus amount must be a positive number.");
+    const { data, error } = await supabase
+      .from("staff_bonus_tiers")
+      .insert({
+        label: form.label.trim(),
+        role: form.role === "all" ? null : form.role,
+        metric: form.metric,
+        threshold,
+        bonus_amount: bonus,
+        period: form.period,
+      })
+      .select()
+      .single();
+    if (error) return toast.error(error.message);
+    setTiers((prev) => [...prev, data as unknown as AdminBonusTier]);
+    setForm({ label: "", role: "all", metric: "ppv_revenue", threshold: "", bonus_amount: "", period: "week" });
+    setOpen(false);
+    toast.success("Bonus tier added");
+  };
+
+  const onDelete = async (id: string) => {
+    const { error } = await supabase.from("staff_bonus_tiers").delete().eq("id", id);
+    if (error) return toast.error(error.message);
+    setTiers((prev) => prev.filter((t) => t.id !== id));
+    toast.success("Bonus tier removed");
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <h3 className="text-sm font-semibold flex items-center gap-1.5">
+            <Gift className="h-4 w-4 text-primary" />
+            Bonus tiers
+          </h3>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Staff see live progress toward these in their portal. Achieved tiers are added to payouts automatically.
+          </p>
+        </div>
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogTrigger asChild>
+            <Button size="sm" variant="outline">
+              <Plus className="h-3.5 w-3.5 mr-1.5" />
+              Add tier
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-md">
+            <DialogHeader><DialogTitle>New bonus tier</DialogTitle></DialogHeader>
+            <div className="space-y-3 py-2">
+              <div className="space-y-1.5">
+                <Label>Name</Label>
+                <Input
+                  value={form.label}
+                  onChange={(e) => setForm({ ...form, label: e.target.value })}
+                  placeholder="Weekly PPV crusher"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Metric</Label>
+                  <Select value={form.metric} onValueChange={(v) => setForm({ ...form, metric: v as AdminBonusTier["metric"] })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ppv_revenue">PPV revenue ($)</SelectItem>
+                      <SelectItem value="total_revenue">Total revenue ($)</SelectItem>
+                      <SelectItem value="messages">Messages sent</SelectItem>
+                      <SelectItem value="hours">Hours worked</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Period</Label>
+                  <Select value={form.period} onValueChange={(v) => setForm({ ...form, period: v as "week" | "month" })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="week">Weekly</SelectItem>
+                      <SelectItem value="month">Monthly</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Threshold</Label>
+                  <Input
+                    type="number"
+                    value={form.threshold}
+                    onChange={(e) => setForm({ ...form, threshold: e.target.value })}
+                    placeholder="2500"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Bonus ($)</Label>
+                  <Input
+                    type="number"
+                    value={form.bonus_amount}
+                    onChange={(e) => setForm({ ...form, bonus_amount: e.target.value })}
+                    placeholder="50"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Applies to</Label>
+                <Select value={form.role} onValueChange={(v) => setForm({ ...form, role: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All roles</SelectItem>
+                    {Object.entries(roleLabels).map(([value, label]) => (
+                      <SelectItem key={value} value={value}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+              <Button onClick={onAdd}>Add tier</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+      {tiers.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-border bg-card/40 p-6 text-center text-xs text-muted-foreground">
+          No bonus tiers yet — add one to put an incentive in front of your staff.
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+          {tiers.map((t) => (
+            <div key={t.id} className="rounded-xl border border-border bg-card p-3.5 flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold truncate">{t.label}</div>
+                <div className="text-[11px] text-muted-foreground mt-0.5">
+                  {BONUS_METRIC_LABELS[t.metric]} ≥ {t.metric === "messages" ? t.threshold.toLocaleString() : t.metric === "hours" ? `${t.threshold}h` : fmt$(t.threshold)} / {t.period}
+                </div>
+                <div className="text-xs font-bold text-primary mt-1">+{fmt$(t.bonus_amount)}</div>
+                <div className="text-[10px] text-muted-foreground/70 mt-0.5">
+                  {t.role ? roleLabels[t.role as StaffRole] ?? t.role : "All roles"}
+                </div>
+              </div>
+              <button
+                onClick={() => onDelete(t.id)}
+                className="rounded p-1.5 text-muted-foreground hover:text-destructive hover:bg-secondary transition-colors shrink-0"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -2206,6 +2944,26 @@ function TimeClockTab({
     onRefresh();
   };
 
+  // Anti-cheat: snap a padded shift's end time back to the last moment
+  // the portal actually saw the staff member (their last heartbeat).
+  const onTrimToActivity = async (s: Shift) => {
+    if (!s.last_heartbeat_at) return;
+    const { error } = await supabase
+      .from("shifts")
+      .update({ end_at: s.last_heartbeat_at })
+      .eq("id", s.id);
+    if (error) return toast.error(error.message);
+    void logAudit({
+      action: "trim_shift",
+      entity_type: "shift",
+      entity_id: s.id,
+      entity_name: chatterName(s.chatter_id),
+      details: `End trimmed to last portal activity (${format(new Date(s.last_heartbeat_at), "MMM d, h:mm a")})`,
+    });
+    toast.success("Shift trimmed to last activity");
+    onRefresh();
+  };
+
   const creatorName = (id: string) => creators.find((c) => c.id === id)?.name ?? "—";
   const chatterName = (id: string) => chatters.find((c) => c.id === id)?.name ?? "—";
 
@@ -2249,30 +3007,50 @@ function TimeClockTab({
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            {activeShifts.map((s) => (
-              <div key={s.id} className="rounded-xl border-2 border-success/40 bg-success/5 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="text-xs text-muted-foreground">
-                      {chatterName(s.chatter_id)} · for
+            {activeShifts.map((s) => {
+              // Live presence signal — heartbeats land ~every minute while
+              // the staff portal tab is open. Silence >3 min = likely away.
+              const hbAgeMin = s.last_heartbeat_at
+                ? (now - new Date(s.last_heartbeat_at).getTime()) / 60_000
+                : null;
+              const present = hbAgeMin != null && hbAgeMin <= 3;
+              return (
+                <div key={s.id} className="rounded-xl border-2 border-success/40 bg-success/5 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-xs text-muted-foreground">
+                        {chatterName(s.chatter_id)} · for
+                      </div>
+                      <div className="text-lg font-bold truncate">{creatorName(s.creator_id)}</div>
+                      <div className="text-[11px] text-muted-foreground mt-0.5">
+                        Started {format(new Date(s.start_at), "h:mm a")}
+                      </div>
+                      <div className="text-[11px] mt-1 flex items-center gap-1.5">
+                        <span className={`h-1.5 w-1.5 rounded-full ${present ? "bg-success animate-pulse" : "bg-amber-500"}`} />
+                        {hbAgeMin == null ? (
+                          <span className="text-muted-foreground">no portal activity yet</span>
+                        ) : present ? (
+                          <span className="text-success font-medium">portal open · {Math.round(s.heartbeat_minutes)}m tracked</span>
+                        ) : (
+                          <span className="text-amber-600 dark:text-amber-400 font-medium">
+                            away {Math.round(hbAgeMin)}m · {Math.round(s.heartbeat_minutes)}m tracked
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <div className="text-lg font-bold truncate">{creatorName(s.creator_id)}</div>
-                    <div className="text-[11px] text-muted-foreground mt-0.5">
-                      Started {format(new Date(s.start_at), "h:mm a")}
+                    <div className="text-right shrink-0">
+                      <div className="text-xl font-mono font-bold tabular-nums">{elapsed(s.start_at)}</div>
+                      <button
+                        onClick={() => onForceClockOut(s.id)}
+                        className="text-[11px] text-destructive hover:underline mt-0.5"
+                      >
+                        force clock out
+                      </button>
                     </div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <div className="text-xl font-mono font-bold tabular-nums">{elapsed(s.start_at)}</div>
-                    <button
-                      onClick={() => onForceClockOut(s.id)}
-                      className="text-[11px] text-destructive hover:underline mt-0.5"
-                    >
-                      force clock out
-                    </button>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -2339,6 +3117,7 @@ function TimeClockTab({
                   <th className="text-left font-medium px-4 py-3">Clocked in</th>
                   <th className="text-left font-medium px-4 py-3">Clocked out</th>
                   <th className="text-right font-medium px-4 py-3">Duration</th>
+                  <th className="text-left font-medium px-4 py-3">Verified</th>
                   <th className="text-right font-medium px-4 py-3">Revenue</th>
                 </tr>
               </thead>
@@ -2347,6 +3126,11 @@ function TimeClockTab({
                   const hrs = s.end_at
                     ? (new Date(s.end_at).getTime() - new Date(s.start_at).getTime()) / 3600_000
                     : (now - new Date(s.start_at).getTime()) / 3600_000;
+                  const v = verifiedHours(s);
+                  // Trim makes sense when the verified gap is real (>15 min
+                  // of logged time after the last heartbeat).
+                  const trimmable = s.end_at && s.last_heartbeat_at &&
+                    new Date(s.end_at).getTime() - new Date(s.last_heartbeat_at).getTime() > 15 * 60_000;
                   return (
                     <tr key={s.id} className="border-t border-border bg-card">
                       <td className="px-4 py-3 font-medium">{chatterName(s.chatter_id)}</td>
@@ -2362,6 +3146,29 @@ function TimeClockTab({
                         )}
                       </td>
                       <td className="px-4 py-3 text-right text-muted-foreground">{hrs.toFixed(1)}h</td>
+                      <td className="px-4 py-3">
+                        {v ? (
+                          <div className="flex items-center gap-1.5">
+                            <span
+                              className={`inline-flex text-[10px] px-1.5 py-0.5 rounded border font-semibold tabular-nums ${VERIFIED_TONE_CLS[v.tone]}`}
+                              title={`Portal tracked ${v.verifiedH.toFixed(1)}h of the ${v.loggedH.toFixed(1)}h logged (${v.pct.toFixed(0)}%)`}
+                            >
+                              {v.verifiedH.toFixed(1)}h · {v.pct.toFixed(0)}%
+                            </span>
+                            {trimmable && v.tone !== "good" && (
+                              <button
+                                onClick={() => onTrimToActivity(s)}
+                                className="text-[10px] text-destructive hover:underline"
+                                title="Set clock-out to the staff member's last portal activity"
+                              >
+                                trim
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-muted-foreground/50">no data</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-right">{s.total_revenue > 0 ? fmt$(s.total_revenue) : "—"}</td>
                     </tr>
                   );

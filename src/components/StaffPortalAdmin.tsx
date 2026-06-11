@@ -11,13 +11,23 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { toast } from "sonner";
 import {
   Plus, Trash2, Pencil, Megaphone, GraduationCap, MessageSquare, Pin, PinOff,
-  Target, Save, ChevronUp, ChevronDown, Users as UsersIcon,
+  Target, Save, ChevronUp, ChevronDown, Users as UsersIcon, ListChecks,
 } from "lucide-react";
 import { format, formatDistanceToNow, parseISO, addMonths } from "date-fns";
 import { logAudit } from "@/lib/audit";
 
 type Creator = { id: string; name: string };
-type Chatter = { id: string; name: string; role: string };
+type Chatter = { id: string; name: string; role: string; status?: string };
+
+type OnboardingItem = {
+  id: string;
+  label: string;
+  description: string | null;
+  role: string | null;
+  display_order: number;
+  active: boolean;
+};
+type OnboardingProgressRow = { id: string; chatter_id: string; item_id: string; completed_at: string };
 
 const ROLE_SCOPES = [
   { value: "all",                  label: "All staff" },
@@ -121,6 +131,9 @@ export function StaffPortalAdmin({
         <TabsTrigger value="scripts" className="flex items-center gap-1.5">
           <MessageSquare className="h-3.5 w-3.5" /> Scripts
         </TabsTrigger>
+        <TabsTrigger value="onboarding" className="flex items-center gap-1.5">
+          <ListChecks className="h-3.5 w-3.5" /> Onboarding
+        </TabsTrigger>
       </TabsList>
 
       <TabsContent value="announcements" className="mt-4">
@@ -132,7 +145,210 @@ export function StaffPortalAdmin({
       <TabsContent value="scripts" className="mt-4">
         <ScriptsManager creators={creators} />
       </TabsContent>
+      <TabsContent value="onboarding" className="mt-4">
+        <OnboardingManager chatters={chatters} />
+      </TabsContent>
     </Tabs>
+  );
+}
+
+// ── Staff onboarding checklist ─────────────────────────────────────────────
+//
+// Template items (optionally role-scoped) that every new hire works
+// through in their portal, plus a live per-person progress overview for
+// everyone whose status is still "onboarding".
+
+function OnboardingManager({ chatters }: { chatters: Chatter[] }) {
+  const [items, setItems] = useState<OnboardingItem[]>([]);
+  const [progress, setProgress] = useState<OnboardingProgressRow[]>([]);
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({ label: "", description: "", role: "all" });
+
+  useEffect(() => {
+    (async () => {
+      const [{ data: it }, { data: pr }] = await Promise.all([
+        supabase.from("staff_onboarding_items").select("*").eq("active", true).order("display_order"),
+        supabase.from("staff_onboarding_progress").select("*"),
+      ]);
+      setItems((it ?? []) as unknown as OnboardingItem[]);
+      setProgress((pr ?? []) as unknown as OnboardingProgressRow[]);
+    })();
+  }, []);
+
+  const onAdd = async () => {
+    if (!form.label.trim()) return toast.error("Give the step a name.");
+    const { data, error } = await supabase
+      .from("staff_onboarding_items")
+      .insert({
+        label: form.label.trim(),
+        description: form.description.trim() || null,
+        role: form.role === "all" ? null : form.role,
+        display_order: items.length,
+      })
+      .select()
+      .single();
+    if (error) return toast.error(error.message);
+    setItems((prev) => [...prev, data as unknown as OnboardingItem]);
+    setForm({ label: "", description: "", role: "all" });
+    setOpen(false);
+    toast.success("Step added");
+  };
+
+  const onDelete = async (id: string) => {
+    const { error } = await supabase.from("staff_onboarding_items").delete().eq("id", id);
+    if (error) return toast.error(error.message);
+    setItems((prev) => prev.filter((i) => i.id !== id));
+    toast.success("Step removed");
+  };
+
+  const move = async (idx: number, dir: -1 | 1) => {
+    const next = [...items];
+    const target = idx + dir;
+    if (target < 0 || target >= next.length) return;
+    [next[idx], next[target]] = [next[target], next[idx]];
+    setItems(next);
+    // Persist both swapped orders; ignore failures silently (next load fixes).
+    await Promise.all(
+      next.map((it, i) =>
+        supabase.from("staff_onboarding_items").update({ display_order: i }).eq("id", it.id),
+      ),
+    );
+  };
+
+  const onboardingStaff = chatters.filter((c) => c.status === "onboarding");
+  const itemsForRole = (role: string) => items.filter((i) => !i.role || i.role === role);
+
+  return (
+    <div className="space-y-6">
+      {/* Template */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h3 className="text-sm font-semibold">Checklist template</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Steps every new hire ticks off in their portal. Role-scoped steps only show for that role.
+            </p>
+          </div>
+          <Dialog open={open} onOpenChange={setOpen}>
+            <Button size="sm" onClick={() => setOpen(true)}>
+              <Plus className="h-3.5 w-3.5 mr-1.5" />
+              Add step
+            </Button>
+            <DialogContent className="max-w-md">
+              <DialogHeader><DialogTitle>New onboarding step</DialogTitle></DialogHeader>
+              <div className="space-y-3 py-2">
+                <div className="space-y-1.5">
+                  <Label>Step</Label>
+                  <Input
+                    value={form.label}
+                    onChange={(e) => setForm({ ...form, label: e.target.value })}
+                    placeholder="Read the chatting playbook"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Details (optional)</Label>
+                  <Textarea
+                    value={form.description}
+                    onChange={(e) => setForm({ ...form, description: e.target.value })}
+                    placeholder="Where to find it, what to focus on…"
+                    rows={2}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Applies to</Label>
+                  <Select value={form.role} onValueChange={(v) => setForm({ ...form, role: v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {ROLE_SCOPES.map((r) => (
+                        <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+                <Button onClick={onAdd}>Add step</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
+        {items.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border bg-card/40 p-8 text-center text-sm text-muted-foreground">
+            No steps yet — add the first onboarding step above.
+          </div>
+        ) : (
+          <div className="rounded-xl border border-border divide-y divide-border bg-card">
+            {items.map((item, idx) => (
+              <div key={item.id} className="flex items-center gap-3 px-4 py-2.5">
+                <span className="text-xs text-muted-foreground/60 font-mono w-5">{idx + 1}.</span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium">{item.label}</div>
+                  {item.description && (
+                    <div className="text-[11px] text-muted-foreground truncate">{item.description}</div>
+                  )}
+                </div>
+                {item.role && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded border border-border bg-secondary/40 text-muted-foreground shrink-0">
+                    {ROLE_SCOPES.find((r) => r.value === item.role)?.label ?? item.role}
+                  </span>
+                )}
+                <div className="flex items-center gap-0.5 shrink-0">
+                  <button onClick={() => move(idx, -1)} disabled={idx === 0} className="rounded p-1 text-muted-foreground hover:text-foreground disabled:opacity-30">
+                    <ChevronUp className="h-3.5 w-3.5" />
+                  </button>
+                  <button onClick={() => move(idx, 1)} disabled={idx === items.length - 1} className="rounded p-1 text-muted-foreground hover:text-foreground disabled:opacity-30">
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  </button>
+                  <button onClick={() => onDelete(item.id)} className="rounded p-1 text-muted-foreground hover:text-destructive">
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Live progress for staff still onboarding */}
+      <div>
+        <h3 className="text-sm font-semibold mb-3">In onboarding now</h3>
+        {onboardingStaff.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border bg-card/40 p-6 text-center text-xs text-muted-foreground">
+            Nobody is in onboarding right now. New staff with the "Onboarding" status appear here.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            {onboardingStaff.map((c) => {
+              const myItems = itemsForRole(c.role);
+              const done = myItems.filter((i) => progress.some((p) => p.chatter_id === c.id && p.item_id === i.id)).length;
+              const pct = myItems.length > 0 ? (done / myItems.length) * 100 : 0;
+              return (
+                <div key={c.id} className="rounded-xl border border-border bg-card p-3.5">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className="text-sm font-semibold truncate">{c.name}</span>
+                    <span className={`text-xs font-bold shrink-0 ${pct === 100 ? "text-success" : "text-muted-foreground"}`}>
+                      {done}/{myItems.length}
+                    </span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-secondary overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${pct === 100 ? "bg-success" : "bg-primary"}`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  {pct === 100 && (
+                    <p className="text-[10px] text-success font-medium mt-1.5">
+                      Complete — flip them to Active on the Roster tab.
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

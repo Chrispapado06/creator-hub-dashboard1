@@ -9,12 +9,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
-import { format, formatDistanceToNow, isToday, isTomorrow, isThisWeek, addWeeks, isWithinInterval, startOfWeek, endOfWeek, subDays, parseISO, startOfDay, eachDayOfInterval } from "date-fns";
+import { format, formatDistanceToNow, isToday, isTomorrow, isThisWeek, addWeeks, isWithinInterval, startOfWeek, endOfWeek, startOfMonth, subDays, parseISO, startOfDay, eachDayOfInterval } from "date-fns";
 import {
   Play, Square, LogOut, Clock as ClockIcon, Calendar, LayoutDashboard,
   TrendingUp, DollarSign, GraduationCap, MessageCircle, Sparkles,
   Megaphone, Copy, Check, Target, Wallet, BarChart3, ChevronRight,
-  AlertTriangle, Clock,
+  AlertTriangle, Clock, NotebookPen, Gift, CheckCircle2, Plus, Trash2,
+  CalendarOff,
 } from "lucide-react";
 import { logAudit } from "@/lib/audit";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -58,9 +59,56 @@ type Shift = {
   target_account_id: string | null;
   target_account_name: string | null;
   notes: string | null;
+  /** Written at clock-out; surfaced to the next person clocking in on
+   *  the same creator. */
+  handover_note: string | null;
+  /** Minutes the portal tab was open / focused during the shift —
+   *  incremented by the heartbeat while clocked in. */
+  heartbeat_minutes: number;
+  visible_minutes: number;
+  last_heartbeat_at: string | null;
 };
 
 type PlatformAccount = { id: string; creator_id: string; label: string; sublabel?: string };
+
+type BonusTier = {
+  id: string;
+  label: string;
+  role: string | null;
+  metric: "ppv_revenue" | "total_revenue" | "messages" | "hours";
+  threshold: number;
+  bonus_amount: number;
+  period: "week" | "month";
+  active: boolean;
+};
+type OnboardingItem = {
+  id: string;
+  label: string;
+  description: string | null;
+  role: string | null;
+  display_order: number;
+  active: boolean;
+};
+type OnboardingProgress = { id: string; chatter_id: string; item_id: string; completed_at: string };
+type TimeOffRequest = {
+  id: string;
+  chatter_id: string;
+  start_date: string;
+  end_date: string;
+  reason: string | null;
+  status: "pending" | "approved" | "denied";
+  reviewed_by: string | null;
+  created_at: string;
+};
+type AvailabilityRow = {
+  id: string;
+  chatter_id: string;
+  weekday: number; // 0 = Monday … 6 = Sunday
+  start_time: string;
+  end_time: string;
+};
+/** Latest handover left on a creator by whoever worked the previous shift. */
+type Handover = { note: string; by: string | null; at: string };
 
 type Announcement = {
   id: string;
@@ -187,7 +235,7 @@ function ClockPage() {
     custom_revenue: "", message_count: "",
     // VA fields
     posts_count: "", upvotes_count: "", comments_received: "", dms_handled: "",
-    notes: "",
+    notes: "", handover: "",
   });
   const [savingClockOut, setSavingClockOut] = useState(false);
 
@@ -200,6 +248,16 @@ function ClockPage() {
   const [coachingNotes, setCoachingNotes] = useState<CoachingNote[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [allShifts, setAllShifts] = useState<Shift[]>([]); // last 90d for performance charts
+
+  // ── v3 state: bonuses, onboarding, handover, rota ──────────────────────
+  const [bonusTiers, setBonusTiers] = useState<BonusTier[]>([]);
+  const [onboardingItems, setOnboardingItems] = useState<OnboardingItem[]>([]);
+  const [onboardingProgress, setOnboardingProgress] = useState<OnboardingProgress[]>([]);
+  // Latest handover note for the creator picked in the clock-in form.
+  const [handover, setHandover] = useState<Handover | null>(null);
+  // Planned shifts from the admin rota, mapped onto the Shift shape so the
+  // existing schedule UI can render them unchanged.
+  const [rotaShifts, setRotaShifts] = useState<Shift[]>([]);
 
   // Live timer for active shifts
   useEffect(() => {
@@ -292,7 +350,7 @@ function ClockPage() {
       const { data: cs } = await supabase.from("creators").select("id, name").order("name");
       setCreators((cs ?? []) as Creator[]);
     }
-    setShifts((sh ?? []) as Shift[]);
+    setShifts((sh ?? []) as unknown as Shift[]);
 
     // Load platform accounts based on the chatter's role
     const role = (ch as Chatter).role;
@@ -380,7 +438,41 @@ function ClockPage() {
     setScripts((scr ?? []) as Script[]);
     setCoachingNotes((cn ?? []) as CoachingNote[]);
     setGoals((gs ?? []) as Goal[]);
-    setAllShifts((shAll ?? []) as Shift[]);
+    setAllShifts((shAll ?? []) as unknown as Shift[]);
+
+    // v3 extras — bonus tiers (all roles, filtered client-side once the
+    // chatter row is known), the onboarding checklist, and upcoming rota
+    // plans from the admin's weekly schedule builder.
+    const [{ data: tiers }, { data: obItems }, { data: obProg }, { data: rota }] = await Promise.all([
+      supabase.from("staff_bonus_tiers").select("*").eq("active", true),
+      supabase.from("staff_onboarding_items").select("*").eq("active", true).order("display_order"),
+      supabase.from("staff_onboarding_progress").select("*").eq("chatter_id", chatterId),
+      supabase
+        .from("rota_shifts")
+        .select("*")
+        .eq("chatter_id", chatterId)
+        .gte("start_at", new Date().toISOString())
+        .order("start_at")
+        .limit(50),
+    ]);
+    setBonusTiers((tiers ?? []) as unknown as BonusTier[]);
+    setOnboardingItems((obItems ?? []) as unknown as OnboardingItem[]);
+    setOnboardingProgress((obProg ?? []) as unknown as OnboardingProgress[]);
+    // Map rota rows onto the Shift shape (zeroed metrics) so the existing
+    // schedule grouping + cards render them without special-casing.
+    setRotaShifts(((rota ?? []) as unknown as { id: string; chatter_id: string; creator_id: string | null; start_at: string; end_at: string; notes: string | null }[]).map((r) => ({
+      id: `rota-${r.id}`,
+      chatter_id: r.chatter_id,
+      creator_id: r.creator_id ?? "",
+      start_at: r.start_at,
+      end_at: r.end_at,
+      ppv_count: 0, ppv_revenue: 0, tips_revenue: 0, custom_revenue: 0,
+      total_revenue: 0, message_count: 0, posts_count: 0, upvotes_count: 0,
+      comments_received: 0, dms_handled: 0,
+      target_platform: null, target_account_id: null, target_account_name: null,
+      notes: r.notes, handover_note: null,
+      heartbeat_minutes: 0, visible_minutes: 0, last_heartbeat_at: null,
+    })));
 
     setLoading(false);
   };
@@ -394,6 +486,109 @@ function ClockPage() {
     () => shifts.filter((s) => !s.end_at && new Date(s.start_at).getTime() <= Date.now()),
     [shifts, now]
   );
+
+  // ── Verified-hours heartbeat ────────────────────────────────────────────
+  // While clocked in, accumulate one "open" minute per real minute the
+  // portal tab exists, plus one "visible" minute when it's the focused
+  // tab, and flush onto the shift row every tick. Admins compare these
+  // against the logged duration to spot padded shifts. Local accumulators
+  // (not the possibly-stale React state) are the source of truth so a
+  // slow refresh can't reset the counters.
+  const activeShiftsRef = useRef<Shift[]>([]);
+  activeShiftsRef.current = activeShifts;
+  const hbAccumRef = useRef<Map<string, { base: number; baseVisible: number; accum: number; accumVisible: number }>>(new Map());
+  const hbLastTickRef = useRef<number>(Date.now());
+  useEffect(() => {
+    hbLastTickRef.current = Date.now();
+    const beat = () => {
+      const nowMs = Date.now();
+      // Clamp the delta to 2 minutes — if the laptop slept, the gap is
+      // genuinely "away" time and must NOT count as activity.
+      const deltaMin = Math.min((nowMs - hbLastTickRef.current) / 60_000, 2);
+      hbLastTickRef.current = nowMs;
+      const active = activeShiftsRef.current;
+      if (active.length === 0 || deltaMin <= 0) return;
+      const visible = typeof document !== "undefined" && document.visibilityState === "visible";
+      const accums = hbAccumRef.current;
+      // Drop accumulators for shifts that ended.
+      for (const id of accums.keys()) {
+        if (!active.some((s) => s.id === id)) accums.delete(id);
+      }
+      for (const s of active) {
+        let entry = accums.get(s.id);
+        if (!entry) {
+          entry = { base: s.heartbeat_minutes ?? 0, baseVisible: s.visible_minutes ?? 0, accum: 0, accumVisible: 0 };
+          accums.set(s.id, entry);
+        }
+        entry.accum += deltaMin;
+        if (visible) entry.accumVisible += deltaMin;
+        void supabase
+          .from("shifts")
+          .update({
+            heartbeat_minutes: Math.round(entry.base + entry.accum),
+            visible_minutes: Math.round(entry.baseVisible + entry.accumVisible),
+            last_heartbeat_at: new Date().toISOString(),
+          })
+          .eq("id", s.id);
+      }
+    };
+    const t = setInterval(beat, 60_000);
+    return () => clearInterval(t);
+  }, []);
+
+  // ── Handover lookup ─────────────────────────────────────────────────────
+  // When the staff member picks a creator to clock in on, fetch the most
+  // recent handover note anyone left on that creator in the last 7 days.
+  useEffect(() => {
+    if (!pickedCreatorId) {
+      setHandover(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("shifts")
+        .select("handover_note, end_at, chatters(name)")
+        .eq("creator_id", pickedCreatorId)
+        .not("handover_note", "is", null)
+        .not("end_at", "is", null)
+        .gte("end_at", subDays(new Date(), 7).toISOString())
+        .order("end_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (cancelled) return;
+      if (data?.handover_note) {
+        const by = (data as { chatters?: { name?: string } | null }).chatters?.name ?? null;
+        setHandover({ note: data.handover_note, by, at: data.end_at as string });
+      } else {
+        setHandover(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [pickedCreatorId]);
+
+  // ── Onboarding checklist (self-check) ──────────────────────────────────
+  const myOnboardingItems = useMemo(
+    () => onboardingItems.filter((i) => !i.role || i.role === chatter?.role),
+    [onboardingItems, chatter],
+  );
+  const toggleOnboardingItem = async (item: OnboardingItem) => {
+    if (!chatter) return;
+    const existing = onboardingProgress.find((p) => p.item_id === item.id);
+    if (existing) {
+      const { error } = await supabase.from("staff_onboarding_progress").delete().eq("id", existing.id);
+      if (error) return toast.error(error.message);
+      setOnboardingProgress((prev) => prev.filter((p) => p.id !== existing.id));
+    } else {
+      const { data, error } = await supabase
+        .from("staff_onboarding_progress")
+        .insert({ chatter_id: chatter.id, item_id: item.id, completed_by: chatter.name })
+        .select()
+        .single();
+      if (error) return toast.error(error.message);
+      setOnboardingProgress((prev) => [...prev, data as OnboardingProgress]);
+    }
+  };
   const scheduledShifts = useMemo(
     () => shifts
       .filter((s) => !s.end_at && new Date(s.start_at).getTime() > Date.now())
@@ -438,7 +633,9 @@ function ClockPage() {
     }
   }, [now, activeShifts, maxShiftHours]);
 
-  // Group scheduled shifts into buckets for calendar-like display
+  // Group scheduled shifts into buckets for calendar-like display.
+  // Combines legacy future `shifts` rows with rota plans from the admin's
+  // weekly schedule builder (rota_shifts), deduped on identical start.
   const groupedSchedule = useMemo(() => {
     const groups: { label: string; shifts: Shift[] }[] = [];
     const today: Shift[] = [];
@@ -448,7 +645,11 @@ function ClockPage() {
     const later: Shift[] = [];
     const nextWeekStart = startOfWeek(addWeeks(new Date(), 1), { weekStartsOn: 0 });
     const nextWeekEnd = endOfWeek(addWeeks(new Date(), 1), { weekStartsOn: 0 });
-    for (const s of scheduledShifts) {
+    const upcoming = [
+      ...scheduledShifts,
+      ...rotaShifts.filter((r) => !scheduledShifts.some((s) => s.start_at === r.start_at)),
+    ].sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime());
+    for (const s of upcoming) {
       const d = new Date(s.start_at);
       if (isToday(d)) today.push(s);
       else if (isTomorrow(d)) tomorrow.push(s);
@@ -462,7 +663,7 @@ function ClockPage() {
     if (nextWeek.length) groups.push({ label: "Next week", shifts: nextWeek });
     if (later.length) groups.push({ label: "Later", shifts: later });
     return groups;
-  }, [scheduledShifts]);
+  }, [scheduledShifts, rotaShifts]);
 
   const localTzAbbr = useMemo(() => {
     try {
@@ -524,7 +725,7 @@ function ClockPage() {
       ppv_count: "", ppv_revenue: "", tips_revenue: "",
       custom_revenue: "", message_count: "",
       posts_count: "", upvotes_count: "", comments_received: "", dms_handled: "",
-      notes: "",
+      notes: "", handover: "",
     });
   };
 
@@ -547,6 +748,7 @@ function ClockPage() {
       comments_received: parseInt(clockOutForm.comments_received) || 0,
       dms_handled: parseInt(clockOutForm.dms_handled) || 0,
       notes: clockOutForm.notes.trim() || null,
+      handover_note: clockOutForm.handover.trim() || null,
     };
     const { error } = await supabase.from("shifts").update(payload).eq("id", clockOutShift.id);
     setSavingClockOut(false);
@@ -627,6 +829,12 @@ function ClockPage() {
       localTzAbbr={localTzAbbr}
       now={now}
       maxShiftHours={maxShiftHours}
+      handover={handover}
+      bonusTiers={bonusTiers}
+      allShifts={allShifts}
+      onboardingItems={myOnboardingItems}
+      onboardingProgress={onboardingProgress}
+      toggleOnboardingItem={toggleOnboardingItem}
     />
   );
 
@@ -941,6 +1149,25 @@ function ClockPage() {
                 placeholder="What got done, any context"
               />
             </div>
+
+            {/* Handover — relay-race note for whoever takes the next shift
+                on this creator. */}
+            <div className="space-y-1.5 rounded-xl border border-primary/25 bg-primary/5 p-3">
+              <Label className="text-xs flex items-center gap-1.5">
+                <NotebookPen className="h-3.5 w-3.5 text-primary" />
+                Handover for the next shift
+              </Label>
+              <Textarea
+                value={clockOutForm.handover}
+                onChange={(e) => setClockOutForm({ ...clockOutForm, handover: e.target.value })}
+                placeholder="Whale status, conversations in progress, who to follow up with, topics to avoid…"
+                rows={3}
+                className="resize-none bg-card"
+              />
+              <p className="text-[10px] text-muted-foreground">
+                Shown to the next person who clocks in on this creator.
+              </p>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setClockOutShift(null)}>Cancel</Button>
@@ -984,13 +1211,47 @@ function TodayTab(props: {
   now: number;
   // Effective per-staff cap (hours). Used for the time-left banner.
   maxShiftHours: number;
+  handover: Handover | null;
+  bonusTiers: BonusTier[];
+  allShifts: Shift[];
+  onboardingItems: OnboardingItem[];
+  onboardingProgress: OnboardingProgress[];
+  toggleOnboardingItem: (item: OnboardingItem) => void;
 }) {
   const {
     chatter, creators, assignments, announcements, activeShifts, groupedSchedule,
     pickedCreatorId, setPickedCreatorId, pickedAccountId, setPickedAccountId,
     availableAccounts, needsAccountPicker, clockingIn, onClockIn, openClockOut,
     elapsed, creatorName, localTzAbbr, now, maxShiftHours,
+    handover, bonusTiers, allShifts, onboardingItems, onboardingProgress, toggleOnboardingItem,
   } = props;
+
+  // ── Bonus progress for the current period ─────────────────────────────
+  const myTiers = bonusTiers.filter((t) => !t.role || t.role === chatter.role);
+  const bonusProgress = myTiers.map((t) => {
+    const periodStart = t.period === "month"
+      ? startOfMonth(new Date())
+      : startOfWeek(new Date(), { weekStartsOn: 1 });
+    const inPeriod = allShifts.filter(
+      (s) => s.end_at && new Date(s.start_at) >= periodStart,
+    );
+    let value = 0;
+    if (t.metric === "ppv_revenue") value = inPeriod.reduce((sum, s) => sum + s.ppv_revenue, 0);
+    else if (t.metric === "total_revenue") value = inPeriod.reduce((sum, s) => sum + s.total_revenue, 0);
+    else if (t.metric === "messages") value = inPeriod.reduce((sum, s) => sum + s.message_count, 0);
+    else value = inPeriod.reduce(
+      (sum, s) => sum + (new Date(s.end_at!).getTime() - new Date(s.start_at).getTime()) / 3_600_000, 0,
+    );
+    return { tier: t, value, pct: Math.min(100, (value / t.threshold) * 100) };
+  });
+  const fmtMetric = (metric: BonusTier["metric"], v: number) =>
+    metric === "messages" ? Math.round(v).toLocaleString()
+      : metric === "hours" ? `${v.toFixed(1)}h`
+      : fmt$(v);
+
+  const onboardingDone = onboardingItems.filter(
+    (i) => onboardingProgress.some((p) => p.item_id === i.id),
+  ).length;
 
   const today = groupedSchedule.find((g) => g.label === "Today");
 
@@ -1003,6 +1264,56 @@ function TodayTab(props: {
           Hi {chatter.name.split(" ")[0]} — {format(new Date(), "EEEE, MMM d")}.
         </p>
       </div>
+
+      {/* Onboarding checklist — only while the account is in onboarding */}
+      {chatter.status === "onboarding" && onboardingItems.length > 0 && (
+        <section className="space-y-2">
+          <div className="flex items-center justify-between">
+            <h2 className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/70">
+              Your onboarding
+            </h2>
+            <span className="text-[11px] font-semibold text-primary">
+              {onboardingDone}/{onboardingItems.length} done
+            </span>
+          </div>
+          <div className="rounded-2xl border border-primary/25 bg-primary/5 p-4 space-y-1">
+            {/* Progress bar */}
+            <div className="h-1.5 rounded-full bg-primary/15 overflow-hidden mb-3">
+              <div
+                className="h-full rounded-full bg-primary transition-all duration-500"
+                style={{ width: `${onboardingItems.length > 0 ? (onboardingDone / onboardingItems.length) * 100 : 0}%` }}
+              />
+            </div>
+            {onboardingItems.map((item) => {
+              const done = onboardingProgress.some((p) => p.item_id === item.id);
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => toggleOnboardingItem(item)}
+                  className="w-full flex items-start gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-primary/10 transition-colors"
+                >
+                  <CheckCircle2
+                    className={`h-4 w-4 mt-0.5 shrink-0 transition-colors ${done ? "text-primary" : "text-muted-foreground/30"}`}
+                    fill={done ? "currentColor" : "none"}
+                    stroke={done ? "white" : "currentColor"}
+                  />
+                  <span className="min-w-0">
+                    <span className={`text-sm block ${done ? "line-through text-muted-foreground" : ""}`}>{item.label}</span>
+                    {item.description && !done && (
+                      <span className="text-[11px] text-muted-foreground block mt-0.5">{item.description}</span>
+                    )}
+                  </span>
+                </button>
+              );
+            })}
+            {onboardingDone === onboardingItems.length && (
+              <p className="text-[11px] text-primary font-medium pt-1">
+                🎉 All done — your manager will activate your account.
+              </p>
+            )}
+          </div>
+        </section>
+      )}
 
       {/* Announcements */}
       {announcements.length > 0 && (
@@ -1088,6 +1399,46 @@ function TodayTab(props: {
         </section>
       )}
 
+      {/* Bonus progress — live incentive tracker for the current period */}
+      {bonusProgress.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/70">
+            Bonus progress
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {bonusProgress.map(({ tier, value, pct }) => {
+              const hit = pct >= 100;
+              return (
+                <div
+                  key={tier.id}
+                  className={`rounded-xl border p-4 ${hit ? "border-success/40 bg-success/5" : "border-border bg-card"}`}
+                >
+                  <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <Gift className={`h-3.5 w-3.5 shrink-0 ${hit ? "text-success" : "text-primary"}`} />
+                      <span className="text-xs font-semibold truncate">{tier.label}</span>
+                    </div>
+                    <span className={`text-xs font-bold shrink-0 ${hit ? "text-success" : ""}`}>
+                      {hit ? `+${fmt$(tier.bonus_amount)} 🎉` : fmt$(tier.bonus_amount)}
+                    </span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-secondary overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-700 ${hit ? "bg-success" : "bg-primary"}`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <div className="text-[11px] text-muted-foreground mt-1.5">
+                    {fmtMetric(tier.metric, value)} / {fmtMetric(tier.metric, tier.threshold)} this {tier.period}
+                    {!hit && <> · {fmtMetric(tier.metric, tier.threshold - value)} to go</>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
       {/* Clock in */}
       <section className="space-y-3">
         <h2 className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/70">
@@ -1141,6 +1492,23 @@ function TodayTab(props: {
               <div className="text-[11px] text-muted-foreground">
                 You'll log this account's stats when you clock out.
               </div>
+            </div>
+          )}
+
+          {/* Handover from the previous shift on this creator */}
+          {handover && (
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/8 p-3.5 space-y-1">
+              <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-400">
+                <NotebookPen className="h-3.5 w-3.5" />
+                <span className="text-[11px] font-bold uppercase tracking-wider">
+                  Handover from the last shift
+                </span>
+              </div>
+              <p className="text-sm whitespace-pre-wrap text-foreground/90">{handover.note}</p>
+              <p className="text-[11px] text-muted-foreground">
+                {handover.by ? `— ${handover.by}, ` : "— "}
+                {formatDistanceToNow(new Date(handover.at), { addSuffix: true })}
+              </p>
             </div>
           )}
 
@@ -1485,6 +1853,8 @@ function PayTab({ chatter, payouts, shifts }: { chatter: Chatter; payouts: Payou
 
 // ── Schedule tab ────────────────────────────────────────────────────────────
 
+const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
 function ScheduleTab({
   groupedSchedule, closedShifts, creatorName, chatter,
 }: {
@@ -1493,12 +1863,195 @@ function ScheduleTab({
   creatorName: (id: string) => string;
   chatter: Chatter;
 }) {
+  // ── Self-contained: weekly availability + time-off requests ────────────
+  const [availability, setAvailability] = useState<AvailabilityRow[]>([]);
+  const [timeOff, setTimeOff] = useState<TimeOffRequest[]>([]);
+  // Local edit buffers per weekday (HH:mm strings, "" = not available).
+  const [availDraft, setAvailDraft] = useState<Record<number, { start: string; end: string }>>({});
+  const [toForm, setToForm] = useState({ start: "", end: "", reason: "" });
+  const [savingTo, setSavingTo] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const [{ data: av }, { data: to }] = await Promise.all([
+        supabase.from("staff_availability").select("*").eq("chatter_id", chatter.id),
+        supabase.from("time_off_requests").select("*").eq("chatter_id", chatter.id).order("created_at", { ascending: false }),
+      ]);
+      const rows = (av ?? []) as unknown as AvailabilityRow[];
+      setAvailability(rows);
+      const draft: Record<number, { start: string; end: string }> = {};
+      for (let d = 0; d < 7; d++) {
+        const row = rows.find((r) => r.weekday === d);
+        draft[d] = row
+          ? { start: row.start_time.slice(0, 5), end: row.end_time.slice(0, 5) }
+          : { start: "", end: "" };
+      }
+      setAvailDraft(draft);
+      setTimeOff((to ?? []) as unknown as TimeOffRequest[]);
+    })();
+  }, [chatter.id]);
+
+  const saveDay = async (weekday: number) => {
+    const d = availDraft[weekday];
+    const existing = availability.find((r) => r.weekday === weekday);
+    if (!d.start || !d.end) {
+      // Cleared → delete the row if there was one.
+      if (existing) {
+        const { error } = await supabase.from("staff_availability").delete().eq("id", existing.id);
+        if (error) return toast.error(error.message);
+        setAvailability((prev) => prev.filter((r) => r.id !== existing.id));
+        toast.success(`${WEEKDAYS[weekday]} cleared`);
+      }
+      return;
+    }
+    if (d.start >= d.end) return toast.error("End time must be after start time.");
+    if (existing) {
+      const { error } = await supabase
+        .from("staff_availability")
+        .update({ start_time: d.start, end_time: d.end })
+        .eq("id", existing.id);
+      if (error) return toast.error(error.message);
+      setAvailability((prev) => prev.map((r) => r.id === existing.id ? { ...r, start_time: d.start, end_time: d.end } : r));
+    } else {
+      const { data, error } = await supabase
+        .from("staff_availability")
+        .insert({ chatter_id: chatter.id, weekday, start_time: d.start, end_time: d.end })
+        .select()
+        .single();
+      if (error) return toast.error(error.message);
+      setAvailability((prev) => [...prev, data as AvailabilityRow]);
+    }
+    toast.success(`${WEEKDAYS[weekday]} availability saved`);
+  };
+
+  const submitTimeOff = async () => {
+    if (!toForm.start || !toForm.end) return toast.error("Pick start and end dates.");
+    if (toForm.start > toForm.end) return toast.error("End date is before start date.");
+    setSavingTo(true);
+    const { data, error } = await supabase
+      .from("time_off_requests")
+      .insert({
+        chatter_id: chatter.id,
+        start_date: toForm.start,
+        end_date: toForm.end,
+        reason: toForm.reason.trim() || null,
+      })
+      .select()
+      .single();
+    setSavingTo(false);
+    if (error) return toast.error(error.message);
+    setTimeOff((prev) => [data as TimeOffRequest, ...prev]);
+    setToForm({ start: "", end: "", reason: "" });
+    toast.success("Time-off request sent");
+  };
+
+  const cancelTimeOff = async (id: string) => {
+    const { error } = await supabase.from("time_off_requests").delete().eq("id", id).eq("status", "pending");
+    if (error) return toast.error(error.message);
+    setTimeOff((prev) => prev.filter((r) => r.id !== id));
+    toast.success("Request withdrawn");
+  };
+
+  const toStatusStyles: Record<TimeOffRequest["status"], string> = {
+    pending:  "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30",
+    approved: "bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border-emerald-500/30",
+    denied:   "bg-destructive/10 text-destructive border-destructive/30",
+  };
+
   return (
     <div className="space-y-8">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Schedule</h1>
         <p className="text-sm text-muted-foreground mt-1">Your upcoming and past shifts.</p>
       </div>
+
+      {/* My availability */}
+      <section className="space-y-3">
+        <h2 className="text-base font-semibold">My weekly availability</h2>
+        <p className="text-xs text-muted-foreground -mt-2">
+          Times are in your local timezone. Your manager sees these when building the rota — leave a day blank if you can't work it.
+        </p>
+        <div className="rounded-2xl border border-border bg-card divide-y divide-border">
+          {WEEKDAYS.map((label, weekday) => {
+            const d = availDraft[weekday] ?? { start: "", end: "" };
+            return (
+              <div key={weekday} className="flex items-center gap-3 px-4 py-2.5 flex-wrap">
+                <span className="text-sm font-medium w-24">{label}</span>
+                <Input
+                  type="time"
+                  value={d.start}
+                  onChange={(e) => setAvailDraft((prev) => ({ ...prev, [weekday]: { ...d, start: e.target.value } }))}
+                  className="h-9 w-28"
+                />
+                <span className="text-xs text-muted-foreground">to</span>
+                <Input
+                  type="time"
+                  value={d.end}
+                  onChange={(e) => setAvailDraft((prev) => ({ ...prev, [weekday]: { ...d, end: e.target.value } }))}
+                  className="h-9 w-28"
+                />
+                <Button size="sm" variant="outline" className="ml-auto" onClick={() => saveDay(weekday)}>
+                  Save
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* Time off */}
+      <section className="space-y-3">
+        <h2 className="text-base font-semibold">Time off</h2>
+        <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_2fr_auto] gap-2 items-end">
+            <div className="space-y-1">
+              <Label className="text-xs">From</Label>
+              <Input type="date" value={toForm.start} onChange={(e) => setToForm({ ...toForm, start: e.target.value })} className="h-9" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">To</Label>
+              <Input type="date" value={toForm.end} onChange={(e) => setToForm({ ...toForm, end: e.target.value })} className="h-9" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Reason (optional)</Label>
+              <Input value={toForm.reason} onChange={(e) => setToForm({ ...toForm, reason: e.target.value })} placeholder="Vacation, appointment…" className="h-9" />
+            </div>
+            <Button size="sm" onClick={submitTimeOff} disabled={savingTo} className="h-9">
+              <CalendarOff className="h-3.5 w-3.5 mr-1.5" />
+              Request
+            </Button>
+          </div>
+          {timeOff.length > 0 && (
+            <div className="space-y-1.5 pt-1">
+              {timeOff.map((r) => (
+                <div key={r.id} className="flex items-center justify-between gap-3 rounded-lg border border-border bg-background/50 px-3 py-2 flex-wrap">
+                  <div className="min-w-0">
+                    <span className="text-sm font-medium">
+                      {format(parseISO(r.start_date), "MMM d")}
+                      {r.end_date !== r.start_date && <> – {format(parseISO(r.end_date), "MMM d")}</>}
+                    </span>
+                    {r.reason && <span className="text-xs text-muted-foreground ml-2">{r.reason}</span>}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`text-[10px] px-2 py-0.5 rounded border font-medium ${toStatusStyles[r.status]}`}>
+                      {r.status === "pending" ? "Pending" : r.status === "approved" ? "Approved" : "Denied"}
+                    </span>
+                    {r.status === "pending" && (
+                      <button
+                        onClick={() => cancelTimeOff(r.id)}
+                        className="text-muted-foreground hover:text-destructive transition-colors"
+                        title="Withdraw request"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
 
       {/* Upcoming */}
       <section className="space-y-3">
