@@ -19,7 +19,8 @@ import { ListChecks, Plus, Trash2, Check, X, ArrowRight, GripVertical, Workflow 
 import {
   completeActiveStep, skipStep, startPipeline, reassignStep, cancelPipeline,
   addStandaloneTask, completeStandaloneTask, currentUsername,
-  type TeamMember, type Template, type TemplateStep, type Pipeline, type PipelineStep, type StandaloneTask, type NewStep,
+  generateDueRecurringTasks, listRecurringTasks, createRecurringTask, deleteRecurringTask,
+  type TeamMember, type Template, type TemplateStep, type Pipeline, type PipelineStep, type StandaloneTask, type NewStep, type RecurringTask,
 } from "@/lib/tasks";
 
 export const Route = createFileRoute("/tasks")({ component: TasksPage });
@@ -68,7 +69,8 @@ function TasksPage() {
     setStandalone((st ?? []) as StandaloneTask[]);
     if (!silent) setLoading(false);
   };
-  useEffect(() => { load(); }, []);
+  // On open: materialise any recurring tasks due today (idempotent), then load.
+  useEffect(() => { (async () => { await generateDueRecurringTasks(); load(); })(); }, []);
   const refresh = () => load(true);
 
   const memberName = (id: string | null) => members.find((m) => m.id === id)?.name ?? "—";
@@ -519,7 +521,111 @@ function StartTab({ members, onCreated }: { members: TeamMember[]; onCreated: ()
         <p className="mb-3 text-xs text-muted-foreground">Not a pipeline — a single task for one person.</p>
         <AddTaskDialog members={members} onAdded={onCreated} />
       </Card>
+
+      <RecurringManager members={members} onChanged={onCreated} />
     </div>
+  );
+}
+
+// ── Repeating tasks ──────────────────────────────────────────────────────────
+const RECUR_PRESETS = [
+  { label: "Daily", d: 1 },
+  { label: "Weekly", d: 7 },
+  { label: "Every 2 weeks", d: 14 },
+  { label: "Monthly", d: 30 },
+];
+const cadenceLabel = (d: number) =>
+  d === 1 ? "every day" : d === 7 ? "every week" : d === 14 ? "every 2 weeks" : d === 30 ? "monthly" : `every ${d} days`;
+
+function RecurringManager({ members, onChanged }: { members: TeamMember[]; onChanged: () => void }) {
+  const emptyR = { title: "", assignee_id: "", interval_days: 7, start_date: format(new Date(), "yyyy-MM-dd") };
+  const [rules, setRules] = useState<RecurringTask[]>([]);
+  const [f, setF] = useState(emptyR);
+  const [saving, setSaving] = useState(false);
+
+  const load = async () => setRules(await listRecurringTasks());
+  useEffect(() => { load(); }, []);
+
+  const memberName = (id: string) => members.find((m) => m.id === id)?.name ?? "—";
+
+  const create = async () => {
+    setSaving(true);
+    const { error } = await createRecurringTask(f);
+    setSaving(false);
+    if (error) { toast.error(error); return; }
+    toast.success("Repeating task created");
+    setF(emptyR);
+    load();
+    onChanged();
+  };
+  const remove = async (id: string) => {
+    const { error } = await deleteRecurringTask(id);
+    if (error) toast.error(error); else { toast.success("Stopped repeating"); load(); }
+  };
+
+  return (
+    <Card className="p-5">
+      <h3 className="mb-1 text-sm font-semibold">Repeating tasks</h3>
+      <p className="mb-3 text-xs text-muted-foreground">Auto-creates a task on a schedule. New occurrences appear (and ping the assignee) whenever someone opens Tasks on/after the due day.</p>
+      <div className="space-y-3">
+        <div className="grid gap-1.5">
+          <Label>Task</Label>
+          <Input value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} placeholder="e.g. Post weekly recap" />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-1.5">
+            <Label>Assignee</Label>
+            <Select value={f.assignee_id} onValueChange={(v) => setF({ ...f, assignee_id: v })}>
+              <SelectTrigger><SelectValue placeholder="Pick a member" /></SelectTrigger>
+              <SelectContent>{members.map((m) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-1.5">
+            <Label>Starts</Label>
+            <Input type="date" value={f.start_date} onChange={(e) => setF({ ...f, start_date: e.target.value })} />
+          </div>
+        </div>
+        <div className="grid gap-1.5">
+          <Label>Repeat</Label>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {RECUR_PRESETS.map((p) => (
+              <button
+                key={p.d}
+                type="button"
+                onClick={() => setF({ ...f, interval_days: p.d })}
+                className={`rounded-full border px-2.5 py-1 text-xs transition-all ${f.interval_days === p.d ? "border-primary/40 bg-primary/10 text-primary font-medium" : "border-border text-muted-foreground hover:text-foreground"}`}
+              >
+                {p.label}
+              </button>
+            ))}
+            <span className="ml-1 text-xs text-muted-foreground">or every</span>
+            <Input type="number" min={1} value={f.interval_days} onChange={(e) => setF({ ...f, interval_days: Number(e.target.value) })} className="h-8 w-16" />
+            <span className="text-xs text-muted-foreground">days</span>
+          </div>
+        </div>
+        <Button className="w-full" onClick={create} disabled={saving || !f.title.trim() || !f.assignee_id}>
+          {saving ? "Saving…" : "Create repeating task"}
+        </Button>
+      </div>
+
+      {rules.length > 0 && (
+        <div className="mt-4 space-y-1.5">
+          <div className="text-xs font-medium text-muted-foreground">Active repeats</div>
+          {rules.map((r) => (
+            <div key={r.id} className="flex items-center justify-between gap-2 rounded border border-border px-2.5 py-1.5 text-xs">
+              <div className="min-w-0 truncate">
+                <span className="font-medium">{r.title}</span>
+                <span className="text-muted-foreground"> · {cadenceLabel(r.interval_days)} · {memberName(r.assignee_id)}</span>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <span className="text-muted-foreground">next {format(parseISO(r.next_run), "MMM d")}</span>
+                <button onClick={() => remove(r.id)} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
   );
 }
 

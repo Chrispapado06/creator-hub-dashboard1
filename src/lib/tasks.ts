@@ -255,3 +255,66 @@ export async function completeStandaloneTask(id: string): Promise<{ error: strin
     .eq("id", id);
   return { error: error?.message ?? null };
 }
+
+// ── Recurring tasks ──────────────────────────────────────────────────────────
+export type RecurringTask = {
+  id: string;
+  title: string;
+  description: string | null;
+  assignee_id: string;
+  interval_days: number;
+  next_run: string;
+  active: boolean;
+  created_at: string;
+};
+
+/**
+ * Materialise any recurring occurrences due today, then ping the assignees of
+ * whatever got created. Call this when the Tasks page loads — the DB function
+ * is idempotent (FOR UPDATE SKIP LOCKED), so several open tabs is harmless.
+ */
+export async function generateDueRecurringTasks(): Promise<void> {
+  const { data, error } = await sb.rpc("generate_due_recurring_tasks", {});
+  if (error) { console.error("[recurring] generate failed:", error.message); return; }
+  const created = (data?.created ?? []) as { title: string; assignee_discord_user_id: string | null }[];
+  for (const c of created) {
+    if (c.assignee_discord_user_id) {
+      await notify({
+        content: `🔁 Recurring task due: **${c.title}**`,
+        mentionUserIds: [c.assignee_discord_user_id],
+      }).catch(() => {});
+    }
+  }
+}
+
+export async function listRecurringTasks(): Promise<RecurringTask[]> {
+  const { data } = await sb.from("recurring_tasks").select("*").order("created_at", { ascending: false });
+  return (data ?? []) as RecurringTask[];
+}
+
+export async function createRecurringTask(args: {
+  title: string;
+  assignee_id: string;
+  interval_days: number;
+  start_date: string;
+  description?: string | null;
+}): Promise<{ error: string | null }> {
+  if (!args.title.trim()) return { error: "Title is required" };
+  if (!args.assignee_id) return { error: "Pick an assignee" };
+  if (!args.interval_days || args.interval_days < 1) return { error: "Repeat interval must be at least 1 day" };
+  if (!args.start_date) return { error: "Pick a start date" };
+  const { error } = await sb.from("recurring_tasks").insert({
+    title: args.title.trim(),
+    description: args.description?.trim() || null,
+    assignee_id: args.assignee_id,
+    interval_days: args.interval_days,
+    next_run: args.start_date,
+    created_by: currentUsername(),
+  });
+  return { error: error?.message ?? null };
+}
+
+export async function deleteRecurringTask(id: string): Promise<{ error: string | null }> {
+  const { error } = await sb.from("recurring_tasks").delete().eq("id", id);
+  return { error: error?.message ?? null };
+}
