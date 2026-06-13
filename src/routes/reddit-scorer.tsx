@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -50,15 +50,23 @@ const bandStyles: Record<string, string> = {
 const emptyForm = {
   creatorId: "" as string,
   creatorName: "",
-  nicheFit: 5,
-  contentVolume: 5,
-  visualAppeal: 5,
-  existingReach: 3,
-  verificationWilling: false,
-  complianceOk: true,
+  // Matching profile (drives niche_demand + subreddit eligibility)
   niche: "",
   startingKarma: 0,
   startingAccountAgeDays: 0,
+  // content_supply (derived)
+  contentPiecesPerWeek: 0,
+  redditNativeContent: false,
+  // verification_willingness (derived)
+  verificationWilling: false,
+  // manual, scored against guidance
+  competitorAvgUpvotes: 0,
+  conversionHistoryPct: 0,
+};
+
+const sourceChip: Record<"derived" | "manual", string> = {
+  derived: "bg-cyan-500/15 text-cyan-600 border-cyan-500/30",
+  manual: "bg-amber-500/15 text-amber-600 border-amber-500/30",
 };
 
 const emptyCatalogForm: Omit<CatalogSubreddit, "id"> = {
@@ -111,47 +119,12 @@ function AssessTab() {
   const [creators, setCreators] = useState<Creator[]>([]);
   const [catalog, setCatalog] = useState<CatalogSubreddit[]>([]);
   const [form, setForm] = useState({ ...emptyForm });
-  const [result, setResult] = useState<ViabilityResult | null>(null);
-  const [plan, setPlan] = useState<AccountPlan | null>(null);
-  const [matches, setMatches] = useState<SubredditMatch[]>([]);
+  const [settings, setSettings] = useState<ScorerSettings>(DEFAULT_SETTINGS);
   const [launchPlan, setLaunchPlan] = useState<string>("");
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
-
-  const [settings, setSettings] = useState<ScorerSettings>(DEFAULT_SETTINGS);
   const [analyzing, setAnalyzing] = useState(false);
   const [vision, setVision] = useState<CreatorVisionResult | null>(null);
-
-  const onAnalyzePhotos = async (files: FileList | null) => {
-    if (!files || files.length === 0) return;
-    const picked = Array.from(files).filter((f) => isAllowedMediaType(f.type)).slice(0, MAX_IMAGES);
-    if (picked.length === 0) { toast.error("Upload JPG, PNG, WebP or GIF images."); return; }
-    setAnalyzing(true);
-    try {
-      const images = await Promise.all(picked.map(fileToBase64));
-      const result = await analyzeCreatorPhotos(images);
-      setVision(result);
-      if (result.compliance_concern) {
-        toast.error("Compliance concern flagged — review before proceeding.");
-      }
-      // The scan drives the photo-judgeable rubric criteria + niche tags.
-      const existing = form.niche.split(",").map((s) => s.trim()).filter(Boolean);
-      const merged = Array.from(new Set([...existing, ...result.niche_tags]));
-      set({
-        visualAppeal: result.visual_appeal,
-        nicheFit: result.niche_demand,
-        complianceOk: !result.compliance_concern,
-        niche: merged.join(", "),
-      });
-      if (!result.compliance_concern) {
-        toast.success(`Scan complete — ${result.verdict.toUpperCase()} prospect. Visual appeal & niche demand pre-filled.`);
-      }
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Scan failed");
-    } finally {
-      setAnalyzing(false);
-    }
-  };
 
   useEffect(() => {
     supabase.from("creators").select("id, name").order("name").then(({ data }) => setCreators((data ?? []) as Creator[]));
@@ -161,39 +134,74 @@ function AssessTab() {
 
   const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }));
 
-  const runAssessment = () => {
-    const parsed = ViabilityInputsSchema.safeParse({
-      creatorName: form.creatorName.trim(),
-      creatorId: form.creatorId || null,
-      nicheFit: form.nicheFit,
-      contentVolume: form.contentVolume,
-      visualAppeal: form.visualAppeal,
-      existingReach: form.existingReach,
-      verificationWilling: form.verificationWilling,
-      complianceOk: form.complianceOk,
-      niche: form.niche.split(",").map((s) => s.trim()).filter(Boolean),
-      startingKarma: Number(form.startingKarma) || 0,
-      startingAccountAgeDays: Number(form.startingAccountAgeDays) || 0,
-    });
-    if (!parsed.success) {
-      toast.error(parsed.error.issues[0]?.message ?? "Invalid inputs");
-      return;
+  const nicheTags = useMemo(
+    () => form.niche.split(",").map((s) => s.trim()).filter(Boolean),
+    [form.niche],
+  );
+
+  // Build validated inputs. Name defaults to a placeholder so the verdict
+  // previews live as you type; a real name is only required to Save.
+  const inputs = useMemo(() => ({
+    creatorName: form.creatorName.trim() || "Prospect",
+    creatorId: form.creatorId || null,
+    niche: nicheTags,
+    startingKarma: Number(form.startingKarma) || 0,
+    startingAccountAgeDays: Number(form.startingAccountAgeDays) || 0,
+    contentPiecesPerWeek: Number(form.contentPiecesPerWeek) || 0,
+    redditNativeContent: form.redditNativeContent,
+    verificationWilling: form.verificationWilling,
+    competitorAvgUpvotes: Number(form.competitorAvgUpvotes) || 0,
+    conversionHistoryPct: Number(form.conversionHistoryPct) || 0,
+  }), [form, nicheTags]);
+
+  const parsed = useMemo(() => ViabilityInputsSchema.safeParse(inputs), [inputs]);
+
+  // Everything is CALCULATED live — niche_demand from the match roll-up, the
+  // verdict from the weighted rubric. No subjective rating anywhere.
+  const matches = useMemo(
+    () => (parsed.success ? rankSubreddits(parsed.data, catalog, new Date(), 25) : []),
+    [parsed, catalog],
+  );
+  const matchStats = useMemo(
+    () => ({ matchCount: matches.length, combinedMembers: matches.reduce((s, m) => s + (m.subreddit.subscribers || 0), 0) }),
+    [matches],
+  );
+  const result = useMemo(
+    () => (parsed.success
+      ? scoreViability(parsed.data, matchStats, { weights: settings.rubricWeights, guidance: settings.guidance })
+      : null),
+    [parsed, matchStats, settings],
+  );
+  const plan = useMemo(() => (result ? calcAccountsAndProxies(result.band, settings.capacity) : null), [result, settings]);
+
+  const onAnalyzePhotos = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const picked = Array.from(files).filter((f) => isAllowedMediaType(f.type)).slice(0, MAX_IMAGES);
+    if (picked.length === 0) { toast.error("Upload JPG, PNG, WebP or GIF images."); return; }
+    setAnalyzing(true);
+    try {
+      const images = await Promise.all(picked.map(fileToBase64));
+      const v = await analyzeCreatorPhotos(images);
+      setVision(v);
+      if (v.compliance_concern) toast.error("Compliance concern flagged — review before proceeding.");
+      // The scan only PREFILLS objective inputs (niche tags + whether the
+      // content looks Reddit-native). It never sets the score — its
+      // marketability read stays advisory.
+      const merged = Array.from(new Set([...nicheTags, ...v.niche_tags]));
+      set({ niche: merged.join(", "), redditNativeContent: v.reddit_native_content });
+      if (!v.compliance_concern) toast.success(`Scan complete — ${v.verdict.toUpperCase()} read. Niche tags + Reddit-native pre-filled.`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Scan failed");
+    } finally {
+      setAnalyzing(false);
     }
-    // Score + size using the admin-tuned settings (falls back to defaults).
-    const r = scoreViability(parsed.data, settings.rubricWeights);
-    const p = calcAccountsAndProxies(r.band, settings.capacity);
-    const m = rankSubreddits(parsed.data, catalog, new Date(), 25);
-    setResult(r);
-    setPlan(p);
-    setMatches(m);
-    setLaunchPlan("");
   };
 
   const generatePlan = async () => {
     if (!result || !plan) return;
     setGenerating(true);
     try {
-      const text = await generateLaunchPlan({ creatorName: form.creatorName.trim(), result, accountPlan: plan, matches });
+      const text = await generateLaunchPlan({ creatorName: form.creatorName.trim() || "Prospect", result, accountPlan: plan, matches });
       setLaunchPlan(text);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to generate launch plan");
@@ -204,11 +212,12 @@ function AssessTab() {
 
   const saveAssessment = async () => {
     if (!result || !plan) return;
+    if (!form.creatorName.trim()) { toast.error("Enter the creator / prospect name first."); return; }
     setSaving(true);
     const { error } = await sb.from("reddit_assessments").insert({
       creator_id: form.creatorId || null,
       creator_name: form.creatorName.trim(),
-      inputs: form,
+      inputs: { ...inputs, creatorName: form.creatorName.trim() },
       score: result.score,
       band: result.band,
       breakdown: result.breakdown,
@@ -226,8 +235,8 @@ function AssessTab() {
     <div className="mt-4 grid gap-6 lg:grid-cols-2">
       {/* Inputs */}
       <Card className="p-5">
-        <h2 className="mb-1 text-lg font-semibold">Prospect inputs</h2>
-        <p className="mb-4 text-xs text-muted-foreground">Evaluating a potential new model? Scan her photos first — it grades the visual criteria for you. Or pick an existing creator to re-assess.</p>
+        <h2 className="mb-1 text-lg font-semibold">Assessment inputs</h2>
+        <p className="mb-4 text-xs text-muted-foreground">Objective facts only — the verdict is calculated from them. Two criteria (the amber ones) are measured numbers; the rest derive automatically.</p>
         <div className="space-y-4">
           <div className="grid gap-2">
             <Label>Creator / prospect name</Label>
@@ -243,12 +252,12 @@ function AssessTab() {
             <Input placeholder="…or type a new prospect's name" value={form.creatorName} onChange={(e) => set({ creatorName: e.target.value, creatorId: "" })} />
           </div>
 
-          {/* ── AI prospect scan ─────────────────────────────────────── */}
+          {/* ── AI prospect scan (advisory; prefills niche + reddit-native) ── */}
           <div className="rounded-xl border border-primary/25 bg-primary/5 p-3.5">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-1.5 text-sm font-semibold">
                 <Sparkles className="h-4 w-4 text-primary" />
-                AI prospect scan
+                AI prospect scan <span className="text-[10px] font-normal text-muted-foreground">(advisory)</span>
               </div>
               <label className={`inline-flex cursor-pointer items-center gap-1.5 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:opacity-90 ${analyzing ? "pointer-events-none opacity-60" : ""}`}>
                 {analyzing ? "Scanning…" : vision ? "Re-scan photos" : "Upload photos"}
@@ -257,7 +266,7 @@ function AssessTab() {
             </div>
             {!vision ? (
               <p className="mt-1.5 text-xs text-muted-foreground">
-                Upload up to {MAX_IMAGES} photos. Claude grades her marketability for Reddit — visual selling power and niche demand — and gives a go/no-go verdict. Honest scoring: average prospects land mid-range.
+                Optional gut-check. Claude reads her marketability and pre-fills the niche tags + whether the content looks Reddit-native. It does <strong>not</strong> set the score — the verdict below is always calculated.
               </p>
             ) : (
               <div className="mt-3 space-y-2.5">
@@ -269,138 +278,142 @@ function AssessTab() {
                 )}
                 <div className="flex items-center gap-3">
                   <Badge className={`border px-2.5 py-1 text-sm uppercase ${bandStyles[vision.verdict]}`}>{vision.verdict}</Badge>
-                  <div className="flex gap-4 text-sm">
-                    <div><span className="font-bold tabular-nums">{vision.visual_appeal}</span><span className="text-muted-foreground">/10 appeal</span></div>
-                    <div><span className="font-bold tabular-nums">{vision.niche_demand}</span><span className="text-muted-foreground">/10 demand</span></div>
-                    <div className="text-muted-foreground">{vision.face_visible ? "face shown" : "no face"}</div>
-                  </div>
+                  <span className="text-xs text-muted-foreground">AI read of marketability — advisory only</span>
                 </div>
                 {vision.reasoning && <p className="text-xs text-foreground/80">{vision.reasoning}</p>}
                 {vision.standout && (
                   <p className="text-xs"><span className="font-medium">Make-or-break: </span><span className="text-muted-foreground">{vision.standout}</span></p>
                 )}
-                <p className="text-[11px] text-muted-foreground">Visual appeal, niche demand &amp; tags pre-filled below — adjust if you disagree, then add the inputs only you know (content volume, reach, verification).</p>
               </div>
             )}
           </div>
 
-          <RatingRow label="Niche fit / demand" value={form.nicheFit} onChange={(v) => set({ nicheFit: v })} />
-          <RatingRow label="Content volume" value={form.contentVolume} onChange={(v) => set({ contentVolume: v })} />
-          <RatingRow label="Visual appeal" value={form.visualAppeal} onChange={(v) => set({ visualAppeal: v })} />
-          <RatingRow label="Existing reach" value={form.existingReach} onChange={(v) => set({ existingReach: v })} />
-
-          <ToggleRow label="Willing to verify" hint="Unlocks verification-gated subs" checked={form.verificationWilling} onChange={(v) => set({ verificationWilling: v })} />
-          <ToggleRow label="Reddit-compliant content" hint="No banned categories" checked={form.complianceOk} onChange={(v) => set({ complianceOk: v })} />
-
-          <div className="grid gap-2">
-            <Label>Niche tags (comma-separated)</Label>
-            <Input placeholder="fitness, cosplay, gonewild" value={form.niche} onChange={(e) => set({ niche: e.target.value })} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
+          {/* ── Profile facts (feed the derived criteria) ──────────────── */}
+          <div className="space-y-3 rounded-xl border border-border p-3.5">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70">Profile facts</div>
             <div className="grid gap-2">
-              <Label>Starting karma</Label>
-              <Input type="number" min={0} value={form.startingKarma} onChange={(e) => set({ startingKarma: Number(e.target.value) })} />
+              <Label>Niche tags (comma-separated)</Label>
+              <Input placeholder="fitness, cosplay, gonewild" value={form.niche} onChange={(e) => set({ niche: e.target.value })} />
+              <p className="text-[11px] text-muted-foreground">Drives <strong>niche demand</strong> by matching the subreddit catalog.</p>
             </div>
-            <div className="grid gap-2">
-              <Label>Account age (days)</Label>
-              <Input type="number" min={0} value={form.startingAccountAgeDays} onChange={(e) => set({ startingAccountAgeDays: Number(e.target.value) })} />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label>Content pieces / week</Label>
+                <Input type="number" min={0} value={form.contentPiecesPerWeek} onChange={(e) => set({ contentPiecesPerWeek: Number(e.target.value) })} />
+              </div>
+              <div className="grid gap-1.5">
+                <Label>Starting karma</Label>
+                <Input type="number" min={0} value={form.startingKarma} onChange={(e) => set({ startingKarma: Number(e.target.value) })} />
+              </div>
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label>Account age (days)</Label>
+                <Input type="number" min={0} value={form.startingAccountAgeDays} onChange={(e) => set({ startingAccountAgeDays: Number(e.target.value) })} />
+              </div>
+            </div>
+            <ToggleRow label="Reddit-native content" hint="Casual/amateur (not studio) → feeds content supply" checked={form.redditNativeContent} onChange={(v) => set({ redditNativeContent: v })} />
+            <ToggleRow label="Willing to verify" hint="Unlocks verification-gated subs" checked={form.verificationWilling} onChange={(v) => set({ verificationWilling: v })} />
           </div>
 
-          <Button className="w-full" onClick={runAssessment}>Assess viability</Button>
+          {/* ── Manual benchmarks (scored against guidance) ────────────── */}
+          <div className="space-y-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3.5">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-amber-600">Benchmarks — measured numbers</div>
+            <div className="grid gap-1.5">
+              <Label>Competitor avg upvotes</Label>
+              <Input type="number" min={0} value={form.competitorAvgUpvotes} onChange={(e) => set({ competitorAvgUpvotes: Number(e.target.value) })} />
+              <p className="text-[11px] text-muted-foreground">Typical upvotes comparable creators get in this niche. Scored vs {settings.guidance.benchmarkTargetUpvotes} target.</p>
+            </div>
+            <div className="grid gap-1.5">
+              <Label>Conversion history (%)</Label>
+              <Input type="number" min={0} step="0.1" value={form.conversionHistoryPct} onChange={(e) => set({ conversionHistoryPct: Number(e.target.value) })} />
+              <p className="text-[11px] text-muted-foreground">Observed/expected Reddit→OF conversion for comparables. Scored vs {settings.guidance.conversionTargetPct}% target.</p>
+            </div>
+          </div>
         </div>
       </Card>
 
-      {/* Results */}
+      {/* Results — always live (calculated) */}
       <div className="space-y-4">
-        {!result ? (
-          <Card className="flex h-full items-center justify-center p-10 text-center text-sm text-muted-foreground">
-            Fill in the inputs and run an assessment to see the score, infrastructure needs, and matched subreddits.
-          </Card>
-        ) : (
-          <>
-            <Card className="p-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-sm text-muted-foreground">Viability score</div>
-                  <div className="text-4xl font-bold">{result.score}<span className="text-lg text-muted-foreground">/100</span></div>
-                </div>
-                <Badge className={`border px-3 py-1 text-sm uppercase ${bandStyles[result.band]}`}>{result.band}</Badge>
-              </div>
-              <div className="mt-4 space-y-1.5">
-                {result.breakdown.map((c) => (
-                  <div key={c.key} className="flex items-center gap-2 text-sm">
-                    <div className="w-44 shrink-0 text-muted-foreground">{c.label}</div>
+        <Card className="p-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm text-muted-foreground">Calculated verdict</div>
+              <div className="text-4xl font-bold">{result ? result.score : "—"}<span className="text-lg text-muted-foreground">/100</span></div>
+            </div>
+            {result && <Badge className={`border px-3 py-1 text-sm uppercase ${bandStyles[result.band]}`}>{result.band}</Badge>}
+          </div>
+          {result && (
+            <div className="mt-4 space-y-2.5">
+              {result.breakdown.map((c) => (
+                <div key={c.key}>
+                  <div className="flex items-center gap-2 text-sm">
+                    <div className="flex w-48 shrink-0 items-center gap-1.5">
+                      <span className="truncate">{c.label}</span>
+                      <span className={`shrink-0 rounded border px-1 py-px text-[9px] uppercase ${sourceChip[c.source]}`}>{c.source}</span>
+                    </div>
                     <div className="h-2 flex-1 overflow-hidden rounded bg-muted">
-                      <div className="h-full bg-primary" style={{ width: `${(c.points / c.weight) * 100}%` }} />
+                      <div className="h-full bg-primary" style={{ width: `${c.weight > 0 ? (c.points / c.weight) * 100 : 0}%` }} />
                     </div>
-                    <div className="w-12 text-right tabular-nums">{c.points}/{c.weight}</div>
+                    <div className="w-14 text-right tabular-nums text-xs">{c.points}/{c.weight}</div>
                   </div>
-                ))}
-              </div>
-            </Card>
-
-            {plan && (
-              <Card className="p-5">
-                <h3 className="mb-3 flex items-center gap-2 font-semibold"><Server className="h-4 w-4" /> Infrastructure</h3>
-                <div className="grid grid-cols-3 gap-3 text-center">
-                  <Stat icon={<Users className="h-4 w-4" />} label="Accounts" value={plan.accountsNeeded} />
-                  <Stat icon={<Server className="h-4 w-4" />} label="4G proxies" value={plan.proxiesNeeded} />
-                  <Stat icon={<Sparkles className="h-4 w-4" />} label="Posts/day" value={plan.targetDailyPosts} />
+                  <div className="ml-[12.5rem] text-[11px] text-muted-foreground">{c.derivation}</div>
                 </div>
-                <p className="mt-3 text-xs text-muted-foreground">Includes a 20% shadowban buffer · 1 dedicated proxy per account · launch accounts post {plan.postsPerAccountPerDay}/day while warming.</p>
-              </Card>
-            )}
+              ))}
+            </div>
+          )}
+        </Card>
 
-            <Card className="p-5">
-              <h3 className="mb-3 font-semibold">Matched subreddits ({matches.length})</h3>
-              {matches.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No subreddits matched. Add entries in the catalog tab, or the creator's niche/verification settings excluded them all.</p>
-              ) : (
-                <div className="max-h-72 space-y-1.5 overflow-auto">
-                  {matches.map((m) => (
-                    <div key={m.subreddit.id} className="flex items-center gap-2 rounded border border-border px-3 py-1.5 text-sm">
-                      <span className="font-medium">r/{m.subreddit.name}</span>
-                      <span className="text-xs text-muted-foreground">{m.subreddit.subscribers.toLocaleString()}</span>
-                      <div className="ml-auto flex items-center gap-1">
-                        {m.nicheOverlap.length > 0 && <Badge variant="secondary" className="text-[10px]">{m.nicheOverlap.join(", ")}</Badge>}
-                        {!m.eligibleNow && <Badge className="border bg-warning/15 text-warning border-warning/30 text-[10px]">warm-up</Badge>}
-                        {m.stale && <Badge className="border bg-muted text-muted-foreground text-[10px]">stale</Badge>}
-                        {m.subreddit.verification_required && <Badge className="text-[10px]"><ShieldCheck className="mr-1 h-3 w-3" />verify</Badge>}
-                        <span className="w-10 text-right tabular-nums text-xs text-muted-foreground">{m.score}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
-
-            <Card className="p-5">
-              <div className="mb-3 flex items-center justify-between">
-                <h3 className="flex items-center gap-2 font-semibold"><Sparkles className="h-4 w-4" /> AI launch plan</h3>
-                <div className="flex gap-2">
-                  <Button size="sm" variant="outline" onClick={generatePlan} disabled={generating}>{generating ? "Generating…" : "Generate"}</Button>
-                  <Button size="sm" onClick={saveAssessment} disabled={saving}><Save className="mr-1 h-3.5 w-3.5" />{saving ? "Saving…" : "Save"}</Button>
-                </div>
-              </div>
-              {launchPlan ? (
-                <pre className="max-h-96 overflow-auto whitespace-pre-wrap text-sm leading-relaxed">{launchPlan}</pre>
-              ) : (
-                <p className="text-sm text-muted-foreground">Generate a Claude-written launch plan narrative, then save the whole assessment.</p>
-              )}
-            </Card>
-          </>
+        {plan && (
+          <Card className="p-5">
+            <h3 className="mb-3 flex items-center gap-2 font-semibold"><Server className="h-4 w-4" /> Infrastructure</h3>
+            <div className="grid grid-cols-3 gap-3 text-center">
+              <Stat icon={<Users className="h-4 w-4" />} label="Accounts" value={plan.accountsNeeded} />
+              <Stat icon={<Server className="h-4 w-4" />} label="4G proxies" value={plan.proxiesNeeded} />
+              <Stat icon={<Sparkles className="h-4 w-4" />} label="Posts/day" value={plan.targetDailyPosts} />
+            </div>
+            <p className="mt-3 text-xs text-muted-foreground">Includes a {Math.round(settings.capacity.shadowbanBuffer * 100)}% shadowban buffer · {settings.capacity.proxiesPerAccount} dedicated proxy per account · launch accounts post {plan.postsPerAccountPerDay}/day while warming.</p>
+          </Card>
         )}
-      </div>
-    </div>
-  );
-}
 
-function RatingRow({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
-  return (
-    <div className="grid gap-1.5">
-      <div className="flex justify-between text-sm"><Label>{label}</Label><span className="tabular-nums text-muted-foreground">{value}/10</span></div>
-      <Slider min={0} max={10} step={1} value={[value]} onValueChange={([v]) => onChange(v)} />
+        <Card className="p-5">
+          <h3 className="mb-3 font-semibold">Matched subreddits ({matches.length})</h3>
+          {matches.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No subreddits matched — add niche tags above and entries in the catalog tab. Niche demand stays 0 until subs match.</p>
+          ) : (
+            <div className="max-h-72 space-y-1.5 overflow-auto">
+              {matches.map((m) => (
+                <div key={m.subreddit.id} className="flex items-center gap-2 rounded border border-border px-3 py-1.5 text-sm">
+                  <span className="font-medium">r/{m.subreddit.name}</span>
+                  <span className="text-xs text-muted-foreground">{m.subreddit.subscribers.toLocaleString()}</span>
+                  <div className="ml-auto flex items-center gap-1">
+                    {m.nicheOverlap.length > 0 && <Badge variant="secondary" className="text-[10px]">{m.nicheOverlap.join(", ")}</Badge>}
+                    {!m.eligibleNow && <Badge className="border bg-warning/15 text-warning border-warning/30 text-[10px]">warm-up</Badge>}
+                    {m.stale && <Badge className="border bg-muted text-muted-foreground text-[10px]">stale</Badge>}
+                    {m.subreddit.verification_required && <Badge className="text-[10px]"><ShieldCheck className="mr-1 h-3 w-3" />verify</Badge>}
+                    <span className="w-10 text-right tabular-nums text-xs text-muted-foreground">{m.score}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        <Card className="p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="flex items-center gap-2 font-semibold"><Sparkles className="h-4 w-4" /> AI launch plan</h3>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={generatePlan} disabled={generating || !result}>{generating ? "Generating…" : "Generate"}</Button>
+              <Button size="sm" onClick={saveAssessment} disabled={saving || !result}><Save className="mr-1 h-3.5 w-3.5" />{saving ? "Saving…" : "Save"}</Button>
+            </div>
+          </div>
+          {launchPlan ? (
+            <pre className="max-h-96 overflow-auto whitespace-pre-wrap text-sm leading-relaxed">{launchPlan}</pre>
+          ) : (
+            <p className="text-sm text-muted-foreground">Generate a Claude-written launch plan narrative, then save the whole assessment.</p>
+          )}
+        </Card>
+      </div>
     </div>
   );
 }
@@ -767,6 +780,8 @@ function SettingsTab() {
     setSettings((s) => ({ ...s, rubricWeights: { ...s.rubricWeights, [k]: v } }));
   const setCap = (k: keyof ScorerSettings["capacity"], v: number) =>
     setSettings((s) => ({ ...s, capacity: { ...s.capacity, [k]: v } }));
+  const setGuide = (k: keyof ScorerSettings["guidance"], v: number) =>
+    setSettings((s) => ({ ...s, guidance: { ...s.guidance, [k]: v } }));
 
   const save = async () => {
     setSaving(true);
@@ -802,6 +817,50 @@ function SettingsTab() {
               <Slider min={0} max={50} step={1} value={[settings.rubricWeights[k] || 0]} onValueChange={([v]) => setWeight(k, v)} />
             </div>
           ))}
+        </div>
+      </Card>
+
+      {/* Scoring guidance — thresholds the criteria score against */}
+      <Card className="p-5">
+        <h2 className="mb-1 text-lg font-semibold">Scoring guidance</h2>
+        <p className="mb-4 text-xs text-muted-foreground">The targets each criterion is normalised against. Hit the target = full marks for that criterion.</p>
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-1.5">
+              <Label>Target matched subs</Label>
+              <Input type="number" min={1} value={settings.guidance.targetMatches} onChange={(e) => setGuide("targetMatches", Number(e.target.value))} />
+              <p className="text-[11px] text-muted-foreground">niche demand</p>
+            </div>
+            <div className="grid gap-1.5">
+              <Label>Target combined members</Label>
+              <Input type="number" min={1} value={settings.guidance.targetCombinedMembers} onChange={(e) => setGuide("targetCombinedMembers", Number(e.target.value))} />
+              <p className="text-[11px] text-muted-foreground">niche demand (log-scaled)</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-1.5">
+              <Label>Target pieces / week</Label>
+              <Input type="number" min={1} value={settings.guidance.targetPiecesPerWeek} onChange={(e) => setGuide("targetPiecesPerWeek", Number(e.target.value))} />
+              <p className="text-[11px] text-muted-foreground">content supply</p>
+            </div>
+            <div className="grid gap-1.5">
+              <Label>Studio penalty (×)</Label>
+              <Input type="number" min={0} max={1} step="0.05" value={settings.guidance.studioPenalty} onChange={(e) => setGuide("studioPenalty", Number(e.target.value))} />
+              <p className="text-[11px] text-muted-foreground">supply multiplier when not Reddit-native</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-1.5">
+              <Label>Benchmark target upvotes</Label>
+              <Input type="number" min={1} value={settings.guidance.benchmarkTargetUpvotes} onChange={(e) => setGuide("benchmarkTargetUpvotes", Number(e.target.value))} />
+              <p className="text-[11px] text-muted-foreground">competitor benchmark</p>
+            </div>
+            <div className="grid gap-1.5">
+              <Label>Conversion target (%)</Label>
+              <Input type="number" min={0.1} step="0.1" value={settings.guidance.conversionTargetPct} onChange={(e) => setGuide("conversionTargetPct", Number(e.target.value))} />
+              <p className="text-[11px] text-muted-foreground">conversion history</p>
+            </div>
+          </div>
         </div>
       </Card>
 

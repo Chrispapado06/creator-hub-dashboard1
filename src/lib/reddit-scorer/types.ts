@@ -3,10 +3,18 @@ import { z } from "zod";
 /**
  * Reddit Viability Scorer — shared types and validation.
  *
- * All business numbers (weights, bands, posting limits, formula) live as named
- * constants in the sibling pure-logic modules (rubric.ts, accounts.ts,
- * matching.ts) so they're trivially auditable and unit-tested. Nothing here
- * touches the network or the DB.
+ * The verdict is CALCULATED from five rubric criteria — never a subjective
+ * "how good is she" rating. Three criteria are DERIVED (read-only) from
+ * objective facts; two are MANUAL numbers scored against agency guidance:
+ *
+ *   niche_demand             (30) — derived from subreddit match results
+ *   competitor_benchmark     (25) — manual: avg upvotes of comparable creators
+ *   content_supply           (15) — derived from profile (pieces/wk + reddit-native)
+ *   verification_willingness (15) — derived from profile (boolean)
+ *   conversion_history       (15) — manual: observed Reddit→OF conversion %
+ *
+ * All scoring numbers live in rubric.ts / settings.ts; nothing here touches
+ * the network or the DB.
  */
 
 // ── Bands ────────────────────────────────────────────────────────────────────
@@ -14,33 +22,54 @@ export const BANDS = ["strong", "viable", "marginal", "skip"] as const;
 export type Band = (typeof BANDS)[number];
 
 // ── Assessment inputs (the form) ─────────────────────────────────────────────
-// Rubric criteria are rated 0–10; booleans gate the binary criteria.
+// Objective profile facts + two manual benchmark numbers. No 0–10 "rate her"
+// sliders — every scored value is derived or measured.
 export const ViabilityInputsSchema = z.object({
   creatorName: z.string().min(1, "Creator name is required"),
   creatorId: z.string().uuid().nullable().optional(),
 
-  // Weighted rubric criteria
-  nicheFit: z.number().min(0).max(10),            // demand: content maps to active subs
-  contentVolume: z.number().min(0).max(10),       // can sustain fresh posting cadence
-  visualAppeal: z.number().min(0).max(10),        // production quality / selling power
-  existingReach: z.number().min(0).max(10),       // starting karma assets / off-platform reach
-  verificationWilling: z.boolean(),               // unlocks verification-gated subs
-  complianceOk: z.boolean(),                       // content allowed on Reddit (no banned categories)
-
-  // Matching profile (not scored, used to rank subreddits)
-  niche: z.array(z.string()).default([]),         // creator content tags
+  // Matching profile → drives niche_demand (via subreddit matching) and
+  // subreddit eligibility. Not scored directly.
+  niche: z.array(z.string()).default([]),
   startingKarma: z.number().int().min(0).default(0),
   startingAccountAgeDays: z.number().int().min(0).default(0),
+
+  // content_supply (derived): how much fresh, Reddit-suitable content exists.
+  contentPiecesPerWeek: z.number().min(0).default(0),
+  redditNativeContent: z.boolean().default(false),
+
+  // verification_willingness (derived): unlocks verification-gated subs.
+  verificationWilling: z.boolean().default(false),
+
+  // competitor_benchmark (manual): avg upvotes comparable creators get in the
+  // same niche. Scored against the agency benchmark target.
+  competitorAvgUpvotes: z.number().min(0).default(0),
+
+  // conversion_history (manual): observed/expected Reddit→OF conversion (% of
+  // clicks that subscribe) for this creator or close comparables. Scored
+  // against the agency conversion target.
+  conversionHistoryPct: z.number().min(0).default(0),
 });
 export type ViabilityInputs = z.infer<typeof ViabilityInputsSchema>;
 
 // ── Scoring output ───────────────────────────────────────────────────────────
+export type CriterionKey =
+  | "niche_demand"
+  | "competitor_benchmark"
+  | "content_supply"
+  | "verification_willingness"
+  | "conversion_history";
+
 export type CriterionBreakdown = {
-  key: string;
+  key: CriterionKey;
   label: string;
+  /** "derived" = read-only, computed from facts; "manual" = a measured number. */
+  source: "derived" | "manual";
   weight: number;       // weight out of 100
   normalized: number;   // 0..1 score for this criterion
-  points: number;       // weight * normalized (contribution to final score)
+  points: number;       // contribution to the final score (weight * normalized)
+  /** Human-readable explanation of HOW this criterion got its value. */
+  derivation: string;
 };
 
 export type ViabilityResult = {
@@ -49,14 +78,20 @@ export type ViabilityResult = {
   breakdown: CriterionBreakdown[];
 };
 
+/** Objective signals niche_demand is derived from (the subreddit match roll-up). */
+export type MatchStats = {
+  matchCount: number;
+  combinedMembers: number;
+};
+
 // ── Account / proxy sizing ───────────────────────────────────────────────────
 export type AccountPlan = {
   band: Band;
   targetDailyPosts: number;
   postsPerAccountPerDay: number;
   baseAccounts: number;       // before buffer
-  accountsNeeded: number;     // after 20% shadowban buffer
-  proxiesNeeded: number;      // 1 dedicated 4G mobile proxy per account
+  accountsNeeded: number;     // after shadowban buffer
+  proxiesNeeded: number;      // dedicated mobile proxies per account
 };
 
 // ── Subreddit catalog + matching ─────────────────────────────────────────────

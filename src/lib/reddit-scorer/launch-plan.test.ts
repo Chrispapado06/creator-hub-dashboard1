@@ -6,7 +6,7 @@ const result: ViabilityResult = {
   score: 62,
   band: "viable",
   breakdown: [
-    { key: "nicheFit", label: "Niche fit / demand", weight: 30, normalized: 0.8, points: 24 },
+    { key: "niche_demand", label: "Niche demand", source: "derived", weight: 30, normalized: 0.8, points: 24, derivation: "6 matched subs · 2.5M combined members" },
   ],
 };
 

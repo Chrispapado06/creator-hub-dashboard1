@@ -48,13 +48,14 @@ const ANALYSIS_TOOL = {
       visual_appeal: { type: "integer", minimum: 0, maximum: 10, description: "Marketability / visual selling power for paid adult content (0 = not marketable, 10 = exceptional). Be honest; average prospects score 3–5." },
       niche_demand: { type: "integer", minimum: 0, maximum: 10, description: "Estimated active Reddit audience demand for her look/niche (0–10)." },
       niche_tags: { type: "array", items: { type: "string" }, description: "Short lowercase niche/aesthetic tags relevant to subreddit matching (e.g. fitness, cosplay, goth, petite, milf, gamer)." },
+      reddit_native_content: { type: "boolean", description: "Does the content look casual/amateur/selfie-style (Reddit-native, performs well on Reddit) rather than polished studio work?" },
       face_visible: { type: "boolean", description: "Is her face visible in any photo? (Face content typically converts better.)" },
       compliance_concern: { type: "boolean", description: "True if anything suggests a possible minor, non-consensual content, or Reddit-banned material." },
       verdict: { type: "string", enum: ["strong", "viable", "marginal", "skip"], description: "Overall fitness as a Reddit promotion prospect." },
       reasoning: { type: "string", description: "Concise commercial justification for the verdict." },
       standout: { type: "string", description: "The single biggest factor that makes or breaks her as a prospect." },
     },
-    required: ["visual_appeal", "niche_demand", "niche_tags", "face_visible", "compliance_concern", "verdict", "reasoning", "standout"],
+    required: ["visual_appeal", "niche_demand", "niche_tags", "reddit_native_content", "face_visible", "compliance_concern", "verdict", "reasoning", "standout"],
   },
 } as const;
 
@@ -62,6 +63,7 @@ export const CreatorVisionSchema = z.object({
   visual_appeal: z.number().int().min(0).max(10),
   niche_demand: z.number().int().min(0).max(10),
   niche_tags: z.array(z.string().trim().toLowerCase().min(1)).max(12).transform((tags) => Array.from(new Set(tags))),
+  reddit_native_content: z.boolean().default(false),
   face_visible: z.boolean(),
   compliance_concern: z.boolean().default(false),
   verdict: z.enum(["strong", "viable", "marginal", "skip"]),
