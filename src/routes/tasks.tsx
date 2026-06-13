@@ -103,7 +103,7 @@ function TasksPage() {
             <BoardTab session={session} pipelines={pipelines} steps={steps} members={members} memberName={memberName} onRefresh={refresh} />
           </TabsContent>
           <TabsContent value="member">
-            <MemberTab members={members} pipelines={pipelines} steps={steps} standalone={standalone} />
+            <MemberTab session={session} members={members} pipelines={pipelines} steps={steps} standalone={standalone} onRefresh={refresh} />
           </TabsContent>
           <TabsContent value="start">
             <StartTab members={members} onCreated={refresh} />
@@ -324,20 +324,27 @@ function ReassignControl({ stepId, members, currentId, pipelineTitle, onDone }: 
 }
 
 // ── By member ────────────────────────────────────────────────────────────────
-function MemberTab({ members, pipelines, steps, standalone }: { members: TeamMember[]; pipelines: Pipeline[]; steps: PipelineStep[]; standalone: StandaloneTask[] }) {
+function MemberTab({ session, members, pipelines, steps, standalone, onRefresh }: { session: Session; members: TeamMember[]; pipelines: Pipeline[]; steps: PipelineStep[]; standalone: StandaloneTask[]; onRefresh: () => void }) {
   const [memberId, setMemberId] = useState<string>("");
   const activeSteps = steps.filter((s) => s.status === "active" && s.assignee_id === memberId);
   const tasks = standalone.filter((t) => t.assignee_id === memberId);
   const total = activeSteps.length + tasks.length;
+  const memberName = members.find((m) => m.id === memberId)?.name ?? "";
 
   return (
     <div className="mt-4 space-y-4">
-      <div className="max-w-xs">
-        <Label className="text-xs">Team member</Label>
-        <Select value={memberId} onValueChange={setMemberId}>
-          <SelectTrigger><SelectValue placeholder="Pick a member" /></SelectTrigger>
-          <SelectContent>{members.map((m) => <SelectItem key={m.id} value={m.id}>{m.name}{m.discord_user_id ? "" : " (no Discord)"}</SelectItem>)}</SelectContent>
-        </Select>
+      <div className="flex items-end justify-between gap-3 flex-wrap">
+        <div className="max-w-xs flex-1">
+          <Label className="text-xs">Team member</Label>
+          <Select value={memberId} onValueChange={setMemberId}>
+            <SelectTrigger><SelectValue placeholder="Pick a member" /></SelectTrigger>
+            <SelectContent>{members.map((m) => <SelectItem key={m.id} value={m.id}>{m.name}{m.discord_user_id ? "" : " (no Discord)"}</SelectItem>)}</SelectContent>
+          </Select>
+        </div>
+        {/* Admins can hand this person a task right here. */}
+        {memberId && session.isAdmin && (
+          <AddTaskDialog members={members} defaultAssigneeId={memberId} onAdded={onRefresh} selfLabel={`Assign task to ${memberName.split(" ")[0]}`} />
+        )}
       </div>
 
       {memberId && (
