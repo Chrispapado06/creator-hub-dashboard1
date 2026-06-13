@@ -21,10 +21,13 @@ import { Sparkles, Trash2, Plus, Save, ShieldCheck, Server, Users, History, Aler
 import { format } from "date-fns";
 
 import { ViabilityInputsSchema, type CatalogSubreddit, type SubredditMatch, type ViabilityResult } from "@/lib/reddit-scorer/types";
-import { scoreViability } from "@/lib/reddit-scorer/rubric";
+import { scoreViability, RUBRIC_LABELS, RUBRIC_WEIGHTS } from "@/lib/reddit-scorer/rubric";
 import { validateCsv } from "@/lib/reddit-scorer/csv";
+import { loadScorerSettings, saveScorerSettings, DEFAULT_SETTINGS, type ScorerSettings } from "@/lib/reddit-scorer/settings";
+import { analyzeCreatorPhotos, fileToBase64, isAllowedMediaType, MAX_IMAGES, type CreatorVisionResult } from "@/lib/reddit-scorer/creator-vision";
 import { calcAccountsAndProxies } from "@/lib/reddit-scorer/accounts";
 import { rankSubreddits } from "@/lib/reddit-scorer/matching";
+import { computeCalibration, calibrationAccuracy, type AssessmentLite, type PerformanceLite, type CalibrationRow } from "@/lib/reddit-scorer/calibration";
 import { generateLaunchPlan } from "@/lib/reddit-scorer/launch-plan";
 import type { AccountPlan } from "@/lib/reddit-scorer/types";
 
@@ -89,11 +92,15 @@ function RedditScorerPage() {
         <TabsList>
           <TabsTrigger value="assess">Assess</TabsTrigger>
           <TabsTrigger value="history">History</TabsTrigger>
+          <TabsTrigger value="calibration">Calibration</TabsTrigger>
           <TabsTrigger value="catalog">Subreddit catalog</TabsTrigger>
+          <TabsTrigger value="settings">Settings</TabsTrigger>
         </TabsList>
         <TabsContent value="assess"><AssessTab /></TabsContent>
         <TabsContent value="history"><HistoryTab /></TabsContent>
+        <TabsContent value="calibration"><CalibrationTab /></TabsContent>
         <TabsContent value="catalog"><CatalogTab /></TabsContent>
+        <TabsContent value="settings"><SettingsTab /></TabsContent>
       </Tabs>
     </div>
   );
@@ -111,9 +118,35 @@ function AssessTab() {
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  const [settings, setSettings] = useState<ScorerSettings>(DEFAULT_SETTINGS);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [vision, setVision] = useState<CreatorVisionResult | null>(null);
+
+  const onAnalyzePhotos = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const picked = Array.from(files).filter((f) => isAllowedMediaType(f.type)).slice(0, MAX_IMAGES);
+    if (picked.length === 0) { toast.error("Upload JPG, PNG, WebP or GIF images."); return; }
+    setAnalyzing(true);
+    try {
+      const images = await Promise.all(picked.map(fileToBase64));
+      const result = await analyzeCreatorPhotos(images);
+      setVision(result);
+      // Merge suggested niche tags into whatever's already typed.
+      const existing = form.niche.split(",").map((s) => s.trim()).filter(Boolean);
+      const merged = Array.from(new Set([...existing, ...result.niche_tags]));
+      set({ niche: merged.join(", ") });
+      toast.success("Photos analyzed — niche tags suggested below");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Analysis failed");
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
   useEffect(() => {
     supabase.from("creators").select("id, name").order("name").then(({ data }) => setCreators((data ?? []) as Creator[]));
     sb.from("subreddit_catalog").select("*").then(({ data }: { data: CatalogSubreddit[] | null }) => setCatalog(data ?? []));
+    loadScorerSettings().then(setSettings);
   }, []);
 
   const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }));
@@ -136,8 +169,9 @@ function AssessTab() {
       toast.error(parsed.error.issues[0]?.message ?? "Invalid inputs");
       return;
     }
-    const r = scoreViability(parsed.data);
-    const p = calcAccountsAndProxies(r.band);
+    // Score + size using the admin-tuned settings (falls back to defaults).
+    const r = scoreViability(parsed.data, settings.rubricWeights);
+    const p = calcAccountsAndProxies(r.band, settings.capacity);
     const m = rankSubreddits(parsed.data, catalog, new Date(), 25);
     setResult(r);
     setPlan(p);
@@ -207,8 +241,26 @@ function AssessTab() {
           <ToggleRow label="Reddit-compliant content" hint="No banned categories" checked={form.complianceOk} onChange={(v) => set({ complianceOk: v })} />
 
           <div className="grid gap-2">
-            <Label>Niche tags (comma-separated)</Label>
+            <div className="flex items-center justify-between">
+              <Label>Niche tags (comma-separated)</Label>
+              <label className={`inline-flex cursor-pointer items-center gap-1 text-xs text-primary hover:underline ${analyzing ? "pointer-events-none opacity-60" : ""}`}>
+                <Sparkles className="h-3.5 w-3.5" />
+                {analyzing ? "Analyzing…" : "Suggest from photos"}
+                <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => onAnalyzePhotos(e.target.files)} />
+              </label>
+            </div>
             <Input placeholder="fitness, cosplay, gonewild" value={form.niche} onChange={(e) => set({ niche: e.target.value })} />
+            {vision && (
+              <div className="rounded border border-primary/20 bg-primary/5 p-2.5 text-xs">
+                <div className="font-medium">{vision.content_style || "Photo analysis"}</div>
+                <div className="mt-0.5 text-muted-foreground">{vision.observations}</div>
+                <div className="mt-1.5 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+                  <span>{vision.face_visible ? "Face visible" : "Face not shown"}</span>
+                  <span>·</span>
+                  <span>{vision.reddit_native_content ? "Reddit-native style" : "Studio/polished"}</span>
+                </div>
+              </div>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-2">
@@ -489,6 +541,270 @@ function HistoryTab() {
           )}
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// ── Calibration tab ──────────────────────────────────────────────────────────
+const alignmentStyles: Record<CalibrationRow["alignment"], string> = {
+  aligned: "bg-success/15 text-success border-success/30",
+  close: "bg-warning/15 text-warning border-warning/30",
+  off: "bg-destructive/15 text-destructive border-destructive/30",
+};
+
+function CalibrationTab() {
+  const [creators, setCreators] = useState<Creator[]>([]);
+  const [rows, setRows] = useState<CalibrationRow[]>([]);
+  const [perfRows, setPerfRows] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  // Performance entry form.
+  const [pf, setPf] = useState({
+    creator_id: "", creator_name: "", month: format(new Date(), "yyyy-MM-01"),
+    reddit_clicks: 0, of_subs_attributed: 0, revenue_attributed: 0, actual_outcome: "" as string,
+  });
+  const [saving, setSaving] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    const [{ data: cs }, { data: assess }, { data: perf }] = await Promise.all([
+      supabase.from("creators").select("id, name").order("name"),
+      sb.from("reddit_assessments").select("creator_id, creator_name, score, band, created_at"),
+      sb.from("scorer_creator_performance").select("*").order("month", { ascending: false }),
+    ]);
+    setCreators((cs ?? []) as Creator[]);
+    setPerfRows((perf ?? []) as any[]);
+    // Build calibration. Key on creator_id when present, else lowercased name.
+    const keyOf = (cid: string | null, name: string) => cid || `name:${name.trim().toLowerCase()}`;
+    const assessments: AssessmentLite[] = ((assess ?? []) as any[]).map((a) => ({
+      creatorKey: keyOf(a.creator_id, a.creator_name),
+      creatorName: a.creator_name,
+      score: Number(a.score),
+      band: a.band,
+      createdAt: a.created_at,
+    }));
+    const performance: PerformanceLite[] = ((perf ?? []) as any[]).map((p) => ({
+      creatorKey: keyOf(p.creator_id, p.creator_name),
+      revenueAttributed: Number(p.revenue_attributed),
+    }));
+    setRows(computeCalibration(assessments, performance));
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  const savePerf = async () => {
+    const name = pf.creator_name.trim() || creators.find((c) => c.id === pf.creator_id)?.name || "";
+    if (!name) { toast.error("Pick or name a creator"); return; }
+    if (!pf.month) { toast.error("Pick a month"); return; }
+    setSaving(true);
+    const { error } = await sb.from("scorer_creator_performance").insert({
+      creator_id: pf.creator_id || null,
+      creator_name: name,
+      month: pf.month,
+      reddit_clicks: Number(pf.reddit_clicks) || 0,
+      of_subs_attributed: Number(pf.of_subs_attributed) || 0,
+      revenue_attributed: Number(pf.revenue_attributed) || 0,
+      actual_outcome: pf.actual_outcome === "" ? null : Number(pf.actual_outcome),
+    });
+    setSaving(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success("Performance logged");
+    setPf({ creator_id: "", creator_name: "", month: format(new Date(), "yyyy-MM-01"), reddit_clicks: 0, of_subs_attributed: 0, revenue_attributed: 0, actual_outcome: "" });
+    load();
+  };
+
+  const removePerf = async (id: string) => {
+    const { error } = await sb.from("scorer_creator_performance").delete().eq("id", id);
+    if (error) toast.error(error.message); else load();
+  };
+
+  const accuracy = calibrationAccuracy(rows);
+
+  return (
+    <div className="mt-4 grid gap-6 lg:grid-cols-[1fr_1.4fr]">
+      {/* Performance entry */}
+      <Card className="p-5">
+        <h2 className="mb-1 text-lg font-semibold">Log actual performance</h2>
+        <p className="mb-4 text-xs text-muted-foreground">Record how a creator really did on Reddit. The table compares this against what the rubric predicted.</p>
+        <div className="space-y-3">
+          <div className="grid gap-1.5">
+            <Label>Creator</Label>
+            <Select value={pf.creator_id} onValueChange={(id) => setPf((p) => ({ ...p, creator_id: id, creator_name: creators.find((c) => c.id === id)?.name ?? p.creator_name }))}>
+              <SelectTrigger><SelectValue placeholder="Pick a creator (or type below)" /></SelectTrigger>
+              <SelectContent>{creators.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
+            </Select>
+            <Input placeholder="Creator name" value={pf.creator_name} onChange={(e) => setPf((p) => ({ ...p, creator_name: e.target.value }))} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-1.5"><Label>Month</Label><Input type="month" value={pf.month.slice(0, 7)} onChange={(e) => setPf((p) => ({ ...p, month: e.target.value ? `${e.target.value}-01` : p.month }))} /></div>
+            <div className="grid gap-1.5"><Label>Actual outcome (0–100)</Label><Input type="number" min={0} max={100} placeholder="optional" value={pf.actual_outcome} onChange={(e) => setPf((p) => ({ ...p, actual_outcome: e.target.value }))} /></div>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="grid gap-1.5"><Label>Reddit clicks</Label><Input type="number" min={0} value={pf.reddit_clicks} onChange={(e) => setPf((p) => ({ ...p, reddit_clicks: Number(e.target.value) }))} /></div>
+            <div className="grid gap-1.5"><Label>OF subs</Label><Input type="number" min={0} value={pf.of_subs_attributed} onChange={(e) => setPf((p) => ({ ...p, of_subs_attributed: Number(e.target.value) }))} /></div>
+            <div className="grid gap-1.5"><Label>Revenue $</Label><Input type="number" min={0} value={pf.revenue_attributed} onChange={(e) => setPf((p) => ({ ...p, revenue_attributed: Number(e.target.value) }))} /></div>
+          </div>
+          <Button className="w-full" onClick={savePerf} disabled={saving}>{saving ? "Saving…" : "Log performance"}</Button>
+        </div>
+
+        {perfRows.length > 0 && (
+          <div className="mt-5 space-y-1.5">
+            <div className="text-xs font-medium text-muted-foreground">Recent entries</div>
+            {perfRows.slice(0, 8).map((p) => (
+              <div key={p.id} className="flex items-center justify-between gap-2 rounded border border-border px-2.5 py-1.5 text-xs">
+                <span className="truncate">{p.creator_name} · {format(new Date(p.month), "MMM yyyy")}</span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-success">${Number(p.revenue_attributed).toLocaleString()}</span>
+                  <button onClick={() => removePerf(p.id)} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3 w-3" /></button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {/* Calibration table */}
+      <div className="space-y-4">
+        <Card className="p-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold">Predicted vs actual</h2>
+              <p className="text-xs text-muted-foreground">Where the rubric ranking disagrees with real revenue, retune the weights in Settings.</p>
+            </div>
+            {rows.length > 0 && (
+              <div className="text-right">
+                <div className="text-3xl font-bold tabular-nums">{accuracy}%</div>
+                <div className="text-[11px] text-muted-foreground">rank match</div>
+              </div>
+            )}
+          </div>
+        </Card>
+
+        <Card>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Creator</TableHead>
+                <TableHead>Score</TableHead>
+                <TableHead>Predicted</TableHead>
+                <TableHead>Revenue</TableHead>
+                <TableHead>Actual</TableHead>
+                <TableHead>Fit</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                <TableRow><TableCell colSpan={6} className="text-center text-sm text-muted-foreground">Loading…</TableCell></TableRow>
+              ) : rows.length === 0 ? (
+                <TableRow><TableCell colSpan={6} className="text-center text-sm text-muted-foreground">Need both a saved assessment and logged performance for the same creator. Log some performance on the left.</TableCell></TableRow>
+              ) : rows.map((r) => (
+                <TableRow key={r.creatorKey}>
+                  <TableCell className="font-medium">{r.creatorName}</TableCell>
+                  <TableCell className="tabular-nums">{r.score}</TableCell>
+                  <TableCell className="tabular-nums">#{r.predictedRank}</TableCell>
+                  <TableCell className="tabular-nums text-success">${r.revenue.toLocaleString()}</TableCell>
+                  <TableCell className="tabular-nums">#{r.actualRank}</TableCell>
+                  <TableCell>
+                    <Badge className={`border text-[10px] ${alignmentStyles[r.alignment]}`}>
+                      {r.alignment === "aligned" ? "on" : r.rankDelta > 0 ? `under +${r.rankDelta}` : `over ${r.rankDelta}`}
+                    </Badge>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+// ── Settings tab ─────────────────────────────────────────────────────────────
+function SettingsTab() {
+  const [settings, setSettings] = useState<ScorerSettings>(DEFAULT_SETTINGS);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { loadScorerSettings().then((s) => { setSettings(s); setLoading(false); }); }, []);
+
+  const weightKeys = Object.keys(RUBRIC_WEIGHTS) as (keyof typeof RUBRIC_WEIGHTS)[];
+  const weightTotal = weightKeys.reduce((sum, k) => sum + (settings.rubricWeights[k] || 0), 0);
+
+  const setWeight = (k: keyof typeof RUBRIC_WEIGHTS, v: number) =>
+    setSettings((s) => ({ ...s, rubricWeights: { ...s.rubricWeights, [k]: v } }));
+  const setCap = (k: keyof ScorerSettings["capacity"], v: number) =>
+    setSettings((s) => ({ ...s, capacity: { ...s.capacity, [k]: v } }));
+
+  const save = async () => {
+    setSaving(true);
+    const { error } = await saveScorerSettings(settings);
+    setSaving(false);
+    if (error) toast.error(error); else toast.success("Settings saved");
+  };
+
+  const reset = () => setSettings(DEFAULT_SETTINGS);
+
+  if (loading) return <div className="mt-4 text-sm text-muted-foreground">Loading…</div>;
+
+  return (
+    <div className="mt-4 grid gap-6 lg:grid-cols-2">
+      {/* Rubric weights */}
+      <Card className="p-5">
+        <div className="mb-1 flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Rubric weights</h2>
+          <span className={`text-sm tabular-nums ${weightTotal === 100 ? "text-muted-foreground" : "text-warning"}`}>
+            total {weightTotal}
+          </span>
+        </div>
+        <p className="mb-4 text-xs text-muted-foreground">
+          Relative importance of each criterion. They don't have to sum to 100 — the score is normalised either way — but 100 keeps it readable.
+        </p>
+        <div className="space-y-4">
+          {weightKeys.map((k) => (
+            <div key={k} className="grid gap-1.5">
+              <div className="flex justify-between text-sm">
+                <Label>{RUBRIC_LABELS[k]}</Label>
+                <span className="tabular-nums text-muted-foreground">{settings.rubricWeights[k]}</span>
+              </div>
+              <Slider min={0} max={50} step={1} value={[settings.rubricWeights[k] || 0]} onValueChange={([v]) => setWeight(k, v)} />
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* Capacity params */}
+      <Card className="p-5">
+        <h2 className="mb-4 text-lg font-semibold">Capacity &amp; freshness</h2>
+        <div className="space-y-4">
+          <div className="grid gap-1.5">
+            <div className="flex justify-between text-sm">
+              <Label>Shadowban buffer</Label>
+              <span className="tabular-nums text-muted-foreground">{Math.round(settings.capacity.shadowbanBuffer * 100)}%</span>
+            </div>
+            <Slider min={0} max={1} step={0.05} value={[settings.capacity.shadowbanBuffer]} onValueChange={([v]) => setCap("shadowbanBuffer", v)} />
+            <p className="text-xs text-muted-foreground">Extra accounts provisioned to absorb bans.</p>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-1.5">
+              <Label>Proxies / account</Label>
+              <Input type="number" min={1} value={settings.capacity.proxiesPerAccount} onChange={(e) => setCap("proxiesPerAccount", Number(e.target.value))} />
+            </div>
+            <div className="grid gap-1.5">
+              <Label>Posts / account / day</Label>
+              <Input type="number" min={1} value={settings.capacity.postsPerAccountPerDay} onChange={(e) => setCap("postsPerAccountPerDay", Number(e.target.value))} />
+            </div>
+          </div>
+          <div className="grid gap-1.5">
+            <Label>Stale after (days)</Label>
+            <Input type="number" min={1} value={settings.capacity.staleAfterDays} onChange={(e) => setCap("staleAfterDays", Number(e.target.value))} />
+            <p className="text-xs text-muted-foreground">Subreddits not re-verified within this window get down-weighted + flagged.</p>
+          </div>
+        </div>
+      </Card>
+
+      <div className="flex gap-2 lg:col-span-2">
+        <Button onClick={save} disabled={saving}><Save className="mr-1 h-4 w-4" />{saving ? "Saving…" : "Save settings"}</Button>
+        <Button variant="outline" onClick={reset}>Reset to defaults</Button>
+      </div>
     </div>
   );
 }

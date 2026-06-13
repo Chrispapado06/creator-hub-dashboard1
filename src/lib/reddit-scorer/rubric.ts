@@ -53,16 +53,25 @@ function normalize(inputs: ViabilityInputs): Record<keyof typeof RUBRIC_WEIGHTS,
   };
 }
 
+export type RubricWeights = Record<keyof typeof RUBRIC_WEIGHTS, number>;
+
 /**
  * Compute the weighted viability score (0..100), its band, and the per-criterion
  * breakdown. Pure — no side effects.
+ *
+ * `weights` overrides the default RUBRIC_WEIGHTS (e.g. from the admin Settings
+ * tab); any missing key falls back to the default. The score is normalised by
+ * the total weight, so retuned weights that don't sum to 100 still yield a
+ * 0..100 score.
  */
-export function scoreViability(inputs: ViabilityInputs): ViabilityResult {
+export function scoreViability(inputs: ViabilityInputs, weights?: Partial<RubricWeights>): ViabilityResult {
   const normalized = normalize(inputs);
   const keys = Object.keys(RUBRIC_WEIGHTS) as (keyof typeof RUBRIC_WEIGHTS)[];
+  const effective: RubricWeights = { ...RUBRIC_WEIGHTS, ...(weights ?? {}) };
+  const totalWeight = keys.reduce((sum, k) => sum + (effective[k] || 0), 0) || 1;
 
   const breakdown: CriterionBreakdown[] = keys.map((key) => {
-    const weight = RUBRIC_WEIGHTS[key];
+    const weight = effective[key] || 0;
     const norm = normalized[key];
     return {
       key,
@@ -73,8 +82,9 @@ export function scoreViability(inputs: ViabilityInputs): ViabilityResult {
     };
   });
 
+  // Express the score out of 100 regardless of how the weights sum.
   const rawScore = breakdown.reduce((sum, c) => sum + c.weight * c.normalized, 0);
-  const score = Math.round(rawScore * 10) / 10;
+  const score = Math.round((rawScore / totalWeight) * 100 * 10) / 10;
 
   return { score, band: bandForScore(score), breakdown };
 }

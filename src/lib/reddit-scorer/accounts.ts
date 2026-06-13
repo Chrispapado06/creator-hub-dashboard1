@@ -35,14 +35,25 @@ export const TARGET_DAILY_POSTS_BY_BAND: Record<Band, number> = {
  *   proxies    = accounts (1:1, dedicated)
  * Pure and deterministic.
  */
-export function calcAccountsAndProxies(band: Band): AccountPlan {
+export type CapacityParams = {
+  /** Replacement buffer fraction (0.2 = +20%). */
+  shadowbanBuffer: number;
+  /** Dedicated proxies per account (normally 1). */
+  proxiesPerAccount: number;
+  /** Posts a fresh/warming account makes per day. */
+  postsPerAccountPerDay: number;
+};
+
+export function calcAccountsAndProxies(band: Band, capacity?: Partial<CapacityParams>): AccountPlan {
+  const buffer = capacity?.shadowbanBuffer ?? ACCOUNT_BUFFER;
+  const proxiesPerAccount = capacity?.proxiesPerAccount ?? 1;
   const targetDailyPosts = TARGET_DAILY_POSTS_BY_BAND[band];
-  const postsPerAccountPerDay = POSTS_PER_NEW_ACCOUNT_PER_DAY;
+  const postsPerAccountPerDay = capacity?.postsPerAccountPerDay ?? POSTS_PER_NEW_ACCOUNT_PER_DAY;
 
   const baseAccounts =
     targetDailyPosts === 0 ? 0 : Math.ceil(targetDailyPosts / postsPerAccountPerDay);
-  const accountsNeeded = baseAccounts === 0 ? 0 : Math.ceil(baseAccounts * (1 + ACCOUNT_BUFFER));
-  const proxiesNeeded = accountsNeeded; // 1 dedicated proxy per account
+  const accountsNeeded = baseAccounts === 0 ? 0 : Math.ceil(baseAccounts * (1 + buffer));
+  const proxiesNeeded = accountsNeeded * proxiesPerAccount; // dedicated proxies
 
   return {
     band,

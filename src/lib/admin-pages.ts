@@ -38,6 +38,7 @@ export const ADMIN_PAGES: AdminPage[] = [
   { slug: "instagram",       path: "/instagram",       label: "Instagram", group: "Platforms" },
   { slug: "reddit",          path: "/reddit",          label: "Reddit",    group: "Platforms" },
   { slug: "reddit-airtable", path: "/reddit-airtable", label: "Airtable",  group: "Platforms" },
+  { slug: "reddit-scorer",   path: "/reddit-scorer",   label: "Scorer",    group: "Platforms" },
   { slug: "x",               path: "/x",               label: "X",         group: "Platforms" },
   { slug: "tiktok",          path: "/tiktok",          label: "TikTok",    group: "Platforms" },
   { slug: "facebook",        path: "/facebook",        label: "Facebook",  group: "Platforms" },
