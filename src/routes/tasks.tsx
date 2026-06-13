@@ -817,6 +817,8 @@ function TemplatesTab({ members, onRefresh }: { members: TeamMember[]; onRefresh
 
 function DiscordIdsEditor({ members, onSaved }: { members: TeamMember[]; onSaved: () => void }) {
   const [draft, setDraft] = useState<Record<string, string>>({});
+  const [query, setQuery] = useState("");
+  const [activeOnly, setActiveOnly] = useState(true);
   useEffect(() => { setDraft(Object.fromEntries(members.map((m) => [m.id, m.discord_user_id ?? ""]))); }, [members]);
 
   const save = async (id: string) => {
@@ -825,16 +827,33 @@ function DiscordIdsEditor({ members, onSaved }: { members: TeamMember[]; onSaved
     if (error) toast.error(error.message); else { toast.success("Saved"); onSaved(); }
   };
 
+  const q = query.trim().toLowerCase();
+  const filtered = members.filter((m) =>
+    (!activeOnly || m.status === "active") && (!q || m.name.toLowerCase().includes(q)),
+  );
+
   return (
-    <Card className="divide-y divide-border">
-      {members.map((m) => (
-        <div key={m.id} className="flex items-center gap-3 p-3">
-          <span className="w-40 truncate text-sm font-medium">{m.name}</span>
-          <Input className="flex-1 font-mono text-xs" placeholder="Discord user ID (numbers)" value={draft[m.id] ?? ""} onChange={(e) => setDraft((d) => ({ ...d, [m.id]: e.target.value }))} />
-          <Button size="sm" variant="outline" onClick={() => save(m.id)}>Save</Button>
-        </div>
-      ))}
-    </Card>
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 flex-wrap">
+        <Input className="h-9 max-w-xs" placeholder="Search staff…" value={query} onChange={(e) => setQuery(e.target.value)} />
+        <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
+          <input type="checkbox" checked={activeOnly} onChange={(e) => setActiveOnly(e.target.checked)} className="h-3.5 w-3.5" />
+          Active staff only
+        </label>
+        <span className="text-[11px] text-muted-foreground">{filtered.length} of {members.length}</span>
+      </div>
+      <Card className="divide-y divide-border">
+        {filtered.length === 0 ? (
+          <div className="p-4 text-center text-xs text-muted-foreground">No staff match.</div>
+        ) : filtered.map((m) => (
+          <div key={m.id} className="flex items-center gap-3 p-3">
+            <span className="w-40 truncate text-sm font-medium">{m.name}</span>
+            <Input className="flex-1 font-mono text-xs" placeholder="Discord user ID (numbers)" value={draft[m.id] ?? ""} onChange={(e) => setDraft((d) => ({ ...d, [m.id]: e.target.value }))} />
+            <Button size="sm" variant="outline" onClick={() => save(m.id)}>Save</Button>
+          </div>
+        ))}
+      </Card>
+    </div>
   );
 }
 
