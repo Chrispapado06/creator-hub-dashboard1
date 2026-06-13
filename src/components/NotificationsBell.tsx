@@ -36,7 +36,7 @@ type Shift = {
 
 type Notification = {
   id: string;
-  kind: "audit" | "task_due" | "task_overdue" | "shift_active";
+  kind: "audit" | "task_due" | "task_overdue" | "shift_active" | "task_turn" | "task_assigned";
   icon: React.ReactNode;
   title: string;
   body: string;
@@ -68,7 +68,13 @@ export function NotificationsBell() {
     const nowISO = new Date().toISOString();
     const dueSoonISO = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
-    const [audit, overdueTasks, dueSoonTasks, activeShifts] = await Promise.all([
+    // The signed-in user's linked staff record — drives the personal
+    // "it's your turn" + "task assigned to you" notifications.
+    let myChatterId: string | null = null;
+    try { myChatterId = JSON.parse(localStorage.getItem("agency_session") || "{}")?.chatter_id ?? null; } catch { /* none */ }
+    const usb = supabase as unknown as { from: (t: string) => any };
+
+    const [audit, overdueTasks, dueSoonTasks, activeShifts, myActiveSteps, myOpenTasks] = await Promise.all([
       supabase
         .from("audit_log")
         .select("id, actor_username, action, entity_type, entity_name, details, created_at")
@@ -95,9 +101,49 @@ export function NotificationsBell() {
         .select("id, chatter_id, start_at, end_at, chatters(name)")
         .is("end_at", null)
         .order("start_at", { ascending: true }),
+      // Pipeline steps currently active + assigned to me ("your turn").
+      myChatterId
+        ? usb.from("task_pipeline_steps")
+            .select("id, step_name, step_order, updated_at, task_pipelines(title)")
+            .eq("status", "active").eq("assignee_id", myChatterId)
+        : Promise.resolve({ data: [] }),
+      // Open one-off tasks assigned to me.
+      myChatterId
+        ? usb.from("standalone_tasks")
+            .select("id, title, due_date, created_at")
+            .eq("status", "open").eq("assignee_id", myChatterId)
+        : Promise.resolve({ data: [] }),
     ]);
 
     const items: Notification[] = [];
+
+    // ── It's your turn (active pipeline steps) — pushed first / most urgent.
+    for (const row of ((myActiveSteps as any).data ?? []) as any[]) {
+      items.push({
+        id: `turn_${row.id}`,
+        kind: "task_turn",
+        icon: <ListChecks className="h-3.5 w-3.5" />,
+        title: `Your turn: ${row.step_name}`,
+        body: `${row.task_pipelines?.title ?? "Pipeline"} · step ${row.step_order} — move with speed`,
+        timestamp: row.updated_at ?? nowISO,
+        link: "/tasks",
+        tone: "warn",
+      });
+    }
+
+    // ── Tasks assigned to me.
+    for (const row of ((myOpenTasks as any).data ?? []) as any[]) {
+      items.push({
+        id: `mytask_${row.id}`,
+        kind: "task_assigned",
+        icon: <ListChecks className="h-3.5 w-3.5" />,
+        title: `Task for you: ${String(row.title).slice(0, 60)}`,
+        body: row.due_date ? `Due ${row.due_date}` : "Assigned to you",
+        timestamp: row.created_at ?? nowISO,
+        link: "/tasks",
+        tone: "info",
+      });
+    }
 
     // Active shifts (people currently clocked in)
     for (const row of (activeShifts.data ?? []) as unknown as (Shift & { chatters: { name?: string } | null })[]) {
@@ -174,7 +220,9 @@ export function NotificationsBell() {
   }, []);
 
   const sorted = useMemo(() => {
-    const order = { task_overdue: 0, shift_active: 1, task_due: 2, audit: 3 } as const;
+    const order: Record<Notification["kind"], number> = {
+      task_turn: 0, task_overdue: 1, task_assigned: 2, shift_active: 3, task_due: 4, audit: 5,
+    };
     return [...notifications].sort((a, b) => {
       const ord = order[a.kind] - order[b.kind];
       if (ord !== 0) return ord;
