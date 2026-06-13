@@ -205,20 +205,24 @@ function MyTasksTab({
   onRefresh: () => void;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
+  // Admins see everything by default (they're often not assigned tasks
+  // themselves); they can flip to just their own. Staff only ever see theirs.
+  const [scope, setScope] = useState<"mine" | "all">(session.isAdmin && !session.chatterId ? "all" : "mine");
+  const all = scope === "all";
 
-  const myActiveSteps = useMemo(
+  const activeSteps = useMemo(
     () => steps
-      .filter((s) => s.status === "active" && s.assignee_id === session.chatterId)
+      .filter((s) => s.status === "active" && (all || s.assignee_id === session.chatterId))
       .map((s) => ({ step: s, pipeline: pipelines.find((p) => p.id === s.pipeline_id) }))
       .filter((x) => x.pipeline)
       .sort((a, b) => new Date(a.pipeline!.created_at).getTime() - new Date(b.pipeline!.created_at).getTime()),
-    [steps, pipelines, session.chatterId],
+    [steps, pipelines, session.chatterId, all],
   );
-  const myTasks = useMemo(
+  const tasks = useMemo(
     () => standalone
-      .filter((t) => t.assignee_id === session.chatterId)
+      .filter((t) => all || t.assignee_id === session.chatterId)
       .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()),
-    [standalone, session.chatterId],
+    [standalone, session.chatterId, all],
   );
 
   const onDone = async (pipelineId: string, title: string) => {
@@ -238,28 +242,42 @@ function MyTasksTab({
     onRefresh();
   };
 
-  if (!session.chatterId) {
+  // Non-admin with no linked staff record (shouldn't normally happen).
+  if (!session.chatterId && !session.isAdmin) {
     return (
       <div className="mt-4 rounded-xl border border-dashed border-border bg-card/40 p-8 text-center text-sm text-muted-foreground">
-        You're signed in as an admin account that isn't linked to a team member, so you have no personal task list. Use the <strong>Board</strong> or <strong>By member</strong> tabs.
+        Your login isn't linked to a team member yet, so there's no personal task list. Ask an admin to link your account.
       </div>
     );
   }
 
   return (
     <div className="mt-4 space-y-6">
-      <MiniCalendar tasks={myTasks} />
+      {session.isAdmin && (
+        <div className="flex items-center justify-between">
+          <div className="inline-flex rounded-lg border border-border p-0.5 text-xs">
+            <button onClick={() => setScope("mine")} className={`rounded-md px-3 py-1 transition-colors ${!all ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>Mine</button>
+            <button onClick={() => setScope("all")} className={`rounded-md px-3 py-1 transition-colors ${all ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>Everyone</button>
+          </div>
+          {all && <span className="text-[11px] text-muted-foreground">Showing every team member's open items</span>}
+        </div>
+      )}
+
+      <MiniCalendar tasks={tasks} />
 
       <section>
-        <h2 className="mb-2 text-sm font-semibold">Pipeline steps waiting on you ({myActiveSteps.length})</h2>
-        {myActiveSteps.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border bg-card/40 p-6 text-center text-sm text-muted-foreground">Nothing handed to you right now.</div>
+        <h2 className="mb-2 text-sm font-semibold">{all ? "Active pipeline steps" : "Pipeline steps waiting on you"} ({activeSteps.length})</h2>
+        {activeSteps.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border bg-card/40 p-6 text-center text-sm text-muted-foreground">{all ? "No active pipeline steps." : "Nothing handed to you right now."}</div>
         ) : (
           <div className="space-y-2">
-            {myActiveSteps.map(({ step, pipeline }) => (
+            {activeSteps.map(({ step, pipeline }) => (
               <Card key={step.id} className="flex items-center justify-between gap-3 p-4">
                 <div className="min-w-0">
-                  <div className="font-medium">{pipeline!.title}</div>
+                  <div className="font-medium">
+                    {pipeline!.title}
+                    {all && <span className="ml-2 text-xs font-normal text-muted-foreground">→ {memberName(step.assignee_id)}</span>}
+                  </div>
                   <div className="text-xs text-muted-foreground">
                     Step {step.step_order}: <span className="text-foreground">{step.step_name}</span>
                     {step.description ? ` — ${step.description}` : ""}
@@ -275,15 +293,18 @@ function MyTasksTab({
       </section>
 
       <section>
-        <h2 className="mb-2 text-sm font-semibold">Your one-off tasks ({myTasks.length})</h2>
-        {myTasks.length === 0 ? (
+        <h2 className="mb-2 text-sm font-semibold">{all ? "Open one-off tasks" : "Your one-off tasks"} ({tasks.length})</h2>
+        {tasks.length === 0 ? (
           <div className="rounded-xl border border-dashed border-border bg-card/40 p-6 text-center text-sm text-muted-foreground">No open tasks.</div>
         ) : (
           <div className="space-y-2">
-            {myTasks.map((t) => (
+            {tasks.map((t) => (
               <Card key={t.id} className="flex items-center justify-between gap-3 p-4">
                 <div className="min-w-0">
-                  <div className="font-medium">{t.title}</div>
+                  <div className="font-medium">
+                    {t.title}
+                    {all && <span className="ml-2 text-xs font-normal text-muted-foreground">→ {memberName(t.assignee_id)}</span>}
+                  </div>
                   {(t.description || t.due_date) && (
                     <div className="text-xs text-muted-foreground">
                       {t.description}{t.description && t.due_date ? " · " : ""}{t.due_date ? `due ${format(new Date(t.due_date), "MMM d")}` : ""}
@@ -297,7 +318,9 @@ function MyTasksTab({
             ))}
           </div>
         )}
-        <div className="mt-3"><AddTaskDialog members={[]} defaultAssigneeId={session.chatterId} onAdded={onRefresh} selfLabel="Add a task for yourself" /></div>
+        {session.chatterId && (
+          <div className="mt-3"><AddTaskDialog members={[]} defaultAssigneeId={session.chatterId} onAdded={onRefresh} selfLabel="Add a task for yourself" /></div>
+        )}
       </section>
     </div>
   );
