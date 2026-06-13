@@ -185,7 +185,9 @@ function NavSection({
 function RedditNavGroup() {
   const location = useLocation();
   const isRedditActive =
-    location.pathname === "/reddit" || location.pathname === "/reddit-airtable";
+    location.pathname === "/reddit" ||
+    location.pathname === "/reddit-airtable" ||
+    location.pathname === "/reddit-scorer";
   const [open, setOpen] = useState(isRedditActive);
 
   return (
@@ -212,6 +214,7 @@ function RedditNavGroup() {
         <div className="ml-4 mt-0.5 space-y-0.5 border-l border-border pl-3">
           <SideNavLink to="/reddit" slug="reddit" icon={<SiReddit className="h-4 w-4" />} label="Posts" />
           <SideNavLink to="/reddit-airtable" slug="reddit-airtable" icon={<SiAirtable className="h-4 w-4" />} label="Airtable" />
+          <SideNavLink to="/reddit-scorer" slug="reddit-scorer" icon={<Sparkles className="h-4 w-4" />} label="Scorer" />
         </div>
       )}
     </div>
