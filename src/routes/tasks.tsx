@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -582,7 +583,7 @@ function RecurringManager({ members, onChanged }: { members: TeamMember[]; onCha
           </div>
           <div className="grid gap-1.5">
             <Label>Starts</Label>
-            <Input type="date" value={f.start_date} onChange={(e) => setF({ ...f, start_date: e.target.value })} />
+            <DatePicker value={f.start_date ? parseISO(f.start_date) : null} onChange={(d) => setF({ ...f, start_date: d ? format(d, "yyyy-MM-dd") : "" })} placeholder="Start date" />
           </div>
         </div>
         <div className="grid gap-1.5">
@@ -629,19 +630,35 @@ function RecurringManager({ members, onChanged }: { members: TeamMember[]; onCha
   );
 }
 
+const emptyTaskForm = (assignee: string) => ({ title: "", assignee_id: assignee, due: null as Date | null, description: "", repeat: "0", customDays: 7 });
+
 function AddTaskDialog({ members, defaultAssigneeId, onAdded, selfLabel }: { members: TeamMember[]; defaultAssigneeId?: string; onAdded: () => void; selfLabel?: string }) {
   const [open, setOpen] = useState(false);
-  const [f, setF] = useState({ title: "", assignee_id: defaultAssigneeId ?? "", due_date: "", description: "" });
+  const [f, setF] = useState(emptyTaskForm(defaultAssigneeId ?? ""));
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => { if (open) setF({ title: "", assignee_id: defaultAssigneeId ?? "", due_date: "", description: "" }); }, [open, defaultAssigneeId]);
+  useEffect(() => { if (open) setF(emptyTaskForm(defaultAssigneeId ?? "")); }, [open, defaultAssigneeId]);
+
+  const interval = f.repeat === "custom" ? Math.max(1, Number(f.customDays) || 0) : Number(f.repeat);
+  const repeats = interval > 0;
 
   const save = async () => {
     setSaving(true);
-    const { error } = await addStandaloneTask({ title: f.title, assignee_id: f.assignee_id, due_date: f.due_date || null, description: f.description || null });
+    const dueStr = f.due ? format(f.due, "yyyy-MM-dd") : null;
+    if (repeats) {
+      // A repeat creates a recurrence rule; the first occurrence materialises
+      // immediately if it's due today/now.
+      const start = dueStr ?? format(new Date(), "yyyy-MM-dd");
+      const { error } = await createRecurringTask({ title: f.title, assignee_id: f.assignee_id, interval_days: interval, start_date: start, description: f.description || null });
+      if (error) { setSaving(false); toast.error(error); return; }
+      await generateDueRecurringTasks();
+      toast.success("Repeating task created");
+    } else {
+      const { error } = await addStandaloneTask({ title: f.title, assignee_id: f.assignee_id, due_date: dueStr, description: f.description || null });
+      if (error) { setSaving(false); toast.error(error); return; }
+      toast.success("Task added");
+    }
     setSaving(false);
-    if (error) { toast.error(error); return; }
-    toast.success("Task added");
     setOpen(false);
     onAdded();
   };
@@ -662,11 +679,37 @@ function AddTaskDialog({ members, defaultAssigneeId, onAdded, selfLabel }: { mem
             </div>
           )}
           <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-1.5"><Label>Due date</Label><Input type="date" value={f.due_date} onChange={(e) => setF({ ...f, due_date: e.target.value })} /></div>
+            <div className="grid gap-1.5">
+              <Label>{repeats ? "First due / starts" : "Due date"}</Label>
+              <DatePicker value={f.due} onChange={(d) => setF({ ...f, due: d })} clearable placeholder="Pick a date" />
+            </div>
+            <div className="grid gap-1.5">
+              <Label>Repeat</Label>
+              <Select value={f.repeat} onValueChange={(v) => setF({ ...f, repeat: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="0">Doesn't repeat</SelectItem>
+                  <SelectItem value="1">Daily</SelectItem>
+                  <SelectItem value="7">Weekly</SelectItem>
+                  <SelectItem value="14">Every 2 weeks</SelectItem>
+                  <SelectItem value="30">Monthly</SelectItem>
+                  <SelectItem value="custom">Custom…</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
+          {f.repeat === "custom" && (
+            <div className="grid gap-1.5">
+              <Label>Every N days</Label>
+              <Input type="number" min={1} value={f.customDays} onChange={(e) => setF({ ...f, customDays: Number(e.target.value) })} className="w-28" />
+            </div>
+          )}
+          {repeats && (
+            <p className="text-[11px] text-muted-foreground">A fresh task is created {interval === 1 ? "every day" : interval === 7 ? "every week" : `every ${interval} days`}, starting on the date above (or today if blank). Manage or stop it from Start → Repeating tasks.</p>
+          )}
           <div className="grid gap-1.5"><Label>Notes</Label><Textarea value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} rows={2} /></div>
         </div>
-        <DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button><Button onClick={save} disabled={saving}>{saving ? "Saving…" : "Add task"}</Button></DialogFooter>
+        <DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button><Button onClick={save} disabled={saving}>{saving ? "Saving…" : repeats ? "Create repeating task" : "Add task"}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   );
