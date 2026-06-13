@@ -5,7 +5,7 @@ import {
   Plus, Trash2, Edit2, Check, X, MessageCircle, AlertTriangle,
   DollarSign, Clock, Award, TrendingUp, Flag, Eye, EyeOff, Copy, KeyRound,
   Download, Wallet, History, Search, Briefcase, Globe2, MapPin, Activity,
-  NotebookPen, Gift, CalendarOff, Calculator, ListChecks, CalendarDays,
+  NotebookPen, Gift, CalendarOff, Calculator, ListChecks, CalendarDays, ChevronsUpDown,
   ChevronLeft, ChevronRight, CheckCircle2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel, SelectSeparator } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -174,6 +176,42 @@ const BONUS_METRIC_LABELS: Record<AdminBonusTier["metric"], string> = {
   messages: "Messages sent",
   hours: "Hours worked",
 };
+
+// Searchable country picker — full ISO list (cmdk filters as you type).
+function CountryCombobox({ value, onChange }: { value: string; onChange: (code: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const selected = countryByCode(value);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" role="combobox" aria-expanded={open} className="w-full justify-between font-normal">
+          <span className="truncate">
+            {selected ? `${flagEmoji(selected.code)}  ${selected.name}` : <span className="text-muted-foreground">Pick a country</span>}
+          </span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+        <Command>
+          <CommandInput placeholder="Search countries…" />
+          <CommandList>
+            <CommandEmpty>No country found.</CommandEmpty>
+            <CommandItem value="not set" onSelect={() => { onChange(""); setOpen(false); }}>
+              <Check className={`mr-2 h-4 w-4 ${!value ? "opacity-100" : "opacity-0"}`} />
+              <span className="text-muted-foreground">Not set</span>
+            </CommandItem>
+            {COUNTRIES.map((c) => (
+              <CommandItem key={c.code} value={`${c.name} ${c.code}`} onSelect={() => { onChange(c.code); setOpen(false); }}>
+                <Check className={`mr-2 h-4 w-4 ${value === c.code ? "opacity-100" : "opacity-0"}`} />
+                <span>{flagEmoji(c.code)}  {c.name}</span>
+              </CommandItem>
+            ))}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 const statusStyles: Record<ChatterStatus, string> = {
   active:     "bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border-emerald-500/30",
@@ -827,20 +865,7 @@ function RosterTab({
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label>Country</Label>
-                  <Select
-                    value={form.country || "none"}
-                    onValueChange={(v) => setForm({ ...form, country: v === "none" ? "" : v })}
-                  >
-                    <SelectTrigger><SelectValue placeholder="Pick a country" /></SelectTrigger>
-                    <SelectContent className="max-h-72">
-                      <SelectItem value="none">— Not set —</SelectItem>
-                      {COUNTRIES.map((c) => (
-                        <SelectItem key={c.code} value={c.code}>
-                          {flagEmoji(c.code)}  {c.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <CountryCombobox value={form.country} onChange={(code) => setForm({ ...form, country: code })} />
                 </div>
                 <div className="space-y-1.5">
                   <Label>Gender</Label>
