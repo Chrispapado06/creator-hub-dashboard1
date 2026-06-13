@@ -173,3 +173,46 @@
     -moz-osx-font-smoothing: grayscale;
   }
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   "Sick" button hover — white flip + scale + soft shadow + animated rainbow
+   outline. Applied to the shadcn Button (.sick-btn marker), NOT raw Radix
+   primitives (switch / tabs / select triggers are <button> too). Left
+   unlayered on purpose so it overrides Tailwind's per-variant hover utilities.
+   ────────────────────────────────────────────────────────────────────────── */
+@property --bang { syntax: "<angle>"; initial-value: 0deg; inherits: false; }
+
+.sick-btn {
+  position: relative; z-index: 0; cursor: pointer;
+  transition: transform .16s cubic-bezier(.2,.7,.3,1), background-color .16s ease,
+              color .16s ease, box-shadow .16s ease, border-color .16s ease;
+  will-change: transform;
+}
+.sick-btn:hover {
+  background: #fff; color: #111; border-color: #fff;
+  transform: scale(1.06); box-shadow: 0 8px 22px rgba(0,0,0,.30);
+}
+.sick-btn:hover :is(svg) { color: #111; }
+.sick-btn:active { transform: scale(.96); }
+
+/* animated rainbow outline tracing the edge on hover */
+.sick-btn::before {
+  content: ""; position: absolute; inset: -1.5px; border-radius: inherit;
+  z-index: -1; opacity: 0; padding: 1.25px;
+  background: conic-gradient(from var(--bang),
+    #ff004c,#ff8a00,#ffe600,#28ff00,#00e1ff,#5b6bff,#d400ff,#ff004c);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  transition: opacity .2s ease;
+  animation: huebang 2.6s linear infinite;
+}
+.sick-btn:hover::before { opacity: 1; }
+@keyframes huebang { to { --bang: 360deg; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .sick-btn { transition: none; }
+  .sick-btn:hover { transform: none; }
+  .sick-btn::before { animation: none; }
+}

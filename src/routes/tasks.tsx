@@ -14,8 +14,8 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogT
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
-import { format, formatDistanceToNowStrict } from "date-fns";
-import { ListChecks, Plus, Trash2, Check, X, ArrowRight, GripVertical, Workflow as WorkflowIcon, CircleDot, User } from "lucide-react";
+import { format, formatDistanceToNowStrict, parseISO, addDays, startOfDay, isSameDay, differenceInCalendarDays } from "date-fns";
+import { ListChecks, Plus, Trash2, Check, X, ArrowRight, GripVertical, Workflow as WorkflowIcon, CircleDot, User, CalendarDays } from "lucide-react";
 import {
   completeActiveStep, skipStep, startPipeline, reassignStep, cancelPipeline,
   addStandaloneTask, completeStandaloneTask, currentUsername,
@@ -129,6 +129,67 @@ function activeSince(pipelineId: string, steps: PipelineStep[], pipelines: Pipel
   return p ? new Date(p.created_at) : null;
 }
 
+// ── Mini calendar (front of My tasks) ────────────────────────────────────────
+// 14-day strip + agenda of what's due soon. Pipeline steps don't carry due
+// dates (by design), so this tracks standalone-task due dates.
+const CAL_WEEK = ["S", "M", "T", "W", "T", "F", "S"];
+function MiniCalendar({ tasks }: { tasks: StandaloneTask[] }) {
+  const today = startOfDay(new Date());
+  const dated = tasks.filter((t) => t.due_date);
+  const byDay = new Map<string, number>();
+  for (const t of dated) byDay.set(t.due_date!, (byDay.get(t.due_date!) ?? 0) + 1);
+
+  const days = Array.from({ length: 14 }, (_, i) => addDays(today, i));
+  const agenda = dated
+    .map((t) => ({ t, due: parseISO(t.due_date!) }))
+    .filter(({ due }) => differenceInCalendarDays(due, today) <= 13)
+    .sort((a, b) => a.due.getTime() - b.due.getTime())
+    .slice(0, 6);
+
+  return (
+    <Card className="p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <div className="flex items-center gap-1.5 text-sm font-semibold"><CalendarDays className="h-4 w-4 text-primary" /> Coming up</div>
+        <span className="text-[11px] text-muted-foreground">{format(today, "MMMM yyyy")}</span>
+      </div>
+      <div className="grid grid-cols-7 gap-1">
+        {days.map((d) => {
+          const count = byDay.get(format(d, "yyyy-MM-dd")) ?? 0;
+          const isToday = isSameDay(d, today);
+          return (
+            <div key={format(d, "yyyy-MM-dd")} className={`rounded-lg border p-1.5 text-center ${isToday ? "border-primary bg-primary/10" : "border-border"}`}>
+              <div className="text-[9px] uppercase text-muted-foreground/70">{CAL_WEEK[d.getDay()]}</div>
+              <div className={`text-sm font-semibold ${isToday ? "text-primary" : ""}`}>{format(d, "d")}</div>
+              {count > 0 ? (
+                <div className="mx-auto mt-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[9px] font-bold text-primary-foreground">{count}</div>
+              ) : (
+                <div className="mt-0.5 h-4" />
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-3 space-y-1">
+        {agenda.length === 0 ? (
+          <p className="text-center text-xs text-muted-foreground">Nothing due in the next two weeks.</p>
+        ) : agenda.map(({ t, due }) => {
+          const delta = differenceInCalendarDays(due, today);
+          const overdue = delta < 0;
+          const label = overdue ? `${Math.abs(delta)}d overdue` : delta === 0 ? "today" : delta === 1 ? "tomorrow" : `in ${delta}d`;
+          return (
+            <div key={t.id} className="flex items-center justify-between gap-2 text-xs">
+              <span className="truncate">{t.title}</span>
+              <span className={`shrink-0 rounded px-1.5 py-0.5 ${overdue ? "bg-destructive/15 text-destructive" : delta <= 1 ? "bg-amber-500/15 text-amber-600" : "bg-secondary text-muted-foreground"}`}>
+                {format(due, "MMM d")} · {label}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
 // ── My tasks ─────────────────────────────────────────────────────────────────
 function MyTasksTab({
   session, pipelines, steps, standalone, memberName, onRefresh,
@@ -184,6 +245,8 @@ function MyTasksTab({
 
   return (
     <div className="mt-4 space-y-6">
+      <MiniCalendar tasks={myTasks} />
+
       <section>
         <h2 className="mb-2 text-sm font-semibold">Pipeline steps waiting on you ({myActiveSteps.length})</h2>
         {myActiveSteps.length === 0 ? (

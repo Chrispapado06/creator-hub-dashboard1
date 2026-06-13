@@ -10,15 +10,15 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "bg-primary text-primary-foreground shadow hover:bg-primary/90 hover:shadow-md hover:-translate-y-px",
+          "sick-btn bg-primary text-primary-foreground shadow hover:bg-primary/90 hover:shadow-md hover:-translate-y-px",
         destructive:
-          "bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90 hover:shadow-md hover:-translate-y-px",
+          "sick-btn bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90 hover:shadow-md hover:-translate-y-px",
         outline:
-          "border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground hover:border-primary/40 hover:shadow",
+          "sick-btn border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground hover:border-primary/40 hover:shadow",
         secondary:
-          "bg-secondary text-secondary-foreground shadow-sm hover:bg-secondary/80 hover:shadow",
+          "sick-btn bg-secondary text-secondary-foreground shadow-sm hover:bg-secondary/80 hover:shadow",
         ghost:
-          "hover:bg-accent hover:text-accent-foreground",
+          "sick-btn hover:bg-accent hover:text-accent-foreground",
         link:
           "text-primary underline-offset-4 hover:underline",
       },
