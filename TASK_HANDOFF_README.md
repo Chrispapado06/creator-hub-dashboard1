@@ -120,20 +120,24 @@ When it's someone's turn, the app pings every channel they've configured under
 - **Discord** — `@`-mention (set `DISCORD_TASK_WEBHOOK_URL`, fill each Discord ID).
 - **WhatsApp** — template message via the Meta WhatsApp Cloud API.
 
-### WhatsApp setup (the involved one)
-Business-initiated WhatsApp messages **require an approved template** — you can't
-send free text outside a 24h window. Steps:
-1. In **Meta Business → WhatsApp**, add a WhatsApp Business Account + a phone number.
-2. Create a **message template** (e.g. name `task_ping`) with one body variable:
-   `🔔 Task update: {{1}}` — submit for approval (usually minutes–hours).
-3. Generate a **permanent System User token** with `whatsapp_business_messaging`.
-4. Note the **phone-number ID** (Cloud API → Setup) — not the phone number.
-5. Set in **Vercel env**:
-   `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `WHATSAPP_TEMPLATE` (=`task_ping`),
-   `WHATSAPP_TEMPLATE_LANG` (=`en`). Redeploy.
+### WhatsApp setup via Twilio (no Meta business verification)
+Twilio's WhatsApp **Sandbox** sends messages with no Meta business
+verification and no template approval — fine for an internal team.
+1. Sign up at **twilio.com** (free trial includes credit).
+2. Console → **Messaging → Try it out → Send a WhatsApp message** (the Sandbox).
+   Note the sandbox **From** number (usually `+14155238886`) and the
+   **join code** shown (e.g. `join lucky-fox`).
+3. From WhatsApp, **each person sends `join <code>`** to that sandbox number once.
+4. From the Console dashboard copy your **Account SID** + **Auth Token**.
+5. Set in **Vercel env**: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`,
+   `TWILIO_WHATSAPP_FROM` (=`whatsapp:+14155238886`). Redeploy.
    Health check: `GET /api/whatsapp-notify` → `{ "configured": true }`.
-6. Fill each member's **WhatsApp number** (with country code, e.g. `+447894531033`)
-   in Team contacts.
+6. Fill each member's **WhatsApp number** (with country code) in Team contacts,
+   then hit **Test**.
+
+(For production beyond the sandbox you'd request a real WhatsApp sender in
+Twilio — that step does involve Meta's WhatsApp onboarding, but the sandbox is
+enough to run your team.)
 
 Apply the migration first: `supabase db push` (adds `chatters.whatsapp_phone` +
 updates the recurring generator). Until WhatsApp is configured, those pings are
