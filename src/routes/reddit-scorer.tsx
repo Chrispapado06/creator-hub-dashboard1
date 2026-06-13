@@ -84,7 +84,7 @@ function RedditScorerPage() {
         <SiReddit className="h-7 w-7 text-[#FF4500]" />
         <div>
           <h1 className="text-2xl font-bold">Reddit Viability Scorer</h1>
-          <p className="text-sm text-muted-foreground">Assess a creator, size the launch, match subreddits.</p>
+          <p className="text-sm text-muted-foreground">Scan a prospect's photos for fit, size the launch, match subreddits.</p>
         </div>
       </div>
 
@@ -131,13 +131,23 @@ function AssessTab() {
       const images = await Promise.all(picked.map(fileToBase64));
       const result = await analyzeCreatorPhotos(images);
       setVision(result);
-      // Merge suggested niche tags into whatever's already typed.
+      if (result.compliance_concern) {
+        toast.error("Compliance concern flagged — review before proceeding.");
+      }
+      // The scan drives the photo-judgeable rubric criteria + niche tags.
       const existing = form.niche.split(",").map((s) => s.trim()).filter(Boolean);
       const merged = Array.from(new Set([...existing, ...result.niche_tags]));
-      set({ niche: merged.join(", ") });
-      toast.success("Photos analyzed — niche tags suggested below");
+      set({
+        visualAppeal: result.visual_appeal,
+        nicheFit: result.niche_demand,
+        complianceOk: !result.compliance_concern,
+        niche: merged.join(", "),
+      });
+      if (!result.compliance_concern) {
+        toast.success(`Scan complete — ${result.verdict.toUpperCase()} prospect. Visual appeal & niche demand pre-filled.`);
+      }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Analysis failed");
+      toast.error(e instanceof Error ? e.message : "Scan failed");
     } finally {
       setAnalyzing(false);
     }
@@ -216,20 +226,62 @@ function AssessTab() {
     <div className="mt-4 grid gap-6 lg:grid-cols-2">
       {/* Inputs */}
       <Card className="p-5">
-        <h2 className="mb-4 text-lg font-semibold">Creator inputs</h2>
+        <h2 className="mb-1 text-lg font-semibold">Prospect inputs</h2>
+        <p className="mb-4 text-xs text-muted-foreground">Evaluating a potential new model? Scan her photos first — it grades the visual criteria for you. Or pick an existing creator to re-assess.</p>
         <div className="space-y-4">
           <div className="grid gap-2">
-            <Label>Creator</Label>
+            <Label>Creator / prospect name</Label>
             <Select
               value={form.creatorId}
               onValueChange={(id) => set({ creatorId: id, creatorName: creators.find((c) => c.id === id)?.name ?? form.creatorName })}
             >
-              <SelectTrigger><SelectValue placeholder="Pick a creator (or type a name below)" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="Existing creator (optional)" /></SelectTrigger>
               <SelectContent>
                 {creators.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
               </SelectContent>
             </Select>
-            <Input placeholder="Creator name" value={form.creatorName} onChange={(e) => set({ creatorName: e.target.value })} />
+            <Input placeholder="…or type a new prospect's name" value={form.creatorName} onChange={(e) => set({ creatorName: e.target.value, creatorId: "" })} />
+          </div>
+
+          {/* ── AI prospect scan ─────────────────────────────────────── */}
+          <div className="rounded-xl border border-primary/25 bg-primary/5 p-3.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 text-sm font-semibold">
+                <Sparkles className="h-4 w-4 text-primary" />
+                AI prospect scan
+              </div>
+              <label className={`inline-flex cursor-pointer items-center gap-1.5 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:opacity-90 ${analyzing ? "pointer-events-none opacity-60" : ""}`}>
+                {analyzing ? "Scanning…" : vision ? "Re-scan photos" : "Upload photos"}
+                <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => onAnalyzePhotos(e.target.files)} />
+              </label>
+            </div>
+            {!vision ? (
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                Upload up to {MAX_IMAGES} photos. Claude grades her marketability for Reddit — visual selling power and niche demand — and gives a go/no-go verdict. Honest scoring: average prospects land mid-range.
+              </p>
+            ) : (
+              <div className="mt-3 space-y-2.5">
+                {vision.compliance_concern && (
+                  <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <span>Compliance concern flagged — verify age/consent and Reddit-eligibility before running this prospect.</span>
+                  </div>
+                )}
+                <div className="flex items-center gap-3">
+                  <Badge className={`border px-2.5 py-1 text-sm uppercase ${bandStyles[vision.verdict]}`}>{vision.verdict}</Badge>
+                  <div className="flex gap-4 text-sm">
+                    <div><span className="font-bold tabular-nums">{vision.visual_appeal}</span><span className="text-muted-foreground">/10 appeal</span></div>
+                    <div><span className="font-bold tabular-nums">{vision.niche_demand}</span><span className="text-muted-foreground">/10 demand</span></div>
+                    <div className="text-muted-foreground">{vision.face_visible ? "face shown" : "no face"}</div>
+                  </div>
+                </div>
+                {vision.reasoning && <p className="text-xs text-foreground/80">{vision.reasoning}</p>}
+                {vision.standout && (
+                  <p className="text-xs"><span className="font-medium">Make-or-break: </span><span className="text-muted-foreground">{vision.standout}</span></p>
+                )}
+                <p className="text-[11px] text-muted-foreground">Visual appeal, niche demand &amp; tags pre-filled below — adjust if you disagree, then add the inputs only you know (content volume, reach, verification).</p>
+              </div>
+            )}
           </div>
 
           <RatingRow label="Niche fit / demand" value={form.nicheFit} onChange={(v) => set({ nicheFit: v })} />
@@ -241,26 +293,8 @@ function AssessTab() {
           <ToggleRow label="Reddit-compliant content" hint="No banned categories" checked={form.complianceOk} onChange={(v) => set({ complianceOk: v })} />
 
           <div className="grid gap-2">
-            <div className="flex items-center justify-between">
-              <Label>Niche tags (comma-separated)</Label>
-              <label className={`inline-flex cursor-pointer items-center gap-1 text-xs text-primary hover:underline ${analyzing ? "pointer-events-none opacity-60" : ""}`}>
-                <Sparkles className="h-3.5 w-3.5" />
-                {analyzing ? "Analyzing…" : "Suggest from photos"}
-                <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => onAnalyzePhotos(e.target.files)} />
-              </label>
-            </div>
+            <Label>Niche tags (comma-separated)</Label>
             <Input placeholder="fitness, cosplay, gonewild" value={form.niche} onChange={(e) => set({ niche: e.target.value })} />
-            {vision && (
-              <div className="rounded border border-primary/20 bg-primary/5 p-2.5 text-xs">
-                <div className="font-medium">{vision.content_style || "Photo analysis"}</div>
-                <div className="mt-0.5 text-muted-foreground">{vision.observations}</div>
-                <div className="mt-1.5 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
-                  <span>{vision.face_visible ? "Face visible" : "Face not shown"}</span>
-                  <span>·</span>
-                  <span>{vision.reddit_native_content ? "Reddit-native style" : "Studio/polished"}</span>
-                </div>
-              </div>
-            )}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-2">

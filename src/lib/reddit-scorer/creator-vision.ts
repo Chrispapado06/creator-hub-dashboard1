@@ -1,11 +1,16 @@
 /**
- * Creator photo analysis — pre-fills the assess form's niche tags by showing
- * Claude a few photos. The prompt + forced-tool-use schema are ported from the
- * standalone scorer; the network call goes browser-direct to Anthropic reusing
- * the dashboard's stored key (same pattern as bernard.ts).
+ * Prospect scan — shows Claude a few photos of a POTENTIAL model and returns a
+ * marketability assessment for Reddit/OnlyFans promotion: is she a commercial
+ * fit, or just an average next-door girl who won't convert? The scan grades
+ * the photo-judgeable rubric criteria (visual appeal, niche demand) and gives
+ * an overall verdict, which pre-fills the assessment form.
  *
- * We force a single tool call so Claude must return a structured object — no
- * free-text JSON parsing.
+ * This is talent-scouting tooling for an adult-content agency evaluating
+ * consenting-adult prospects. The schema also forces a compliance check so any
+ * apparent-minor / non-consensual / banned content is flagged, not scored.
+ *
+ * A single forced tool call guarantees structured output. The network call
+ * goes browser-direct to Anthropic reusing the dashboard's stored key.
  */
 import { z } from "zod";
 import { getAnthropicKey } from "@/lib/bernard";
@@ -20,33 +25,48 @@ export function isAllowedMediaType(t: string): t is AllowedMediaType {
   return (ALLOWED_MEDIA_TYPES as readonly string[]).includes(t);
 }
 
-const CREATOR_VISION_SYSTEM = `You are a marketing analyst for an OnlyFans agency assessing whether a creator suits Reddit promotion. You are shown photos of one creator. Infer only what the images actually support — do not guess demographics, names, or anything not visible. Call the record_creator_analysis tool exactly once with your findings. Keep niche tags short, lowercase, and Reddit-subreddit-relevant (e.g. "fitness", "cosplay", "goth", "petite", "milf", "feet", "gamer"). Be objective and clinical; this is internal marketing tooling.`;
+const CREATOR_VISION_SYSTEM = `You are a talent scout for an OnlyFans marketing agency. You are shown photos of a PROSPECTIVE adult model the agency is considering signing for Reddit promotion. Your job is to judge her COMMERCIAL VIABILITY for that channel — would Reddit audiences click, subscribe, and pay, or is she an average prospect who won't convert?
 
-const ANALYSIS_USER_PROMPT = `These are photos of one creator. Analyze them and record: the niche/aesthetic tags that describe her content, whether her face is visible in any shot, whether the content looks Reddit-native (casual/amateur/selfie style that performs well on Reddit) versus polished studio work, a one-line content-style summary, and a brief observation noting anything useful or anything you could not determine. Use only what the images show.`;
+Assess objectively and commercially, the way a modelling/talent agency grades a portfolio:
+- visual_appeal (0–10): overall marketability and selling power for paid adult content — attractiveness as a commercial signal, photogenic quality, distinctiveness, production value. Be discerning and honest: a genuinely average "girl next door" with no standout draw should land around 3–5; reserve 8–10 for prospects with clear, scroll-stopping commercial appeal. Do not inflate.
+- niche_demand (0–10): how much active Reddit audience exists for her look/aesthetic/niche.
+- A clear verdict on whether she's worth running.
+
+Flag (do not score) any compliance concern: anyone who could be a minor, non-consensual material, or content Reddit bans outright — set compliance_concern true and explain.
+
+Judge only what the photos support. Be clinical and professional — this is internal commercial tooling, not commentary about the person. Call the record_prospect_assessment tool exactly once.`;
+
+const ANALYSIS_USER_PROMPT = `These are photos of a potential model we may sign for Reddit promotion. Grade her commercial viability for paid adult content on Reddit: marketability/visual selling power, demand for her niche, the niche/aesthetic tags that describe her, whether her face is visible, an overall verdict (strong / viable / marginal / skip), the reasoning, and the single biggest thing that makes or breaks her as a prospect. Be honest — most prospects are average; say so when they are.`;
 
 const ANALYSIS_TOOL = {
-  name: "record_creator_analysis",
-  description: "Record the structured analysis of the creator's photos.",
+  name: "record_prospect_assessment",
+  description: "Record the structured marketability assessment of the prospective model.",
   input_schema: {
     type: "object",
     additionalProperties: false,
     properties: {
-      niche_tags: { type: "array", items: { type: "string" }, description: "Short lowercase niche/aesthetic tags relevant to subreddit matching." },
-      face_visible: { type: "boolean", description: "Is the creator's face visible in any photo?" },
-      reddit_native_content: { type: "boolean", description: "Does the content look casual/amateur (Reddit-native) rather than polished studio work?" },
-      content_style: { type: "string", description: "One-line summary of the content style." },
-      observations: { type: "string", description: "Brief useful observation, or what couldn't be determined." },
+      visual_appeal: { type: "integer", minimum: 0, maximum: 10, description: "Marketability / visual selling power for paid adult content (0 = not marketable, 10 = exceptional). Be honest; average prospects score 3–5." },
+      niche_demand: { type: "integer", minimum: 0, maximum: 10, description: "Estimated active Reddit audience demand for her look/niche (0–10)." },
+      niche_tags: { type: "array", items: { type: "string" }, description: "Short lowercase niche/aesthetic tags relevant to subreddit matching (e.g. fitness, cosplay, goth, petite, milf, gamer)." },
+      face_visible: { type: "boolean", description: "Is her face visible in any photo? (Face content typically converts better.)" },
+      compliance_concern: { type: "boolean", description: "True if anything suggests a possible minor, non-consensual content, or Reddit-banned material." },
+      verdict: { type: "string", enum: ["strong", "viable", "marginal", "skip"], description: "Overall fitness as a Reddit promotion prospect." },
+      reasoning: { type: "string", description: "Concise commercial justification for the verdict." },
+      standout: { type: "string", description: "The single biggest factor that makes or breaks her as a prospect." },
     },
-    required: ["niche_tags", "face_visible", "reddit_native_content", "content_style", "observations"],
+    required: ["visual_appeal", "niche_demand", "niche_tags", "face_visible", "compliance_concern", "verdict", "reasoning", "standout"],
   },
 } as const;
 
 export const CreatorVisionSchema = z.object({
+  visual_appeal: z.number().int().min(0).max(10),
+  niche_demand: z.number().int().min(0).max(10),
   niche_tags: z.array(z.string().trim().toLowerCase().min(1)).max(12).transform((tags) => Array.from(new Set(tags))),
   face_visible: z.boolean(),
-  reddit_native_content: z.boolean(),
-  content_style: z.string().trim().default(""),
-  observations: z.string().trim().default(""),
+  compliance_concern: z.boolean().default(false),
+  verdict: z.enum(["strong", "viable", "marginal", "skip"]),
+  reasoning: z.string().trim().default(""),
+  standout: z.string().trim().default(""),
 });
 export type CreatorVisionResult = z.infer<typeof CreatorVisionSchema>;
 
@@ -54,7 +74,7 @@ type AnthropicContentBlock = { type: string; name?: string; input?: unknown; [k:
 
 export function parseAnalysisResponse(json: { content?: AnthropicContentBlock[] }): CreatorVisionResult {
   const block = json.content?.find((b) => b.type === "tool_use" && b.name === ANALYSIS_TOOL.name);
-  if (!block) throw new Error("Vision model did not return the expected analysis — try different photos.");
+  if (!block) throw new Error("Vision model did not return the expected assessment — try clearer photos.");
   const parsed = CreatorVisionSchema.safeParse(block.input);
   if (!parsed.success) {
     throw new Error(`Malformed analysis from the model: ${parsed.error.issues.map((i) => i.message).join(", ")}`);
