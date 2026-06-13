@@ -833,6 +833,32 @@ function DiscordIdsEditor({ members, onSaved }: { members: TeamMember[]; onSaved
     if (error) toast.error(error.message); else { toast.success("Saved"); onSaved(); }
   };
 
+  // Fire a real test ping to whatever's typed for this person and report the
+  // per-channel result — so Meta/Discord setup is verifiable without making a
+  // fake task.
+  const test = async (id: string) => {
+    const did = (discord[id] ?? "").trim();
+    const ph = (phone[id] ?? "").trim();
+    if (!did && !ph) { toast.error("Enter a Discord ID or WhatsApp number first"); return; }
+    const out: string[] = [];
+    if (ph) {
+      try {
+        const r = await fetch("/api/whatsapp-notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: ph, content: "✅ Test ping from the dashboard — your task notifications work." }) });
+        const j = await r.json().catch(() => ({}));
+        out.push(j.ok ? "WhatsApp ✓" : `WhatsApp ✗ (${j.error || r.status})`);
+      } catch { out.push("WhatsApp ✗ (network)"); }
+    }
+    if (did) {
+      try {
+        const r = await fetch("/api/discord-notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: "✅ Test ping from the dashboard.", mentionUserIds: [did] }) });
+        const j = await r.json().catch(() => ({}));
+        out.push(j.ok ? "Discord ✓" : `Discord ✗ (${j.error || r.status})`);
+      } catch { out.push("Discord ✗ (network)"); }
+    }
+    const allOk = out.every((s) => s.includes("✓"));
+    (allOk ? toast.success : toast.error)(out.join("  ·  "));
+  };
+
   const q = query.trim().toLowerCase();
   const filtered = members.filter((m) =>
     (!activeOnly || m.status === "active") && (!q || m.name.toLowerCase().includes(q)),
@@ -856,6 +882,7 @@ function DiscordIdsEditor({ members, onSaved }: { members: TeamMember[]; onSaved
             <span className="w-36 shrink-0 truncate text-sm font-medium">{m.name}</span>
             <Input className="flex-1 min-w-[150px] font-mono text-xs" placeholder="Discord user ID (numbers)" value={discord[m.id] ?? ""} onChange={(e) => setDiscord((d) => ({ ...d, [m.id]: e.target.value }))} />
             <Input className="flex-1 min-w-[150px] font-mono text-xs" placeholder="WhatsApp e.g. +447894531033" value={phone[m.id] ?? ""} onChange={(e) => setPhone((d) => ({ ...d, [m.id]: e.target.value }))} />
+            <Button size="sm" variant="ghost" onClick={() => test(m.id)} title="Send a test ping now">Test</Button>
             <Button size="sm" variant="outline" onClick={() => save(m.id)}>Save</Button>
           </div>
         ))}
