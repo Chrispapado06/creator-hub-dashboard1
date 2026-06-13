@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
 import { format } from "date-fns";
 import { DailyHero } from "@/components/DailyHero";
+import { AttentionFeed } from "@/components/AttentionFeed";
 
 export const Route = createFileRoute("/daily")({
   component: DailyPage,
@@ -400,6 +401,9 @@ function DailyPage() {
   return (
     <div className="space-y-8">
       <Toaster />
+
+      {/* What needs a decision today — surfaced from across the app */}
+      <AttentionFeed />
 
       {/* Command-center hero — pulse, alerts, movers, monthly goal */}
       <DailyHero />
