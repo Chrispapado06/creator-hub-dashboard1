@@ -425,6 +425,7 @@ function RosterTab({
     create_login: false,
     login_username: "",
     login_password: "",
+    login_is_admin: false,
   });
   const [assignDialogOpen, setAssignDialogOpen] = useState<string | null>(null);
   const [filterRole, setFilterRole] = useState<string>("all");
@@ -516,6 +517,7 @@ function RosterTab({
       create_login: false,
       login_username: "",
       login_password: "",
+      login_is_admin: false,
     });
     setEditingId(c.id);
     setOpen(true);
@@ -551,20 +553,25 @@ function RosterTab({
       chatterId = data?.id ?? null;
     }
     if (form.create_login && chatterId) {
+      // Super admin = account_type 'admin' with allowed_pages NULL (no page
+      // restrictions). Still linked to the chatter row, so they're "also a
+      // member" — they can act on anyone's pipeline + see the full dashboard.
+      const isAdmin = form.login_is_admin;
       const { error: loginErr } = await supabase.from("access_codes").insert({
         username: form.login_username.trim(),
         password: form.login_password,
         label: form.name.trim(),
-        account_type: "staff",
+        account_type: isAdmin ? "admin" : "staff",
+        allowed_pages: isAdmin ? null : undefined,
         chatter_id: chatterId,
       });
       if (loginErr) {
         toast.error(`Staff saved but login failed: ${loginErr.message}`);
       } else {
-        toast.success(`Login created — ${form.login_username.trim()}`);
+        toast.success(`${isAdmin ? "Super admin" : "Staff"} login created — ${form.login_username.trim()}`);
       }
     }
-    setForm({ name: "", email: "", role: "chatter" as StaffRole, status: "active" as ChatterStatus, commission_pct: "10", hourly_rate: "", languages: "", hire_date: "", notes: "", country: "", gender: "", create_login: false, login_username: "", login_password: "" });
+    setForm({ name: "", email: "", role: "chatter" as StaffRole, status: "active" as ChatterStatus, commission_pct: "10", hourly_rate: "", languages: "", hire_date: "", notes: "", country: "", gender: "", create_login: false, login_username: "", login_password: "", login_is_admin: false });
     setEditingId(null);
     setOpen(false);
     onRefresh();
@@ -761,7 +768,7 @@ function RosterTab({
             {chatters.length} staff · {chatters.filter((c) => c.status === "active").length} active
           </p>
         </div>
-        <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) { setEditingId(null); setForm({ name: "", email: "", role: "chatter" as StaffRole, status: "active" as ChatterStatus, commission_pct: "10", hourly_rate: "", languages: "", hire_date: "", notes: "", country: "", gender: "", create_login: false, login_username: "", login_password: "" }); } }}>
+        <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) { setEditingId(null); setForm({ name: "", email: "", role: "chatter" as StaffRole, status: "active" as ChatterStatus, commission_pct: "10", hourly_rate: "", languages: "", hire_date: "", notes: "", country: "", gender: "", create_login: false, login_username: "", login_password: "", login_is_admin: false }); } }}>
           <DialogTrigger asChild>
             <Button size="sm"><Plus className="h-4 w-4 mr-1.5" />Add staff</Button>
           </DialogTrigger>
@@ -921,8 +928,22 @@ function RosterTab({
                           autoComplete="new-password"
                         />
                       </div>
+                      {/* Access level — staff (portal only) vs super admin
+                          (full dashboard + authority over everyone's work). */}
+                      <div className="col-span-2 space-y-1.5">
+                        <Label className="text-xs">Access level</Label>
+                        <Select value={form.login_is_admin ? "admin" : "staff"} onValueChange={(v) => setForm({ ...form, login_is_admin: v === "admin" })}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="staff">Staff — clock in/out portal only</SelectItem>
+                            <SelectItem value="admin">Super admin — full dashboard + manage everyone</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                       <div className="col-span-2 text-[11px] text-muted-foreground">
-                        They'll log in at the same URL with these credentials and only see the clock in/out portal.
+                        {form.login_is_admin
+                          ? "Full access: the whole dashboard, all settings, and authority over every staff member's tasks/pipelines."
+                          : "They'll log in at the same URL and only see the clock in/out portal."}
                       </div>
                     </div>
                   )}
