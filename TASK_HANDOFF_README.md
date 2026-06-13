@@ -107,3 +107,34 @@ Recurring tasks, priorities/labels, analytics, due dates on *pipeline* steps
 (standalone tasks have due dates), file attachments, email notifications, and a
 two-way `/done`-from-Discord bot. (A separate unused `taskflow-bot/` exists in
 the repo; it is **not** wired to this feature.)
+
+---
+
+## Multi-channel pings (Discord + WhatsApp + in-app)
+
+When it's someone's turn, the app pings every channel they've configured under
+**Tasks → Templates → Team contacts**:
+
+- **In-app** — the notification bell shows "Your turn: <step> — move with speed"
+  and assigned tasks (polls every 60s; nothing to set up).
+- **Discord** — `@`-mention (set `DISCORD_TASK_WEBHOOK_URL`, fill each Discord ID).
+- **WhatsApp** — template message via the Meta WhatsApp Cloud API.
+
+### WhatsApp setup (the involved one)
+Business-initiated WhatsApp messages **require an approved template** — you can't
+send free text outside a 24h window. Steps:
+1. In **Meta Business → WhatsApp**, add a WhatsApp Business Account + a phone number.
+2. Create a **message template** (e.g. name `task_ping`) with one body variable:
+   `🔔 Task update: {{1}}` — submit for approval (usually minutes–hours).
+3. Generate a **permanent System User token** with `whatsapp_business_messaging`.
+4. Note the **phone-number ID** (Cloud API → Setup) — not the phone number.
+5. Set in **Vercel env**:
+   `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `WHATSAPP_TEMPLATE` (=`task_ping`),
+   `WHATSAPP_TEMPLATE_LANG` (=`en`). Redeploy.
+   Health check: `GET /api/whatsapp-notify` → `{ "configured": true }`.
+6. Fill each member's **WhatsApp number** (with country code, e.g. `+447894531033`)
+   in Team contacts.
+
+Apply the migration first: `supabase db push` (adds `chatters.whatsapp_phone` +
+updates the recurring generator). Until WhatsApp is configured, those pings are
+silently skipped — Discord + in-app still work.

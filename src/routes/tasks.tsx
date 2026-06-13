@@ -59,7 +59,7 @@ function TasksPage() {
   const load = async (silent = false) => {
     if (!silent) setLoading(true);
     const [{ data: m }, { data: p }, { data: s }, { data: st }] = await Promise.all([
-      sb.from("chatters").select("id, name, status, discord_user_id").order("name"),
+      sb.from("chatters").select("id, name, status, discord_user_id, whatsapp_phone").order("name"),
       sb.from("task_pipelines").select("*").eq("status", "active").order("created_at", { ascending: false }),
       sb.from("task_pipeline_steps").select("*").order("step_order"),
       sb.from("standalone_tasks").select("*").eq("status", "open").order("created_at", { ascending: false }),
@@ -805,8 +805,8 @@ function TemplatesTab({ members, onRefresh }: { members: TeamMember[]; onRefresh
       </section>
 
       <section>
-        <h2 className="mb-1 text-sm font-semibold">Team Discord IDs</h2>
-        <p className="mb-3 text-xs text-muted-foreground">A member only gets pinged on handoff if their Discord user ID is set here. (Discord → Settings → Advanced → Developer Mode → right-click the user → Copy ID.)</p>
+        <h2 className="mb-1 text-sm font-semibold">Team contacts (Discord + WhatsApp)</h2>
+        <p className="mb-3 text-xs text-muted-foreground">Each member is pinged on handoff via any channel set here. Discord ID: Settings → Advanced → Developer Mode → right-click the user → Copy ID. WhatsApp: full number with country code (e.g. +447894531033) — requires the WhatsApp Cloud API set up in Vercel.</p>
         <DiscordIdsEditor members={members} onSaved={onRefresh} />
       </section>
 
@@ -816,14 +816,20 @@ function TemplatesTab({ members, onRefresh }: { members: TeamMember[]; onRefresh
 }
 
 function DiscordIdsEditor({ members, onSaved }: { members: TeamMember[]; onSaved: () => void }) {
-  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [discord, setDiscord] = useState<Record<string, string>>({});
+  const [phone, setPhone] = useState<Record<string, string>>({});
   const [query, setQuery] = useState("");
   const [activeOnly, setActiveOnly] = useState(true);
-  useEffect(() => { setDraft(Object.fromEntries(members.map((m) => [m.id, m.discord_user_id ?? ""]))); }, [members]);
+  useEffect(() => {
+    setDiscord(Object.fromEntries(members.map((m) => [m.id, m.discord_user_id ?? ""])));
+    setPhone(Object.fromEntries(members.map((m) => [m.id, m.whatsapp_phone ?? ""])));
+  }, [members]);
 
   const save = async (id: string) => {
-    const val = (draft[id] ?? "").trim();
-    const { error } = await sb.from("chatters").update({ discord_user_id: val || null }).eq("id", id);
+    const { error } = await sb.from("chatters").update({
+      discord_user_id: (discord[id] ?? "").trim() || null,
+      whatsapp_phone: (phone[id] ?? "").trim() || null,
+    }).eq("id", id);
     if (error) toast.error(error.message); else { toast.success("Saved"); onSaved(); }
   };
 
@@ -846,9 +852,10 @@ function DiscordIdsEditor({ members, onSaved }: { members: TeamMember[]; onSaved
         {filtered.length === 0 ? (
           <div className="p-4 text-center text-xs text-muted-foreground">No staff match.</div>
         ) : filtered.map((m) => (
-          <div key={m.id} className="flex items-center gap-3 p-3">
-            <span className="w-40 truncate text-sm font-medium">{m.name}</span>
-            <Input className="flex-1 font-mono text-xs" placeholder="Discord user ID (numbers)" value={draft[m.id] ?? ""} onChange={(e) => setDraft((d) => ({ ...d, [m.id]: e.target.value }))} />
+          <div key={m.id} className="flex items-center gap-2 p-3 flex-wrap sm:flex-nowrap">
+            <span className="w-36 shrink-0 truncate text-sm font-medium">{m.name}</span>
+            <Input className="flex-1 min-w-[150px] font-mono text-xs" placeholder="Discord user ID (numbers)" value={discord[m.id] ?? ""} onChange={(e) => setDiscord((d) => ({ ...d, [m.id]: e.target.value }))} />
+            <Input className="flex-1 min-w-[150px] font-mono text-xs" placeholder="WhatsApp e.g. +447894531033" value={phone[m.id] ?? ""} onChange={(e) => setPhone((d) => ({ ...d, [m.id]: e.target.value }))} />
             <Button size="sm" variant="outline" onClick={() => save(m.id)}>Save</Button>
           </div>
         ))}

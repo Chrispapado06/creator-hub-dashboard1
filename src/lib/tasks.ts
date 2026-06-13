@@ -10,6 +10,7 @@
 
 import { supabase } from "@/integrations/supabase/client";
 import { notify } from "@/lib/discord";
+import { notifyChatter } from "@/lib/notify";
 
 // Untyped accessor — the generated Supabase types don't include the new tables
 // or RPCs yet. Regenerate types after the migration to restore type-safety.
@@ -22,7 +23,7 @@ const sb = supabase as unknown as {
 export type PipelineStatus = "active" | "complete" | "cancelled";
 export type StepStatus = "waiting" | "active" | "done" | "skipped";
 
-export type TeamMember = { id: string; name: string; status: string; discord_user_id: string | null };
+export type TeamMember = { id: string; name: string; status: string; discord_user_id: string | null; whatsapp_phone: string | null };
 
 export type Template = { id: string; name: string; description: string | null; active: boolean };
 export type TemplateStep = {
@@ -114,16 +115,10 @@ export async function completeActiveStep(
     await notify({ content: `✅ **${pipelineTitle}** complete.` }).catch(() => {});
     return { error: null, completed: true };
   }
-  await notify({
-    content: handoffMessage(
-      pipelineTitle,
-      data.next_step_order,
-      data.total_steps,
-      data.next_step_name,
-      caller,
-    ),
-    mentionUserIds: [data.next_assignee_discord_user_id],
-  }).catch(() => {});
+  await notifyChatter(
+    data.next_assignee_id,
+    handoffMessage(pipelineTitle, data.next_step_order, data.total_steps, data.next_step_name, caller),
+  );
   return { error: null, completed: false };
 }
 
@@ -142,10 +137,10 @@ export async function skipStep(
   if (data?.pipeline_completed) {
     await notify({ content: `✅ **${pipelineTitle}** complete.` }).catch(() => {});
   } else if (data) {
-    await notify({
-      content: handoffMessage(pipelineTitle, data.next_step_order, data.total_steps, data.next_step_name, caller),
-      mentionUserIds: [data.next_assignee_discord_user_id],
-    }).catch(() => {});
+    await notifyChatter(
+      data.next_assignee_id,
+      handoffMessage(pipelineTitle, data.next_step_order, data.total_steps, data.next_step_name, caller),
+    );
   }
   return { error: null };
 }
@@ -172,10 +167,10 @@ export async function startPipeline(
   });
   if (error) return { error: error.message };
 
-  await notify({
-    content: handoffMessage(title.trim(), data.first_step_order ?? 1, data.total_steps, data.first_step_name, null),
-    mentionUserIds: [data.assignee_discord_user_id],
-  }).catch(() => {});
+  await notifyChatter(
+    data.assignee_id,
+    handoffMessage(title.trim(), data.first_step_order ?? 1, data.total_steps, data.first_step_name, null),
+  );
   return { error: null, pipelineId: data.pipeline_id };
 }
 
@@ -194,10 +189,7 @@ export async function reassignStep(
   });
   if (error) return { error: error.message };
   if (data?.is_active) {
-    await notify({
-      content: `🔁 **${pipelineTitle}** — reassigned to you: **${data.step_name}**`,
-      mentionUserIds: [data.assignee_discord_user_id],
-    }).catch(() => {});
+    await notifyChatter(data.assignee_id, `🔁 **${pipelineTitle}** — reassigned to you: **${data.step_name}**`);
   }
   return { error: null };
 }
@@ -236,14 +228,8 @@ export async function addStandaloneTask(args: {
     .single();
   if (error) return { error: error.message };
 
-  // Best-effort ping to the assignee (look up their discord id).
-  const { data: ch } = await sb.from("chatters").select("discord_user_id").eq("id", data.assignee_id).maybeSingle();
-  if (ch?.discord_user_id) {
-    await notify({
-      content: `📋 New task: **${args.title.trim()}**${args.due_date ? ` (due ${args.due_date})` : ""}`,
-      mentionUserIds: [ch.discord_user_id],
-    }).catch(() => {});
-  }
+  // Best-effort ping to the assignee across every channel they've set up.
+  await notifyChatter(data.assignee_id, `📋 New task: **${args.title.trim()}**${args.due_date ? ` (due ${args.due_date})` : ""}`);
   return { error: null };
 }
 
@@ -276,14 +262,9 @@ export type RecurringTask = {
 export async function generateDueRecurringTasks(): Promise<void> {
   const { data, error } = await sb.rpc("generate_due_recurring_tasks", {});
   if (error) { console.error("[recurring] generate failed:", error.message); return; }
-  const created = (data?.created ?? []) as { title: string; assignee_discord_user_id: string | null }[];
+  const created = (data?.created ?? []) as { title: string; assignee_id: string | null }[];
   for (const c of created) {
-    if (c.assignee_discord_user_id) {
-      await notify({
-        content: `🔁 Recurring task due: **${c.title}**`,
-        mentionUserIds: [c.assignee_discord_user_id],
-      }).catch(() => {});
-    }
+    await notifyChatter(c.assignee_id, `🔁 Recurring task due: **${c.title}**`);
   }
 }
 
