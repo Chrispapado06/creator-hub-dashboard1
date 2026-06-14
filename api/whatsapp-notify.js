@@ -22,16 +22,18 @@ const TOKEN = process.env.TWILIO_AUTH_TOKEN;
 const FROM_RAW = process.env.TWILIO_WHATSAPP_FROM || "";
 const SECRET = process.env.WHATSAPP_NOTIFY_SECRET;
 
-// Twilio wants "whatsapp:+<E.164>". Accept the env with or without the prefix.
-const FROM = FROM_RAW ? (FROM_RAW.startsWith("whatsapp:") ? FROM_RAW : `whatsapp:${FROM_RAW}`) : "";
-
-// Normalize a recipient to whatsapp:+digits (keep a leading +).
+// Normalize any phone-ish string to whatsapp:+digits — strips spaces, brackets,
+// dashes and an existing "whatsapp:" prefix, so "whatsapp:+1 (415) 523-8886"
+// and "+357 99129355" both work.
 function toWhatsapp(raw) {
-  let s = String(raw || "").trim().replace(/[^\d+]/g, "");
+  let s = String(raw || "").trim().replace(/^whatsapp:/i, "").replace(/[^\d+]/g, "");
   if (!s) return "";
   if (!s.startsWith("+")) s = `+${s}`;
   return `whatsapp:${s}`;
 }
+
+// Twilio wants "whatsapp:+<E.164>" for the sender too — clean it the same way.
+const FROM = toWhatsapp(FROM_RAW);
 
 export default async function handler(req, res) {
   if (req.method === "GET") {
