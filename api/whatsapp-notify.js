@@ -37,7 +37,15 @@ const FROM = toWhatsapp(FROM_RAW);
 
 export default async function handler(req, res) {
   if (req.method === "GET") {
-    return res.status(200).json({ ok: true, configured: Boolean(SID && TOKEN && FROM) });
+    // Echo the normalized sender so we can verify a deploy landed and that the
+    // env value is being cleaned. FROM is just the public Twilio sandbox number,
+    // never a secret — SID/TOKEN are never returned.
+    return res.status(200).json({
+      ok: true,
+      configured: Boolean(SID && TOKEN && FROM),
+      from: FROM || null,
+      fromValid: /^whatsapp:\+\d{6,15}$/.test(FROM),
+    });
   }
   if (req.method !== "POST") {
     return res.status(405).json({ ok: false, error: "method not allowed" });
