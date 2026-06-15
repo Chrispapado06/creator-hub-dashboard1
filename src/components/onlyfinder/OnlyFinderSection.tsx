@@ -5,8 +5,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, ArrowLeft, FlaskConical } from "lucide-react";
+import { Plus, ArrowLeft } from "lucide-react";
 import { FansIncomeChart } from "./FansIncomeChart";
+import { OnlyFinderLogo } from "./OnlyFinderLogo";
 import {
   listCreators, getCreatorMetrics, getCreatorChanges, getCreatorExperiments,
   getDecisions, getLatestDigest, addCreator, logKeywordChange, logDailySpend,
@@ -58,7 +59,7 @@ export function OnlyFinderSection() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-2.5">
-        <FlaskConical className="h-5 w-5 text-primary" />
+        <OnlyFinderLogo className="h-6 w-6" />
         <div>
           <h2 className="text-lg font-semibold">OnlyFinder experiments</h2>
           <p className="text-xs text-muted-foreground">Keyword-change experiments per creator — movement, not attribution.</p>

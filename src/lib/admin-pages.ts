@@ -42,6 +42,7 @@ export const ADMIN_PAGES: AdminPage[] = [
   { slug: "reddit-scorer",   path: "/reddit-scorer",   label: "Scorer",    group: "Platforms" },
   { slug: "x",               path: "/x",               label: "X",         group: "Platforms" },
   { slug: "tiktok",          path: "/tiktok",          label: "TikTok",    group: "Platforms" },
+  { slug: "onlyfinder",      path: "/onlyfinder",      label: "OnlyFinder", group: "Platforms" },
   { slug: "facebook",        path: "/facebook",        label: "Facebook",  group: "Platforms" },
   { slug: "ads",             path: "/ads",             label: "Ads",       group: "Platforms" },
 

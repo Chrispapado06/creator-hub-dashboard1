@@ -14,6 +14,7 @@ import { NotificationsBell } from "@/components/NotificationsBell";
 import { SyncStatusBadge } from "@/components/SyncStatusBadge";
 import { InstallPromptBanner } from "@/components/InstallPromptBanner";
 import { SiOnlyfans, SiInstagram, SiFacebook, SiReddit, SiX, SiMeta, SiTiktok, SiAirtable } from "react-icons/si";
+import { OnlyFinderLogo } from "@/components/onlyfinder/OnlyFinderLogo";
 
 type AgencySettings = {
   agency_name: string;
@@ -565,6 +566,7 @@ function RootComponent() {
             <RedditNavGroup />
             <SideNavLink to="/x" slug="x" icon={<SiX className="h-4 w-4" />} label="X" />
             <SideNavLink to="/tiktok" slug="tiktok" icon={<SiTiktok className="h-4 w-4" />} label="TikTok" />
+            <SideNavLink to="/onlyfinder" slug="onlyfinder" icon={<OnlyFinderLogo className="h-4 w-4" />} label="OnlyFinder" />
             <MetaNavGroup />
           </NavSection>
 

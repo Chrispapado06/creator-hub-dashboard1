@@ -14,6 +14,7 @@ import { Route as RevenueRouteImport } from './routes/revenue'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as OnlyFansRouteImport } from './routes/onlyfans'
+import { Route as OnlyFinderRouteImport } from './routes/onlyfinder'
 import { Route as InstagramRouteImport } from './routes/instagram'
 import { Route as RedditRouteImport } from './routes/reddit'
 import { Route as XRouteImport } from './routes/x'
@@ -136,6 +137,11 @@ const OnlyFansRoute = OnlyFansRouteImport.update({
   path: '/onlyfans',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OnlyFinderRoute = OnlyFinderRouteImport.update({
+  id: '/onlyfinder',
+  path: '/onlyfinder',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const InstagramRoute = InstagramRouteImport.update({
   id: '/instagram',
   path: '/instagram',
@@ -173,6 +179,7 @@ export interface FileRoutesByFullPath {
   '/revenue': typeof RevenueRoute
   '/settings': typeof SettingsRoute
   '/onlyfans': typeof OnlyFansRoute
+  '/onlyfinder': typeof OnlyFinderRoute
   '/instagram': typeof InstagramRoute
   '/reddit': typeof RedditRoute
   '/x': typeof XRoute
@@ -201,6 +208,7 @@ export interface FileRoutesByTo {
   '/revenue': typeof RevenueRoute
   '/settings': typeof SettingsRoute
   '/onlyfans': typeof OnlyFansRoute
+  '/onlyfinder': typeof OnlyFinderRoute
   '/instagram': typeof InstagramRoute
   '/reddit': typeof RedditRoute
   '/x': typeof XRoute
@@ -230,6 +238,7 @@ export interface FileRoutesById {
   '/revenue': typeof RevenueRoute
   '/settings': typeof SettingsRoute
   '/onlyfans': typeof OnlyFansRoute
+  '/onlyfinder': typeof OnlyFinderRoute
   '/instagram': typeof InstagramRoute
   '/reddit': typeof RedditRoute
   '/x': typeof XRoute
@@ -260,6 +269,7 @@ export interface FileRouteTypes {
     | '/revenue'
     | '/settings'
     | '/onlyfans'
+    | '/onlyfinder'
     | '/instagram'
     | '/reddit'
     | '/x'
@@ -288,6 +298,7 @@ export interface FileRouteTypes {
     | '/revenue'
     | '/settings'
     | '/onlyfans'
+    | '/onlyfinder'
     | '/instagram'
     | '/reddit'
     | '/x'
@@ -316,6 +327,7 @@ export interface FileRouteTypes {
     | '/revenue'
     | '/settings'
     | '/onlyfans'
+    | '/onlyfinder'
     | '/instagram'
     | '/reddit'
     | '/x'
@@ -345,6 +357,7 @@ export interface RootRouteChildren {
   RevenueRoute: typeof RevenueRoute
   SettingsRoute: typeof SettingsRoute
   OnlyFansRoute: typeof OnlyFansRoute
+  OnlyFinderRoute: typeof OnlyFinderRoute
   InstagramRoute: typeof InstagramRoute
   RedditRoute: typeof RedditRoute
   XRoute: typeof XRoute
@@ -403,6 +416,13 @@ declare module '@tanstack/react-router' {
       path: '/onlyfans'
       fullPath: '/onlyfans'
       preLoaderRoute: typeof OnlyFansRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/onlyfinder': {
+      id: '/onlyfinder'
+      path: '/onlyfinder'
+      fullPath: '/onlyfinder'
+      preLoaderRoute: typeof OnlyFinderRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/instagram': {
@@ -561,6 +581,7 @@ const rootRouteChildren: RootRouteChildren = {
   RevenueRoute: RevenueRoute,
   SettingsRoute: SettingsRoute,
   OnlyFansRoute: OnlyFansRoute,
+  OnlyFinderRoute: OnlyFinderRoute,
   InstagramRoute: InstagramRoute,
   RedditRoute: RedditRoute,
   XRoute: XRoute,
