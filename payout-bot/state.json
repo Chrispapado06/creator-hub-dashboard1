@@ -2744,6 +2744,11 @@
       "ts": "2026-06-15T02:02:26+00:00",
       "amount": 17528,
       "state": "approved"
+    },
+    "acct_996fbed6bab449af89f211b4851896ef:86162440": {
+      "ts": "2026-06-15T10:18:34+00:00",
+      "amount": 195,
+      "state": "approved"
     }
   },
   "bootstrapped": {
