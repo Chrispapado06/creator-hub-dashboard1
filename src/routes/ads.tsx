@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { SiMeta } from "react-icons/si";
 import { MetaAccountView } from "@/components/MetaAccountView";
+import { OnlyFinderSection } from "@/components/onlyfinder/OnlyFinderSection";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -162,6 +163,7 @@ function AdsPage() {
             <TabsTrigger value="meta" disabled={!isMetaConnected}>Meta Account</TabsTrigger>
             <TabsTrigger value="campaigns">Campaigns</TabsTrigger>
             <TabsTrigger value="analytics">Analytics</TabsTrigger>
+            <TabsTrigger value="onlyfinder">OnlyFinder</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="mt-6">
@@ -197,6 +199,9 @@ function AdsPage() {
           </TabsContent>
           <TabsContent value="analytics" className="mt-6">
             <AnalyticsTab creators={creators} campaigns={campaigns} inflowwStats={inflowwStats} />
+          </TabsContent>
+          <TabsContent value="onlyfinder" className="mt-6">
+            <OnlyFinderSection />
           </TabsContent>
         </Tabs>
       )}
