@@ -5,6 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DatePicker } from "@/components/ui/date-picker";
+import { format, parseISO } from "date-fns";
 import { Plus, ArrowLeft } from "lucide-react";
 import { FansIncomeChart } from "./FansIncomeChart";
 import { OnlyFinderLogo } from "./OnlyFinderLogo";
@@ -239,7 +241,7 @@ function KeywordChangeForm({ creatorId, onSaved }: { creatorId: string; onSaved:
     <div className="rounded-xl border border-border bg-card p-5">
       <div className="mb-3 text-sm font-semibold">Log keyword change</div>
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Date changed *"><Input type="date" value={form.changed_on} onChange={(e) => setForm({ ...form, changed_on: e.target.value })} /></Field>
+        <Field label="Date changed *"><DatePicker value={form.changed_on ? parseISO(form.changed_on) : null} onChange={(d) => setForm({ ...form, changed_on: d ? format(d, "yyyy-MM-dd") : "" })} /></Field>
         <Field label="Action">
           <Select value={form.action} onValueChange={(v) => setForm({ ...form, action: v })}>
             <SelectTrigger><SelectValue /></SelectTrigger>
@@ -272,7 +274,7 @@ function SpendForm({ creatorId, onSaved }: { creatorId: string; onSaved: () => v
     <div className="rounded-xl border border-border bg-card p-5">
       <div className="mb-3 text-sm font-semibold">Log daily OnlyFinder spend</div>
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Date *"><Input type="date" value={form.metric_date} onChange={(e) => setForm({ ...form, metric_date: e.target.value })} /></Field>
+        <Field label="Date *"><DatePicker value={form.metric_date ? parseISO(form.metric_date) : null} onChange={(d) => setForm({ ...form, metric_date: d ? format(d, "yyyy-MM-dd") : "" })} /></Field>
         <Field label="Spend ($) *"><Input type="number" step="0.01" value={form.spend_usd} onChange={(e) => setForm({ ...form, spend_usd: e.target.value })} placeholder="25.00" /></Field>
       </div>
       <Button size="sm" className="mt-4" onClick={submit} disabled={saving || form.spend_usd === ""}>{saving ? "Saving…" : "Log spend"}</Button>
