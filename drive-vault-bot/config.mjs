@@ -20,6 +20,7 @@
 // folder_id   = the Drive folder the model uploads content into.
 
 import { randomUUID } from "node:crypto";
+import { AwsClient } from "aws4fetch";
 
 export const DRIVE_MAP = [
   // name                account_id (OF)                              folder_id (Google Drive)
@@ -46,7 +47,7 @@ export const MAX_BYTES = 1024 * 1024 * 1024; // 1 GB (OnlyFans' max)
 
 // The direct multipart upload (pushing bytes through Cloudflare) is capped
 // at 100 MB by Cloudflare. Anything at/above this goes the file_url route
-// instead: stage to a private Supabase bucket, hand OnlyFans a short-lived
+// instead: stage to a private Cloudflare R2 bucket, hand OnlyFans a short-lived
 // signed URL, and let it pull the file itself (supports up to MAX_BYTES).
 // 90 MB keeps a safety margin below the 100 MB Cloudflare wall.
 export const CDN_DIRECT_MAX_BYTES = 90 * 1024 * 1024; // 90 MB
@@ -120,92 +121,84 @@ async function postWithRetry(url, init, attempts = 4) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// ── Large-file staging (Supabase Storage signed URLs) ──────────────
+// ── Large-file staging (Cloudflare R2 presigned URLs) ──────────────
 // OnlyFans' direct upload caps at 100 MB (Cloudflare). For bigger files we
 // hand OnlyFans a URL to pull from instead. Since the content is private,
-// that URL must NOT be public — we stage the file in a private Supabase
-// bucket and mint a short-lived SIGNED URL (expires in 1h), then delete
-// the temp copy as soon as OnlyFans has finished fetching it.
-// Strip any trailing slash so joins never produce `//storage/v1` (which the
-// Supabase gateway routes inconsistently). Matches the other bots in this repo.
-const SUPABASE_URL = (process.env.SUPABASE_URL || "").replace(/\/+$/, "");
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-const STAGING_BUCKET = "vault-staging";
+// that URL must NOT be public — we stage the file in a private Cloudflare R2
+// bucket and mint a short-lived PRESIGNED URL (expires in 1h), then delete
+// the temp copy as soon as OnlyFans has finished fetching it. R2 is used
+// because its egress is free (OnlyFans' download costs nothing) and it has a
+// generous free tier.
+const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID || "";
+const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID || "";
+const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY || "";
+const R2_BUCKET = process.env.R2_BUCKET || "vault-staging";
+const R2_ENDPOINT = R2_ACCOUNT_ID ? `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com` : "";
 
 export function stagingConfigured() {
-  return !!(SUPABASE_URL && SUPABASE_SERVICE_KEY);
+  return !!(R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY && R2_BUCKET);
 }
 
-function sbHeaders(extra = {}) {
-  return { Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, apikey: SUPABASE_SERVICE_KEY, ...extra };
-}
-
-// Create the private staging bucket if absent, then ALWAYS PUT to enforce
-// its config. The PUT matters for two reasons:
-//   • privacy — if the bucket pre-existed (manually / older script) as PUBLIC,
-//     create returns "already exists" and would leave it public; the PUT
-//     forces public:false so staged content can't be fetched without a token.
-//   • size    — sets the bucket file_size_limit. NOTE: this can only be <= the
-//     project's GLOBAL upload limit, which it CANNOT raise. The global limit
-//     (Supabase dashboard → Storage → Upload file size limit, default 50 MB,
-//     needs a paid plan for >50 MB) must be >= MAX_BYTES or large uploads 413.
-async function ensureStagingBucket() {
-  const create = await fetch(`${SUPABASE_URL}/storage/v1/bucket`, {
-    method: "POST",
-    headers: sbHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify({ id: STAGING_BUCKET, name: STAGING_BUCKET, public: false, file_size_limit: MAX_BYTES }),
-  });
-  const created = create.ok;
-  if (!created) {
-    const body = await create.text();
-    const exists = create.status === 409 || /exist/i.test(body);
-    if (!exists) throw new Error(`Supabase bucket ensure failed: HTTP ${create.status} ${body.slice(0, 150)}`);
+let _r2;
+function r2Client() {
+  if (!_r2) {
+    _r2 = new AwsClient({
+      accessKeyId: R2_ACCESS_KEY_ID,
+      secretAccessKey: R2_SECRET_ACCESS_KEY,
+      service: "s3",
+      region: "auto", // R2 ignores region but the SigV4 signer needs one
+    });
   }
-  // Enforce config whether we just created it or it pre-existed.
-  const put = await fetch(`${SUPABASE_URL}/storage/v1/bucket/${STAGING_BUCKET}`, {
-    method: "PUT",
-    headers: sbHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify({ public: false, file_size_limit: MAX_BYTES }),
-  });
-  if (!put.ok) throw new Error(`Supabase bucket config (private/limit) failed: HTTP ${put.status} ${(await put.text()).slice(0, 150)}`);
+  return _r2;
 }
 
-// Upload bytes to the staging bucket and return { url, cleanup }. cleanup()
-// deletes the temp object and never throws (best-effort).
-async function stageToSignedUrl(bytes, filename, mimeType) {
-  await ensureStagingBucket();
-  const safe = String(filename).replace(/[^\w.\-]+/g, "_").slice(-120) || "file";
-  const objectPath = `${randomUUID()}/${safe}`;
-  const enc = objectPath.split("/").map(encodeURIComponent).join("/");
-  const objectUrl = `${SUPABASE_URL}/storage/v1/object/${STAGING_BUCKET}/${enc}`;
+const enc = (p) => p.split("/").map(encodeURIComponent).join("/");
 
-  // Best-effort delete of the staged object; never throws.
+// CreateBucket is idempotent on R2: 200 first time, 409 thereafter. We do it
+// once per run so a missing bucket self-heals without a dashboard step.
+async function ensureStagingBucket(r2) {
+  const r = await fetch(await r2.sign(`${R2_ENDPOINT}/${R2_BUCKET}`, { method: "PUT" }));
+  if (r.ok || r.status === 409) return;
+  const body = await r.text();
+  if (/BucketAlreadyOwnedByYou|BucketAlreadyExists/i.test(body)) return;
+  throw new Error(`R2 bucket ensure failed: HTTP ${r.status} ${body.slice(0, 150)}`);
+}
+
+// Upload bytes to R2 and return { url, cleanup }. url is a 1h presigned GET.
+// cleanup() deletes the temp object and never throws (best-effort).
+async function stageToSignedUrl(bytes, filename, mimeType) {
+  const r2 = r2Client();
+  await ensureStagingBucket(r2);
+  const safe = String(filename).replace(/[^\w.\-]+/g, "_").slice(-120) || "file";
+  const objectUrl = `${R2_ENDPOINT}/${R2_BUCKET}/${enc(`${randomUUID()}/${safe}`)}`;
+
   const remove = async () => {
-    try { await fetch(objectUrl, { method: "DELETE", headers: sbHeaders() }); }
-    catch { /* the 1h signed-URL expiry is the backstop */ }
+    try { await fetch(await r2.sign(objectUrl, { method: "DELETE" })); }
+    catch { /* the 1h presigned-URL expiry is the backstop */ }
   };
 
-  // Upload with retry (this big POST is the one staging call that can flake;
-  // postWithRetry only retries 429/5xx, so a 413 "too large" still fails fast).
-  const up = await postWithRetry(objectUrl, {
-    method: "POST",
-    headers: sbHeaders({ "Content-Type": mimeType || "application/octet-stream", "x-upsert": "true" }),
-    body: bytes,
-  });
-  if (!up.ok) throw new Error(`Supabase staging upload failed: HTTP ${up.status} ${(await up.text()).slice(0, 150)}`);
+  // PUT the object, retrying transient 5xx/429. UNSIGNED-PAYLOAD avoids hashing
+  // the whole multi-hundred-MB buffer (the header tells SigV4 to skip it).
+  let put;
+  for (let i = 0; i < 4; i++) {
+    const req = await r2.sign(objectUrl, {
+      method: "PUT",
+      headers: { "Content-Type": mimeType || "application/octet-stream", "X-Amz-Content-Sha256": "UNSIGNED-PAYLOAD" },
+      body: bytes,
+    });
+    try { put = await fetch(req); } catch (e) { put = { ok: false, status: 0, text: async () => e.message }; }
+    if (put.ok || !TRANSIENT_STATUSES.has(put.status)) break;
+    await sleep(2000 * (i + 1));
+  }
+  if (!put.ok) throw new Error(`R2 staging upload failed: HTTP ${put.status} ${(await put.text()).slice(0, 150)}`);
 
-  // From here the object EXISTS — any failure must delete it before throwing,
+  // Object now EXISTS — any failure below must delete it before throwing,
   // or we leak a multi-hundred-MB blob (no cleanup handle reaches the caller).
   try {
-    const sign = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${STAGING_BUCKET}/${enc}`, {
-      method: "POST",
-      headers: sbHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({ expiresIn: 3600 }),
-    });
-    if (!sign.ok) throw new Error(`Supabase sign failed: HTTP ${sign.status} ${(await sign.text()).slice(0, 150)}`);
-    const signedPath = (await sign.json())?.signedURL;
-    if (!signedPath) throw new Error("Supabase sign returned no signedURL");
-    return { url: `${SUPABASE_URL}/storage/v1${signedPath}`, cleanup: remove };
+    // Presigned GET, valid 1h. signQuery puts the signature in the query string
+    // so OnlyFans can fetch with a plain GET, no auth headers.
+    const signed = await r2.sign(`${objectUrl}?X-Amz-Expires=3600`, { method: "GET", aws: { signQuery: true } });
+    return { url: signed.url, cleanup: remove };
   } catch (e) {
     await remove();
     throw e;
@@ -276,8 +269,8 @@ export async function uploadToVault(accountId, bytes, filename, mimeType) {
   } else {
     if (!stagingConfigured()) {
       throw new Error(
-        `large file (${(size / 1e6).toFixed(0)} MB) needs Supabase staging, but ` +
-        `SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are not set`);
+        `large file (${(size / 1e6).toFixed(0)} MB) needs R2 staging, but ` +
+        `R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY are not set`);
     }
     const staged = await stageToSignedUrl(bytes, filename, mimeType);
     try {

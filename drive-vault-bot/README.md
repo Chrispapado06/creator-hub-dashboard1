@@ -70,21 +70,25 @@ Repo → **Settings → Secrets and variables → Actions → New repository sec
 `ONLYFANSAPI_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` already exist (used
 by `payout-bot`). Telegram is optional — without it the bot just logs.
 
-**For large files (>90 MB)** also add:
+**For large files (>90 MB)** also add Cloudflare R2 credentials. The OnlyFans
+direct upload is capped at **100 MB** (Cloudflare), so bigger files are staged
+into a private R2 bucket and pulled by OnlyFans via a 1-hour **presigned URL**,
+then deleted. R2 is used because its **egress is free** (OnlyFans' download
+costs nothing) and the free tier (10 GB storage) easily covers transient staging.
 
 | Secret | Value |
 | --- | --- |
-| `SUPABASE_URL` | `https://jzcnlxlorbmtgtjvgwbx.supabase.co` |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase dashboard → Project Settings → API → `service_role` secret |
+| `R2_ACCOUNT_ID` | Cloudflare dashboard → R2 → your **Account ID** |
+| `R2_ACCESS_KEY_ID` | R2 → **Manage R2 API Tokens** → create token (Object Read & Write) |
+| `R2_SECRET_ACCESS_KEY` | the secret half of that API token (shown once) |
+| `R2_BUCKET` | bucket name — defaults to `vault-staging` if omitted |
 
-⚠️ **Prerequisite for large files:** the OnlyFans direct upload is capped at
-**100 MB** (Cloudflare). Bigger files are staged into a private Supabase bucket
-(`vault-staging`, auto-created) and pulled by OnlyFans via a 1-hour signed URL.
-For this to work, the **Supabase project's GLOBAL upload limit** must be raised
-to ≥ 1 GB (dashboard → **Storage → Upload file size limit** — needs a paid
-plan for >50 MB). A per-bucket limit alone **cannot** exceed the global one.
-If these secrets are absent, small files still upload fine; large ones are
-flagged (not uploaded).
+R2 setup (one-time, ~3 min): Cloudflare dashboard → **R2** → enable R2 (free;
+asks for a card but doesn't charge under the free tier) → **Create bucket**
+named `vault-staging` (or let the bot create it) → **Manage R2 API Tokens** →
+**Create API Token** with **Object Read & Write** permission → copy the Access
+Key ID + Secret. If these secrets are absent, small files still upload fine;
+large ones are flagged (not uploaded).
 
 ### 5. Test
 Actions → **Drive → OF vault bot** → **Run workflow**. Drop a test image into a
@@ -93,11 +97,10 @@ appear in that creator's OnlyFans vault. The file stays put in Drive.
 
 ## Notes & limits
 - **File size / large-file path:** files **≤90 MB** upload directly. Files
-  **>90 MB** route through Supabase staging → `file_url` + async (see the
-  prerequisite above). Files over **`MAX_BYTES` (1 GB — OnlyFans' max, in
-  `config.mjs`)** are recorded once and **flagged**, never silently dropped and
-  never retried. The runner holds each file in memory, so very large videos
-  need runner headroom.
+  **>90 MB** route through R2 staging → `file_url` + async (see the R2 secrets
+  above). Files over **`MAX_BYTES` (1 GB — OnlyFans' max, in `config.mjs`)** are
+  recorded once and **flagged**, never silently dropped and never retried. The
+  runner holds each file in memory, so very large videos need runner headroom.
 - **Only `image/*` and `video/*`** are uploaded; other files in the folders are
   ignored (see `ALLOWED_MIME_PREFIXES`).
 - **Throughput:** up to `MAX_FILES_PER_CREATOR_PER_RUN` (default 25) files per

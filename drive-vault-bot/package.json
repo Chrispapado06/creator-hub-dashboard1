@@ -5,6 +5,7 @@
   "private": true,
   "description": "Polls each model's Google Drive folder and uploads new media into their OnlyFans vault.",
   "dependencies": {
+    "aws4fetch": "^1.0.20",
     "googleapis": "^144.0.0"
   }
 }
