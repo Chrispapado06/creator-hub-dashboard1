@@ -144,13 +144,38 @@ async function main() {
       const where = f.trail ? `${f.trail}/${f.name}` : f.name;
       const size = Number(f.size || 0);
       if (size > MAX_BYTES) {
-        console.warn(`  ✗ ${where}: ${(size / 1e9).toFixed(2)} GB exceeds MAX_BYTES — skipped`);
+        // Over OnlyFans' 1 GB hard limit — no upload method can take it.
+        // Record it so it's flagged ONCE, not re-reported every 5 min.
+        console.warn(`  ✗ ${where}: ${(size / 1e9).toFixed(2)} GB exceeds OnlyFans' 1 GB limit — skipped`);
         skipped++;
-        failures.push(`${c.name}: <code>${escHtml(where)}</code> too large (${(size / 1e9).toFixed(2)} GB)`);
+        failures.push(`${c.name}: <code>${escHtml(where)}</code> too large (${(size / 1e9).toFixed(2)} GB) — over OnlyFans' 1 GB limit; compress it or post manually`);
+        state.processed[f.id] = {
+          name: f.name,
+          folder: f.trail || "(root)",
+          creator: c.name,
+          account_id: c.account_id,
+          skipped_reason: "exceeds_1gb",
+          recorded_at: new Date().toISOString(),
+        };
+        await saveState(state);
         continue;
       }
       try {
         const bytes = await downloadBytes(drive, f.id);
+        // Drive sometimes omits `size` in metadata; re-check against the real
+        // bytes so a >1 GB file can't slip past the pre-download guard and
+        // then retry (re-downloading) every run forever.
+        if (bytes.length > MAX_BYTES) {
+          console.warn(`  ✗ ${where}: ${(bytes.length / 1e9).toFixed(2)} GB exceeds OnlyFans' 1 GB limit — skipped`);
+          skipped++;
+          failures.push(`${c.name}: <code>${escHtml(where)}</code> too large (${(bytes.length / 1e9).toFixed(2)} GB) — over OnlyFans' 1 GB limit; compress it or post manually`);
+          state.processed[f.id] = {
+            name: f.name, folder: f.trail || "(root)", creator: c.name,
+            account_id: c.account_id, skipped_reason: "exceeds_1gb", recorded_at: new Date().toISOString(),
+          };
+          await saveState(state);
+          continue;
+        }
         const r = await uploadToVault(c.account_id, bytes, f.name, f.mimeType);
         // Media reached the vault → record it so it's never re-uploaded,
         // even if the staging-post cleanup below failed.

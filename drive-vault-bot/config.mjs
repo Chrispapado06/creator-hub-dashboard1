@@ -19,6 +19,8 @@
 // account_id  = the onlyfansapi acct_... id for the creator's OF page.
 // folder_id   = the Drive folder the model uploads content into.
 
+import { randomUUID } from "node:crypto";
+
 export const DRIVE_MAP = [
   // name                account_id (OF)                              folder_id (Google Drive)
   { name: "Blue Bear",     account_id: "acct_99db42bda91149f58fd68ecccde21fa8", folder_id: "1h4lBdweWfstnjT1yJhVj6BhOE8ygb8Aa" },
@@ -37,16 +39,17 @@ export const DRIVE_MAP = [
 // a weird shortcut loop can't make the bot spin forever.
 export const MAX_FOLDER_DEPTH = 10;
 
-// Hard ceiling per file. Two reasons to keep this modest:
-//   1. GH Actions runners hold the whole file in memory during the
-//      multipart upload, so a giant 4K master would OOM the job.
-//   2. OnlyFansAPI's CDN itself rejects videos over ~500 MB with HTTP
-//      413 — files that pass this preflight but exceed OF's limit
-//      come back as failures every run forever.
-// 500 MB is a safe cap below OF's observed reject threshold; files
-// larger than this are skipped (logged + Telegram-flagged) so a human
-// can transcode them with ffmpeg before retrying.
-export const MAX_BYTES = 500 * 1024 * 1024; // 500 MB
+// Hard ceiling per file = OnlyFans' documented upload limit (1 GB via the
+// file_url path). Files larger than this can't be uploaded by any method,
+// so the bot records + flags them once and never retries (no per-run spam).
+export const MAX_BYTES = 1024 * 1024 * 1024; // 1 GB (OnlyFans' max)
+
+// The direct multipart upload (pushing bytes through Cloudflare) is capped
+// at 100 MB by Cloudflare. Anything at/above this goes the file_url route
+// instead: stage to a private Supabase bucket, hand OnlyFans a short-lived
+// signed URL, and let it pull the file itself (supports up to MAX_BYTES).
+// 90 MB keeps a safety margin below the 100 MB Cloudflare wall.
+export const CDN_DIRECT_MAX_BYTES = 90 * 1024 * 1024; // 90 MB
 
 // Max files to process per creator per run, so a backlog can't blow past
 // the 5-min cron cadence. Leftovers are picked up on the next run.
@@ -115,6 +118,145 @@ async function postWithRetry(url, init, attempts = 4) {
   return last;
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ── Large-file staging (Supabase Storage signed URLs) ──────────────
+// OnlyFans' direct upload caps at 100 MB (Cloudflare). For bigger files we
+// hand OnlyFans a URL to pull from instead. Since the content is private,
+// that URL must NOT be public — we stage the file in a private Supabase
+// bucket and mint a short-lived SIGNED URL (expires in 1h), then delete
+// the temp copy as soon as OnlyFans has finished fetching it.
+// Strip any trailing slash so joins never produce `//storage/v1` (which the
+// Supabase gateway routes inconsistently). Matches the other bots in this repo.
+const SUPABASE_URL = (process.env.SUPABASE_URL || "").replace(/\/+$/, "");
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+const STAGING_BUCKET = "vault-staging";
+
+export function stagingConfigured() {
+  return !!(SUPABASE_URL && SUPABASE_SERVICE_KEY);
+}
+
+function sbHeaders(extra = {}) {
+  return { Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, apikey: SUPABASE_SERVICE_KEY, ...extra };
+}
+
+// Create the private staging bucket if absent, then ALWAYS PUT to enforce
+// its config. The PUT matters for two reasons:
+//   • privacy — if the bucket pre-existed (manually / older script) as PUBLIC,
+//     create returns "already exists" and would leave it public; the PUT
+//     forces public:false so staged content can't be fetched without a token.
+//   • size    — sets the bucket file_size_limit. NOTE: this can only be <= the
+//     project's GLOBAL upload limit, which it CANNOT raise. The global limit
+//     (Supabase dashboard → Storage → Upload file size limit, default 50 MB,
+//     needs a paid plan for >50 MB) must be >= MAX_BYTES or large uploads 413.
+async function ensureStagingBucket() {
+  const create = await fetch(`${SUPABASE_URL}/storage/v1/bucket`, {
+    method: "POST",
+    headers: sbHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ id: STAGING_BUCKET, name: STAGING_BUCKET, public: false, file_size_limit: MAX_BYTES }),
+  });
+  const created = create.ok;
+  if (!created) {
+    const body = await create.text();
+    const exists = create.status === 409 || /exist/i.test(body);
+    if (!exists) throw new Error(`Supabase bucket ensure failed: HTTP ${create.status} ${body.slice(0, 150)}`);
+  }
+  // Enforce config whether we just created it or it pre-existed.
+  const put = await fetch(`${SUPABASE_URL}/storage/v1/bucket/${STAGING_BUCKET}`, {
+    method: "PUT",
+    headers: sbHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ public: false, file_size_limit: MAX_BYTES }),
+  });
+  if (!put.ok) throw new Error(`Supabase bucket config (private/limit) failed: HTTP ${put.status} ${(await put.text()).slice(0, 150)}`);
+}
+
+// Upload bytes to the staging bucket and return { url, cleanup }. cleanup()
+// deletes the temp object and never throws (best-effort).
+async function stageToSignedUrl(bytes, filename, mimeType) {
+  await ensureStagingBucket();
+  const safe = String(filename).replace(/[^\w.\-]+/g, "_").slice(-120) || "file";
+  const objectPath = `${randomUUID()}/${safe}`;
+  const enc = objectPath.split("/").map(encodeURIComponent).join("/");
+  const objectUrl = `${SUPABASE_URL}/storage/v1/object/${STAGING_BUCKET}/${enc}`;
+
+  // Best-effort delete of the staged object; never throws.
+  const remove = async () => {
+    try { await fetch(objectUrl, { method: "DELETE", headers: sbHeaders() }); }
+    catch { /* the 1h signed-URL expiry is the backstop */ }
+  };
+
+  // Upload with retry (this big POST is the one staging call that can flake;
+  // postWithRetry only retries 429/5xx, so a 413 "too large" still fails fast).
+  const up = await postWithRetry(objectUrl, {
+    method: "POST",
+    headers: sbHeaders({ "Content-Type": mimeType || "application/octet-stream", "x-upsert": "true" }),
+    body: bytes,
+  });
+  if (!up.ok) throw new Error(`Supabase staging upload failed: HTTP ${up.status} ${(await up.text()).slice(0, 150)}`);
+
+  // From here the object EXISTS — any failure must delete it before throwing,
+  // or we leak a multi-hundred-MB blob (no cleanup handle reaches the caller).
+  try {
+    const sign = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${STAGING_BUCKET}/${enc}`, {
+      method: "POST",
+      headers: sbHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ expiresIn: 3600 }),
+    });
+    if (!sign.ok) throw new Error(`Supabase sign failed: HTTP ${sign.status} ${(await sign.text()).slice(0, 150)}`);
+    const signedPath = (await sign.json())?.signedURL;
+    if (!signedPath) throw new Error("Supabase sign returned no signedURL");
+    return { url: `${SUPABASE_URL}/storage/v1${signedPath}`, cleanup: remove };
+  } catch (e) {
+    await remove();
+    throw e;
+  }
+}
+
+// Async upload from a URL. OnlyFans downloads the file itself (no Cloudflare
+// 100 MB wall), so we poll until it reports completed/failed. Returns the
+// usable media id.
+async function cdnUploadFromUrl(accountId, fileUrl, H) {
+  const fd = new FormData();
+  fd.set("file_url", fileUrl);
+  fd.set("async", "true");
+  const r = await postWithRetry(`${OF_BASE}/${accountId}/media/upload`, { method: "POST", headers: H, body: fd });
+  if (!r.ok) throw new Error(`async CDN upload failed for ${accountId}: ${await ofErr(r)}`);
+  // Fields are top-level on this endpoint (confirmed live), but unwrap a
+  // `data` envelope too in case the API changes — matches of-api.ts's `data ?? j`.
+  const j = await r.json();
+  const d = j?.data ?? j;
+  const mediaId = d?.prefixed_id;
+  const pollUrl = d?.polling_url;
+  if (!mediaId || !pollUrl) throw new Error(`async upload missing id/poll_url for ${accountId}: ${JSON.stringify(j).slice(0, 150)}`);
+
+  const deadline = Date.now() + 25 * 60 * 1000; // 25 min — generous for a ~1 GB transcode
+  let delay = 6000;
+  while (Date.now() < deadline) {
+    await sleep(delay);
+    delay = Math.min(Math.round(delay * 1.3), 20000);
+    let sr;
+    try { sr = await fetch(pollUrl, { headers: H }); } catch { continue; }
+    if (!sr.ok) continue; // transient — keep polling
+    const sj = await sr.json().catch(() => ({}));
+    if (sj.status === "completed") return mediaId;
+    if (sj.status === "failed") throw new Error(`async upload failed for ${accountId}: ${sj.error || "unknown"}`);
+    // pending / processing → keep polling
+  }
+  throw new Error(`async upload timed out for ${accountId} (>25 min)`);
+}
+
+// Push bytes directly through the CDN (≤100 MB). Synchronous.
+async function cdnUploadDirect(accountId, bytes, filename, mimeType, H) {
+  const fd = new FormData();
+  fd.set("file", new Blob([bytes], { type: mimeType || "application/octet-stream" }), filename);
+  const up = await postWithRetry(`${OF_BASE}/${accountId}/media/upload`, { method: "POST", headers: H, body: fd });
+  if (!up.ok) throw new Error(`CDN upload failed for ${accountId}: ${await ofErr(up)}`);
+  const uj = await up.json();
+  const mediaId = (uj?.data ?? uj)?.prefixed_id;
+  if (!mediaId) throw new Error(`CDN upload returned no media id for ${accountId}`);
+  return mediaId;
+}
+
 // Returns { mediaId, postId, deleted }. Throws ONLY if the media never
 // reached the vault (CDN upload or staging-post creation failed) — those
 // are safe to retry. If the media DID reach the vault but the cleanup
@@ -124,19 +266,31 @@ export async function uploadToVault(accountId, bytes, filename, mimeType) {
   const OF_KEY = process.env.ONLYFANSAPI_KEY;
   if (!OF_KEY) throw new Error("ONLYFANSAPI_KEY missing");
   const H = { Authorization: `Bearer ${OF_KEY}` };
+  const size = bytes.length ?? bytes.byteLength ?? 0;
 
-  // 1) Upload to CDN. Retries 502/503/504/429 with exponential backoff —
-  //    those are flakes, not file-level errors. 413 (too large) and
-  //    other 4xx return on the first try.
-  const fd = new FormData();
-  fd.set("file", new Blob([bytes], { type: mimeType || "application/octet-stream" }), filename);
-  const up = await postWithRetry(`${OF_BASE}/${accountId}/media/upload`, { method: "POST", headers: H, body: fd });
-  if (!up.ok) throw new Error(`CDN upload failed for ${accountId}: ${await ofErr(up)}`);
-  const mediaId = (await up.json())?.prefixed_id;
-  if (!mediaId) throw new Error(`CDN upload returned no media id for ${accountId}`);
+  // 1) Get the media onto OnlyFans. Small files push directly; big files go
+  //    via a staged signed URL so they dodge the 100 MB Cloudflare cap.
+  let mediaId;
+  if (size <= CDN_DIRECT_MAX_BYTES) {
+    mediaId = await cdnUploadDirect(accountId, bytes, filename, mimeType, H);
+  } else {
+    if (!stagingConfigured()) {
+      throw new Error(
+        `large file (${(size / 1e6).toFixed(0)} MB) needs Supabase staging, but ` +
+        `SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are not set`);
+    }
+    const staged = await stageToSignedUrl(bytes, filename, mimeType);
+    try {
+      mediaId = await cdnUploadFromUrl(accountId, staged.url, H);
+    } finally {
+      await staged.cleanup(); // always remove the temp copy, success or not
+    }
+  }
 
-  // 2) Attach to a far-future scheduled post (never goes live).
-  const post = await fetch(`${OF_BASE}/${accountId}/posts`, {
+  // 2) Attach to a far-future scheduled post (never goes live). Retry on
+  //    5xx/429 like the upload — for big files a failure here would otherwise
+  //    re-upload the whole file next run and orphan this CDN media.
+  const post = await postWithRetry(`${OF_BASE}/${accountId}/posts`, {
     method: "POST",
     headers: { ...H, "Content-Type": "application/json" },
     body: JSON.stringify({ text: VAULT_POST_TEXT, mediaFiles: [mediaId], scheduledDate: farFutureSchedule() }),

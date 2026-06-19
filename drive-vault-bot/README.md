@@ -70,15 +70,34 @@ Repo → **Settings → Secrets and variables → Actions → New repository sec
 `ONLYFANSAPI_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` already exist (used
 by `payout-bot`). Telegram is optional — without it the bot just logs.
 
+**For large files (>90 MB)** also add:
+
+| Secret | Value |
+| --- | --- |
+| `SUPABASE_URL` | `https://jzcnlxlorbmtgtjvgwbx.supabase.co` |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase dashboard → Project Settings → API → `service_role` secret |
+
+⚠️ **Prerequisite for large files:** the OnlyFans direct upload is capped at
+**100 MB** (Cloudflare). Bigger files are staged into a private Supabase bucket
+(`vault-staging`, auto-created) and pulled by OnlyFans via a 1-hour signed URL.
+For this to work, the **Supabase project's GLOBAL upload limit** must be raised
+to ≥ 1 GB (dashboard → **Storage → Upload file size limit** — needs a paid
+plan for >50 MB). A per-bucket limit alone **cannot** exceed the global one.
+If these secrets are absent, small files still upload fine; large ones are
+flagged (not uploaded).
+
 ### 5. Test
 Actions → **Drive → OF vault bot** → **Run workflow**. Drop a test image into a
 configured folder (or a subfolder inside it) first; after the run it should
 appear in that creator's OnlyFans vault. The file stays put in Drive.
 
 ## Notes & limits
-- **File size:** the runner holds each file in memory during upload. Files over
-  `MAX_BYTES` (default 2 GB, in `config.mjs`) are **skipped and flagged**, never
-  silently dropped. Raise the limit only if needed.
+- **File size / large-file path:** files **≤90 MB** upload directly. Files
+  **>90 MB** route through Supabase staging → `file_url` + async (see the
+  prerequisite above). Files over **`MAX_BYTES` (1 GB — OnlyFans' max, in
+  `config.mjs`)** are recorded once and **flagged**, never silently dropped and
+  never retried. The runner holds each file in memory, so very large videos
+  need runner headroom.
 - **Only `image/*` and `video/*`** are uploaded; other files in the folders are
   ignored (see `ALLOWED_MIME_PREFIXES`).
 - **Throughput:** up to `MAX_FILES_PER_CREATOR_PER_RUN` (default 25) files per
