@@ -37,11 +37,16 @@ export const DRIVE_MAP = [
 // a weird shortcut loop can't make the bot spin forever.
 export const MAX_FOLDER_DEPTH = 10;
 
-// Hard ceiling per file. GitHub Actions runners hold the whole file in
-// memory during multipart upload, so a giant 4K master would OOM the
-// job. Files larger than this are SKIPPED (logged + Telegram-flagged),
-// never silently dropped. Raise if your runner has the headroom.
-export const MAX_BYTES = 2 * 1024 * 1024 * 1024; // 2 GiB
+// Hard ceiling per file. Two reasons to keep this modest:
+//   1. GH Actions runners hold the whole file in memory during the
+//      multipart upload, so a giant 4K master would OOM the job.
+//   2. OnlyFansAPI's CDN itself rejects videos over ~500 MB with HTTP
+//      413 — files that pass this preflight but exceed OF's limit
+//      come back as failures every run forever.
+// 500 MB is a safe cap below OF's observed reject threshold; files
+// larger than this are skipped (logged + Telegram-flagged) so a human
+// can transcode them with ffmpeg before retrying.
+export const MAX_BYTES = 500 * 1024 * 1024; // 500 MB
 
 // Max files to process per creator per run, so a backlog can't blow past
 // the 5-min cron cadence. Leftovers are picked up on the next run.
@@ -87,6 +92,29 @@ async function ofErr(res) {
   catch { return `HTTP ${res.status}`; }
 }
 
+// Transient errors that warrant a retry. 502/503/504 = upstream CDN
+// hiccup (most common in the wild), 429 = rate limit. Anything else
+// (incl. 413 = file too big, 401 = bad token, 4xx = malformed) is
+// permanent for THIS file — we surface it immediately.
+const TRANSIENT_STATUSES = new Set([429, 502, 503, 504]);
+
+async function postWithRetry(url, init, attempts = 4) {
+  let last;
+  for (let i = 0; i < attempts; i++) {
+    const r = await fetch(url, init);
+    if (r.ok || !TRANSIENT_STATUSES.has(r.status)) return r;
+    last = r;
+    // Exponential backoff with jitter — 2s, 4s, 8s. Reads Retry-After
+    // header on 429 if Cloudflare/OF send one.
+    const ra = Number(r.headers.get("retry-after"));
+    const delay = Number.isFinite(ra) && ra > 0
+      ? ra * 1000
+      : (1000 * Math.pow(2, i + 1)) + Math.floor(Math.random() * 500);
+    await new Promise((res) => setTimeout(res, delay));
+  }
+  return last;
+}
+
 // Returns { mediaId, postId, deleted }. Throws ONLY if the media never
 // reached the vault (CDN upload or staging-post creation failed) — those
 // are safe to retry. If the media DID reach the vault but the cleanup
@@ -97,10 +125,12 @@ export async function uploadToVault(accountId, bytes, filename, mimeType) {
   if (!OF_KEY) throw new Error("ONLYFANSAPI_KEY missing");
   const H = { Authorization: `Bearer ${OF_KEY}` };
 
-  // 1) Upload to CDN.
+  // 1) Upload to CDN. Retries 502/503/504/429 with exponential backoff —
+  //    those are flakes, not file-level errors. 413 (too large) and
+  //    other 4xx return on the first try.
   const fd = new FormData();
   fd.set("file", new Blob([bytes], { type: mimeType || "application/octet-stream" }), filename);
-  const up = await fetch(`${OF_BASE}/${accountId}/media/upload`, { method: "POST", headers: H, body: fd });
+  const up = await postWithRetry(`${OF_BASE}/${accountId}/media/upload`, { method: "POST", headers: H, body: fd });
   if (!up.ok) throw new Error(`CDN upload failed for ${accountId}: ${await ofErr(up)}`);
   const mediaId = (await up.json())?.prefixed_id;
   if (!mediaId) throw new Error(`CDN upload returned no media id for ${accountId}`);
