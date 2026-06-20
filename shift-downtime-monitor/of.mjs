@@ -75,6 +75,10 @@ function normaliseChats(json) {
     out.push({
       fanId: Number(fanRaw.id),
       fanUsername: String(fanRaw.username ?? fanRaw.name ?? fanRaw.id),
+      // The "fan" is actually another CREATOR (e.g. a mass-DM from a page the
+      // creator is subbed to) when OF flags them as a performer / earner. The
+      // chatter isn't expected to reply to those, so we don't flag them.
+      fanIsCreator: fanRaw.isPerformer === true || fanRaw.isRealPerformer === true || fanRaw.canEarn === true,
       lastMessage: {
         id: Number(lm.id ?? 0),
         text: typeof lm.text === "string" ? lm.text.replace(/<[^>]+>/g, "").trim() : "",
@@ -102,6 +106,7 @@ export function unansweredThreads(chats, now = Date.now()) {
     .map((c) => ({
       fanId: c.fanId,
       fanUsername: c.fanUsername,
+      fanIsCreator: c.fanIsCreator,
       fanMessageAt: c.lastMessage.createdAt,
       text: c.lastMessage.text,
       waitedSeconds: Math.max(0, Math.round((now - Date.parse(c.lastMessage.createdAt)) / 1000)),

@@ -88,9 +88,11 @@ async function scan(accounts, state, now) {
       continue;
     }
     watched++;
-    // Keep only actionable threads: not the account talking to itself, and
-    // within the live-downtime window (older = abandoned backlog).
+    // Keep only actionable threads: a real fan (not another creator's mass-DM),
+    // not the account talking to itself, and within the live-downtime window
+    // (older = abandoned backlog).
     threads = threads.filter((t) =>
+      !t.fanIsCreator &&
       t.fanUsername.toLowerCase() !== acct.username.toLowerCase() &&
       t.waitedSeconds <= THRESHOLDS.maxWaitSec);
     if (!threads.length) continue;
