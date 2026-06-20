@@ -1,0 +1,15 @@
+{
+  "name": "shift-downtime-monitor",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "description": "Watches OF accounts on shift and escalates unanswered fan messages to Discord (5/10/20 min).",
+  "scripts": {
+    "monitor": "node monitor.mjs",
+    "probe": "node probe-of-sync.mjs",
+    "once": "MONITOR_LOOP_DURATION_SEC=0 node monitor.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.45.0"
+  }
+}

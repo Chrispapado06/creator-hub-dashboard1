@@ -1,0 +1,36 @@
+name: Shift downtime monitor (every 5 min)
+
+on:
+  schedule:
+    # Offset from payout-bot (:00/:10) and drive-vault (:05) to spread load.
+    - cron: "2-59/5 * * * *"   # :02, :07, :12, … each invocation self-loops ~4.5 min
+  workflow_dispatch:
+
+permissions:
+  contents: write   # commits state.json (the alert ledger) back to the repo
+
+concurrency:
+  group: shift-downtime-monitor
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Run monitor
+        working-directory: shift-downtime-monitor
+        env:
+          ONLYFANSAPI_KEY: ${{ secrets.ONLYFANSAPI_KEY }}
+          DISCORD_WEBHOOK_DOWNTIME: ${{ secrets.DISCORD_WEBHOOK_DOWNTIME }}
+          DISCORD_WEBHOOK_GROUP: ${{ secrets.DISCORD_WEBHOOK_GROUP }}
+        run: node monitor.mjs
+      - name: Commit state if changed
+        run: |
+          git config user.name  'shift-downtime-bot'
+          git config user.email 'shift-downtime-bot@users.noreply.github.com'
+          git add shift-downtime-monitor/state.json
+          git diff --cached --quiet || (git commit -m "shift-monitor: update state.json [skip ci]" && git push)
