@@ -12,7 +12,7 @@
 // Best-effort for the DB flow: never throws (the mutation already committed).
 
 import { supabase } from "@/integrations/supabase/client";
-import { dmUser } from "@/lib/discord";
+import { discordPing } from "@/lib/discord";
 import { toast } from "sonner";
 
 const sb = supabase as unknown as { from: (t: string) => any };
@@ -45,29 +45,32 @@ export async function notifyChatter(chatterId: string | null | undefined, conten
 
   let name = "team member";
   let discordId: string | null = null;
+  let channelId: string | null = null;
   let phone: string | null = null;
   try {
     const { data } = await sb
       .from("chatters")
-      .select("name, discord_user_id, whatsapp_phone")
+      .select("name, discord_user_id, discord_channel_id, whatsapp_phone")
       .eq("id", chatterId)
       .maybeSingle();
     name = data?.name ?? name;
     discordId = data?.discord_user_id ?? null;
+    channelId = data?.discord_channel_id ?? null;
     phone = data?.whatsapp_phone ?? null;
   } catch {
     /* ignore — fall through to the no-channel warning */
   }
 
-  if (!discordId && !phone) {
+  const hasDiscord = Boolean(discordId || channelId);
+  if (!hasDiscord && !phone) {
     toast.warning(
-      `${name} has no WhatsApp number or Discord ID — they were NOT pinged externally (they'll still see it in their in-app list). Add one in Tasks → Templates → Team contacts.`,
+      `${name} has no Discord channel/ID or WhatsApp number — they were NOT pinged externally (they'll still see it in their in-app list). Add one in Tasks → Templates → Team contacts.`,
     );
     return;
   }
 
   const [discordOk, wa] = await Promise.all([
-    discordId ? dmUser(discordId, content) : Promise.resolve(null),
+    hasDiscord ? discordPing({ channelId, discordId, content }) : Promise.resolve(null),
     phone ? whatsappNotify(phone, content) : Promise.resolve(null),
   ]);
 

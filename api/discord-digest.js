@@ -1,56 +1,68 @@
-// Daily per-person task digest, DM'd by the Discord bot.
+// Daily per-person task digest, posted by the Discord bot.
 //
-// Each morning (Vercel cron) this DMs every active team member with a Discord ID
-// their tasks for the day: the pipeline steps waiting on them + their open
-// one-off tasks. People with nothing on their plate are not DM'd.
+// Each morning (Vercel cron) the bot posts every active member's tasks for the
+// day — pipeline steps waiting on them + open one-off tasks — into THEIR channel
+// (and @-mentions them, and pins it, replacing yesterday's pin). People with no
+// channel set get a DM via discord_user_id; people with nothing on their plate
+// are skipped.
 //
-// Triggered by the Vercel cron defined in vercel.json. Secured by CRON_SECRET:
-// Vercel sends `Authorization: Bearer <CRON_SECRET>`. For a manual test, send
-// the same value as the `x-cron-secret` header.
+// Secured by CRON_SECRET: Vercel sends `Authorization: Bearer <CRON_SECRET>`.
+// Manual test: send the same value as the `x-cron-secret` header.
 //
-// Vercel env vars:
-//   DISCORD_BOT_TOKEN        — the bot token (same as api/discord-dm.js)
-//   CRON_SECRET              — random string; secures this endpoint
-//   VITE_SUPABASE_URL        — already set for the client build (reused here)
-//   VITE_SUPABASE_ANON_KEY   — already set; reads under "Public full access" RLS
-//
-// Self-contained (no cross-dir imports) so Vercel bundling can't break it.
+// Vercel env vars: DISCORD_BOT_TOKEN, CRON_SECRET, VITE_SUPABASE_URL,
+// VITE_SUPABASE_ANON_KEY (the last two already set for the client build).
 
 const TOKEN = process.env.DISCORD_BOT_TOKEN;
 const CRON_SECRET = process.env.CRON_SECRET;
 const SB_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
 const SB_KEY = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
 
-async function discordDM(token, recipientId, content) {
-  const chRes = await fetch("https://discord.com/api/v10/users/@me/channels", {
-    method: "POST",
-    headers: { Authorization: `Bot ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ recipient_id: String(recipientId) }),
+async function dapi(path, init) {
+  return fetch(`https://discord.com/api/v10${path}`, {
+    ...init,
+    headers: { Authorization: `Bot ${TOKEN}`, "Content-Type": "application/json", ...(init && init.headers) },
   });
-  if (!chRes.ok) throw new Error(`open DM ${chRes.status}: ${(await chRes.text().catch(() => "")).slice(0, 160)}`);
-  const ch = await chRes.json();
-  const msgRes = await fetch(`https://discord.com/api/v10/channels/${ch.id}/messages`, {
+}
+
+async function postToChannel(channelId, content) {
+  const r = await dapi(`/channels/${channelId}/messages`, {
     method: "POST",
-    headers: { Authorization: `Bot ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ content: String(content).slice(0, 1900) }),
+    body: JSON.stringify({ content: String(content).slice(0, 1900), allowed_mentions: { parse: ["users"] } }),
   });
-  if (!msgRes.ok) throw new Error(`send DM ${msgRes.status}: ${(await msgRes.text().catch(() => "")).slice(0, 160)}`);
+  if (!r.ok) throw new Error(`post ${r.status}: ${(await r.text().catch(() => "")).slice(0, 160)}`);
+  return r.json();
+}
+
+async function openDM(recipientId) {
+  const r = await dapi("/users/@me/channels", { method: "POST", body: JSON.stringify({ recipient_id: String(recipientId) }) });
+  if (!r.ok) throw new Error(`open DM ${r.status}: ${(await r.text().catch(() => "")).slice(0, 160)}`);
+  return (await r.json()).id;
+}
+
+// Pin the new digest, unpinning the bot's OWN prior pins in that channel so they
+// don't accumulate. All best-effort (needs Manage Messages).
+async function pinDaily(channelId, messageId, botId) {
+  try {
+    const pins = await dapi(`/channels/${channelId}/pins`, { method: "GET" }).then((r) => (r.ok ? r.json() : []));
+    for (const p of pins) {
+      if (p && p.author && p.author.id === botId) {
+        await dapi(`/channels/${channelId}/pins/${p.id}`, { method: "DELETE" }).catch(() => {});
+      }
+    }
+    await dapi(`/channels/${channelId}/pins/${messageId}`, { method: "PUT" }).catch(() => {});
+  } catch { /* best-effort */ }
 }
 
 async function sbGet(path) {
-  const r = await fetch(`${SB_URL}/rest/v1/${path}`, {
-    headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` },
-  });
+  const r = await fetch(`${SB_URL}/rest/v1/${path}`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } });
   if (!r.ok) throw new Error(`supabase ${r.status}: ${(await r.text().catch(() => "")).slice(0, 160)}`);
   return r.json();
 }
 
 export default async function handler(req, res) {
-  // Auth: Vercel cron (Bearer) OR a manual test (x-cron-secret).
   if (CRON_SECRET) {
-    const okBearer = req.headers.authorization === `Bearer ${CRON_SECRET}`;
-    const okManual = req.headers["x-cron-secret"] === CRON_SECRET;
-    if (!okBearer && !okManual) return res.status(401).json({ ok: false, error: "unauthorized" });
+    const ok = req.headers.authorization === `Bearer ${CRON_SECRET}` || req.headers["x-cron-secret"] === CRON_SECRET;
+    if (!ok) return res.status(401).json({ ok: false, error: "unauthorized" });
   }
   if (!TOKEN || !SB_URL || !SB_KEY) {
     return res.status(200).json({ ok: false, error: "not configured (DISCORD_BOT_TOKEN / VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY)" });
@@ -58,8 +70,10 @@ export default async function handler(req, res) {
 
   const today = new Date().toISOString().slice(0, 10);
   try {
+    const botId = await dapi("/users/@me", { method: "GET" }).then((r) => r.json()).then((u) => u && u.id).catch(() => null);
+
     const [chatters, steps, tasks] = await Promise.all([
-      sbGet("chatters?status=eq.active&discord_user_id=not.is.null&select=id,name,discord_user_id&order=name"),
+      sbGet("chatters?status=eq.active&select=id,name,discord_user_id,discord_channel_id&order=name"),
       sbGet("task_pipeline_steps?status=eq.active&select=assignee_id,step_name,task_pipelines!inner(title,status)&task_pipelines.status=eq.active"),
       sbGet("standalone_tasks?status=eq.open&select=assignee_id,title,due_date"),
     ]);
@@ -69,14 +83,15 @@ export default async function handler(req, res) {
     const tasksBy = {};
     for (const t of tasks) (tasksBy[t.assignee_id] = tasksBy[t.assignee_id] || []).push(t);
 
-    let sent = 0, empty = 0;
+    let sent = 0, empty = 0, skipped = 0;
     const warnings = [];
     for (const c of chatters) {
+      if (!c.discord_channel_id && !c.discord_user_id) { skipped++; continue; }
       const ms = stepsBy[c.id] || [];
       const mt = tasksBy[c.id] || [];
       if (ms.length + mt.length === 0) { empty++; continue; }
 
-      let msg = `🗓️ **Your tasks for ${today}**\n`;
+      let msg = `${c.discord_user_id ? `<@${c.discord_user_id}> ` : ""}🗓️ **Your tasks for ${today}**\n`;
       if (ms.length) {
         msg += `\n**Pipelines waiting on you (${ms.length}):**\n` +
           ms.map((s) => `• ${(s.task_pipelines && s.task_pipelines.title) || "Pipeline"} — ${s.step_name}`).join("\n") + "\n";
@@ -87,11 +102,21 @@ export default async function handler(req, res) {
       }
       msg += `\nMark them done in the dashboard → Tasks. Move with speed 💪`;
 
-      try { await discordDM(TOKEN, c.discord_user_id, msg); sent++; }
-      catch (e) { warnings.push(`${c.name}: ${String((e && e.message) || e)}`); }
+      try {
+        if (c.discord_channel_id) {
+          const posted = await postToChannel(c.discord_channel_id, msg);
+          if (botId && posted && posted.id) await pinDaily(c.discord_channel_id, posted.id, botId);
+        } else {
+          const dmId = await openDM(c.discord_user_id);
+          await postToChannel(dmId, msg);
+        }
+        sent++;
+      } catch (e) {
+        warnings.push(`${c.name}: ${String((e && e.message) || e)}`);
+      }
     }
 
-    return res.status(200).json({ ok: true, day: today, sent, empty, warnings });
+    return res.status(200).json({ ok: true, day: today, sent, empty, skipped, warnings });
   } catch (e) {
     console.error("[discord-digest]", e && e.message);
     return res.status(200).json({ ok: false, error: String((e && e.message) || e) });

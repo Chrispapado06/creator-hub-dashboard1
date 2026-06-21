@@ -21,25 +21,35 @@ function withMentions(content: string, ids: string[]): string {
 }
 
 /**
- * DM one user via the Discord BOT (their private channel) — used for personal
- * task pings. POSTs to /api/discord-dm, which holds the bot token server-side.
- * Best-effort: resolves to a boolean, never throws.
+ * Ping one member via the Discord BOT — posts to their channel (with an
+ * @-mention) if channelId is set, else DMs them. POSTs to /api/discord-dm, which
+ * holds the bot token server-side. Best-effort: resolves to a boolean, never throws.
  */
-export async function dmUser(discordId: string, content: string): Promise<boolean> {
+export async function discordPing(opts: {
+  channelId?: string | null;
+  discordId?: string | null;
+  content: string;
+  pin?: boolean;
+}): Promise<boolean> {
   try {
     const res = await fetch("/api/discord-dm", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ discordId, content }),
+      body: JSON.stringify({
+        channelId: opts.channelId || undefined,
+        discordId: opts.discordId || undefined,
+        content: opts.content,
+        pin: opts.pin,
+      }),
     });
     if (!res.ok) {
-      console.error("[discord-dm] HTTP", res.status);
+      console.error("[discord] HTTP", res.status);
       return false;
     }
     const json = (await res.json().catch(() => ({}))) as { ok?: boolean };
     return Boolean(json.ok);
   } catch (e) {
-    console.error("[discord-dm] failed:", e);
+    console.error("[discord] ping failed:", e);
     return false;
   }
 }

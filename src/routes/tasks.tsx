@@ -59,7 +59,7 @@ function TasksPage() {
   const load = async (silent = false) => {
     if (!silent) setLoading(true);
     const [{ data: m }, { data: p }, { data: s }, { data: st }] = await Promise.all([
-      sb.from("chatters").select("id, name, status, discord_user_id, whatsapp_phone").order("name"),
+      sb.from("chatters").select("id, name, status, discord_user_id, discord_channel_id, whatsapp_phone").order("name"),
       sb.from("task_pipelines").select("*").eq("status", "active").order("created_at", { ascending: false }),
       sb.from("task_pipeline_steps").select("*").order("step_order"),
       sb.from("standalone_tasks").select("*").eq("status", "open").order("created_at", { ascending: false }),
@@ -820,7 +820,7 @@ function TemplatesTab({ members, onRefresh }: { members: TeamMember[]; onRefresh
 
       <section>
         <h2 className="mb-1 text-sm font-semibold">Team contacts (Discord + WhatsApp)</h2>
-        <p className="mb-3 text-xs text-muted-foreground">Each member is pinged on handoff via any channel set here. Discord ID: Settings → Advanced → Developer Mode → right-click the user → Copy ID. WhatsApp: full number with country code (e.g. +447894531033) — requires the WhatsApp Cloud API set up in Vercel.</p>
+        <p className="mb-3 text-xs text-muted-foreground">Each member is pinged on handoff via any channel set here. <strong>Discord channel ID</strong> (right-click their channel → Copy Channel ID): the bot posts their pings + daily digest there and @-mentions them; leave blank to DM instead. <strong>Discord user ID</strong> (Developer Mode → right-click the user → Copy ID): used for the @-mention / DM fallback. <strong>WhatsApp</strong>: full number with country code.</p>
         <DiscordIdsEditor members={members} onSaved={onRefresh} />
       </section>
 
@@ -831,17 +831,20 @@ function TemplatesTab({ members, onRefresh }: { members: TeamMember[]; onRefresh
 
 function DiscordIdsEditor({ members, onSaved }: { members: TeamMember[]; onSaved: () => void }) {
   const [discord, setDiscord] = useState<Record<string, string>>({});
+  const [channel, setChannel] = useState<Record<string, string>>({});
   const [phone, setPhone] = useState<Record<string, string>>({});
   const [query, setQuery] = useState("");
   const [activeOnly, setActiveOnly] = useState(true);
   useEffect(() => {
     setDiscord(Object.fromEntries(members.map((m) => [m.id, m.discord_user_id ?? ""])));
+    setChannel(Object.fromEntries(members.map((m) => [m.id, m.discord_channel_id ?? ""])));
     setPhone(Object.fromEntries(members.map((m) => [m.id, m.whatsapp_phone ?? ""])));
   }, [members]);
 
   const save = async (id: string) => {
     const { error } = await sb.from("chatters").update({
       discord_user_id: (discord[id] ?? "").trim() || null,
+      discord_channel_id: (channel[id] ?? "").trim() || null,
       whatsapp_phone: (phone[id] ?? "").trim() || null,
     }).eq("id", id);
     if (error) toast.error(error.message); else { toast.success("Saved"); onSaved(); }
@@ -852,8 +855,9 @@ function DiscordIdsEditor({ members, onSaved }: { members: TeamMember[]; onSaved
   // fake task.
   const test = async (id: string) => {
     const did = (discord[id] ?? "").trim();
+    const ch = (channel[id] ?? "").trim();
     const ph = (phone[id] ?? "").trim();
-    if (!did && !ph) { toast.error("Enter a Discord ID or WhatsApp number first"); return; }
+    if (!did && !ch && !ph) { toast.error("Enter a Discord channel/ID or WhatsApp number first"); return; }
     const out: string[] = [];
     if (ph) {
       try {
@@ -862,9 +866,9 @@ function DiscordIdsEditor({ members, onSaved }: { members: TeamMember[]; onSaved
         out.push(j.ok ? "WhatsApp ✓" : `WhatsApp ✗ (${j.error || r.status})`);
       } catch { out.push("WhatsApp ✗ (network)"); }
     }
-    if (did) {
+    if (did || ch) {
       try {
-        const r = await fetch("/api/discord-notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: "✅ Test ping from the dashboard.", mentionUserIds: [did] }) });
+        const r = await fetch("/api/discord-dm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ channelId: ch || undefined, discordId: did || undefined, content: "✅ Test ping from the dashboard." }) });
         const j = await r.json().catch(() => ({}));
         out.push(j.ok ? "Discord ✓" : `Discord ✗ (${j.error || r.status})`);
       } catch { out.push("Discord ✗ (network)"); }
@@ -893,9 +897,10 @@ function DiscordIdsEditor({ members, onSaved }: { members: TeamMember[]; onSaved
           <div className="p-4 text-center text-xs text-muted-foreground">No staff match.</div>
         ) : filtered.map((m) => (
           <div key={m.id} className="flex items-center gap-2 p-3 flex-wrap sm:flex-nowrap">
-            <span className="w-36 shrink-0 truncate text-sm font-medium">{m.name}</span>
-            <Input className="flex-1 min-w-[150px] font-mono text-xs" placeholder="Discord user ID (numbers)" value={discord[m.id] ?? ""} onChange={(e) => setDiscord((d) => ({ ...d, [m.id]: e.target.value }))} />
-            <Input className="flex-1 min-w-[150px] font-mono text-xs" placeholder="WhatsApp e.g. +447894531033" value={phone[m.id] ?? ""} onChange={(e) => setPhone((d) => ({ ...d, [m.id]: e.target.value }))} />
+            <span className="w-32 shrink-0 truncate text-sm font-medium">{m.name}</span>
+            <Input className="flex-1 min-w-[130px] font-mono text-xs" placeholder="Discord user ID" value={discord[m.id] ?? ""} onChange={(e) => setDiscord((d) => ({ ...d, [m.id]: e.target.value }))} />
+            <Input className="flex-1 min-w-[130px] font-mono text-xs" placeholder="Discord channel ID" value={channel[m.id] ?? ""} onChange={(e) => setChannel((d) => ({ ...d, [m.id]: e.target.value }))} />
+            <Input className="flex-1 min-w-[140px] font-mono text-xs" placeholder="WhatsApp +44…" value={phone[m.id] ?? ""} onChange={(e) => setPhone((d) => ({ ...d, [m.id]: e.target.value }))} />
             <Button size="sm" variant="ghost" onClick={() => test(m.id)} title="Send a test ping now">Test</Button>
             <Button size="sm" variant="outline" onClick={() => save(m.id)}>Save</Button>
           </div>

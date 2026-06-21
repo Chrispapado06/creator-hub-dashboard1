@@ -1,36 +1,65 @@
-// Personal Discord DM for the task pipeline, via a Discord BOT (not a webhook).
+// Personal Discord task ping via the bot — posts to a person's CHANNEL (and
+// @-mentions them), or falls back to a DM if no channel is set.
 //
-// A DM is each person's private channel — so a handoff ping lands in their own
-// Discord inbox, not a shared channel. The browser can't hold the bot token, so
-// the client POSTs here and THIS function (Vercel, secret in process.env) sends.
+// The browser can't hold the bot token, so the client POSTs here and THIS
+// function (Vercel, secret in process.env) sends.
 //
-// Requirements: the bot must share a server with the recipient, and the
-// recipient must allow DMs from server members.
+// Requirements: the bot must be in the server and able to Send Messages in the
+// channel (and Manage Messages if you want pinning). For DM fallback the bot
+// must share a server with the recipient and they must allow DMs.
 //
 // Vercel env vars:
 //   DISCORD_BOT_TOKEN          — the bot token from discord.com/developers
 //   DISCORD_TASK_NOTIFY_SECRET — optional shared secret (x-task-notify-secret)
 //
-// Always responds 200 (best-effort) — a failed DM must never break the caller.
+// Body: { channelId?, discordId?, content, pin? } — at least one of channelId /
+// discordId. Always responds 200 (best-effort).
 
 const TOKEN = process.env.DISCORD_BOT_TOKEN;
 const SECRET = process.env.DISCORD_TASK_NOTIFY_SECRET;
 
-// Open a DM channel with the user, then post the message. Throws on failure.
-async function discordDM(token, recipientId, content) {
-  const chRes = await fetch("https://discord.com/api/v10/users/@me/channels", {
+async function postToChannel(token, channelId, content) {
+  const r = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
+    method: "POST",
+    headers: { Authorization: `Bot ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ content: String(content).slice(0, 1900), allowed_mentions: { parse: ["users"] } }),
+  });
+  if (!r.ok) throw new Error(`post ${r.status}: ${(await r.text().catch(() => "")).slice(0, 160)}`);
+  return r.json();
+}
+
+async function openDM(token, recipientId) {
+  const r = await fetch("https://discord.com/api/v10/users/@me/channels", {
     method: "POST",
     headers: { Authorization: `Bot ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ recipient_id: String(recipientId) }),
   });
-  if (!chRes.ok) throw new Error(`open DM ${chRes.status}: ${(await chRes.text().catch(() => "")).slice(0, 160)}`);
-  const ch = await chRes.json();
-  const msgRes = await fetch(`https://discord.com/api/v10/channels/${ch.id}/messages`, {
-    method: "POST",
-    headers: { Authorization: `Bot ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ content: String(content).slice(0, 1900) }),
-  });
-  if (!msgRes.ok) throw new Error(`send DM ${msgRes.status}: ${(await msgRes.text().catch(() => "")).slice(0, 160)}`);
+  if (!r.ok) throw new Error(`open DM ${r.status}: ${(await r.text().catch(() => "")).slice(0, 160)}`);
+  return (await r.json()).id;
+}
+
+// Best-effort pin — needs Manage Messages. Swallows failure.
+async function pinMessage(token, channelId, messageId) {
+  await fetch(`https://discord.com/api/v10/channels/${channelId}/pins/${messageId}`, {
+    method: "PUT",
+    headers: { Authorization: `Bot ${token}` },
+  }).catch(() => {});
+}
+
+// Deliver to one person: their channel (with @mention + optional pin), else DM.
+async function deliver(token, { channelId, discordId, content, pin }) {
+  if (channelId) {
+    const body = discordId ? `<@${discordId}> ${content}` : content;
+    const msg = await postToChannel(token, channelId, body);
+    if (pin && msg && msg.id) await pinMessage(token, channelId, msg.id);
+    return;
+  }
+  if (discordId) {
+    const dmId = await openDM(token, discordId);
+    await postToChannel(token, dmId, content);
+    return;
+  }
+  throw new Error("no channelId or discordId");
 }
 
 export default async function handler(req, res) {
@@ -46,19 +75,20 @@ export default async function handler(req, res) {
 
   let body = req.body;
   if (typeof body === "string") { try { body = JSON.parse(body); } catch { body = {}; } }
+  const channelId = body && body.channelId;
   const discordId = body && body.discordId;
   const content = (body && body.content ? String(body.content) : "").slice(0, 1800);
+  const pin = Boolean(body && body.pin);
 
-  if (!discordId || !content) {
-    return res.status(200).json({ ok: false, error: "missing discordId or content" });
+  if (!content || (!channelId && !discordId)) {
+    return res.status(200).json({ ok: false, error: "missing content or target (channelId/discordId)" });
   }
   if (!TOKEN) {
-    console.error("[discord-dm] not configured (DISCORD_BOT_TOKEN)");
     return res.status(200).json({ ok: false, error: "discord bot not configured" });
   }
 
   try {
-    await discordDM(TOKEN, discordId, content);
+    await deliver(TOKEN, { channelId, discordId, content, pin });
     return res.status(200).json({ ok: true });
   } catch (e) {
     console.error("[discord-dm]", e && e.message);
