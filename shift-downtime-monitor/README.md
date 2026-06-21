@@ -30,8 +30,10 @@ When the chatter replies in Infloww, the OF API reflects it within seconds
   older than `maxWaitSec` (60 min — abandoned backlog, not live downtime).
 - **Idempotency:** a committed `state.json` ledger (like `payout-bot`), so the
   5-min cron never re-sends the same breach.
-- **Tight timing:** each cron invocation self-loops every ~45s for ~4.5 min
+- **Timing / cost:** each cron invocation self-loops every **2 min** for ~4.5 min
   (`config.mjs` → `LOOP`); the workflow fires every 5 min → continuous coverage.
+  2-min cadence (vs 45s) keeps OF API usage ~190k credits/mo. Polling isn't
+  cached (`is-cached=false`), so the real cost cut is webhooks (a v2).
 - **Safe default:** with no webhook configured it runs **DRY_RUN** (logs only).
 
 ## Config to keep current

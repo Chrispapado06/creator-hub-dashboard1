@@ -67,13 +67,14 @@ export function currentShiftBlock(now = Date.now()) {
   return SHIFT_BLOCKS.find((b) => h >= b.startHour && h < b.endHour) ?? SHIFT_BLOCKS.at(-1);
 }
 
-// ── Tight-timing loop ───────────────────────────────────────────────────────
+// ── Poll loop ───────────────────────────────────────────────────────────────
 // GitHub Actions cron floors at ~5 min and runs late, so each invocation runs
-// its own sub-minute poll loop to hit the 5/10/20 thresholds closely. A 5-min
-// cron + this loop = continuous coverage.
+// its own poll loop to cover the gap. Cadence is 2 min (was 45s) to cut OF API
+// credit usage ~2× — still catches any 5-min downtime comfortably. The duration
+// spans the full ~5-min cron gap so there's no blind window between runs.
 export const LOOP = {
-  everySec: Number(process.env.MONITOR_LOOP_EVERY_SEC || 45),       // poll cadence within a run
-  durationSec: Number(process.env.MONITOR_LOOP_DURATION_SEC || 270), // run for ~4.5 min, then exit
+  everySec: Number(process.env.MONITOR_LOOP_EVERY_SEC || 120),       // poll cadence within a run (2 min)
+  durationSec: Number(process.env.MONITOR_LOOP_DURATION_SEC || 270), // run ~4.5 min, then exit
 };
 
 // ── Discord routing (env / GitHub secrets) ──────────────────────────────────
