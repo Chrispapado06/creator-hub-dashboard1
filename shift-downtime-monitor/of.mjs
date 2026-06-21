@@ -90,6 +90,24 @@ function normaliseChats(json) {
   return out;
 }
 
+// Every OF account on this API key, normalised. The /accounts endpoint
+// returns a bare array (sometimes an object keyed by index), so we coerce.
+// `authenticated` false = connected but needs re-auth (can't read its chats).
+export async function listAccounts() {
+  const json = await ofGet("/accounts");
+  const raw = Array.isArray(json) ? json
+    : Array.isArray(json?.data) ? json.data
+    : (json && typeof json === "object") ? Object.values(json) : [];
+  return raw
+    .filter((a) => a && typeof a === "object" && a.id && a.onlyfans_username)
+    .map((a) => ({
+      accountId: a.id,
+      username: a.onlyfans_username,
+      name: a.display_name || a.onlyfans_username,
+      authenticated: a.is_authenticated === true,
+    }));
+}
+
 // Return the account's most recent chat threads (normalised). Single page —
 // the monitor only cares about recent activity, and the OF API returns chats
 // newest-activity-first.

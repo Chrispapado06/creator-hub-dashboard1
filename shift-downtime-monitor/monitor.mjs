@@ -26,9 +26,9 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { sendDiscord } from "../payout-bot/config.mjs";
-import { listChats, unansweredThreads } from "./of.mjs";
+import { listAccounts, listChats, unansweredThreads } from "./of.mjs";
 import {
-  buildAccounts, THRESHOLDS, LEVEL2_TIERS, LOOP, DISCORD, DRY_RUN,
+  tierFor, THRESHOLDS, LEVEL2_TIERS, LOOP, DISCORD, DRY_RUN,
   currentShiftBlock,
 } from "./config.mjs";
 
@@ -143,14 +143,22 @@ async function scan(accounts, state, now) {
 
 // ── Main: tight loop for one cron invocation ────────────────────────────────
 (async () => {
-  const accounts = buildAccounts();
+  // Watch EVERY authenticated OF account (so new creators are auto-included).
+  // Tier comes from config overrides; everything else defaults sanely.
+  const all = await listAccounts();
+  const accounts = all
+    .filter((a) => a.authenticated)
+    .map((a) => ({ name: a.name, username: a.username, accountId: a.accountId, tier: tierFor(a.username) }));
+  const needAuth = all.filter((a) => !a.authenticated).map((a) => a.name);
   const state = loadState();
   const deadline = Date.now() + LOOP.durationSec * 1000;
 
   console.log(
-    `[${ts()}] Shift Downtime Monitor v1 — ${accounts.length} accounts, ` +
+    `[${ts()}] Shift Downtime Monitor v1 — watching ${accounts.length} accounts ` +
+    `(${accounts.map((a) => a.name).join(", ")}), ` +
     `thresholds ${THRESHOLDS.level1Sec / 60}/${THRESHOLDS.level2Sec / 60}/${THRESHOLDS.level3Sec / 60}m, ` +
-    `${DRY_RUN ? "DRY_RUN" : "LIVE"}.`,
+    `${DRY_RUN ? "DRY_RUN" : "LIVE"}.` +
+    (needAuth.length ? ` ⚠ NOT authenticated (needs re-auth): ${needAuth.join(", ")}.` : ""),
   );
 
   let pass = 0;

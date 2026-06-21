@@ -5,23 +5,27 @@
 // only what the monitor needs on top of that: per-account TIER and Discord
 // channel, the escalation thresholds, and the Discord routing.
 
-import { CREATORS } from "../payout-bot/config.mjs";
-export { CREATORS };
-
-// ── Per-account metadata ────────────────────────────────────────────────────
-// Keyed by OF username. `tier` gates the 10-min (level-2) escalation — it only
-// fires for A/B tier. Accounts not listed default to tier "C" (no level-2).
-//
-// >>> FILL THESE IN. Tiers are placeholders. <<<
+// ── Per-account TIER overrides ──────────────────────────────────────────────
+// The monitor watches EVERY authenticated OF account automatically (so new
+// creators are picked up with no edits here). This map only sets each account's
+// `tier`, which gates the 10-min (level-2) escalation (A/B only). Keyed by the
+// current OF username. Anything not listed defaults to tier "C" (no level-2).
 export const ACCOUNT_META = {
-  // username             tier
-  "bluebeari3vip":     { tier: "A" },
-  "flame_fantasy_xx":  { tier: "B" },
-  "emmasonne":         { tier: "B" },
-  "marissa.munoz":     { tier: "B" },
-  "thisisjunee":       { tier: "C" },
-  "juliejswan":        { tier: "C" },
+  // username             tier   creator
+  "bluebeari3vip":     { tier: "A" },  // Blue Bear
+  "marissa.munoz":     { tier: "B" },  // Marissa
+  "emmasonne":         { tier: "B" },  // Emma
+  "flame_fantasy_xx":  { tier: "B" },  // Meg (currently disconnected)
+  "junehaynes":        { tier: "C" },  // June - Sandra
+  "juliejswan":        { tier: "C" },  // Julie
+  "lillyylou":         { tier: "C" },  // Antonella  — tier TBC, confirm
+  "ellaajanee":        { tier: "C" },  // Ella       — tier TBC, confirm
 };
+
+// Tier for an account by username (defaults to C — no 10-min step).
+export function tierFor(username) {
+  return ACCOUNT_META[username]?.tier ?? "C";
+}
 
 // ── Escalation thresholds (seconds) ─────────────────────────────────────────
 export const THRESHOLDS = {
@@ -88,15 +92,3 @@ export const DRY_RUN =
   process.env.DRY_RUN === "true" ||
   (!DISCORD.downtimeWebhook && !DISCORD.groupWebhook);
 
-// Merge CREATORS with ACCOUNT_META into the monitor's account worklist.
-export function buildAccounts() {
-  return CREATORS.map((c) => {
-    const meta = ACCOUNT_META[c.username] ?? {};
-    return {
-      name: c.name,
-      username: c.username,
-      accountId: c.account_id,
-      tier: meta.tier ?? "C",
-    };
-  });
-}
