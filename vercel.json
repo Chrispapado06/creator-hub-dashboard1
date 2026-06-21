@@ -2,6 +2,9 @@
   "rewrites": [
     { "source": "/reddit-api/(.*)", "destination": "https://www.reddit.com/$1" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ],
+  "crons": [
+    { "path": "/api/discord-digest", "schedule": "0 8 * * *" }
   ]
 }
 

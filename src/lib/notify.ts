@@ -12,7 +12,7 @@
 // Best-effort for the DB flow: never throws (the mutation already committed).
 
 import { supabase } from "@/integrations/supabase/client";
-import { notify as discordNotify } from "@/lib/discord";
+import { dmUser } from "@/lib/discord";
 import { toast } from "sonner";
 
 const sb = supabase as unknown as { from: (t: string) => any };
@@ -67,7 +67,7 @@ export async function notifyChatter(chatterId: string | null | undefined, conten
   }
 
   const [discordOk, wa] = await Promise.all([
-    discordId ? discordNotify({ content, mentionUserIds: [discordId] }) : Promise.resolve(null),
+    discordId ? dmUser(discordId, content) : Promise.resolve(null),
     phone ? whatsappNotify(phone, content) : Promise.resolve(null),
   ]);
 

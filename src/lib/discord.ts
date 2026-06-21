@@ -20,6 +20,30 @@ function withMentions(content: string, ids: string[]): string {
   return `${ids.map((id) => `<@${id}>`).join(" ")} ${content}`;
 }
 
+/**
+ * DM one user via the Discord BOT (their private channel) — used for personal
+ * task pings. POSTs to /api/discord-dm, which holds the bot token server-side.
+ * Best-effort: resolves to a boolean, never throws.
+ */
+export async function dmUser(discordId: string, content: string): Promise<boolean> {
+  try {
+    const res = await fetch("/api/discord-dm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ discordId, content }),
+    });
+    if (!res.ok) {
+      console.error("[discord-dm] HTTP", res.status);
+      return false;
+    }
+    const json = (await res.json().catch(() => ({}))) as { ok?: boolean };
+    return Boolean(json.ok);
+  } catch (e) {
+    console.error("[discord-dm] failed:", e);
+    return false;
+  }
+}
+
 export async function notify({ content, mentionUserIds }: NotifyArgs): Promise<boolean> {
   const ids = (mentionUserIds ?? []).filter((x): x is string => Boolean(x));
   try {
