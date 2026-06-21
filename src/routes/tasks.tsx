@@ -18,7 +18,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { format, formatDistanceToNowStrict, parseISO, addDays, startOfDay, isSameDay, differenceInCalendarDays } from "date-fns";
 import { ListChecks, Plus, Trash2, Check, X, ArrowRight, GripVertical, Workflow as WorkflowIcon, CircleDot, User, CalendarDays } from "lucide-react";
 import {
-  completeActiveStep, skipStep, startPipeline, reassignStep, cancelPipeline,
+  completeStep, skipStepById, startPipeline, reassignStep, cancelPipeline,
   addStandaloneTask, completeStandaloneTask, currentUsername,
   generateDueRecurringTasks, listRecurringTasks, createRecurringTask, deleteRecurringTask,
   type TeamMember, type Template, type TemplateStep, type Pipeline, type PipelineStep, type StandaloneTask, type NewStep, type RecurringTask,
@@ -225,12 +225,12 @@ function MyTasksTab({
     [standalone, session.chatterId, all],
   );
 
-  const onDone = async (pipelineId: string, title: string) => {
-    setBusy(pipelineId);
-    const { error, completed } = await completeActiveStep(pipelineId, title);
+  const onDone = async (stepId: string, title: string) => {
+    setBusy(stepId);
+    const { error, completed } = await completeStep(stepId, title);
     setBusy(null);
     if (error) { toast.error(error); return; }
-    toast.success(completed ? `${title} complete 🎉` : "Done — handed off to the next person");
+    toast.success(completed ? `${title} complete 🎉` : "Done");
     onRefresh();
   };
   const onTaskDone = async (id: string, title: string) => {
@@ -283,8 +283,8 @@ function MyTasksTab({
                     {step.description ? ` — ${step.description}` : ""}
                   </div>
                 </div>
-                <Button size="sm" disabled={busy === pipeline!.id} onClick={() => onDone(pipeline!.id, pipeline!.title)}>
-                  <Check className="mr-1 h-4 w-4" />{busy === pipeline!.id ? "…" : "Done"}
+                <Button size="sm" disabled={busy === step.id} onClick={() => onDone(step.id, pipeline!.title)}>
+                  <Check className="mr-1 h-4 w-4" />{busy === step.id ? "…" : "Done"}
                 </Button>
               </Card>
             ))}
@@ -352,7 +352,7 @@ function BoardTab({
     <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
       {pipelines.map((p) => {
         const ps = steps.filter((s) => s.pipeline_id === p.id).sort((a, b) => a.step_order - b.step_order);
-        const active = ps.find((s) => s.status === "active");
+        const actives = ps.filter((s) => s.status === "active");
         const since = activeSince(p.id, steps, pipelines);
         const doneCount = ps.filter((s) => s.status === "done").length;
         return (
@@ -384,16 +384,21 @@ function BoardTab({
               ))}
             </div>
 
-            {active && (
-              <div className="mt-auto rounded-lg border border-primary/20 bg-primary/5 p-2 text-xs">
-                <div className="flex items-center gap-1.5"><User className="h-3 w-3" /><span className="font-medium">{memberName(active.assignee_id)}</span><span className="text-muted-foreground">· {active.step_name}</span></div>
-                {since && <div className="mt-0.5 text-[10px] text-muted-foreground">in this step {formatDistanceToNowStrict(since)}</div>}
-                {session.isAdmin && (
-                  <div className="mt-1.5 flex items-center gap-1.5">
-                    <ReassignControl stepId={active.id} members={members} currentId={active.assignee_id} pipelineTitle={p.title} onDone={onRefresh} />
-                    <button className="text-[10px] text-muted-foreground hover:text-foreground" onClick={async () => { const { error } = await skipStep(p.id, p.title); if (error) toast.error(error); else { toast.success("Step skipped"); onRefresh(); } }}>skip</button>
+            {actives.length > 0 && (
+              <div className="mt-auto space-y-1.5">
+                {actives.map((active) => (
+                  <div key={active.id} className="rounded-lg border border-primary/20 bg-primary/5 p-2 text-xs">
+                    <div className="flex items-center gap-1.5"><User className="h-3 w-3" /><span className="font-medium">{memberName(active.assignee_id)}</span><span className="text-muted-foreground">· {active.step_name}</span></div>
+                    {actives.length === 1 && since && <div className="mt-0.5 text-[10px] text-muted-foreground">in this step {formatDistanceToNowStrict(since)}</div>}
+                    {session.isAdmin && (
+                      <div className="mt-1.5 flex items-center gap-1.5">
+                        <ReassignControl stepId={active.id} members={members} currentId={active.assignee_id} pipelineTitle={p.title} onDone={onRefresh} />
+                        <button className="text-[10px] text-muted-foreground hover:text-foreground" onClick={async () => { const { error } = await skipStepById(active.id, p.title); if (error) toast.error(error); else { toast.success("Step skipped"); onRefresh(); } }}>skip</button>
+                      </div>
+                    )}
                   </div>
-                )}
+                ))}
+                {actives.length > 1 && <div className="text-[10px] text-muted-foreground">{actives.length} steps running at once</div>}
               </div>
             )}
           </Card>
@@ -473,6 +478,7 @@ function StartTab({ members, onCreated }: { members: TeamMember[]; onCreated: ()
   const [templateId, setTemplateId] = useState<string>("");
   const [title, setTitle] = useState("");
   const [rows, setRows] = useState<NewStep[]>([]);
+  const [parallel, setParallel] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -495,11 +501,11 @@ function StartTab({ members, onCreated }: { members: TeamMember[]; onCreated: ()
   const create = async () => {
     if (rows.some((r) => !r.step_name.trim())) { toast.error("Every step needs a name"); return; }
     setSaving(true);
-    const { error } = await startPipeline(templateId || null, title, rows.map((r) => ({ ...r, step_name: r.step_name.trim() })));
+    const { error } = await startPipeline(templateId || null, title, rows.map((r) => ({ ...r, step_name: r.step_name.trim() })), parallel);
     setSaving(false);
     if (error) { toast.error(error); return; }
-    toast.success("Pipeline started — first owner pinged");
-    setTemplateId(""); setTitle(""); setRows([]);
+    toast.success(parallel ? "Pipeline started — all owners pinged at once" : "Pipeline started — first owner pinged");
+    setTemplateId(""); setTitle(""); setRows([]); setParallel(false);
     onCreated();
   };
 
@@ -519,7 +525,7 @@ function StartTab({ members, onCreated }: { members: TeamMember[]; onCreated: ()
         </div>
 
         <div className="space-y-2">
-          <div className="flex items-center justify-between"><Label>Steps (in order)</Label><Button size="sm" variant="outline" onClick={addRow}><Plus className="mr-1 h-3.5 w-3.5" />Add step</Button></div>
+          <div className="flex items-center justify-between"><Label>{parallel ? "Steps (all sent together)" : "Steps (in order)"}</Label><Button size="sm" variant="outline" onClick={addRow}><Plus className="mr-1 h-3.5 w-3.5" />Add step</Button></div>
           {rows.length === 0 ? (
             <p className="text-xs text-muted-foreground">Pick a template to prefill steps, or add steps manually.</p>
           ) : rows.map((row, i) => (
@@ -535,8 +541,16 @@ function StartTab({ members, onCreated }: { members: TeamMember[]; onCreated: ()
           ))}
         </div>
 
+        <label className="flex items-start gap-2 rounded-lg border border-border bg-card/40 p-3 text-sm">
+          <input type="checkbox" checked={parallel} onChange={(e) => setParallel(e.target.checked)} className="mt-0.5 h-4 w-4 accent-primary" />
+          <span>
+            <span className="font-medium">Send all steps at the same time</span>
+            <span className="block text-xs text-muted-foreground">Everyone is pinged at once and works in parallel — no waiting for a handoff. The pipeline finishes when all steps are done.</span>
+          </span>
+        </label>
+
         <Button className="w-full" onClick={create} disabled={saving || rows.length === 0 || !title.trim()}>
-          {saving ? "Starting…" : "Start pipeline"}<ArrowRight className="ml-1 h-4 w-4" />
+          {saving ? "Starting…" : parallel ? "Start (all at once)" : "Start pipeline"}<ArrowRight className="ml-1 h-4 w-4" />
         </Button>
       </Card>
 

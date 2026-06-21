@@ -147,11 +147,15 @@ export async function skipStep(
 
 export type NewStep = { step_name: string; description?: string | null; assignee_id: string };
 
-/** Start a pipeline from resolved steps. Pings the first owner after commit. */
+/**
+ * Start a pipeline from resolved steps. Sequential (default) activates step 1;
+ * parallel activates ALL steps at once. Pings every first-wave owner.
+ */
 export async function startPipeline(
   templateId: string | null,
   title: string,
   steps: NewStep[],
+  parallel = false,
 ): Promise<{ error: string | null; pipelineId?: string }> {
   const caller = currentUsername();
   if (!caller) return { error: "Not signed in" };
@@ -164,14 +168,56 @@ export async function startPipeline(
     p_title: title.trim(),
     p_caller_username: caller,
     p_steps: steps,
+    p_parallel: parallel,
   });
   if (error) return { error: error.message };
 
-  await notifyChatter(
-    data.assignee_id,
-    handoffMessage(title.trim(), data.first_step_order ?? 1, data.total_steps, data.first_step_name, null),
-  );
+  // Ping every first-wave owner — the single step-1 owner (sequential) or ALL
+  // owners (parallel).
+  for (const a of (data?.assignees ?? []) as Array<{ assignee_id: string; step_name: string; step_order: number }>) {
+    await notifyChatter(a.assignee_id, handoffMessage(title.trim(), a.step_order ?? 1, data.total_steps, a.step_name, null));
+  }
   return { error: null, pipelineId: data.pipeline_id };
+}
+
+/** Complete (or skip) ONE step by id — works for sequential and parallel pipelines. */
+async function resolveStep(
+  stepId: string,
+  pipelineTitle: string,
+  status: "done" | "skipped",
+): Promise<{ error: string | null; completed: boolean }> {
+  const caller = currentUsername();
+  if (!caller) return { error: "Not signed in", completed: false };
+  const { data, error } = await sb.rpc("resolve_step", {
+    p_step_id: stepId,
+    p_caller_username: caller,
+    p_new_status: status,
+  });
+  if (error) return { error: error.message, completed: false };
+
+  if (data?.pipeline_completed) {
+    await notify({ content: `✅ **${data.pipeline_title ?? pipelineTitle}** complete.` }).catch(() => {});
+    return { error: null, completed: true };
+  }
+  // Sequential → ping the next owner. Parallel → others still working, no ping.
+  if (data?.next_assignee_id) {
+    await notifyChatter(
+      data.next_assignee_id,
+      handoffMessage(data.pipeline_title ?? pipelineTitle, data.next_step_order, data.total_steps, data.next_step_name, caller),
+    );
+  }
+  return { error: null, completed: false };
+}
+
+/** Mark a specific step done (step owner or admin). */
+export async function completeStep(stepId: string, pipelineTitle: string) {
+  return resolveStep(stepId, pipelineTitle, "done");
+}
+
+/** Skip a specific step (step owner or admin). */
+export async function skipStepById(stepId: string, pipelineTitle: string): Promise<{ error: string | null }> {
+  const { error } = await resolveStep(stepId, pipelineTitle, "skipped");
+  return { error };
 }
 
 /** Reassign a step's owner (admin only). Pings the new owner if step is active. */
