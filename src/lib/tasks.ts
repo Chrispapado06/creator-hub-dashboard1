@@ -23,7 +23,7 @@ const sb = supabase as unknown as {
 export type PipelineStatus = "active" | "complete" | "cancelled";
 export type StepStatus = "waiting" | "active" | "done" | "skipped";
 
-export type TeamMember = { id: string; name: string; status: string; discord_user_id: string | null; discord_channel_id: string | null; whatsapp_phone: string | null };
+export type TeamMember = { id: string; name: string; status: string; discord_user_id: string | null; discord_channel_id: string | null; whatsapp_phone: string | null; in_task_team?: boolean };
 
 export type Template = { id: string; name: string; description: string | null; active: boolean };
 export type TemplateStep = {

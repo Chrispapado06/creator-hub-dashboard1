@@ -58,12 +58,18 @@ function TasksPage() {
 
   const load = async (silent = false) => {
     if (!silent) setLoading(true);
-    const [{ data: m }, { data: p }, { data: s }, { data: st }] = await Promise.all([
-      sb.from("chatters").select("id, name, status, discord_user_id, discord_channel_id, whatsapp_phone").order("name"),
+    const [mRes, { data: p }, { data: s }, { data: st }] = await Promise.all([
+      sb.from("chatters").select("id, name, status, discord_user_id, discord_channel_id, whatsapp_phone, in_task_team").order("name"),
       sb.from("task_pipelines").select("*").eq("status", "active").order("created_at", { ascending: false }),
       sb.from("task_pipeline_steps").select("*").order("step_order"),
       sb.from("standalone_tasks").select("*").eq("status", "open").order("created_at", { ascending: false }),
     ]);
+    // Fallback for before the in_task_team migration is applied — keep Tasks working.
+    let m = mRes.data;
+    if (mRes.error) {
+      const fb = await sb.from("chatters").select("id, name, status, discord_user_id, discord_channel_id, whatsapp_phone").order("name");
+      m = fb.data;
+    }
     setMembers((m ?? []) as TeamMember[]);
     setPipelines((p ?? []) as Pipeline[]);
     setSteps((s ?? []) as PipelineStep[]);
@@ -75,6 +81,9 @@ function TasksPage() {
   const refresh = () => load(true);
 
   const memberName = (id: string | null) => members.find((m) => m.id === id)?.name ?? "—";
+  // Staff curated into the task team (Templates → Team contacts). Only these are
+  // offered for assignment anywhere. Undefined (pre-migration) = treated as in.
+  const taskTeam = members.filter((m) => m.in_task_team !== false);
 
   return (
     <div className="mx-auto max-w-6xl p-6">
@@ -103,17 +112,17 @@ function TasksPage() {
             <MyTasksTab session={session} pipelines={pipelines} steps={steps} standalone={standalone} memberName={memberName} onRefresh={refresh} />
           </TabsContent>
           <TabsContent value="board">
-            <BoardTab session={session} pipelines={pipelines} steps={steps} members={members} memberName={memberName} onRefresh={refresh} />
+            <BoardTab session={session} pipelines={pipelines} steps={steps} members={taskTeam} memberName={memberName} onRefresh={refresh} />
           </TabsContent>
           <TabsContent value="member">
-            <MemberTab session={session} members={members} pipelines={pipelines} steps={steps} standalone={standalone} onRefresh={refresh} />
+            <MemberTab session={session} members={taskTeam} pipelines={pipelines} steps={steps} standalone={standalone} onRefresh={refresh} />
           </TabsContent>
           <TabsContent value="start">
-            <StartTab members={members} onCreated={refresh} />
+            <StartTab members={taskTeam} onCreated={refresh} />
           </TabsContent>
           {session.isAdmin && (
             <TabsContent value="templates">
-              <TemplatesTab members={members} onRefresh={refresh} />
+              <TemplatesTab members={members} taskTeam={taskTeam} onRefresh={refresh} />
             </TabsContent>
           )}
         </Tabs>
@@ -753,7 +762,7 @@ function AddTaskDialog({ members, defaultAssigneeId, onAdded, selfLabel }: { mem
 }
 
 // ── Templates admin ──────────────────────────────────────────────────────────
-function TemplatesTab({ members, onRefresh }: { members: TeamMember[]; onRefresh: () => void }) {
+function TemplatesTab({ members, taskTeam, onRefresh }: { members: TeamMember[]; taskTeam: TeamMember[]; onRefresh: () => void }) {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [tplSteps, setTplSteps] = useState<TemplateStep[]>([]);
   const [editing, setEditing] = useState<Template | null>(null);
@@ -820,11 +829,11 @@ function TemplatesTab({ members, onRefresh }: { members: TeamMember[]; onRefresh
 
       <section>
         <h2 className="mb-1 text-sm font-semibold">Team contacts (Discord + WhatsApp)</h2>
-        <p className="mb-3 text-xs text-muted-foreground">Each member is pinged on handoff via any channel set here. <strong>Discord channel ID</strong> (right-click their channel → Copy Channel ID): the bot posts their pings + daily digest there and @-mentions them; leave blank to DM instead. <strong>Discord user ID</strong> (Developer Mode → right-click the user → Copy ID): used for the @-mention / DM fallback. <strong>WhatsApp</strong>: full number with country code.</p>
+        <p className="mb-3 text-xs text-muted-foreground">Each member is pinged on handoff via any channel set here. <strong>In team</strong> (the checkbox): untick to remove someone from <em>every</em> task assignment list — Start pipeline, Board reassign, By member — without deleting them. <strong>Discord channel ID</strong> (right-click their channel → Copy Channel ID): the bot posts their pings + daily digest there and @-mentions them; leave blank to DM instead. <strong>Discord user ID</strong> (Developer Mode → right-click the user → Copy ID): used for the @-mention / DM fallback. <strong>WhatsApp</strong>: full number with country code.</p>
         <DiscordIdsEditor members={members} onSaved={onRefresh} />
       </section>
 
-      <TemplateDialog open={open} onOpenChange={setOpen} editing={editing} members={members} steps={tplSteps} onSaved={() => { setOpen(false); load(); }} />
+      <TemplateDialog open={open} onOpenChange={setOpen} editing={editing} members={taskTeam} steps={tplSteps} onSaved={() => { setOpen(false); load(); }} />
     </div>
   );
 }
@@ -833,13 +842,30 @@ function DiscordIdsEditor({ members, onSaved }: { members: TeamMember[]; onSaved
   const [discord, setDiscord] = useState<Record<string, string>>({});
   const [channel, setChannel] = useState<Record<string, string>>({});
   const [phone, setPhone] = useState<Record<string, string>>({});
+  const [team, setTeam] = useState<Record<string, boolean>>({});
   const [query, setQuery] = useState("");
   const [activeOnly, setActiveOnly] = useState(true);
   useEffect(() => {
     setDiscord(Object.fromEntries(members.map((m) => [m.id, m.discord_user_id ?? ""])));
     setChannel(Object.fromEntries(members.map((m) => [m.id, m.discord_channel_id ?? ""])));
     setPhone(Object.fromEntries(members.map((m) => [m.id, m.whatsapp_phone ?? ""])));
+    setTeam(Object.fromEntries(members.map((m) => [m.id, m.in_task_team !== false])));
   }, [members]);
+
+  // Toggle whether a person appears in task assignment lists. Saves immediately
+  // (optimistic; reverts on error so it never silently lies).
+  const toggleTeam = async (id: string, next: boolean) => {
+    const name = members.find((m) => m.id === id)?.name ?? "Member";
+    setTeam((t) => ({ ...t, [id]: next }));
+    const { error } = await sb.from("chatters").update({ in_task_team: next }).eq("id", id);
+    if (error) {
+      setTeam((t) => ({ ...t, [id]: !next }));
+      toast.error(error.message.includes("in_task_team") ? "Run the in_task_team migration first (SQL in chat)." : error.message);
+    } else {
+      toast.success(next ? `${name} added to task team` : `${name} removed from task team`);
+      onSaved();
+    }
+  };
 
   const save = async (id: string) => {
     const { error } = await sb.from("chatters").update({
@@ -890,21 +916,27 @@ function DiscordIdsEditor({ members, onSaved }: { members: TeamMember[]; onSaved
           <input type="checkbox" checked={activeOnly} onChange={(e) => setActiveOnly(e.target.checked)} className="h-3.5 w-3.5" />
           Active staff only
         </label>
-        <span className="text-[11px] text-muted-foreground">{filtered.length} of {members.length}</span>
+        <span className="text-[11px] text-muted-foreground">{filtered.length} of {members.length} shown · {members.filter((m) => team[m.id] !== false).length} in task team</span>
       </div>
       <Card className="divide-y divide-border">
         {filtered.length === 0 ? (
           <div className="p-4 text-center text-xs text-muted-foreground">No staff match.</div>
-        ) : filtered.map((m) => (
-          <div key={m.id} className="flex items-center gap-2 p-3 flex-wrap sm:flex-nowrap">
-            <span className="w-32 shrink-0 truncate text-sm font-medium">{m.name}</span>
+        ) : filtered.map((m) => {
+          const inTeam = team[m.id] !== false;
+          return (
+          <div key={m.id} className={`flex items-center gap-2 p-3 flex-wrap sm:flex-nowrap ${inTeam ? "" : "opacity-50"}`}>
+            <label className="flex w-32 shrink-0 items-center gap-2 cursor-pointer" title={inTeam ? "In the task team — untick to hide from all task assignments" : "Excluded from task assignments — tick to add back"}>
+              <input type="checkbox" checked={inTeam} onChange={(e) => toggleTeam(m.id, e.target.checked)} className="h-4 w-4 shrink-0 accent-primary" />
+              <span className="truncate text-sm font-medium">{m.name}</span>
+            </label>
             <Input className="flex-1 min-w-[130px] font-mono text-xs" placeholder="Discord user ID" value={discord[m.id] ?? ""} onChange={(e) => setDiscord((d) => ({ ...d, [m.id]: e.target.value }))} />
             <Input className="flex-1 min-w-[130px] font-mono text-xs" placeholder="Discord channel ID" value={channel[m.id] ?? ""} onChange={(e) => setChannel((d) => ({ ...d, [m.id]: e.target.value }))} />
             <Input className="flex-1 min-w-[140px] font-mono text-xs" placeholder="WhatsApp +44…" value={phone[m.id] ?? ""} onChange={(e) => setPhone((d) => ({ ...d, [m.id]: e.target.value }))} />
             <Button size="sm" variant="ghost" onClick={() => test(m.id)} title="Send a test ping now">Test</Button>
             <Button size="sm" variant="outline" onClick={() => save(m.id)}>Save</Button>
           </div>
-        ))}
+          );
+        })}
       </Card>
     </div>
   );
