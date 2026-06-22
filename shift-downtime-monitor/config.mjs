@@ -63,9 +63,10 @@ export const SHIFT_TZ = "Asia/Manila"; // GMT+8, no DST
 // Blocks are in PH time (the sheet is PH). Each maps to its GMT-named Discord
 // shift channel, where the downtime ping @everyones the team on shift.
 export const SHIFT_BLOCKS = [
-  { name: "Evening", startHour: 0,  endHour: 8,  qaName: "Lance", qaDiscord: "1358891208935608532", channelId: "1411370988406440026" }, // PH 00–08 = 16:00–24:00 GMT
-  { name: "Night",   startHour: 8,  endHour: 16, qaName: "Liz",   qaDiscord: "714697188545921054",  channelId: "1410175555801841674" }, // PH 08–16 = 00:00–08:00 GMT
-  { name: "Day",     startHour: 16, endHour: 24, qaName: "Yen",   qaDiscord: "1267138323999359027", channelId: "1411638392550326272" }, // PH 16–24 = 08:00–16:00 GMT
+  // channelId = where to post; roleId = which shift role to @mention there.
+  { name: "Evening", startHour: 0,  endHour: 8,  qaName: "Lance", qaDiscord: "1358891208935608532", channelId: "1411370988406440026", roleId: "1491477766971982056" }, // late evening · PH 00–08 = 16:00–24:00 GMT
+  { name: "Night",   startHour: 8,  endHour: 16, qaName: "Liz",   qaDiscord: "714697188545921054",  channelId: "1410175555801841674", roleId: "1491477514013380711" }, // Evening-night · PH 08–16 = 00:00–08:00 GMT
+  { name: "Day",     startHour: 16, endHour: 24, qaName: "Yen",   qaDiscord: "1267138323999359027", channelId: "1411638392550326272", roleId: "1491477215261491250" }, // Day Shift · PH 16–24 = 08:00–16:00 GMT
 ];
 
 // Hour-of-day (0–24, fractional) in a timezone.

@@ -78,15 +78,18 @@ async function post(label, url, content, mentions) {
 // bot token isn't configured yet, so alerts never silently stop.
 async function postPrimary(label, block, body) {
   if (DISCORD.botToken && block.channelId) {
-    const content = `@everyone ${body}`;
+    // Ping the shift role (falls back to @everyone if no role configured).
+    const mention = block.roleId ? `<@&${block.roleId}>` : "@everyone";
+    const allowed = block.roleId ? { parse: [], roles: [block.roleId] } : { parse: ["everyone"] };
+    const content = `${mention} ${body}`;
     if (DRY_RUN) {
-      console.log(`[${ts()}] DRY_RUN ${label} → #${block.name} (${block.channelId}) @everyone\n    ${content.replace(/\n/g, "\n    ")}`);
+      console.log(`[${ts()}] DRY_RUN ${label} → #${block.name} (${block.channelId}) mention ${mention}\n    ${content.replace(/\n/g, "\n    ")}`);
       return;
     }
     const r = await fetch(`https://discord.com/api/v10/channels/${block.channelId}/messages`, {
       method: "POST",
       headers: { Authorization: `Bot ${DISCORD.botToken}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ content, allowed_mentions: { parse: ["everyone"] } }),
+      body: JSON.stringify({ content, allowed_mentions: allowed }),
     });
     if (!r.ok) console.warn(`[${ts()}] shift-channel post failed ${r.status}: ${(await r.text().catch(() => "")).slice(0, 160)}`);
     return;
