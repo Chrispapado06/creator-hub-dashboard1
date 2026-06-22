@@ -11,9 +11,14 @@ fan thread** crosses a threshold. Each level fires **once per breach**.
 
 | Wait | Condition | Action |
 |------|-----------|--------|
-| **≥ 3 min**  | — | Ping the **QA on shift** in the **Chatter-QA** channel |
-| **≥ 10 min** | account is **tier A/B** | Escalate (ping QA again) in **Chatter-QA** |
+| **≥ 3 min**  | — | **@everyone** in the current **shift channel** (Day / Evening / Night) |
+| **≥ 10 min** | account is **tier A/B** | Escalate — **@everyone** in the shift channel |
 | **≥ 20 min** | — | Message **Management** |
+
+The shift channel is picked by current time (GMT): 08–16h → Day, 16–24h →
+Evening, 00–08h → Night (see `config.mjs` → `SHIFT_BLOCKS`). Posting + @everyone
+uses the Bernard bot (`DISCORD_BOT_TOKEN`); until that's set, L1/L2 fall back to
+the Chatter-QA webhook pinging the QA, so coverage never drops.
 
 When the chatter replies in Infloww, the OF API reflects it within seconds
 (verified ~3–19s) and the thread clears, ending the breach.

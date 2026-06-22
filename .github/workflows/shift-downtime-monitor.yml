@@ -27,6 +27,7 @@ jobs:
           ONLYFANSAPI_KEY: ${{ secrets.ONLYFANSAPI_KEY }}
           DISCORD_WEBHOOK_DOWNTIME: ${{ secrets.DISCORD_WEBHOOK_DOWNTIME }}
           DISCORD_WEBHOOK_GROUP: ${{ secrets.DISCORD_WEBHOOK_GROUP }}
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
         run: node monitor.mjs
       - name: Commit state if changed
         run: |

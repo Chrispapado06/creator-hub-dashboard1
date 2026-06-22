@@ -73,6 +73,28 @@ async function post(label, url, content, mentions) {
   });
 }
 
+// The primary downtime ping → the time-appropriate shift channel, @everyone,
+// via the bot. Falls back to the Chatter-QA webhook (pinging the QA) when the
+// bot token isn't configured yet, so alerts never silently stop.
+async function postPrimary(label, block, body) {
+  if (DISCORD.botToken && block.channelId) {
+    const content = `@everyone ${body}`;
+    if (DRY_RUN) {
+      console.log(`[${ts()}] DRY_RUN ${label} → #${block.name} (${block.channelId}) @everyone\n    ${content.replace(/\n/g, "\n    ")}`);
+      return;
+    }
+    const r = await fetch(`https://discord.com/api/v10/channels/${block.channelId}/messages`, {
+      method: "POST",
+      headers: { Authorization: `Bot ${DISCORD.botToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ content, allowed_mentions: { parse: ["everyone"] } }),
+    });
+    if (!r.ok) console.warn(`[${ts()}] shift-channel post failed ${r.status}: ${(await r.text().catch(() => "")).slice(0, 160)}`);
+    return;
+  }
+  // Fallback (no bot token yet): Chatter-QA webhook, ping the QA on shift.
+  await post(label, DISCORD.downtimeWebhook, `${ping(block.qaDiscord)} ${body}`, [block.qaDiscord]);
+}
+
 // ── One scan pass over all accounts ─────────────────────────────────────────
 async function scan(accounts, state, now) {
   const block = currentShiftBlock(now);
@@ -107,22 +129,18 @@ async function scan(accounts, state, now) {
     const mins = Math.floor(waited / 60);
     const who = `(QA on shift: ${block.qaName})`;
 
-    // Level 1 — ≥5 min: ping the on-shift QA in Chatter-QA.
+    // Level 1 — downtime ping → the shift channel, @everyone on shift.
     if (claim(state, `${ep}|1`)) {
       fired++;
-      await post(`L1 ${acct.name}`, DISCORD.downtimeWebhook,
-        `🔴 **Downtime — ${acct.name}** — fan @${oldest.fanUsername} has waited **${fmtAge(waited)}** unanswered.\n` +
-        `QA ${ping(block.qaDiscord)} — please check the chatter on shift. ${who}`,
-        [block.qaDiscord]);
+      await postPrimary(`L1 ${acct.name}`, block,
+        `🔴 **Downtime — ${acct.name}** — fan @${oldest.fanUsername} has waited **${fmtAge(waited)}** unanswered. Please respond. ${who}`);
     }
 
     // Level 2 — escalate (A/B tier, or accounts with a custom override).
     if (waited >= th.level2Sec && acct.l2 && claim(state, `${ep}|2`)) {
       fired++;
-      await post(`L2 ${acct.name}`, DISCORD.downtimeWebhook,
-        `🟠 **Still down ${mins}m — ${acct.name}** (tier ${acct.tier}, fan @${oldest.fanUsername}).\n` +
-        `QA ${ping(block.qaDiscord)} — chatter still hasn't replied. ${who}`,
-        [block.qaDiscord]);
+      await postPrimary(`L2 ${acct.name}`, block,
+        `🟠 **Still down ${mins}m — ${acct.name}** (fan @${oldest.fanUsername}) — chatter still hasn't replied. ${who}`);
     }
 
     // Level 3 — message Management.

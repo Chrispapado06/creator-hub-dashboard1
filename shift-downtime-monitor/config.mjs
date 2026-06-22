@@ -60,10 +60,12 @@ export const LEVEL2_TIERS = new Set(["A", "B"]);
 // from the current PH time → no sheet/database needed. (Per-block CHATTER
 // resolution from the sheet comes in v2.) Update QA ids when the rota changes.
 export const SHIFT_TZ = "Asia/Manila"; // GMT+8, no DST
+// Blocks are in PH time (the sheet is PH). Each maps to its GMT-named Discord
+// shift channel, where the downtime ping @everyones the team on shift.
 export const SHIFT_BLOCKS = [
-  { name: "Shift 1", qaName: "Lance", qaDiscord: "1358891208935608532", startHour: 0,  endHour: 8 },
-  { name: "Shift 2", qaName: "Liz",   qaDiscord: "714697188545921054",  startHour: 8,  endHour: 16 },
-  { name: "Shift 3", qaName: "Yen",   qaDiscord: "1267138323999359027", startHour: 16, endHour: 24 },
+  { name: "Evening", startHour: 0,  endHour: 8,  qaName: "Lance", qaDiscord: "1358891208935608532", channelId: "1411370988406440026" }, // PH 00–08 = 16:00–24:00 GMT
+  { name: "Night",   startHour: 8,  endHour: 16, qaName: "Liz",   qaDiscord: "714697188545921054",  channelId: "1410175555801841674" }, // PH 08–16 = 00:00–08:00 GMT
+  { name: "Day",     startHour: 16, endHour: 24, qaName: "Yen",   qaDiscord: "1267138323999359027", channelId: "1411638392550326272" }, // PH 16–24 = 08:00–16:00 GMT
 ];
 
 // Hour-of-day (0–24, fractional) in a timezone.
@@ -98,6 +100,10 @@ export const LOOP = {
 export const DISCORD = {
   downtimeWebhook: process.env.DISCORD_WEBHOOK_DOWNTIME || "",
   groupWebhook: process.env.DISCORD_WEBHOOK_GROUP || "",
+  // Bernard bot token — posts the downtime ping into the time-appropriate shift
+  // channel and @everyones it. Until this is set, L1/L2 fall back to the
+  // Chatter-QA webhook (pinging the QA) so coverage never drops.
+  botToken: process.env.DISCORD_BOT_TOKEN || "",
 };
 
 // DRY_RUN: log intended alerts instead of sending. Forced on when no Discord
@@ -105,5 +111,5 @@ export const DISCORD = {
 export const DRY_RUN =
   process.env.DRY_RUN === "1" ||
   process.env.DRY_RUN === "true" ||
-  (!DISCORD.downtimeWebhook && !DISCORD.groupWebhook);
+  (!DISCORD.downtimeWebhook && !DISCORD.groupWebhook && !DISCORD.botToken);
 
