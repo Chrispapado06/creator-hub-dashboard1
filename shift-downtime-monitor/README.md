@@ -23,6 +23,20 @@ the Chatter-QA webhook pinging the QA, so coverage never drops.
 When the chatter replies in Infloww, the OF API reflects it within seconds
 (verified ~3–19s) and the thread clears, ending the breach.
 
+## Whale / spend flags
+
+Once per run the monitor sweeps each account's `transactions` and flags new
+spend events (purchases, tips) into `#chatter-pins-qa-pins` so QAs can trace
+active whales: `🐋 Model — FanName (@user) spent $X (type) · <of-link>`. Each
+fires once (idempotent by transaction id), only within `WHALE.lookbackSec`.
+Tune with `WHALE_TIERS` (which account tiers), `WHALE_MIN_AMOUNT` (noise floor),
+`WHALE_ENABLED=0`. Needs `DISCORD_QA_PINS_CHANNEL_ID` + the bot token; logs in
+DRY_RUN until set. Cost: +1 OF credit/account/run.
+
+> Not buildable on the OF API: the **MM-gap flag** (no mass message sent in ~2h)
+> — `mass-messaging` is empty for every account because MMs are sent via
+> Infloww, which the OF API can't see. Needs an Infloww integration.
+
 ## v1 (current) — no database, no sheet
 
 - **Signal:** `GET /{acct}/chats` → a thread is unanswered when

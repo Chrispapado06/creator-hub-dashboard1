@@ -26,10 +26,10 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { sendDiscord } from "../payout-bot/config.mjs";
-import { listAccounts, listChats, unansweredThreads } from "./of.mjs";
+import { listAccounts, listChats, listTransactions, unansweredThreads } from "./of.mjs";
 import {
   tierFor, thresholdsFor, level2Eligible, THRESHOLDS, LOOP, DISCORD, DRY_RUN,
-  currentShiftBlock,
+  currentShiftBlock, WHALE,
 } from "./config.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -96,6 +96,46 @@ async function postPrimary(label, block, body) {
   }
   // Fallback (no bot token yet): Chatter-QA webhook, ping the QA on shift.
   await post(label, DISCORD.downtimeWebhook, `${ping(block.qaDiscord)} ${body}`, [block.qaDiscord]);
+}
+
+// Post a whale/purchase flag into #chatter-pins-qa-pins (bot token), or log.
+async function postQaPins(label, body) {
+  if (DRY_RUN || !DISCORD.botToken || !DISCORD.qaPinsChannelId) {
+    console.log(`[${ts()}] DRY_RUN ${label} → #chatter-pins-qa-pins (${DISCORD.qaPinsChannelId || "unset"})\n    ${body.replace(/\n/g, "\n    ")}`);
+    return;
+  }
+  const r = await fetch(`https://discord.com/api/v10/channels/${DISCORD.qaPinsChannelId}/messages`, {
+    method: "POST",
+    headers: { Authorization: `Bot ${DISCORD.botToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ content: body, allowed_mentions: { parse: [] } }),
+  });
+  if (!r.ok) console.warn(`[${ts()}] qa-pins post failed ${r.status}: ${(await r.text().catch(() => "")).slice(0, 160)}`);
+}
+
+const money = (n) => `$${Number(n).toFixed(2).replace(/\.00$/, "")}`;
+const spendVerb = (type) => (/tip/i.test(type) ? "tipped" : /subscri/i.test(type) ? "subscribed" : "spent");
+
+// Once per run: flag new fan spend events (purchases/tips) so QAs can trace
+// active whales. Idempotent per transaction id; only recent ones (lookback).
+async function sweepTransactions(accounts, state, now) {
+  if (!WHALE.enabled) return 0;
+  const watch = accounts.filter((a) => WHALE.tiers.includes(a.tier));
+  let flagged = 0;
+  for (const acct of watch) {
+    let txns;
+    try { txns = await listTransactions(acct.accountId, { limit: 20 }); }
+    catch { continue; }
+    for (const t of txns) {
+      const ageSec = (now - Date.parse(t.createdAt)) / 1000;
+      if (ageSec > WHALE.lookbackSec || t.amount < WHALE.minAmount) continue;
+      if (!claim(state, `tx|${acct.accountId}|${t.id}`)) continue;
+      flagged++;
+      const link = t.fanUsername ? ` · <https://onlyfans.com/${t.fanUsername}>` : "";
+      await postQaPins(`whale ${acct.name}`,
+        `🐋 **${acct.name}** — **${t.fanName}**${t.fanUsername ? ` (@${t.fanUsername})` : ""} ${spendVerb(t.type)} **${money(t.amount)}** (${t.type})${link}`);
+    }
+  }
+  return flagged;
 }
 
 // ── One scan pass over all accounts ─────────────────────────────────────────
@@ -187,6 +227,14 @@ async function scan(accounts, state, now) {
     `${DRY_RUN ? "DRY_RUN" : "LIVE"}.` +
     (needAuth.length ? ` ⚠ NOT authenticated (needs re-auth): ${needAuth.join(", ")}.` : ""),
   );
+
+  // Whale/purchase flags — swept once per invocation (transactions are a
+  // separate, lower-frequency signal than chat downtime).
+  try {
+    const flagged = await sweepTransactions(accounts, state, Date.now());
+    if (flagged) console.log(`[${ts()}] whale sweep: ${flagged} spend flag(s)`);
+  } catch (e) { console.error(`[${ts()}] whale sweep error: ${e.message}`); }
+  saveState(state);
 
   let pass = 0;
   do {

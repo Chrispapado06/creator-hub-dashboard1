@@ -105,6 +105,21 @@ export const DISCORD = {
   // channel and @everyones it. Until this is set, L1/L2 fall back to the
   // Chatter-QA webhook (pinging the QA) so coverage never drops.
   botToken: process.env.DISCORD_BOT_TOKEN || "",
+  // #chatter-pins-qa-pins channel — where whale/purchase flags post (bot token).
+  qaPinsChannelId: process.env.DISCORD_QA_PINS_CHANNEL_ID || "",
+};
+
+// ── Whale / spend flags ─────────────────────────────────────────────────────
+// Surface fan spend events (purchases, tips) to #chatter-pins-qa-pins so QAs
+// can trace active whales across shifts (Liz's ask). Each is flagged once.
+// NOTE: this polls the OF transactions endpoint (1 credit/account/run) — a
+// modest extra cost; tune which accounts via WHALE.tiers and frequency via
+// WHALE.everyNthPass. Set WHALE_MIN_AMOUNT to cut noise (e.g. only ≥ $20).
+export const WHALE = {
+  enabled: process.env.WHALE_ENABLED !== "0",
+  minAmount: Number(process.env.WHALE_MIN_AMOUNT || 0),       // flag spends ≥ this ($)
+  lookbackSec: Number(process.env.WHALE_LOOKBACK_SEC || 900), // ignore txns older than 15 min (no cold-start spam)
+  tiers: (process.env.WHALE_TIERS || "A,B,C").split(",").map((s) => s.trim()), // which account tiers to watch
 };
 
 // DRY_RUN: log intended alerts instead of sending. Forced on when no Discord

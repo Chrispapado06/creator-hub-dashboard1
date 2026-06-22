@@ -116,6 +116,31 @@ export async function listChats(accountId, { limit = 100 } = {}) {
   return normaliseChats(json);
 }
 
+// Recent money transactions (purchases / tips / subs) for an account, newest
+// first. Used for whale-handling flags. Each: who spent, how much, when, on what.
+export async function listTransactions(accountId, { limit = 20 } = {}) {
+  const json = await ofGet(`/${accountId}/transactions?limit=${limit}`);
+  const raw = Array.isArray(json) ? json
+    : Array.isArray(json?.data) ? json.data
+    : Array.isArray(json?.data?.list) ? json.data.list
+    : Array.isArray(json?.list) ? json.list : [];
+  return raw.map((t) => {
+    const u = t.user ?? {};
+    const dd = t.descriptionDetails ?? {};
+    const url = dd?.params?.URL ? String(dd.params.URL) : "";
+    const username = url ? url.split("/").filter(Boolean).pop() : String(u.username ?? "");
+    return {
+      id: String(t.id ?? `${u.id ?? "x"}-${t.createdAt ?? ""}`),
+      type: String(dd.type ?? t.type ?? "purchase"), // message (PPV) | tip | subscribe | stream | post
+      amount: Number(t.amount ?? 0),
+      createdAt: typeof t.createdAt === "string" ? t.createdAt : "",
+      fanId: u.id != null ? String(u.id) : "",
+      fanUsername: username,
+      fanName: String(dd?.params?.NAME ?? u.name ?? username ?? u.id ?? "fan"),
+    };
+  }).filter((t) => t.createdAt && t.amount > 0);
+}
+
 // Of an account's threads, the ones where the fan sent last (unanswered),
 // each with its wait age in seconds, sorted oldest-wait first.
 export function unansweredThreads(chats, now = Date.now()) {
