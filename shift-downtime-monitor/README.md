@@ -11,7 +11,7 @@ fan thread** crosses a threshold. Each level fires **once per breach**.
 
 | Wait | Condition | Action |
 |------|-----------|--------|
-| **≥ 5 min**  | — | Ping the **QA on shift** in the **Chatter-QA** channel |
+| **≥ 3 min**  | — | Ping the **QA on shift** in the **Chatter-QA** channel |
 | **≥ 10 min** | account is **tier A/B** | Escalate (ping QA again) in **Chatter-QA** |
 | **≥ 20 min** | — | Message **Management** |
 
