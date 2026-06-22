@@ -26,7 +26,10 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { sendDiscord } from "../payout-bot/config.mjs";
-import { listAccounts, listChats, listTransactions, unansweredThreads } from "./of.mjs";
+import {
+  listAccounts, listChats, listTransactions, unansweredThreads,
+  listUserLists, listListMemberIds,
+} from "./of.mjs";
 import {
   tierFor, thresholdsFor, level2Eligible, THRESHOLDS, LOOP, DISCORD, DRY_RUN,
   currentShiftBlock, WHALE,
@@ -34,6 +37,7 @@ import {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const STATE_FILE = resolve(__dirname, "state.json");
+const WHALES_FILE = resolve(__dirname, "whales.json");
 
 const ts = () => new Date().toLocaleTimeString("en-GB", { hour12: false });
 const fmtAge = (s) => (s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${String(s % 60).padStart(2, "0")}s`);
@@ -115,24 +119,55 @@ async function postQaPins(label, body) {
 const money = (n) => `$${Number(n).toFixed(2).replace(/\.00$/, "")}`;
 const spendVerb = (type) => (/tip/i.test(type) ? "tipped" : /subscri/i.test(type) ? "subscribed" : "spent");
 
-// Once per run: flag new fan spend events (purchases/tips) so QAs can trace
-// active whales. Idempotent per transaction id; only recent ones (lookback).
-async function sweepTransactions(accounts, state, now) {
+// ── Whale set (cached) ──────────────────────────────────────────────────────
+// whales.json: { refreshedAt, byAccount: { acctId: [fanId,...] } }. The whale
+// set = members of each account's high-spend lists, refreshed every
+// WHALE.refreshHours so the per-run cost is just the transactions poll.
+function loadWhales() {
+  try { return JSON.parse(readFileSync(WHALES_FILE, "utf8")); } catch { return { refreshedAt: null, byAccount: {} }; }
+}
+function saveWhales(w) { writeFileSync(WHALES_FILE, JSON.stringify(w, null, 2) + "\n"); }
+
+async function refreshWhaleSets(accounts, whales, now) {
+  const pat = new RegExp(WHALE.listPattern, "i");
+  for (const acct of accounts) {
+    if (!WHALE.tiers.includes(acct.tier)) continue;
+    try {
+      const lists = await listUserLists(acct.accountId);
+      const whaleLists = lists.filter((l) => pat.test(l.name));
+      const ids = new Set();
+      for (const l of whaleLists) for (const id of await listListMemberIds(acct.accountId, l.id)) ids.add(id);
+      whales.byAccount[acct.accountId] = [...ids];
+      console.log(`[${ts()}] whale lists ${acct.name}: [${whaleLists.map((l) => l.name).join(", ") || "none"}] → ${ids.size} whales`);
+    } catch (e) { console.warn(`[${ts()}] whale refresh ${acct.name} failed: ${e.message}`); }
+  }
+  whales.refreshedAt = new Date(now).toISOString();
+  saveWhales(whales);
+}
+
+// Once per run: flag spend by WHALES (high-spend-list members), or any single
+// purchase ≥ WHALE.hardFloor. Idempotent per txn id; only recent (lookback).
+async function sweepTransactions(accounts, state, whales, now) {
   if (!WHALE.enabled) return 0;
   const watch = accounts.filter((a) => WHALE.tiers.includes(a.tier));
   let flagged = 0;
   for (const acct of watch) {
+    const whaleSet = new Set(whales.byAccount[acct.accountId] || []);
     let txns;
     try { txns = await listTransactions(acct.accountId, { limit: 20 }); }
     catch { continue; }
     for (const t of txns) {
       const ageSec = (now - Date.parse(t.createdAt)) / 1000;
-      if (ageSec > WHALE.lookbackSec || t.amount < WHALE.minAmount) continue;
+      if (ageSec > WHALE.lookbackSec) continue;
+      const isWhale = whaleSet.has(t.fanId);
+      const bigOneOff = WHALE.hardFloor > 0 && t.amount >= WHALE.hardFloor;
+      if (!isWhale && !bigOneOff) continue;
       if (!claim(state, `tx|${acct.accountId}|${t.id}`)) continue;
       flagged++;
       const link = t.fanUsername ? ` · <https://onlyfans.com/${t.fanUsername}>` : "";
+      const tag = isWhale ? "🐋" : "💸";
       await postQaPins(`whale ${acct.name}`,
-        `🐋 **${acct.name}** — **${t.fanName}**${t.fanUsername ? ` (@${t.fanUsername})` : ""} ${spendVerb(t.type)} **${money(t.amount)}** (${t.type})${link}`);
+        `${tag} **${acct.name}** — **${t.fanName}**${t.fanUsername ? ` (@${t.fanUsername})` : ""} ${spendVerb(t.type)} **${money(t.amount)}** (${t.type})${link}`);
     }
   }
   return flagged;
@@ -228,13 +263,22 @@ async function scan(accounts, state, now) {
     (needAuth.length ? ` ⚠ NOT authenticated (needs re-auth): ${needAuth.join(", ")}.` : ""),
   );
 
-  // Whale/purchase flags — swept once per invocation (transactions are a
-  // separate, lower-frequency signal than chat downtime).
-  try {
-    const flagged = await sweepTransactions(accounts, state, Date.now());
-    if (flagged) console.log(`[${ts()}] whale sweep: ${flagged} spend flag(s)`);
-  } catch (e) { console.error(`[${ts()}] whale sweep error: ${e.message}`); }
-  saveState(state);
+  // Whale flags — swept once per invocation. Refresh the cached whale set
+  // (high-spend-list members) only when it's older than WHALE.refreshHours.
+  if (WHALE.enabled) {
+    const whales = loadWhales();
+    const staleMs = WHALE.refreshHours * 3600 * 1000;
+    if (!whales.refreshedAt || Date.now() - Date.parse(whales.refreshedAt) > staleMs) {
+      console.log(`[${ts()}] refreshing whale lists…`);
+      try { await refreshWhaleSets(accounts, whales, Date.now()); }
+      catch (e) { console.error(`[${ts()}] whale refresh error: ${e.message}`); }
+    }
+    try {
+      const flagged = await sweepTransactions(accounts, state, whales, Date.now());
+      if (flagged) console.log(`[${ts()}] whale sweep: ${flagged} spend flag(s)`);
+    } catch (e) { console.error(`[${ts()}] whale sweep error: ${e.message}`); }
+    saveState(state);
+  }
 
   let pass = 0;
   do {

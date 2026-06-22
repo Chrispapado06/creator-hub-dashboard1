@@ -25,13 +25,20 @@ When the chatter replies in Infloww, the OF API reflects it within seconds
 
 ## Whale / spend flags
 
-Once per run the monitor sweeps each account's `transactions` and flags new
-spend events (purchases, tips) into `#chatter-pins-qa-pins` so QAs can trace
-active whales: `🐋 Model — FanName (@user) spent $X (type) · <of-link>`. Each
-fires once (idempotent by transaction id), only within `WHALE.lookbackSec`.
-Tune with `WHALE_TIERS` (which account tiers), `WHALE_MIN_AMOUNT` (noise floor),
-`WHALE_ENABLED=0`. Needs `DISCORD_QA_PINS_CHANNEL_ID` + the bot token; logs in
-DRY_RUN until set. Cost: +1 OF credit/account/run.
+Once per run the monitor sweeps each account's `transactions` and flags spend by
+**whales** into `#chatter-pins-qa-pins`:
+`🐋 Model — FanName (@user) spent $X (type) · <of-link>`.
+
+A whale = a fan in the account's high-spend OF lists (`Big Spender ≥ $250`,
+`≥ 500`, `WHALE …`) — the OF API has no per-fan lifetime spend, so those lists
+*are* the signal. Membership is read once and cached in `whales.json`, refreshed
+every `WHALE_REFRESH_HOURS` (12), so the per-run cost stays ~1 credit/account.
+Each flag fires once (idempotent by txn id) within `WHALE.lookbackSec`.
+
+Tune: `WHALE_LIST_PATTERN` (which list names count), `WHALE_HARD_FLOOR` (also
+flag any single purchase ≥ $X from a non-listed fan; 0 = whales only),
+`WHALE_TIERS`, `WHALE_ENABLED=0`. Needs `DISCORD_QA_PINS_CHANNEL_ID` + the bot
+token; logs in DRY_RUN until set.
 
 > Not buildable on the OF API: the **MM-gap flag** (no mass message sent in ~2h)
 > — `mass-messaging` is empty for every account because MMs are sent via

@@ -110,16 +110,21 @@ export const DISCORD = {
 };
 
 // ── Whale / spend flags ─────────────────────────────────────────────────────
-// Surface fan spend events (purchases, tips) to #chatter-pins-qa-pins so QAs
-// can trace active whales across shifts (Liz's ask). Each is flagged once.
-// NOTE: this polls the OF transactions endpoint (1 credit/account/run) — a
-// modest extra cost; tune which accounts via WHALE.tiers and frequency via
-// WHALE.everyNthPass. Set WHALE_MIN_AMOUNT to cut noise (e.g. only ≥ $20).
+// Flag spend events to #chatter-pins-qa-pins so QAs can trace active whales.
+// A "whale" = a fan in the account's high-spend LISTS (the OF API has no
+// per-fan lifetime-spend field, so the team's spend-tier lists ARE the signal).
+// `listPattern` matches those list names (Big Spender / LT Spend / ≥ 250 / 500 /
+// whale). Membership is fetched + cached in whales.json, refreshed every
+// `refreshHours`, so the per-run cost stays at ~1 credit/account (the txn poll).
+// `hardFloor` > 0 also flags any single purchase ≥ that $ even from an unlisted
+// fan (0 = whales only). Tune the whale tiers via WHALE_TIERS.
 export const WHALE = {
   enabled: process.env.WHALE_ENABLED !== "0",
-  minAmount: Number(process.env.WHALE_MIN_AMOUNT || 0),       // flag spends ≥ this ($)
-  lookbackSec: Number(process.env.WHALE_LOOKBACK_SEC || 900), // ignore txns older than 15 min (no cold-start spam)
-  tiers: (process.env.WHALE_TIERS || "A,B,C").split(",").map((s) => s.trim()), // which account tiers to watch
+  listPattern: process.env.WHALE_LIST_PATTERN || "big spender|lt spend|whale|≥\\s*\\$?\\s*(250|300|500|1000)",
+  hardFloor: Number(process.env.WHALE_HARD_FLOOR || 0), // also flag any single purchase ≥ this ($); 0 = off
+  lookbackSec: Number(process.env.WHALE_LOOKBACK_SEC || 900),
+  refreshHours: Number(process.env.WHALE_REFRESH_HOURS || 12),
+  tiers: (process.env.WHALE_TIERS || "A,B,C").split(",").map((s) => s.trim()),
 };
 
 // DRY_RUN: log intended alerts instead of sending. Forced on when no Discord

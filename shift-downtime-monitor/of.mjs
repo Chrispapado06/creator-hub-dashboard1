@@ -116,6 +116,41 @@ export async function listChats(accountId, { limit = 100 } = {}) {
   return normaliseChats(json);
 }
 
+// Helper: pull an array out of the OF response regardless of wrapper shape
+// (bare array / {data:[]} / {data:{list:[]}} / {list:[]}).
+function asList(json) {
+  return Array.isArray(json) ? json
+    : Array.isArray(json?.data) ? json.data
+    : Array.isArray(json?.data?.list) ? json.data.list
+    : Array.isArray(json?.list) ? json.list : [];
+}
+
+// An account's custom fan lists (the team's spend-tier "tags": Big Spender,
+// LT Spend, etc.). Returns [{id, name, usersCount}].
+export async function listUserLists(accountId) {
+  const json = await ofGet(`/${accountId}/user-lists?limit=50`);
+  return asList(json)
+    .filter((l) => l && l.id != null)
+    .map((l) => ({ id: String(l.id), name: String(l.name ?? ""), usersCount: Number(l.usersCount ?? 0) }));
+}
+
+// All member fan-ids of a list (paginated). Set of string ids.
+export async function listListMemberIds(accountId, listId, { maxPages = 30 } = {}) {
+  const ids = new Set();
+  let path = `/${accountId}/user-lists/${listId}/users?limit=50`;
+  let pages = 0;
+  while (path && pages < maxPages) {
+    const json = await ofGet(path);
+    for (const u of asList(json)) {
+      const id = u?.id ?? u;
+      if (id != null) ids.add(String(id));
+    }
+    path = json?._pagination?.next_page ?? null;
+    pages++;
+  }
+  return ids;
+}
+
 // Recent money transactions (purchases / tips / subs) for an account, newest
 // first. Used for whale-handling flags. Each: who spent, how much, when, on what.
 export async function listTransactions(accountId, { limit = 20 } = {}) {
