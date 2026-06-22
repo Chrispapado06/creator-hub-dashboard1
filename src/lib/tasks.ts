@@ -301,17 +301,17 @@ export type RecurringTask = {
 };
 
 /**
- * Materialise any recurring occurrences due today, then ping the assignees of
- * whatever got created. Call this when the Tasks page loads — the DB function
- * is idempotent (FOR UPDATE SKIP LOCKED), so several open tabs is harmless.
+ * Materialise any recurring occurrences due today. Call this when the Tasks page
+ * loads — the DB function is idempotent (FOR UPDATE SKIP LOCKED), so several open
+ * tabs is harmless.
+ *
+ * We deliberately do NOT ping per task here. Recurring tasks are batched into the
+ * single daily Discord digest (api/discord-digest.js) — one message listing all
+ * of a person's tasks — instead of N separate "Recurring task due" pings.
  */
 export async function generateDueRecurringTasks(): Promise<void> {
-  const { data, error } = await sb.rpc("generate_due_recurring_tasks", {});
-  if (error) { console.error("[recurring] generate failed:", error.message); return; }
-  const created = (data?.created ?? []) as { title: string; assignee_id: string | null }[];
-  for (const c of created) {
-    await notifyChatter(c.assignee_id, `🔁 Recurring task due: **${c.title}**`);
-  }
+  const { error } = await sb.rpc("generate_due_recurring_tasks", {});
+  if (error) console.error("[recurring] generate failed:", error.message);
 }
 
 export async function listRecurringTasks(): Promise<RecurringTask[]> {

@@ -59,6 +59,16 @@ async function sbGet(path) {
   return r.json();
 }
 
+async function sbRpc(fn, args) {
+  const r = await fetch(`${SB_URL}/rest/v1/rpc/${fn}`, {
+    method: "POST",
+    headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify(args || {}),
+  });
+  if (!r.ok) throw new Error(`supabase rpc ${fn} ${r.status}: ${(await r.text().catch(() => "")).slice(0, 160)}`);
+  return r.json().catch(() => null);
+}
+
 export default async function handler(req, res) {
   if (CRON_SECRET) {
     const ok = req.headers.authorization === `Bearer ${CRON_SECRET}` || req.headers["x-cron-secret"] === CRON_SECRET;
@@ -71,6 +81,10 @@ export default async function handler(req, res) {
   const today = new Date().toISOString().slice(0, 10);
   try {
     const botId = await dapi("/users/@me", { method: "GET" }).then((r) => r.json()).then((u) => u && u.id).catch(() => null);
+
+    // Materialise any recurring tasks due today FIRST, so they land in this
+    // digest even if nobody opened the dashboard yet. Idempotent; best-effort.
+    await sbRpc("generate_due_recurring_tasks", {}).catch((e) => console.error("[discord-digest] recurring gen:", e && e.message));
 
     const [chatters, steps, tasks] = await Promise.all([
       sbGet("chatters?status=eq.active&select=id,name,discord_user_id,discord_channel_id&order=name"),
@@ -91,16 +105,18 @@ export default async function handler(req, res) {
       const mt = tasksBy[c.id] || [];
       if (ms.length + mt.length === 0) { empty++; continue; }
 
-      let msg = `${c.discord_user_id ? `<@${c.discord_user_id}> ` : ""}🗓️ **Your tasks for ${today}**\n`;
+      const dateLabel = new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
+      const total = ms.length + mt.length;
+      let msg = `${c.discord_user_id ? `<@${c.discord_user_id}>\n` : ""}🗓️ **Your tasks — ${dateLabel}**  ·  ${total} to do\n`;
       if (ms.length) {
-        msg += `\n**Pipelines waiting on you (${ms.length}):**\n` +
-          ms.map((s) => `• ${(s.task_pipelines && s.task_pipelines.title) || "Pipeline"} — ${s.step_name}`).join("\n") + "\n";
+        msg += `\n**🔁 Pipelines waiting on you (${ms.length})**\n` +
+          ms.map((s) => `> • **${(s.task_pipelines && s.task_pipelines.title) || "Pipeline"}** — ${s.step_name}`).join("\n") + "\n";
       }
       if (mt.length) {
-        msg += `\n**One-off tasks (${mt.length}):**\n` +
-          mt.map((t) => `• ${t.title}${t.due_date ? ` (due ${t.due_date})` : ""}`).join("\n") + "\n";
+        msg += `\n**📋 Tasks (${mt.length})**\n` +
+          mt.map((t) => `> • ${t.title}${t.due_date ? ` _(due ${t.due_date})_` : ""}`).join("\n") + "\n";
       }
-      msg += `\nMark them done in the dashboard → Tasks. Move with speed 💪`;
+      msg += `\n_Tick them off in the dashboard → Tasks. Move with speed_ 💪`;
 
       try {
         if (c.discord_channel_id) {
