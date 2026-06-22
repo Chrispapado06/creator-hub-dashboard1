@@ -44,6 +44,23 @@ token; logs in DRY_RUN until set.
 > — `mass-messaging` is empty for every account because MMs are sent via
 > Infloww, which the OF API can't see. Needs an Infloww integration.
 
+## List automations (dry-run by default)
+
+Two list-management automations, **logging only** until `LIST_AUTO_WRITES=1`:
+
+- **#1 exclude-on-reply** — when a chatter replies to a fan, add that fan to the
+  account's current-shift exclude ("No MM") list. The exclude lists are
+  auto-detected by name (`EXCLUDE_LIST_PATTERN`) and the one matching the live
+  shift is chosen at reply-time.
+- **#2 idle-spender mover** — records each fan's last-spend date in
+  `lastspend.json` over time; when a fan crosses `INACTIVITY_DAYS` (7/14/28)
+  with no spend, it'd move them to a `No spend Nd` list. Accurate for
+  low-volume accounts immediately; fully accurate after ~28 days of recording.
+
+Both print exactly what they'd change to the run log; enable real OF list writes
+with `LIST_AUTO_WRITES=1` (verify on a single fan first). The OF write endpoints
+(`addUserToList` / `removeUserFromList` / `createUserList`) are wired in `of.mjs`.
+
 ## v1 (current) — no database, no sheet
 
 - **Signal:** `GET /{acct}/chats` → a thread is unanswered when

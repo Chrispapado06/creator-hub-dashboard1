@@ -151,6 +151,39 @@ export async function listListMemberIds(accountId, listId, { maxPages = 30 } = {
   return ids;
 }
 
+// ── List writes (gated behind dry-run in the caller) ────────────────────────
+async function ofWrite(method, path, body) {
+  if (!OF_KEY) throw new Error("No OF key");
+  const url = path.startsWith("http") ? path : `${BASE}${path.startsWith("/") ? path : `/${path}`}`;
+  const r = await fetch(url, {
+    method,
+    headers: { Authorization: `Bearer ${OF_KEY}`, Accept: "application/json", "Content-Type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!r.ok) {
+    const t = await r.text().catch(() => "");
+    const e = new Error(`HTTP ${r.status} ${method} ${path} — ${t.slice(0, 160)}`);
+    e.status = r.status; throw e;
+  }
+  return r.json().catch(() => ({}));
+}
+export const addUserToList = (acct, listId, userId) => ofWrite("POST", `/${acct}/user-lists/${listId}/users`, { user_id: String(userId) });
+export const removeUserFromList = (acct, listId, userId) => ofWrite("DELETE", `/${acct}/user-lists/${listId}/users/${userId}`);
+export const createUserList = (acct, name) => ofWrite("POST", `/${acct}/user-lists`, { name });
+
+// Threads where the CREATOR (chatter) sent the last message recently — i.e. a
+// chatter just replied to this fan (within windowSec). Used by exclude-on-reply.
+export function recentReplies(chats, now = Date.now(), windowSec = 600) {
+  const out = [];
+  for (const c of chats) {
+    const lm = c.lastMessage;
+    if (!lm || lm.sentBy !== "creator" || !lm.createdAt || c.fanIsCreator) continue;
+    const ageSec = Math.round((now - Date.parse(lm.createdAt)) / 1000);
+    if (ageSec >= 0 && ageSec <= windowSec) out.push({ fanId: c.fanId, fanUsername: c.fanUsername, repliedAt: lm.createdAt });
+  }
+  return out;
+}
+
 // Recent money transactions (purchases / tips / subs) for an account, newest
 // first. Used for whale-handling flags. Each: who spent, how much, when, on what.
 export async function listTransactions(accountId, { limit = 20 } = {}) {

@@ -127,6 +127,24 @@ export const WHALE = {
   tiers: (process.env.WHALE_TIERS || "A,B,C").split(",").map((s) => s.trim()),
 };
 
+// ── List automations (Lance #1 + #2) ────────────────────────────────────────
+// Both default to DRY-RUN: they log exactly what they WOULD change to the run
+// output and write nothing to OnlyFans until LIST_AUTO_WRITES=1. The OF write
+// endpoints are wired but verified live only when writes are first enabled.
+//   #1 exclude-on-reply: when a chatter replies to a fan, add that fan to the
+//      account's exclude ("no MM") list — auto-detected by name (excludePattern).
+//   #2 idle spenders: record each fan's last-spend date over time; when a fan
+//      crosses inactivityDays without spending, move them to a "No spend Nd"
+//      list. Only accurate after it has recorded for ~max(inactivityDays) days.
+export const LIST_AUTO = {
+  enabled: process.env.LIST_AUTO_ENABLED !== "0", // dry-run logging on by default
+  writes: process.env.LIST_AUTO_WRITES === "1",   // actually write to OF lists — OFF by default
+  excludePattern: process.env.EXCLUDE_LIST_PATTERN || "do not send mm|no[ -]?mm",
+  replyWindowSec: Number(process.env.EXCLUDE_REPLY_WINDOW_SEC || 600), // a reply within 10 min = "just replied"
+  inactivityDays: (process.env.INACTIVITY_DAYS || "7,14,28").split(",").map((s) => Number(s.trim())),
+  noSpendListPrefix: process.env.NOSPEND_LIST_PREFIX || "No spend",
+};
+
 // DRY_RUN: log intended alerts instead of sending. Forced on when no Discord
 // destination is configured, so it's always safe to run locally.
 export const DRY_RUN =

@@ -28,16 +28,18 @@ import { dirname, resolve } from "node:path";
 import { sendDiscord } from "../payout-bot/config.mjs";
 import {
   listAccounts, listChats, listTransactions, unansweredThreads,
-  listUserLists, listListMemberIds,
+  listUserLists, listListMemberIds, recentReplies,
+  addUserToList, removeUserFromList, createUserList,
 } from "./of.mjs";
 import {
   tierFor, thresholdsFor, level2Eligible, THRESHOLDS, LOOP, DISCORD, DRY_RUN,
-  currentShiftBlock, WHALE,
+  currentShiftBlock, WHALE, LIST_AUTO,
 } from "./config.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const STATE_FILE = resolve(__dirname, "state.json");
 const WHALES_FILE = resolve(__dirname, "whales.json");
+const LASTSPEND_FILE = resolve(__dirname, "lastspend.json");
 
 const ts = () => new Date().toLocaleTimeString("en-GB", { hour12: false });
 const fmtAge = (s) => (s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${String(s % 60).padStart(2, "0")}s`);
@@ -130,6 +132,8 @@ function saveWhales(w) { writeFileSync(WHALES_FILE, JSON.stringify(w, null, 2) +
 
 async function refreshWhaleSets(accounts, whales, now) {
   const pat = new RegExp(WHALE.listPattern, "i");
+  const exclPat = new RegExp(LIST_AUTO.excludePattern, "i");
+  whales.excludeByAccount ??= {};
   for (const acct of accounts) {
     if (!WHALE.tiers.includes(acct.tier)) continue;
     try {
@@ -138,16 +142,76 @@ async function refreshWhaleSets(accounts, whales, now) {
       const ids = new Set();
       for (const l of whaleLists) for (const id of await listListMemberIds(acct.accountId, l.id)) ids.add(id);
       whales.byAccount[acct.accountId] = [...ids];
-      console.log(`[${ts()}] whale lists ${acct.name}: [${whaleLists.map((l) => l.name).join(", ") || "none"}] → ${ids.size} whales`);
-    } catch (e) { console.warn(`[${ts()}] whale refresh ${acct.name} failed: ${e.message}`); }
+      // #1 — cache ALL exclude ("no MM") lists; the right shift's one is picked
+      // at reply-time so it stays correct as shifts roll over.
+      const exclLists = lists.filter((l) => exclPat.test(l.name)).map((l) => ({ id: l.id, name: l.name }));
+      whales.excludeByAccount[acct.accountId] = exclLists;
+      console.log(`[${ts()}] lists ${acct.name}: ${ids.size} whales · ${exclLists.length} exclude list(s)`);
+    } catch (e) { console.warn(`[${ts()}] list refresh ${acct.name} failed: ${e.message}`); }
   }
   whales.refreshedAt = new Date(now).toISOString();
   saveWhales(whales);
 }
 
+// ── #1 exclude-on-reply ─────────────────────────────────────────────────────
+// When a chatter replies to a fan, add that fan to the account's exclude list
+// (so they don't get mass-messaged this shift). Dry-run by default.
+async function applyExcludeOnReply(acct, chats, state, whales, now) {
+  if (!LIST_AUTO.enabled) return;
+  // Pick the exclude list matching the current shift (fall back to first).
+  const candidates = whales?.excludeByAccount?.[acct.accountId] || [];
+  const shiftName = currentShiftBlock(now).name.toLowerCase();
+  const excl = candidates.find((c) => c.name.toLowerCase().includes(shiftName)) ?? candidates[0];
+  const day = new Date(now).toISOString().slice(0, 10);
+  for (const r of recentReplies(chats, now, LIST_AUTO.replyWindowSec)) {
+    if (!claim(state, `excl|${acct.accountId}|${r.fanId}|${day}`)) continue; // once per fan per day
+    if (!excl) { console.log(`[${ts()}] #1 ${acct.name}: replied @${r.fanUsername} — NO exclude list found`); continue; }
+    if (LIST_AUTO.writes) {
+      try { await addUserToList(acct.accountId, excl.id, r.fanId); console.log(`[${ts()}] #1 ${acct.name}: added @${r.fanUsername} → "${excl.name}"`); }
+      catch (e) { console.warn(`[${ts()}] #1 ${acct.name}: add @${r.fanUsername} failed: ${e.message}`); }
+    } else {
+      console.log(`[${ts()}] #1 DRY ${acct.name}: would add @${r.fanUsername} → exclude list "${excl.name}"`);
+    }
+  }
+}
+
+// ── #2 idle-spender mover (last-spend store + inactivity sweep) ──────────────
+function loadLastSpend() { try { return JSON.parse(readFileSync(LASTSPEND_FILE, "utf8")); } catch { return { byAccount: {} }; } }
+function saveLastSpend(ls) { writeFileSync(LASTSPEND_FILE, JSON.stringify(ls) + "\n"); }
+
+// Record each fan's most-recent spend date (builds the history #2 needs).
+function recordSpend(lastSpend, accountId, txns) {
+  const m = (lastSpend.byAccount[accountId] ??= {});
+  for (const t of txns) {
+    if (!t.fanId || !t.createdAt) continue;
+    if (!m[t.fanId] || t.createdAt > m[t.fanId]) m[t.fanId] = t.createdAt;
+  }
+}
+
+// Once accurate (after ~max(inactivityDays) days of recording), move fans who
+// crossed an inactivity threshold into the matching "No spend Nd" list.
+async function sweepInactivity(accounts, lastSpend, state, now) {
+  if (!LIST_AUTO.enabled) return 0;
+  const bands = [...LIST_AUTO.inactivityDays].sort((a, b) => b - a); // largest first
+  let n = 0;
+  for (const acct of accounts) {
+    if (!WHALE.tiers.includes(acct.tier)) continue;
+    const ls = lastSpend.byAccount[acct.accountId] || {};
+    for (const [fanId, iso] of Object.entries(ls)) {
+      const days = (now - Date.parse(iso)) / 86400000;
+      const band = bands.find((b) => days >= b);
+      if (band == null) continue;
+      if (!claim(state, `nospend|${acct.accountId}|${fanId}|${band}`)) continue;
+      n++;
+      console.log(`[${ts()}] #2 DRY ${acct.name}: fan ${fanId} ${Math.floor(days)}d no spend → would move to "${LIST_AUTO.noSpendListPrefix} ${band}d"`);
+    }
+  }
+  return n;
+}
+
 // Once per run: flag spend by WHALES (high-spend-list members), or any single
 // purchase ≥ WHALE.hardFloor. Idempotent per txn id; only recent (lookback).
-async function sweepTransactions(accounts, state, whales, now) {
+async function sweepTransactions(accounts, state, whales, lastSpend, now) {
   if (!WHALE.enabled) return 0;
   const watch = accounts.filter((a) => WHALE.tiers.includes(a.tier));
   let flagged = 0;
@@ -156,6 +220,7 @@ async function sweepTransactions(accounts, state, whales, now) {
     let txns;
     try { txns = await listTransactions(acct.accountId, { limit: 20 }); }
     catch { continue; }
+    recordSpend(lastSpend, acct.accountId, txns); // #2 — build last-spend history
     for (const t of txns) {
       const ageSec = (now - Date.parse(t.createdAt)) / 1000;
       if (ageSec > WHALE.lookbackSec) continue;
@@ -180,14 +245,17 @@ async function scan(accounts, state, whales, now) {
   const unreachable = [];
 
   for (const acct of accounts) {
-    let threads;
+    let chats;
     try {
-      threads = unansweredThreads(await listChats(acct.accountId), now);
+      chats = await listChats(acct.accountId);
     } catch (e) {
       unreachable.push(`${acct.name}${e.status === 404 ? "" : ` (${e.status || "err"})`}`);
       continue;
     }
     watched++;
+    let threads = unansweredThreads(chats, now);
+    // #1 — exclude-on-reply (dry-run by default), independent of downtime.
+    await applyExcludeOnReply(acct, chats, state, whales, now);
     // Keep only actionable threads: a real fan (not another creator's mass-DM),
     // not the account talking to itself, and within the live-downtime window
     // (older = abandoned backlog).
@@ -279,18 +347,29 @@ async function scan(accounts, state, whales, now) {
   // Load + refresh the cached whale set (used by both the spend sweep and the
   // whale-activity flags). Refreshed only when older than WHALE.refreshHours.
   let whales = { byAccount: {} };
+  const lastSpend = loadLastSpend();
   if (WHALE.enabled) {
     whales = loadWhales();
     const staleMs = WHALE.refreshHours * 3600 * 1000;
     if (!whales.refreshedAt || Date.now() - Date.parse(whales.refreshedAt) > staleMs) {
-      console.log(`[${ts()}] refreshing whale lists…`);
+      console.log(`[${ts()}] refreshing whale + exclude lists…`);
       try { await refreshWhaleSets(accounts, whales, Date.now()); }
-      catch (e) { console.error(`[${ts()}] whale refresh error: ${e.message}`); }
+      catch (e) { console.error(`[${ts()}] list refresh error: ${e.message}`); }
     }
     try {
-      const flagged = await sweepTransactions(accounts, state, whales, Date.now());
+      const flagged = await sweepTransactions(accounts, state, whales, lastSpend, Date.now());
       if (flagged) console.log(`[${ts()}] whale sweep: ${flagged} spend flag(s)`);
     } catch (e) { console.error(`[${ts()}] whale sweep error: ${e.message}`); }
+    saveState(state);
+  }
+  // #2 — move idle spenders (dry-run). Recording starts now; accurate after
+  // it's been running ~max(inactivityDays) days.
+  if (LIST_AUTO.enabled) {
+    try {
+      const moved = await sweepInactivity(accounts, lastSpend, state, Date.now());
+      if (moved) console.log(`[${ts()}] #2 inactivity: ${moved} would-move(s)`);
+    } catch (e) { console.error(`[${ts()}] inactivity sweep error: ${e.message}`); }
+    saveLastSpend(lastSpend);
     saveState(state);
   }
 
