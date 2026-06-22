@@ -10,6 +10,10 @@
 // creators are picked up with no edits here). This map only sets each account's
 // `tier`, which gates the 10-min (level-2) escalation (A/B only). Keyed by the
 // current OF username. Anything not listed defaults to tier "C" (no level-2).
+// An optional `thresholds` override sets that account's own alert timings
+// (seconds); anything omitted falls back to the global THRESHOLDS. An account
+// with a custom override is always eligible for the 2nd-level ping regardless
+// of tier. Changing thresholds does NOT change API usage — same poll data.
 export const ACCOUNT_META = {
   // username             tier   creator
   "bluebeari3vip":     { tier: "A" },  // Blue Bear
@@ -18,13 +22,23 @@ export const ACCOUNT_META = {
   "flame_fantasy_xx":  { tier: "B" },  // Meg (currently disconnected)
   "junehaynes":        { tier: "C" },  // June - Sandra
   "juliejswan":        { tier: "C" },  // Julie
-  "lillyylou":         { tier: "C" },  // Antonella  — tier TBC, confirm
-  "ellaajanee":        { tier: "C" },  // Ella       — tier TBC, confirm
+  "lillyylou":         { tier: "C", thresholds: { level1Sec: 180, level2Sec: 300 } },  // Antonella — pin at 3 then 5 min
+  "ellaajanee":        { tier: "C", thresholds: { level1Sec: 180, level2Sec: 300 } },  // Ella      — pin at 3 then 5 min
 };
 
 // Tier for an account by username (defaults to C — no 10-min step).
 export function tierFor(username) {
   return ACCOUNT_META[username]?.tier ?? "C";
+}
+
+// Effective thresholds for an account = global defaults + per-account override.
+export function thresholdsFor(username) {
+  return { ...THRESHOLDS, ...(ACCOUNT_META[username]?.thresholds ?? {}) };
+}
+
+// Whether the 2nd-level (escalation) ping applies: A/B tier, or a custom override.
+export function level2Eligible(username) {
+  return LEVEL2_TIERS.has(tierFor(username)) || !!ACCOUNT_META[username]?.thresholds;
 }
 
 // ── Escalation thresholds (seconds) ─────────────────────────────────────────

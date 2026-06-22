@@ -28,7 +28,7 @@ import { dirname, resolve } from "node:path";
 import { sendDiscord } from "../payout-bot/config.mjs";
 import { listAccounts, listChats, unansweredThreads } from "./of.mjs";
 import {
-  tierFor, THRESHOLDS, LEVEL2_TIERS, LOOP, DISCORD, DRY_RUN,
+  tierFor, thresholdsFor, level2Eligible, THRESHOLDS, LOOP, DISCORD, DRY_RUN,
   currentShiftBlock,
 } from "./config.mjs";
 
@@ -91,15 +91,16 @@ async function scan(accounts, state, now) {
     // Keep only actionable threads: a real fan (not another creator's mass-DM),
     // not the account talking to itself, and within the live-downtime window
     // (older = abandoned backlog).
+    const th = acct.thresholds; // per-account timings
     threads = threads.filter((t) =>
       !t.fanIsCreator &&
       t.fanUsername.toLowerCase() !== acct.username.toLowerCase() &&
-      t.waitedSeconds <= THRESHOLDS.maxWaitSec);
+      t.waitedSeconds <= th.maxWaitSec);
     if (!threads.length) continue;
 
     const oldest = threads[0]; // longest-waiting actionable thread drives the breach
     const waited = oldest.waitedSeconds;
-    if (waited < THRESHOLDS.level1Sec) continue;
+    if (waited < th.level1Sec) continue;
     breaching++;
 
     const ep = `${acct.accountId}|${oldest.fanMessageAt}`;
@@ -115,8 +116,8 @@ async function scan(accounts, state, now) {
         [block.qaDiscord]);
     }
 
-    // Level 2 — ≥10 min, A/B tier only: escalate.
-    if (waited >= THRESHOLDS.level2Sec && LEVEL2_TIERS.has(acct.tier) && claim(state, `${ep}|2`)) {
+    // Level 2 — escalate (A/B tier, or accounts with a custom override).
+    if (waited >= th.level2Sec && acct.l2 && claim(state, `${ep}|2`)) {
       fired++;
       await post(`L2 ${acct.name}`, DISCORD.downtimeWebhook,
         `🟠 **Still down ${mins}m — ${acct.name}** (tier ${acct.tier}, fan @${oldest.fanUsername}).\n` +
@@ -124,11 +125,11 @@ async function scan(accounts, state, now) {
         [block.qaDiscord]);
     }
 
-    // Level 3 — ≥20 min: message Management.
-    if (waited >= THRESHOLDS.level3Sec && claim(state, `${ep}|3`)) {
+    // Level 3 — message Management.
+    if (waited >= th.level3Sec && claim(state, `${ep}|3`)) {
       fired++;
       await post(`L3 ${acct.name}`, DISCORD.groupWebhook,
-        `⚠️ **20+ min no response — ${acct.name}** — fan @${oldest.fanUsername} has waited **${fmtAge(waited)}**.\n` +
+        `⚠️ **${Math.floor(th.level3Sec / 60)}+ min no response — ${acct.name}** — fan @${oldest.fanUsername} has waited **${fmtAge(waited)}**.\n` +
         `QA ${ping(block.qaDiscord)} — needs immediate attention. ${who}`,
         [block.qaDiscord]);
     }
@@ -148,7 +149,12 @@ async function scan(accounts, state, now) {
   const all = await listAccounts();
   const accounts = all
     .filter((a) => a.authenticated)
-    .map((a) => ({ name: a.name, username: a.username, accountId: a.accountId, tier: tierFor(a.username) }));
+    .map((a) => ({
+      name: a.name, username: a.username, accountId: a.accountId,
+      tier: tierFor(a.username),
+      thresholds: thresholdsFor(a.username), // per-account timings (e.g. Ella/Antonella 3→5 min)
+      l2: level2Eligible(a.username),
+    }));
   const needAuth = all.filter((a) => !a.authenticated).map((a) => a.name);
   const state = loadState();
   const deadline = Date.now() + LOOP.durationSec * 1000;
