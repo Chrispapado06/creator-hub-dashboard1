@@ -174,7 +174,7 @@ async function sweepTransactions(accounts, state, whales, now) {
 }
 
 // ── One scan pass over all accounts ─────────────────────────────────────────
-async function scan(accounts, state, now) {
+async function scan(accounts, state, whales, now) {
   const block = currentShiftBlock(now);
   let watched = 0, breaching = 0, fired = 0;
   const unreachable = [];
@@ -197,6 +197,19 @@ async function scan(accounts, state, now) {
       t.fanUsername.toLowerCase() !== acct.username.toLowerCase() &&
       t.waitedSeconds <= th.maxWaitSec);
     if (!threads.length) continue;
+
+    // #4 — whale activity: a whale on this account is messaging and waiting →
+    // flag QAs in #chatter-pins-qa-pins (any wait, so whales surface fast).
+    const whaleSet = new Set(whales?.byAccount?.[acct.accountId] || []);
+    if (whaleSet.size) {
+      for (const t of threads) {
+        if (!whaleSet.has(String(t.fanId))) continue;
+        if (!claim(state, `wact|${acct.accountId}|${t.fanMessageAt}`)) continue;
+        const link = t.fanUsername ? ` · <https://onlyfans.com/${t.fanUsername}>` : "";
+        await postQaPins(`whale-active ${acct.name}`,
+          `🐋 **${acct.name}** — whale **${t.fanUsername}** is messaging, waiting **${fmtAge(t.waitedSeconds)}**${link}`);
+      }
+    }
 
     const oldest = threads[0]; // longest-waiting actionable thread drives the breach
     const waited = oldest.waitedSeconds;
@@ -263,10 +276,11 @@ async function scan(accounts, state, now) {
     (needAuth.length ? ` ⚠ NOT authenticated (needs re-auth): ${needAuth.join(", ")}.` : ""),
   );
 
-  // Whale flags — swept once per invocation. Refresh the cached whale set
-  // (high-spend-list members) only when it's older than WHALE.refreshHours.
+  // Load + refresh the cached whale set (used by both the spend sweep and the
+  // whale-activity flags). Refreshed only when older than WHALE.refreshHours.
+  let whales = { byAccount: {} };
   if (WHALE.enabled) {
-    const whales = loadWhales();
+    whales = loadWhales();
     const staleMs = WHALE.refreshHours * 3600 * 1000;
     if (!whales.refreshedAt || Date.now() - Date.parse(whales.refreshedAt) > staleMs) {
       console.log(`[${ts()}] refreshing whale lists…`);
@@ -283,7 +297,7 @@ async function scan(accounts, state, now) {
   let pass = 0;
   do {
     pass++;
-    try { await scan(accounts, state, Date.now()); }
+    try { await scan(accounts, state, whales, Date.now()); }
     catch (e) { console.error(`[${ts()}] scan pass #${pass} error: ${e.message}`); }
     saveState(state); // persist after every pass so a crash mid-loop keeps idempotency
     if (Date.now() + LOOP.everySec * 1000 < deadline) await sleep(LOOP.everySec * 1000);
