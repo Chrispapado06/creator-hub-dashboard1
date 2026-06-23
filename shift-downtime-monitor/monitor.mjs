@@ -106,8 +106,13 @@ async function postPrimary(label, block, body) {
 
 // Post a whale/purchase flag into #chatter-pins-qa-pins (bot token), or log.
 async function postQaPins(label, body) {
+  // Prefer the webhook (bulletproof, no bot permission needed).
+  if (!DRY_RUN && DISCORD.qaPinsWebhook) {
+    await sendDiscord(DISCORD.qaPinsWebhook, { content: body, allowed_mentions: { parse: [] } });
+    return;
+  }
   if (DRY_RUN || !DISCORD.botToken || !DISCORD.qaPinsChannelId) {
-    console.log(`[${ts()}] DRY_RUN ${label} → #chatter-pins-qa-pins (${DISCORD.qaPinsChannelId || "unset"})\n    ${body.replace(/\n/g, "\n    ")}`);
+    console.log(`[${ts()}] DRY_RUN ${label} → qa-pins (${DISCORD.qaPinsChannelId || "unset"})\n    ${body.replace(/\n/g, "\n    ")}`);
     return;
   }
   const r = await fetch(`https://discord.com/api/v10/channels/${DISCORD.qaPinsChannelId}/messages`, {

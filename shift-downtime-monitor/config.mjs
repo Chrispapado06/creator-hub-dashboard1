@@ -105,7 +105,9 @@ export const DISCORD = {
   // channel and @everyones it. Until this is set, L1/L2 fall back to the
   // Chatter-QA webhook (pinging the QA) so coverage never drops.
   botToken: process.env.DISCORD_BOT_TOKEN || "",
-  // Channel where whale/purchase flags post (bot token).
+  // Where whale/purchase flags post. Prefer a webhook (bulletproof, no bot
+  // permission needed); fall back to the bot token + channel id.
+  qaPinsWebhook: process.env.DISCORD_WEBHOOK_QA_PINS || "",
   qaPinsChannelId: process.env.DISCORD_QA_PINS_CHANNEL_ID || "1518916555037999164",
 };
 
