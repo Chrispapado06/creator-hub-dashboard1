@@ -151,6 +151,22 @@ export async function listListMemberIds(accountId, listId, { maxPages = 30 } = {
   return ids;
 }
 
+// ── EOD activity (mass messages / feed posts / stories), each with an id +
+// date so they can be recorded once and survive later deletion ──────────────
+export async function listMassMessages(accountId) {
+  const json = await ofGet(`/${accountId}/mass-messaging/overview`);
+  const items = json?.data?.items ?? asList(json);
+  return items.filter((m) => m?.id).map((m) => ({ id: String(m.id), date: m.date || m.createdAt || "" }));
+}
+export async function listFeedPosts(accountId, { limit = 30 } = {}) {
+  const json = await ofGet(`/${accountId}/posts?limit=${limit}`);
+  return asList(json).filter((p) => p?.id).map((p) => ({ id: String(p.id), date: p.postedAt || p.createdAt || "" }));
+}
+export async function listStories(accountId) {
+  const json = await ofGet(`/${accountId}/stories`);
+  return asList(json).filter((s) => s?.id).map((s) => ({ id: String(s.id), date: s.createdAt || s.date || "" }));
+}
+
 // ── List writes (gated behind dry-run in the caller) ────────────────────────
 async function ofWrite(method, path, body) {
   if (!OF_KEY) throw new Error("No OF key");

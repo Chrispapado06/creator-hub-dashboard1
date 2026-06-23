@@ -30,16 +30,18 @@ import {
   listAccounts, listChats, listTransactions, unansweredThreads,
   listUserLists, listListMemberIds, recentReplies,
   addUserToList, removeUserFromList, createUserList,
+  listMassMessages, listFeedPosts, listStories,
 } from "./of.mjs";
 import {
   tierFor, thresholdsFor, level2Eligible, THRESHOLDS, LOOP, DISCORD, DRY_RUN,
-  currentShiftBlock, WHALE, LIST_AUTO,
+  currentShiftBlock, WHALE, LIST_AUTO, EOD, dayInTz, hourInTz,
 } from "./config.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const STATE_FILE = resolve(__dirname, "state.json");
 const WHALES_FILE = resolve(__dirname, "whales.json");
 const LASTSPEND_FILE = resolve(__dirname, "lastspend.json");
+const EOD_FILE = resolve(__dirname, "mm-eod.json");
 
 const ts = () => new Date().toLocaleTimeString("en-GB", { hour12: false });
 const fmtAge = (s) => (s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${String(s % 60).padStart(2, "0")}s`);
@@ -243,6 +245,56 @@ async function sweepTransactions(accounts, state, whales, lastSpend, now) {
   return flagged;
 }
 
+// ── EOD report: record each MM/feed/story by id every run (so deletions are
+// still counted), then post the day's totals once a day ─────────────────────
+function loadEod() { try { return JSON.parse(readFileSync(EOD_FILE, "utf8")); } catch { return { days: {}, lastSentDate: null, lastRecordedAt: null }; } }
+function saveEod(e) { writeFileSync(EOD_FILE, JSON.stringify(e) + "\n"); }
+
+async function recordEodActivity(eod, accounts, now) {
+  eod.days ??= {};
+  for (const acct of accounts) {
+    for (const [type, fn] of [["mm", listMassMessages], ["feed", listFeedPosts], ["story", listStories]]) {
+      let items;
+      try { items = await fn(acct.accountId); } catch { continue; }
+      for (const it of items) {
+        if (!it.date) continue;
+        const d = dayInTz(new Date(it.date), EOD.tz);
+        const bucket = ((eod.days[d] ??= {})[acct.accountId] ??= { mm: [], feed: [], story: [] });
+        if (!bucket[type].includes(it.id)) bucket[type].push(it.id);
+      }
+    }
+  }
+  const keep = new Set([0, 1, 2, 3].map((d) => dayInTz(new Date(now - d * 86400000), EOD.tz)));
+  for (const d of Object.keys(eod.days)) if (!keep.has(d)) delete eod.days[d];
+  eod.lastRecordedAt = new Date(now).toISOString();
+}
+
+function buildEodReport(eod, accounts, now) {
+  const today = dayInTz(new Date(now), EOD.tz);
+  const day = eod.days[today] || {};
+  let tMM = 0, tF = 0, tS = 0;
+  const rows = accounts.map((a) => {
+    const b = day[a.accountId] || { mm: [], feed: [], story: [] };
+    tMM += b.mm.length; tF += b.feed.length; tS += b.story.length;
+    return { name: a.name, mm: b.mm.length, feed: b.feed.length, story: b.story.length };
+  });
+  const pad = (s, n) => String(s).padEnd(n), padN = (s, n) => String(s).padStart(n);
+  const line = (a, m, f, s) => `${pad(a, 16)}${padN(m, 4)}${padN(f, 6)}${padN(s, 7)}`;
+  const fmtDay = new Intl.DateTimeFormat("en-GB", { timeZone: EOD.tz, weekday: "short", day: "2-digit", month: "short", year: "numeric" }).format(new Date(now));
+  const body = [line("Account", "MM", "Feed", "Story"), "─".repeat(33),
+    ...rows.map((r) => line(r.name, r.mm, r.feed, r.story)), "─".repeat(33), line("TOTAL", tMM, tF, tS)];
+  return `📊 **MM EOD — ${fmtDay}**\n\`\`\`\n${body.join("\n")}\n\`\`\`\n_MMs are recorded as they're sent, so deletions are still counted._`;
+}
+
+async function maybeSendEod(eod, accounts, now) {
+  if (!EOD.enabled || !EOD.webhook) return false;
+  const today = dayInTz(new Date(now), EOD.tz);
+  if (hourInTz(new Date(now), EOD.tz) < EOD.hour || eod.lastSentDate === today) return false;
+  await sendDiscord(EOD.webhook, { content: buildEodReport(eod, accounts, now) });
+  eod.lastSentDate = today;
+  return true;
+}
+
 // ── One scan pass over all accounts ─────────────────────────────────────────
 async function scan(accounts, state, whales, now) {
   const block = currentShiftBlock(now);
@@ -376,6 +428,19 @@ async function scan(accounts, state, whales, now) {
     } catch (e) { console.error(`[${ts()}] inactivity sweep error: ${e.message}`); }
     saveLastSpend(lastSpend);
     saveState(state);
+  }
+
+  // EOD — record MM/feed/story activity each run; post the day's totals once.
+  if (EOD.enabled) {
+    const eod = loadEod();
+    const due = !eod.lastRecordedAt || Date.now() - Date.parse(eod.lastRecordedAt) >= (EOD.recordEveryN * 5 - 1) * 60000;
+    if (due) {
+      try { await recordEodActivity(eod, accounts, Date.now()); }
+      catch (e) { console.error(`[${ts()}] EOD record error: ${e.message}`); }
+    }
+    try { if (await maybeSendEod(eod, accounts, Date.now())) console.log(`[${ts()}] EOD report sent`); }
+    catch (e) { console.error(`[${ts()}] EOD send error: ${e.message}`); }
+    saveEod(eod);
   }
 
   let pass = 0;

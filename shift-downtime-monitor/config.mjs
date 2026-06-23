@@ -69,8 +69,13 @@ export const SHIFT_BLOCKS = [
   { name: "Day",     startHour: 16, endHour: 24, qaName: "Yen",   qaDiscord: "1267138323999359027", channelId: "1411638392550326272", roleId: "1491477215261491250" }, // Day Shift · PH 16–24 = 08:00–16:00 GMT
 ];
 
+// Calendar day (YYYY-MM-DD) of a date in a timezone.
+export function dayInTz(date, tz) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+}
+
 // Hour-of-day (0–24, fractional) in a timezone.
-function hourInTz(date, tz) {
+export function hourInTz(date, tz) {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false,
   }).formatToParts(date);
@@ -145,6 +150,19 @@ export const LIST_AUTO = {
   replyWindowSec: Number(process.env.EXCLUDE_REPLY_WINDOW_SEC || 600), // a reply within 10 min = "just replied"
   inactivityDays: (process.env.INACTIVITY_DAYS || "7,14,28").split(",").map((s) => Number(s.trim())),
   noSpendListPrefix: process.env.NOSPEND_LIST_PREFIX || "No spend",
+};
+
+// ── EOD activity report (MMs / feed posts / stories per day) ────────────────
+// Each run records every MM / feed post / story (by id) into a daily ledger, so
+// deleting one in OnlyFans doesn't drop it from the count. Once a day at `hour`
+// (in `tz`) it posts the day's totals to EOD_WEBHOOK. Adds ~3 OF calls/account/
+// run — throttle with EOD_RECORD_EVERY_N if cost matters.
+export const EOD = {
+  enabled: process.env.EOD_ENABLED !== "0",
+  webhook: process.env.EOD_WEBHOOK || "",     // channel to post the report to (GitHub secret)
+  tz: process.env.EOD_TZ || "Europe/London",
+  hour: Number(process.env.EOD_HOUR || 23),   // send at this hour (tz)
+  recordEveryN: Number(process.env.EOD_RECORD_EVERY_N || 1), // record on every Nth invocation
 };
 
 // DRY_RUN: log intended alerts instead of sending. Forced on when no Discord
