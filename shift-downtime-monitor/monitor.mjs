@@ -245,22 +245,29 @@ async function sweepTransactions(accounts, state, whales, lastSpend, now) {
   return flagged;
 }
 
-// ── EOD report: record each MM/feed/story by id every run (so deletions are
-// still counted), then post the day's totals once a day ─────────────────────
-function loadEod() { try { return JSON.parse(readFileSync(EOD_FILE, "utf8")); } catch { return { days: {}, lastSentDate: null, lastRecordedAt: null }; } }
+// ── EOD / shift reports: record each MM (with sent+viewed), feed post and story
+// by id every run, then post the day's totals (and an end-of-shift summary) ──
+function loadEod() { try { return JSON.parse(readFileSync(EOD_FILE, "utf8")); } catch { return { days: {}, lastSentDate: null, lastShiftBlock: null, lastRecordedAt: null }; } }
 function saveEod(e) { writeFileSync(EOD_FILE, JSON.stringify(e) + "\n"); }
+const emptyDay = () => ({ mms: {}, feedByAcct: {}, storyByAcct: {} });
 
 async function recordEodActivity(eod, accounts, now) {
   eod.days ??= {};
   for (const acct of accounts) {
-    for (const [type, fn] of [["mm", listMassMessages], ["feed", listFeedPosts], ["story", listStories]]) {
-      let items;
-      try { items = await fn(acct.accountId); } catch { continue; }
+    let mms; try { mms = await listMassMessages(acct.accountId); } catch { mms = null; }
+    for (const m of mms ?? []) {
+      if (!m.date) continue;
+      const day = (eod.days[dayInTz(new Date(m.date), EOD.tz)] ??= emptyDay());
+      const prev = day.mms[m.id];
+      day.mms[m.id] = { acct: acct.name, date: m.date, sent: m.sent, viewed: Math.max(m.viewed, prev?.viewed ?? 0), text: m.text };
+    }
+    for (const [key, fn] of [["feedByAcct", listFeedPosts], ["storyByAcct", listStories]]) {
+      let items; try { items = await fn(acct.accountId); } catch { continue; }
       for (const it of items) {
         if (!it.date) continue;
-        const d = dayInTz(new Date(it.date), EOD.tz);
-        const bucket = ((eod.days[d] ??= {})[acct.accountId] ??= { mm: [], feed: [], story: [] });
-        if (!bucket[type].includes(it.id)) bucket[type].push(it.id);
+        const day = (eod.days[dayInTz(new Date(it.date), EOD.tz)] ??= emptyDay());
+        const arr = (day[key][acct.accountId] ??= []);
+        if (!arr.includes(it.id)) arr.push(it.id);
       }
     }
   }
@@ -269,21 +276,53 @@ async function recordEodActivity(eod, accounts, now) {
   eod.lastRecordedAt = new Date(now).toISOString();
 }
 
+const allMMs = (eod) => Object.values(eod.days || {}).flatMap((day) => Object.entries(day.mms || {}).map(([id, m]) => ({ id, ...m })));
+
+// Analytics over a set of MMs: busiest hour, most active account, top by views.
+function mmAnalytics(mms) {
+  const perAcct = {}, byHour = {};
+  for (const m of mms) {
+    perAcct[m.acct] = (perAcct[m.acct] || 0) + 1;
+    const h = new Intl.DateTimeFormat("en-GB", { timeZone: EOD.tz, hour: "2-digit", hour12: false }).format(new Date(m.date));
+    byHour[h] = (byHour[h] || 0) + 1;
+  }
+  return {
+    count: mms.length,
+    mostActive: Object.entries(perAcct).sort((a, b) => b[1] - a[1])[0],
+    busiest: Object.entries(byHour).sort((a, b) => b[1] - a[1])[0],
+    top: [...mms].filter((m) => m.sent > 0).sort((a, b) => b.viewed - a.viewed).slice(0, 3),
+  };
+}
+const topLines = (top) => top.map((m, i) => `  ${i + 1}. ${m.acct} — ${m.viewed} views / ${(m.sent / 1000).toFixed(0)}k sent · "${m.text}"`).join("\n");
+
 function buildEodReport(eod, accounts, now) {
   const today = dayInTz(new Date(now), EOD.tz);
-  const day = eod.days[today] || {};
-  let tMM = 0, tF = 0, tS = 0;
-  const rows = accounts.map((a) => {
-    const b = day[a.accountId] || { mm: [], feed: [], story: [] };
-    tMM += b.mm.length; tF += b.feed.length; tS += b.story.length;
-    return { name: a.name, mm: b.mm.length, feed: b.feed.length, story: b.story.length };
-  });
+  const day = eod.days[today] || emptyDay();
+  const mms = Object.entries(day.mms).map(([id, m]) => ({ id, ...m }));
+  const a = mmAnalytics(mms);
+  const fTot = Object.values(day.feedByAcct).reduce((s, x) => s + x.length, 0);
+  const sTot = Object.values(day.storyByAcct).reduce((s, x) => s + x.length, 0);
   const pad = (s, n) => String(s).padEnd(n), padN = (s, n) => String(s).padStart(n);
-  const line = (a, m, f, s) => `${pad(a, 16)}${padN(m, 4)}${padN(f, 6)}${padN(s, 7)}`;
+  const line = (n, m, f, s) => `${pad(n, 16)}${padN(m, 4)}${padN(f, 6)}${padN(s, 7)}`;
+  const rows = accounts.map((acc) => line(acc.name, mms.filter((m) => m.acct === acc.name).length, (day.feedByAcct[acc.accountId] || []).length, (day.storyByAcct[acc.accountId] || []).length));
   const fmtDay = new Intl.DateTimeFormat("en-GB", { timeZone: EOD.tz, weekday: "short", day: "2-digit", month: "short", year: "numeric" }).format(new Date(now));
-  const body = [line("Account", "MM", "Feed", "Story"), "─".repeat(33),
-    ...rows.map((r) => line(r.name, r.mm, r.feed, r.story)), "─".repeat(33), line("TOTAL", tMM, tF, tS)];
-  return `📊 **MM EOD — ${fmtDay}**\n\`\`\`\n${body.join("\n")}\n\`\`\`\n_MMs are recorded as they're sent, so deletions are still counted._`;
+  return `📊 **MM EOD — ${fmtDay}** · all accounts\n` +
+    `**${a.count} MMs · ${fTot} feed · ${sTot} stories**\n` +
+    "```\n" + [line("Account", "MM", "Feed", "Story"), "─".repeat(33), ...rows].join("\n") + "\n```\n" +
+    (a.busiest ? `📈 Busiest hour: **${a.busiest[0]}:00** (${a.busiest[1]} MMs)\n` : "") +
+    (a.mostActive ? `🔥 Most active: **${a.mostActive[0]}** (${a.mostActive[1]} MMs)\n` : "") +
+    (a.top.length ? `👀 Top MMs by views:\n${topLines(a.top)}\n` : "") +
+    `_Views accumulate through the day; MMs are counted even if deleted._`;
+}
+
+function buildShiftReport(eod, shiftName, now) {
+  const since = now - 8 * 3600 * 1000;
+  const mms = allMMs(eod).filter((m) => { const t = Date.parse(m.date); return t >= since && t <= now; });
+  const a = mmAnalytics(mms);
+  return `🔄 **End of Shift — ${shiftName}**\n` +
+    `**${a.count} MMs** sent across all accounts this shift.\n` +
+    (a.mostActive ? `🔥 Most active: **${a.mostActive[0]}** (${a.mostActive[1]} MMs)\n` : "") +
+    (a.top.length ? `👀 Top MMs by views:\n${topLines(a.top)}` : "_No MMs this shift._");
 }
 
 async function maybeSendEod(eod, accounts, now) {
@@ -292,6 +331,19 @@ async function maybeSendEod(eod, accounts, now) {
   if (hourInTz(new Date(now), EOD.tz) < EOD.hour || eod.lastSentDate === today) return false;
   await sendDiscord(EOD.webhook, { content: buildEodReport(eod, accounts, now) });
   eod.lastSentDate = today;
+  return true;
+}
+
+// Send a shift summary whenever the active shift block changes (i.e. a shift
+// just ended). Covers the MMs from the prior 8h.
+async function maybeSendShiftReport(eod, now) {
+  if (!EOD.enabled || !EOD.webhook) return false;
+  const cur = currentShiftBlock(now).name;
+  if (eod.lastShiftBlock == null) { eod.lastShiftBlock = cur; return false; }
+  if (eod.lastShiftBlock === cur) return false;
+  const ended = eod.lastShiftBlock;
+  eod.lastShiftBlock = cur;
+  await sendDiscord(EOD.webhook, { content: buildShiftReport(eod, ended, now) });
   return true;
 }
 
@@ -438,6 +490,8 @@ async function scan(accounts, state, whales, now) {
       try { await recordEodActivity(eod, accounts, Date.now()); }
       catch (e) { console.error(`[${ts()}] EOD record error: ${e.message}`); }
     }
+    try { if (await maybeSendShiftReport(eod, Date.now())) console.log(`[${ts()}] shift report sent`); }
+    catch (e) { console.error(`[${ts()}] shift send error: ${e.message}`); }
     try { if (await maybeSendEod(eod, accounts, Date.now())) console.log(`[${ts()}] EOD report sent`); }
     catch (e) { console.error(`[${ts()}] EOD send error: ${e.message}`); }
     saveEod(eod);

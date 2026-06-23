@@ -156,7 +156,13 @@ export async function listListMemberIds(accountId, listId, { maxPages = 30 } = {
 export async function listMassMessages(accountId) {
   const json = await ofGet(`/${accountId}/mass-messaging/overview`);
   const items = json?.data?.items ?? asList(json);
-  return items.filter((m) => m?.id).map((m) => ({ id: String(m.id), date: m.date || m.createdAt || "" }));
+  return items.filter((m) => m?.id).map((m) => ({
+    id: String(m.id),
+    date: m.date || m.createdAt || "",
+    sent: Number(m.sentCount ?? 0),
+    viewed: Number(m.viewedCount ?? 0),
+    text: (m.rawText || m.text || "").replace(/<[^>]+>/g, "").slice(0, 50),
+  }));
 }
 export async function listFeedPosts(accountId, { limit = 30 } = {}) {
   const json = await ofGet(`/${accountId}/posts?limit=${limit}`);
