@@ -34,7 +34,7 @@ import {
 } from "./of.mjs";
 import {
   tierFor, thresholdsFor, level2Eligible, THRESHOLDS, LOOP, DISCORD, DRY_RUN,
-  currentShiftBlock, WHALE, LIST_AUTO, EOD, dayInTz, hourInTz,
+  currentShiftBlock, WHALE, LIST_AUTO, EOD, PAYDAY, dayInTz, hourInTz, weekdayInTz,
 } from "./config.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -42,6 +42,8 @@ const STATE_FILE = resolve(__dirname, "state.json");
 const WHALES_FILE = resolve(__dirname, "whales.json");
 const LASTSPEND_FILE = resolve(__dirname, "lastspend.json");
 const EOD_FILE = resolve(__dirname, "mm-eod.json");
+const PAYDAY_FILE = resolve(__dirname, "whale-paydays.json");
+const PAYDAY_STATE_FILE = resolve(__dirname, "payday-state.json");
 
 const ts = () => new Date().toLocaleTimeString("en-GB", { hour12: false });
 const fmtAge = (s) => (s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${String(s % 60).padStart(2, "0")}s`);
@@ -252,15 +254,63 @@ async function sweepTransactions(accounts, state, whales, lastSpend, now) {
       if (!isWhale && !bigOneOff) continue;
       if (!claim(state, `tx|${acct.accountId}|${t.id}`)) continue;
       flagged++;
-      const link = t.fanUsername ? ` · <https://onlyfans.com/${t.fanUsername}>` : "";
+      const link = t.fanUsername ? `\n<https://onlyfans.com/${t.fanUsername}>` : "";
       const tag = isWhale ? "🐋" : "💸";
-      const card = cardMap[t.fanId] ? ` · ${cardMap[t.fanId]}` : "";
+      const handling = cardMap[t.fanId] ? ` — ${cardMap[t.fanId]}` : "";
+      // Luca's format: "Whale - Dominic on Marissa - DO NOT SELL · QA Liz"
       await postQaPins(`whale ${acct.name}`,
-        `${tag} **${acct.name}** — **${t.fanName}**${t.fanUsername ? ` (@${t.fanUsername})` : ""} ${spendVerb(t.type)} **${money(t.amount)}** (${t.type})${card}${link}${qaMention}`,
+        `${tag} **Whale — ${t.fanName} on ${acct.name}**${handling}\n` +
+        `${spendVerb(t.type)} **${money(t.amount)}** (${t.type})${qaMention}${link}`,
         block.qaDiscord ? [block.qaDiscord] : []);
     }
   }
   return flagged;
+}
+
+// ── Payday whale reminders (Phase 2/3) ──────────────────────────────────────
+// Once per payday morning, post the whales paid today with their handling
+// and the QA on shift — drives "interfere immediately on chatting and pace
+// chatters" for DO_NOT_SELL whales (Luca's example).
+function loadPayday() { try { return JSON.parse(readFileSync(PAYDAY_FILE, "utf8")); } catch { return { whales: [] }; } }
+function loadPaydayState() { try { return JSON.parse(readFileSync(PAYDAY_STATE_FILE, "utf8")); } catch { return { lastSentDate: null }; } }
+function savePaydayState(s) { writeFileSync(PAYDAY_STATE_FILE, JSON.stringify(s, null, 2) + "\n"); }
+
+const HANDLING_LABEL = {
+  DO_NOT_SELL: "🔴 DO NOT SELL",
+  REVIVE: "🟡 REVIVE / CHECK-IN",
+  PRE_SELL: "🟦 PRE-SELL",
+  SELL: "🟢 SELL",
+  PAYDAY: "💵 PAYDAY",
+};
+
+function buildPaydayReport(payday, today, weekday, block) {
+  const due = (payday.whales || []).filter((w) => w?.payday && w.payday.slice(0, 3).toLowerCase() === weekday.slice(0, 3).toLowerCase());
+  if (!due.length) return null;
+  const qa = block.qaDiscord ? `<@${block.qaDiscord}>` : block.qaName;
+  // Group by handling so DO NOT SELL is unmissable at the top.
+  const groupOrder = ["DO_NOT_SELL", "PRE_SELL", "REVIVE", "SELL"];
+  const grouped = {};
+  for (const w of due) (grouped[w.handling] ??= []).push(w);
+  const fmtLine = (w) => `• **Whale — ${w.name} on ${w.model}** — ${HANDLING_LABEL[w.handling] || w.handling || "?"}${w.note ? ` _(${w.note})_` : ""}`;
+  const sections = groupOrder.filter((g) => grouped[g]).map((g) =>
+    `${HANDLING_LABEL[g]} — **${grouped[g].length}**\n` + grouped[g].map(fmtLine).join("\n"));
+  return `💵 **Payday reminders — ${today}** _(${weekday})_\n` +
+    `${due.length} whale(s) get paid today. QA on shift: ${qa}\n\n` +
+    sections.join("\n\n") +
+    `\n\n_Chatters: handle whales per their tag. Pace and stay on RB for "do not sell."_`;
+}
+
+async function maybeSendPaydayReport(state, now) {
+  if (!PAYDAY.enabled) return false;
+  const today = dayInTz(new Date(now), PAYDAY.tz);
+  const weekday = weekdayInTz(new Date(now), PAYDAY.tz);
+  if (hourInTz(new Date(now), PAYDAY.tz) < PAYDAY.hour || state.lastSentDate === today) return false;
+  const payday = loadPayday();
+  const body = buildPaydayReport(payday, today, weekday, currentShiftBlock(now));
+  state.lastSentDate = today; // record even if nothing due — don't recheck this day
+  if (!body) return false;
+  await postQaPins("payday", body, currentShiftBlock(now).qaDiscord ? [currentShiftBlock(now).qaDiscord] : []);
+  return true;
 }
 
 // ── EOD / shift reports: record each MM (with sent+viewed), feed post and story
@@ -448,10 +498,11 @@ async function scan(accounts, state, whales, now) {
         const fid = String(t.fanId);
         if (!whaleSet.has(fid)) continue;
         if (!claim(state, `wact|${acct.accountId}|${t.fanMessageAt}`)) continue;
-        const link = t.fanUsername ? ` · <https://onlyfans.com/${t.fanUsername}>` : "";
-        const card = cardMap[fid] ? ` · ${cardMap[fid]}` : "";
+        const link = t.fanUsername ? `\n<https://onlyfans.com/${t.fanUsername}>` : "";
+        const handling = cardMap[fid] ? ` — ${cardMap[fid]}` : "";
         await postQaPins(`whale-active ${acct.name}`,
-          `🐋 **${acct.name}** — whale **${t.fanUsername}** is messaging, waiting **${fmtAge(t.waitedSeconds)}**${card}${link}${qaMention}`,
+          `🐋 **Whale — ${t.fanUsername} on ${acct.name}**${handling}\n` +
+          `messaging, waiting **${fmtAge(t.waitedSeconds)}**${qaMention}${link}`,
           block.qaDiscord ? [block.qaDiscord] : []);
       }
     }
@@ -558,6 +609,11 @@ async function scan(accounts, state, whales, now) {
       try { await recordEodActivity(eod, accounts, Date.now()); }
       catch (e) { console.error(`[${ts()}] EOD record error: ${e.message}`); }
     }
+    try {
+      const pds = loadPaydayState();
+      if (await maybeSendPaydayReport(pds, Date.now())) console.log(`[${ts()}] payday reminder sent`);
+      savePaydayState(pds);
+    } catch (e) { console.error(`[${ts()}] payday error: ${e.message}`); }
     try { if (await maybeSendShiftReport(eod, accounts, Date.now())) console.log(`[${ts()}] shift report sent`); }
     catch (e) { console.error(`[${ts()}] shift send error: ${e.message}`); }
     try { if (await maybeSendEod(eod, accounts, Date.now())) console.log(`[${ts()}] EOD report sent`); }

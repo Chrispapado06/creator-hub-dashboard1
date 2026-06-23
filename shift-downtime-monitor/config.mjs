@@ -74,6 +74,11 @@ export function dayInTz(date, tz) {
   return new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
 }
 
+// Short weekday name (Mon..Sun) of a date in a timezone.
+export function weekdayInTz(date, tz) {
+  return new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short" }).format(date);
+}
+
 // Hour-of-day (0–24, fractional) in a timezone.
 export function hourInTz(date, tz) {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -167,6 +172,16 @@ export const LIST_AUTO = {
 // deleting one in OnlyFans doesn't drop it from the count. Once a day at `hour`
 // (in `tz`) it posts the day's totals to EOD_WEBHOOK. Adds ~3 OF calls/account/
 // run — throttle with EOD_RECORD_EVERY_N if cost matters.
+// ── Payday whale reminders (Phase 2/3) ──────────────────────────────────────
+// Once per payday morning, ping #chatter-pins-qa-pins with each whale paid
+// that day — model, handling tag (DO NOT SELL / PRE-SELL / etc.), QA on shift.
+// Data source: whale-paydays.json (a small per-whale file the team edits).
+export const PAYDAY = {
+  enabled: process.env.PAYDAY_ENABLED !== "0",
+  hour: Number(process.env.PAYDAY_HOUR || 8), // post at this local hour
+  tz: process.env.PAYDAY_TZ || "Europe/London",
+};
+
 export const EOD = {
   enabled: process.env.EOD_ENABLED !== "0",
   webhook: process.env.EOD_WEBHOOK || "",            // MM QA report channel (GitHub secret)

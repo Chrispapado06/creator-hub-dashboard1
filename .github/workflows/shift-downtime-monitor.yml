@@ -36,5 +36,5 @@ jobs:
         run: |
           git config user.name  'shift-downtime-bot'
           git config user.email 'shift-downtime-bot@users.noreply.github.com'
-          git add shift-downtime-monitor/state.json shift-downtime-monitor/whales.json shift-downtime-monitor/lastspend.json shift-downtime-monitor/mm-eod.json
+          git add shift-downtime-monitor/state.json shift-downtime-monitor/whales.json shift-downtime-monitor/lastspend.json shift-downtime-monitor/mm-eod.json shift-downtime-monitor/payday-state.json
           git diff --cached --quiet || (git commit -m "shift-monitor: update state [skip ci]" && git push)
