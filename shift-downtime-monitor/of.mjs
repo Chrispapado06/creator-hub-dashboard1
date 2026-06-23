@@ -164,7 +164,10 @@ export async function listMassMessages(accountId) {
     free: m.isFree !== false,
     media: Number(m.mediaCount ?? 0),
     price: Number(m.price ?? 0),
-    text: (m.rawText || m.text || "").replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim().slice(0, 180),
+    text: (m.rawText || m.text || "")
+      .replace(/<[^>]+>/g, "")
+      .replace(/https?:\/\/\S+/gi, "").replace(/\bwww\.\S+/gi, "") // strip links (Discord auto-embeds them)
+      .replace(/\s+/g, " ").trim().slice(0, 180),
   }));
 }
 export async function listFeedPosts(accountId, { limit = 30 } = {}) {

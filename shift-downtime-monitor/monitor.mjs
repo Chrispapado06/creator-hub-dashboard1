@@ -351,7 +351,7 @@ async function maybeSendEod(eod, accounts, now) {
   if (!EOD.enabled || !EOD.webhook) return false;
   const today = dayInTz(new Date(now), EOD.tz);
   if (hourInTz(new Date(now), EOD.tz) < EOD.hour || eod.lastSentDate === today) return false;
-  for (const chunk of buildEodReport(eod, accounts, now)) await sendDiscord(EOD.webhook, { content: chunk });
+  for (const chunk of buildEodReport(eod, accounts, now)) await sendDiscord(EOD.webhook, { content: chunk, flags: 4 });
   eod.lastSentDate = today;
   return true;
 }
@@ -365,7 +365,7 @@ async function maybeSendShiftReport(eod, accounts, now) {
   if (eod.lastShiftBlock === cur) return false;
   const ended = eod.lastShiftBlock;
   eod.lastShiftBlock = cur;
-  for (const chunk of buildShiftReport(eod, accounts, ended, now)) await sendDiscord(EOD.webhook, { content: chunk });
+  for (const chunk of buildShiftReport(eod, accounts, ended, now)) await sendDiscord(EOD.webhook, { content: chunk, flags: 4 });
   return true;
 }
 
