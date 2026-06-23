@@ -30,7 +30,7 @@ import {
   listAccounts, listChats, listTransactions, unansweredThreads,
   listUserLists, listListMemberIds, recentReplies,
   addUserToList, removeUserFromList, createUserList,
-  listMassMessages, listFeedPosts, listStories,
+  listMassMessages, listFeedPosts, listStories, countScheduledPosts,
 } from "./of.mjs";
 import {
   tierFor, thresholdsFor, level2Eligible, THRESHOLDS, LOOP, DISCORD, DRY_RUN,
@@ -347,11 +347,34 @@ function buildShiftReport(eod, accounts, shiftName, now) {
   return detailedChunks(header, active, byAcct, "—");
 }
 
+// Admin report: feed posts + stories posted today per account, plus a flag for
+// accounts with 0 scheduled (future) posts. ? = couldn't read (API error).
+function buildAdminReport(eod, accounts, scheduled, now) {
+  const day = eod.days[dayInTz(new Date(now), EOD.tz)] || emptyDay();
+  const pad = (s, n) => String(s).padEnd(n), padN = (s, n) => String(s).padStart(n);
+  const needSched = [];
+  const rows = accounts.map((acc) => {
+    const feed = (day.feedByAcct[acc.accountId] || []).length;
+    const story = (day.storyByAcct[acc.accountId] || []).length;
+    const sc = scheduled[acc.accountId];
+    if (sc === 0) needSched.push(acc.name);
+    return `${pad(acc.name, 16)}${padN(feed, 5)}${padN(story, 8)}${padN(sc == null ? "?" : sc, 7)}`;
+  });
+  const fmtDay = new Intl.DateTimeFormat("en-GB", { timeZone: EOD.tz, weekday: "short", day: "2-digit", month: "short", year: "numeric" }).format(new Date(now));
+  return `🗂️ **EOD Admin Report — ${fmtDay}**\n` +
+    "```\n" + [`${pad("Account", 16)}${padN("Feed", 5)}${padN("Story", 8)}${padN("Sched", 7)}`, "─".repeat(36), ...rows].join("\n") + "\n```\n" +
+    (needSched.length ? `⚠️ **Nothing scheduled — queue content:** ${needSched.join(", ")}` : "✅ All accounts have content scheduled.");
+}
+
 async function maybeSendEod(eod, accounts, now) {
   if (!EOD.enabled || !EOD.webhook) return false;
   const today = dayInTz(new Date(now), EOD.tz);
   if (hourInTz(new Date(now), EOD.tz) < EOD.hour || eod.lastSentDate === today) return false;
   for (const chunk of buildEodReport(eod, accounts, now)) await sendDiscord(EOD.webhook, { content: chunk, flags: 4 });
+  // Admin report → admin channel (falls back to the MM channel).
+  const scheduled = {};
+  for (const acc of accounts) { try { scheduled[acc.accountId] = await countScheduledPosts(acc.accountId, now); } catch { scheduled[acc.accountId] = null; } }
+  await sendDiscord(EOD.adminWebhook || EOD.webhook, { content: buildAdminReport(eod, accounts, scheduled, now), flags: 4 });
   eod.lastSentDate = today;
   return true;
 }

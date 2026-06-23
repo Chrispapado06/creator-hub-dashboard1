@@ -159,7 +159,8 @@ export const LIST_AUTO = {
 // run — throttle with EOD_RECORD_EVERY_N if cost matters.
 export const EOD = {
   enabled: process.env.EOD_ENABLED !== "0",
-  webhook: process.env.EOD_WEBHOOK || "",     // channel to post the report to (GitHub secret)
+  webhook: process.env.EOD_WEBHOOK || "",            // MM QA report channel (GitHub secret)
+  adminWebhook: process.env.EOD_ADMIN_WEBHOOK || "", // admin report channel (falls back to webhook)
   tz: process.env.EOD_TZ || "Europe/London",
   hour: Number(process.env.EOD_HOUR || 23),   // send at this hour (tz)
   recordEveryN: Number(process.env.EOD_RECORD_EVERY_N || 1), // record on every Nth invocation

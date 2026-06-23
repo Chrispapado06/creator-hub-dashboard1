@@ -178,6 +178,12 @@ export async function listStories(accountId) {
   const json = await ofGet(`/${accountId}/stories`);
   return asList(json).filter((s) => s?.id).map((s) => ({ id: String(s.id), date: s.createdAt || s.date || "" }));
 }
+// Count of scheduled (future-dated) feed posts. Counting only future posts
+// guards against the filter being ignored / the API returning the live feed.
+export async function countScheduledPosts(accountId, now = Date.now()) {
+  const json = await ofGet(`/${accountId}/posts?filter=scheduled&limit=50`);
+  return asList(json).filter((p) => p?.postedAt && Date.parse(p.postedAt) > now).length;
+}
 
 // ── List writes (gated behind dry-run in the caller) ────────────────────────
 async function ofWrite(method, path, body) {
