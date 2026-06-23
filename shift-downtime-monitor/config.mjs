@@ -132,6 +132,16 @@ export const WHALE = {
   lookbackSec: Number(process.env.WHALE_LOOKBACK_SEC || 900),
   refreshHours: Number(process.env.WHALE_REFRESH_HOURS || 12),
   tiers: (process.env.WHALE_TIERS || "A,B,C").split(",").map((s) => s.trim()),
+  // Per-whale handling tags driven by the team's WHALE CARD lists. The pattern
+  // matches the list name → a short tag printed in the ping (Phase 2/3).
+  // Order matters: most-restrictive first wins.
+  cardTags: [
+    { pattern: /do not sell/i,        tag: "🔴 DO NOT SELL" },
+    { pattern: /revive|check.?in/i,   tag: "🟡 REVIVE / CHECK-IN" },
+    { pattern: /pre.?sell/i,          tag: "🟦 PRE-SELL" },
+    { pattern: /payday/i,             tag: "💵 PAYDAY" },
+    { pattern: /sell/i,               tag: "🟢 SELL" },
+  ],
 };
 
 // ── List automations (Lance #1 + #2) ────────────────────────────────────────

@@ -107,10 +107,11 @@ async function postPrimary(label, block, body) {
 }
 
 // Post a whale/purchase flag into #chatter-pins-qa-pins (bot token), or log.
-async function postQaPins(label, body) {
+async function postQaPins(label, body, mentions = []) {
+  const allowed = { parse: [], users: mentions.filter(Boolean) };
   // Prefer the webhook (bulletproof, no bot permission needed).
   if (!DRY_RUN && DISCORD.qaPinsWebhook) {
-    await sendDiscord(DISCORD.qaPinsWebhook, { content: body, allowed_mentions: { parse: [] } });
+    await sendDiscord(DISCORD.qaPinsWebhook, { content: body, allowed_mentions: allowed, flags: 4 });
     return;
   }
   if (DRY_RUN || !DISCORD.botToken || !DISCORD.qaPinsChannelId) {
@@ -120,7 +121,7 @@ async function postQaPins(label, body) {
   const r = await fetch(`https://discord.com/api/v10/channels/${DISCORD.qaPinsChannelId}/messages`, {
     method: "POST",
     headers: { Authorization: `Bot ${DISCORD.botToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ content: body, allowed_mentions: { parse: [] } }),
+    body: JSON.stringify({ content: body, allowed_mentions: allowed, flags: 4 }),
   });
   if (!r.ok) console.warn(`[${ts()}] qa-pins post failed ${r.status}: ${(await r.text().catch(() => "")).slice(0, 160)}`);
 }
@@ -141,6 +142,7 @@ async function refreshWhaleSets(accounts, whales, now) {
   const pat = new RegExp(WHALE.listPattern, "i");
   const exclPat = new RegExp(LIST_AUTO.excludePattern, "i");
   whales.excludeByAccount ??= {};
+  whales.cardByAccount ??= {};
   for (const acct of accounts) {
     if (!WHALE.tiers.includes(acct.tier)) continue;
     try {
@@ -153,7 +155,18 @@ async function refreshWhaleSets(accounts, whales, now) {
       // at reply-time so it stays correct as shifts roll over.
       const exclLists = lists.filter((l) => exclPat.test(l.name)).map((l) => ({ id: l.id, name: l.name }));
       whales.excludeByAccount[acct.accountId] = exclLists;
-      console.log(`[${ts()}] lists ${acct.name}: ${ids.size} whales · ${exclLists.length} exclude list(s)`);
+      // Phase 2/3 — per-whale handling tag from the WHALE CARD lists. fanId →
+      // tag. Most-restrictive tag wins (DO NOT SELL > REVIVE > SELL).
+      const cardMap = {};
+      for (const { pattern, tag } of WHALE.cardTags) {
+        for (const l of lists.filter((l) => pattern.test(l.name) && l.usersCount > 0)) {
+          for (const id of await listListMemberIds(acct.accountId, l.id)) {
+            if (!cardMap[id]) cardMap[id] = tag; // first match (top-priority) sticks
+          }
+        }
+      }
+      whales.cardByAccount[acct.accountId] = cardMap;
+      console.log(`[${ts()}] lists ${acct.name}: ${ids.size} whales · ${exclLists.length} exclude · ${Object.keys(cardMap).length} tagged`);
     } catch (e) { console.warn(`[${ts()}] list refresh ${acct.name} failed: ${e.message}`); }
   }
   whales.refreshedAt = new Date(now).toISOString();
@@ -221,9 +234,12 @@ async function sweepInactivity(accounts, lastSpend, state, now) {
 async function sweepTransactions(accounts, state, whales, lastSpend, now) {
   if (!WHALE.enabled) return 0;
   const watch = accounts.filter((a) => WHALE.tiers.includes(a.tier));
+  const block = currentShiftBlock(now);
+  const qaMention = block.qaDiscord ? ` · QA <@${block.qaDiscord}>` : ` · QA ${block.qaName}`;
   let flagged = 0;
   for (const acct of watch) {
     const whaleSet = new Set(whales.byAccount[acct.accountId] || []);
+    const cardMap = whales.cardByAccount?.[acct.accountId] || {};
     let txns;
     try { txns = await listTransactions(acct.accountId, { limit: 20 }); }
     catch { continue; }
@@ -238,8 +254,10 @@ async function sweepTransactions(accounts, state, whales, lastSpend, now) {
       flagged++;
       const link = t.fanUsername ? ` · <https://onlyfans.com/${t.fanUsername}>` : "";
       const tag = isWhale ? "🐋" : "💸";
+      const card = cardMap[t.fanId] ? ` · ${cardMap[t.fanId]}` : "";
       await postQaPins(`whale ${acct.name}`,
-        `${tag} **${acct.name}** — **${t.fanName}**${t.fanUsername ? ` (@${t.fanUsername})` : ""} ${spendVerb(t.type)} **${money(t.amount)}** (${t.type})${link}`);
+        `${tag} **${acct.name}** — **${t.fanName}**${t.fanUsername ? ` (@${t.fanUsername})` : ""} ${spendVerb(t.type)} **${money(t.amount)}** (${t.type})${card}${link}${qaMention}`,
+        block.qaDiscord ? [block.qaDiscord] : []);
     }
   }
   return flagged;
@@ -421,15 +439,20 @@ async function scan(accounts, state, whales, now) {
     if (!threads.length) continue;
 
     // #4 — whale activity: a whale on this account is messaging and waiting →
-    // flag QAs in #chatter-pins-qa-pins (any wait, so whales surface fast).
+    // flag QA on shift in #chatter-pins-qa-pins, tagging handling status.
     const whaleSet = new Set(whales?.byAccount?.[acct.accountId] || []);
+    const cardMap = whales?.cardByAccount?.[acct.accountId] || {};
+    const qaMention = block.qaDiscord ? ` · QA <@${block.qaDiscord}>` : ` · QA ${block.qaName}`;
     if (whaleSet.size) {
       for (const t of threads) {
-        if (!whaleSet.has(String(t.fanId))) continue;
+        const fid = String(t.fanId);
+        if (!whaleSet.has(fid)) continue;
         if (!claim(state, `wact|${acct.accountId}|${t.fanMessageAt}`)) continue;
         const link = t.fanUsername ? ` · <https://onlyfans.com/${t.fanUsername}>` : "";
+        const card = cardMap[fid] ? ` · ${cardMap[fid]}` : "";
         await postQaPins(`whale-active ${acct.name}`,
-          `🐋 **${acct.name}** — whale **${t.fanUsername}** is messaging, waiting **${fmtAge(t.waitedSeconds)}**${link}`);
+          `🐋 **${acct.name}** — whale **${t.fanUsername}** is messaging, waiting **${fmtAge(t.waitedSeconds)}**${card}${link}${qaMention}`,
+          block.qaDiscord ? [block.qaDiscord] : []);
       }
     }
 
