@@ -161,7 +161,10 @@ export async function listMassMessages(accountId) {
     date: m.date || m.createdAt || "",
     sent: Number(m.sentCount ?? 0),
     viewed: Number(m.viewedCount ?? 0),
-    text: (m.rawText || m.text || "").replace(/<[^>]+>/g, "").slice(0, 50),
+    free: m.isFree !== false,
+    media: Number(m.mediaCount ?? 0),
+    price: Number(m.price ?? 0),
+    text: (m.rawText || m.text || "").replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim().slice(0, 180),
   }));
 }
 export async function listFeedPosts(accountId, { limit = 30 } = {}) {
