@@ -106,7 +106,8 @@ export const DISCORD = {
   // Chatter-QA webhook (pinging the QA) so coverage never drops.
   botToken: process.env.DISCORD_BOT_TOKEN || "",
   // #chatter-pins-qa-pins channel — where whale/purchase flags post (bot token).
-  qaPinsChannelId: process.env.DISCORD_QA_PINS_CHANNEL_ID || "",
+  // Defaults to the channel id you gave (it resolves to #chatter-pins-qa-pins).
+  qaPinsChannelId: process.env.DISCORD_QA_PINS_CHANNEL_ID || "1411370988406440026",
 };
 
 // ── Whale / spend flags ─────────────────────────────────────────────────────
