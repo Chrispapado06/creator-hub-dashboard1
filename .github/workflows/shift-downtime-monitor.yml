@@ -30,6 +30,7 @@ jobs:
           DISCORD_WEBHOOK_QA_PINS: ${{ secrets.DISCORD_WEBHOOK_QA_PINS }}
           DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
           EOD_WEBHOOK: ${{ secrets.EOD_WEBHOOK }}
+          EOD_ADMIN_WEBHOOK: ${{ secrets.EOD_ADMIN_WEBHOOK }}
         run: node monitor.mjs
       - name: Commit state if changed
         run: |
