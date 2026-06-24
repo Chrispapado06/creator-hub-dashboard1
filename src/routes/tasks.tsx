@@ -829,7 +829,7 @@ function TemplatesTab({ members, taskTeam, onRefresh }: { members: TeamMember[];
 
       <section>
         <h2 className="mb-1 text-sm font-semibold">Task team &amp; contacts</h2>
-        <p className="mb-3 text-xs text-muted-foreground">This is your <strong>task team</strong> — who can be assigned tasks. The <strong>checkbox</strong> adds/removes a person from every assignment list (Start pipeline, Board reassign, By member), <em>independent</em> of their employee active/inactive status. <strong>Super admins</strong> (login-only accounts) show at the bottom with an <em>Add to task team</em> button. Each person is pinged on handoff via the channels set here — <strong>Discord channel ID</strong> (right-click channel → Copy Channel ID): bot posts their pings + daily digest there and @-mentions them; leave blank to DM. <strong>Discord user ID</strong> (Developer Mode → right-click → Copy ID): @-mention / DM fallback. <strong>WhatsApp</strong>: full number with country code.</p>
+        <p className="mb-3 text-xs text-muted-foreground">This is your <strong>task team</strong> — who can be assigned tasks. The <strong>checkbox</strong> adds/removes a person from every assignment list (Start pipeline, Board reassign, By member), <em>independent</em> of their employee active/inactive status. <strong>Login-only accounts</strong> (e.g. super admins with no person record) appear in the same list, dimmed — just tick to add them. Each person is pinged on handoff via the channels set here — <strong>Discord channel ID</strong> (right-click channel → Copy Channel ID): bot posts their pings + daily digest there and @-mentions them; leave blank to DM. <strong>Discord user ID</strong> (Developer Mode → right-click → Copy ID): @-mention / DM fallback. <strong>WhatsApp</strong>: full number with country code.</p>
         <DiscordIdsEditor members={members} onSaved={onRefresh} />
       </section>
 
@@ -934,45 +934,43 @@ function DiscordIdsEditor({ members, onSaved }: { members: TeamMember[]; onSaved
     <div className="space-y-2">
       <div className="flex items-center gap-2 flex-wrap">
         <Input className="h-9 max-w-xs" placeholder="Search people…" value={query} onChange={(e) => setQuery(e.target.value)} />
-        <span className="text-[11px] text-muted-foreground">{members.filter((m) => team[m.id] !== false).length} on the task team · {members.length} people</span>
+        <span className="text-[11px] text-muted-foreground">{members.filter((m) => team[m.id] !== false).length} on the task team · {members.length + addableAdmins.length} people</span>
       </div>
       <Card className="divide-y divide-border">
-        {filtered.length === 0 ? (
-          <div className="p-4 text-center text-xs text-muted-foreground">No staff match.</div>
-        ) : filtered.map((m) => {
-          const inTeam = team[m.id] !== false;
-          return (
-          <div key={m.id} className={`flex items-center gap-2 p-3 flex-wrap sm:flex-nowrap ${inTeam ? "" : "opacity-50"}`}>
-            <label className="flex w-32 shrink-0 items-center gap-2 cursor-pointer" title={inTeam ? "In the task team — untick to hide from all task assignments" : "Excluded from task assignments — tick to add back"}>
-              <input type="checkbox" checked={inTeam} onChange={(e) => toggleTeam(m.id, e.target.checked)} className="h-4 w-4 shrink-0 accent-primary" />
-              <span className="truncate text-sm font-medium">{m.name}</span>
-            </label>
-            <Input className="flex-1 min-w-[130px] font-mono text-xs" placeholder="Discord user ID" value={discord[m.id] ?? ""} onChange={(e) => setDiscord((d) => ({ ...d, [m.id]: e.target.value }))} />
-            <Input className="flex-1 min-w-[130px] font-mono text-xs" placeholder="Discord channel ID" value={channel[m.id] ?? ""} onChange={(e) => setChannel((d) => ({ ...d, [m.id]: e.target.value }))} />
-            <Input className="flex-1 min-w-[140px] font-mono text-xs" placeholder="WhatsApp +44…" value={phone[m.id] ?? ""} onChange={(e) => setPhone((d) => ({ ...d, [m.id]: e.target.value }))} />
-            <Button size="sm" variant="ghost" onClick={() => test(m.id)} title="Send a test ping now">Test</Button>
-            <Button size="sm" variant="outline" onClick={() => save(m.id)}>Save</Button>
-          </div>
-          );
-        })}
-      </Card>
-
-      {addableAdmins.length > 0 && (
-        <div className="space-y-1.5 pt-1">
-          <p className="text-[11px] text-muted-foreground">Super admins (login-only — no person record yet). Add one to make them assignable + pingable:</p>
-          <Card className="divide-y divide-border">
+        {filtered.length === 0 && addableAdmins.length === 0 ? (
+          <div className="p-4 text-center text-xs text-muted-foreground">No people match.</div>
+        ) : (
+          <>
+            {filtered.map((m) => {
+              const inTeam = team[m.id] !== false;
+              return (
+                <div key={m.id} className={`flex items-center gap-2 p-3 flex-wrap sm:flex-nowrap ${inTeam ? "" : "opacity-50"}`}>
+                  <label className="flex w-36 shrink-0 items-center gap-2 cursor-pointer" title={inTeam ? "On the task team — untick to remove" : "Off the task team — tick to add"}>
+                    <input type="checkbox" checked={inTeam} onChange={(e) => toggleTeam(m.id, e.target.checked)} className="h-4 w-4 shrink-0 accent-primary" />
+                    <span className="truncate text-sm font-medium">{m.name}</span>
+                  </label>
+                  <Input className="flex-1 min-w-[130px] font-mono text-xs" placeholder="Discord user ID" value={discord[m.id] ?? ""} onChange={(e) => setDiscord((d) => ({ ...d, [m.id]: e.target.value }))} />
+                  <Input className="flex-1 min-w-[130px] font-mono text-xs" placeholder="Discord channel ID" value={channel[m.id] ?? ""} onChange={(e) => setChannel((d) => ({ ...d, [m.id]: e.target.value }))} />
+                  <Input className="flex-1 min-w-[140px] font-mono text-xs" placeholder="WhatsApp +44…" value={phone[m.id] ?? ""} onChange={(e) => setPhone((d) => ({ ...d, [m.id]: e.target.value }))} />
+                  <Button size="sm" variant="ghost" onClick={() => test(m.id)} title="Send a test ping now">Test</Button>
+                  <Button size="sm" variant="outline" onClick={() => save(m.id)}>Save</Button>
+                </div>
+              );
+            })}
             {addableAdmins.map((a) => (
-              <div key={a.id} className="flex items-center gap-2 p-3">
-                <span className="flex-1 truncate text-sm font-medium">
-                  {a.label || a.username}
-                  <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">super admin</span>
-                </span>
-                <Button size="sm" variant="outline" onClick={() => addAdmin(a)}><Plus className="mr-1 h-3.5 w-3.5" />Add to task team</Button>
+              <div key={`admin-${a.id}`} className="flex items-center gap-2 p-3 flex-wrap sm:flex-nowrap opacity-60">
+                <label className="flex w-36 shrink-0 items-center gap-2 cursor-pointer" title="Tick to add this person to the task team">
+                  <input type="checkbox" checked={false} onChange={() => addAdmin(a)} className="h-4 w-4 shrink-0 accent-primary" />
+                  <span className="truncate text-sm font-medium">{a.label || a.username}</span>
+                </label>
+                <span className="flex-1 min-w-[200px] text-xs italic text-muted-foreground">Tick to add — then set their Discord / WhatsApp</span>
+                <Button size="sm" variant="ghost" disabled>Test</Button>
+                <Button size="sm" variant="outline" disabled>Save</Button>
               </div>
             ))}
-          </Card>
-        </div>
-      )}
+          </>
+        )}
+      </Card>
     </div>
   );
 }
