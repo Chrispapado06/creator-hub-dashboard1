@@ -205,6 +205,17 @@ export const addUserToList = (acct, listId, userId) => ofWrite("POST", `/${acct}
 export const removeUserFromList = (acct, listId, userId) => ofWrite("DELETE", `/${acct}/user-lists/${listId}/users/${userId}`);
 export const createUserList = (acct, name) => ofWrite("POST", `/${acct}/user-lists`, { name });
 
+// Message history for one chat. Each item: {fromFan, text, createdAt}.
+// Used by the whale-intel pilot to feed chat content to the LLM extractor.
+export async function listChatMessages(accountId, fanId, { limit = 50 } = {}) {
+  const json = await ofGet(`/${accountId}/chats/${fanId}/messages?limit=${limit}`);
+  return asList(json).filter((m) => m?.id).map((m) => ({
+    fromFan: m.fromUser?.id === Number(fanId),
+    text: (m.text || m.rawText || "").replace(/<[^>]+>/g, "").replace(/https?:\/\/\S+/g, "").trim(),
+    createdAt: m.createdAt || "",
+  }));
+}
+
 // Threads where the CREATOR (chatter) sent the last message recently — i.e. a
 // chatter just replied to this fan (within windowSec). Used by exclude-on-reply.
 export function recentReplies(chats, now = Date.now(), windowSec = 600) {
