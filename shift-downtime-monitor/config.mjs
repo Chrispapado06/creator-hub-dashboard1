@@ -189,6 +189,9 @@ export const EOD = {
   tz: process.env.EOD_TZ || "Europe/London",
   hour: Number(process.env.EOD_HOUR || 23),   // send at this hour (tz)
   recordEveryN: Number(process.env.EOD_RECORD_EVERY_N || 1), // record on every Nth invocation
+  // End-of-shift mini-report fires at each shift change (3×/day). OFF by
+  // default — turn on with SHIFT_REPORT_ENABLED=1.
+  shiftReport: process.env.SHIFT_REPORT_ENABLED === "1",
 };
 
 // DRY_RUN: log intended alerts instead of sending. Forced on when no Discord

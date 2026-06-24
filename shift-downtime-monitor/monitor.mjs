@@ -450,7 +450,7 @@ async function maybeSendEod(eod, accounts, now) {
 // Send a shift summary whenever the active shift block changes (a shift just
 // ended). Covers MMs from the prior 8h.
 async function maybeSendShiftReport(eod, accounts, now) {
-  if (!EOD.enabled || !EOD.webhook) return false;
+  if (!EOD.enabled || !EOD.shiftReport || !EOD.webhook) return false;
   const cur = currentShiftBlock(now).name;
   if (eod.lastShiftBlock == null) { eod.lastShiftBlock = cur; return false; }
   if (eod.lastShiftBlock === cur) return false;
