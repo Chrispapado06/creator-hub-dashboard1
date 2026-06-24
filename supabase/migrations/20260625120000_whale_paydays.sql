@@ -14,9 +14,13 @@ create table if not exists public.whale_paydays (
   fan_id      text,
   added_by    text,                                  -- Discord username who added (audit)
   created_at  timestamptz not null default now(),
-  updated_at  timestamptz not null default now(),
-  unique (lower(name), lower(model))                 -- prevent dupes; one row per whale/model
+  updated_at  timestamptz not null default now()
 );
+
+-- One row per (whale name, model) — case-insensitive. Postgres requires this
+-- as a separate functional unique index, not an inline column constraint.
+create unique index if not exists whale_paydays_name_model_uniq
+  on public.whale_paydays (lower(name), lower(model));
 
 create index if not exists whale_paydays_model_idx  on public.whale_paydays (lower(model));
 create index if not exists whale_paydays_payday_idx on public.whale_paydays (payday);
