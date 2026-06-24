@@ -106,20 +106,41 @@ for (const acct of accounts) {
     });
   }
 
-  if (DRY) {
-    console.log(`   (dry-run) would insert ${rows.length} new row(s)`);
-    rows.slice(0, 3).forEach((r) => console.log(`      • ${r.name} → ${r.handling}`));
-    totalNew += rows.length; continue;
+  // Dedupe rows by (lower(name), lower(model)) — different fans can share the
+  // same team-annotated display_name. Keep the FIRST occurrence (the
+  // most-restrictive handling came first from the list iteration order).
+  const seenKey = new Set();
+  const dedupedRows = rows.filter((r) => {
+    const k = `${r.name.toLowerCase()}|${r.model.toLowerCase()}`;
+    if (seenKey.has(k)) return false;
+    seenKey.add(k); return true;
+  });
+  if (dedupedRows.length < rows.length) {
+    console.log(`   (deduped ${rows.length - dedupedRows.length} same-name-on-same-model)`);
   }
 
-  // Insert in batches of 100 to be kind to PostgREST
-  for (let i = 0; i < rows.length; i += 100) {
-    const slice = rows.slice(i, i + 100);
-    const { error } = await supa.from("whale_paydays").insert(slice);
-    if (error) { console.log(`   ✖ batch ${i / 100 + 1} failed: ${error.message}`); totalErr++; }
-    else totalNew += slice.length;
+  if (DRY) {
+    console.log(`   (dry-run) would insert ${dedupedRows.length} new row(s)`);
+    dedupedRows.slice(0, 3).forEach((r) => console.log(`      • ${r.name} → ${r.handling}`));
+    totalNew += dedupedRows.length; continue;
   }
-  console.log(`   ✓ inserted ${rows.length} new, skipped ${byFan.size - rows.length} existing`);
+
+  // Insert one at a time and ignore duplicate-key errors — PostgREST upsert
+  // doesn't play nicely with the functional unique index (lower(name),
+  // lower(model)). Slow but reliable for the one-shot bootstrap. 10-way
+  // concurrency to keep wall-clock reasonable.
+  let inserted = 0, dupes = 0;
+  const insertOne = async (r) => {
+    const { error } = await supa.from("whale_paydays").insert(r);
+    if (!error) inserted++;
+    else if (/duplicate key|unique/i.test(error.message)) dupes++;
+    else console.log(`   ! ${r.name}: ${error.message}`);
+  };
+  for (let i = 0; i < dedupedRows.length; i += 10) {
+    await Promise.all(dedupedRows.slice(i, i + 10).map(insertOne));
+  }
+  totalNew += inserted;
+  console.log(`   ✓ inserted ${inserted} (of ${dedupedRows.length} candidates · ${dupes} already in DB)`);
 }
 
 console.log(`\n✓ Done — saw ${totalSeen} whale-list entries · added ${totalNew} new · skipped ${totalSkipped} (already in DB) · ${totalErr} error(s)`);
