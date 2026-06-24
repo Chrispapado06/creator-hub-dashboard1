@@ -1,0 +1,56 @@
+name: Deploy whale system (one-click)
+
+# Run from GitHub → Actions tab → this workflow → "Run workflow" button.
+# Does:
+#   1. Registers / updates the /whale slash command with Discord (one-time).
+#   2. Bootstraps the whale_paydays table from your OF whale lists.
+#
+# NOTE: this workflow does NOT push the SQL migration or redeploy Bernard's
+# Edge Function code. Those have to be done separately (see README) because
+# they need a Supabase access token. Run those FIRST, then this workflow.
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_register:
+        description: "Skip slash-command registration (only run bootstrap)"
+        type: boolean
+        default: false
+      skip_bootstrap:
+        description: "Skip whale bootstrap (only run register)"
+        type: boolean
+        default: false
+      dry_bootstrap:
+        description: "Bootstrap in dry-run (preview, no DB writes)"
+        type: boolean
+        default: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - name: Install supabase-js
+        run: npm install --no-package-lock @supabase/supabase-js@2.45.0
+
+      - name: Register /whale slash command
+        if: ${{ !inputs.skip_register }}
+        env:
+          DISCORD_APP_ID: ${{ secrets.DISCORD_APP_ID }}
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+        run: node payout-bot/discord-commands/register.mjs
+
+      - name: Bootstrap whale DB from OF lists
+        if: ${{ !inputs.skip_bootstrap }}
+        env:
+          ONLYFANSAPI_KEY: ${{ secrets.ONLYFANSAPI_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [ "${{ inputs.dry_bootstrap }}" = "true" ]; then
+            node shift-downtime-monitor/bootstrap-whales.mjs --dry
+          else
+            node shift-downtime-monitor/bootstrap-whales.mjs
+          fi
