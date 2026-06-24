@@ -828,8 +828,8 @@ function TemplatesTab({ members, taskTeam, onRefresh }: { members: TeamMember[];
       </section>
 
       <section>
-        <h2 className="mb-1 text-sm font-semibold">Team contacts (Discord + WhatsApp)</h2>
-        <p className="mb-3 text-xs text-muted-foreground">Each member is pinged on handoff via any channel set here. <strong>In team</strong> (the checkbox): untick to remove someone from <em>every</em> task assignment list — Start pipeline, Board reassign, By member — without deleting them. <strong>Discord channel ID</strong> (right-click their channel → Copy Channel ID): the bot posts their pings + daily digest there and @-mentions them; leave blank to DM instead. <strong>Discord user ID</strong> (Developer Mode → right-click the user → Copy ID): used for the @-mention / DM fallback. <strong>WhatsApp</strong>: full number with country code.</p>
+        <h2 className="mb-1 text-sm font-semibold">Task team &amp; contacts</h2>
+        <p className="mb-3 text-xs text-muted-foreground">This is your <strong>task team</strong> — who can be assigned tasks. The <strong>checkbox</strong> adds/removes a person from every assignment list (Start pipeline, Board reassign, By member), <em>independent</em> of their employee active/inactive status. <strong>Super admins</strong> (login-only accounts) show at the bottom with an <em>Add to task team</em> button. Each person is pinged on handoff via the channels set here — <strong>Discord channel ID</strong> (right-click channel → Copy Channel ID): bot posts their pings + daily digest there and @-mentions them; leave blank to DM. <strong>Discord user ID</strong> (Developer Mode → right-click → Copy ID): @-mention / DM fallback. <strong>WhatsApp</strong>: full number with country code.</p>
         <DiscordIdsEditor members={members} onSaved={onRefresh} />
       </section>
 
@@ -844,16 +844,24 @@ function DiscordIdsEditor({ members, onSaved }: { members: TeamMember[]; onSaved
   const [phone, setPhone] = useState<Record<string, string>>({});
   const [team, setTeam] = useState<Record<string, boolean>>({});
   const [query, setQuery] = useState("");
-  const [activeOnly, setActiveOnly] = useState(true);
+  // Super-admin logins (access_codes, account_type 'admin') with no chatters row.
+  // They can't be task assignees until we create a person record for them, so we
+  // surface them here to be added to the task team like anyone else.
+  const [admins, setAdmins] = useState<Array<{ id: string; username: string; label: string | null; chatter_id: string | null }>>([]);
+  const loadAdmins = async () => {
+    const { data } = await sb.from("access_codes").select("id, username, label, chatter_id").eq("account_type", "admin");
+    setAdmins((data ?? []) as Array<{ id: string; username: string; label: string | null; chatter_id: string | null }>);
+  };
   useEffect(() => {
     setDiscord(Object.fromEntries(members.map((m) => [m.id, m.discord_user_id ?? ""])));
     setChannel(Object.fromEntries(members.map((m) => [m.id, m.discord_channel_id ?? ""])));
     setPhone(Object.fromEntries(members.map((m) => [m.id, m.whatsapp_phone ?? ""])));
     setTeam(Object.fromEntries(members.map((m) => [m.id, m.in_task_team !== false])));
   }, [members]);
+  useEffect(() => { loadAdmins(); }, []);
 
-  // Toggle whether a person appears in task assignment lists. Saves immediately
-  // (optimistic; reverts on error so it never silently lies).
+  // Toggle whether a person is on the task team — independent of their employee
+  // active/inactive status. Saves immediately (optimistic; reverts on error).
   const toggleTeam = async (id: string, next: boolean) => {
     const name = members.find((m) => m.id === id)?.name ?? "Member";
     setTeam((t) => ({ ...t, [id]: next }));
@@ -865,6 +873,20 @@ function DiscordIdsEditor({ members, onSaved }: { members: TeamMember[]; onSaved
       toast.success(next ? `${name} added to task team` : `${name} removed from task team`);
       onSaved();
     }
+  };
+
+  // Add a super admin (login-only, no chatters row) to the task team: create a
+  // person record and link their login to it, so they can be assigned tasks, see
+  // their own list, and be pinged. in_task_team defaults to true on the new row.
+  const addAdmin = async (admin: { id: string; username: string; label: string | null }) => {
+    const name = (admin.label || admin.username || "Admin").trim();
+    const { data: ch, error } = await sb.from("chatters").insert({ name, status: "active" }).select("id").single();
+    if (error) { toast.error(error.message); return; }
+    const { error: linkErr } = await sb.from("access_codes").update({ chatter_id: ch.id }).eq("id", admin.id);
+    if (linkErr) toast.error(`Added, but couldn't link the login: ${linkErr.message}`);
+    else toast.success(`${name} added to the task team`);
+    await loadAdmins();
+    onSaved();
   };
 
   const save = async (id: string) => {
@@ -904,19 +926,15 @@ function DiscordIdsEditor({ members, onSaved }: { members: TeamMember[]; onSaved
   };
 
   const q = query.trim().toLowerCase();
-  const filtered = members.filter((m) =>
-    (!activeOnly || m.status === "active") && (!q || m.name.toLowerCase().includes(q)),
-  );
+  const filtered = members.filter((m) => !q || m.name.toLowerCase().includes(q));
+  // Super admins who have no person record yet — offer to add them.
+  const addableAdmins = admins.filter((a) => !a.chatter_id && (!q || (a.label || a.username || "").toLowerCase().includes(q)));
 
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2 flex-wrap">
-        <Input className="h-9 max-w-xs" placeholder="Search staff…" value={query} onChange={(e) => setQuery(e.target.value)} />
-        <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
-          <input type="checkbox" checked={activeOnly} onChange={(e) => setActiveOnly(e.target.checked)} className="h-3.5 w-3.5" />
-          Active staff only
-        </label>
-        <span className="text-[11px] text-muted-foreground">{filtered.length} of {members.length} shown · {members.filter((m) => team[m.id] !== false).length} in task team</span>
+        <Input className="h-9 max-w-xs" placeholder="Search people…" value={query} onChange={(e) => setQuery(e.target.value)} />
+        <span className="text-[11px] text-muted-foreground">{members.filter((m) => team[m.id] !== false).length} on the task team · {members.length} people</span>
       </div>
       <Card className="divide-y divide-border">
         {filtered.length === 0 ? (
@@ -938,6 +956,23 @@ function DiscordIdsEditor({ members, onSaved }: { members: TeamMember[]; onSaved
           );
         })}
       </Card>
+
+      {addableAdmins.length > 0 && (
+        <div className="space-y-1.5 pt-1">
+          <p className="text-[11px] text-muted-foreground">Super admins (login-only — no person record yet). Add one to make them assignable + pingable:</p>
+          <Card className="divide-y divide-border">
+            {addableAdmins.map((a) => (
+              <div key={a.id} className="flex items-center gap-2 p-3">
+                <span className="flex-1 truncate text-sm font-medium">
+                  {a.label || a.username}
+                  <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">super admin</span>
+                </span>
+                <Button size="sm" variant="outline" onClick={() => addAdmin(a)}><Plus className="mr-1 h-3.5 w-3.5" />Add to task team</Button>
+              </div>
+            ))}
+          </Card>
+        </div>
+      )}
     </div>
   );
 }
