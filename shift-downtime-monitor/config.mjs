@@ -178,8 +178,12 @@ export const LIST_AUTO = {
 // Data source: whale-paydays.json (a small per-whale file the team edits).
 export const PAYDAY = {
   enabled: process.env.PAYDAY_ENABLED !== "0",
-  hour: Number(process.env.PAYDAY_HOUR || 8), // post at this local hour
   tz: process.env.PAYDAY_TZ || "Europe/London",
+  // Post once per shift (Day / Evening / Night) so each shift sees it when
+  // they come on, not once a day. Set PAYDAY_DAILY=1 for the old once-a-day
+  // behaviour at PAYDAY_HOUR.
+  perShift: process.env.PAYDAY_DAILY !== "1",
+  hour: Number(process.env.PAYDAY_HOUR || 8),
 };
 
 export const EOD = {

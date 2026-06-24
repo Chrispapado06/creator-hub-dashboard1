@@ -272,7 +272,7 @@ async function sweepTransactions(accounts, state, whales, lastSpend, now) {
 // and the QA on shift — drives "interfere immediately on chatting and pace
 // chatters" for DO_NOT_SELL whales (Luca's example).
 function loadPayday() { try { return JSON.parse(readFileSync(PAYDAY_FILE, "utf8")); } catch { return { whales: [] }; } }
-function loadPaydayState() { try { return JSON.parse(readFileSync(PAYDAY_STATE_FILE, "utf8")); } catch { return { lastSentDate: null }; } }
+function loadPaydayState() { try { return JSON.parse(readFileSync(PAYDAY_STATE_FILE, "utf8")); } catch { return { lastSentDate: null, lastSentKey: null }; } }
 function savePaydayState(s) { writeFileSync(PAYDAY_STATE_FILE, JSON.stringify(s, null, 2) + "\n"); }
 
 const HANDLING_LABEL = {
@@ -294,8 +294,8 @@ function buildPaydayReport(payday, today, weekday, block) {
   const fmtLine = (w) => `• **Whale — ${w.name} on ${w.model}** — ${HANDLING_LABEL[w.handling] || w.handling || "?"}${w.note ? ` _(${w.note})_` : ""}`;
   const sections = groupOrder.filter((g) => grouped[g]).map((g) =>
     `${HANDLING_LABEL[g]} — **${grouped[g].length}**\n` + grouped[g].map(fmtLine).join("\n"));
-  return `💵 **Payday reminders — ${today}** _(${weekday})_\n` +
-    `${due.length} whale(s) get paid today. QA on shift: ${qa}\n\n` +
+  return `💵 **Payday Today** — ${block.name} shift · QA on shift: ${qa}\n` +
+    `**${due.length} whale(s) get paid today** _(${weekday}, ${today})_\n\n` +
     sections.join("\n\n") +
     `\n\n_Chatters: handle whales per their tag. Pace and stay on RB for "do not sell."_`;
 }
@@ -304,12 +304,21 @@ async function maybeSendPaydayReport(state, now) {
   if (!PAYDAY.enabled) return false;
   const today = dayInTz(new Date(now), PAYDAY.tz);
   const weekday = weekdayInTz(new Date(now), PAYDAY.tz);
-  if (hourInTz(new Date(now), PAYDAY.tz) < PAYDAY.hour || state.lastSentDate === today) return false;
+  const block = currentShiftBlock(now);
+  // Per-shift mode (default, per Lance): each shift gets it when they come on.
+  // Daily mode: once a day at PAYDAY_HOUR.
+  if (PAYDAY.perShift) {
+    const key = `${today}|${block.name}`;
+    if (state.lastSentKey === key) return false;
+    state.lastSentKey = key;
+  } else {
+    if (hourInTz(new Date(now), PAYDAY.tz) < PAYDAY.hour || state.lastSentDate === today) return false;
+    state.lastSentDate = today;
+  }
   const payday = loadPayday();
-  const body = buildPaydayReport(payday, today, weekday, currentShiftBlock(now));
-  state.lastSentDate = today; // record even if nothing due — don't recheck this day
+  const body = buildPaydayReport(payday, today, weekday, block);
   if (!body) return false;
-  await postQaPins("payday", body, currentShiftBlock(now).qaDiscord ? [currentShiftBlock(now).qaDiscord] : []);
+  await postQaPins("payday", body, block.qaDiscord ? [block.qaDiscord] : []);
   return true;
 }
 

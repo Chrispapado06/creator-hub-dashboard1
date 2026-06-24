@@ -1,12 +1,12 @@
 {
-  "_help": "Per-whale payday reminders. Each entry: who the whale is, which model they're on, what day they get paid, and how to handle them. The bot pings #chatter-pins-qa-pins on payday morning so the on-shift chatter+QA know how to handle each whale that day.",
+  "_help": "Per-whale payday reminders. Add with: node shift-downtime-monitor/payday.mjs add --name=<n> --model=<m> --payday=<Mon..Sun> [--handling=DO_NOT_SELL|PRE_SELL|SELL|REVIVE] [--fanId=<id>] [--note=<s>]. List with: payday.mjs list. The bot reads this on every run; changes show in the next shift reminder.",
   "_fields": {
-    "fanId":   "OnlyFans fan numeric id (the bot uses this to match incoming messages/buys)",
-    "name":    "display name (shown in the ping; e.g. 'Dominic')",
-    "model":   "creator account username (matches one of the connected accounts)",
-    "handling": "DO_NOT_SELL | PRE_SELL | SELL | REVIVE   (Phase 3 tag)",
-    "payday":  "Mon | Tue | Wed | Thu | Fri | Sat | Sun  — day the whale gets paid",
-    "note":    "optional free-text shown in the ping"
+    "fanId":   "OnlyFans fan numeric id (optional but lets the bot match incoming buys/messages)",
+    "name":    "display name shown in the ping",
+    "model":   "creator account name (Marissa, Blue Bear, etc.)",
+    "handling": "DO_NOT_SELL | PRE_SELL | SELL | REVIVE",
+    "payday":  "Mon | Tue | Wed | Thu | Fri | Sat | Sun",
+    "note":    "optional free-text"
   },
   "whales": []
 }
