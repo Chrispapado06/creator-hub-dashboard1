@@ -40,6 +40,8 @@ jobs:
         env:
           DISCORD_APP_ID: ${{ secrets.DISCORD_APP_ID }}
           DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          # Guild-scoped → propagates INSTANTLY (global takes up to 1 hour).
+          DISCORD_GUILD_ID: "1410173669648498690"
         run: node payout-bot/discord-commands/register.mjs
 
       - name: Bootstrap whale DB from OF lists

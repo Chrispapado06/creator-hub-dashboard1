@@ -169,7 +169,12 @@ const commands = [
   },
 ];
 
-const url = `https://discord.com/api/v10/applications/${APP_ID}/commands`;
+// Guild-scoped registration propagates INSTANTLY (global takes up to 1 hour).
+// Set DISCORD_GUILD_ID to register to a specific server; omit it for global.
+const GUILD_ID = process.env.DISCORD_GUILD_ID;
+const url = GUILD_ID
+  ? `https://discord.com/api/v10/applications/${APP_ID}/guilds/${GUILD_ID}/commands`
+  : `https://discord.com/api/v10/applications/${APP_ID}/commands`;
 const res = await fetch(url, {
   method: "PUT",
   headers: { "Authorization": `Bot ${TOKEN}`, "Content-Type": "application/json" },
@@ -180,5 +185,5 @@ if (!res.ok) {
   console.error("Failed:", res.status, txt);
   process.exit(1);
 }
-console.log("Registered", commands.length, "commands.");
+console.log(`Registered ${commands.length} commands ${GUILD_ID ? `to guild ${GUILD_ID} (instant)` : "globally (up to 1h to propagate)"}.`);
 console.log(txt);
