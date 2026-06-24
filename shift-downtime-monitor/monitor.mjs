@@ -274,6 +274,19 @@ async function sweepTransactions(accounts, state, whales, lastSpend, now) {
 // and the QA on shift — drives "interfere immediately on chatting and pace
 // chatters" for DO_NOT_SELL whales (Luca's example).
 function loadPayday() { try { return JSON.parse(readFileSync(PAYDAY_FILE, "utf8")); } catch { return { whales: [] }; } }
+async function loadPaydayDb() {
+  // Source of truth = Supabase (synced via /whale on Bernard). Falls back to
+  // the local JSON when Supabase isn't reachable (CI/local dev without keys).
+  const url = process.env.SUPABASE_URL, key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return loadPayday();
+  try {
+    const { createClient } = await import("@supabase/supabase-js");
+    const s = createClient(url, key, { auth: { persistSession: false } });
+    const { data, error } = await s.from("whale_paydays").select("name,model,payday,handling,note,last_objection,fan_id");
+    if (error || !data) throw new Error(error?.message || "no data");
+    return { whales: data.map((r) => ({ ...r })) };
+  } catch (e) { console.warn(`[${ts()}] whale_paydays DB read failed (${e.message}) — using JSON fallback`); return loadPayday(); }
+}
 function loadPaydayState() { try { return JSON.parse(readFileSync(PAYDAY_STATE_FILE, "utf8")); } catch { return { lastSentDate: null, lastSentKey: null }; } }
 function savePaydayState(s) { writeFileSync(PAYDAY_STATE_FILE, JSON.stringify(s, null, 2) + "\n"); }
 
@@ -293,7 +306,8 @@ function buildPaydayReport(payday, today, weekday, block) {
   const groupOrder = ["DO_NOT_SELL", "PRE_SELL", "REVIVE", "SELL"];
   const grouped = {};
   for (const w of due) (grouped[w.handling] ??= []).push(w);
-  const fmtLine = (w) => `• **Whale — ${w.name} on ${w.model}** — ${HANDLING_LABEL[w.handling] || w.handling || "?"}${w.note ? ` _(${w.note})_` : ""}`;
+  const fmtLine = (w) => `• **Whale — ${w.name} on ${w.model}** — ${HANDLING_LABEL[w.handling] || w.handling || "?"}` +
+    `${w.last_objection ? ` · _${w.last_objection}_` : ""}${w.note ? ` _(${w.note})_` : ""}`;
   const sections = groupOrder.filter((g) => grouped[g]).map((g) =>
     `${HANDLING_LABEL[g]} — **${grouped[g].length}**\n` + grouped[g].map(fmtLine).join("\n"));
   return `💵 **Payday Today** — ${block.name} shift · QA on shift: ${qa}\n` +
@@ -317,7 +331,7 @@ async function maybeSendPaydayReport(state, now) {
     if (hourInTz(new Date(now), PAYDAY.tz) < PAYDAY.hour || state.lastSentDate === today) return false;
     state.lastSentDate = today;
   }
-  const payday = loadPayday();
+  const payday = await loadPaydayDb();
   const body = buildPaydayReport(payday, today, weekday, block);
   if (!body) return false;
   await postQaPins("payday", body, block.qaDiscord ? [block.qaDiscord] : []);

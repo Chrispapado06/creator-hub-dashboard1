@@ -74,6 +74,65 @@ const commands = [
     ],
   },
   {
+    name: "whale",
+    description: "Whale-payday cards: who's getting paid today + per-whale handling.",
+    options: [
+      {
+        name: "today",
+        description: "Show whales getting paid today.",
+        type: 1, // SUB_COMMAND
+      },
+      {
+        name: "view",
+        description: "Show one whale's card.",
+        type: 1,
+        options: [
+          { name: "name",  description: "Whale name (case-insensitive)", type: 3, required: true },
+          { name: "model", description: "Model name (optional, narrows the match)", type: 3, required: false },
+        ],
+      },
+      {
+        name: "list",
+        description: "List all whales (optionally filtered by model).",
+        type: 1,
+        options: [
+          { name: "model", description: "Filter by model (optional)", type: 3, required: false },
+        ],
+      },
+      {
+        name: "add",
+        description: "Add or update a whale card. Admin role only.",
+        type: 1,
+        options: [
+          { name: "name",     description: "Whale name", type: 3, required: true },
+          { name: "model",    description: "Model (e.g. Marissa)", type: 3, required: true },
+          { name: "payday",   description: "Day of week", type: 3, required: true,
+            choices: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map((d) => ({ name: d, value: d })) },
+          { name: "handling", description: "How to handle this whale", type: 3, required: false,
+            choices: [
+              { name: "DO NOT SELL",    value: "DO_NOT_SELL" },
+              { name: "PRE-SELL",       value: "PRE_SELL"    },
+              { name: "REVIVE / CHECK", value: "REVIVE"      },
+              { name: "SELL",           value: "SELL"        },
+            ],
+          },
+          { name: "objection", description: "Last objection (short, e.g. 'wife saw card')", type: 3, required: false },
+          { name: "note",      description: "Optional free-text note", type: 3, required: false },
+          { name: "fan_id",    description: "OnlyFans numeric fan id (optional)", type: 3, required: false },
+        ],
+      },
+      {
+        name: "rm",
+        description: "Remove a whale card. Admin role only.",
+        type: 1,
+        options: [
+          { name: "name",  description: "Whale name", type: 3, required: true },
+          { name: "model", description: "Model name", type: 3, required: true },
+        ],
+      },
+    ],
+  },
+  {
     name: "activity",
     description: "Manager only — Reddit-derived hours per poster (no /shift needed).",
     options: [

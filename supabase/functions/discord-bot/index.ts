@@ -26,6 +26,8 @@ const DISCORD_BOT_TOKEN  = Deno.env.get("DISCORD_BOT_TOKEN")!;
 const DISCORD_APP_ID     = Deno.env.get("DISCORD_APP_ID")!;
 const MANAGER_ROLE_ID    = Deno.env.get("DISCORD_MANAGER_ROLE_ID") || "";
 const MANAGER_CHANNEL_ID = Deno.env.get("DISCORD_MANAGER_CHANNEL_ID") || "";
+// Admin role for /whale write commands (add / rm). Read commands are open to all.
+const WHALE_ADMIN_ROLE_ID = Deno.env.get("DISCORD_WHALE_ADMIN_ROLE_ID") || "1451946723252371506";
 const SUPABASE_URL       = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE   = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const AIRTABLE_PAT       = Deno.env.get("AIRTABLE_PAT") || "";
@@ -870,6 +872,118 @@ async function handleMyShifts(interaction: any): Promise<Response> {
   return replyEphemeral(lines.length ? lines.join("\n") : "No shifts submitted in the last 14 days.");
 }
 
+// ── /whale (whale-payday cards) ──────────────────────────────────
+function userIsWhaleAdmin(interaction: any): boolean {
+  if (!WHALE_ADMIN_ROLE_ID) return true;
+  const roles: string[] = interaction.member?.roles ?? [];
+  return roles.includes(WHALE_ADMIN_ROLE_ID);
+}
+
+const HANDLING_LABEL_W: Record<string, string> = {
+  DO_NOT_SELL: "🔴 DO NOT SELL",
+  REVIVE: "🟡 REVIVE / CHECK-IN",
+  PRE_SELL: "🟦 PRE-SELL",
+  SELL: "🟢 SELL",
+};
+
+function whaleCardLine(w: any): string {
+  const tag = HANDLING_LABEL_W[w.handling] ?? w.handling ?? "?";
+  const obj = w.last_objection ? ` · _${w.last_objection}_` : "";
+  const note = w.note ? ` _(${w.note})_` : "";
+  return `• **${w.name}** on **${w.model}** — ${tag} · payday **${w.payday}**${obj}${note}`;
+}
+
+async function handleWhale(interaction: any): Promise<Response> {
+  const sub = interaction.data?.options?.[0];
+  if (!sub) return replyEphemeral("Use `/whale today`, `/whale view`, `/whale list`, `/whale add`, or `/whale rm`.");
+  const opts = Object.fromEntries((sub.options ?? []).map((o: any) => [o.name, o.value]));
+  const action = sub.name;
+
+  // ── today ─────────────────────────────────────────────────────
+  if (action === "today") {
+    const weekday = new Intl.DateTimeFormat("en-US", { timeZone: "Europe/London", weekday: "short" }).format(new Date()).slice(0, 3);
+    const { data, error } = await supa.from("whale_paydays").select("*").eq("payday", weekday).order("handling");
+    if (error) return replyEphemeral(`DB error: ${error.message}`);
+    if (!data?.length) return replyEphemeral(`No whales on payday today (${weekday}).`);
+    const grouped: Record<string, any[]> = {};
+    for (const w of data) (grouped[w.handling] ??= []).push(w);
+    const order = ["DO_NOT_SELL", "PRE_SELL", "REVIVE", "SELL"];
+    const sections = order.filter((k) => grouped[k]).map((k) =>
+      `${HANDLING_LABEL_W[k]} — ${grouped[k].length}\n` + grouped[k].map(whaleCardLine).join("\n"));
+    return replyEphemeral(`💵 **Payday today (${weekday})** — ${data.length} whale(s)\n\n${sections.join("\n\n")}`);
+  }
+
+  // ── view name [model] ────────────────────────────────────────
+  if (action === "view") {
+    let q = supa.from("whale_paydays").select("*").ilike("name", opts.name);
+    if (opts.model) q = q.ilike("model", opts.model);
+    const { data, error } = await q;
+    if (error) return replyEphemeral(`DB error: ${error.message}`);
+    if (!data?.length) return replyEphemeral(`No whale found matching **${opts.name}**${opts.model ? ` on ${opts.model}` : ""}.`);
+    if (data.length > 1) {
+      return replyEphemeral(`Found ${data.length} whales named **${opts.name}**:\n` +
+        data.map(whaleCardLine).join("\n") + `\n\n_Specify a model to narrow._`);
+    }
+    return replyEphemeral(whaleCardLine(data[0]));
+  }
+
+  // ── list [model] ─────────────────────────────────────────────
+  if (action === "list") {
+    let q = supa.from("whale_paydays").select("*").order("model").order("name");
+    if (opts.model) q = q.ilike("model", `%${opts.model}%`);
+    const { data, error } = await q;
+    if (error) return replyEphemeral(`DB error: ${error.message}`);
+    if (!data?.length) return replyEphemeral("No whales yet. Add with `/whale add`.");
+    // Discord limits messages to 2000 chars — paginate by truncating gracefully.
+    const lines = data.map(whaleCardLine);
+    let body = `**${data.length} whale(s)**${opts.model ? ` matching "${opts.model}"` : ""}:\n`;
+    let used = 0;
+    for (const ln of lines) {
+      if (body.length + ln.length > 1850) { body += `\n…and ${lines.length - used} more (use \`/whale list model:X\` to filter).`; break; }
+      body += `\n${ln}`; used++;
+    }
+    return replyEphemeral(body);
+  }
+
+  // ── add (admin only) ─────────────────────────────────────────
+  if (action === "add") {
+    if (!userIsWhaleAdmin(interaction)) return replyEphemeral("Admin role only.");
+    const row: any = {
+      name: String(opts.name).trim(),
+      model: String(opts.model).trim(),
+      payday: opts.payday,
+      handling: opts.handling || "SELL",
+      last_objection: opts.objection || null,
+      note: opts.note || null,
+      fan_id: opts.fan_id || null,
+      added_by: interaction.member?.user?.username || interaction.user?.username || null,
+    };
+    // upsert on (lower(name), lower(model))
+    const { data: existing } = await supa.from("whale_paydays").select("id")
+      .ilike("name", row.name).ilike("model", row.model).maybeSingle();
+    if (existing?.id) {
+      const { error } = await supa.from("whale_paydays").update(row).eq("id", existing.id);
+      if (error) return replyEphemeral(`DB error: ${error.message}`);
+      return replyEphemeral(`✅ Updated **${row.name}** on **${row.model}** — ${HANDLING_LABEL_W[row.handling]} · payday ${row.payday}`);
+    }
+    const { error } = await supa.from("whale_paydays").insert(row);
+    if (error) return replyEphemeral(`DB error: ${error.message}`);
+    return replyEphemeral(`✅ Added **${row.name}** on **${row.model}** — ${HANDLING_LABEL_W[row.handling]} · payday ${row.payday}`);
+  }
+
+  // ── rm (admin only) ──────────────────────────────────────────
+  if (action === "rm") {
+    if (!userIsWhaleAdmin(interaction)) return replyEphemeral("Admin role only.");
+    const { data, error } = await supa.from("whale_paydays").delete()
+      .ilike("name", opts.name).ilike("model", opts.model).select("id");
+    if (error) return replyEphemeral(`DB error: ${error.message}`);
+    if (!data?.length) return replyEphemeral(`No match for **${opts.name}** on **${opts.model}**.`);
+    return replyEphemeral(`🗑️ Removed **${opts.name}** on **${opts.model}**.`);
+  }
+
+  return replyEphemeral(`Unknown /whale sub-command: ${action}`);
+}
+
 // ── Button handlers (approval flow) ──────────────────────────────
 function userIsManager(interaction: any): boolean {
   if (!MANAGER_ROLE_ID) return true;
@@ -1017,6 +1131,7 @@ Deno.serve(async (req) => {
     if (name === "payroll")          return handlePayroll(interaction);
     if (name === "activity")         return handleActivity(interaction);
     if (name === "check-subreddits") return handleCheckSubreddits(interaction);
+    if (name === "whale")            return handleWhale(interaction);
     return replyEphemeral("Unknown command.");
   }
 
