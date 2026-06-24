@@ -180,10 +180,12 @@ async function refreshWhaleSets(accounts, whales, now) {
 // (so they don't get mass-messaged this shift). Dry-run by default.
 async function applyExcludeOnReply(acct, chats, state, whales, now) {
   if (!LIST_AUTO.enabled) return;
-  // Pick the exclude list matching the current shift (fall back to first).
+  // One global "No MM" list per account (Lance: not per shift). We still cache
+  // multiple matches in case the team has e.g. "DO NOT SEND MM" + legacy ones,
+  // but pick the most-global / non-shift-named one first.
   const candidates = whales?.excludeByAccount?.[acct.accountId] || [];
-  const shiftName = currentShiftBlock(now).name.toLowerCase();
-  const excl = candidates.find((c) => c.name.toLowerCase().includes(shiftName)) ?? candidates[0];
+  const isShiftScoped = (n) => /\b(day|evening|night|late.?evening|midshift|am|pm)\b/i.test(n);
+  const excl = candidates.find((c) => !isShiftScoped(c.name)) ?? candidates[0];
   const day = new Date(now).toISOString().slice(0, 10);
   for (const r of recentReplies(chats, now, LIST_AUTO.replyWindowSec)) {
     if (!claim(state, `excl|${acct.accountId}|${r.fanId}|${day}`)) continue; // once per fan per day
