@@ -9,6 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -102,24 +104,30 @@ function TasksPage() {
         <Tabs defaultValue="my">
           <TabsList>
             <TabsTrigger value="my">My tasks</TabsTrigger>
-            <TabsTrigger value="board">Board</TabsTrigger>
-            <TabsTrigger value="member">By member</TabsTrigger>
-            <TabsTrigger value="start">Start pipeline</TabsTrigger>
+            {session.isAdmin && <TabsTrigger value="board">Board</TabsTrigger>}
+            {session.isAdmin && <TabsTrigger value="member">By member</TabsTrigger>}
+            {session.isAdmin && <TabsTrigger value="start">Start pipeline</TabsTrigger>}
             {session.isAdmin && <TabsTrigger value="templates">Templates</TabsTrigger>}
           </TabsList>
 
           <TabsContent value="my">
             <MyTasksTab session={session} pipelines={pipelines} steps={steps} standalone={standalone} memberName={memberName} onRefresh={refresh} />
           </TabsContent>
-          <TabsContent value="board">
-            <BoardTab session={session} pipelines={pipelines} steps={steps} members={taskTeam} memberName={memberName} onRefresh={refresh} />
-          </TabsContent>
-          <TabsContent value="member">
-            <MemberTab session={session} members={taskTeam} pipelines={pipelines} steps={steps} standalone={standalone} onRefresh={refresh} />
-          </TabsContent>
-          <TabsContent value="start">
-            <StartTab members={taskTeam} onCreated={refresh} />
-          </TabsContent>
+          {session.isAdmin && (
+            <TabsContent value="board">
+              <BoardTab session={session} pipelines={pipelines} steps={steps} members={taskTeam} memberName={memberName} onRefresh={refresh} />
+            </TabsContent>
+          )}
+          {session.isAdmin && (
+            <TabsContent value="member">
+              <MemberTab session={session} members={taskTeam} pipelines={pipelines} steps={steps} standalone={standalone} onRefresh={refresh} />
+            </TabsContent>
+          )}
+          {session.isAdmin && (
+            <TabsContent value="start">
+              <StartTab members={taskTeam} onCreated={refresh} />
+            </TabsContent>
+          )}
           {session.isAdmin && (
             <TabsContent value="templates">
               <TemplatesTab members={members} taskTeam={taskTeam} onRefresh={refresh} />
@@ -844,6 +852,7 @@ function DiscordIdsEditor({ members, onSaved }: { members: TeamMember[]; onSaved
   const [phone, setPhone] = useState<Record<string, string>>({});
   const [team, setTeam] = useState<Record<string, boolean>>({});
   const [query, setQuery] = useState("");
+  const [addOpen, setAddOpen] = useState(false);
   // ALL login accounts (access_codes) — admin AND staff. Any login WITHOUT a
   // person record (or pointing at a missing one) can't be a task assignee yet, so
   // we offer them in the "Add person" picker. (This is where login-only people
@@ -939,13 +948,15 @@ function DiscordIdsEditor({ members, onSaved }: { members: TeamMember[]; onSaved
   // nobody falls through the cracks.
   const offTeam = members
     .filter((m) => team[m.id] === false)
-    .map((m) => ({ key: `c:${m.id}`, name: m.name, sub: null as string | null }));
+    .map((m) => ({ key: `c:${m.id}`, name: m.name }));
+  // Login accounts are shown by USERNAME (that's how they're created/known).
   const orphanLogins = logins
     .filter((l) => !l.chatter_id || !memberIds.has(l.chatter_id))
-    .map((l) => ({ key: `a:${l.id}`, name: l.username || l.label || "Login", sub: l.label && l.label !== l.username ? l.label : null }));
+    .map((l) => ({ key: `a:${l.id}`, name: l.username || l.label || "Login" }));
   const addable = [...offTeam, ...orphanLogins].sort((a, b) => a.name.localeCompare(b.name));
 
   const onAdd = (val: string) => {
+    setAddOpen(false);
     const kind = val[0];
     const id = val.slice(2);
     if (kind === "c") toggleTeam(id, true);
@@ -960,11 +971,29 @@ function DiscordIdsEditor({ members, onSaved }: { members: TeamMember[]; onSaved
       <div className="flex items-center gap-2 flex-wrap">
         <Input className="h-9 max-w-xs" placeholder="Search the team…" value={query} onChange={(e) => setQuery(e.target.value)} />
         <span className="text-[11px] text-muted-foreground">{members.filter((m) => team[m.id] !== false).length} on the task team</span>
+        <Popover open={addOpen} onOpenChange={setAddOpen}>
+          <PopoverTrigger asChild>
+            <Button size="sm" variant="outline" className="ml-auto"><Plus className="mr-1 h-4 w-4" />Add a person</Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-72 p-0" align="end">
+            <Command>
+              <CommandInput placeholder="Search people…" />
+              <CommandList>
+                <CommandEmpty>No one left to add.</CommandEmpty>
+                <CommandGroup>
+                  {addable.map((a) => (
+                    <CommandItem key={a.key} value={`${a.name}|${a.key}`} onSelect={() => onAdd(a.key)}>{a.name}</CommandItem>
+                  ))}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
       </div>
 
       <Card className="divide-y divide-border">
         {roster.length === 0 ? (
-          <div className="p-4 text-center text-xs text-muted-foreground">No one on the task team yet — add people below.</div>
+          <div className="p-4 text-center text-xs text-muted-foreground">No one on the task team yet — use “Add a person”.</div>
         ) : roster.map((m) => (
           <div key={m.id} className="flex items-center gap-2 p-3 flex-wrap sm:flex-nowrap">
             <span className="w-32 shrink-0 truncate text-sm font-medium">{m.name}</span>
@@ -977,21 +1006,6 @@ function DiscordIdsEditor({ members, onSaved }: { members: TeamMember[]; onSaved
           </div>
         ))}
       </Card>
-
-      <div className="flex items-center gap-2">
-        <Select value="" onValueChange={onAdd}>
-          <SelectTrigger className="h-9 w-full max-w-xs"><SelectValue placeholder="+ Add a person to the task team…" /></SelectTrigger>
-          <SelectContent>
-            {addable.length === 0 ? (
-              <div className="px-2 py-1.5 text-xs text-muted-foreground">Everyone is already on the team.</div>
-            ) : addable.map((a) => (
-              <SelectItem key={a.key} value={a.key}>
-                {a.name}{a.sub ? <span className="ml-1.5 text-muted-foreground">· {a.sub}</span> : null}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
     </div>
   );
 }

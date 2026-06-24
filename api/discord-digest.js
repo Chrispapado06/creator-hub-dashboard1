@@ -39,17 +39,32 @@ async function openDM(recipientId) {
   return (await r.json()).id;
 }
 
-// Pin the new digest, unpinning the bot's OWN prior pins in that channel so they
-// don't accumulate. All best-effort (needs Manage Messages).
+// Pin the new digest, unpinning the bot's OWN prior pins so they don't pile up.
+// Handles BOTH Discord pin APIs — the new one (/messages/pins, returns {items})
+// and the legacy one (/pins, returns an array) — falling back between them. All
+// best-effort; the bot needs the "Manage Messages" permission in the channel.
 async function pinDaily(channelId, messageId, botId) {
   try {
-    const pins = await dapi(`/channels/${channelId}/pins`, { method: "GET" }).then((r) => (r.ok ? r.json() : []));
-    for (const p of pins) {
+    // List existing pins (new shape first, then legacy).
+    let pinned = [];
+    const rNew = await dapi(`/channels/${channelId}/messages/pins`, { method: "GET" });
+    if (rNew.ok) {
+      const j = await rNew.json().catch(() => null);
+      pinned = j && Array.isArray(j.items) ? j.items.map((it) => it.message).filter(Boolean) : [];
+    } else {
+      const rOld = await dapi(`/channels/${channelId}/pins`, { method: "GET" });
+      pinned = rOld.ok ? await rOld.json().catch(() => []) : [];
+    }
+    // Remove the bot's previous pins.
+    for (const p of pinned) {
       if (p && p.author && p.author.id === botId) {
-        await dapi(`/channels/${channelId}/pins/${p.id}`, { method: "DELETE" }).catch(() => {});
+        const d = await dapi(`/channels/${channelId}/messages/pins/${p.id}`, { method: "DELETE" });
+        if (!d.ok) await dapi(`/channels/${channelId}/pins/${p.id}`, { method: "DELETE" }).catch(() => {});
       }
     }
-    await dapi(`/channels/${channelId}/pins/${messageId}`, { method: "PUT" }).catch(() => {});
+    // Pin the new digest (new endpoint, fall back to legacy).
+    const put = await dapi(`/channels/${channelId}/messages/pins/${messageId}`, { method: "PUT" });
+    if (!put.ok) await dapi(`/channels/${channelId}/pins/${messageId}`, { method: "PUT" }).catch(() => {});
   } catch { /* best-effort */ }
 }
 
