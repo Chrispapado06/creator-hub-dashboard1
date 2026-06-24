@@ -829,7 +829,7 @@ function TemplatesTab({ members, taskTeam, onRefresh }: { members: TeamMember[];
 
       <section>
         <h2 className="mb-1 text-sm font-semibold">Task team &amp; contacts</h2>
-        <p className="mb-3 text-xs text-muted-foreground">This is your <strong>task team</strong> — who can be assigned tasks. The <strong>checkbox</strong> adds/removes a person from every assignment list (Start pipeline, Board reassign, By member), <em>independent</em> of their employee active/inactive status. <strong>Login-only accounts</strong> (e.g. super admins with no person record) appear in the same list, dimmed — just tick to add them. Each person is pinged on handoff via the channels set here — <strong>Discord channel ID</strong> (right-click channel → Copy Channel ID): bot posts their pings + daily digest there and @-mentions them; leave blank to DM. <strong>Discord user ID</strong> (Developer Mode → right-click → Copy ID): @-mention / DM fallback. <strong>WhatsApp</strong>: full number with country code.</p>
+        <p className="mb-3 text-xs text-muted-foreground">This is your <strong>task team</strong> — only the people who can be assigned tasks. Use <strong>+ Add a person</strong> to put someone on it (any staff or login account, incl. super admins) and <strong>Remove</strong> to take them off — independent of their employee active/inactive status. Each person is pinged on handoff via the channels set here — <strong>Discord channel ID</strong> (right-click channel → Copy Channel ID): bot posts their pings + daily digest there and @-mentions them; leave blank to DM. <strong>Discord user ID</strong> (Developer Mode → right-click → Copy ID): @-mention / DM fallback. <strong>WhatsApp</strong>: full number with country code.</p>
         <DiscordIdsEditor members={members} onSaved={onRefresh} />
       </section>
 
@@ -844,13 +844,14 @@ function DiscordIdsEditor({ members, onSaved }: { members: TeamMember[]; onSaved
   const [phone, setPhone] = useState<Record<string, string>>({});
   const [team, setTeam] = useState<Record<string, boolean>>({});
   const [query, setQuery] = useState("");
-  // Super-admin logins (access_codes, account_type 'admin') with no chatters row.
-  // They can't be task assignees until we create a person record for them, so we
-  // surface them here to be added to the task team like anyone else.
-  const [admins, setAdmins] = useState<Array<{ id: string; username: string; label: string | null; chatter_id: string | null }>>([]);
-  const loadAdmins = async () => {
-    const { data } = await sb.from("access_codes").select("id, username, label, chatter_id").eq("account_type", "admin");
-    setAdmins((data ?? []) as Array<{ id: string; username: string; label: string | null; chatter_id: string | null }>);
+  // ALL login accounts (access_codes) — admin AND staff. Any login WITHOUT a
+  // person record (or pointing at a missing one) can't be a task assignee yet, so
+  // we offer them in the "Add person" picker. (This is where login-only people
+  // like super admins — and anyone whose login isn't linked — were going missing.)
+  const [logins, setLogins] = useState<Array<{ id: string; username: string; label: string | null; chatter_id: string | null }>>([]);
+  const loadLogins = async () => {
+    const { data } = await sb.from("access_codes").select("id, username, label, chatter_id");
+    setLogins((data ?? []) as Array<{ id: string; username: string; label: string | null; chatter_id: string | null }>);
   };
   useEffect(() => {
     setDiscord(Object.fromEntries(members.map((m) => [m.id, m.discord_user_id ?? ""])));
@@ -858,7 +859,7 @@ function DiscordIdsEditor({ members, onSaved }: { members: TeamMember[]; onSaved
     setPhone(Object.fromEntries(members.map((m) => [m.id, m.whatsapp_phone ?? ""])));
     setTeam(Object.fromEntries(members.map((m) => [m.id, m.in_task_team !== false])));
   }, [members]);
-  useEffect(() => { loadAdmins(); }, []);
+  useEffect(() => { loadLogins(); }, []);
 
   // Toggle whether a person is on the task team — independent of their employee
   // active/inactive status. Saves immediately (optimistic; reverts on error).
@@ -878,14 +879,14 @@ function DiscordIdsEditor({ members, onSaved }: { members: TeamMember[]; onSaved
   // Add a super admin (login-only, no chatters row) to the task team: create a
   // person record and link their login to it, so they can be assigned tasks, see
   // their own list, and be pinged. in_task_team defaults to true on the new row.
-  const addAdmin = async (admin: { id: string; username: string; label: string | null }) => {
-    const name = (admin.label || admin.username || "Admin").trim();
+  const addLogin = async (login: { id: string; username: string; label: string | null }) => {
+    const name = (login.username || login.label || "Member").trim();
     const { data: ch, error } = await sb.from("chatters").insert({ name, status: "active" }).select("id").single();
     if (error) { toast.error(error.message); return; }
-    const { error: linkErr } = await sb.from("access_codes").update({ chatter_id: ch.id }).eq("id", admin.id);
+    const { error: linkErr } = await sb.from("access_codes").update({ chatter_id: ch.id }).eq("id", login.id);
     if (linkErr) toast.error(`Added, but couldn't link the login: ${linkErr.message}`);
     else toast.success(`${name} added to the task team`);
-    await loadAdmins();
+    await loadLogins();
     onSaved();
   };
 
@@ -926,54 +927,71 @@ function DiscordIdsEditor({ members, onSaved }: { members: TeamMember[]; onSaved
   };
 
   const q = query.trim().toLowerCase();
-  const filtered = members.filter((m) => !q || m.name.toLowerCase().includes(q));
-  // Super admins who have no person record yet — offer to add them.
-  const addableAdmins = admins.filter((a) => !a.chatter_id && (!q || (a.label || a.username || "").toLowerCase().includes(q)));
+  const memberIds = new Set(members.map((m) => m.id));
+
+  // The roster = ONLY people who are on the task team. (No unselected clutter.)
+  const roster = members
+    .filter((m) => team[m.id] !== false)
+    .filter((m) => !q || m.name.toLowerCase().includes(q));
+
+  // Everyone you could ADD: off-team people + any login with no person record
+  // (admin or staff). Logins whose linked record is missing also show here, so
+  // nobody falls through the cracks.
+  const offTeam = members
+    .filter((m) => team[m.id] === false)
+    .map((m) => ({ key: `c:${m.id}`, name: m.name, sub: null as string | null }));
+  const orphanLogins = logins
+    .filter((l) => !l.chatter_id || !memberIds.has(l.chatter_id))
+    .map((l) => ({ key: `a:${l.id}`, name: l.username || l.label || "Login", sub: l.label && l.label !== l.username ? l.label : null }));
+  const addable = [...offTeam, ...orphanLogins].sort((a, b) => a.name.localeCompare(b.name));
+
+  const onAdd = (val: string) => {
+    const kind = val[0];
+    const id = val.slice(2);
+    if (kind === "c") toggleTeam(id, true);
+    else {
+      const l = logins.find((x) => x.id === id);
+      if (l) addLogin(l);
+    }
+  };
 
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2 flex-wrap">
-        <Input className="h-9 max-w-xs" placeholder="Search people…" value={query} onChange={(e) => setQuery(e.target.value)} />
-        <span className="text-[11px] text-muted-foreground">{members.filter((m) => team[m.id] !== false).length} on the task team · {members.length + addableAdmins.length} people</span>
+        <Input className="h-9 max-w-xs" placeholder="Search the team…" value={query} onChange={(e) => setQuery(e.target.value)} />
+        <span className="text-[11px] text-muted-foreground">{members.filter((m) => team[m.id] !== false).length} on the task team</span>
       </div>
+
       <Card className="divide-y divide-border">
-        {filtered.length === 0 && addableAdmins.length === 0 ? (
-          <div className="p-4 text-center text-xs text-muted-foreground">No people match.</div>
-        ) : (
-          <>
-            {filtered.map((m) => {
-              const inTeam = team[m.id] !== false;
-              return (
-                <div key={m.id} className={`flex items-center gap-2 p-3 flex-wrap sm:flex-nowrap ${inTeam ? "" : "opacity-50"}`}>
-                  <label className="flex w-36 shrink-0 items-center gap-2 cursor-pointer" title={inTeam ? "On the task team — untick to remove" : "Off the task team — tick to add"}>
-                    <input type="checkbox" checked={inTeam} onChange={(e) => toggleTeam(m.id, e.target.checked)} className="h-4 w-4 shrink-0 accent-primary" />
-                    <span className="truncate text-sm font-medium">{m.name}</span>
-                  </label>
-                  <Input className="flex-1 min-w-[130px] font-mono text-xs" placeholder="Discord user ID" value={discord[m.id] ?? ""} onChange={(e) => setDiscord((d) => ({ ...d, [m.id]: e.target.value }))} />
-                  <Input className="flex-1 min-w-[130px] font-mono text-xs" placeholder="Discord channel ID" value={channel[m.id] ?? ""} onChange={(e) => setChannel((d) => ({ ...d, [m.id]: e.target.value }))} />
-                  <Input className="flex-1 min-w-[140px] font-mono text-xs" placeholder="WhatsApp +44…" value={phone[m.id] ?? ""} onChange={(e) => setPhone((d) => ({ ...d, [m.id]: e.target.value }))} />
-                  <Button size="sm" variant="ghost" onClick={() => test(m.id)} title="Send a test ping now">Test</Button>
-                  <Button size="sm" variant="outline" onClick={() => save(m.id)}>Save</Button>
-                </div>
-              );
-            })}
-            {addableAdmins.map((a) => (
-              <div key={`admin-${a.id}`} className="flex items-center gap-2 p-3 flex-wrap sm:flex-nowrap opacity-60">
-                <label className="flex flex-1 min-w-[180px] items-center gap-2 cursor-pointer" title="Tick to add this person to the task team">
-                  <input type="checkbox" checked={false} onChange={() => addAdmin(a)} className="h-4 w-4 shrink-0 accent-primary" />
-                  <span className="truncate text-sm font-medium">
-                    {a.username}
-                    {a.label && a.label !== a.username && <span className="ml-1.5 text-xs font-normal text-muted-foreground">{a.label}</span>}
-                  </span>
-                </label>
-                <span className="shrink-0 text-xs italic text-muted-foreground">Tick to add</span>
-                <Button size="sm" variant="ghost" disabled>Test</Button>
-                <Button size="sm" variant="outline" disabled>Save</Button>
-              </div>
-            ))}
-          </>
-        )}
+        {roster.length === 0 ? (
+          <div className="p-4 text-center text-xs text-muted-foreground">No one on the task team yet — add people below.</div>
+        ) : roster.map((m) => (
+          <div key={m.id} className="flex items-center gap-2 p-3 flex-wrap sm:flex-nowrap">
+            <span className="w-32 shrink-0 truncate text-sm font-medium">{m.name}</span>
+            <Input className="flex-1 min-w-[130px] font-mono text-xs" placeholder="Discord user ID" value={discord[m.id] ?? ""} onChange={(e) => setDiscord((d) => ({ ...d, [m.id]: e.target.value }))} />
+            <Input className="flex-1 min-w-[130px] font-mono text-xs" placeholder="Discord channel ID" value={channel[m.id] ?? ""} onChange={(e) => setChannel((d) => ({ ...d, [m.id]: e.target.value }))} />
+            <Input className="flex-1 min-w-[140px] font-mono text-xs" placeholder="WhatsApp +44…" value={phone[m.id] ?? ""} onChange={(e) => setPhone((d) => ({ ...d, [m.id]: e.target.value }))} />
+            <Button size="sm" variant="ghost" onClick={() => test(m.id)} title="Send a test ping now">Test</Button>
+            <Button size="sm" variant="outline" onClick={() => save(m.id)}>Save</Button>
+            <Button size="sm" variant="ghost" className="text-destructive" onClick={() => toggleTeam(m.id, false)} title="Remove from the task team">Remove</Button>
+          </div>
+        ))}
       </Card>
+
+      <div className="flex items-center gap-2">
+        <Select value="" onValueChange={onAdd}>
+          <SelectTrigger className="h-9 w-full max-w-xs"><SelectValue placeholder="+ Add a person to the task team…" /></SelectTrigger>
+          <SelectContent>
+            {addable.length === 0 ? (
+              <div className="px-2 py-1.5 text-xs text-muted-foreground">Everyone is already on the team.</div>
+            ) : addable.map((a) => (
+              <SelectItem key={a.key} value={a.key}>
+                {a.name}{a.sub ? <span className="ml-1.5 text-muted-foreground">· {a.sub}</span> : null}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
     </div>
   );
 }
