@@ -1,6 +1,20 @@
 -- Whale paydays — single source of truth for the per-whale payday cards used
 -- by /whale (Bernard slash-command) and the shift-downtime monitor's per-shift
 -- payday reminders. Replaces the local whale-paydays.json (kept as a fallback).
+
+-- Helper function — auto-updates updated_at on row modification. Defined here
+-- defensively (create-or-replace) because the migration may be applied on a
+-- fresh project that doesn't have this from an earlier migration.
+create or replace function public.set_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
 create table if not exists public.whale_paydays (
   id          uuid primary key default gen_random_uuid(),
   name        text not null,
