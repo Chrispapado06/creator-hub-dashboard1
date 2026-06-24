@@ -31,6 +31,10 @@ jobs:
           DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
           EOD_WEBHOOK: ${{ secrets.EOD_WEBHOOK }}
           EOD_ADMIN_WEBHOOK: ${{ secrets.EOD_ADMIN_WEBHOOK }}
+          # Dedicated whale system project (uncvrd automations) — keeps the rest
+          # of the monitor's SUPABASE_* (if ever set) free for other workflows.
+          WHALE_SUPABASE_URL: ${{ secrets.WHALE_SUPABASE_URL }}
+          WHALE_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.WHALE_SUPABASE_SERVICE_ROLE_KEY }}
         run: node monitor.mjs
       - name: Commit state if changed
         run: |

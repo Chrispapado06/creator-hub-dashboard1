@@ -275,9 +275,12 @@ async function sweepTransactions(accounts, state, whales, lastSpend, now) {
 // chatters" for DO_NOT_SELL whales (Luca's example).
 function loadPayday() { try { return JSON.parse(readFileSync(PAYDAY_FILE, "utf8")); } catch { return { whales: [] }; } }
 async function loadPaydayDb() {
-  // Source of truth = Supabase (synced via /whale on Bernard). Falls back to
-  // the local JSON when Supabase isn't reachable (CI/local dev without keys).
-  const url = process.env.SUPABASE_URL, key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  // Source of truth = the Supabase project that hosts Bernard (where /whale
+  // writes). WHALE_SUPABASE_* lets it point at a DIFFERENT project than the
+  // generic SUPABASE_* secrets (which other workflows may share). Falls back
+  // to local JSON when neither is set.
+  const url = process.env.WHALE_SUPABASE_URL || process.env.SUPABASE_URL;
+  const key = process.env.WHALE_SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return loadPayday();
   try {
     const { createClient } = await import("@supabase/supabase-js");

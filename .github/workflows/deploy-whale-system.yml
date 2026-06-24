@@ -46,8 +46,10 @@ jobs:
         if: ${{ !inputs.skip_bootstrap }}
         env:
           ONLYFANSAPI_KEY: ${{ secrets.ONLYFANSAPI_KEY }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # Whale-system-specific project (uncvrd automations / nyolewfgobbfroweaxtr).
+          # Falls back to the generic SUPABASE_* if WHALE_* aren't set.
+          SUPABASE_URL: ${{ secrets.WHALE_SUPABASE_URL || secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.WHALE_SUPABASE_SERVICE_ROLE_KEY || secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           if [ "${{ inputs.dry_bootstrap }}" = "true" ]; then
             node shift-downtime-monitor/bootstrap-whales.mjs --dry
