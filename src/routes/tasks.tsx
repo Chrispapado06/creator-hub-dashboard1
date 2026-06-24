@@ -870,6 +870,26 @@ function DiscordIdsEditor({ members, onSaved }: { members: TeamMember[]; onSaved
   }, [members]);
   useEffect(() => { loadLogins(); }, []);
 
+  // Self-heal: earlier code mistakenly named login-created person records by the
+  // account LABEL (a role, e.g. "Founder") instead of the USERNAME. Rename any
+  // such record back to its login username. Guarded to only touch the broken
+  // ones (name === label), so it's safe and runs once.
+  useEffect(() => {
+    if (!members.length || !logins.length) return;
+    const byId = new Map(members.map((m) => [m.id, m]));
+    const broken = logins.filter((l) => {
+      if (!l.chatter_id || !l.username) return false;
+      const m = byId.get(l.chatter_id);
+      return m && m.name === l.label && l.label !== l.username;
+    });
+    if (!broken.length) return;
+    (async () => {
+      for (const l of broken) await sb.from("chatters").update({ name: l.username }).eq("id", l.chatter_id);
+      onSaved();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [members, logins]);
+
   // Toggle whether a person is on the task team — independent of their employee
   // active/inactive status. Saves immediately (optimistic; reverts on error).
   const toggleTeam = async (id: string, next: boolean) => {
@@ -937,18 +957,22 @@ function DiscordIdsEditor({ members, onSaved }: { members: TeamMember[]; onSaved
 
   const q = query.trim().toLowerCase();
   const memberIds = new Set(members.map((m) => m.id));
+  // Prefer the linked login's USERNAME for display (the self-heal above fixes the
+  // stored name, this keeps the UI correct immediately).
+  const usernameByChatter = new Map(logins.filter((l) => l.chatter_id && l.username).map((l) => [l.chatter_id as string, l.username as string]));
+  const nameOf = (m: TeamMember) => usernameByChatter.get(m.id) || m.name;
 
   // The roster = ONLY people who are on the task team. (No unselected clutter.)
   const roster = members
     .filter((m) => team[m.id] !== false)
-    .filter((m) => !q || m.name.toLowerCase().includes(q));
+    .filter((m) => !q || nameOf(m).toLowerCase().includes(q));
 
   // Everyone you could ADD: off-team people + any login with no person record
   // (admin or staff). Logins whose linked record is missing also show here, so
   // nobody falls through the cracks.
   const offTeam = members
     .filter((m) => team[m.id] === false)
-    .map((m) => ({ key: `c:${m.id}`, name: m.name }));
+    .map((m) => ({ key: `c:${m.id}`, name: nameOf(m) }));
   // Login accounts are shown by USERNAME (that's how they're created/known).
   const orphanLogins = logins
     .filter((l) => !l.chatter_id || !memberIds.has(l.chatter_id))
@@ -996,7 +1020,7 @@ function DiscordIdsEditor({ members, onSaved }: { members: TeamMember[]; onSaved
           <div className="p-4 text-center text-xs text-muted-foreground">No one on the task team yet — use “Add a person”.</div>
         ) : roster.map((m) => (
           <div key={m.id} className="flex items-center gap-2 p-3 flex-wrap sm:flex-nowrap">
-            <span className="w-32 shrink-0 truncate text-sm font-medium">{m.name}</span>
+            <span className="w-32 shrink-0 truncate text-sm font-medium">{nameOf(m)}</span>
             <Input className="flex-1 min-w-[130px] font-mono text-xs" placeholder="Discord user ID" value={discord[m.id] ?? ""} onChange={(e) => setDiscord((d) => ({ ...d, [m.id]: e.target.value }))} />
             <Input className="flex-1 min-w-[130px] font-mono text-xs" placeholder="Discord channel ID" value={channel[m.id] ?? ""} onChange={(e) => setChannel((d) => ({ ...d, [m.id]: e.target.value }))} />
             <Input className="flex-1 min-w-[140px] font-mono text-xs" placeholder="WhatsApp +44…" value={phone[m.id] ?? ""} onChange={(e) => setPhone((d) => ({ ...d, [m.id]: e.target.value }))} />
