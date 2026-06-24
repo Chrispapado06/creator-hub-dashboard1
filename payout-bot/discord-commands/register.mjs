@@ -92,6 +92,11 @@ const commands = [
         ],
       },
       {
+        name: "stats",
+        description: "Counts: how many whales tracked per model + per handling.",
+        type: 1,
+      },
+      {
         name: "list",
         description: "List all whales (optionally filtered by model).",
         type: 1,
@@ -106,7 +111,7 @@ const commands = [
         options: [
           { name: "name",     description: "Whale name", type: 3, required: true },
           { name: "model",    description: "Model (e.g. Marissa)", type: 3, required: true },
-          { name: "payday",   description: "Day of week", type: 3, required: true,
+          { name: "payday",   description: "Day of week (optional — leave blank if unknown)", type: 3, required: false,
             choices: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map((d) => ({ name: d, value: d })) },
           { name: "handling", description: "How to handle this whale", type: 3, required: false,
             choices: [

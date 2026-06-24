@@ -927,6 +927,23 @@ async function handleWhale(interaction: any): Promise<Response> {
     return replyEphemeral(whaleCardLine(data[0]));
   }
 
+  // ── stats ────────────────────────────────────────────────────
+  if (action === "stats") {
+    const { data, error } = await supa.from("whale_paydays").select("model,handling,payday");
+    if (error) return replyEphemeral(`DB error: ${error.message}`);
+    if (!data?.length) return replyEphemeral("No whales in the DB yet — run the bootstrap script.");
+    const byModel: Record<string, number> = {}, byHandling: Record<string, number> = {};
+    let withPayday = 0;
+    for (const r of data) {
+      byModel[r.model] = (byModel[r.model] || 0) + 1;
+      byHandling[r.handling] = (byHandling[r.handling] || 0) + 1;
+      if (r.payday) withPayday++;
+    }
+    const mLines = Object.entries(byModel).sort((a, b) => b[1] - a[1]).map(([m, n]) => `  • ${m}: **${n}**`);
+    const hLines = Object.entries(byHandling).sort((a, b) => b[1] - a[1]).map(([h, n]) => `  • ${HANDLING_LABEL_W[h] || h}: **${n}**`);
+    return replyEphemeral(`🐋 **Whale DB stats — ${data.length} total · ${withPayday} with payday set**\n\n**By model:**\n${mLines.join("\n")}\n\n**By handling:**\n${hLines.join("\n")}`);
+  }
+
   // ── list [model] ─────────────────────────────────────────────
   if (action === "list") {
     let q = supa.from("whale_paydays").select("*").order("model").order("name");
@@ -951,7 +968,7 @@ async function handleWhale(interaction: any): Promise<Response> {
     const row: any = {
       name: String(opts.name).trim(),
       model: String(opts.model).trim(),
-      payday: opts.payday,
+      payday: opts.payday || null,
       handling: opts.handling || "SELL",
       last_objection: opts.objection || null,
       note: opts.note || null,

@@ -5,7 +5,9 @@ create table if not exists public.whale_paydays (
   id          uuid primary key default gen_random_uuid(),
   name        text not null,
   model       text not null,
-  payday      text not null check (payday in ('Mon','Tue','Wed','Thu','Fri','Sat','Sun')),
+  -- Nullable: whales auto-discovered from OF lists start without a payday; the
+  -- team fills it in via /whale add later. Reminders only fire for non-null.
+  payday      text check (payday is null or payday in ('Mon','Tue','Wed','Thu','Fri','Sat','Sun')),
   handling    text not null default 'SELL' check (handling in ('DO_NOT_SELL','PRE_SELL','REVIVE','SELL')),
   note        text,
   last_objection text,
