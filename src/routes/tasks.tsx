@@ -959,11 +959,14 @@ function DiscordIdsEditor({ members, onSaved }: { members: TeamMember[]; onSaved
             })}
             {addableAdmins.map((a) => (
               <div key={`admin-${a.id}`} className="flex items-center gap-2 p-3 flex-wrap sm:flex-nowrap opacity-60">
-                <label className="flex w-36 shrink-0 items-center gap-2 cursor-pointer" title="Tick to add this person to the task team">
+                <label className="flex flex-1 min-w-[180px] items-center gap-2 cursor-pointer" title="Tick to add this person to the task team">
                   <input type="checkbox" checked={false} onChange={() => addAdmin(a)} className="h-4 w-4 shrink-0 accent-primary" />
-                  <span className="truncate text-sm font-medium">{a.label || a.username}</span>
+                  <span className="truncate text-sm font-medium">
+                    {a.username}
+                    {a.label && a.label !== a.username && <span className="ml-1.5 text-xs font-normal text-muted-foreground">{a.label}</span>}
+                  </span>
                 </label>
-                <span className="flex-1 min-w-[200px] text-xs italic text-muted-foreground">Tick to add — then set their Discord / WhatsApp</span>
+                <span className="shrink-0 text-xs italic text-muted-foreground">Tick to add</span>
                 <Button size="sm" variant="ghost" disabled>Test</Button>
                 <Button size="sm" variant="outline" disabled>Save</Button>
               </div>
