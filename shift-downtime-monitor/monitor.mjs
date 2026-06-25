@@ -32,6 +32,7 @@ import {
   addUserToList, removeUserFromList, createUserList,
   listMassMessages, listFeedPosts, listStories, countScheduledPosts,
 } from "./of.mjs";
+import { coachWhaleResponse } from "./coach.mjs";
 import {
   tierFor, thresholdsFor, level2Eligible, THRESHOLDS, LOOP, DISCORD, DRY_RUN,
   currentShiftBlock, WHALE, LIST_AUTO, EOD, PAYDAY, dayInTz, hourInTz, weekdayInTz,
@@ -565,15 +566,31 @@ async function scan(accounts, state, whales, now) {
         if (!claim(state, `wact|${acct.accountId}|${t.fanMessageAt}`)) continue;
         const link = t.fanUsername ? `\n<https://onlyfans.com/${t.fanUsername}>` : "";
         const handling = cardMap[fid] ? ` — ${cardMap[fid]}` : "";
-        // Chatter-assist: this whale's stored topic + one playbook entry.
         const card = cardsByFan.get(fid);
-        const topicLine = card?.current_topic ? `\n💡 **Today:** ${card.current_topic}` : "";
-        const objectionLine = !card?.current_topic && card?.last_objection ? `\n_Last objection:_ ${card.last_objection}` : "";
-        const play = pickPlaybook();
-        const playLine = play ? `\n🎯 **Try:** ${play.name} — ${play.text}` : "";
+
+        // Try the AI coach first (Option C — Luca's pick). It reads the whale's
+        // recent chat + the playbook, returns a tailored topic + play. Falls
+        // back to the manual current_topic + static playbook rotation if the
+        // coach is disabled or errors.
+        let topicLine = "", playLine = "", whyLine = "";
+        const coach = process.env.COACH_ENABLED === "1"
+          ? await coachWhaleResponse({ accountId: acct.accountId, fanId: fid, whaleCard: card, playbook }).catch(() => null)
+          : null;
+        if (coach) {
+          if (coach.topic)    topicLine = `\n💡 **Now:** ${coach.topic}`;
+          if (coach.interest) topicLine += ` · _likes:_ ${coach.interest}`;
+          if (coach.play)     playLine = `\n🎯 **Try:** ${coach.play.name} — ${coach.play.text}`;
+          if (coach.why)      whyLine = `\n_${coach.why}_`;
+        } else {
+          if (card?.current_topic)  topicLine = `\n💡 **Today:** ${card.current_topic}`;
+          else if (card?.last_objection) topicLine = `\n_Last objection:_ ${card.last_objection}`;
+          const play = pickPlaybook();
+          if (play) playLine = `\n🎯 **Try:** ${play.name} — ${play.text}`;
+        }
+
         await postQaPins(`whale-active ${acct.name}`,
           `🐋 **Whale — ${t.fanUsername} on ${acct.name}**${handling}\n` +
-          `messaging, waiting **${fmtAge(t.waitedSeconds)}**${qaMention}${topicLine}${objectionLine}${playLine}${link}`,
+          `messaging, waiting **${fmtAge(t.waitedSeconds)}**${qaMention}${topicLine}${playLine}${whyLine}${link}`,
           block.qaDiscord ? [block.qaDiscord] : []);
       }
     }

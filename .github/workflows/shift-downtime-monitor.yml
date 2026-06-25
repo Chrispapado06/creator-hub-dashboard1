@@ -35,6 +35,11 @@ jobs:
           # of the monitor's SUPABASE_* (if ever set) free for other workflows.
           WHALE_SUPABASE_URL: ${{ secrets.WHALE_SUPABASE_URL }}
           WHALE_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.WHALE_SUPABASE_SERVICE_ROLE_KEY }}
+          # AI coach (Option C). Set COACH_ENABLED=1 once OPENAI_API_KEY is set
+          # AND the playbook table has entries. Until then, whale-active pings
+          # fall back to the static-rotation playbook + manual current_topic.
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          COACH_ENABLED: ${{ vars.COACH_ENABLED || '0' }}
         run: node monitor.mjs
       - name: Commit state if changed
         run: |
