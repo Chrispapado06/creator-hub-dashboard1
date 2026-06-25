@@ -3,14 +3,14 @@
 // chatter to make next. Output structure is strict so monitor.mjs can format
 // it into the ping.
 //
-// Uses OpenAI gpt-4o-mini (cheapest model that does JSON-mode reliably).
-// Cost ≈ $0.0003 per call (~$2-5/mo at expected whale-flag volume).
+// Uses Claude Haiku 4.5 (cheapest Claude tier; follows strict-JSON instructions
+// reliably). Cost ≈ $0.0025 per call (~$10-20/mo at expected whale-flag volume).
 //
 // Falls back to null (= caller uses the static-rotation behavior) when:
-//   • OPENAI_API_KEY isn't set
+//   • ANTHROPIC_API_KEY isn't set
 //   • playbook is empty
 //   • OF chat history fetch fails
-//   • OpenAI errors
+//   • Anthropic errors or returns un-parseable JSON
 // So this layer is failure-tolerant — the whale flag still fires either way.
 
 import { listChatMessages } from "./of.mjs";
@@ -35,7 +35,7 @@ Picking the play:
 - If a playbook entry references the fan's stated interest, prefer it.`;
 
 export async function coachWhaleResponse({ accountId, fanId, whaleCard, playbook }) {
-  const key = process.env.OPENAI_API_KEY;
+  const key = process.env.ANTHROPIC_API_KEY;
   if (!key || !playbook?.length) return null;
 
   let msgs;
@@ -66,24 +66,28 @@ PLAYBOOK (pick by exact name; '' if none fit):
 ${playbookList}`;
 
   try {
-    const r = await fetch("https://api.openai.com/v1/chat/completions", {
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      headers: {
+        "x-api-key": key,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: userPrompt },
-        ],
-        response_format: { type: "json_object" },
+        model: "claude-haiku-4-5-20251001",
         max_tokens: 300,
-        temperature: 0.5,
+        system: SYSTEM_PROMPT,
+        messages: [{ role: "user", content: userPrompt }],
       }),
     });
     if (!r.ok) return null;
     const j = await r.json();
-    const txt = j.choices?.[0]?.message?.content ?? "";
-    const parsed = JSON.parse(txt);
+    const txt = j.content?.[0]?.text ?? "";
+    // Claude usually returns clean JSON when instructed, but defensively pull
+    // out the first {...} block in case it adds any preamble.
+    const match = txt.match(/\{[\s\S]*\}/);
+    if (!match) return null;
+    const parsed = JSON.parse(match[0]);
     const play = parsed.play_name
       ? playbook.find((p) => p.name.toLowerCase() === String(parsed.play_name).toLowerCase()) || null
       : null;
