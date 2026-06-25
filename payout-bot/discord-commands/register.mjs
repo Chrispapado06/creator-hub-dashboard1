@@ -14,6 +14,14 @@ if (!APP_ID || !TOKEN) {
   process.exit(1);
 }
 
+// Connected OF account display names — used as choices for /whale's `model`
+// field. Order matches the OF API listAccounts() output. Add new accounts
+// here and re-run the register script when a new creator is onboarded.
+// Limit: Discord allows up to 25 choices per option.
+const MODEL_CHOICES = [
+  "Blue Bear", "Marissa munoz", "Emma", "Julie", "June - Sandra", "Antonella", "Ella",
+].map((m) => ({ name: m, value: m }));
+
 const commands = [
   {
     name: "shift",
@@ -88,7 +96,7 @@ const commands = [
         type: 1,
         options: [
           { name: "name",  description: "Whale name (case-insensitive)", type: 3, required: true },
-          { name: "model", description: "Model name (optional, narrows the match)", type: 3, required: false },
+          { name: "model", description: "Model (optional, narrows the match)", type: 3, required: false, choices: MODEL_CHOICES },
         ],
       },
       {
@@ -101,7 +109,7 @@ const commands = [
         description: "List all whales (optionally filtered by model).",
         type: 1,
         options: [
-          { name: "model", description: "Filter by model (optional)", type: 3, required: false },
+          { name: "model", description: "Filter by model (optional)", type: 3, required: false, choices: MODEL_CHOICES },
         ],
       },
       {
@@ -110,7 +118,7 @@ const commands = [
         type: 1,
         options: [
           { name: "name",     description: "Whale name", type: 3, required: true },
-          { name: "model",    description: "Model (e.g. Marissa)", type: 3, required: true },
+          { name: "model",    description: "Which model they're on", type: 3, required: true, choices: MODEL_CHOICES },
           { name: "payday",   description: "Day of week (optional — leave blank if unknown)", type: 3, required: false,
             choices: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map((d) => ({ name: d, value: d })) },
           { name: "handling", description: "How to handle this whale", type: 3, required: false,
@@ -132,7 +140,7 @@ const commands = [
         type: 1,
         options: [
           { name: "name",  description: "Whale name", type: 3, required: true },
-          { name: "model", description: "Model name", type: 3, required: true },
+          { name: "model", description: "Which model", type: 3, required: true, choices: MODEL_CHOICES },
         ],
       },
     ],
