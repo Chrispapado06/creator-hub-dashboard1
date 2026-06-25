@@ -5,9 +5,15 @@
 // Channels:
 //   • WhatsApp — via /api/whatsapp-notify (needs chatters.whatsapp_phone + the
 //                recipient must have joined the Twilio sandbox once)
-//   • Discord  — @-mention via /api/discord-notify (needs discord_user_id)
+//   • Discord  — @-mention via /api/discord-dm (needs discord_user_id or channel)
 //   • In-app   — handled separately by the NotificationsBell polling (always works,
 //                no setup) — so a missing WhatsApp number degrades gracefully.
+//
+// COALESCING: when many pings hit the same person in a few seconds (e.g. you
+// start the same pipeline for 12 creators, all owned by one script-writer), we
+// buffer them and send ONE combined message instead of a wall of pings. A single
+// ping just flushes after a short quiet window. The in-app list is the reliable
+// source of truth, so the worst case (tab closed mid-buffer) still shows the task.
 //
 // Best-effort for the DB flow: never throws (the mutation already committed).
 
@@ -32,17 +38,15 @@ async function whatsappNotify(phone: string, content: string): Promise<{ ok: boo
   }
 }
 
-/**
- * Ping one team member across whichever channels they've set up, then toast the
- * outcome:
- *   • no channel configured → warning (they will NOT be pinged externally)
- *   • everything sent       → success
- *   • something failed      → error/warning WITH the reason (e.g. Twilio
- *                             "not opted in", so you know to have them join the sandbox)
- */
-export async function notifyChatter(chatterId: string | null | undefined, content: string): Promise<void> {
-  if (!chatterId) return;
+/** Fold N buffered pings into one tidy message; a single ping is sent verbatim. */
+function combine(contents: string[]): string {
+  if (contents.length === 1) return contents[0];
+  const lines = contents.map((c) => `• ${c.replace(/^[🔁🔔📋✅📝]\s*/u, "").trim()}`);
+  return `🔔 **${contents.length} task updates for you:**\n${lines.join("\n")}`;
+}
 
+/** Resolve a member's channels, send the (possibly combined) message, toast the outcome. */
+async function deliver(chatterId: string, content: string): Promise<void> {
   let name = "team member";
   let discordId: string | null = null;
   let channelId: string | null = null;
@@ -86,4 +90,44 @@ export async function notifyChatter(chatterId: string | null | undefined, conten
   } else {
     toast.error(`Couldn't reach ${name} · ${failed.join(" · ")} ✗`);
   }
+}
+
+// ── Coalescing buffer ────────────────────────────────────────────────────────
+type Pending = { contents: string[]; timer: ReturnType<typeof setTimeout> | null; firstAt: number };
+const buffers = new Map<string, Pending>();
+const QUIET_MS = 3500; // flush this long after the LAST ping to a person…
+const MAX_MS = 9000; // …but never hold a ping longer than this overall.
+
+async function flush(chatterId: string): Promise<void> {
+  const buf = buffers.get(chatterId);
+  if (!buf) return;
+  buffers.delete(chatterId);
+  if (buf.timer) clearTimeout(buf.timer);
+  await deliver(chatterId, combine(buf.contents));
+}
+
+/**
+ * Queue a ping for one team member. Rapid pings to the same person within a few
+ * seconds are merged into a single combined message; a lone ping flushes after a
+ * short quiet window. Never throws.
+ */
+export async function notifyChatter(chatterId: string | null | undefined, content: string): Promise<void> {
+  if (!chatterId) return;
+  const existing = buffers.get(chatterId);
+  const buf: Pending = existing ?? { contents: [], timer: null, firstAt: Date.now() };
+  buf.contents.push(content);
+  if (buf.timer) clearTimeout(buf.timer);
+  const wait = Math.max(0, Math.min(QUIET_MS, MAX_MS - (Date.now() - buf.firstAt)));
+  buf.timer = setTimeout(() => { void flush(chatterId); }, wait);
+  buffers.set(chatterId, buf);
+}
+
+// If the operator switches away or closes the tab mid-buffer, flush now (best
+// effort) so pending pings still go out.
+if (typeof document !== "undefined") {
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      for (const id of Array.from(buffers.keys())) void flush(id);
+    }
+  });
 }
