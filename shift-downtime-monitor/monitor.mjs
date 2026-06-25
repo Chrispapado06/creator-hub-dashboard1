@@ -274,6 +274,38 @@ async function sweepTransactions(accounts, state, whales, lastSpend, now) {
 // and the QA on shift — drives "interfere immediately on chatting and pace
 // chatters" for DO_NOT_SELL whales (Luca's example).
 function loadPayday() { try { return JSON.parse(readFileSync(PAYDAY_FILE, "utf8")); } catch { return { whales: [] }; } }
+// Playbook of scripts/questions for the whale-assist (Option A — static
+// rotation). Loaded once per run; empty array if Supabase isn't reachable.
+async function loadPlaybook() {
+  const url = process.env.WHALE_SUPABASE_URL || process.env.SUPABASE_URL;
+  const key = process.env.WHALE_SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return [];
+  try {
+    const { createClient } = await import("@supabase/supabase-js");
+    const s = createClient(url, key, { auth: { persistSession: false } });
+    const { data, error } = await s.from("whale_playbook").select("id,name,category,text").eq("active", true);
+    if (error || !data) return [];
+    return data;
+  } catch { return []; }
+}
+
+// Per-fan whale card lookup (name + current_topic + handling + payday) keyed
+// by fan_id, so the whale-active flag can enrich its message. One small query.
+async function loadWhaleCardsByFan() {
+  const url = process.env.WHALE_SUPABASE_URL || process.env.SUPABASE_URL;
+  const key = process.env.WHALE_SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return new Map();
+  try {
+    const { createClient } = await import("@supabase/supabase-js");
+    const s = createClient(url, key, { auth: { persistSession: false } });
+    const { data, error } = await s.from("whale_paydays")
+      .select("fan_id,name,model,current_topic,handling,last_objection,payday")
+      .not("fan_id", "is", null);
+    if (error || !data) return new Map();
+    return new Map(data.map((r) => [String(r.fan_id), r]));
+  } catch { return new Map(); }
+}
+
 async function loadPaydayDb() {
   // Source of truth = the Supabase project that hosts Bernard (where /whale
   // writes). WHALE_SUPABASE_* lets it point at a DIFFERENT project than the
@@ -493,6 +525,11 @@ async function scan(accounts, state, whales, now) {
   const block = currentShiftBlock(now);
   let watched = 0, breaching = 0, fired = 0;
   const unreachable = [];
+  // Load the playbook + per-fan card lookup once per scan. Both are tiny.
+  const playbook = await loadPlaybook();
+  const cardsByFan = await loadWhaleCardsByFan();
+  // Pick a random active playbook entry (Option A — simple rotation).
+  const pickPlaybook = () => playbook.length ? playbook[Math.floor(Math.random() * playbook.length)] : null;
 
   for (const acct of accounts) {
     let chats;
@@ -528,9 +565,15 @@ async function scan(accounts, state, whales, now) {
         if (!claim(state, `wact|${acct.accountId}|${t.fanMessageAt}`)) continue;
         const link = t.fanUsername ? `\n<https://onlyfans.com/${t.fanUsername}>` : "";
         const handling = cardMap[fid] ? ` — ${cardMap[fid]}` : "";
+        // Chatter-assist: this whale's stored topic + one playbook entry.
+        const card = cardsByFan.get(fid);
+        const topicLine = card?.current_topic ? `\n💡 **Today:** ${card.current_topic}` : "";
+        const objectionLine = !card?.current_topic && card?.last_objection ? `\n_Last objection:_ ${card.last_objection}` : "";
+        const play = pickPlaybook();
+        const playLine = play ? `\n🎯 **Try:** ${play.name} — ${play.text}` : "";
         await postQaPins(`whale-active ${acct.name}`,
           `🐋 **Whale — ${t.fanUsername} on ${acct.name}**${handling}\n` +
-          `messaging, waiting **${fmtAge(t.waitedSeconds)}**${qaMention}${link}`,
+          `messaging, waiting **${fmtAge(t.waitedSeconds)}**${qaMention}${topicLine}${objectionLine}${playLine}${link}`,
           block.qaDiscord ? [block.qaDiscord] : []);
       }
     }

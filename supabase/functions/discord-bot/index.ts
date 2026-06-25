@@ -998,7 +998,77 @@ async function handleWhale(interaction: any): Promise<Response> {
     return replyEphemeral(`🗑️ Removed **${opts.name}** on **${opts.model}**.`);
   }
 
+  // ── topic name model [topic] ─────────────────────────────────
+  // Set or clear the "current topic" for a whale. Anyone can set it (chatters
+  // working that whale need to be able to update it). Blank topic = clear.
+  if (action === "topic") {
+    const { data: existing } = await supa.from("whale_paydays").select("id,name,model")
+      .ilike("name", opts.name).ilike("model", opts.model).maybeSingle();
+    if (!existing?.id) return replyEphemeral(`No whale **${opts.name}** on **${opts.model}**. Use \`/whale add\` first.`);
+    const topic = (opts.topic || "").trim() || null;
+    const { error } = await supa.from("whale_paydays").update({ current_topic: topic }).eq("id", existing.id);
+    if (error) return replyEphemeral(`DB error: ${error.message}`);
+    return replyEphemeral(topic
+      ? `✅ **${existing.name}** on **${existing.model}** — today: _${topic}_`
+      : `✅ Cleared today's topic for **${existing.name}** on **${existing.model}**.`);
+  }
+
   return replyEphemeral(`Unknown /whale sub-command: ${action}`);
+}
+
+// ── /playbook (whale-assist scripts) ─────────────────────────────
+async function handlePlaybook(interaction: any): Promise<Response> {
+  const sub = interaction.data?.options?.[0];
+  if (!sub) return replyEphemeral("Use `/playbook list`, `/playbook add`, or `/playbook rm`.");
+  const opts = Object.fromEntries((sub.options ?? []).map((o: any) => [o.name, o.value]));
+  const action = sub.name;
+
+  if (action === "list") {
+    const { data, error } = await supa.from("whale_playbook")
+      .select("name,category,text,active").order("category").order("name");
+    if (error) return replyEphemeral(`DB error: ${error.message}`);
+    if (!data?.length) return replyEphemeral("Playbook is empty. Admin: add entries with `/playbook add`.");
+    const lines = data.map((p: any) =>
+      `• **${p.name}**${p.category ? ` (${p.category})` : ""}${p.active ? "" : " _(inactive)_"} — ${p.text}`);
+    let body = `🎯 **Playbook — ${data.length} entr${data.length === 1 ? "y" : "ies"}**\n`;
+    let shown = 0;
+    for (const ln of lines) {
+      if (body.length + ln.length > 1850) { body += `\n…and ${lines.length - shown} more.`; break; }
+      body += `\n${ln}`; shown++;
+    }
+    return replyEphemeral(body);
+  }
+
+  if (action === "add") {
+    if (!userIsWhaleAdmin(interaction)) return replyEphemeral("Admin role only.");
+    const row: any = {
+      name: String(opts.name).trim(),
+      text: String(opts.text).trim(),
+      category: opts.category ? String(opts.category).trim() : null,
+      added_by: interaction.member?.user?.username || interaction.user?.username || null,
+      active: true,
+    };
+    // Upsert: name is the natural key.
+    const { data: existing } = await supa.from("whale_playbook").select("id").ilike("name", row.name).maybeSingle();
+    if (existing?.id) {
+      const { error } = await supa.from("whale_playbook").update(row).eq("id", existing.id);
+      if (error) return replyEphemeral(`DB error: ${error.message}`);
+      return replyEphemeral(`✅ Updated playbook entry **${row.name}**.`);
+    }
+    const { error } = await supa.from("whale_playbook").insert(row);
+    if (error) return replyEphemeral(`DB error: ${error.message}`);
+    return replyEphemeral(`✅ Added playbook entry **${row.name}**${row.category ? ` (${row.category})` : ""}.`);
+  }
+
+  if (action === "rm") {
+    if (!userIsWhaleAdmin(interaction)) return replyEphemeral("Admin role only.");
+    const { data, error } = await supa.from("whale_playbook").delete().ilike("name", opts.name).select("id");
+    if (error) return replyEphemeral(`DB error: ${error.message}`);
+    if (!data?.length) return replyEphemeral(`No playbook entry named **${opts.name}**.`);
+    return replyEphemeral(`🗑️ Removed playbook entry **${opts.name}**.`);
+  }
+
+  return replyEphemeral(`Unknown /playbook sub-command: ${action}`);
 }
 
 // ── Button handlers (approval flow) ──────────────────────────────
@@ -1149,6 +1219,7 @@ Deno.serve(async (req) => {
     if (name === "activity")         return handleActivity(interaction);
     if (name === "check-subreddits") return handleCheckSubreddits(interaction);
     if (name === "whale")            return handleWhale(interaction);
+    if (name === "playbook")         return handlePlaybook(interaction);
     return replyEphemeral("Unknown command.");
   }
 

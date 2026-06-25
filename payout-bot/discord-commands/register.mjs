@@ -143,6 +143,41 @@ const commands = [
           { name: "model", description: "Which model", type: 3, required: true, choices: MODEL_CHOICES },
         ],
       },
+      {
+        name: "topic",
+        description: "Set or clear what to talk about with this whale today.",
+        type: 1,
+        options: [
+          { name: "name",  description: "Whale name", type: 3, required: true },
+          { name: "model", description: "Which model", type: 3, required: true, choices: MODEL_CHOICES },
+          { name: "topic", description: "Topic for today (leave blank to clear)", type: 3, required: false },
+        ],
+      },
+    ],
+  },
+  {
+    name: "playbook",
+    description: "The whale-assist playbook (scripts/questions the bot suggests).",
+    options: [
+      { name: "list", description: "Show all playbook entries.", type: 1 },
+      {
+        name: "add",
+        description: "Add or update a playbook entry. Admin only.",
+        type: 1,
+        options: [
+          { name: "name",     description: "Short label, e.g. 'White Knight Q5'", type: 3, required: true },
+          { name: "text",     description: "The actual script/question to suggest", type: 3, required: true },
+          { name: "category", description: "Bucket (white_knight, opener, tease, etc.)", type: 3, required: false },
+        ],
+      },
+      {
+        name: "rm",
+        description: "Remove a playbook entry. Admin only.",
+        type: 1,
+        options: [
+          { name: "name", description: "Name of the entry to remove", type: 3, required: true },
+        ],
+      },
     ],
   },
   {
