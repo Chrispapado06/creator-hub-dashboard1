@@ -87,8 +87,16 @@ function handoffMessage(
   stepName: string,
   handedOffBy: string | null,
 ): string {
-  const by = handedOffBy ? ` _(handed off by ${handedOffBy})_` : "";
-  return `🔁 **${title}** — Step ${stepOrder}/${total}: **${stepName}**${by}`;
+  const by = handedOffBy ? ` _(from ${handedOffBy})_` : "";
+  return `🔁 **${title}** · Step ${stepOrder}/${total} — **${stepName}**${by}`;
+}
+
+// "2026-06-24" → "24 Jun" (calendar string, no timezone math).
+function prettyDue(d?: string | null): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d || ""));
+  if (!m) return String(d || "");
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${Number(m[3])} ${months[Number(m[2]) - 1]}`;
 }
 
 // ── Mutations ────────────────────────────────────────────────────────────────
@@ -275,7 +283,7 @@ export async function addStandaloneTask(args: {
   if (error) return { error: error.message };
 
   // Best-effort ping to the assignee across every channel they've set up.
-  await notifyChatter(data.assignee_id, `📋 New task: **${args.title.trim()}**${args.due_date ? ` (due ${args.due_date})` : ""}`);
+  await notifyChatter(data.assignee_id, `📋 **New task:** ${args.title.trim()}${args.due_date ? `  ·  📅 due ${prettyDue(args.due_date)}` : ""}`);
   return { error: null };
 }
 

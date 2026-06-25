@@ -17,6 +17,13 @@ const CRON_SECRET = process.env.CRON_SECRET;
 const SB_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
 const SB_KEY = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
 
+// "2026-06-24" → "24 Jun" (no timezone math; the string is already a calendar date).
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function prettyDate(d) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d || ""));
+  return m ? `${Number(m[3])} ${MONTHS[Number(m[2]) - 1]}` : String(d || "");
+}
+
 async function dapi(path, init) {
   return fetch(`https://discord.com/api/v10${path}`, {
     ...init,
@@ -122,16 +129,17 @@ export default async function handler(req, res) {
 
       const dateLabel = new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
       const total = ms.length + mt.length;
-      let msg = `${c.discord_user_id ? `<@${c.discord_user_id}>\n` : ""}🗓️ **Your tasks — ${dateLabel}**  ·  ${total} to do\n`;
+      let msg = `## 🗓️ Your tasks — ${dateLabel}\n`;
+      if (c.discord_user_id) msg += `<@${c.discord_user_id}>\n`;
       if (ms.length) {
-        msg += `\n**🔁 Pipelines waiting on you (${ms.length})**\n` +
-          ms.map((s) => `> • **${(s.task_pipelines && s.task_pipelines.title) || "Pipeline"}** — ${s.step_name}`).join("\n") + "\n";
+        msg += `\n### 🔁 Pipelines waiting on you (${ms.length})\n` +
+          ms.map((s) => `- **${(s.task_pipelines && s.task_pipelines.title) || "Pipeline"}** · ${s.step_name}`).join("\n") + "\n";
       }
       if (mt.length) {
-        msg += `\n**📋 Tasks (${mt.length})**\n` +
-          mt.map((t) => `> • ${t.title}${t.due_date ? ` _(due ${t.due_date})_` : ""}`).join("\n") + "\n";
+        msg += `\n### 📋 To-do (${mt.length})\n` +
+          mt.map((t) => `- ${t.title}${t.due_date ? ` · _due ${prettyDate(t.due_date)}_` : ""}`).join("\n") + "\n";
       }
-      msg += `\n_Tick them off in the dashboard → Tasks. Move with speed_ 💪`;
+      msg += `\n-# ${total} task${total === 1 ? "" : "s"} today · tick them off in the dashboard → Tasks 💪`;
 
       try {
         if (c.discord_channel_id) {

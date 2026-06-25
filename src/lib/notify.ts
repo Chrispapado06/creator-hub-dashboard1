@@ -41,8 +41,9 @@ async function whatsappNotify(phone: string, content: string): Promise<{ ok: boo
 /** Fold N buffered pings into one tidy message; a single ping is sent verbatim. */
 function combine(contents: string[]): string {
   if (contents.length === 1) return contents[0];
-  const lines = contents.map((c) => `• ${c.replace(/^[🔁🔔📋✅📝]\s*/u, "").trim()}`);
-  return `🔔 **${contents.length} task updates for you:**\n${lines.join("\n")}`;
+  // Bullet the first line of each (handles any multi-line content gracefully).
+  const lines = contents.map((c) => `- ${c.split("\n")[0].replace(/^[🔁🔔📋✅📝🗓️]\s*/u, "").trim()}`);
+  return `### 🔔 ${contents.length} task updates\n${lines.join("\n")}`;
 }
 
 /** Resolve a member's channels, send the (possibly combined) message, toast the outcome. */
