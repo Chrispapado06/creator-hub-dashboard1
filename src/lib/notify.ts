@@ -96,8 +96,8 @@ async function deliver(chatterId: string, content: string): Promise<void> {
 // ── Coalescing buffer ────────────────────────────────────────────────────────
 type Pending = { contents: string[]; timer: ReturnType<typeof setTimeout> | null; firstAt: number };
 const buffers = new Map<string, Pending>();
-const QUIET_MS = 3500; // flush this long after the LAST ping to a person…
-const MAX_MS = 9000; // …but never hold a ping longer than this overall.
+const QUIET_MS = 8000; // flush this long after the LAST ping to a person…
+const MAX_MS = 30000; // …but never hold a ping longer than this overall.
 
 async function flush(chatterId: string): Promise<void> {
   const buf = buffers.get(chatterId);

@@ -49,7 +49,9 @@ async function pinMessage(token, channelId, messageId) {
 // Deliver to one person: their channel (with @mention + optional pin), else DM.
 async function deliver(token, { channelId, discordId, content, pin }) {
   if (channelId) {
-    const body = discordId ? `<@${discordId}> ${content}` : content;
+    // Mention on its OWN line so any leading markdown (## / ### headers, - bullets)
+    // in the content still renders — Discord only formats those at line start.
+    const body = discordId ? `<@${discordId}>\n${content}` : content;
     const msg = await postToChannel(token, channelId, body);
     if (pin && msg && msg.id) await pinMessage(token, channelId, msg.id);
     return;
