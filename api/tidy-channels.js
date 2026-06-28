@@ -9,13 +9,13 @@
 // Body: { username }. Always responds 200 with the digest result (or an error).
 
 const SB_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
-const SB_KEY = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+const SB_KEY = process.env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
 const CRON_SECRET = process.env.CRON_SECRET;
 
 // Returns { ok, why } so a failure tells us EXACTLY what went wrong.
 async function checkAdmin(username) {
   if (!SB_URL) return { ok: false, why: "server missing VITE_SUPABASE_URL" };
-  if (!SB_KEY) return { ok: false, why: "server missing VITE_SUPABASE_ANON_KEY" };
+  if (!SB_KEY) return { ok: false, why: "server missing the Supabase key" };
   if (!username) return { ok: false, why: "no username in session" };
   const u = encodeURIComponent(username);
   let r;
