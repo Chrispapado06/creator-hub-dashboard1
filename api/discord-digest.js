@@ -94,24 +94,31 @@ async function sbRpc(fn, args) {
 // One-shot tidy: delete the BOT'S OWN recent messages in a channel (e.g. the old
 // pre-fix spam), so we can repost a single clean digest. Needs Manage Messages.
 async function purgeBotMessages(channelId, botId) {
+  let total = 0;
   try {
-    const r = await dapi(`/channels/${channelId}/messages?limit=100`, { method: "GET" });
-    if (!r.ok) return 0;
-    const msgs = await r.json().catch(() => []);
-    const now = Date.now();
-    const ids = (Array.isArray(msgs) ? msgs : [])
-      .filter((m) => m && m.author && m.author.id === botId)
-      .filter((m) => now - Date.parse(m.timestamp) < 13 * 24 * 3600 * 1000) // bulk-delete only works <14 days
-      .map((m) => m.id);
-    if (ids.length === 0) return 0;
-    if (ids.length === 1) {
-      await dapi(`/channels/${channelId}/messages/${ids[0]}`, { method: "DELETE" }).catch(() => {});
-      return 1;
+    // Loop so channels with >100 of the bot's messages get fully cleared.
+    for (let pass = 0; pass < 6; pass++) {
+      const r = await dapi(`/channels/${channelId}/messages?limit=100`, { method: "GET" });
+      if (!r.ok) break;
+      const msgs = await r.json().catch(() => []);
+      const now = Date.now();
+      const ids = (Array.isArray(msgs) ? msgs : [])
+        .filter((m) => m && m.author && m.author.id === botId)
+        .filter((m) => now - Date.parse(m.timestamp) < 13 * 24 * 3600 * 1000) // bulk-delete only works <14 days
+        .map((m) => m.id);
+      if (ids.length === 0) break;
+      if (ids.length === 1) {
+        await dapi(`/channels/${channelId}/messages/${ids[0]}`, { method: "DELETE" }).catch(() => {});
+        total += 1;
+        break;
+      }
+      const d = await dapi(`/channels/${channelId}/messages/bulk-delete`, { method: "POST", body: JSON.stringify({ messages: ids.slice(0, 100) }) });
+      if (!d.ok) for (const id of ids) await dapi(`/channels/${channelId}/messages/${id}`, { method: "DELETE" }).catch(() => {});
+      total += ids.length;
+      if (ids.length < 100) break; // fewer than a full page → nothing more to fetch
     }
-    const d = await dapi(`/channels/${channelId}/messages/bulk-delete`, { method: "POST", body: JSON.stringify({ messages: ids.slice(0, 100) }) });
-    if (!d.ok) for (const id of ids) await dapi(`/channels/${channelId}/messages/${id}`, { method: "DELETE" }).catch(() => {});
-    return ids.length;
-  } catch { return 0; }
+  } catch { /* best-effort */ }
+  return total;
 }
 
 export default async function handler(req, res) {
@@ -144,12 +151,20 @@ export default async function handler(req, res) {
     const tasksBy = {};
     for (const t of tasks) (tasksBy[t.assignee_id] = tasksBy[t.assignee_id] || []).push(t);
 
-    let sent = 0, empty = 0, skipped = 0, purged = 0;
+    // Tidy mode: purge the bot's old messages in EVERY configured channel — every
+    // chatter with a channel, ANY status, even people with no current tasks — so
+    // nobody (e.g. Luca) gets missed.
+    let purged = 0;
+    if (clean && botId) {
+      const withChan = await sbGet("chatters?discord_channel_id=not.is.null&select=discord_channel_id").catch(() => []);
+      const channels = [...new Set((withChan || []).map((c) => c.discord_channel_id).filter(Boolean))];
+      for (const ch of channels) purged += await purgeBotMessages(ch, botId);
+    }
+
+    let sent = 0, empty = 0, skipped = 0;
     const warnings = [];
     for (const c of chatters) {
       if (!c.discord_channel_id && !c.discord_user_id) { skipped++; continue; }
-      // Tidy the channel first when ?clean=1 (delete the bot's old messages).
-      if (clean && c.discord_channel_id && botId) purged += await purgeBotMessages(c.discord_channel_id, botId);
       const ms = stepsBy[c.id] || [];
       const mt = tasksBy[c.id] || [];
       if (ms.length + mt.length === 0) { empty++; continue; }
