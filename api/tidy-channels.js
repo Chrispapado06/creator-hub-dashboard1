@@ -12,17 +12,26 @@ const SB_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
 const SB_KEY = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
 const CRON_SECRET = process.env.CRON_SECRET;
 
-async function isAdmin(username) {
-  if (!username || !SB_URL || !SB_KEY) return false;
+// Returns { ok, why } so a failure tells us EXACTLY what went wrong.
+async function checkAdmin(username) {
+  if (!SB_URL) return { ok: false, why: "server missing VITE_SUPABASE_URL" };
+  if (!SB_KEY) return { ok: false, why: "server missing VITE_SUPABASE_ANON_KEY" };
+  if (!username) return { ok: false, why: "no username in session" };
   const u = encodeURIComponent(username);
-  const r = await fetch(`${SB_URL}/rest/v1/access_codes?username=eq.${u}&select=account_type,active`, {
-    headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` },
-  });
-  if (!r.ok) return false;
+  let r;
+  try {
+    r = await fetch(`${SB_URL}/rest/v1/access_codes?username=eq.${u}&select=account_type,active`, {
+      headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` },
+    });
+  } catch (e) { return { ok: false, why: `lookup network error: ${String((e && e.message) || e)}` }; }
+  if (!r.ok) return { ok: false, why: `lookup failed ${r.status}` };
   const rows = await r.json().catch(() => []);
-  // Admin = any non-staff account (matches the app's `account_type ?? "admin"`,
-  // so a NULL account_type — e.g. the owner — counts as admin).
-  return Array.isArray(rows) && rows.some((x) => x && x.account_type !== "staff" && x.active !== false);
+  if (!Array.isArray(rows) || rows.length === 0) return { ok: false, why: `no account_codes row for username "${username}"` };
+  // Admin = any non-staff active account (matches the app's `account_type ?? "admin"`).
+  const admin = rows.some((x) => x && x.account_type !== "staff" && x.active !== false);
+  return admin
+    ? { ok: true }
+    : { ok: false, why: `account "${username}" is not admin (account_type=${rows.map((x) => x.account_type).join("/")})` };
 }
 
 export default async function handler(req, res) {
@@ -33,11 +42,9 @@ export default async function handler(req, res) {
   if (typeof body === "string") { try { body = JSON.parse(body); } catch { body = {}; } }
   const username = body && body.username ? String(body.username) : "";
 
-  if (!username) {
-    return res.status(401).json({ ok: false, error: "no username in session — sign out and back in" });
-  }
-  if (!(await isAdmin(username))) {
-    return res.status(401).json({ ok: false, error: `not recognised as an admin (user: ${username})` });
+  const chk = await checkAdmin(username);
+  if (!chk.ok) {
+    return res.status(401).json({ ok: false, error: chk.why });
   }
 
   const host = req.headers.host;
