@@ -91,11 +91,36 @@ async function sbRpc(fn, args) {
   return r.json().catch(() => null);
 }
 
+// One-shot tidy: delete the BOT'S OWN recent messages in a channel (e.g. the old
+// pre-fix spam), so we can repost a single clean digest. Needs Manage Messages.
+async function purgeBotMessages(channelId, botId) {
+  try {
+    const r = await dapi(`/channels/${channelId}/messages?limit=100`, { method: "GET" });
+    if (!r.ok) return 0;
+    const msgs = await r.json().catch(() => []);
+    const now = Date.now();
+    const ids = (Array.isArray(msgs) ? msgs : [])
+      .filter((m) => m && m.author && m.author.id === botId)
+      .filter((m) => now - Date.parse(m.timestamp) < 13 * 24 * 3600 * 1000) // bulk-delete only works <14 days
+      .map((m) => m.id);
+    if (ids.length === 0) return 0;
+    if (ids.length === 1) {
+      await dapi(`/channels/${channelId}/messages/${ids[0]}`, { method: "DELETE" }).catch(() => {});
+      return 1;
+    }
+    const d = await dapi(`/channels/${channelId}/messages/bulk-delete`, { method: "POST", body: JSON.stringify({ messages: ids.slice(0, 100) }) });
+    if (!d.ok) for (const id of ids) await dapi(`/channels/${channelId}/messages/${id}`, { method: "DELETE" }).catch(() => {});
+    return ids.length;
+  } catch { return 0; }
+}
+
 export default async function handler(req, res) {
   if (CRON_SECRET) {
     const ok = req.headers.authorization === `Bearer ${CRON_SECRET}` || req.headers["x-cron-secret"] === CRON_SECRET;
     if (!ok) return res.status(401).json({ ok: false, error: "unauthorized" });
   }
+  // ?clean=1 → tidy each channel (delete the bot's old messages) before reposting.
+  const clean = Boolean(req.query && (req.query.clean === "1" || req.query.clean === "true"));
   if (!TOKEN || !SB_URL || !SB_KEY) {
     return res.status(200).json({ ok: false, error: "not configured (DISCORD_BOT_TOKEN / VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY)" });
   }
@@ -119,10 +144,12 @@ export default async function handler(req, res) {
     const tasksBy = {};
     for (const t of tasks) (tasksBy[t.assignee_id] = tasksBy[t.assignee_id] || []).push(t);
 
-    let sent = 0, empty = 0, skipped = 0;
+    let sent = 0, empty = 0, skipped = 0, purged = 0;
     const warnings = [];
     for (const c of chatters) {
       if (!c.discord_channel_id && !c.discord_user_id) { skipped++; continue; }
+      // Tidy the channel first when ?clean=1 (delete the bot's old messages).
+      if (clean && c.discord_channel_id && botId) purged += await purgeBotMessages(c.discord_channel_id, botId);
       const ms = stepsBy[c.id] || [];
       const mt = tasksBy[c.id] || [];
       if (ms.length + mt.length === 0) { empty++; continue; }
@@ -155,7 +182,7 @@ export default async function handler(req, res) {
       }
     }
 
-    return res.status(200).json({ ok: true, day: today, sent, empty, skipped, warnings });
+    return res.status(200).json({ ok: true, day: today, clean, purged, sent, empty, skipped, warnings });
   } catch (e) {
     console.error("[discord-digest]", e && e.message);
     return res.status(200).json({ ok: false, error: String((e && e.message) || e) });
