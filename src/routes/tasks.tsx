@@ -815,6 +815,18 @@ function TemplatesTab({ members, taskTeam, onRefresh }: { members: TeamMember[];
     if (error) toast.error(error.message); else { toast.success("Template deleted"); load(); }
   };
 
+  const [tidying, setTidying] = useState(false);
+  const tidy = async () => {
+    setTidying(true);
+    try {
+      const r = await fetch("/api/tidy-channels", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: currentUsername() }) });
+      const j = (await r.json().catch(() => ({}))) as { ok?: boolean; purged?: number; sent?: number; error?: string };
+      if (j.ok) toast.success(`Tidied ✓ — ${j.purged ?? 0} old messages cleared · ${j.sent ?? 0} fresh lists posted`);
+      else toast.error(`Tidy failed: ${j.error ?? "unknown"}`);
+    } catch { toast.error("Tidy failed (network)"); }
+    setTidying(false);
+  };
+
   return (
     <div className="mt-4 space-y-6">
       <section>
@@ -860,7 +872,21 @@ function TemplatesTab({ members, taskTeam, onRefresh }: { members: TeamMember[];
       </section>
 
       <section>
-        <h2 className="mb-1 text-sm font-semibold">Task team &amp; contacts</h2>
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold">Task team &amp; contacts</h2>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button size="sm" variant="outline" disabled={tidying}>{tidying ? "Tidying…" : "Tidy Discord channels"}</Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Tidy everyone's Discord channels?</AlertDialogTitle>
+                <AlertDialogDescription>Deletes the bot's old messages in each person's channel and reposts one clean task list. Only the bot's own messages are removed. Needs the bot to have “Manage Messages”.</AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={tidy}>Tidy &amp; resend</AlertDialogAction></AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
         <p className="mb-3 text-xs text-muted-foreground">This is your <strong>task team</strong> — only the people who can be assigned tasks. Use <strong>+ Add a person</strong> to put someone on it (any staff or login account, incl. super admins) and <strong>Remove</strong> to take them off — independent of their employee active/inactive status. Each person is pinged on handoff via the channels set here — <strong>Discord channel ID</strong> (right-click channel → Copy Channel ID): bot posts their pings + daily digest there and @-mentions them; leave blank to DM. <strong>Discord user ID</strong> (Developer Mode → right-click → Copy ID): @-mention / DM fallback. <strong>WhatsApp</strong>: full number with country code.</p>
         <DiscordIdsEditor members={members} onSaved={onRefresh} />
       </section>
