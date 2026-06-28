@@ -266,19 +266,23 @@ export async function addStandaloneTask(args: {
   description?: string | null;
   due_date?: string | null;
   notify?: "now" | "batch";
+  remind_days?: number | null;
 }): Promise<{ error: string | null }> {
   const caller = currentUsername();
   if (!args.title.trim()) return { error: "Title is required" };
   if (!args.assignee_id) return { error: "Pick an assignee" };
+  const insert: Record<string, unknown> = {
+    title: args.title.trim(),
+    assignee_id: args.assignee_id,
+    description: args.description?.trim() || null,
+    due_date: args.due_date || null,
+    created_by: caller,
+  };
+  // Only send remind_days when set, so inserts still work before the migration.
+  if (args.remind_days != null) insert.remind_days = args.remind_days;
   const { data, error } = await sb
     .from("standalone_tasks")
-    .insert({
-      title: args.title.trim(),
-      assignee_id: args.assignee_id,
-      description: args.description?.trim() || null,
-      due_date: args.due_date || null,
-      created_by: caller,
-    })
+    .insert(insert)
     .select("id, assignee_id")
     .single();
   if (error) return { error: error.message };
@@ -311,6 +315,7 @@ export type RecurringTask = {
   next_run: string;
   active: boolean;
   created_at: string;
+  remind_days?: number | null;
 };
 
 /**
@@ -338,19 +343,22 @@ export async function createRecurringTask(args: {
   interval_days: number;
   start_date: string;
   description?: string | null;
+  remind_days?: number | null;
 }): Promise<{ error: string | null }> {
   if (!args.title.trim()) return { error: "Title is required" };
   if (!args.assignee_id) return { error: "Pick an assignee" };
   if (!args.interval_days || args.interval_days < 1) return { error: "Repeat interval must be at least 1 day" };
   if (!args.start_date) return { error: "Pick a start date" };
-  const { error } = await sb.from("recurring_tasks").insert({
+  const insert: Record<string, unknown> = {
     title: args.title.trim(),
     description: args.description?.trim() || null,
     assignee_id: args.assignee_id,
     interval_days: args.interval_days,
     next_run: args.start_date,
     created_by: currentUsername(),
-  });
+  };
+  if (args.remind_days != null) insert.remind_days = args.remind_days;
+  const { error } = await sb.from("recurring_tasks").insert(insert);
   return { error: error?.message ?? null };
 }
 

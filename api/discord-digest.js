@@ -24,6 +24,14 @@ function prettyDate(d) {
   return m ? `${Number(m[3])} ${MONTHS[Number(m[2]) - 1]}` : String(d || "");
 }
 
+// "2026-06-28" shifted by N days → "YYYY-MM-DD" (UTC-safe, no timezone drift).
+function shiftDate(dateStr, deltaDays) {
+  const d = new Date(`${String(dateStr).slice(0, 10)}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return "";
+  d.setUTCDate(d.getUTCDate() + deltaDays);
+  return d.toISOString().slice(0, 10);
+}
+
 async function dapi(path, init) {
   return fetch(`https://discord.com/api/v10${path}`, {
     ...init,
@@ -169,13 +177,33 @@ export default async function handler(req, res) {
       }
     }
 
+    // Reminders: "⏰ Coming up" heads-ups whose reminder day (due/next_run minus
+    // remind_days) is today. Wrapped so a pre-migration DB (no remind_days
+    // column) just yields no reminders instead of erroring.
+    const remindersBy = {};
+    try {
+      const [recurs, remTasks] = await Promise.all([
+        sbGet("recurring_tasks?active=eq.true&remind_days=not.is.null&select=title,assignee_id,next_run,remind_days"),
+        sbGet("standalone_tasks?status=eq.open&remind_days=not.is.null&due_date=not.is.null&select=title,assignee_id,due_date,remind_days"),
+      ]);
+      for (const r of (recurs || [])) {
+        if (r.remind_days == null || !r.next_run) continue;
+        if (shiftDate(r.next_run, -r.remind_days) === today) (remindersBy[r.assignee_id] = remindersBy[r.assignee_id] || []).push(`${r.title} — due ${prettyDate(r.next_run)}`);
+      }
+      for (const t of (remTasks || [])) {
+        if (t.remind_days == null || !t.due_date) continue;
+        if (shiftDate(t.due_date, -t.remind_days) === today) (remindersBy[t.assignee_id] = remindersBy[t.assignee_id] || []).push(`${t.title} — due ${prettyDate(t.due_date)}`);
+      }
+    } catch (e) { console.error("[discord-digest] reminders:", e && e.message); }
+
     let sent = 0, empty = 0, skipped = 0;
     const warnings = [];
     for (const c of chatters) {
       if (!c.discord_channel_id && !c.discord_user_id) { skipped++; continue; }
       const ms = stepsBy[c.id] || [];
       const mt = tasksBy[c.id] || [];
-      if (ms.length + mt.length === 0) { empty++; continue; }
+      const mr = remindersBy[c.id] || [];
+      if (ms.length + mt.length + mr.length === 0) { empty++; continue; }
 
       const dateLabel = new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
       const total = ms.length + mt.length;
@@ -189,7 +217,13 @@ export default async function handler(req, res) {
         msg += `\n### 📋 To-do (${mt.length})\n` +
           mt.map((t) => `- ${t.title}${t.due_date ? ` · _due ${prettyDate(t.due_date)}_` : ""}`).join("\n") + "\n";
       }
-      msg += `\n-# ${total} task${total === 1 ? "" : "s"} today · tick them off in the dashboard → Tasks 💪`;
+      if (mr.length) {
+        msg += `\n### ⏰ Coming up\n` +
+          mr.map((x) => `- ${x}`).join("\n") + "\n";
+      }
+      msg += total > 0
+        ? `\n-# ${total} task${total === 1 ? "" : "s"} today · tick them off in the dashboard → Tasks 💪`
+        : `\n-# Nothing due today · heads-up above 👀`;
 
       try {
         if (c.discord_channel_id) {

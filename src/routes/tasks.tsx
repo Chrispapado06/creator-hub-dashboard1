@@ -607,7 +607,7 @@ const cadenceLabel = (d: number) =>
   d === 1 ? "every day" : d === 7 ? "every week" : d === 14 ? "every 2 weeks" : d === 30 ? "monthly" : `every ${d} days`;
 
 function RecurringManager({ members, onChanged }: { members: TeamMember[]; onChanged: () => void }) {
-  const emptyR = { title: "", assignee_id: "", interval_days: 7, start_date: format(new Date(), "yyyy-MM-dd") };
+  const emptyR = { title: "", assignee_id: "", interval_days: 7, start_date: format(new Date(), "yyyy-MM-dd"), remind: "none" };
   const [rules, setRules] = useState<RecurringTask[]>([]);
   const [f, setF] = useState(emptyR);
   const [saving, setSaving] = useState(false);
@@ -619,7 +619,7 @@ function RecurringManager({ members, onChanged }: { members: TeamMember[]; onCha
 
   const create = async () => {
     setSaving(true);
-    const { error } = await createRecurringTask(f);
+    const { error } = await createRecurringTask({ title: f.title, assignee_id: f.assignee_id, interval_days: f.interval_days, start_date: f.start_date, remind_days: remindValue(f.remind) });
     setSaving(false);
     if (error) { toast.error(error); return; }
     toast.success("Repeating task created");
@@ -672,6 +672,14 @@ function RecurringManager({ members, onChanged }: { members: TeamMember[]; onCha
             <span className="text-xs text-muted-foreground">days</span>
           </div>
         </div>
+        <div className="grid gap-1.5">
+          <Label>Remind</Label>
+          <Select value={f.remind} onValueChange={(v) => setF({ ...f, remind: v })}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>{REMIND_OPTIONS.map((o) => <SelectItem key={o.v} value={o.v}>{o.label}</SelectItem>)}</SelectContent>
+          </Select>
+          {f.remind !== "none" && <span className="text-[11px] text-muted-foreground">A “⏰ Coming up” heads-up goes out {f.remind === "0" ? "on the day of" : `${f.remind} day${f.remind === "1" ? "" : "s"} before`} each occurrence.</span>}
+        </div>
         <Button className="w-full" onClick={create} disabled={saving || !f.title.trim() || !f.assignee_id}>
           {saving ? "Saving…" : "Create repeating task"}
         </Button>
@@ -687,8 +695,16 @@ function RecurringManager({ members, onChanged }: { members: TeamMember[]; onCha
                 <span className="text-muted-foreground"> · {cadenceLabel(r.interval_days)} · {memberName(r.assignee_id)}</span>
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                <span className="text-muted-foreground">next {format(parseISO(r.next_run), "MMM d")}</span>
-                <button onClick={() => remove(r.id)} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
+                <span className="text-muted-foreground">next {format(parseISO(r.next_run), "MMM d")}{r.remind_days != null ? ` · ⏰ ${r.remind_days === 0 ? "day of" : `${r.remind_days}d before`}` : ""}</span>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <button className="flex items-center gap-1 rounded border border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:border-destructive/40 hover:text-destructive"><Trash2 className="h-3 w-3" />Stop repeating</button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader><AlertDialogTitle>Stop “{r.title}” repeating?</AlertDialogTitle><AlertDialogDescription>No new occurrences will be created from tomorrow on. Tasks already created stay on people's lists.</AlertDialogDescription></AlertDialogHeader>
+                    <AlertDialogFooter><AlertDialogCancel>Keep repeating</AlertDialogCancel><AlertDialogAction onClick={() => remove(r.id)}>Stop repeating</AlertDialogAction></AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               </div>
             </div>
           ))}
@@ -698,7 +714,19 @@ function RecurringManager({ members, onChanged }: { members: TeamMember[]; onCha
   );
 }
 
-const emptyTaskForm = (assignee: string) => ({ title: "", assignee_id: assignee, due: null as Date | null, description: "", repeat: "0", customDays: 7, notify: "now" as "now" | "batch" });
+// Reminder offsets — days BEFORE the due date / next occurrence to send a
+// "⏰ Coming up" heads-up in the daily digest. "none" = off.
+const REMIND_OPTIONS = [
+  { v: "none", label: "No reminder" },
+  { v: "0", label: "On the day" },
+  { v: "1", label: "1 day before" },
+  { v: "2", label: "2 days before" },
+  { v: "3", label: "3 days before" },
+  { v: "7", label: "1 week before" },
+];
+const remindValue = (s: string): number | null => (s === "none" ? null : Number(s));
+
+const emptyTaskForm = (assignee: string) => ({ title: "", assignee_id: assignee, due: null as Date | null, description: "", repeat: "0", customDays: 7, notify: "now" as "now" | "batch", remind: "none" });
 
 function AddTaskDialog({ members, defaultAssigneeId, onAdded, selfLabel }: { members: TeamMember[]; defaultAssigneeId?: string; onAdded: () => void; selfLabel?: string }) {
   const [open, setOpen] = useState(false);
@@ -717,12 +745,12 @@ function AddTaskDialog({ members, defaultAssigneeId, onAdded, selfLabel }: { mem
       // A repeat creates a recurrence rule; the first occurrence materialises
       // immediately if it's due today/now.
       const start = dueStr ?? format(new Date(), "yyyy-MM-dd");
-      const { error } = await createRecurringTask({ title: f.title, assignee_id: f.assignee_id, interval_days: interval, start_date: start, description: f.description || null });
+      const { error } = await createRecurringTask({ title: f.title, assignee_id: f.assignee_id, interval_days: interval, start_date: start, description: f.description || null, remind_days: remindValue(f.remind) });
       if (error) { setSaving(false); toast.error(error); return; }
       await generateDueRecurringTasks();
       toast.success("Repeating task created");
     } else {
-      const { error } = await addStandaloneTask({ title: f.title, assignee_id: f.assignee_id, due_date: dueStr, description: f.description || null, notify: f.notify });
+      const { error } = await addStandaloneTask({ title: f.title, assignee_id: f.assignee_id, due_date: dueStr, description: f.description || null, notify: f.notify, remind_days: remindValue(f.remind) });
       if (error) { setSaving(false); toast.error(error); return; }
       toast.success(f.notify === "batch" ? "Task added — notification held 5 min" : "Task added");
     }
@@ -772,6 +800,14 @@ function AddTaskDialog({ members, defaultAssigneeId, onAdded, selfLabel }: { mem
               <Input type="number" min={1} value={f.customDays} onChange={(e) => setF({ ...f, customDays: Number(e.target.value) })} className="w-28" />
             </div>
           )}
+          <div className="grid gap-1.5">
+            <Label>Remind</Label>
+            <Select value={f.remind} onValueChange={(v) => setF({ ...f, remind: v })}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>{REMIND_OPTIONS.map((o) => <SelectItem key={o.v} value={o.v}>{o.label}</SelectItem>)}</SelectContent>
+            </Select>
+            {f.remind !== "none" && <span className="text-[11px] text-muted-foreground">A “⏰ Coming up” heads-up goes out in the 8am digest {f.remind === "0" ? "on the due day" : `${f.remind} day${f.remind === "1" ? "" : "s"} before`}{repeats ? " each occurrence" : f.due ? "" : " — set a due date for this to fire"}.</span>}
+          </div>
           {repeats && (
             <p className="text-[11px] text-muted-foreground">A fresh task is created {interval === 1 ? "every day" : interval === 7 ? "every week" : `every ${interval} days`}, starting on the date above (or today if blank). Manage or stop it from Start → Repeating tasks.</p>
           )}
