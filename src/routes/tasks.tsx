@@ -18,7 +18,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
 import { format, formatDistanceToNowStrict, parseISO, addDays, startOfDay, isSameDay, differenceInCalendarDays } from "date-fns";
-import { ListChecks, Plus, Trash2, Check, X, ArrowRight, GripVertical, Workflow as WorkflowIcon, CircleDot, User, CalendarDays } from "lucide-react";
+import { ListChecks, Plus, Trash2, Check, X, ArrowRight, Workflow as WorkflowIcon, CircleDot, User, CalendarDays, ChevronUp, ChevronDown } from "lucide-react";
 import {
   completeStep, skipStepById, startPipeline, reassignStep, cancelPipeline,
   addStandaloneTask, completeStandaloneTask, currentUsername,
@@ -354,6 +354,7 @@ function BoardTab({
   memberName: (id: string | null) => string;
   onRefresh: () => void;
 }) {
+  const [query, setQuery] = useState("");
   const onCancel = async (id: string) => {
     const { error } = await cancelPipeline(id);
     if (error) { toast.error(error); return; }
@@ -361,13 +362,24 @@ function BoardTab({
     onRefresh();
   };
 
-  if (pipelines.length === 0) {
-    return <div className="mt-4 rounded-xl border border-dashed border-border bg-card/40 p-10 text-center text-sm text-muted-foreground">No active pipelines. Start one on the <strong>Start pipeline</strong> tab.</div>;
-  }
+  const q = query.trim().toLowerCase();
+  const filtered = pipelines.filter((p) => !q || p.title.toLowerCase().includes(q));
 
   return (
-    <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-      {pipelines.map((p) => {
+    <div className="mt-4 space-y-3">
+      {pipelines.length > 0 && (
+        <div className="flex items-center gap-2">
+          <Input className="h-9 max-w-xs" placeholder="Search pipelines…" value={query} onChange={(e) => setQuery(e.target.value)} />
+          <span className="text-[11px] text-muted-foreground">{filtered.length} of {pipelines.length}</span>
+        </div>
+      )}
+      {pipelines.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-border bg-card/40 p-10 text-center text-sm text-muted-foreground">No active pipelines. Start one on the <strong>Start pipeline</strong> tab.</div>
+      ) : filtered.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-border bg-card/40 p-10 text-center text-sm text-muted-foreground">No pipelines match “{query}”.</div>
+      ) : (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {filtered.map((p) => {
         const ps = steps.filter((s) => s.pipeline_id === p.id).sort((a, b) => a.step_order - b.step_order);
         const actives = ps.filter((s) => s.status === "active");
         const since = activeSince(p.id, steps, pipelines);
@@ -420,7 +432,9 @@ function BoardTab({
             )}
           </Card>
         );
-      })}
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -1066,6 +1080,13 @@ function TemplateDialog({ open, onOpenChange, editing, members, steps, onSaved }
   const setRow = (i: number, patch: Partial<StepDraft>) => setRows((r) => r.map((row, idx) => (idx === i ? { ...row, ...patch } : row)));
   const addRow = () => setRows((r) => [...r, { step_name: "", description: null, default_assignee_id: null }]);
   const removeRow = (i: number) => setRows((r) => r.filter((_, idx) => idx !== i));
+  const move = (i: number, dir: -1 | 1) => setRows((r) => {
+    const j = i + dir;
+    if (j < 0 || j >= r.length) return r;
+    const copy = [...r];
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+    return copy;
+  });
 
   const save = async () => {
     if (!name.trim()) { toast.error("Name is required"); return; }
@@ -1102,8 +1123,11 @@ function TemplateDialog({ open, onOpenChange, editing, members, steps, onSaved }
           <div className="space-y-2">
             <div className="flex items-center justify-between"><Label>Steps</Label><Button size="sm" variant="outline" onClick={addRow}><Plus className="mr-1 h-3.5 w-3.5" />Add</Button></div>
             {rows.map((row, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground/40" />
+              <div key={row.id ?? `new-${i}`} className="flex items-center gap-2">
+                <div className="flex shrink-0 flex-col">
+                  <button type="button" disabled={i === 0} onClick={() => move(i, -1)} className="text-muted-foreground hover:text-foreground disabled:opacity-30" title="Move up"><ChevronUp className="h-3.5 w-3.5" /></button>
+                  <button type="button" disabled={i === rows.length - 1} onClick={() => move(i, 1)} className="text-muted-foreground hover:text-foreground disabled:opacity-30" title="Move down"><ChevronDown className="h-3.5 w-3.5" /></button>
+                </div>
                 <Input className="flex-1" value={row.step_name} onChange={(e) => setRow(i, { step_name: e.target.value })} placeholder={`Step ${i + 1}`} />
                 <Select value={row.default_assignee_id ?? "none"} onValueChange={(v) => setRow(i, { default_assignee_id: v === "none" ? null : v })}>
                   <SelectTrigger className="w-[150px]"><SelectValue /></SelectTrigger>
