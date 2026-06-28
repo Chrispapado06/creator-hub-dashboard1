@@ -265,6 +265,7 @@ export async function addStandaloneTask(args: {
   assignee_id: string;
   description?: string | null;
   due_date?: string | null;
+  notify?: "now" | "batch";
 }): Promise<{ error: string | null }> {
   const caller = currentUsername();
   if (!args.title.trim()) return { error: "Title is required" };
@@ -283,7 +284,11 @@ export async function addStandaloneTask(args: {
   if (error) return { error: error.message };
 
   // Best-effort ping to the assignee across every channel they've set up.
-  await notifyChatter(data.assignee_id, `📋 **New task:** ${args.title.trim()}${args.due_date ? `  ·  📅 due ${prettyDue(args.due_date)}` : ""}`);
+  await notifyChatter(
+    data.assignee_id,
+    `📋 **New task:** ${args.title.trim()}${args.due_date ? `  ·  📅 due ${prettyDue(args.due_date)}` : ""}`,
+    { mode: args.notify ?? "now" },
+  );
   return { error: null };
 }
 

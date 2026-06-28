@@ -94,10 +94,13 @@ async function deliver(chatterId: string, content: string): Promise<void> {
 }
 
 // ── Coalescing buffer ────────────────────────────────────────────────────────
-type Pending = { contents: string[]; timer: ReturnType<typeof setTimeout> | null; firstAt: number };
+type Pending = { contents: string[]; timer: ReturnType<typeof setTimeout> | null; firstAt: number; holdUntil: number };
 const buffers = new Map<string, Pending>();
 const QUIET_MS = 8000; // flush this long after the LAST ping to a person…
 const MAX_MS = 30000; // …but never hold a ping longer than this overall.
+const BATCH_HOLD_MS = 5 * 60 * 1000; // "Hold 5 min" — let the assigner pile on more.
+
+export type NotifyMode = "now" | "batch";
 
 async function flush(chatterId: string): Promise<void> {
   const buf = buffers.get(chatterId);
@@ -108,17 +111,36 @@ async function flush(chatterId: string): Promise<void> {
 }
 
 /**
- * Queue a ping for one team member. Rapid pings to the same person within a few
- * seconds are merged into a single combined message; a lone ping flushes after a
- * short quiet window. Never throws.
+ * Queue a ping for one team member.
+ *   • mode "now"   → send right away (with anything already buffered for them).
+ *   • mode "batch" → hold up to 5 min so the assigner can add more for the same
+ *                    person; they're all sent together.
+ *   • default      → auto-coalesce: merge rapid bursts, flush after a short quiet
+ *                    window. Never throws.
  */
-export async function notifyChatter(chatterId: string | null | undefined, content: string): Promise<void> {
+export async function notifyChatter(
+  chatterId: string | null | undefined,
+  content: string,
+  opts: { mode?: NotifyMode } = {},
+): Promise<void> {
   if (!chatterId) return;
   const existing = buffers.get(chatterId);
-  const buf: Pending = existing ?? { contents: [], timer: null, firstAt: Date.now() };
+  const buf: Pending = existing ?? { contents: [], timer: null, firstAt: Date.now(), holdUntil: 0 };
   buf.contents.push(content);
   if (buf.timer) clearTimeout(buf.timer);
-  const wait = Math.max(0, Math.min(QUIET_MS, MAX_MS - (Date.now() - buf.firstAt)));
+
+  if (opts.mode === "now") {
+    buffers.set(chatterId, buf);
+    void flush(chatterId);
+    return;
+  }
+  if (opts.mode === "batch") {
+    buf.holdUntil = Math.max(buf.holdUntil, Date.now() + BATCH_HOLD_MS);
+  }
+
+  // Respect an active 5-min batch hold; otherwise the auto-coalesce window.
+  let wait = Math.max(0, Math.min(QUIET_MS, MAX_MS - (Date.now() - buf.firstAt)));
+  if (buf.holdUntil > Date.now()) wait = buf.holdUntil - Date.now();
   buf.timer = setTimeout(() => { void flush(chatterId); }, wait);
   buffers.set(chatterId, buf);
 }

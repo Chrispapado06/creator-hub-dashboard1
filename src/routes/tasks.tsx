@@ -684,7 +684,7 @@ function RecurringManager({ members, onChanged }: { members: TeamMember[]; onCha
   );
 }
 
-const emptyTaskForm = (assignee: string) => ({ title: "", assignee_id: assignee, due: null as Date | null, description: "", repeat: "0", customDays: 7 });
+const emptyTaskForm = (assignee: string) => ({ title: "", assignee_id: assignee, due: null as Date | null, description: "", repeat: "0", customDays: 7, notify: "now" as "now" | "batch" });
 
 function AddTaskDialog({ members, defaultAssigneeId, onAdded, selfLabel }: { members: TeamMember[]; defaultAssigneeId?: string; onAdded: () => void; selfLabel?: string }) {
   const [open, setOpen] = useState(false);
@@ -708,9 +708,9 @@ function AddTaskDialog({ members, defaultAssigneeId, onAdded, selfLabel }: { mem
       await generateDueRecurringTasks();
       toast.success("Repeating task created");
     } else {
-      const { error } = await addStandaloneTask({ title: f.title, assignee_id: f.assignee_id, due_date: dueStr, description: f.description || null });
+      const { error } = await addStandaloneTask({ title: f.title, assignee_id: f.assignee_id, due_date: dueStr, description: f.description || null, notify: f.notify });
       if (error) { setSaving(false); toast.error(error); return; }
-      toast.success("Task added");
+      toast.success(f.notify === "batch" ? "Task added — notification held 5 min" : "Task added");
     }
     setSaving(false);
     setOpen(false);
@@ -762,6 +762,16 @@ function AddTaskDialog({ members, defaultAssigneeId, onAdded, selfLabel }: { mem
             <p className="text-[11px] text-muted-foreground">A fresh task is created {interval === 1 ? "every day" : interval === 7 ? "every week" : `every ${interval} days`}, starting on the date above (or today if blank). Manage or stop it from Start → Repeating tasks.</p>
           )}
           <div className="grid gap-1.5"><Label>Notes</Label><Textarea value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} rows={2} /></div>
+          {!repeats && (
+            <div className="grid gap-1.5">
+              <Label>Notify them</Label>
+              <div className="inline-flex w-fit rounded-lg border border-border p-0.5 text-xs">
+                <button type="button" onClick={() => setF({ ...f, notify: "now" })} className={`rounded-md px-3 py-1 transition-colors ${f.notify === "now" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>Send now</button>
+                <button type="button" onClick={() => setF({ ...f, notify: "batch" })} className={`rounded-md px-3 py-1 transition-colors ${f.notify === "batch" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>Hold 5 min</button>
+              </div>
+              <p className="text-[11px] text-muted-foreground">{f.notify === "batch" ? "Held 5 minutes so you can add more tasks for this person — then sent together as one message. Adding a “Send now” task to them sends it all immediately." : "Pings them right away."}</p>
+            </div>
+          )}
         </div>
         <DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button><Button onClick={save} disabled={saving}>{saving ? "Saving…" : repeats ? "Create repeating task" : "Add task"}</Button></DialogFooter>
       </DialogContent>
