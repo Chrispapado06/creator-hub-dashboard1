@@ -155,10 +155,18 @@ export default async function handler(req, res) {
     // chatter with a channel, ANY status, even people with no current tasks — so
     // nobody (e.g. Luca) gets missed.
     let purged = 0;
+    const purgeDetail = [];
     if (clean && botId) {
-      const withChan = await sbGet("chatters?discord_channel_id=not.is.null&select=discord_channel_id").catch(() => []);
-      const channels = [...new Set((withChan || []).map((c) => c.discord_channel_id).filter(Boolean))];
-      for (const ch of channels) purged += await purgeBotMessages(ch, botId);
+      const withChan = await sbGet("chatters?discord_channel_id=not.is.null&select=name,discord_channel_id").catch(() => []);
+      const seen = new Set();
+      for (const c of (withChan || [])) {
+        const ch = c.discord_channel_id;
+        if (!ch || seen.has(ch)) continue;
+        seen.add(ch);
+        const n = await purgeBotMessages(ch, botId);
+        purged += n;
+        purgeDetail.push({ name: c.name, channel: ch, purged: n });
+      }
     }
 
     let sent = 0, empty = 0, skipped = 0;
@@ -197,7 +205,7 @@ export default async function handler(req, res) {
       }
     }
 
-    return res.status(200).json({ ok: true, day: today, clean, purged, sent, empty, skipped, warnings });
+    return res.status(200).json({ ok: true, day: today, clean, purged, purgeDetail, sent, empty, skipped, warnings });
   } catch (e) {
     console.error("[discord-digest]", e && e.message);
     return res.status(200).json({ ok: false, error: String((e && e.message) || e) });
