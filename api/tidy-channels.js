@@ -15,12 +15,14 @@ const CRON_SECRET = process.env.CRON_SECRET;
 async function isAdmin(username) {
   if (!username || !SB_URL || !SB_KEY) return false;
   const u = encodeURIComponent(username);
-  const r = await fetch(`${SB_URL}/rest/v1/access_codes?username=eq.${u}&account_type=eq.admin&select=id`, {
+  const r = await fetch(`${SB_URL}/rest/v1/access_codes?username=eq.${u}&select=account_type,active`, {
     headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` },
   });
   if (!r.ok) return false;
   const rows = await r.json().catch(() => []);
-  return Array.isArray(rows) && rows.length > 0;
+  // Admin = any non-staff account (matches the app's `account_type ?? "admin"`,
+  // so a NULL account_type — e.g. the owner — counts as admin).
+  return Array.isArray(rows) && rows.some((x) => x && x.account_type !== "staff" && x.active !== false);
 }
 
 export default async function handler(req, res) {
@@ -31,8 +33,11 @@ export default async function handler(req, res) {
   if (typeof body === "string") { try { body = JSON.parse(body); } catch { body = {}; } }
   const username = body && body.username ? String(body.username) : "";
 
+  if (!username) {
+    return res.status(401).json({ ok: false, error: "no username in session — sign out and back in" });
+  }
   if (!(await isAdmin(username))) {
-    return res.status(401).json({ ok: false, error: "admin only" });
+    return res.status(401).json({ ok: false, error: `not recognised as an admin (user: ${username})` });
   }
 
   const host = req.headers.host;
