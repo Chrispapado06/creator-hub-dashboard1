@@ -34,6 +34,7 @@ import { Route as FinancialsRouteImport } from './routes/financials'
 import { Route as RedditAirtableRouteImport } from './routes/reddit-airtable'
 import { Route as RedditScorerRouteImport } from './routes/reddit-scorer'
 import { Route as TasksRouteImport } from './routes/tasks'
+import { Route as ContentRouteImport } from './routes/content'
 import { Route as PSlugRouteImport } from './routes/p.$slug'
 import { Route as CreatorsCreatorIdRouteImport } from './routes/creators.$creatorId'
 
@@ -105,6 +106,11 @@ const RedditScorerRoute = RedditScorerRouteImport.update({
 const TasksRoute = TasksRouteImport.update({
   id: '/tasks',
   path: '/tasks',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ContentRoute = ContentRouteImport.update({
+  id: '/content',
+  path: '/content',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PSlugRoute = PSlugRouteImport.update({
@@ -199,6 +205,7 @@ export interface FileRoutesByFullPath {
   '/reddit-airtable': typeof RedditAirtableRoute
   '/reddit-scorer': typeof RedditScorerRoute
   '/tasks': typeof TasksRoute
+  '/content': typeof ContentRoute
   '/p/$slug': typeof PSlugRoute
   '/creators/$creatorId': typeof CreatorsCreatorIdRoute
 }
@@ -228,6 +235,7 @@ export interface FileRoutesByTo {
   '/reddit-airtable': typeof RedditAirtableRoute
   '/reddit-scorer': typeof RedditScorerRoute
   '/tasks': typeof TasksRoute
+  '/content': typeof ContentRoute
   '/p/$slug': typeof PSlugRoute
   '/creators/$creatorId': typeof CreatorsCreatorIdRoute
 }
@@ -258,6 +266,7 @@ export interface FileRoutesById {
   '/reddit-airtable': typeof RedditAirtableRoute
   '/reddit-scorer': typeof RedditScorerRoute
   '/tasks': typeof TasksRoute
+  '/content': typeof ContentRoute
   '/p/$slug': typeof PSlugRoute
   '/creators/$creatorId': typeof CreatorsCreatorIdRoute
 }
@@ -289,6 +298,7 @@ export interface FileRouteTypes {
     | '/reddit-airtable'
     | '/reddit-scorer'
     | '/tasks'
+    | '/content'
     | '/p/$slug'
     | '/creators/$creatorId'
   fileRoutesByTo: FileRoutesByTo
@@ -318,6 +328,7 @@ export interface FileRouteTypes {
     | '/reddit-airtable'
     | '/reddit-scorer'
     | '/tasks'
+    | '/content'
     | '/p/$slug'
     | '/creators/$creatorId'
   id:
@@ -347,6 +358,7 @@ export interface FileRouteTypes {
     | '/reddit-airtable'
     | '/reddit-scorer'
     | '/tasks'
+    | '/content'
     | '/p/$slug'
     | '/creators/$creatorId'
   fileRoutesById: FileRoutesById
@@ -377,6 +389,7 @@ export interface RootRouteChildren {
   RedditAirtableRoute: typeof RedditAirtableRoute
   RedditScorerRoute: typeof RedditScorerRoute
   TasksRoute: typeof TasksRoute
+  ContentRoute: typeof ContentRoute
   PSlugRoute: typeof PSlugRoute
   CreatorsCreatorIdRoute: typeof CreatorsCreatorIdRoute
 }
@@ -558,6 +571,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TasksRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/content': {
+      id: '/content'
+      path: '/content'
+      fullPath: '/content'
+      preLoaderRoute: typeof ContentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/p/$slug': {
       id: '/p/$slug'
       path: '/p/$slug'
@@ -601,6 +621,7 @@ const rootRouteChildren: RootRouteChildren = {
   RedditAirtableRoute: RedditAirtableRoute,
   RedditScorerRoute: RedditScorerRoute,
   TasksRoute: TasksRoute,
+  ContentRoute: ContentRoute,
   PSlugRoute: PSlugRoute,
   CreatorsCreatorIdRoute: CreatorsCreatorIdRoute,
 }

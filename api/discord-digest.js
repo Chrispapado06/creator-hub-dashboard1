@@ -31,6 +31,13 @@ function shiftDate(dateStr, deltaDays) {
   d.setUTCDate(d.getUTCDate() + deltaDays);
   return d.toISOString().slice(0, 10);
 }
+function mondayOf(dateStr) {
+  const d = new Date(`${String(dateStr).slice(0, 10)}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); // 0=Sun..6=Sat → days since Monday
+  return d.toISOString().slice(0, 10);
+}
+function isMonday(dateStr) { return new Date(`${String(dateStr).slice(0, 10)}T00:00:00Z`).getUTCDay() === 1; }
+function daysBetween(a, b) { return Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86400000); }
 
 async function dapi(path, init) {
   return fetch(`https://discord.com/api/v10${path}`, {
@@ -97,6 +104,17 @@ async function sbRpc(fn, args) {
   });
   if (!r.ok) throw new Error(`supabase rpc ${fn} ${r.status}: ${(await r.text().catch(() => "")).slice(0, 160)}`);
   return r.json().catch(() => null);
+}
+
+async function sbWrite(method, path, body) {
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/${path}`, {
+      method,
+      headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify(body),
+    });
+    return r.ok;
+  } catch { return false; }
 }
 
 // One-shot tidy: delete the BOT'S OWN recent messages in a channel (e.g. the old
@@ -196,6 +214,38 @@ export default async function handler(req, res) {
       }
     } catch (e) { console.error("[discord-digest] reminders:", e && e.message); }
 
+    // Content tracker nudges (state-driven): Gly bumps 'requested' (re-nudged
+    // every 4 days), Finlay+Luca QC 'received', Luca pays last week's
+    // uploaded-but-unpaid on Mondays. Wrapped: a pre-migration DB yields nothing.
+    const CONTENT_CREATORS = ["Rosario", "Antonella", "Nicole"];
+    const contentBy = {};
+    try {
+      const findId = (needle) => (chatters.find((c) => (c.name || "").toLowerCase().includes(needle)) || {}).id;
+      const glyId = findId("gly"), lucaId = findId("luca"), finId = findId("finlay");
+      const push = (id, text) => { if (id) (contentBy[id] = contentBy[id] || []).push(text); };
+      const weekStart = mondayOf(today);
+      let rows = await sbGet(`content_tracker?week_start=eq.${weekStart}&select=creator,stage,pay_status,last_bumped`);
+      // Seed this week's default creators if missing, so bumps fire from Monday.
+      const have = new Set((rows || []).map((r) => r.creator));
+      const seed = CONTENT_CREATORS.filter((c) => !have.has(c));
+      if (seed.length) {
+        await sbWrite("POST", "content_tracker", seed.map((c) => ({ creator: c, week_start: weekStart })));
+        rows = await sbGet(`content_tracker?week_start=eq.${weekStart}&select=creator,stage,pay_status,last_bumped`);
+      }
+      for (const r of (rows || [])) {
+        if (r.stage === "requested" && glyId && (!r.last_bumped || daysBetween(r.last_bumped, today) >= 4)) {
+          push(glyId, `Bump **${r.creator}** — content not in yet`);
+          await sbWrite("PATCH", `content_tracker?creator=eq.${encodeURIComponent(r.creator)}&week_start=eq.${weekStart}`, { last_bumped: today });
+        }
+        if (r.stage === "received") { push(finId, `Quality-check **${r.creator}**'s content`); push(lucaId, `Quality-check **${r.creator}**'s content`); }
+      }
+      if (isMonday(today)) {
+        const lastWeek = shiftDate(weekStart, -7);
+        const payRows = await sbGet(`content_tracker?week_start=eq.${lastWeek}&stage=eq.uploaded&pay_status=eq.unpaid&select=creator`);
+        for (const r of (payRows || [])) push(lucaId, `💸 Pay **${r.creator}** for last week`);
+      }
+    } catch (e) { console.error("[discord-digest] content:", e && e.message); }
+
     let sent = 0, empty = 0, skipped = 0;
     const warnings = [];
     for (const c of chatters) {
@@ -203,7 +253,8 @@ export default async function handler(req, res) {
       const ms = stepsBy[c.id] || [];
       const mt = tasksBy[c.id] || [];
       const mr = remindersBy[c.id] || [];
-      if (ms.length + mt.length + mr.length === 0) { empty++; continue; }
+      const mc = contentBy[c.id] || [];
+      if (ms.length + mt.length + mr.length + mc.length === 0) { empty++; continue; }
 
       const dateLabel = new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
       const total = ms.length + mt.length;
@@ -216,6 +267,10 @@ export default async function handler(req, res) {
       if (mt.length) {
         msg += `\n### 📋 To-do (${mt.length})\n` +
           mt.map((t) => `- ${t.title}${t.due_date ? ` · _due ${prettyDate(t.due_date)}_` : ""}`).join("\n") + "\n";
+      }
+      if (mc.length) {
+        msg += `\n### 🎬 Content\n` +
+          mc.map((x) => `- ${x}`).join("\n") + "\n";
       }
       if (mr.length) {
         msg += `\n### ⏰ Coming up\n` +
