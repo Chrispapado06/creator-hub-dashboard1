@@ -116,7 +116,7 @@ function CreatorPortal() {
     if (error) { setBusy(null); toast.error(error.message); return; }
     // Uploading marks it "received" → triggers the QC reminder to Finlay + Luca.
     const nextStage = row.stage === "requested" ? "received" : row.stage;
-    await sb.from("content_tracker").update({ file_path: path, file_name: file.name, stage: nextStage, updated_at: new Date().toISOString() }).eq("id", row.id);
+    await sb.from("content_tracker").update({ file_path: path, file_name: file.name, stage: nextStage, uploaded_by: "creator", uploaded_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", row.id);
     setBusy(null);
     setRows((rs) => rs.map((r) => (r.id === row.id ? { ...r, file_path: path, file_name: file.name, stage: nextStage } : r)));
     toast.success(lang === "es" ? "¡Subido!" : "Uploaded!");
