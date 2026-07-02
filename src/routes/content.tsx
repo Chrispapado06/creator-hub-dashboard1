@@ -118,7 +118,7 @@ function ContentPage() {
       <div className="mb-6 flex items-center gap-3">
         <FileText className="h-7 w-7 text-primary" />
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Content</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Salary Creators</h1>
           <p className="text-sm text-muted-foreground">Weekly content per creator — request → receive → QC → upload → pay. No more floating docs.</p>
         </div>
       </div>
