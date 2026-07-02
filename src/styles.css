@@ -1,7 +1,7 @@
 @import "tailwindcss" source(none);
 @source "../src";
 @import "tw-animate-css";
-@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap");
 
 @custom-variant dark (&:is(.dark *));
 
@@ -161,13 +161,13 @@
   }
 
   html {
-    font-family: 'Fraunces', Georgia, 'Times New Roman', serif;
+    font-family: 'Poppins', system-ui, -apple-system, sans-serif;
   }
 
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
-    font-family: 'Fraunces', Georgia, 'Times New Roman', serif;
+    font-family: 'Poppins', system-ui, -apple-system, sans-serif;
     font-feature-settings: "kern", "liga", "calt";
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
