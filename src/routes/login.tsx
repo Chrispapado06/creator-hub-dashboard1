@@ -8,7 +8,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
 import {
   LockKeyhole, Eye, EyeOff, ShieldCheck, Headset, ArrowRight,
-  ArrowLeft, Sparkles, Loader2,
+  ArrowLeft, Sparkles, Loader2, Camera,
 } from "lucide-react";
 import { logAudit } from "@/lib/audit";
 
@@ -17,7 +17,7 @@ export const Route = createFileRoute("/login")({
   component: LoginPage,
 });
 
-type Portal = "admin" | "staff";
+type Portal = "admin" | "staff" | "creator";
 
 const PORTALS: Record<Portal, {
   title: string;
@@ -44,6 +44,14 @@ const PORTALS: Record<Portal, {
     icon: <Headset className="h-7 w-7" />,
     chip: "from-cyan-500 to-sky-400",
     glow: "oklch(0.72 0.13 220 / 0.35)",
+  },
+  creator: {
+    title: "Creator Portal",
+    tagline: "Your weekly content",
+    bullets: ["This week's brief", "Upload your content", "English / Español"],
+    icon: <Camera className="h-7 w-7" />,
+    chip: "from-pink-500 to-rose-400",
+    glow: "oklch(0.7 0.16 12 / 0.35)",
   },
 };
 
@@ -85,7 +93,7 @@ function LoginPage() {
     setLoading(true);
     const { data, error } = await supabase
       .from("access_codes")
-      .select("id, username, password, active, account_type, chatter_id, allowed_pages")
+      .select("id, username, password, active, account_type, chatter_id, allowed_pages, label")
       .eq("username", u)
       .eq("password", p)
       .eq("active", true)
@@ -95,16 +103,12 @@ function LoginPage() {
       fail("Invalid username or password.");
       return;
     }
-    // The chosen portal must match the account's actual type — admins
-    // can't slip into the staff portal and vice versa. This keeps the
-    // post-login redirect (and the route guards) predictable.
-    const accountType = data.account_type ?? "admin";
-    if (portal === "staff" && accountType !== "staff") {
-      fail("This is an admin account — go back and use Admin Console.");
-      return;
-    }
-    if (portal === "admin" && accountType === "staff") {
-      fail("This is a staff account — go back and use Staff Portal.");
+    // The chosen portal must match the account's actual type, so the redirect
+    // and route guards stay predictable. (null account_type = legacy admin.)
+    const accountType: string = (data.account_type as string | null) ?? "admin";
+    if (portal !== accountType) {
+      const nice = accountType === "staff" ? "Staff Portal" : accountType === "creator" ? "Creator Portal" : "Admin Console";
+      fail(`This account belongs to the ${nice} — go back and pick that.`);
       return;
     }
     const session = JSON.stringify({
@@ -112,16 +116,17 @@ function LoginPage() {
       type: accountType,
       chatter_id: data.chatter_id ?? null,
       allowed_pages: (data as { allowed_pages?: string[] | null }).allowed_pages ?? null,
+      creator_name: accountType === "creator" ? ((data as { label?: string | null }).label ?? data.username) : null,
     });
     localStorage.setItem("agency_session", session);
     void logAudit({
       action: "login",
       entity_type: "session",
       entity_name: data.username,
-      details: accountType === "staff" ? "staff portal" : "admin",
+      details: `${accountType} portal`,
     });
     window.dispatchEvent(new Event("agency-auth-changed"));
-    navigate({ to: accountType === "staff" ? "/clock" : "/" });
+    navigate({ to: accountType === "staff" ? "/clock" : accountType === "creator" ? "/portal" : "/" });
   };
 
   const active = portal ? PORTALS[portal] : null;
@@ -267,7 +272,7 @@ function LoginPage() {
 
               <div className="flex items-center gap-3 mb-6">
                 <div className={`h-10 w-10 rounded-xl bg-gradient-to-br ${active!.chip} text-white flex items-center justify-center login-pop`}>
-                  {portal === "admin" ? <ShieldCheck className="h-5 w-5" /> : <Headset className="h-5 w-5" />}
+                  {portal === "admin" ? <ShieldCheck className="h-5 w-5" /> : portal === "staff" ? <Headset className="h-5 w-5" /> : <Camera className="h-5 w-5" />}
                 </div>
                 <div>
                   <div className="text-sm font-bold tracking-tight">{active!.title}</div>

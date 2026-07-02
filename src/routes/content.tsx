@@ -34,6 +34,7 @@ type Row = {
   creator: string;
   week_start: string;
   stage: string;
+  requirements: string | null;
   doc_link: string | null;
   file_path: string | null;
   file_name: string | null;
@@ -147,6 +148,7 @@ function ContentPage() {
               <tr className="border-b border-border text-left text-xs text-muted-foreground">
                 <th className="p-3 font-medium">Creator</th>
                 <th className="p-3 font-medium">Stage</th>
+                <th className="p-3 font-medium">Brief (creator sees)</th>
                 <th className="p-3 font-medium">Doc / file</th>
                 <th className="p-3 font-medium">Pay</th>
                 <th className="p-3 font-medium">Notes</th>
@@ -155,7 +157,7 @@ function ContentPage() {
             </thead>
             <tbody>
               {rows.length === 0 ? (
-                <tr><td colSpan={6} className="p-6 text-center text-muted-foreground">No creators for this week yet — add one below.</td></tr>
+                <tr><td colSpan={7} className="p-6 text-center text-muted-foreground">No creators for this week yet — add one below.</td></tr>
               ) : rows.map((row) => (
                 <tr key={row.id} className="border-b border-border/60 align-top">
                   <td className="p-3 font-medium">{row.creator}</td>
@@ -177,6 +179,17 @@ function ContentPage() {
                         );
                       })}
                     </div>
+                  </td>
+
+                  {/* Brief — shown to the creator on their portal */}
+                  <td className="min-w-[200px] p-3">
+                    <textarea
+                      className="w-full resize-y rounded-md border border-border bg-transparent p-2 text-xs"
+                      rows={2}
+                      placeholder="What to send this week…"
+                      defaultValue={row.requirements ?? ""}
+                      onBlur={(e) => { if ((e.target.value || "") !== (row.requirements ?? "")) patch(row, { requirements: e.target.value.trim() || null }); }}
+                    />
                   </td>
 
                   {/* Doc: link + file */}
@@ -250,6 +263,57 @@ function ContentPage() {
       <p className="mt-4 text-xs text-muted-foreground">
         Reminders (via the 8am digest): <strong>Gly</strong> is nudged to bump any creator still on <em>Requested</em> (every ~4 days) · <strong>Finlay + Luca</strong> to QC anyone on <em>Received</em> · <strong>Luca</strong> every <strong>Monday</strong> to pay last week's uploaded-but-unpaid creators.
       </p>
+
+      <CreatorLogins creators={Array.from(new Set([...DEFAULT_CREATORS, ...rows.map((r) => r.creator)]))} />
     </div>
+  );
+}
+
+function CreatorLogins({ creators }: { creators: string[] }) {
+  const [logins, setLogins] = useState<Array<{ id: string; username: string; label: string | null }>>([]);
+  const [form, setForm] = useState<Record<string, { u: string; p: string }>>({});
+
+  const load = async () => {
+    const { data } = await sb.from("access_codes").select("id, username, label").eq("account_type", "creator");
+    setLogins((data ?? []) as Array<{ id: string; username: string; label: string | null }>);
+  };
+  useEffect(() => { load(); }, []);
+
+  const loginFor = (name: string) => logins.find((l) => (l.label ?? "").toLowerCase() === name.toLowerCase());
+  const create = async (name: string) => {
+    const f = form[name] || { u: "", p: "" };
+    if (!f.u.trim() || !f.p.trim()) { toast.error("Username and password required"); return; }
+    const { error } = await sb.from("access_codes").insert({ username: f.u.trim(), password: f.p, label: name, account_type: "creator", active: true });
+    if (error) { toast.error(error.message); return; }
+    toast.success(`Login created for ${name}`);
+    setForm((s) => ({ ...s, [name]: { u: "", p: "" } }));
+    load();
+  };
+
+  return (
+    <Card className="mt-4 p-5">
+      <h3 className="mb-1 text-sm font-semibold">Creator logins</h3>
+      <p className="mb-3 text-xs text-muted-foreground">Give each creator a login for their portal (they see their brief + upload their content, in English or Español). They sign in via the <strong>Creator Portal</strong> option on the login page.</p>
+      <div className="space-y-2">
+        {creators.map((name) => {
+          const l = loginFor(name);
+          const f = form[name] || { u: "", p: "" };
+          return (
+            <div key={name} className="flex flex-wrap items-center gap-2 rounded-lg border border-border p-2.5 text-sm">
+              <span className="w-24 shrink-0 font-medium">{name}</span>
+              {l ? (
+                <span className="text-xs text-success">✓ login: <span className="font-mono">{l.username}</span></span>
+              ) : (
+                <>
+                  <Input className="h-8 w-32 text-xs" placeholder="username" value={f.u} onChange={(e) => setForm((s) => ({ ...s, [name]: { ...f, u: e.target.value } }))} />
+                  <Input className="h-8 w-32 text-xs" placeholder="password" value={f.p} onChange={(e) => setForm((s) => ({ ...s, [name]: { ...f, p: e.target.value } }))} />
+                  <Button size="sm" variant="outline" onClick={() => create(name)}>Create login</Button>
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </Card>
   );
 }

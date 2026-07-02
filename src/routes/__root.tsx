@@ -24,9 +24,10 @@ type AgencySettings = {
 
 type SessionData = {
   username: string;
-  type: "admin" | "staff";
+  type: "admin" | "staff" | "creator";
   chatter_id: string | null;
   allowed_pages: string[] | null;
+  creator_name: string | null;
 };
 
 function AgencyLogoBadge({ url, name }: { url: string | null; name: string }) {
@@ -54,15 +55,16 @@ const parseSession = (raw: string | null): SessionData | null => {
     if (obj && typeof obj === "object" && obj.username) {
       return {
         username: obj.username,
-        type: obj.type === "staff" ? "staff" : "admin",
+        type: obj.type === "staff" ? "staff" : obj.type === "creator" ? "creator" : "admin",
         chatter_id: obj.chatter_id ?? null,
         // null = unrestricted (super admin); array = restricted to those page slugs
         allowed_pages: Array.isArray(obj.allowed_pages) ? obj.allowed_pages : null,
+        creator_name: obj.creator_name ?? null,
       };
     }
   } catch {
     // Legacy: plain-string session = admin with full access
-    return { username: raw, type: "admin", chatter_id: null, allowed_pages: null };
+    return { username: raw, type: "admin", chatter_id: null, allowed_pages: null, creator_name: null };
   }
   return null;
 };
@@ -407,7 +409,11 @@ function RootComponent() {
       navigate({ to: "/login" });
     }
     if (authed === true && location.pathname === "/login") {
-      navigate({ to: session?.type === "staff" ? "/clock" : "/" });
+      navigate({ to: session?.type === "staff" ? "/clock" : session?.type === "creator" ? "/portal" : "/" });
+    }
+    // Creators only ever see their own portal.
+    if (authed === true && session?.type === "creator" && location.pathname !== "/portal" && location.pathname !== "/login") {
+      navigate({ to: "/portal" });
     }
     // Staff are restricted to the routes they need: /clock for shifts and
     // /chat for team comms. Anywhere else (admin pages, settings, etc)
@@ -453,6 +459,12 @@ function RootComponent() {
   }
 
   if (!authed) return null;
+
+  // Creator portal: fully standalone (no dashboard chrome) — the /portal page
+  // renders its own header + language toggle.
+  if (session?.type === "creator") {
+    return <Outlet />;
+  }
 
   // Staff portal: thin top nav (Clock / Chat tabs + sign-out) above
   // the page content. No admin sidebar — staff only see what they
