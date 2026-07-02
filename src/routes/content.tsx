@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
 import { format, startOfWeek, addWeeks } from "date-fns";
-import { FileText, ChevronLeft, ChevronRight, Upload, Download, Plus, Check } from "lucide-react";
+import { FileText, ChevronLeft, ChevronRight, Upload, Download, Plus, ChevronDown, KeyRound } from "lucide-react";
 
 export const Route = createFileRoute("/content")({ component: ContentPage });
 
@@ -140,118 +140,103 @@ function ContentPage() {
       </div>
 
       {loading ? (
-        <div className="h-64 animate-pulse rounded-xl border border-border bg-card/60" />
+        <div className="grid gap-4 md:grid-cols-2"><div className="h-72 animate-pulse rounded-xl border border-border bg-card/60" /><div className="h-72 animate-pulse rounded-xl border border-border bg-card/60" /></div>
+      ) : rows.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-border bg-card/40 p-10 text-center text-sm text-muted-foreground">No creators for this week yet — add one below.</div>
       ) : (
-        <Card className="overflow-x-auto">
-          <table className="w-full min-w-[860px] text-sm">
-            <thead>
-              <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                <th className="p-3 font-medium">Creator</th>
-                <th className="p-3 font-medium">Stage</th>
-                <th className="p-3 font-medium">Brief (creator sees)</th>
-                <th className="p-3 font-medium">Doc / file</th>
-                <th className="p-3 font-medium">Pay</th>
-                <th className="p-3 font-medium">Notes</th>
-                <th className="p-3"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.length === 0 ? (
-                <tr><td colSpan={7} className="p-6 text-center text-muted-foreground">No creators for this week yet — add one below.</td></tr>
-              ) : rows.map((row) => (
-                <tr key={row.id} className="border-b border-border/60 align-top">
-                  <td className="p-3 font-medium">{row.creator}</td>
+        <div className="grid gap-4 md:grid-cols-2">
+          {rows.map((row) => (
+            <Card key={row.id} className="flex flex-col gap-4 p-5">
+              {/* Header */}
+              <div className="flex items-center justify-between">
+                <div className="text-lg font-semibold">{row.creator}</div>
+                <button onClick={() => removeRow(row)} className="text-xs text-muted-foreground hover:text-destructive">Remove</button>
+              </div>
 
-                  {/* Stage pills */}
-                  <td className="p-3">
-                    <div className="flex flex-wrap gap-1">
-                      {STAGES.map((s, i) => {
-                        const active = row.stage === s.v;
-                        const done = i < stageIdx(row.stage);
-                        return (
-                          <button
-                            key={s.v}
-                            onClick={() => patch(row, { stage: s.v })}
-                            className={`rounded-full border px-2 py-0.5 text-[11px] transition-colors ${active ? "border-primary bg-primary text-primary-foreground" : done ? "border-success/40 bg-success/10 text-success" : "border-border text-muted-foreground hover:text-foreground"}`}
-                          >
-                            {done && <Check className="mr-0.5 inline h-3 w-3" />}{s.label}
-                          </button>
-                        );
-                      })}
+              {/* Stage stepper */}
+              <div>
+                <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Stage</div>
+                <div className="flex gap-1">
+                  {STAGES.map((s, i) => {
+                    const active = row.stage === s.v;
+                    const done = i < stageIdx(row.stage);
+                    return (
+                      <button key={s.v} onClick={() => patch(row, { stage: s.v })}
+                        className={`flex-1 rounded-md py-1.5 text-[11px] font-medium transition-colors ${active ? "bg-primary text-primary-foreground" : done ? "bg-success/15 text-success" : "bg-muted text-muted-foreground hover:text-foreground"}`}>
+                        {done ? "✓ " : ""}{s.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Brief — the creator sees this */}
+              <div>
+                <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Brief — the creator sees this</div>
+                <textarea
+                  className="w-full resize-y rounded-lg border border-border bg-transparent p-2.5 text-sm"
+                  rows={2}
+                  placeholder="e.g. 5 photos, 2 videos this week…"
+                  defaultValue={row.requirements ?? ""}
+                  onBlur={(e) => { if ((e.target.value || "") !== (row.requirements ?? "")) patch(row, { requirements: e.target.value.trim() || null }); }}
+                />
+              </div>
+
+              {/* Content + Pay */}
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Content</div>
+                  <Input
+                    className="mb-2 h-9 text-sm"
+                    placeholder="Paste a Drive/Docs link…"
+                    defaultValue={row.doc_link ?? ""}
+                    onBlur={(e) => { if ((e.target.value || "") !== (row.doc_link ?? "")) patch(row, { doc_link: e.target.value.trim() || null }); }}
+                  />
+                  {row.file_path ? (
+                    <div className="flex items-center gap-2 text-sm">
+                      <button onClick={() => download(row)} className="flex items-center gap-1 text-primary hover:underline"><Download className="h-3.5 w-3.5" />{row.file_name ?? "file"}</button>
+                      <button onClick={() => patch(row, { file_path: null, file_name: null })} className="text-muted-foreground hover:text-destructive">×</button>
                     </div>
-                  </td>
-
-                  {/* Brief — shown to the creator on their portal */}
-                  <td className="min-w-[200px] p-3">
-                    <textarea
-                      className="w-full resize-y rounded-md border border-border bg-transparent p-2 text-xs"
-                      rows={2}
-                      placeholder="What to send this week…"
-                      defaultValue={row.requirements ?? ""}
-                      onBlur={(e) => { if ((e.target.value || "") !== (row.requirements ?? "")) patch(row, { requirements: e.target.value.trim() || null }); }}
-                    />
-                  </td>
-
-                  {/* Doc: link + file */}
-                  <td className="min-w-[220px] p-3">
-                    <Input
-                      className="mb-1.5 h-8 text-xs"
-                      placeholder="Paste a Drive/Docs link…"
-                      defaultValue={row.doc_link ?? ""}
-                      onBlur={(e) => { if ((e.target.value || "") !== (row.doc_link ?? "")) patch(row, { doc_link: e.target.value.trim() || null }); }}
-                    />
-                    <div className="flex items-center gap-2 text-xs">
-                      {row.file_path ? (
-                        <button onClick={() => download(row)} className="flex items-center gap-1 text-primary hover:underline"><Download className="h-3 w-3" />{row.file_name ?? "file"}</button>
-                      ) : (
-                        <label className="flex cursor-pointer items-center gap-1 text-muted-foreground hover:text-foreground">
-                          <Upload className="h-3 w-3" />{busy === row.id ? "Uploading…" : "Upload file"}
-                          <input type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(row, f); e.target.value = ""; }} />
-                        </label>
-                      )}
-                      {row.file_path && (
-                        <button onClick={() => patch(row, { file_path: null, file_name: null })} className="text-muted-foreground hover:text-destructive">×</button>
-                      )}
-                    </div>
-                  </td>
-
-                  {/* Pay */}
-                  <td className="p-3">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-muted-foreground">$</span>
+                  ) : (
+                    <label className="flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-dashed border-border py-2 text-sm text-muted-foreground hover:border-primary/40 hover:text-foreground">
+                      <Upload className="h-3.5 w-3.5" />{busy === row.id ? "Uploading…" : "Upload file"}
+                      <input type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(row, f); e.target.value = ""; }} />
+                    </label>
+                  )}
+                </div>
+                <div>
+                  <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Pay</div>
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">$</span>
                       <Input
-                        className="h-8 w-20 text-xs"
+                        className="h-9 pl-6 text-sm"
                         type="number"
+                        placeholder="0"
                         defaultValue={row.pay_amount ?? ""}
                         onBlur={(e) => { const v = e.target.value === "" ? null : Number(e.target.value); if (v !== row.pay_amount) patch(row, { pay_amount: v }); }}
                       />
                     </div>
                     <button
                       onClick={() => patch(row, { pay_status: row.pay_status === "paid" ? "unpaid" : "paid" })}
-                      className={`mt-1 rounded-full border px-2 py-0.5 text-[11px] ${row.pay_status === "paid" ? "border-success/40 bg-success/10 text-success" : "border-border text-muted-foreground hover:text-foreground"}`}
+                      className={`shrink-0 rounded-lg border px-3 py-2 text-xs font-medium ${row.pay_status === "paid" ? "border-success/40 bg-success/10 text-success" : "border-border text-muted-foreground hover:text-foreground"}`}
                     >
                       {row.pay_status === "paid" ? "✓ Paid" : "Mark paid"}
                     </button>
-                  </td>
+                  </div>
+                </div>
+              </div>
 
-                  {/* Notes */}
-                  <td className="min-w-[160px] p-3">
-                    <Input
-                      className="h-8 text-xs"
-                      placeholder="Notes…"
-                      defaultValue={row.notes ?? ""}
-                      onBlur={(e) => { if ((e.target.value || "") !== (row.notes ?? "")) patch(row, { notes: e.target.value.trim() || null }); }}
-                    />
-                  </td>
-
-                  <td className="p-3">
-                    <button onClick={() => removeRow(row)} className="text-muted-foreground hover:text-destructive" title="Remove from this week">×</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
+              {/* Notes */}
+              <Input
+                className="h-9 text-sm"
+                placeholder="Internal notes (optional)…"
+                defaultValue={row.notes ?? ""}
+                onBlur={(e) => { if ((e.target.value || "") !== (row.notes ?? "")) patch(row, { notes: e.target.value.trim() || null }); }}
+              />
+            </Card>
+          ))}
+        </div>
       )}
 
       {/* Add creator */}
@@ -272,6 +257,7 @@ function ContentPage() {
 function CreatorLogins({ creators }: { creators: string[] }) {
   const [logins, setLogins] = useState<Array<{ id: string; username: string; label: string | null }>>([]);
   const [form, setForm] = useState<Record<string, { u: string; p: string }>>({});
+  const [open, setOpen] = useState(false);
 
   const load = async () => {
     const { data } = await sb.from("access_codes").select("id, username, label").eq("account_type", "creator");
@@ -290,9 +276,18 @@ function CreatorLogins({ creators }: { creators: string[] }) {
     load();
   };
 
+  const setUp = creators.filter((c) => loginFor(c)).length;
+
   return (
-    <Card className="mt-4 p-5">
-      <h3 className="mb-1 text-sm font-semibold">Creator logins</h3>
+    <Card className="mt-6 p-5">
+      <button onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-2 text-left">
+        <KeyRound className="h-4 w-4 text-muted-foreground" />
+        <span className="text-sm font-semibold">Creator logins</span>
+        <span className="text-xs text-muted-foreground">{setUp}/{creators.length} set up</span>
+        <ChevronDown className={`ml-auto h-4 w-4 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {!open ? null : (
+      <div className="mt-3">
       <p className="mb-3 text-xs text-muted-foreground">Give each creator a login for their portal (they see their brief + upload their content, in English or Español). They sign in via the <strong>Creator Portal</strong> option on the login page.</p>
       <div className="space-y-2">
         {creators.map((name) => {
@@ -314,6 +309,8 @@ function CreatorLogins({ creators }: { creators: string[] }) {
           );
         })}
       </div>
+      </div>
+      )}
     </Card>
   );
 }
