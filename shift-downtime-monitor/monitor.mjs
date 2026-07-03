@@ -39,12 +39,15 @@ import {
 } from "./config.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const STATE_FILE = resolve(__dirname, "state.json");
-const WHALES_FILE = resolve(__dirname, "whales.json");
-const LASTSPEND_FILE = resolve(__dirname, "lastspend.json");
-const EOD_FILE = resolve(__dirname, "mm-eod.json");
-const PAYDAY_FILE = resolve(__dirname, "whale-paydays.json");
-const PAYDAY_STATE_FILE = resolve(__dirname, "payday-state.json");
+// On Railway, STATE_DIR points at a mounted volume so state survives restarts.
+// On GitHub Actions (or local dev) it's the repo folder — same as before.
+const STATE_DIR = process.env.STATE_DIR || __dirname;
+const STATE_FILE = resolve(STATE_DIR, "state.json");
+const WHALES_FILE = resolve(STATE_DIR, "whales.json");
+const LASTSPEND_FILE = resolve(STATE_DIR, "lastspend.json");
+const EOD_FILE = resolve(STATE_DIR, "mm-eod.json");
+const PAYDAY_FILE = resolve(__dirname, "whale-paydays.json"); // JSON fallback only; real data in Supabase
+const PAYDAY_STATE_FILE = resolve(STATE_DIR, "payday-state.json");
 
 const ts = () => new Date().toLocaleTimeString("en-GB", { hour12: false });
 const fmtAge = (s) => (s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${String(s % 60).padStart(2, "0")}s`);
@@ -637,6 +640,10 @@ async function scan(accounts, state, whales, now) {
 
 // ── Main: tight loop for one cron invocation ────────────────────────────────
 (async () => {
+  // RAILWAY_MODE=1 → outer forever-loop, always-on service.
+  // Anything else → one 4.5-min pass (GitHub Actions cron pattern).
+  const RAILWAY_MODE = process.env.RAILWAY_MODE === "1";
+  do {
   // Watch EVERY authenticated OF account (so new creators are auto-included).
   // Tier comes from config overrides; everything else defaults sanely.
   const all = await listAccounts();
@@ -719,7 +726,8 @@ async function scan(accounts, state, whales, now) {
     else break;
   } while (Date.now() < deadline);
 
-  console.log(`[${ts()}] Done — ${pass} pass(es).`);
+  console.log(`[${ts()}] Cycle done — ${pass} pass(es)${RAILWAY_MODE ? ", reloading accounts and continuing…" : "."}`);
+  } while (RAILWAY_MODE);
 })().catch((e) => {
   console.error("Monitor failed:", e);
   process.exit(1);
