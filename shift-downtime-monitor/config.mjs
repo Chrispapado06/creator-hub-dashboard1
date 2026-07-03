@@ -43,7 +43,7 @@ export function level2Eligible(username) {
 
 // ── Escalation thresholds (seconds) ─────────────────────────────────────────
 export const THRESHOLDS = {
-  level1Sec: 3 * 60,   // ≥3 min unanswered  → ping QA on shift
+  level1Sec: 5 * 60,   // ≥5 min unanswered  → ping QA on shift
   level2Sec: 10 * 60,  // ≥10 min (A/B only) → escalate (ping QA again)
   level3Sec: 20 * 60,  // ≥20 min            → message Management
   // Ignore threads older than this — they're abandoned backlog, not live
