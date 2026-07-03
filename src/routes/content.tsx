@@ -8,12 +8,16 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { DatePicker } from "@/components/ui/date-picker";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
 import { format, startOfWeek, addWeeks, formatDistanceToNowStrict } from "date-fns";
-import { FileText, ChevronLeft, ChevronRight, Upload, Download, Plus, ChevronDown, KeyRound, Star, Clock } from "lucide-react";
+import { FileText, ChevronLeft, ChevronRight, Upload, Download, Plus, ChevronDown, KeyRound, Star, Clock, ListPlus } from "lucide-react";
+import { addStandaloneTask } from "@/lib/tasks";
 
 export const Route = createFileRoute("/content")({ component: ContentPage });
 
@@ -62,6 +66,16 @@ function ContentPage() {
   const [loading, setLoading] = useState(true);
   const [newCreator, setNewCreator] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  const [members, setMembers] = useState<Array<{ id: string; name: string }>>([]);
+
+  useEffect(() => {
+    (async () => {
+      const res = await sb.from("chatters").select("id, name, in_task_team").order("name");
+      let list = res.data ?? [];
+      if (res.error) { const fb = await sb.from("chatters").select("id, name").order("name"); list = fb.data ?? []; }
+      setMembers((list as Array<{ id: string; name: string; in_task_team?: boolean }>).filter((m) => m.in_task_team !== false).map((m) => ({ id: m.id, name: m.name })));
+    })();
+  }, []);
 
   const load = async () => {
     setLoading(true);
@@ -190,9 +204,12 @@ function ContentPage() {
           {shown.map((row) => (
             <Card key={row.id} className={`flex flex-col gap-4 border-l-4 p-5 ${STAGE_ACCENT[row.stage] ?? "border-l-border"}`}>
               {/* Header */}
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <div className="text-lg font-semibold">{row.creator}</div>
-                <button onClick={() => removeRow(row)} className="text-xs text-muted-foreground hover:text-destructive">Remove</button>
+                <div className="flex items-center gap-2">
+                  <AssignTaskDialog creator={row.creator} members={members} />
+                  <button onClick={() => removeRow(row)} className="text-xs text-muted-foreground hover:text-destructive">Remove</button>
+                </div>
               </div>
 
               {/* Stage stepper */}
@@ -310,6 +327,48 @@ function ContentPage() {
 
       <CreatorLogins creators={Array.from(new Set([...DEFAULT_CREATORS, ...rows.map((r) => r.creator)]))} />
     </div>
+  );
+}
+
+function AssignTaskDialog({ creator, members }: { creator: string; members: Array<{ id: string; name: string }> }) {
+  const [open, setOpen] = useState(false);
+  const [assignee, setAssignee] = useState("");
+  const [title, setTitle] = useState(`${creator} — `);
+  const [due, setDue] = useState<Date | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { if (open) { setTitle(`${creator} — `); setAssignee(""); setDue(null); } }, [open, creator]);
+
+  const assign = async () => {
+    if (!title.trim()) { toast.error("Add a task title"); return; }
+    if (!assignee) { toast.error("Pick who it's for"); return; }
+    setSaving(true);
+    const { error } = await addStandaloneTask({ title: title.trim(), assignee_id: assignee, due_date: due ? format(due, "yyyy-MM-dd") : null });
+    setSaving(false);
+    if (error) { toast.error(error); return; }
+    toast.success("Task assigned");
+    setOpen(false);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild><Button size="sm" variant="outline"><ListPlus className="mr-1 h-3.5 w-3.5" />Assign task</Button></DialogTrigger>
+      <DialogContent>
+        <DialogHeader><DialogTitle>Assign a task — {creator}</DialogTitle></DialogHeader>
+        <div className="space-y-3">
+          <div className="grid gap-1.5"><Label>Task</Label><Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={`${creator} — edit weekly video`} autoFocus /></div>
+          <div className="grid gap-1.5">
+            <Label>Assign to</Label>
+            <Select value={assignee} onValueChange={setAssignee}>
+              <SelectTrigger><SelectValue placeholder="Pick a team member" /></SelectTrigger>
+              <SelectContent>{members.map((m) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-1.5"><Label>Due (optional)</Label><DatePicker value={due} onChange={setDue} clearable placeholder="Pick a date" /></div>
+        </div>
+        <DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button><Button onClick={assign} disabled={saving}>{saving ? "Assigning…" : "Assign task"}</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
