@@ -11,6 +11,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Card } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel, SelectSeparator } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -295,6 +297,137 @@ const earningsFor = (shifts: Shift[], chatter: Chatter | undefined): number => {
 };
 
 // ── Main component ─────────────────────────────────────────────────────────────
+// ── Applicants (AI screening) ────────────────────────────────────────────────
+type Applicant = {
+  id: string; name: string | null; email: string | null; telegram: string | null; role: string | null;
+  answers: Array<{ q: string; a: string }> | null; ai_verdict: string | null; ai_score: number | null;
+  ai_reason: string | null; status: string; messaged: boolean; submitted_at: string | null; created_at: string;
+};
+
+function ApplicantAnswers({ answers }: { answers: Array<{ q: string; a: string }> | null }) {
+  const [open, setOpen] = useState(false);
+  if (!answers || answers.length === 0) return null;
+  return (
+    <div>
+      <button onClick={() => setOpen((o) => !o)} className="text-[11px] text-muted-foreground hover:text-foreground">{open ? "Hide" : "View"} answers ({answers.length})</button>
+      {open && (
+        <div className="mt-1.5 space-y-1.5 rounded-lg border border-border bg-muted/30 p-2.5 text-xs">
+          {answers.map((qa, i) => (<div key={i}><div className="font-medium">{qa.q}</div><div className="text-muted-foreground">{qa.a}</div></div>))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ApplicantsView() {
+  const sb = supabase as unknown as { from: (t: string) => any };
+  const [cfg, setCfg] = useState({ requirements: "", min_score: 70, typeform_form_id: "", telegram_chat_id: "" });
+  const [apps, setApps] = useState<Applicant[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [screening, setScreening] = useState(false);
+  const [savingCfg, setSavingCfg] = useState(false);
+  const [openCfg, setOpenCfg] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    const [{ data: c }, { data: a }] = await Promise.all([
+      sb.from("hiring_config").select("*").eq("id", 1).maybeSingle(),
+      sb.from("applicants").select("*").order("ai_score", { ascending: false }).order("created_at", { ascending: false }),
+    ]);
+    if (c) setCfg({ requirements: c.requirements ?? "", min_score: c.min_score ?? 70, typeform_form_id: c.typeform_form_id ?? "", telegram_chat_id: c.telegram_chat_id ?? "" });
+    setApps((a ?? []) as Applicant[]);
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  const saveCfg = async () => {
+    setSavingCfg(true);
+    const { error } = await sb.from("hiring_config").upsert({ id: 1, ...cfg, updated_at: new Date().toISOString() }, { onConflict: "id" });
+    setSavingCfg(false);
+    if (error) toast.error(error.message); else { toast.success("Saved"); setOpenCfg(false); }
+  };
+
+  const username = () => { try { return JSON.parse(localStorage.getItem("agency_session") || "null")?.username ?? ""; } catch { return ""; } };
+  const screenNow = async () => {
+    setScreening(true);
+    try {
+      const r = await fetch("/api/screen-applicants", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: username() }) });
+      const j = await r.json().catch(() => ({}));
+      if (j.ok) toast.success(`Screened ${j.screened} new · ${j.passed} passed · ${j.messaged} messaged`);
+      else toast.error(j.error || "Screening failed");
+    } catch { toast.error("Network error"); }
+    setScreening(false);
+    load();
+  };
+
+  const setStatus = async (id: string, status: string) => {
+    await sb.from("applicants").update({ status }).eq("id", id);
+    setApps((xs) => xs.map((x) => (x.id === id ? { ...x, status } : x)));
+  };
+
+  const verdictColor = (v: string | null) => v === "pass" ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : v === "maybe" ? "bg-amber-500/15 text-amber-600 dark:text-amber-400" : "bg-rose-500/15 text-rose-600 dark:text-rose-400";
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button onClick={screenNow} disabled={screening}><Sparkles className="mr-1.5 h-4 w-4" />{screening ? "Screening…" : "Screen now"}</Button>
+        <Button variant="outline" onClick={() => setOpenCfg((o) => !o)}>Requirements &amp; settings</Button>
+        <div className="ml-auto text-xs text-muted-foreground">{apps.length} applicants · pass ≥ {cfg.min_score}</div>
+      </div>
+
+      {openCfg && (
+        <Card className="space-y-3 p-5">
+          <div className="grid gap-1.5">
+            <Label>Hiring requirements (the AI screens each applicant against this)</Label>
+            <Textarea rows={4} value={cfg.requirements} onChange={(e) => setCfg({ ...cfg, requirements: e.target.value })} placeholder="e.g. Fluent English, 6+ months OF chatting experience, available 6h/day, sales-driven, reliable internet…" />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-1.5"><Label>Pass score (0–100)</Label><Input type="number" min={0} max={100} value={cfg.min_score} onChange={(e) => setCfg({ ...cfg, min_score: Number(e.target.value) })} /></div>
+            <div className="grid gap-1.5"><Label>Typeform form ID</Label><Input value={cfg.typeform_form_id} onChange={(e) => setCfg({ ...cfg, typeform_form_id: e.target.value })} placeholder="abC123" /></div>
+            <div className="grid gap-1.5"><Label>Telegram channel ID</Label><Input value={cfg.telegram_chat_id} onChange={(e) => setCfg({ ...cfg, telegram_chat_id: e.target.value })} placeholder="-1001234567890" /></div>
+          </div>
+          <p className="text-[11px] text-muted-foreground">Secrets (<code>TYPEFORM_TOKEN</code>, the Telegram bot token) live in Vercel; the AI key comes from your agency settings.</p>
+          <div><Button size="sm" onClick={saveCfg} disabled={savingCfg}>{savingCfg ? "Saving…" : "Save settings"}</Button></div>
+        </Card>
+      )}
+
+      {loading ? (
+        <div className="h-48 animate-pulse rounded-xl border border-border bg-card/60" />
+      ) : apps.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-border bg-card/40 p-10 text-center text-sm text-muted-foreground">No applicants yet. Set your Typeform form ID + requirements, then hit <strong>Screen now</strong>.</div>
+      ) : (
+        <div className="grid gap-3 md:grid-cols-2">
+          {apps.map((ap) => (
+            <Card key={ap.id} className={`flex flex-col gap-2 p-4 ${ap.status === "hired" ? "opacity-70" : ""}`}>
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="font-semibold">{ap.name || "Applicant"}{ap.role ? <span className="ml-1.5 text-xs font-normal text-muted-foreground">· {ap.role}</span> : null}</div>
+                  <div className="text-[11px] text-muted-foreground">{ap.email || ""}{ap.telegram ? ` · ${ap.telegram}` : ""}</div>
+                </div>
+                <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${verdictColor(ap.ai_verdict)}`}>{ap.ai_score ?? "—"} · {ap.ai_verdict ?? "—"}</span>
+              </div>
+              {ap.ai_reason && <p className="text-xs text-muted-foreground">{ap.ai_reason}</p>}
+              <ApplicantAnswers answers={ap.answers} />
+              <div className="mt-auto flex items-center gap-2 pt-1">
+                {ap.messaged && <span className="text-[11px] text-emerald-600 dark:text-emerald-400">✓ team notified</span>}
+                <Select value={ap.status} onValueChange={(v) => setStatus(ap.id, v)}>
+                  <SelectTrigger className="ml-auto h-7 w-[110px] text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="new">New</SelectItem>
+                    <SelectItem value="messaged">Messaged</SelectItem>
+                    <SelectItem value="hired">Hired</SelectItem>
+                    <SelectItem value="rejected">Rejected</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ChattersPage() {
   const [creators, setCreators] = useState<Creator[]>([]);
   const [chatters, setChatters] = useState<Chatter[]>([]);
@@ -303,6 +436,7 @@ function ChattersPage() {
   const [logins, setLogins] = useState<StaffLogin[]>([]);
   const [payouts, setPayouts] = useState<Payout[]>([]);
   const [loading, setLoading] = useState(true);
+  const [view, setView] = useState<"staff" | "applicants">("staff");
 
   const load = async (silent = false) => {
     if (!silent) setLoading(true);
@@ -329,17 +463,30 @@ function ChattersPage() {
   return (
     <div className="space-y-6">
       <Toaster />
-      <div>
-        <div className="flex items-center gap-2.5 mb-1">
-          <MessageCircle className="h-6 w-6 text-primary" />
-          <h1 className="text-3xl font-bold tracking-tight">Staff</h1>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2.5 mb-1">
+            <MessageCircle className="h-6 w-6 text-primary" />
+            <h1 className="text-3xl font-bold tracking-tight">Staff</h1>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            {view === "applicants"
+              ? "AI screens your Typeform applications and pings the team on Telegram when a strong candidate applies."
+              : "Manage your team — chatters, social media VAs, editors, recruiters, and managers. Track shifts, performance, and payroll."}
+          </p>
         </div>
-        <p className="text-sm text-muted-foreground">
-          Manage your team — chatters, social media VAs, editors, recruiters, and managers. Track shifts, performance, and payroll.
-        </p>
+        <Select value={view} onValueChange={(v) => setView(v as "staff" | "applicants")}>
+          <SelectTrigger className="w-[170px] shrink-0"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="staff">Current Staff</SelectItem>
+            <SelectItem value="applicants">Applicants</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
-      {loading ? (
+      {view === "applicants" ? (
+        <ApplicantsView />
+      ) : loading ? (
         <div className="h-64 animate-pulse rounded-xl bg-card/60 border border-border" />
       ) : (
         <Tabs defaultValue="timeclock">
