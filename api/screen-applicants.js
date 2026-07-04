@@ -104,8 +104,10 @@ export default async function handler(req, res) {
 
     // Form field titles.
     const form = await fetch(`https://api.typeform.com/forms/${formId}`, { headers: { Authorization: `Bearer ${TYPEFORM_TOKEN}` } }).then((r) => (r.ok ? r.json() : null));
+    // Flatten nested fields (Typeform groups nest their questions).
     const titleById = {};
-    for (const f of ((form && form.fields) || [])) titleById[f.id] = f.title;
+    const flatten = (fields) => { for (const f of (fields || [])) { if (f.id && f.title) titleById[f.id] = f.title; if (f.properties && Array.isArray(f.properties.fields)) flatten(f.properties.fields); } };
+    flatten((form && form.fields) || []);
 
     // Responses.
     const resp = await fetch(`https://api.typeform.com/forms/${formId}/responses?page_size=200&completed=true`, { headers: { Authorization: `Bearer ${TYPEFORM_TOKEN}` } });
