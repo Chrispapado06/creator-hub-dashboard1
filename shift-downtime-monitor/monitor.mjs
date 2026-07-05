@@ -642,6 +642,11 @@ async function scan(accounts, state, whales, now) {
     if (waited < th.level1Sec) continue;
     breaching++;
 
+    // A muted shift (config SHIFT_BLOCKS[].muted) gets NO downtime pings —
+    // team asked for the Evening/Lance shift to stay silent. Still counted as
+    // breaching above (so the scan log stays honest); L1/L2/L3 all suppressed.
+    if (block.muted) continue;
+
     const ep = `${acct.accountId}|${oldest.fanMessageAt}`;
     const mins = Math.floor(waited / 60);
     const who = `(QA on shift: ${block.qaName})`;

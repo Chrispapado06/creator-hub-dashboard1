@@ -1,9 +1,11 @@
-name: Shift downtime monitor (every 5 min)
+name: Shift downtime monitor (manual only — Railway is primary)
 
 on:
-  schedule:
-    # Offset from payout-bot (:00/:10) and drive-vault (:05) to spread load.
-    - cron: "2-59/5 * * * *"   # :02, :07, :12, … each invocation self-loops ~4.5 min
+  # SCHEDULE DISABLED 2026-07-05. The monitor now runs always-on on Railway
+  # (see railway.json). Running this cron too double-posted every downtime
+  # alert (separate state ledger) and spammed "[skip ci]" state commits that
+  # kept hijacking Railway's deploy. Kept as manual-only (workflow_dispatch)
+  # for emergency/backfill use — do NOT re-add the schedule while Railway runs.
   workflow_dispatch:
 
 permissions:
