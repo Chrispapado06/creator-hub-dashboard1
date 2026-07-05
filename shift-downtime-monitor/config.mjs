@@ -62,11 +62,17 @@ export const LEVEL2_TIERS = new Set(["A", "B"]);
 export const SHIFT_TZ = "Asia/Manila"; // GMT+8, no DST
 // Blocks are in PH time (the sheet is PH). Each maps to its GMT-named Discord
 // shift channel, where the downtime ping @everyones the team on shift.
+// ONE consolidated downtime channel (team request 2026-07-05): every shift's
+// downtime pings post to 1517854569516892251. The old per-shift channels
+// (Evening 1411370988406440026, Night 1410175555801841674) are silenced by no
+// longer being referenced here. Each block keeps its own roleId so the on-shift
+// role still gets @mentioned in the shared channel.
+const DOWNTIME_CHANNEL = "1517854569516892251";
 export const SHIFT_BLOCKS = [
   // channelId = where to post; roleId = which shift role to @mention there.
-  { name: "Evening", startHour: 0,  endHour: 8,  qaName: "Lance", qaDiscord: "1358891208935608532", channelId: "1411370988406440026", roleId: "1491477766971982056", muted: true }, // late evening · PH 00–08 = 16:00–24:00 GMT — DOWNTIME PINGS MUTED (team request 2026-07-05)
-  { name: "Night",   startHour: 8,  endHour: 16, qaName: "Liz",   qaDiscord: "714697188545921054",  channelId: "1410175555801841674", roleId: "1491477514013380711" }, // Evening-night · PH 08–16 = 00:00–08:00 GMT
-  { name: "Day",     startHour: 16, endHour: 24, qaName: "Day QA", qaDiscord: "768504714958471188",  channelId: "1517854569516892251", roleId: "1491477215261491250" }, // Day Shift · PH 16–24 = 08:00–16:00 GMT
+  { name: "Evening", startHour: 0,  endHour: 8,  qaName: "Lance", qaDiscord: "1358891208935608532", channelId: DOWNTIME_CHANNEL, roleId: "1491477766971982056" }, // late evening · PH 00–08 = 16:00–24:00 GMT
+  { name: "Night",   startHour: 8,  endHour: 16, qaName: "Liz",   qaDiscord: "714697188545921054",  channelId: DOWNTIME_CHANNEL, roleId: "1491477514013380711" }, // Evening-night · PH 08–16 = 00:00–08:00 GMT
+  { name: "Day",     startHour: 16, endHour: 24, qaName: "Day QA", qaDiscord: "768504714958471188",  channelId: DOWNTIME_CHANNEL, roleId: "1491477215261491250" }, // Day Shift · PH 16–24 = 08:00–16:00 GMT
 ];
 
 // Calendar day (YYYY-MM-DD) of a date in a timezone.
