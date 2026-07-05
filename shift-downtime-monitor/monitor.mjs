@@ -301,9 +301,13 @@ async function loadWhaleCardsByFan() {
   try {
     const { createClient } = await import("@supabase/supabase-js");
     const s = createClient(url, key, { auth: { persistSession: false } });
-    const { data, error } = await s.from("whale_paydays")
-      .select("fan_id,name,model,current_topic,handling,last_objection,payday,birthday,anniversary,job_update")
-      .not("fan_id", "is", null);
+    // Full select includes the milestone columns; if they aren't migrated yet
+    // fall back to the base columns so the whole card lookup doesn't come back
+    // empty (payday milestone still works — it's a base column).
+    const FULL = "fan_id,name,model,current_topic,handling,last_objection,payday,birthday,anniversary,job_update";
+    const BASE = "fan_id,name,model,current_topic,handling,last_objection,payday";
+    let { data, error } = await s.from("whale_paydays").select(FULL).not("fan_id", "is", null);
+    if (error) ({ data, error } = await s.from("whale_paydays").select(BASE).not("fan_id", "is", null));
     if (error || !data) return new Map();
     return new Map(data.map((r) => [String(r.fan_id), r]));
   } catch { return new Map(); }
