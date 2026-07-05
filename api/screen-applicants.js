@@ -107,6 +107,10 @@ export default async function handler(req, res) {
     const minScore = Number(cfg.min_score ?? 70);
     const tgChat = cfg.telegram_chat_id;
     const discordWebhook = cfg.discord_webhook;
+    // Only screen applications submitted AFTER this cutoff — keeps the historical
+    // Typeform backlog from being messaged; only genuinely new applicants pass.
+    const screenSince = cfg.screen_since || null;
+    const cutoffMs = screenSince ? Date.parse(screenSince) : 0;
     const apiKey = ((await sbGet("agency_settings?select=anthropic_api_key"))[0] || {}).anthropic_api_key;
 
     if (!formId || !TYPEFORM_TOKEN) return res.status(200).json({ ok: false, error: "set the Typeform form id (Applicants → settings) + TYPEFORM_TOKEN env" });
@@ -120,8 +124,11 @@ export default async function handler(req, res) {
     const flatten = (fields) => { for (const f of (fields || [])) { if (f.id && f.title) titleById[f.id] = f.title; if (f.properties && Array.isArray(f.properties.fields)) flatten(f.properties.fields); } };
     flatten((form && form.fields) || []);
 
-    // Responses.
-    const resp = await fetch(`https://api.typeform.com/forms/${formId}/responses?page_size=200&completed=true`, { headers: { Authorization: `Bearer ${TYPEFORM_TOKEN}` } });
+    // Responses. `since` (server-side) trims the backlog; the cutoff check below
+    // is the belt-and-suspenders guard in case the param format is ever ignored.
+    let respUrl = `https://api.typeform.com/forms/${formId}/responses?page_size=200&completed=true`;
+    if (cutoffMs) respUrl += `&since=${encodeURIComponent(new Date(cutoffMs).toISOString().replace(/\.\d+Z$/, "Z"))}`;
+    const resp = await fetch(respUrl, { headers: { Authorization: `Bearer ${TYPEFORM_TOKEN}` } });
     if (!resp.ok) return res.status(200).json({ ok: false, error: `typeform ${resp.status}` });
     const items = (await resp.json()).items || [];
 
@@ -131,6 +138,8 @@ export default async function handler(req, res) {
     for (const item of items) {
       const token = item.token || item.response_id || item.landing_id;
       if (!token || seen.has(token)) continue;
+      // Skip anything submitted before the cutoff (ignore the historical backlog).
+      if (cutoffMs && item.submitted_at && Date.parse(item.submitted_at) < cutoffMs) continue;
       const qa = (item.answers || []).map((a) => ({ q: titleById[a.field && a.field.id] || (a.field && a.field.ref) || "?", a: answerValue(a) || "" }));
       if (qa.length === 0) continue;
 
