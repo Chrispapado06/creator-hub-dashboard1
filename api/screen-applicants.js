@@ -82,6 +82,16 @@ async function tgSend(chatId, html) {
   return r.ok;
 }
 
+async function discordPost(webhook, content) {
+  if (!webhook) return false;
+  const r = await fetch(webhook, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content: String(content).slice(0, 1900), allowed_mentions: { parse: [] } }),
+  });
+  return r.ok;
+}
+
 export default async function handler(req, res) {
   const cronOk = CRON_SECRET && (req.headers.authorization === `Bearer ${CRON_SECRET}` || req.headers["x-cron-secret"] === CRON_SECRET);
   let body = req.body;
@@ -96,6 +106,7 @@ export default async function handler(req, res) {
     const formId = cfg.typeform_form_id;
     const minScore = Number(cfg.min_score ?? 70);
     const tgChat = cfg.telegram_chat_id;
+    const discordWebhook = cfg.discord_webhook;
     const apiKey = ((await sbGet("agency_settings?select=anthropic_api_key"))[0] || {}).anthropic_api_key;
 
     if (!formId || !TYPEFORM_TOKEN) return res.status(200).json({ ok: false, error: "set the Typeform form id (Applicants → settings) + TYPEFORM_TOKEN env" });
@@ -143,8 +154,12 @@ export default async function handler(req, res) {
       const isPass = verdict === "pass" || score >= minScore;
       if (isPass) {
         passed++;
-        const msg = `🔥 <b>Strong applicant</b> — ${name}\nScore: <b>${score}/100</b> (${verdict})\n${reason}${email ? `\n✉️ ${email}` : ""}${telegram ? `\n💬 ${telegram}` : ""}`;
-        const sent = await tgSend(tgChat, msg);
+        const tail = `${reason}${email ? `\n✉️ ${email}` : ""}${telegram ? `\n💬 ${telegram}` : ""}`;
+        const discordMsg = `🔥 **Strong applicant** — ${name}\nScore: **${score}/100** (${verdict})\n${tail}`;
+        const tgMsg = `🔥 <b>Strong applicant</b> — ${name}\nScore: <b>${score}/100</b> (${verdict})\n${tail}`;
+        let sent = false;
+        if (discordWebhook) sent = (await discordPost(discordWebhook, discordMsg)) || sent;
+        if (tgChat) sent = (await tgSend(tgChat, tgMsg)) || sent;
         if (sent) { messaged++; await sbWrite("PATCH", `applicants?response_id=eq.${encodeURIComponent(token)}`, { messaged: true, status: "messaged" }); }
       }
     }

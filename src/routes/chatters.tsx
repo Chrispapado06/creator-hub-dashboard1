@@ -321,7 +321,7 @@ function ApplicantAnswers({ answers }: { answers: Array<{ q: string; a: string }
 
 function ApplicantsView() {
   const sb = supabase as unknown as { from: (t: string) => any };
-  const [cfg, setCfg] = useState({ requirements: "", min_score: 70, typeform_form_id: "", telegram_chat_id: "" });
+  const [cfg, setCfg] = useState({ requirements: "", min_score: 70, typeform_form_id: "", telegram_chat_id: "", discord_webhook: "" });
   const [apps, setApps] = useState<Applicant[]>([]);
   const [loading, setLoading] = useState(true);
   const [screening, setScreening] = useState(false);
@@ -334,7 +334,7 @@ function ApplicantsView() {
       sb.from("hiring_config").select("*").eq("id", 1).maybeSingle(),
       sb.from("applicants").select("*").order("ai_score", { ascending: false }).order("created_at", { ascending: false }),
     ]);
-    if (c) setCfg({ requirements: c.requirements ?? "", min_score: c.min_score ?? 70, typeform_form_id: c.typeform_form_id ?? "", telegram_chat_id: c.telegram_chat_id ?? "" });
+    if (c) setCfg({ requirements: c.requirements ?? "", min_score: c.min_score ?? 70, typeform_form_id: c.typeform_form_id ?? "", telegram_chat_id: c.telegram_chat_id ?? "", discord_webhook: c.discord_webhook ?? "" });
     setApps((a ?? []) as Applicant[]);
     setLoading(false);
   };
@@ -384,9 +384,10 @@ function ApplicantsView() {
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="grid gap-1.5"><Label>Pass score (0–100)</Label><Input type="number" min={0} max={100} value={cfg.min_score} onChange={(e) => setCfg({ ...cfg, min_score: Number(e.target.value) })} /></div>
             <div className="grid gap-1.5"><Label>Typeform form ID</Label><Input value={cfg.typeform_form_id} onChange={(e) => setCfg({ ...cfg, typeform_form_id: e.target.value })} placeholder="abC123" /></div>
-            <div className="grid gap-1.5"><Label>Telegram channel ID</Label><Input value={cfg.telegram_chat_id} onChange={(e) => setCfg({ ...cfg, telegram_chat_id: e.target.value })} placeholder="-1001234567890" /></div>
+            <div className="grid gap-1.5"><Label>Telegram channel ID (optional)</Label><Input value={cfg.telegram_chat_id} onChange={(e) => setCfg({ ...cfg, telegram_chat_id: e.target.value })} placeholder="-1001234567890" /></div>
           </div>
-          <p className="text-[11px] text-muted-foreground">Secrets (<code>TYPEFORM_TOKEN</code>, the Telegram bot token) live in Vercel; the AI key comes from your agency settings.</p>
+          <div className="grid gap-1.5"><Label>Discord webhook (post passes here)</Label><Input value={cfg.discord_webhook} onChange={(e) => setCfg({ ...cfg, discord_webhook: e.target.value })} placeholder="https://discord.com/api/webhooks/…" className="font-mono text-xs" /></div>
+          <p className="text-[11px] text-muted-foreground">A strong applicant is posted to your <strong>Discord webhook</strong> (and/or Telegram channel). <code>TYPEFORM_TOKEN</code> lives in Vercel; the AI key comes from your agency settings.</p>
           <div><Button size="sm" onClick={saveCfg} disabled={savingCfg}>{savingCfg ? "Saving…" : "Save settings"}</Button></div>
         </Card>
       )}
