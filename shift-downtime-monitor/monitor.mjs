@@ -28,11 +28,10 @@ import { dirname, resolve } from "node:path";
 import { sendDiscord } from "../payout-bot/config.mjs";
 import {
   listAccounts, listChats, listTransactions, unansweredThreads,
-  listUserLists, listListMemberIds, recentReplies,
+  listUserLists, listListMemberIds, recentReplies, listChatMessages,
   addUserToList, removeUserFromList, createUserList,
   listMassMessages, listFeedPosts, listStories, countScheduledPosts,
 } from "./of.mjs";
-import { coachWhaleResponse } from "./coach.mjs";
 import {
   tierFor, thresholdsFor, level2Eligible, THRESHOLDS, LOOP, DISCORD, DRY_RUN,
   currentShiftBlock, WHALE, LIST_AUTO, EOD, PAYDAY, dayInTz, hourInTz, weekdayInTz,
@@ -303,7 +302,7 @@ async function loadWhaleCardsByFan() {
     const { createClient } = await import("@supabase/supabase-js");
     const s = createClient(url, key, { auth: { persistSession: false } });
     const { data, error } = await s.from("whale_paydays")
-      .select("fan_id,name,model,current_topic,handling,last_objection,payday")
+      .select("fan_id,name,model,current_topic,handling,last_objection,payday,birthday,anniversary,job_update")
       .not("fan_id", "is", null);
     if (error || !data) return new Map();
     return new Map(data.map((r) => [String(r.fan_id), r]));
@@ -524,16 +523,51 @@ async function maybeSendShiftReport(eod, accounts, now) {
   return true;
 }
 
+// ── Whale-pulse card helpers (Luca's lean format) ───────────────────────────
+const truncate = (s, n = 140) => {
+  s = String(s || "").replace(/\s+/g, " ").trim();
+  return s.length > n ? s.slice(0, n - 1) + "…" : s;
+};
+
+// "Recent script used" = the chatter's most recent message to this whale. Free
+// when the chatter's reply is already the thread's last message; otherwise (fan
+// sent last) look back through a little history — one OF call, gated by
+// WHALE.fetchScript and reached only once per whale per shift (see claim()).
+async function whaleRecentScript(accountId, chat) {
+  const lm = chat.lastMessage;
+  if (lm?.sentBy === "creator" && lm.text) return truncate(lm.text);
+  if (!WHALE.fetchScript) return "—";
+  try {
+    const hist = await listChatMessages(accountId, chat.fanId, { limit: 20 });
+    const lastCreator = hist
+      .filter((m) => m.fromFan === false && m.text)
+      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0];
+    return lastCreator?.text ? truncate(lastCreator.text) : "—";
+  } catch { return "—"; }
+}
+
+// Monthly-milestone line: payday today / birthday / anniversary / job update.
+// birthday & anniversary are stored MM-DD (or YYYY-MM-DD) — we match month+day.
+function whaleMilestone(card, weekdayShort, todayMD) {
+  if (!card) return "—";
+  const md = (v) => { const s = String(v || "").trim(); return s.length >= 5 ? s.slice(-5) : ""; };
+  const parts = [];
+  if (card.payday && card.payday.slice(0, 3).toLowerCase() === weekdayShort.slice(0, 3).toLowerCase())
+    parts.push("💵 Payday today");
+  if (md(card.birthday) === todayMD)    parts.push("🎂 Birthday today");
+  if (md(card.anniversary) === todayMD) parts.push("💍 Anniversary today");
+  if (card.job_update)                  parts.push(`💼 ${truncate(card.job_update, 80)}`);
+  return parts.length ? parts.join(" · ") : "—";
+}
+
 // ── One scan pass over all accounts ─────────────────────────────────────────
 async function scan(accounts, state, whales, now) {
   const block = currentShiftBlock(now);
   let watched = 0, breaching = 0, fired = 0;
   const unreachable = [];
-  // Load the playbook + per-fan card lookup once per scan. Both are tiny.
-  const playbook = await loadPlaybook();
+  // Per-fan whale card lookup once per scan (name, previous topic, payday,
+  // milestones) — powers the whale-pulse card below. Tiny single query.
   const cardsByFan = await loadWhaleCardsByFan();
-  // Pick a random active playbook entry (Option A — simple rotation).
-  const pickPlaybook = () => playbook.length ? playbook[Math.floor(Math.random() * playbook.length)] : null;
 
   for (const acct of accounts) {
     let chats;
@@ -555,48 +589,49 @@ async function scan(accounts, state, whales, now) {
       !t.fanIsCreator &&
       t.fanUsername.toLowerCase() !== acct.username.toLowerCase() &&
       t.waitedSeconds <= th.maxWaitSec);
-    if (!threads.length) continue;
 
-    // #4 — whale activity: a whale on this account is messaging and waiting →
-    // flag QA on shift in #chatter-pins-qa-pins, tagging handling status.
+    // #4 — whale pulse (Luca): flag EVERY whale active on this shift, whether
+    // they're waiting OR already being handled — better pulse on who chatters
+    // are talking to. Lean card: name · previous topic · recent script · this
+    // month's milestone (payday / birthday / anniversary / new job). No topic-
+    // suggestion or coach noise. Runs off `chats` (not just unanswered threads)
+    // and BEFORE the no-threads early-return, so replied-to whales still count.
+    // Deduped once per whale per shift.
     const whaleSet = new Set(whales?.byAccount?.[acct.accountId] || []);
     const cardMap = whales?.cardByAccount?.[acct.accountId] || {};
-    const qaMention = block.qaDiscord ? ` · QA <@${block.qaDiscord}>` : ` · QA ${block.qaName}`;
     if (whaleSet.size) {
-      for (const t of threads) {
-        const fid = String(t.fanId);
-        if (!whaleSet.has(fid)) continue;
-        if (!claim(state, `wact|${acct.accountId}|${t.fanMessageAt}`)) continue;
-        const link = t.fanUsername ? `\n<https://onlyfans.com/${t.fanUsername}>` : "";
-        const handling = cardMap[fid] ? ` — ${cardMap[fid]}` : "";
-        const card = cardsByFan.get(fid);
+      const shiftKey = `${dayInTz(new Date(now), PAYDAY.tz)}|${block.name}`;
+      const weekdayShort = weekdayInTz(new Date(now), PAYDAY.tz);
+      const todayMD = dayInTz(new Date(now), PAYDAY.tz).slice(5); // MM-DD
+      const qa = block.qaDiscord ? ` · QA <@${block.qaDiscord}>` : ` · QA ${block.qaName}`;
+      for (const c of chats) {
+        const fid = String(c.fanId);
+        if (!whaleSet.has(fid) || c.fanIsCreator) continue;
+        const lm = c.lastMessage;
+        if (!lm?.createdAt) continue;
+        const ageSec = Math.round((now - Date.parse(lm.createdAt)) / 1000);
+        if (ageSec < 0 || ageSec > WHALE.activeWindowSec) continue; // not active this shift/window
+        if (!claim(state, `wact|${acct.accountId}|${fid}|${shiftKey}`)) continue; // once per whale per shift
 
-        // Try the AI coach first (Option C — Luca's pick). It reads the whale's
-        // recent chat + the playbook, returns a tailored topic + play. Falls
-        // back to the manual current_topic + static playbook rotation if the
-        // coach is disabled or errors.
-        let topicLine = "", playLine = "", whyLine = "";
-        const coach = process.env.COACH_ENABLED === "1"
-          ? await coachWhaleResponse({ accountId: acct.accountId, fanId: fid, whaleCard: card, playbook }).catch(() => null)
-          : null;
-        if (coach) {
-          if (coach.topic)    topicLine = `\n💡 **Now:** ${coach.topic}`;
-          if (coach.interest) topicLine += ` · _likes:_ ${coach.interest}`;
-          if (coach.play)     playLine = `\n🎯 **Try:** ${coach.play.name} — ${coach.play.text}`;
-          if (coach.why)      whyLine = `\n_${coach.why}_`;
-        } else {
-          if (card?.current_topic)  topicLine = `\n💡 **Today:** ${card.current_topic}`;
-          else if (card?.last_objection) topicLine = `\n_Last objection:_ ${card.last_objection}`;
-          const play = pickPlaybook();
-          if (play) playLine = `\n🎯 **Try:** ${play.name} — ${play.text}`;
-        }
+        const card = cardsByFan.get(fid);
+        const name = card?.name || c.fanUsername;
+        const handling = cardMap[fid] ? ` — ${cardMap[fid]}` : "";
+        const waiting = lm.sentBy === "fan" ? ` · ⏳ waiting ${fmtAge(ageSec)}` : "";
+        const prevTopic = card?.current_topic || card?.last_objection || "—";
+        const recentScript = await whaleRecentScript(acct.accountId, c);
+        const milestone = whaleMilestone(card, weekdayShort, todayMD);
+        const link = c.fanUsername ? `\n<https://onlyfans.com/${c.fanUsername}>` : "";
 
         await postQaPins(`whale-active ${acct.name}`,
-          `🐋 **Whale — ${t.fanUsername} on ${acct.name}**${handling}\n` +
-          `messaging, waiting **${fmtAge(t.waitedSeconds)}**${qaMention}${topicLine}${playLine}${whyLine}${link}`,
+          `🐋 **Whale — ${name} on ${acct.name}**${handling}${waiting}${qa}\n` +
+          `• **Previous topic:** ${prevTopic}\n` +
+          `• **Recent script:** ${recentScript}\n` +
+          `• **Milestone:** ${milestone}${link}`,
           block.qaDiscord ? [block.qaDiscord] : []);
       }
     }
+
+    if (!threads.length) continue;
 
     const oldest = threads[0]; // longest-waiting actionable thread drives the breach
     const waited = oldest.waitedSeconds;

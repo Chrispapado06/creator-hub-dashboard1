@@ -137,6 +137,16 @@ export const WHALE = {
   lookbackSec: Number(process.env.WHALE_LOOKBACK_SEC || 900),
   refreshHours: Number(process.env.WHALE_REFRESH_HOURS || 12),
   tiers: (process.env.WHALE_TIERS || "A,B,C").split(",").map((s) => s.trim()),
+  // Whale pulse (Luca): flag EVERY whale active on shift, not just the ones
+  // left waiting. A whale counts as "active" when their thread's last message
+  // (fan OR chatter) is within activeWindowSec. Deduped once per whale per
+  // shift so it's a pulse, not spam.
+  activeWindowSec: Number(process.env.WHALE_ACTIVE_WINDOW_SEC || 3600),
+  // Show the chatter's most recent script on the card. Free when the chatter's
+  // reply is already the thread's last message; when the fan sent last it costs
+  // one extra OF call per newly-flagged whale per shift. WHALE_FETCH_SCRIPT=0
+  // disables that fetch (then "Recent script" only shows on chatter-last chats).
+  fetchScript: process.env.WHALE_FETCH_SCRIPT !== "0",
   // Per-whale handling tags driven by the team's WHALE CARD lists. The pattern
   // matches the list name → a short tag printed in the ping (Phase 2/3).
   // Order matters: most-restrictive first wins.

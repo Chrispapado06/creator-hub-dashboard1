@@ -890,7 +890,13 @@ function whaleCardLine(w: any): string {
   const tag = HANDLING_LABEL_W[w.handling] ?? w.handling ?? "?";
   const obj = w.last_objection ? ` · _${w.last_objection}_` : "";
   const note = w.note ? ` _(${w.note})_` : "";
-  return `• **${w.name}** on **${w.model}** — ${tag} · payday **${w.payday}**${obj}${note}`;
+  const ms = [
+    w.birthday ? `🎂 ${w.birthday}` : "",
+    w.anniversary ? `💍 ${w.anniversary}` : "",
+    w.job_update ? `💼 ${w.job_update}` : "",
+  ].filter(Boolean).join(" · ");
+  const milestones = ms ? ` · ${ms}` : "";
+  return `• **${w.name}** on **${w.model}** — ${tag} · payday **${w.payday}**${obj}${note}${milestones}`;
 }
 
 async function handleWhale(interaction: any): Promise<Response> {
@@ -973,8 +979,18 @@ async function handleWhale(interaction: any): Promise<Response> {
       last_objection: opts.objection || null,
       note: opts.note || null,
       fan_id: opts.fan_id || null,
+      birthday: opts.birthday || null,
+      anniversary: opts.anniversary || null,
+      job_update: opts.job || null,
       added_by: interaction.member?.user?.username || interaction.user?.username || null,
     };
+    // Milestone fields are non-destructive: only write them when the option was
+    // actually passed, so re-adding a whale to tweak another field doesn't wipe
+    // a birthday/anniversary/job someone already set. (Legacy fields keep their
+    // original overwrite behaviour.)
+    for (const k of ["birthday", "anniversary", "job_update"]) {
+      if (row[k] === null) delete row[k];
+    }
     // upsert on (lower(name), lower(model))
     const { data: existing } = await supa.from("whale_paydays").select("id")
       .ilike("name", row.name).ilike("model", row.model).maybeSingle();

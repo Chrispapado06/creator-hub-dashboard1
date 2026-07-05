@@ -132,6 +132,9 @@ const commands = [
           { name: "objection", description: "Last objection (short, e.g. 'wife saw card')", type: 3, required: false },
           { name: "note",      description: "Optional free-text note", type: 3, required: false },
           { name: "fan_id",    description: "OnlyFans numeric fan id (optional)", type: 3, required: false },
+          { name: "birthday",    description: "Birthday MM-DD (e.g. 07-05) — shows 🎂 on the day", type: 3, required: false },
+          { name: "anniversary", description: "Anniversary MM-DD (e.g. 12-01) — shows 💍 on the day", type: 3, required: false },
+          { name: "job",         description: "Job update (e.g. 'new job at Google') — shows 💼", type: 3, required: false },
         ],
       },
       {
