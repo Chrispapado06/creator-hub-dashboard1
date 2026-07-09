@@ -1543,6 +1543,70 @@
       "account_id": "acct_7aa411ae5ab947feba989fe9f63f7a60",
       "vault_media_id": "ofapi_media_f1a3fb7990834c9080112e9fcf231cd4",
       "uploaded_at": "2026-07-09T22:10:36.212Z"
+    },
+    "1PgTiNoupMAwrzj7l68tjEPgg96tx9Dtm": {
+      "name": "IMG_2587.HEIC",
+      "folder": "Client content essentials",
+      "creator": "Blue Bear",
+      "account_id": "acct_99db42bda91149f58fd68ecccde21fa8",
+      "vault_media_id": "ofapi_media_b893bc2ed274403e81c49d96c8347acf",
+      "uploaded_at": "2026-07-09T23:15:07.447Z"
+    },
+    "1e5clSAZCTdFaOegyEXj31LT6vPd6IP8b": {
+      "name": "IMG_2584.HEIC",
+      "folder": "Client content essentials",
+      "creator": "Blue Bear",
+      "account_id": "acct_99db42bda91149f58fd68ecccde21fa8",
+      "vault_media_id": "ofapi_media_6f7ea660ef7943fb850cda1860b025fc",
+      "uploaded_at": "2026-07-09T23:15:18.635Z"
+    },
+    "1ANOwaq3XS57N98oiAowy2G1f3oSw0Y5_": {
+      "name": "IMG_2591.MOV",
+      "folder": "Client content essentials",
+      "creator": "Blue Bear",
+      "account_id": "acct_99db42bda91149f58fd68ecccde21fa8",
+      "skipped_reason": "exceeds_1gb",
+      "recorded_at": "2026-07-09T23:15:18.636Z"
+    },
+    "1XWhrD7AsA1YhaTNot86yrJIv_mWGyWg2": {
+      "name": "IMG_2592.MOV",
+      "folder": "Client content essentials",
+      "creator": "Blue Bear",
+      "account_id": "acct_99db42bda91149f58fd68ecccde21fa8",
+      "skipped_reason": "exceeds_1gb",
+      "recorded_at": "2026-07-09T23:15:18.637Z"
+    },
+    "15p74Xy69b2B4ei_bHEdrl2tbeXFvxqVu": {
+      "name": "IMG_2805.HEIC",
+      "folder": "feed posts/misc",
+      "creator": "Julie",
+      "account_id": "acct_7aa411ae5ab947feba989fe9f63f7a60",
+      "vault_media_id": "ofapi_media_2a1040221d2144608b211d70ac428ee7",
+      "uploaded_at": "2026-07-09T23:22:04.115Z"
+    },
+    "1AATfChWJh9RbPPgN99oxik8kv4jleTvU": {
+      "name": "IMG_2861.HEIC",
+      "folder": "feed posts/misc",
+      "creator": "Julie",
+      "account_id": "acct_7aa411ae5ab947feba989fe9f63f7a60",
+      "vault_media_id": "ofapi_media_253e7a24f49d42648528ef59f719adbe",
+      "uploaded_at": "2026-07-09T23:22:15.062Z"
+    },
+    "1MXqrt4HiTVGExn035EOsl8fLLqkpE0Vp": {
+      "name": "IMG_2870.HEIC",
+      "folder": "feed posts/misc",
+      "creator": "Julie",
+      "account_id": "acct_7aa411ae5ab947feba989fe9f63f7a60",
+      "vault_media_id": "ofapi_media_693866dab80e43aab4d448b42fe64705",
+      "uploaded_at": "2026-07-09T23:22:26.051Z"
+    },
+    "1hT85I6lmS-k5cJchRw07SSH-YsrTCYYq": {
+      "name": "IMG_2862.HEIC",
+      "folder": "feed posts/misc",
+      "creator": "Julie",
+      "account_id": "acct_7aa411ae5ab947feba989fe9f63f7a60",
+      "vault_media_id": "ofapi_media_12d30cdb96dd462a8acbb9b0e4393342",
+      "uploaded_at": "2026-07-09T23:22:36.762Z"
     }
   }
 }
