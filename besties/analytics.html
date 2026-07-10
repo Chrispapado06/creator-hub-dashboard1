@@ -25,7 +25,6 @@
     <header class="topbar">
       <h1>Analytics</h1>
       <div class="topbar-actions">
-        <span class="save-status" id="range-note"></span>
         <a class="btn-ghost" href="/admin">← Admin</a>
         <a class="btn-ghost" href="/" target="_blank" rel="noopener">View site ↗</a>
         <button type="button" class="btn-ghost" id="refresh-btn">Refresh</button>
@@ -34,28 +33,58 @@
 
     <main class="admin-main">
 
+      <section class="panel filter-bar">
+        <div class="presets" id="presets">
+          <button type="button" data-preset="7">Last 7 days</button>
+          <button type="button" data-preset="14">Last 14 days</button>
+          <button type="button" data-preset="30">Last 30 days</button>
+          <button type="button" data-preset="month">This month</button>
+          <button type="button" data-preset="all">All time</button>
+        </div>
+        <div class="date-inputs">
+          <label>From <input type="date" id="from-date" /></label>
+          <label>To <input type="date" id="to-date" /></label>
+        </div>
+        <p class="hint range-note" id="range-note"></p>
+      </section>
+
       <section class="kpi-row" id="kpi-row"></section>
 
       <section class="panel">
         <div class="panel-head">
-          <h2>Last 14 days</h2>
+          <h2>Trend</h2>
           <div class="legend" id="chart-legend"></div>
         </div>
         <div class="chart-wrap" id="chart-wrap"></div>
       </section>
 
-      <section class="panel">
-        <div class="panel-head"><h2>By creator</h2></div>
-        <p class="hint">Sorted by clicks. <strong>Open rate</strong> = opens ÷ clicks (how many taps became an actual outbound visit).</p>
-        <div class="table-scroll">
-          <table class="stats-table" id="creator-table">
-            <thead>
-              <tr><th>Creator</th><th class="num">Clicks</th><th class="num">Opens</th><th class="num">Open rate</th><th class="num">Share of clicks</th></tr>
-            </thead>
-            <tbody id="creator-tbody"></tbody>
-          </table>
-        </div>
-      </section>
+      <div class="two-col">
+        <section class="panel">
+          <div class="panel-head"><h2>By creator</h2></div>
+          <p class="hint"><strong>Open rate</strong> = opens ÷ clicks.</p>
+          <div class="table-scroll">
+            <table class="stats-table" id="creator-table">
+              <thead>
+                <tr><th>Creator</th><th class="num">Clicks</th><th class="num">Opens</th><th class="num">Open rate</th><th class="num">Share</th></tr>
+              </thead>
+              <tbody id="creator-tbody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>By country</h2></div>
+          <p class="hint">Where your visitors come from.</p>
+          <div class="table-scroll">
+            <table class="stats-table" id="country-table">
+              <thead>
+                <tr><th>Country</th><th class="num">Views</th><th class="num">Clicks</th><th class="num">Opens</th><th class="num">Share</th></tr>
+              </thead>
+              <tbody id="country-tbody"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
 
       <section class="panel">
         <details>

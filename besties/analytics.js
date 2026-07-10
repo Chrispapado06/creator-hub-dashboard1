@@ -1,10 +1,13 @@
-/* Analytics dashboard — reads /api/stats (same admin password as /admin). */
+/* Analytics dashboard — reads /api/stats (same admin password as /admin).
+ * All numbers are recomputed client-side for the selected date range (UTC days). */
 (function () {
   "use strict";
 
   var PW_KEY = "besties-admin-pw"; // shared with the admin panel
   var password = sessionStorage.getItem(PW_KEY) || "";
-  var stats = null;
+  var stats = null; // { since, byDay }
+  var range = { start: null, end: null };
+  var activePreset = "14";
 
   var SERIES = [
     { key: "view", label: "Views", color: "#6b7280" },
@@ -14,21 +17,28 @@
 
   function el(id) { return document.getElementById(id); }
   function authHeaders() { return { Authorization: "Bearer " + password }; }
+  function fmt(n) { return (n || 0).toLocaleString(); }
+  function pct(part, whole) { return whole ? (Math.round((part / whole) * 1000) / 10) + "%" : "—"; }
+  function todayUTC() { return new Date().toISOString().slice(0, 10); }
+  function daysAgoUTC(n) { return new Date(Date.now() - n * 86400000).toISOString().slice(0, 10); }
 
-  function pct(part, whole) {
-    if (!whole) return "—";
-    return (Math.round((part / whole) * 1000) / 10) + "%";
+  function daysBetween(startStr, endStr) {
+    var out = [];
+    if (!startStr || !endStr) return out;
+    var cur = new Date(startStr + "T00:00:00Z");
+    var end = new Date(endStr + "T00:00:00Z");
+    var guard = 0;
+    while (cur <= end && guard < 1200) {
+      out.push(cur.toISOString().slice(0, 10));
+      cur = new Date(cur.getTime() + 86400000);
+      guard++;
+    }
+    return out;
   }
 
-  function fmt(n) { return (n || 0).toLocaleString(); }
-
-  function lastDays(n) {
-    var days = [];
-    var now = Date.now();
-    for (var i = n - 1; i >= 0; i--) {
-      days.push(new Date(now - i * 86400000).toISOString().slice(0, 10));
-    }
-    return days;
+  function flagEmoji(code) {
+    if (!/^[A-Z]{2}$/.test(code) || code === "XX" || code === "LO") return "🏳️";
+    return code.replace(/./g, function (c) { return String.fromCodePoint(0x1f1e6 + c.charCodeAt(0) - 65); });
   }
 
   /* ---------------- login ---------------- */
@@ -51,12 +61,10 @@
 
   el("login-form").addEventListener("submit", function (e) {
     e.preventDefault();
-    tryLogin(el("login-password").value, function () {
-      el("login-error").hidden = false;
-    });
+    tryLogin(el("login-password").value, function () { el("login-error").hidden = false; });
   });
 
-  /* ---------------- load + render ---------------- */
+  /* ---------------- data ---------------- */
 
   function load() {
     fetch("/api/stats", { headers: authHeaders(), cache: "no-store" })
@@ -70,17 +78,56 @@
         return r.json();
       })
       .then(function (data) {
-        stats = data;
-        renderKpis();
-        renderChart();
-        renderTable();
-        renderSince();
+        stats = { since: data.since, byDay: data.byDay || {} };
+        if (!range.start) applyPreset(activePreset);
+        else render();
       })
       .catch(function () {});
   }
 
-  function renderKpis() {
-    var t = stats.totals || { view: 0, click: 0, open: 0 };
+  // Sum all per-day buckets within [start, end] into range totals.
+  function aggregate() {
+    var totals = { view: 0, click: 0, open: 0 };
+    var creators = {};
+    var countries = {};
+    Object.keys(stats.byDay).forEach(function (d) {
+      if (d < range.start || d > range.end) return;
+      var day = stats.byDay[d];
+      totals.view += day.view || 0;
+      totals.click += day.click || 0;
+      totals.open += day.open || 0;
+      Object.keys(day.creators || {}).forEach(function (name) {
+        var c = day.creators[name];
+        var t = creators[name] || (creators[name] = { click: 0, open: 0 });
+        t.click += c.click || 0;
+        t.open += c.open || 0;
+      });
+      Object.keys(day.countries || {}).forEach(function (code) {
+        var c = day.countries[code];
+        var t = countries[code] || (countries[code] = { view: 0, click: 0, open: 0, name: c.name || code });
+        t.view += c.view || 0;
+        t.click += c.click || 0;
+        t.open += c.open || 0;
+        if (c.name) t.name = c.name;
+      });
+    });
+    return { totals: totals, creators: creators, countries: countries };
+  }
+
+  /* ---------------- render ---------------- */
+
+  function render() {
+    if (!stats) return;
+    var agg = aggregate();
+    renderKpis(agg.totals);
+    renderChart();
+    renderCreators(agg.creators, agg.totals.click);
+    renderCountries(agg.countries, agg.totals.view);
+    renderRangeNote(agg.totals);
+    renderSince();
+  }
+
+  function renderKpis(t) {
     var tiles = [
       { label: "Page views", value: fmt(t.view) },
       { label: "Creator clicks", value: fmt(t.click), sub: "CTR " + pct(t.click, t.view) },
@@ -111,11 +158,11 @@
   }
 
   function renderChart() {
-    var days = lastDays(14);
-    var byDay = stats.byDay || {};
+    var days = daysBetween(range.start, range.end);
+    if (days.length > 120) days = days.slice(days.length - 120); // keep the SVG readable
+    var byDay = stats.byDay;
     var series = SERIES.map(function (s) {
       return {
-        key: s.key,
         color: s.color,
         label: s.label,
         values: days.map(function (d) { return (byDay[d] && byDay[d][s.key]) || 0; }),
@@ -127,35 +174,33 @@
     var max = 1;
     series.forEach(function (s) { s.values.forEach(function (v) { if (v > max) max = v; }); });
 
-    function x(i) { return padL + (days.length === 1 ? innerW / 2 : (i / (days.length - 1)) * innerW); }
+    function x(i) { return padL + (days.length <= 1 ? innerW / 2 : (i / (days.length - 1)) * innerW); }
     function y(v) { return padT + innerH - (v / max) * innerH; }
 
-    var svg = '<svg viewBox="0 0 ' + W + " " + H + '" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Daily analytics chart">';
-    // baseline + max gridline
+    var labelEvery = Math.max(1, Math.ceil(days.length / 6));
+    var svg = '<svg viewBox="0 0 ' + W + " " + H + '" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Analytics trend">';
     svg += '<line x1="' + padL + '" y1="' + (padT + innerH) + '" x2="' + (W - padR) + '" y2="' + (padT + innerH) + '" stroke="#0000001f" />';
     svg += '<line x1="' + padL + '" y1="' + padT + '" x2="' + (W - padR) + '" y2="' + padT + '" stroke="#0000000f" />';
     svg += '<text x="' + (padL - 6) + '" y="' + (padT + 4) + '" text-anchor="end" font-size="11" fill="#82837e">' + max + "</text>";
     svg += '<text x="' + (padL - 6) + '" y="' + (padT + innerH) + '" text-anchor="end" font-size="11" fill="#82837e">0</text>';
-    // x labels (~every 3rd day)
     days.forEach(function (d, i) {
-      if (i % 3 === 0 || i === days.length - 1) {
+      if (i % labelEvery === 0 || i === days.length - 1) {
         var parts = d.split("-");
         var label = parseInt(parts[1], 10) + "/" + parseInt(parts[2], 10);
         svg += '<text x="' + x(i) + '" y="' + (H - 8) + '" text-anchor="middle" font-size="11" fill="#82837e">' + label + "</text>";
       }
     });
-    // series lines + dots
     series.forEach(function (s) {
+      if (days.length === 1) {
+        svg += '<circle cx="' + x(0) + '" cy="' + y(s.values[0]) + '" r="3.5" fill="' + s.color + '" />';
+        return;
+      }
       var pts = s.values.map(function (v, i) { return x(i) + "," + y(v); }).join(" ");
       svg += '<polyline points="' + pts + '" fill="none" stroke="' + s.color + '" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" />';
-      s.values.forEach(function (v, i) {
-        svg += '<circle cx="' + x(i) + '" cy="' + y(v) + '" r="2.5" fill="' + s.color + '" />';
-      });
     });
     svg += "</svg>";
     el("chart-wrap").innerHTML = svg;
 
-    // legend with per-series totals over the window
     var legend = el("chart-legend");
     legend.innerHTML = "";
     series.forEach(function (s) {
@@ -171,42 +216,79 @@
     });
   }
 
-  function renderTable() {
-    var byCreator = stats.byCreator || {};
-    var totalClicks = stats.totals ? stats.totals.click : 0;
-    var rows = Object.keys(byCreator).map(function (name) {
-      var c = byCreator[name];
-      return { name: name, click: c.click || 0, open: c.open || 0 };
-    });
-    rows.sort(function (a, b) { return b.click - a.click || b.open - a.open; });
-
-    var tbody = el("creator-tbody");
+  function fillTable(tbodyId, rows, cols, emptyText) {
+    var tbody = el(tbodyId);
     tbody.innerHTML = "";
     if (!rows.length) {
       var tr = document.createElement("tr");
       var td = document.createElement("td");
-      td.colSpan = 5;
+      td.colSpan = cols;
       td.className = "empty";
-      td.textContent = "No clicks recorded yet.";
+      td.textContent = emptyText;
       tr.appendChild(td);
       tbody.appendChild(tr);
       return;
     }
-    rows.forEach(function (r) {
+    rows.forEach(function (cells) {
       var tr = document.createElement("tr");
-      function cell(text, cls) {
+      cells.forEach(function (cell) {
         var td = document.createElement("td");
-        if (cls) td.className = cls;
-        td.textContent = text;
+        if (cell.cls) td.className = cell.cls;
+        td.textContent = cell.text;
         tr.appendChild(td);
-      }
-      cell(r.name);
-      cell(fmt(r.click), "num");
-      cell(fmt(r.open), "num");
-      cell(pct(r.open, r.click), "num");
-      cell(pct(r.click, totalClicks), "num");
+      });
       tbody.appendChild(tr);
     });
+  }
+
+  function renderCreators(creators, totalClicks) {
+    var rows = Object.keys(creators).map(function (name) {
+      var c = creators[name];
+      return { name: name, click: c.click || 0, open: c.open || 0 };
+    });
+    rows.sort(function (a, b) { return b.click - a.click || b.open - a.open; });
+    fillTable(
+      "creator-tbody",
+      rows.map(function (r) {
+        return [
+          { text: r.name },
+          { text: fmt(r.click), cls: "num" },
+          { text: fmt(r.open), cls: "num" },
+          { text: pct(r.open, r.click), cls: "num" },
+          { text: pct(r.click, totalClicks), cls: "num" },
+        ];
+      }),
+      5,
+      "No clicks in this range."
+    );
+  }
+
+  function renderCountries(countries, totalViews) {
+    var rows = Object.keys(countries).map(function (code) {
+      var c = countries[code];
+      return { code: code, name: c.name || code, view: c.view || 0, click: c.click || 0, open: c.open || 0 };
+    });
+    rows.sort(function (a, b) { return b.view - a.view || b.click - a.click; });
+    fillTable(
+      "country-tbody",
+      rows.map(function (r) {
+        return [
+          { text: flagEmoji(r.code) + "  " + r.name },
+          { text: fmt(r.view), cls: "num" },
+          { text: fmt(r.click), cls: "num" },
+          { text: fmt(r.open), cls: "num" },
+          { text: pct(r.view, totalViews), cls: "num" },
+        ];
+      }),
+      5,
+      "No visits in this range yet."
+    );
+  }
+
+  function renderRangeNote(t) {
+    el("range-note").textContent =
+      "Showing " + range.start + " → " + range.end + " (UTC) · " +
+      fmt(t.view) + " views, " + fmt(t.click) + " clicks, " + fmt(t.open) + " conversions.";
   }
 
   function renderSince() {
@@ -216,8 +298,58 @@
       if (!isNaN(d)) note = d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
     }
     el("since-note").textContent = note;
-    el("range-note").textContent = "since " + note;
   }
+
+  /* ---------------- date range controls ---------------- */
+
+  function earliestDay() {
+    var keys = Object.keys(stats.byDay).sort();
+    return keys.length ? keys[0] : todayUTC();
+  }
+
+  function applyPreset(preset) {
+    activePreset = preset;
+    var end = todayUTC();
+    var start;
+    if (preset === "7") start = daysAgoUTC(6);
+    else if (preset === "14") start = daysAgoUTC(13);
+    else if (preset === "30") start = daysAgoUTC(29);
+    else if (preset === "month") start = end.slice(0, 8) + "01";
+    else if (preset === "all") start = earliestDay();
+    else start = daysAgoUTC(13);
+    range.start = start;
+    range.end = end;
+    syncControls();
+    render();
+  }
+
+  function syncControls() {
+    el("from-date").value = range.start;
+    el("to-date").value = range.end;
+    el("from-date").max = todayUTC();
+    el("to-date").max = todayUTC();
+    var btns = el("presets").querySelectorAll("button");
+    btns.forEach(function (b) { b.classList.toggle("active", b.getAttribute("data-preset") === activePreset); });
+  }
+
+  el("presets").addEventListener("click", function (e) {
+    var btn = e.target.closest("button[data-preset]");
+    if (btn) applyPreset(btn.getAttribute("data-preset"));
+  });
+
+  function onCustomDate() {
+    var from = el("from-date").value;
+    var to = el("to-date").value;
+    if (!from || !to) return;
+    if (from > to) { var tmp = from; from = to; to = tmp; }
+    range.start = from;
+    range.end = to;
+    activePreset = "custom";
+    syncControls();
+    render();
+  }
+  el("from-date").addEventListener("change", onCustomDate);
+  el("to-date").addEventListener("change", onCustomDate);
 
   /* ---------------- actions ---------------- */
 

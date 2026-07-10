@@ -10,6 +10,8 @@
  *                   mounts one at /data → set DATA_DIR=/data) so admin edits and
  *                   uploads survive restarts and redeploys. Defaults to the app
  *                   folder, which is correct for local development.
+ *   GEO_ENABLED     set to "0" to disable visitor-country lookups (analytics then
+ *                   records every visit under country "Unknown"). Enabled by default.
  */
 "use strict";
 
@@ -93,26 +95,43 @@ function readBody(req, res, limit, cb) {
  * totals, per-creator counts, and a per-day breakdown, not individual events.
  */
 
+// Everything is bucketed per UTC day so the dashboard can recompute totals,
+// per-creator, and per-country numbers for any selected date range.
+//   byDay["YYYY-MM-DD"] = {
+//     view, click, open,
+//     creators: { name: { click, open } },
+//     countries: { CC: { view, click, open, name } },
+//   }
+function emptyDay() {
+  return { view: 0, click: 0, open: 0, creators: {}, countries: {} };
+}
+
 function emptyAnalytics() {
-  return {
-    totals: { view: 0, click: 0, open: 0 },
-    byCreator: {}, // name -> { click, open }
-    byDay: {}, // "YYYY-MM-DD" (UTC) -> { view, click, open }
-    since: new Date().toISOString(),
-  };
+  return { byDay: {}, since: new Date().toISOString() };
 }
 
 function loadAnalytics() {
+  let raw;
   try {
-    const a = JSON.parse(fs.readFileSync(ANALYTICS_FILE, "utf8"));
-    a.totals = Object.assign({ view: 0, click: 0, open: 0 }, a.totals);
-    a.byCreator = a.byCreator || {};
-    a.byDay = a.byDay || {};
-    a.since = a.since || new Date().toISOString();
-    return a;
+    raw = JSON.parse(fs.readFileSync(ANALYTICS_FILE, "utf8"));
   } catch (e) {
     return emptyAnalytics();
   }
+  // normalize / migrate older shapes into the per-day nested structure
+  const out = emptyAnalytics();
+  out.since = raw.since || out.since;
+  const src = raw.byDay || {};
+  Object.keys(src).forEach((d) => {
+    const day = src[d] || {};
+    out.byDay[d] = {
+      view: day.view || 0,
+      click: day.click || 0,
+      open: day.open || 0,
+      creators: day.creators || {},
+      countries: day.countries || {},
+    };
+  });
+  return out;
 }
 
 let analytics = loadAnalytics();
@@ -141,16 +160,21 @@ function scheduleFlush() {
   if (!flushTimer) flushTimer = setTimeout(flushAnalytics, 3000);
 }
 
-function recordEvent(type, creator) {
+function recordEvent(type, creator, country, dateKey) {
   if (!TRACK_TYPES.has(type)) return;
-  const day = new Date().toISOString().slice(0, 10);
-  analytics.totals[type] = (analytics.totals[type] || 0) + 1;
-  if (!analytics.byDay[day]) analytics.byDay[day] = { view: 0, click: 0, open: 0 };
-  analytics.byDay[day][type] = (analytics.byDay[day][type] || 0) + 1;
+  const date = dateKey || new Date().toISOString().slice(0, 10);
+  const day = analytics.byDay[date] || (analytics.byDay[date] = emptyDay());
+  day[type] = (day[type] || 0) + 1;
   if ((type === "click" || type === "open") && creator) {
     const name = String(creator).slice(0, 80);
-    if (!analytics.byCreator[name]) analytics.byCreator[name] = { click: 0, open: 0 };
-    analytics.byCreator[name][type] = (analytics.byCreator[name][type] || 0) + 1;
+    const c = day.creators[name] || (day.creators[name] = { click: 0, open: 0 });
+    c[type] = (c[type] || 0) + 1;
+  }
+  if (country && country.code) {
+    const code = String(country.code).slice(0, 8);
+    const ct = day.countries[code] || (day.countries[code] = { view: 0, click: 0, open: 0, name: country.name || code });
+    ct[type] = (ct[type] || 0) + 1;
+    if (country.name) ct.name = country.name;
   }
   scheduleFlush();
 }
@@ -177,6 +201,67 @@ function rateLimited(ip) {
     for (const [k, v] of rateMap) if (now - v.start > RATE_WINDOW_MS) rateMap.delete(k);
   }
   return rec.count > RATE_LIMIT;
+}
+
+/* ------------ geo (IP -> country) ------------
+ * Resolved server-side. Prefers a country header if a CDN provides one
+ * (Cloudflare, etc.), otherwise a free IP lookup, cached per IP in memory.
+ * Only aggregate country counts are stored — never raw IPs. Set GEO_ENABLED=0
+ * to turn this off entirely (all events count as country "Unknown").
+ */
+const GEO_ENABLED = process.env.GEO_ENABLED !== "0";
+const geoCache = new Map(); // ip -> { code, name }
+
+function headerCountry(req) {
+  const h = req.headers;
+  const code = h["cf-ipcountry"] || h["x-vercel-ip-country"] || h["x-country-code"] || "";
+  return /^[A-Za-z]{2}$/.test(code) ? { code: code.toUpperCase(), name: code.toUpperCase() } : null;
+}
+
+function isPrivateIp(ip) {
+  if (!ip || ip === "unknown") return true;
+  const v = ip.startsWith("::ffff:") ? ip.slice(7) : ip;
+  return (
+    v === "::1" ||
+    v.startsWith("127.") ||
+    v.startsWith("10.") ||
+    v.startsWith("192.168.") ||
+    v.startsWith("169.254.") ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(v) ||
+    v.toLowerCase().startsWith("fc") ||
+    v.toLowerCase().startsWith("fd")
+  );
+}
+
+function resolveCountry(req, ip) {
+  const fromHeader = headerCountry(req);
+  if (fromHeader) return Promise.resolve(fromHeader);
+  if (geoCache.has(ip)) return Promise.resolve(geoCache.get(ip));
+  if (!GEO_ENABLED || isPrivateIp(ip)) {
+    const r = { code: isPrivateIp(ip) ? "LO" : "XX", name: isPrivateIp(ip) ? "Local / private" : "Unknown" };
+    geoCache.set(ip, r);
+    return Promise.resolve(r);
+  }
+  const q = ip.startsWith("::ffff:") ? ip.slice(7) : ip;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 3000);
+  return fetch("https://ipwho.is/" + encodeURIComponent(q), { signal: ctrl.signal })
+    .then((r) => r.json())
+    .then((j) => {
+      const result =
+        j && j.success && j.country_code
+          ? { code: String(j.country_code).toUpperCase().slice(0, 2), name: j.country || j.country_code }
+          : { code: "XX", name: "Unknown" };
+      geoCache.set(ip, result);
+      if (geoCache.size > 10000) geoCache.clear();
+      return result;
+    })
+    .catch(() => {
+      const result = { code: "XX", name: "Unknown" };
+      geoCache.set(ip, result);
+      return result;
+    })
+    .finally(() => clearTimeout(timer));
 }
 
 /* ------------ API handlers ------------ */
@@ -215,23 +300,28 @@ function handleSave(req, res) {
 }
 
 // Public: record a { type, creator } event (or an array of them). Always 204.
+// Responds immediately; country lookup + recording happen asynchronously so the
+// beacon never waits on the geo API.
 function handleTrack(req, res) {
   const ip = clientIp(req);
   readBody(req, res, 8 * 1024, (buf) => {
     if (res.writableEnded) return; // readBody already responded (e.g. 413)
-    if (!rateLimited(ip)) {
-      try {
-        const parsed = JSON.parse(buf.toString("utf8"));
-        const events = Array.isArray(parsed) ? parsed.slice(0, 20) : [parsed];
-        events.forEach((e) => {
-          if (e && typeof e === "object") recordEvent(e.type, e.creator);
-        });
-      } catch (e) {
-        /* ignore malformed beacons */
-      }
-    }
     res.writeHead(204, { "Cache-Control": "no-store" });
     res.end();
+    if (rateLimited(ip)) return;
+    let events;
+    try {
+      const parsed = JSON.parse(buf.toString("utf8"));
+      events = Array.isArray(parsed) ? parsed.slice(0, 20) : [parsed];
+    } catch (e) {
+      return; // ignore malformed beacons
+    }
+    const dateKey = new Date().toISOString().slice(0, 10);
+    resolveCountry(req, ip).then((country) => {
+      events.forEach((e) => {
+        if (e && typeof e === "object") recordEvent(e.type, e.creator, country, dateKey);
+      });
+    });
   });
 }
 
