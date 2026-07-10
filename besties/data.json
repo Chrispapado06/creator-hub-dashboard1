@@ -1,0 +1,69 @@
+{
+  "SITE": {
+    "title": "Campus Besties",
+    "pill": "Popular",
+    "tagline": "Campus Creator Lineup",
+    "headlinePlain": "Get to know my",
+    "headlineHighlight": "campus besties",
+    "headlineEmoji": "🤭 💗",
+    "subtitle": "Tap a creator to open their verified 18+ profile.",
+    "featuredButtonText": "Open Free Profile →",
+    "stickyCtaText": "Open {name} free →",
+    "ageGate": true,
+    "ageGateTitle": "Are you 18 or older?",
+    "ageGateText": "This link leads to adult (18+) content. Please confirm your age to continue.",
+    "ageGateConfirm": "Yes, I'm 18 or older",
+    "ageGateCancel": "No, take me back",
+    "footerNote": "18+ promotional links. Profile images are used with permission of the creators.",
+    "supportEmail": "support@example.com"
+  },
+  "CREATORS": [
+    {
+      "name": "Jess",
+      "image": "",
+      "link": "https://onlyfans.com/CHANGE-ME",
+      "hook": "viral for a reason (free too)",
+      "isNew": true,
+      "featured": true
+    },
+    {
+      "name": "Bella",
+      "image": "",
+      "link": "https://onlyfans.com/CHANGE-ME",
+      "isNew": true
+    },
+    {
+      "name": "Stella",
+      "image": "",
+      "link": "https://onlyfans.com/CHANGE-ME",
+      "isNew": true
+    },
+    {
+      "name": "Kaia",
+      "image": "",
+      "link": "https://onlyfans.com/CHANGE-ME",
+      "isNew": true
+    },
+    {
+      "name": "Irene",
+      "image": "",
+      "link": "https://onlyfans.com/CHANGE-ME",
+      "isNew": true
+    },
+    {
+      "name": "Maria",
+      "image": "",
+      "link": "https://onlyfans.com/CHANGE-ME"
+    },
+    {
+      "name": "Lena",
+      "image": "",
+      "link": "https://onlyfans.com/CHANGE-ME"
+    },
+    {
+      "name": "Emma",
+      "image": "",
+      "link": "https://onlyfans.com/CHANGE-ME"
+    }
+  ]
+}

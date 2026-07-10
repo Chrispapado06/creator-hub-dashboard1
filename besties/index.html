@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex" />
+  <title>Campus Besties</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="shell">
+    <main class="page">
+
+      <section class="intro" aria-labelledby="site-title">
+        <div class="trust-row">
+          <span class="hot-pill" id="pill"></span>
+          <span class="swirl" aria-hidden="true">〰</span>
+          <span id="tagline"></span>
+        </div>
+        <h1 id="site-title">
+          <span id="headline-plain"></span>
+          <span class="highlight" id="headline-highlight"></span>
+          <span aria-hidden="true" id="headline-emoji"></span>
+        </h1>
+        <p class="subtitle" id="subtitle"></p>
+      </section>
+
+      <section class="feature-card" id="feature-card" aria-label="Featured profile"></section>
+
+      <section class="roster" id="roster" aria-label="Creator roster"></section>
+
+      <footer class="footer">
+        <p id="footer-note"></p>
+        <nav>
+          <a id="support-link" href="#"></a>
+        </nav>
+      </footer>
+
+    </main>
+  </div>
+
+  <button type="button" class="sticky-cta" id="sticky-cta"></button>
+
+  <div class="age-scrim" id="age-scrim" hidden>
+    <div class="age-modal" role="dialog" aria-modal="true" aria-labelledby="age-title">
+      <button type="button" id="age-close" aria-label="Close">✕</button>
+      <h2 id="age-title"></h2>
+      <p id="age-text"></p>
+      <button type="button" class="age-confirm" id="age-confirm"></button>
+      <button type="button" class="age-cancel" id="age-cancel"></button>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

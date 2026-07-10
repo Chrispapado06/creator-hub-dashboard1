@@ -1,0 +1,8 @@
+# Runtime-uploaded images live on the server/volume, not in git
+images/*
+!images/.gitkeep
+
+# temp files from atomic data.json writes
+data.json.tmp
+
+node_modules/

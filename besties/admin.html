@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex" />
+  <title>Besties Admin</title>
+  <link rel="stylesheet" href="admin.css" />
+</head>
+<body>
+
+  <!-- login -->
+  <div class="login-scrim" id="login-scrim">
+    <form class="login-modal" id="login-form">
+      <h1>Besties Admin</h1>
+      <p>Enter the admin password to manage creators.</p>
+      <input type="password" id="login-password" placeholder="Password" autocomplete="current-password" autofocus />
+      <button type="submit" class="btn-primary">Log in</button>
+      <p class="login-error" id="login-error" hidden>Wrong password, try again.</p>
+    </form>
+  </div>
+
+  <!-- admin app -->
+  <div class="admin" id="admin" hidden>
+    <header class="topbar">
+      <h1>Besties Admin</h1>
+      <div class="topbar-actions">
+        <span class="save-status" id="save-status"></span>
+        <a class="btn-ghost" href="/" target="_blank" rel="noopener">View site ↗</a>
+        <button type="button" class="btn-primary" id="save-btn">Save changes</button>
+      </div>
+    </header>
+
+    <main class="admin-main">
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Creators</h2>
+          <button type="button" class="btn-primary" id="add-creator">+ Add creator</button>
+        </div>
+        <p class="hint">Click a card's fields to edit. <strong>Featured</strong> puts that creator in the big
+          gradient card at the top. Drag order with the ↑ ↓ buttons. Don't forget to hit <strong>Save changes</strong>.</p>
+        <div class="creator-list" id="creator-list"></div>
+      </section>
+
+      <section class="panel">
+        <details>
+          <summary><h2>Site text &amp; settings</h2></summary>
+          <div class="site-grid" id="site-grid"></div>
+        </details>
+      </section>
+
+    </main>
+  </div>
+
+  <template id="creator-template">
+    <article class="creator-card">
+      <div class="creator-thumb">
+        <img alt="" hidden />
+        <span class="thumb-fallback"></span>
+      </div>
+      <div class="creator-fields">
+        <label>Name <input type="text" data-field="name" placeholder="Bella" /></label>
+        <label>Link (opens on click) <input type="url" data-field="link" placeholder="https://onlyfans.com/…" /></label>
+        <label>Image <span class="image-row">
+          <input type="text" data-field="image" placeholder="images/bella.jpg or https://…" />
+          <button type="button" class="btn-ghost upload-btn">Upload…</button>
+          <input type="file" class="upload-input" accept=".jpg,.jpeg,.png,.webp,.gif,.avif" hidden />
+        </span></label>
+        <label class="hook-label">Hook (featured card only) <input type="text" data-field="hook" placeholder="viral for a reason (free too)" /></label>
+        <div class="creator-flags">
+          <label class="flag"><input type="checkbox" data-field="isNew" /> NEW badge</label>
+          <label class="flag"><input type="radio" name="featured" data-field="featured" /> Featured</label>
+          <span class="spacer"></span>
+          <button type="button" class="btn-ghost move-up" title="Move up">↑</button>
+          <button type="button" class="btn-ghost move-down" title="Move down">↓</button>
+          <button type="button" class="btn-danger delete-btn">Delete</button>
+        </div>
+      </div>
+    </article>
+  </template>
+
+  <script src="admin.js"></script>
+</body>
+</html>
