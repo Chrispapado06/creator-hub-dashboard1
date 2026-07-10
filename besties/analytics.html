@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex" />
+  <title>Besties Analytics</title>
+  <link rel="stylesheet" href="admin.css" />
+</head>
+<body>
+
+  <!-- login -->
+  <div class="login-scrim" id="login-scrim">
+    <form class="login-modal" id="login-form">
+      <h1>Besties Analytics</h1>
+      <p>Enter the admin password to view analytics.</p>
+      <input type="password" id="login-password" placeholder="Password" autocomplete="current-password" autofocus />
+      <button type="submit" class="btn-primary">Log in</button>
+      <p class="login-error" id="login-error" hidden>Wrong password, try again.</p>
+    </form>
+  </div>
+
+  <!-- dashboard -->
+  <div class="admin" id="dash" hidden>
+    <header class="topbar">
+      <h1>Analytics</h1>
+      <div class="topbar-actions">
+        <span class="save-status" id="range-note"></span>
+        <a class="btn-ghost" href="/admin">← Admin</a>
+        <a class="btn-ghost" href="/" target="_blank" rel="noopener">View site ↗</a>
+        <button type="button" class="btn-ghost" id="refresh-btn">Refresh</button>
+      </div>
+    </header>
+
+    <main class="admin-main">
+
+      <section class="kpi-row" id="kpi-row"></section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Last 14 days</h2>
+          <div class="legend" id="chart-legend"></div>
+        </div>
+        <div class="chart-wrap" id="chart-wrap"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>By creator</h2></div>
+        <p class="hint">Sorted by clicks. <strong>Open rate</strong> = opens ÷ clicks (how many taps became an actual outbound visit).</p>
+        <div class="table-scroll">
+          <table class="stats-table" id="creator-table">
+            <thead>
+              <tr><th>Creator</th><th class="num">Clicks</th><th class="num">Opens</th><th class="num">Open rate</th><th class="num">Share of clicks</th></tr>
+            </thead>
+            <tbody id="creator-tbody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <details>
+          <summary><h2>Danger zone</h2></summary>
+          <p class="hint">Tracking started <span id="since-note">—</span>. Resetting permanently clears all analytics counts. This does not affect your creators or the live site.</p>
+          <button type="button" class="btn-danger" id="reset-btn">Reset all analytics</button>
+        </details>
+      </section>
+
+    </main>
+  </div>
+
+  <script src="analytics.js"></script>
+</body>
+</html>

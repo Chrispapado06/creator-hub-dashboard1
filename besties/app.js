@@ -4,26 +4,51 @@
 
   var AGE_KEY = "besties-age-confirmed";
   var pendingLink = null;
+  var pendingCreator = null;
   var SITE = null;
 
   function el(id) { return document.getElementById(id); }
 
-  function openLink(url) {
+  /* Fire an analytics event. Never allowed to break the page. */
+  function track(type, creator) {
+    try {
+      var payload = JSON.stringify({ type: type, creator: creator || undefined });
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon("/api/track", new Blob([payload], { type: "application/json" }));
+      } else {
+        fetch("/api/track", {
+          method: "POST",
+          body: payload,
+          headers: { "Content-Type": "application/json" },
+          keepalive: true,
+        });
+      }
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  function openLink(url, creator) {
     if (!url) return;
+    track("open", creator); // conversion: outbound link actually opened
     window.open(url, "_blank", "noopener");
   }
 
-  function requestOpen(url) {
+  // Called when a creator card/button is clicked (intent).
+  function requestOpen(creator) {
+    track("click", creator.name);
     if (!SITE.ageGate || localStorage.getItem(AGE_KEY) === "yes") {
-      openLink(url);
+      openLink(creator.link, creator.name);
       return;
     }
-    pendingLink = url;
+    pendingLink = creator.link;
+    pendingCreator = creator.name;
     el("age-scrim").hidden = false;
   }
 
   function closeAgeGate() {
     pendingLink = null;
+    pendingCreator = null;
     el("age-scrim").hidden = true;
   }
 
@@ -87,7 +112,7 @@
       media.className = "feature-media";
       media.setAttribute("aria-label", "Open " + featured.name + "'s profile");
       buildImage(media, featured);
-      media.addEventListener("click", function () { requestOpen(featured.link); });
+      media.addEventListener("click", function () { requestOpen(featured); });
 
       var copy = document.createElement("div");
       copy.className = "feature-copy";
@@ -107,7 +132,7 @@
       btn.type = "button";
       btn.className = "profile-button";
       btn.textContent = SITE.featuredButtonText || "Open Profile →";
-      btn.addEventListener("click", function () { requestOpen(featured.link); });
+      btn.addEventListener("click", function () { requestOpen(featured); });
       copy.appendChild(btn);
 
       featureCard.appendChild(media);
@@ -138,7 +163,7 @@
       name.textContent = creator.name;
       link.appendChild(name);
 
-      link.addEventListener("click", function () { requestOpen(creator.link); });
+      link.addEventListener("click", function () { requestOpen(creator); });
 
       article.appendChild(link);
       roster.appendChild(article);
@@ -148,7 +173,7 @@
     var sticky = el("sticky-cta");
     if (featured && SITE.stickyCtaText) {
       sticky.textContent = SITE.stickyCtaText.replace("{name}", featured.name);
-      sticky.addEventListener("click", function () { requestOpen(featured.link); });
+      sticky.addEventListener("click", function () { requestOpen(featured); });
     } else {
       sticky.hidden = true;
     }
@@ -162,14 +187,17 @@
     el("age-confirm").addEventListener("click", function () {
       localStorage.setItem(AGE_KEY, "yes");
       var url = pendingLink;
+      var creator = pendingCreator;
       closeAgeGate();
-      openLink(url);
+      openLink(url, creator);
     });
     el("age-cancel").addEventListener("click", closeAgeGate);
     el("age-close").addEventListener("click", closeAgeGate);
     el("age-scrim").addEventListener("click", function (e) {
       if (e.target === el("age-scrim")) closeAgeGate();
     });
+
+    track("view"); // page view
   }
 
   fetch("data.json", { cache: "no-store" })

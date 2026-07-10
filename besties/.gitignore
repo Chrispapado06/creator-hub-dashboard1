@@ -2,7 +2,11 @@
 images/*
 !images/.gitkeep
 
-# temp files from atomic data.json writes
+# runtime analytics counts live on the server/volume, not in git
+analytics.json
+
+# temp files from atomic writes
 data.json.tmp
+analytics.json.tmp
 
 node_modules/

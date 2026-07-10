@@ -41,6 +41,22 @@ Open **/admin**, log in, and everything is point-and-click:
 
 Hit **Save changes** when done — the public site updates instantly.
 
+## Analytics
+
+Open **/analytics** (same admin password) for a dashboard of:
+
+- **Page views**, **creator clicks**, and **conversions** (an outbound link
+  actually opened after the 18+ gate), plus conversion rate and click-through rate.
+- A 14-day trend chart of views/clicks/opens.
+- A per-creator table (clicks, opens, open rate, share of clicks) so you can see
+  which creators actually pull.
+
+Tracking is automatic — the public page sends anonymous, aggregate-only events
+(no cookies, no personal data) to `/api/track`. Counts are stored in
+`analytics.json` next to `data.json` (on the volume in production), so they
+persist across redeploys. There's a **Reset all analytics** button under the
+dashboard's "Danger zone".
+
 ## Managing creators (the manual way)
 
 All content lives in [data.json](data.json). Add a creator by copy-pasting a
