@@ -22,8 +22,8 @@ export const ACCOUNT_META = {
   "flame_fantasy_xx":  { tier: "B" },  // Meg (currently disconnected)
   "junehaynes":        { tier: "C" },  // June - Sandra
   "juliejswan":        { tier: "C" },  // Julie
-  "lillyylou":         { tier: "C", thresholds: { level1Sec: 180, level2Sec: 300 } },  // Antonella — pin at 3 then 5 min
-  "ellaajanee":        { tier: "C", thresholds: { level1Sec: 180, level2Sec: 300 } },  // Ella      — pin at 3 then 5 min
+  "lillyylou":         { tier: "C" },  // Antonella — uniform 7-min first ping (was 3, team request 2026-07-06)
+  "ellaajanee":        { tier: "C" },  // Ella      — uniform 7-min first ping (was 3, team request 2026-07-06)
 };
 
 // Tier for an account by username (defaults to C — no 10-min step).
@@ -43,7 +43,7 @@ export function level2Eligible(username) {
 
 // ── Escalation thresholds (seconds) ─────────────────────────────────────────
 export const THRESHOLDS = {
-  level1Sec: 5 * 60,   // ≥5 min unanswered  → ping QA on shift
+  level1Sec: 7 * 60,   // ≥7 min unanswered  → ping QA on shift
   level2Sec: 10 * 60,  // ≥10 min (A/B only) → escalate (ping QA again)
   level3Sec: 20 * 60,  // ≥20 min            → message Management
   // Ignore threads older than this — they're abandoned backlog, not live
