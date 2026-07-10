@@ -47,15 +47,22 @@ Open **/analytics** (same admin password) for a dashboard of:
 
 - **Page views**, **creator clicks**, and **conversions** (an outbound link
   actually opened after the 18+ gate), plus conversion rate and click-through rate.
-- A 14-day trend chart of views/clicks/opens.
-- A per-creator table (clicks, opens, open rate, share of clicks) so you can see
-  which creators actually pull.
+- A **date-range picker** — quick presets (last 7 / 14 / 30 days, this month,
+  all time) or a custom **From / To** range. Every number, the chart, and both
+  tables recompute for the selected range.
+- A trend chart of views/clicks/opens over the range.
+- A **by-creator** table (clicks, opens, open rate, share of clicks).
+- A **by-country** table showing where visitors come from (with flags).
 
 Tracking is automatic — the public page sends anonymous, aggregate-only events
-(no cookies, no personal data) to `/api/track`. Counts are stored in
-`analytics.json` next to `data.json` (on the volume in production), so they
-persist across redeploys. There's a **Reset all analytics** button under the
-dashboard's "Danger zone".
+(no cookies, no personal data) to `/api/track`. Visitor country is resolved
+server-side from the request IP (via a CDN country header if present, otherwise
+a free `ipwho.is` lookup cached in memory); only aggregate country **counts** are
+stored — never raw IP addresses. Set `GEO_ENABLED=0` to turn country lookups off.
+
+Counts are stored per day in `analytics.json` next to `data.json` (on the volume
+in production), so they persist across redeploys. Dates are bucketed in **UTC**.
+There's a **Reset all analytics** button under the dashboard's "Danger zone".
 
 ## Managing creators (the manual way)
 
