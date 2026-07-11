@@ -324,10 +324,8 @@
   }
 
   function syncControls() {
-    el("from-date").value = range.start;
-    el("to-date").value = range.end;
-    el("from-date").max = todayUTC();
-    el("to-date").max = todayUTC();
+    fromPicker.refresh();
+    toPicker.refresh();
     var btns = el("presets").querySelectorAll("button");
     btns.forEach(function (b) { b.classList.toggle("active", b.getAttribute("data-preset") === activePreset); });
   }
@@ -337,10 +335,8 @@
     if (btn) applyPreset(btn.getAttribute("data-preset"));
   });
 
-  function onCustomDate() {
-    var from = el("from-date").value;
-    var to = el("to-date").value;
-    if (!from || !to) return;
+  function selectFrom(dateStr) {
+    var from = dateStr, to = range.end || dateStr;
     if (from > to) { var tmp = from; from = to; to = tmp; }
     range.start = from;
     range.end = to;
@@ -348,8 +344,171 @@
     syncControls();
     render();
   }
-  el("from-date").addEventListener("change", onCustomDate);
-  el("to-date").addEventListener("change", onCustomDate);
+
+  function selectTo(dateStr) {
+    var from = range.start || dateStr, to = dateStr;
+    if (from > to) { var tmp = from; from = to; to = tmp; }
+    range.start = from;
+    range.end = to;
+    activePreset = "custom";
+    syncControls();
+    render();
+  }
+
+  /* ---------------- custom calendar dropdown ---------------- */
+
+  var MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  var MONTH_FULL = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  var WEEKDAYS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
+
+  function pad2(n) { return n < 10 ? "0" + n : "" + n; }
+
+  function formatDisplay(dateStr) {
+    if (!dateStr) return "—";
+    var p = dateStr.split("-");
+    return parseInt(p[2], 10) + " " + MONTH_SHORT[parseInt(p[1], 10) - 1] + " " + p[0];
+  }
+
+  // Monday-first grid of a UTC year/month (0-based month), including
+  // greyed-out leading/trailing days from the neighboring months.
+  function buildMonthCells(year, month) {
+    var firstWeekday = (new Date(Date.UTC(year, month, 1)).getUTCDay() + 6) % 7; // Mon=0..Sun=6
+    var daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+    var prevDaysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    var cells = [];
+    for (var i = firstWeekday - 1; i >= 0; i--) {
+      cells.push({ day: prevDaysInMonth - i, outside: true });
+    }
+    for (var d = 1; d <= daysInMonth; d++) {
+      cells.push({ day: d, outside: false, dateStr: year + "-" + pad2(month + 1) + "-" + pad2(d) });
+    }
+    var trailing = (7 - (cells.length % 7)) % 7;
+    for (var t = 1; t <= trailing; t++) cells.push({ day: t, outside: true });
+    return cells;
+  }
+
+  var openPopover = null;
+
+  function closeOpenPopover() {
+    if (openPopover) {
+      openPopover.hidden = true;
+      openPopover._trigger.setAttribute("aria-expanded", "false");
+      openPopover = null;
+    }
+  }
+
+  document.addEventListener("click", function (e) {
+    if (openPopover && !openPopover.contains(e.target) && !openPopover._trigger.contains(e.target)) {
+      closeOpenPopover();
+    }
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") closeOpenPopover();
+  });
+
+  // Builds a trigger-button + popover calendar bound to a value getter/setter.
+  function createDatePicker(containerId, triggerId, textId, opts) {
+    var container = el(containerId);
+    var trigger = el(triggerId);
+    var textEl = el(textId);
+    var popover = document.createElement("div");
+    popover.className = "date-popover";
+    popover.setAttribute("role", "dialog");
+    popover.setAttribute("aria-label", "Choose a date");
+    popover.hidden = true;
+    popover._trigger = trigger;
+    container.appendChild(popover);
+
+    var viewYear, viewMonth;
+
+    function maxDate() { return opts.max(); }
+
+    function setViewToValueOrToday() {
+      var v = opts.getValue() || maxDate();
+      var p = v.split("-");
+      viewYear = parseInt(p[0], 10);
+      viewMonth = parseInt(p[1], 10) - 1;
+    }
+
+    function renderCalendar() {
+      var max = maxDate();
+      var maxParts = max.split("-");
+      var isMaxMonth = viewYear === parseInt(maxParts[0], 10) && viewMonth === parseInt(maxParts[1], 10) - 1;
+      var cells = buildMonthCells(viewYear, viewMonth);
+      var todayStr = todayUTC();
+      var selected = opts.getValue();
+
+      var html = '<div class="cal-header">' +
+        '<button type="button" class="cal-nav" data-nav="-1" aria-label="Previous month">‹</button>' +
+        '<span class="cal-title">' + MONTH_FULL[viewMonth] + " " + viewYear + "</span>" +
+        '<button type="button" class="cal-nav" data-nav="1" aria-label="Next month"' + (isMaxMonth ? " disabled" : "") + ">›</button>" +
+        "</div>";
+      html += '<div class="cal-weekdays">' + WEEKDAYS.map(function (w) { return "<span>" + w + "</span>"; }).join("") + "</div>";
+      html += '<div class="cal-grid">';
+      cells.forEach(function (c) {
+        if (c.outside) {
+          html += '<span class="cal-day is-outside">' + c.day + "</span>";
+          return;
+        }
+        var disabled = c.dateStr > max;
+        var cls = ["cal-day"];
+        if (c.dateStr === todayStr) cls.push("is-today");
+        if (c.dateStr === selected) cls.push("is-selected");
+        html += '<button type="button" class="' + cls.join(" ") + '" data-date="' + c.dateStr + '"' + (disabled ? " disabled" : "") + ">" + c.day + "</button>";
+      });
+      html += "</div>";
+      html += '<div class="cal-footer"><button type="button" class="cal-today-btn" data-today="1">Today</button></div>';
+      popover.innerHTML = html;
+    }
+
+    popover.addEventListener("click", function (e) {
+      var navBtn = e.target.closest("[data-nav]");
+      if (navBtn) {
+        var dir = parseInt(navBtn.getAttribute("data-nav"), 10);
+        viewMonth += dir;
+        if (viewMonth < 0) { viewMonth = 11; viewYear--; }
+        if (viewMonth > 11) { viewMonth = 0; viewYear++; }
+        renderCalendar();
+        return;
+      }
+      if (e.target.closest("[data-today]")) {
+        opts.onSelect(maxDate());
+        closeOpenPopover();
+        return;
+      }
+      var dayBtn = e.target.closest(".cal-day[data-date]");
+      if (dayBtn && !dayBtn.disabled) {
+        opts.onSelect(dayBtn.getAttribute("data-date"));
+        closeOpenPopover();
+      }
+    });
+
+    trigger.addEventListener("click", function (e) {
+      e.stopPropagation();
+      if (openPopover === popover) { closeOpenPopover(); return; }
+      closeOpenPopover();
+      setViewToValueOrToday();
+      renderCalendar();
+      popover.hidden = false;
+      trigger.setAttribute("aria-expanded", "true");
+      openPopover = popover;
+    });
+
+    return {
+      refresh: function () { textEl.textContent = formatDisplay(opts.getValue()); },
+    };
+  }
+
+  var fromPicker = createDatePicker("from-picker", "from-trigger", "from-trigger-text", {
+    getValue: function () { return range.start; },
+    onSelect: selectFrom,
+    max: todayUTC,
+  });
+  var toPicker = createDatePicker("to-picker", "to-trigger", "to-trigger-text", {
+    getValue: function () { return range.end; },
+    onSelect: selectTo,
+    max: todayUTC,
+  });
 
   /* ---------------- actions ---------------- */
 

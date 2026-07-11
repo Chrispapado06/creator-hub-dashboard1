@@ -42,8 +42,20 @@
           <button type="button" data-preset="all">All time</button>
         </div>
         <div class="date-inputs">
-          <label>From <input type="date" id="from-date" /></label>
-          <label>To <input type="date" id="to-date" /></label>
+          <div class="date-picker" id="from-picker">
+            <span class="date-picker-label">From</span>
+            <button type="button" class="date-trigger" id="from-trigger" aria-haspopup="dialog" aria-expanded="false">
+              <svg class="date-trigger-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M6 2v2M14 2v2M3 7h14M4 4h12a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span class="date-trigger-text" id="from-trigger-text">—</span>
+            </button>
+          </div>
+          <div class="date-picker" id="to-picker">
+            <span class="date-picker-label">To</span>
+            <button type="button" class="date-trigger" id="to-trigger" aria-haspopup="dialog" aria-expanded="false">
+              <svg class="date-trigger-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M6 2v2M14 2v2M3 7h14M4 4h12a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span class="date-trigger-text" id="to-trigger-text">—</span>
+            </button>
+          </div>
         </div>
         <p class="hint range-note" id="range-note"></p>
       </section>
