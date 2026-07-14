@@ -111,6 +111,24 @@ async function getRoster() {
   return _roster;
 }
 
+// Debug: classify the first N raw rows so we can see why a section didn't parse.
+export async function debugRaw(limit = 40) {
+  const res = await fetch(ROSTER.csvUrl, { redirect: "follow" });
+  const rows = parseCsv(await res.text());
+  const out = []; let block = null, wcols = null;
+  rows.slice(0, limit).forEach((row, i) => {
+    const b = blockOf(row.join(" "));
+    const wc = weekdayCols(row);
+    let cls;
+    if (b) { block = b; wcols = null; cls = `BLK=${b}`; }
+    else if (wc) { wcols = wc; cls = `HDR[${Object.values(wc).join(",")}]`; }
+    else if (block && wcols) cls = "row";
+    else cls = "skip";
+    out.push(`${i}:${cls}:${String(row[0] || "").slice(0, 18)}(${row.length}c)`);
+  });
+  return out.join("  ");
+}
+
 // Debug: what does the parsed roster hold for a block+weekday right now?
 export async function debugRoster(blockName, weekday) {
   let r; try { r = await getRoster(); } catch (e) { return `fetch/parse error: ${e.message}`; }
