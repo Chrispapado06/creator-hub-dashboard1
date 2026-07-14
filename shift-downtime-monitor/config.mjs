@@ -106,8 +106,8 @@ export function currentShiftBlock(now = Date.now()) {
 // credit usage ~2× — still catches any 5-min downtime comfortably. The duration
 // spans the full ~5-min cron gap so there's no blind window between runs.
 export const LOOP = {
-  everySec: Number(process.env.MONITOR_LOOP_EVERY_SEC || 120),       // poll cadence within a run (2 min)
-  durationSec: Number(process.env.MONITOR_LOOP_DURATION_SEC || 270), // run ~4.5 min, then exit
+  everySec: Number(process.env.MONITOR_LOOP_EVERY_SEC || 180),       // poll every 3 min — loosened from 2m now L1 is 7m, to cut OF credits (~⅓ fewer /chats calls)
+  durationSec: Number(process.env.MONITOR_LOOP_DURATION_SEC || 420), // ~7-min cycle (≈3 scans) before re-running the per-cycle work (txn sweep / EOD record)
 };
 
 // ── Discord routing (env / GitHub secrets) ──────────────────────────────────
