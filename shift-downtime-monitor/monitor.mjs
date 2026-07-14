@@ -735,7 +735,7 @@ async function scan(accounts, state, whales, now) {
     }
     console.log(`[${ts()}] [roster] ${blk.name} ${wd}: ${pairs.join(", ")}`);
     console.log(`[${ts()}] [roster-dbg] ${await debugRoster(blk.name, wd)}`);
-    try { console.log(`[${ts()}] [roster-raw] ${await debugRaw(40)}`); } catch (e) { console.log(`[roster-raw] ${e.message}`); }
+    try { console.log(`[${ts()}] [roster-raw] ${await debugRaw(7,16)}`); } catch (e) { console.log(`[roster-raw] ${e.message}`); }
   }
 
   // Load + refresh the cached whale set (used by both the spend sweep and the

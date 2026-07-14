@@ -111,22 +111,13 @@ async function getRoster() {
   return _roster;
 }
 
-// Debug: classify the first N raw rows so we can see why a section didn't parse.
-export async function debugRaw(limit = 40) {
+// Debug: dump the actual cells of a row range so we can see the real layout.
+export async function debugRaw(from = 7, to = 15) {
   const res = await fetch(ROSTER.csvUrl, { redirect: "follow" });
   const rows = parseCsv(await res.text());
-  const out = []; let block = null, wcols = null;
-  rows.slice(0, limit).forEach((row, i) => {
-    const b = blockOf(row.join(" "));
-    const wc = weekdayCols(row);
-    let cls;
-    if (b) { block = b; wcols = null; cls = `BLK=${b}`; }
-    else if (wc) { wcols = wc; cls = `HDR[${Object.values(wc).join(",")}]`; }
-    else if (block && wcols) cls = "row";
-    else cls = "skip";
-    out.push(`${i}:${cls}:${String(row[0] || "").slice(0, 18)}(${row.length}c)`);
-  });
-  return out.join("  ");
+  return rows.slice(from, to)
+    .map((r, i) => `R${i + from}<${r.map((c) => String(c).replace(/\s+/g, " ").slice(0, 16)).join(" | ")}>`)
+    .join("\n");
 }
 
 // Debug: what does the parsed roster hold for a block+weekday right now?
