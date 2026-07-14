@@ -36,7 +36,7 @@ import {
   tierFor, thresholdsFor, level2Eligible, THRESHOLDS, LOOP, DISCORD, DRY_RUN,
   currentShiftBlock, WHALE, LIST_AUTO, EOD, PAYDAY, ROSTER, dayInTz, hourInTz, weekdayInTz,
 } from "./config.mjs";
-import { resolveChatter, debugRoster, debugRaw } from "./roster.mjs";
+import { resolveChatter, resolveChatterName } from "./roster.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // On Railway, STATE_DIR points at a mounted volume so state survives restarts.
@@ -730,12 +730,11 @@ async function scan(accounts, state, whales, now) {
     const wd = weekdayInTz(new Date(), ROSTER.tz);
     const pairs = [];
     for (const a of accounts) {
+      const name = await resolveChatterName(a.username, blk.name, Date.now()).catch(() => null);
       const c = await resolveChatter(a.username, blk.name, Date.now()).catch(() => null);
-      pairs.push(`${a.name}[${a.username}]→${c ? c.name : "—"}`);
+      pairs.push(`${a.name}→${name || "∅"}${name && !c ? "[no-id]" : ""}`);
     }
     console.log(`[${ts()}] [roster] ${blk.name} ${wd}: ${pairs.join(", ")}`);
-    console.log(`[${ts()}] [roster-dbg] ${await debugRoster(blk.name, wd)}`);
-    try { console.log(`[${ts()}] [roster-raw] ${await debugRaw(7,16)}`); } catch (e) { console.log(`[roster-raw] ${e.message}`); }
   }
 
   // Load + refresh the cached whale set (used by both the spend sweep and the

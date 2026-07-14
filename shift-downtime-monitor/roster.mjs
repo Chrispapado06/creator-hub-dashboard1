@@ -133,6 +133,18 @@ export async function debugRoster(blockName, weekday) {
   return `${toks.length} tokens e.g. [${toks.slice(0, 16).join(" | ")}]`;
 }
 
+// The chatter NAME assigned to `username` right now (ignores whether we have a
+// Discord id) — for diagnostics: distinguishes "no assignment" from "no id".
+export async function resolveChatterName(username, blockName, now = Date.now()) {
+  const aliases = ACCOUNT_SHEET_ALIASES[String(username).toLowerCase()];
+  if (!aliases) return null;
+  let roster; try { roster = await getRoster(); } catch { return null; }
+  const sect = roster?.[blockName]?.[weekdayInTz(new Date(now), ROSTER.tz)];
+  if (!sect) return null;
+  for (const alias of aliases) if (sect[alias]) return sect[alias];
+  return null;
+}
+
 // Discord id (+ resolved chatter name) for the chatter responsible for `username`
 // on the given shift block right now, or null → caller falls back to the role.
 export async function resolveChatter(username, blockName, now = Date.now()) {
