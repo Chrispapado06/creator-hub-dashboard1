@@ -34,8 +34,9 @@ import {
 } from "./of.mjs";
 import {
   tierFor, thresholdsFor, level2Eligible, THRESHOLDS, LOOP, DISCORD, DRY_RUN,
-  currentShiftBlock, WHALE, LIST_AUTO, EOD, PAYDAY, dayInTz, hourInTz, weekdayInTz,
+  currentShiftBlock, WHALE, LIST_AUTO, EOD, PAYDAY, ROSTER, dayInTz, hourInTz, weekdayInTz,
 } from "./config.mjs";
+import { resolveChatter } from "./roster.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // On Railway, STATE_DIR points at a mounted volume so state survives restarts.
@@ -89,11 +90,14 @@ async function post(label, url, content, mentions) {
 // The primary downtime ping → the time-appropriate shift channel, @everyone,
 // via the bot. Falls back to the Chatter-QA webhook (pinging the QA) when the
 // bot token isn't configured yet, so alerts never silently stop.
-async function postPrimary(label, block, body) {
+// chatterId (when the roster resolves the responsible chatter) → @mention that
+// person; otherwise ping the shift role (then @everyone) as the fallback.
+async function postPrimary(label, block, body, chatterId = null) {
   if (DISCORD.botToken && block.channelId) {
-    // Ping the shift role (falls back to @everyone if no role configured).
-    const mention = block.roleId ? `<@&${block.roleId}>` : "@everyone";
-    const allowed = block.roleId ? { parse: [], roles: [block.roleId] } : { parse: ["everyone"] };
+    let mention, allowed;
+    if (chatterId)        { mention = `<@${chatterId}>`;        allowed = { parse: [], users: [chatterId] }; }
+    else if (block.roleId){ mention = `<@&${block.roleId}>`;    allowed = { parse: [], roles: [block.roleId] }; }
+    else                  { mention = "@everyone";              allowed = { parse: ["everyone"] }; }
     const content = `${mention} ${body}`;
     if (DRY_RUN) {
       console.log(`[${ts()}] DRY_RUN ${label} → #${block.name} (${block.channelId}) mention ${mention}\n    ${content.replace(/\n/g, "\n    ")}`);
@@ -107,8 +111,8 @@ async function postPrimary(label, block, body) {
     if (!r.ok) console.warn(`[${ts()}] shift-channel post failed ${r.status}: ${(await r.text().catch(() => "")).slice(0, 160)}`);
     return;
   }
-  // Fallback (no bot token yet): Chatter-QA webhook, ping the QA on shift.
-  await post(label, DISCORD.downtimeWebhook, `${ping(block.qaDiscord)} ${body}`, [block.qaDiscord]);
+  // Fallback (no bot token yet): Chatter-QA webhook, ping the chatter or the QA.
+  await post(label, DISCORD.downtimeWebhook, `${ping(chatterId || block.qaDiscord)} ${body}`, [chatterId || block.qaDiscord]);
 }
 
 // Post a whale/purchase flag into #chatter-pins-qa-pins (bot token), or log.
@@ -649,20 +653,27 @@ async function scan(accounts, state, whales, now) {
 
     const ep = `${acct.accountId}|${oldest.fanMessageAt}`;
     const mins = Math.floor(waited / 60);
-    const who = `(QA on shift: ${block.qaName})`;
+    // Who's responsible for this model on the current shift (from the sheet)?
+    // Resolved → @mention that chatter; else the L1/L2 pings fall back to the
+    // shift role. QA name stays in the text for context either way.
+    const chatter = await resolveChatter(acct.username, block.name, now).catch(() => null);
+    const chatterId = chatter?.id || null;
+    const who = chatter ? `(chatter: ${chatter.name} · QA ${block.qaName})` : `(QA on shift: ${block.qaName})`;
 
-    // Level 1 — downtime ping → the shift channel, @everyone on shift.
+    // Level 1 — downtime ping → the shift channel, @ the chatter (or shift role).
     if (claim(state, `${ep}|1`)) {
       fired++;
       await postPrimary(`L1 ${acct.name}`, block,
-        `🔴 **Downtime — ${acct.name}** — fan @${oldest.fanUsername} has waited **${fmtAge(waited)}** unanswered. Please respond. ${who}`);
+        `🔴 **Downtime — ${acct.name}** — fan @${oldest.fanUsername} has waited **${fmtAge(waited)}** unanswered. Please respond. ${who}`,
+        chatterId);
     }
 
     // Level 2 — escalate (A/B tier, or accounts with a custom override).
     if (waited >= th.level2Sec && acct.l2 && claim(state, `${ep}|2`)) {
       fired++;
       await postPrimary(`L2 ${acct.name}`, block,
-        `🟠 **Still down ${mins}m — ${acct.name}** (fan @${oldest.fanUsername}) — chatter still hasn't replied. ${who}`);
+        `🟠 **Still down ${mins}m — ${acct.name}** (fan @${oldest.fanUsername}) — chatter still hasn't replied. ${who}`,
+        chatterId);
     }
 
     // Level 3 — message Management.
@@ -710,6 +721,19 @@ async function scan(accounts, state, whales, now) {
     `${DRY_RUN ? "DRY_RUN" : "LIVE"}.` +
     (needAuth.length ? ` ⚠ NOT authenticated (needs re-auth): ${needAuth.join(", ")}.` : ""),
   );
+
+  // Roster diagnostic — who the sheet says is on point for each model this
+  // shift (so a breach @mentions the chatter, not the whole role). Logged once
+  // per cycle; unresolved accounts fall back to the shift role.
+  if (ROSTER.enabled) {
+    const blk = currentShiftBlock(Date.now());
+    const pairs = [];
+    for (const a of accounts) {
+      const c = await resolveChatter(a.username, blk.name, Date.now()).catch(() => null);
+      if (c) pairs.push(`${a.name}→${c.name}`);
+    }
+    console.log(`[${ts()}] [roster] ${blk.name} ${weekdayInTz(new Date(), ROSTER.tz)}: ${pairs.join(", ") || "(none resolved — role fallback)"}`);
+  }
 
   // Load + refresh the cached whale set (used by both the spend sweep and the
   // whale-activity flags). Refreshed only when older than WHALE.refreshHours.

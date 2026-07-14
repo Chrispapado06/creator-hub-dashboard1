@@ -202,6 +202,31 @@ export const PAYDAY = {
   hour: Number(process.env.PAYDAY_HOUR || 8),
 };
 
+// ── Chatter roster: ping the responsible chatter, not the shift role ────────
+// The monitor reads the weekly shift sheet (published CSV) and, on a breach,
+// @mentions the chatter assigned to that model on the current shift + weekday.
+// Name → Discord id comes from the private CHATTERS_MAP env var (kept out of
+// the public repo). Unresolved → falls back to the shift role. See roster.mjs.
+export const ROSTER = {
+  enabled: process.env.ROSTER_ENABLED !== "0",
+  csvUrl: process.env.ROSTER_CSV_URL ||
+    "https://docs.google.com/spreadsheets/d/1KkxbWj369WLGwMzjt900eBu36VOtmr1GEudy0bIwMjU/export?format=csv&gid=1330243709",
+  tz: process.env.ROSTER_TZ || "Asia/Manila",   // sheet blocks + columns are Philippine-time
+  cacheSec: Number(process.env.ROSTER_CACHE_SEC || 1800), // refetch the sheet at most every 30 min
+};
+// OF username → the account name(s) as they appear (exact, per comma-cell) in
+// the sheet. Only these monitored accounts get chatter resolution; anything
+// else (e.g. Rose white, not on the sheet) falls back to the shift role.
+export const ACCOUNT_SHEET_ALIASES = {
+  "bluebeari3vip": ["blue bear"],
+  "marissa.munoz": ["marissa"],
+  "emmasonne":     ["emma"],
+  "junehaynes":    ["june", "sandra"],
+  "juliejswan":    ["julie"],
+  "lillyylou":     ["antonella"],
+  "ellaajanee":    ["ella"],
+};
+
 export const EOD = {
   enabled: process.env.EOD_ENABLED !== "0",
   webhook: process.env.EOD_WEBHOOK || "",            // MM QA report channel (GitHub secret)
