@@ -47,12 +47,14 @@ function blockOf(rowText) {
   return null;
 }
 
-// A weekday header row → { colIndex: "Mon" }
+// A weekday header row → { colIndex: "Mon" }. Keeps only the FIRST column for
+// each weekday, so a malformed header that repeats a day (e.g. the Evening
+// block's "Wednesday" dragged across Thu–Sun) doesn't blend days together.
 function weekdayCols(row) {
-  const cols = {}; let hits = 0;
+  const cols = {}; const seen = new Set(); let hits = 0;
   row.forEach((cell, idx) => {
     const m = String(cell).toLowerCase().match(/monday|tuesday|wednesday|thursday|friday|saturday|sunday/);
-    if (m) { cols[idx] = WEEKDAYS[m[0]]; hits++; }
+    if (m) { hits++; const wd = WEEKDAYS[m[0]]; if (!seen.has(wd)) { cols[idx] = wd; seen.add(wd); } }
   });
   return hits >= 3 ? cols : null;
 }
