@@ -36,7 +36,7 @@ import {
   tierFor, thresholdsFor, level2Eligible, THRESHOLDS, LOOP, DISCORD, DRY_RUN,
   currentShiftBlock, WHALE, LIST_AUTO, EOD, PAYDAY, ROSTER, dayInTz, hourInTz, weekdayInTz,
 } from "./config.mjs";
-import { resolveChatter } from "./roster.mjs";
+import { resolveChatter, debugRoster } from "./roster.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // On Railway, STATE_DIR points at a mounted volume so state survives restarts.
@@ -727,12 +727,14 @@ async function scan(accounts, state, whales, now) {
   // per cycle; unresolved accounts fall back to the shift role.
   if (ROSTER.enabled) {
     const blk = currentShiftBlock(Date.now());
+    const wd = weekdayInTz(new Date(), ROSTER.tz);
     const pairs = [];
     for (const a of accounts) {
       const c = await resolveChatter(a.username, blk.name, Date.now()).catch(() => null);
-      if (c) pairs.push(`${a.name}→${c.name}`);
+      pairs.push(`${a.name}[${a.username}]→${c ? c.name : "—"}`);
     }
-    console.log(`[${ts()}] [roster] ${blk.name} ${weekdayInTz(new Date(), ROSTER.tz)}: ${pairs.join(", ") || "(none resolved — role fallback)"}`);
+    console.log(`[${ts()}] [roster] ${blk.name} ${wd}: ${pairs.join(", ")}`);
+    console.log(`[${ts()}] [roster-dbg] ${await debugRoster(blk.name, wd)}`);
   }
 
   // Load + refresh the cached whale set (used by both the spend sweep and the

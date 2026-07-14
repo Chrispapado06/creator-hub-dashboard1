@@ -111,6 +111,17 @@ async function getRoster() {
   return _roster;
 }
 
+// Debug: what does the parsed roster hold for a block+weekday right now?
+export async function debugRoster(blockName, weekday) {
+  let r; try { r = await getRoster(); } catch (e) { return `fetch/parse error: ${e.message}`; }
+  const block = r?.[blockName];
+  if (!block) return `no block '${blockName}' (blocks: ${Object.keys(r || {}).join("/")})`;
+  const sect = block[weekday];
+  if (!sect) return `no weekday '${weekday}' (present: ${Object.keys(block).join(",")})`;
+  const toks = Object.keys(sect);
+  return `${toks.length} tokens e.g. [${toks.slice(0, 16).join(" | ")}]`;
+}
+
 // Discord id (+ resolved chatter name) for the chatter responsible for `username`
 // on the given shift block right now, or null → caller falls back to the role.
 export async function resolveChatter(username, blockName, now = Date.now()) {
