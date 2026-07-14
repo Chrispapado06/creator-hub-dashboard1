@@ -63,15 +63,17 @@ export function cleanName(s) {
 }
 
 export function buildRoster(rows) {
-  const roster = {}; let block = null, wcols = null;
+  const roster = {}; let block = null, wcols = null, chatterCol = 0;
   for (const row of rows) {
     const b = blockOf(row.join(" "));
     if (b) { block = b; wcols = null; roster[block] ??= {}; continue; }
     const wc = weekdayCols(row);
-    if (wc) { wcols = wc; continue; }
+    // The chatter label sits in the column just LEFT of the first weekday
+    // column — robust to the sheet's leading blank column(s).
+    if (wc) { wcols = wc; chatterCol = Math.max(0, Math.min(...Object.keys(wc).map(Number)) - 1); continue; }
     if (!block || !wcols) continue;
-    const chatter = cleanName(row[0]);
-    if (!chatter) continue;
+    const chatter = cleanName(row[chatterCol] || "");
+    if (!chatter || /^\d+$/.test(chatter)) continue; // skip blank / stray numeric labels
     for (const [idxStr, wd] of Object.entries(wcols)) {
       const cell = String(row[Number(idxStr)] || "").trim();
       if (!cell || /day off|no show/i.test(cell)) continue;
