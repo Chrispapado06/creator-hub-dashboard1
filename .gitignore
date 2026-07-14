@@ -37,3 +37,6 @@ dist-ssr
 *.sw?
 .vercel
 .claude/
+
+# staff Discord IDs — keep out of the public repo (load via Railway env at runtime)
+shift-downtime-monitor/chatters.json
