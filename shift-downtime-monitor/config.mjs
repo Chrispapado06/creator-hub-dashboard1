@@ -106,8 +106,8 @@ export function currentShiftBlock(now = Date.now()) {
 // credit usage ~2× — still catches any 5-min downtime comfortably. The duration
 // spans the full ~5-min cron gap so there's no blind window between runs.
 export const LOOP = {
-  everySec: Number(process.env.MONITOR_LOOP_EVERY_SEC || 180),       // poll every 3 min — loosened from 2m now L1 is 7m, to cut OF credits (~⅓ fewer /chats calls)
-  durationSec: Number(process.env.MONITOR_LOOP_DURATION_SEC || 420), // ~7-min cycle (≈3 scans) before re-running the per-cycle work (txn sweep / EOD record)
+  everySec: Number(process.env.MONITOR_LOOP_EVERY_SEC || 240),       // poll every 4 min (L1 is 7m → worst-case detect ~8m). Fewer /chats calls to cut OF credits.
+  durationSec: Number(process.env.MONITOR_LOOP_DURATION_SEC || 720), // ~12-min cycle (≈3 scans) so the per-cycle work (accounts/txn/EOD) runs ~⅓ less often too
 };
 
 // ── Discord routing (env / GitHub secrets) ──────────────────────────────────
@@ -208,7 +208,7 @@ export const EOD = {
   adminWebhook: process.env.EOD_ADMIN_WEBHOOK || "", // admin report channel (falls back to webhook)
   tz: process.env.EOD_TZ || "Europe/London",
   hour: Number(process.env.EOD_HOUR || 23),   // send at this hour (tz)
-  recordEveryN: Number(process.env.EOD_RECORD_EVERY_N || 1), // record on every Nth invocation
+  recordEveryN: Number(process.env.EOD_RECORD_EVERY_N || 3), // record ~every 24 min (was every cycle) to cut OF credits; MMs stay up long enough that deleted-MM capture is still reliable
   // End-of-shift mini-report fires at each shift change (3×/day). OFF by
   // default — turn on with SHIFT_REPORT_ENABLED=1.
   shiftReport: process.env.SHIFT_REPORT_ENABLED === "1",
