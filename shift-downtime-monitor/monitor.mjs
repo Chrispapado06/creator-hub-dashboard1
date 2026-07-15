@@ -701,7 +701,18 @@ async function scan(accounts, state, whales, now) {
   do {
   // Watch EVERY authenticated OF account (so new creators are auto-included).
   // Tier comes from config overrides; everything else defaults sanely.
-  const all = await listAccounts();
+  // listAccounts() is the one hard dependency each cycle — when the OF API
+  // blips (500/504, which it does), DON'T crash the always-on service: log it
+  // and retry next cycle so alerts resume automatically once OF recovers.
+  let all;
+  try {
+    all = await listAccounts();
+  } catch (e) {
+    console.error(`[${ts()}] listAccounts failed (${e.status || ""} ${e.message}) — OF API blip; retrying in ${LOOP.everySec}s`);
+    if (!RAILWAY_MODE) break;
+    await sleep(LOOP.everySec * 1000);
+    continue;
+  }
   const accounts = all
     .filter((a) => a.authenticated)
     .map((a) => ({
