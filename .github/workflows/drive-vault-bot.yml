@@ -1,8 +1,8 @@
 name: Drive → OF vault bot (every 5 min)
 
 on:
-  schedule:
-    - cron: "*/5 * * * *"   # near-real-time: pull new Drive uploads into the vault
+  # schedule disabled — automation paused; re-add the cron block below to resume
+  # - cron: "*/5 * * * *"   # near-real-time: pull new Drive uploads into the vault
   workflow_dispatch:
 
 permissions:
