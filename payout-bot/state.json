@@ -2834,6 +2834,41 @@
       "ts": "2026-07-15T11:13:34+00:00",
       "amount": 23865,
       "state": "new"
+    },
+    "acct_7aa411ae5ab947feba989fe9f63f7a60:87191625": {
+      "ts": "2026-07-19T20:15:58+00:00",
+      "amount": 3203,
+      "state": "new"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:87208735": {
+      "ts": "2026-07-20T01:56:34+00:00",
+      "amount": 24807,
+      "state": "new"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:87302836": {
+      "ts": "2026-07-23T00:52:23+00:00",
+      "amount": 465,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:87299725": {
+      "ts": "2026-07-22T22:19:41+00:00",
+      "amount": 1093,
+      "state": "approved"
+    },
+    "acct_9bae83ac547447798d39e2d816ecd339:87290152": {
+      "ts": "2026-07-22T15:43:39+00:00",
+      "amount": 24529,
+      "state": "approved"
+    },
+    "acct_42e1c9678cfa4d379d44422a39ef7991:87415427": {
+      "ts": "2026-07-27T02:03:46+00:00",
+      "amount": 27060,
+      "state": "approved"
+    },
+    "acct_7aa411ae5ab947feba989fe9f63f7a60:87397307": {
+      "ts": "2026-07-26T19:53:12+00:00",
+      "amount": 4420,
+      "state": "approved"
     }
   },
   "bootstrapped": {
