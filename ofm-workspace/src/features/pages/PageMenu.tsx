@@ -14,9 +14,12 @@ import { toast } from "sonner";
 import { siGoogletranslate } from "simple-icons";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -48,12 +51,19 @@ interface PageMenuProps {
     id: string;
     title: string;
     icon: string | null;
-    content: unknown;
+    content?: unknown;
     parentId: string | null;
   };
-  fullWidth: boolean;
-  onToggleFullWidth: () => void;
-  onRename: () => void;
+  /** Full-width toggle only makes sense in the page editor; omit elsewhere. */
+  fullWidth?: boolean;
+  onToggleFullWidth?: () => void;
+  /** If provided, "Rename" calls this (e.g. focus the title input). Otherwise a
+   *  built-in rename dialog updates the title directly. */
+  onRename?: () => void;
+  /** Called after the page is moved to trash. Defaults to navigating home. */
+  onDeleted?: () => void;
+  /** Extra classes for the ⋯ trigger button (e.g. hover-reveal in a block). */
+  triggerClassName?: string;
 }
 
 export function PageMenu({
@@ -61,6 +71,8 @@ export function PageMenu({
   fullWidth,
   onToggleFullWidth,
   onRename,
+  onDeleted,
+  triggerClassName,
 }: PageMenuProps) {
   const navigate = useNavigate();
   const { data: pages = [] } = usePages();
@@ -68,6 +80,8 @@ export function PageMenu({
   const update = useUpdatePage();
   const archive = useArchivePage();
   const [moveOpen, setMoveOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameValue, setRenameValue] = useState("");
 
   // Pages you can move into = everything except this page and its descendants.
   const moveTargets = useMemo(() => {
@@ -88,12 +102,34 @@ export function PageMenu({
     return pages.filter((p) => !banned.has(p.id));
   }, [pages, page.id]);
 
+  function startRename() {
+    if (onRename) {
+      onRename();
+      return;
+    }
+    setRenameValue(page.title);
+    setRenameOpen(true);
+  }
+
+  async function saveRename() {
+    const next = renameValue.trim();
+    setRenameOpen(false);
+    if (!next || next === page.title) return;
+    try {
+      await update.mutateAsync({ id: page.id, patch: { title: next } });
+      toast.success("Renamed");
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  }
+
   async function doDuplicate(translateTo?: string, langLabel?: string) {
     try {
       const id = await duplicate.mutateAsync({
         title: page.title,
         icon: page.icon,
         content: page.content,
+        sourceId: page.id,
         parentId: page.parentId,
         translateTo,
         langLabel,
@@ -119,7 +155,8 @@ export function PageMenu({
     try {
       await archive.mutateAsync(page.id);
       toast.success("Moved to trash");
-      navigate("/");
+      if (onDeleted) onDeleted();
+      else navigate("/");
     } catch (e) {
       toast.error((e as Error).message);
     }
@@ -136,12 +173,18 @@ export function PageMenu({
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon" className="size-8" title="Page options">
+          <Button
+            variant="ghost"
+            size="icon"
+            className={cn("size-8", triggerClassName)}
+            title="Page options"
+            onClick={(e) => e.stopPropagation()}
+          >
             <MoreHorizontal className="size-4" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56">
-          <DropdownMenuItem onClick={onRename}>
+          <DropdownMenuItem onClick={startRename}>
             <Pencil className="size-4" /> Rename
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => doDuplicate()}>
@@ -174,14 +217,16 @@ export function PageMenu({
             </DropdownMenuSubContent>
           </DropdownMenuSub>
 
-          <DropdownMenuItem onClick={onToggleFullWidth}>
-            {fullWidth ? (
-              <Minimize2 className="size-4" />
-            ) : (
-              <Maximize2 className="size-4" />
-            )}
-            {fullWidth ? "Narrow width" : "Full width"}
-          </DropdownMenuItem>
+          {onToggleFullWidth && (
+            <DropdownMenuItem onClick={onToggleFullWidth}>
+              {fullWidth ? (
+                <Minimize2 className="size-4" />
+              ) : (
+                <Maximize2 className="size-4" />
+              )}
+              {fullWidth ? "Narrow width" : "Full width"}
+            </DropdownMenuItem>
+          )}
 
           <DropdownMenuSeparator />
           <DropdownMenuItem className="text-destructive" onClick={del}>
@@ -222,6 +267,32 @@ export function PageMenu({
               </div>
             )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename page</DialogTitle>
+          </DialogHeader>
+          <Input
+            autoFocus
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void saveRename();
+              }
+            }}
+            placeholder="Untitled"
+          />
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setRenameOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={() => void saveRename()}>Save</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>

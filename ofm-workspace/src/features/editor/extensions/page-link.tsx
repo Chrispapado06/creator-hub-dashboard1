@@ -8,10 +8,11 @@ import { useNavigate } from "react-router-dom";
 import { ChevronRight } from "lucide-react";
 
 import { PageIcon } from "@/features/pages/PageIcon";
+import { PageMenu } from "@/features/pages/PageMenu";
 import { usePages } from "@/features/pages/use-pages";
 
 /** A Notion-style inline link to a sub-page. Shows the sub-page's live title. */
-function PageLinkView({ node }: NodeViewProps) {
+function PageLinkView({ node, editor, deleteNode }: NodeViewProps) {
   const navigate = useNavigate();
   const pageId = node.attrs.pageId as string | null;
   const { data: pages = [] } = usePages();
@@ -20,18 +21,34 @@ function PageLinkView({ node }: NodeViewProps) {
   const icon = page?.icon ?? (node.attrs.icon as string | null);
 
   return (
-    <NodeViewWrapper className="page-link" contentEditable={false}>
-      <button
-        type="button"
-        className="page-link-btn"
-        onClick={() => pageId && navigate(`/page/${pageId}`)}
-      >
-        <span className="page-link-icon">
-          <PageIcon icon={icon} />
-        </span>
-        <span className="page-link-title">{title}</span>
-        <ChevronRight className="page-link-chevron size-4" />
-      </button>
+    <NodeViewWrapper className="page-link group" contentEditable={false}>
+      <div className="flex items-center gap-0.5">
+        <div className="min-w-0 flex-1">
+          <button
+            type="button"
+            className="page-link-btn"
+            onClick={() => pageId && navigate(`/page/${pageId}`)}
+          >
+            <span className="page-link-icon">
+              <PageIcon icon={icon} />
+            </span>
+            <span className="page-link-title">{title}</span>
+            <ChevronRight className="page-link-chevron size-4" />
+          </button>
+        </div>
+        {editor.isEditable && pageId && (
+          <PageMenu
+            page={{
+              id: pageId,
+              title,
+              icon,
+              parentId: page?.parentId ?? null,
+            }}
+            onDeleted={() => deleteNode()}
+            triggerClassName="size-7 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 data-[state=open]:opacity-100"
+          />
+        )}
+      </div>
     </NodeViewWrapper>
   );
 }

@@ -30,8 +30,19 @@ export function useDuplicatePage() {
       parentId: string | null;
       translateTo?: string;
       langLabel?: string;
+      /** When `content` is absent (e.g. from a sidebar/link menu), fetch it by id. */
+      sourceId?: string;
     }): Promise<string> => {
       let content = input.content;
+      if ((content == null || content === "") && input.sourceId) {
+        const { data: src, error: srcErr } = await supabase
+          .from("pages")
+          .select("content")
+          .eq("id", input.sourceId)
+          .single();
+        if (srcErr) throw srcErr;
+        content = (src as { content: unknown }).content;
+      }
       let title = `${input.title || "Untitled"} (copy)`;
 
       if (input.translateTo) {
