@@ -10,9 +10,11 @@ import Suggestion from "@tiptap/suggestion";
 import { ReactRenderer } from "@tiptap/react";
 import { toast } from "sonner";
 import {
+  Bookmark as BookmarkIcon,
   CheckSquare,
   ChevronRight,
   Code2,
+  Columns2,
   FileText,
   Heading1,
   Heading2,
@@ -25,6 +27,7 @@ import {
   Quote,
   Table as TableIcon,
   Type,
+  Video as VideoIcon,
   MessageSquareQuote,
 } from "lucide-react";
 
@@ -194,7 +197,7 @@ export const SLASH_COMMANDS: CommandItem[] = [
     title: "Table",
     subtitle: "Insert a table",
     icon: TableIcon,
-    keywords: ["table", "grid", "rows", "columns"],
+    keywords: ["table", "grid", "rows"],
     run: (e, r) =>
       e
         .chain()
@@ -202,6 +205,41 @@ export const SLASH_COMMANDS: CommandItem[] = [
         .deleteRange(r)
         .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
         .run(),
+  },
+  {
+    title: "2 columns",
+    subtitle: "Side-by-side column layout",
+    icon: Columns2,
+    keywords: ["column", "columns", "layout", "grid", "side"],
+    run: (e, r) =>
+      e
+        .chain()
+        .focus()
+        .deleteRange(r)
+        .insertContent({
+          type: "columnList",
+          content: [
+            { type: "column", content: [{ type: "paragraph" }] },
+            { type: "column", content: [{ type: "paragraph" }] },
+          ],
+        })
+        .run(),
+  },
+  {
+    title: "Video",
+    subtitle: "Embed YouTube/Loom or upload",
+    icon: VideoIcon,
+    keywords: ["video", "youtube", "loom", "vimeo", "embed", "mp4"],
+    run: (e, r) =>
+      e.chain().focus().deleteRange(r).insertContent({ type: "video" }).run(),
+  },
+  {
+    title: "Bookmark",
+    subtitle: "Save a link as a card",
+    icon: BookmarkIcon,
+    keywords: ["bookmark", "link", "url", "web", "preview"],
+    run: (e, r) =>
+      e.chain().focus().deleteRange(r).insertContent({ type: "bookmark" }).run(),
   },
   {
     title: "Image",

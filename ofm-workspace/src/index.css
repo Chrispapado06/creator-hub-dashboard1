@@ -404,6 +404,147 @@
   opacity: 1;
 }
 
+/* ── columns ── */
+.tiptap .column-list {
+  display: flex;
+  gap: 1rem;
+  margin: 0.4rem 0;
+  align-items: flex-start;
+}
+.tiptap .column {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.tiptap .column > * {
+  margin-top: 0;
+}
+@media (max-width: 640px) {
+  .tiptap .column-list {
+    flex-direction: column;
+    gap: 0;
+  }
+}
+
+/* ── video ── */
+.tiptap .video-block {
+  margin: 0.5rem 0;
+}
+.tiptap .video-block video {
+  width: 100%;
+  max-height: 32rem;
+  border-radius: 8px;
+  background: #000;
+}
+.tiptap .video-embed {
+  position: relative;
+  width: 100%;
+  padding-bottom: 56.25%;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.tiptap .video-embed iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+.tiptap .video-empty,
+.tiptap .bookmark-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: var(--muted);
+}
+.tiptap .bookmark-empty {
+  flex-direction: row;
+  align-items: center;
+}
+.tiptap .video-empty input,
+.tiptap .bookmark-empty input {
+  flex: 1;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--background);
+  padding: 0.35rem 0.5rem;
+  font-size: 0.875rem;
+  outline: none;
+}
+.tiptap .video-empty-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+.tiptap .video-empty-actions button,
+.tiptap .bookmark-empty button {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  background: var(--background);
+}
+.tiptap .video-empty-actions button:hover,
+.tiptap .bookmark-empty button:hover {
+  background: var(--accent);
+}
+
+/* ── bookmark ── */
+.tiptap .bookmark-block {
+  margin: 0.4rem 0;
+}
+.tiptap .bookmark-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  text-decoration: none;
+  color: inherit;
+}
+.tiptap .bookmark-card:hover {
+  background: var(--muted);
+}
+.tiptap .bookmark-text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+.tiptap .bookmark-title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tiptap .bookmark-desc {
+  font-size: 0.8rem;
+  color: var(--muted-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tiptap .bookmark-url {
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tiptap .bookmark-icon {
+  color: var(--muted-foreground);
+}
+
+/* ── highlight mark ── */
+.tiptap mark {
+  border-radius: 3px;
+  padding: 0 1px;
+  color: inherit;
+}
+
 /* ── tables ── */
 .tiptap table {
   width: 100%;
