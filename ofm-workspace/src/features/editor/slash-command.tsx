@@ -13,6 +13,7 @@ import {
   CheckSquare,
   ChevronRight,
   Code2,
+  FileText,
   Heading1,
   Heading2,
   Heading3,
@@ -300,9 +301,29 @@ function place(el: HTMLElement | null, rect: (() => DOMRect | null) | null) {
   el.style.zIndex = "50";
 }
 
-export const SlashCommand = Extension.create({
+interface SlashCommandOptions {
+  onCreatePage: ((editor: Editor, range: Range) => void) | null;
+}
+
+export const SlashCommand = Extension.create<SlashCommandOptions>({
   name: "slashCommand",
+  addOptions() {
+    return { onCreatePage: null };
+  },
   addProseMirrorPlugins() {
+    const onCreatePage = this.options.onCreatePage;
+    const pageCommand: CommandItem[] = onCreatePage
+      ? [
+          {
+            title: "Page",
+            subtitle: "Create a sub-page inside this one",
+            icon: FileText,
+            keywords: ["page", "subpage", "sub-page", "child", "nested"],
+            run: (editor, range) => onCreatePage(editor, range),
+          },
+        ]
+      : [];
+    const commands = [...pageCommand, ...SLASH_COMMANDS];
     return [
       Suggestion<CommandItem>({
         editor: this.editor,
@@ -311,7 +332,7 @@ export const SlashCommand = Extension.create({
         startOfLine: false,
         items: ({ query }) => {
           const q = query.toLowerCase();
-          return SLASH_COMMANDS.filter((c) =>
+          return commands.filter((c) =>
             `${c.title} ${c.keywords.join(" ")}`.toLowerCase().includes(q),
           );
         },

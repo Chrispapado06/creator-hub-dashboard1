@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { EditorContent, useEditor, type JSONContent } from "@tiptap/react";
+import type { Editor as TiptapEditor, Range } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
@@ -15,16 +16,19 @@ import { Callout } from "./extensions/callout";
 import { Toggle } from "./extensions/toggle";
 import { FileBlock } from "./extensions/file-block";
 import { PageImage } from "./extensions/image";
+import { PageLink } from "./extensions/page-link";
 import { SlashCommand } from "./slash-command";
 
 export function Editor({
   initialContent,
   editable = true,
   onChange,
+  onCreatePage,
 }: {
   initialContent?: unknown;
   editable?: boolean;
   onChange?: (json: JSONContent) => void;
+  onCreatePage?: (editor: TiptapEditor, range: Range) => void;
 }) {
   const editor = useEditor({
     editable,
@@ -40,7 +44,8 @@ export function Editor({
       Callout,
       Toggle,
       FileBlock,
-      SlashCommand,
+      PageLink,
+      SlashCommand.configure({ onCreatePage: onCreatePage ?? null }),
       Placeholder.configure({
         placeholder: ({ node }) =>
           node.type.name === "heading"

@@ -362,6 +362,48 @@
   font-size: 0.8rem;
 }
 
+/* ── sub-page link ── */
+.tiptap .page-link {
+  margin: 0.15rem 0;
+}
+.tiptap .page-link-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  padding: 0.25rem 0.35rem;
+  border-radius: 6px;
+  text-align: left;
+  cursor: pointer;
+}
+.tiptap .page-link-btn:hover {
+  background: var(--muted);
+}
+.tiptap .page-link-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+}
+.tiptap .page-link-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: var(--border);
+  text-underline-offset: 3px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tiptap .page-link-chevron {
+  color: var(--muted-foreground);
+  opacity: 0;
+}
+.tiptap .page-link-btn:hover .page-link-chevron {
+  opacity: 1;
+}
+
 /* ── tables ── */
 .tiptap table {
   width: 100%;

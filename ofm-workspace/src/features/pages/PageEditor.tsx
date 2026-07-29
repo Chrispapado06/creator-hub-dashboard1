@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import type { JSONContent } from "@tiptap/react";
+import type { Editor as TiptapEditor, Range } from "@tiptap/core";
+import { toast } from "sonner";
 
 import { FullScreenSpinner } from "@/components/full-screen-spinner";
 import { Editor } from "@/features/editor/Editor";
@@ -9,7 +11,12 @@ import { useCurrentMember } from "@/features/auth/use-current-member";
 import { IconPicker } from "./IconPicker";
 import { PageIcon } from "./PageIcon";
 import { ShareDialog } from "./ShareDialog";
-import { usePage, useSavePageContent, useUpdatePage } from "./use-pages";
+import {
+  useCreatePage,
+  usePage,
+  useSavePageContent,
+  useUpdatePage,
+} from "./use-pages";
 
 export default function PageEditor() {
   const { pageId } = useParams();
@@ -18,6 +25,8 @@ export default function PageEditor() {
   const { data: page, isLoading, isError } = usePage(pageId);
   const update = useUpdatePage();
   const saveContent = useSavePageContent();
+  const createPage = useCreatePage();
+  const navigate = useNavigate();
 
   const [title, setTitle] = useState("");
   const [icon, setIcon] = useState<string | null>(null);
@@ -45,6 +54,31 @@ export default function PageEditor() {
       );
     },
     [pageId, saveContent],
+  );
+
+  // Notion-style "/page": create a child page, drop an inline link to it, save
+  // this page, then open the new sub-page.
+  const handleCreateSubpage = useCallback(
+    async (editor: TiptapEditor, range: Range) => {
+      if (!pageId) return;
+      editor.chain().focus().deleteRange(range).run();
+      try {
+        const childId = await createPage.mutateAsync({ parentId: pageId });
+        editor
+          .chain()
+          .focus()
+          .insertContent({
+            type: "pageLink",
+            attrs: { pageId: childId, title: "Untitled" },
+          })
+          .run();
+        await saveContent.mutateAsync({ id: pageId, content: editor.getJSON() });
+        navigate(`/page/${childId}`);
+      } catch (e) {
+        toast.error((e as Error).message);
+      }
+    },
+    [pageId, createPage, saveContent, navigate],
   );
 
   function onTitleChange(v: string) {
@@ -137,6 +171,7 @@ export default function PageEditor() {
         initialContent={page.content}
         editable={canEdit}
         onChange={onContentChange}
+        onCreatePage={canEdit ? handleCreateSubpage : undefined}
       />
     </div>
   );
