@@ -11,11 +11,23 @@
 
 const GT = "https://translate.googleapis.com/translate_a/single";
 
-const cors = {
-  "access-control-allow-origin": "*",
-  "access-control-allow-headers": "authorization, apikey, content-type",
-  "access-control-allow-methods": "POST, OPTIONS",
-};
+// supabase-js attaches headers like `x-client-info` (and sometimes
+// `x-supabase-api-version`) to every functions.invoke() call, which triggers a
+// CORS preflight. If those aren't in Access-Control-Allow-Headers the browser
+// blocks the request (curl doesn't enforce CORS, so it appears to "work").
+// Reflect whatever the browser asks for, with a safe default.
+function corsHeaders(req: Request): Record<string, string> {
+  const requested = req.headers.get("access-control-request-headers");
+  return {
+    "access-control-allow-origin": "*",
+    "access-control-allow-headers":
+      requested ??
+      "authorization, x-client-info, apikey, content-type, x-supabase-api-version",
+    "access-control-allow-methods": "POST, OPTIONS",
+    "access-control-max-age": "86400",
+    vary: "Access-Control-Request-Headers",
+  };
+}
 
 async function translateOne(text: string, target: string): Promise<string> {
   if (!text.trim()) return text;
@@ -31,6 +43,7 @@ async function translateOne(text: string, target: string): Promise<string> {
 }
 
 Deno.serve(async (req) => {
+  const cors = corsHeaders(req);
   const json = (status: number, body: unknown) =>
     new Response(JSON.stringify(body), {
       status,
