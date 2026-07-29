@@ -5,6 +5,7 @@ import { isSupabaseConfigured } from "@/lib/supabase";
 import { useAuth } from "@/features/auth/auth-context";
 import { useCurrentMember } from "@/features/auth/use-current-member";
 import { useDeepLinkAuth } from "@/features/auth/use-deep-link-auth";
+import { useAppUpdater } from "@/features/app/use-updater";
 import { useWorkspaces } from "@/features/workspace/use-workspaces";
 import {
   useCurrentWorkspaceId,
@@ -72,6 +73,7 @@ function ProtectedShell() {
 
 export default function App() {
   useDeepLinkAuth();
+  useAppUpdater();
 
   if (!isSupabaseConfigured) return <ConfigNeeded />;
 

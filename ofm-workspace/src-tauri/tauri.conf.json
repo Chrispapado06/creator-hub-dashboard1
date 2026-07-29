@@ -31,10 +31,17 @@
       "desktop": {
         "schemes": ["ofm"]
       }
+    },
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk3NkRDMTVBNjM4NjlCNUYKUldSZm00WmpXc0Z0bDdMbkJUdVVORFkxbVVpSUt5M0FDUC9SYVloVy8zb1FJVmxXb1hmZklWSnMK",
+      "endpoints": [
+        "https://github.com/Chrispapado06/creator-hub-dashboard1/releases/latest/download/latest.json"
+      ]
     }
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "icon": [
       "icons/32x32.png",

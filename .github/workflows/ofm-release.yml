@@ -1,0 +1,62 @@
+name: OFM Workspace — Release
+
+# Publishes a downloadable macOS build + auto-update artifacts to a GitHub
+# Release whenever you push a tag like `ofm-v0.1.0`.
+#
+# Required repo secrets (Settings → Secrets and variables → Actions):
+#   TAURI_SIGNING_PRIVATE_KEY           the updater private key (base64)
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  its password (empty string if none)
+#   VITE_SUPABASE_URL                   your Supabase project URL
+#   VITE_SUPABASE_PUBLISHABLE_KEY       your Supabase publishable/anon key
+#
+# GITHUB_TOKEN is provided automatically. The app's updater endpoint points at
+# this repo's latest release, so future tags auto-update installed apps.
+
+on:
+  push:
+    tags:
+      - "ofm-v*"
+
+jobs:
+  release:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Cache cargo
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ofm-workspace/src-tauri
+
+      - name: Install frontend dependencies
+        working-directory: ofm-workspace
+        run: npm ci
+
+      - name: Build, sign & publish release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_PUBLIC_VIEWER_URL: https://ofm-public-viewer.vercel.app
+        with:
+          projectPath: ofm-workspace
+          tagName: ${{ github.ref_name }}
+          releaseName: "OFM Workspace ${{ github.ref_name }}"
+          releaseBody: "Download the .dmg below to install. Installed apps auto-update on future releases."
+          releaseDraft: false
+          prerelease: false
+          args: --target universal-apple-darwin

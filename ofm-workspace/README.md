@@ -151,6 +151,37 @@ Deactivated users lose all access immediately (RLS gates on live membership stat
 
 ---
 
+## Downloadable app & auto-updates
+
+Releases are built and published automatically by GitHub Actions
+([`.github/workflows/ofm-release.yml`](../.github/workflows/ofm-release.yml)) when you
+push a version tag. Installed apps then auto-update from the latest GitHub Release
+(via `tauri-plugin-updater`; the app checks on launch).
+
+**One-time setup** — add these repo secrets (Settings → Secrets and variables → Actions):
+
+| Secret | Value |
+| ------ | ----- |
+| `TAURI_SIGNING_PRIVATE_KEY` | the updater private key (generated with `npx tauri signer generate`) |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | its password (empty string if none) |
+| `VITE_SUPABASE_URL` | your Supabase project URL |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | your Supabase publishable/anon key |
+
+(The matching **public** key is committed in `src-tauri/tauri.conf.json` under `plugins.updater.pubkey`.)
+
+**Cut a release:**
+
+```bash
+git tag ofm-v0.1.0
+git push origin ofm-v0.1.0
+```
+
+The workflow builds a universal macOS `.dmg` + the updater artifacts and creates a
+GitHub Release. Share the Release's `.dmg` link as the download; bump the version in
+`src-tauri/tauri.conf.json` + push a new `ofm-v*` tag to ship an update.
+
+> The app is **unsigned** (no Apple Developer cert). First launch: right-click the app → **Open** to bypass macOS Gatekeeper. Add Apple notarization later for a warning-free install.
+
 ## Roadmap
 
 1. ✅ **Scaffold** — Tauri + React + Supabase; auth + admin-invite; RLS foundations _(this step)_
