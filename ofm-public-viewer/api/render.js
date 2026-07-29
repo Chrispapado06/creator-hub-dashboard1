@@ -25,21 +25,63 @@ function renderText(node) {
     else if (mark.type === "code") html = `<code>${html}</code>`;
     else if (mark.type === "link")
       html = `<a href="${esc(mark.attrs?.href)}" target="_blank" rel="noopener nofollow">${html}</a>`;
+    else if (mark.type === "textStyle" && mark.attrs?.color)
+      html = `<span style="color:${esc(mark.attrs.color)}">${html}</span>`;
+    else if (mark.type === "highlight")
+      html = `<mark${mark.attrs?.color ? ` style="background-color:${esc(mark.attrs.color)}"` : ""}>${html}</mark>`;
   }
   return html;
 }
 
 const kids = (n) => (n.content ?? []).map(renderNode).join("");
 
+// Mirror the editor's embedInfo(): turn a stored watch-URL into an embed URL.
+function videoEmbed(raw) {
+  if (!raw) return null;
+  let u;
+  try {
+    u = new URL(raw);
+  } catch {
+    return null;
+  }
+  const host = u.hostname.replace(/^www\./, "");
+  if (host === "youtube.com" || host === "m.youtube.com") {
+    const id = u.searchParams.get("v");
+    if (id) return { kind: "iframe", url: `https://www.youtube.com/embed/${id}` };
+    const m = u.pathname.match(/\/(embed|shorts)\/([\w-]+)/);
+    if (m) return { kind: "iframe", url: `https://www.youtube.com/embed/${m[2]}` };
+  }
+  if (host === "youtu.be") {
+    const id = u.pathname.slice(1);
+    if (id) return { kind: "iframe", url: `https://www.youtube.com/embed/${id}` };
+  }
+  if (host === "vimeo.com") {
+    const id = u.pathname.split("/").filter(Boolean)[0];
+    if (id && /^\d+$/.test(id))
+      return { kind: "iframe", url: `https://player.vimeo.com/video/${id}` };
+  }
+  if (host === "loom.com") {
+    const m = u.pathname.match(/\/(share|embed)\/([\w-]+)/);
+    if (m) return { kind: "iframe", url: `https://www.loom.com/embed/${m[2]}` };
+  }
+  if (/\.(mp4|webm|ogg|mov|m4v)$/i.test(u.pathname)) return { kind: "file", url: raw };
+  return { kind: "iframe", url: raw };
+}
+
+const alignStyle = (n) => {
+  const a = n.attrs?.textAlign;
+  return a && a !== "left" ? ` style="text-align:${esc(a)}"` : "";
+};
+
 function renderNode(node) {
   switch (node.type) {
     case "text":
       return renderText(node);
     case "paragraph":
-      return `<p>${kids(node)}</p>`;
+      return `<p${alignStyle(node)}>${kids(node)}</p>`;
     case "heading": {
       const l = Math.min(3, Math.max(1, Number(node.attrs?.level ?? 1)));
-      return `<h${l}>${kids(node)}</h${l}>`;
+      return `<h${l}${alignStyle(node)}>${kids(node)}</h${l}>`;
     }
     case "bulletList":
       return `<ul>${kids(node)}</ul>`;
@@ -81,6 +123,29 @@ function renderNode(node) {
       return `<td>${kids(node)}</td>`;
     case "fileBlock":
       return `<div class="ph">📎 ${esc(node.attrs?.name ?? "Attachment")}</div>`;
+    case "columnList":
+      return `<div class="cols">${kids(node)}</div>`;
+    case "column":
+      return `<div class="col">${kids(node)}</div>`;
+    case "video": {
+      const src = node.attrs?.src;
+      const info = src ? videoEmbed(src) : null;
+      if (info?.kind === "iframe")
+        return `<div class="video-embed"><iframe src="${esc(info.url)}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen title="Embedded video"></iframe></div>`;
+      if (info?.kind === "file")
+        return `<video src="${esc(info.url)}" controls></video>`;
+      // Uploaded (private-bucket) videos can't be signed server-side -> link/placeholder.
+      return src
+        ? `<a class="ph" href="${esc(src)}" target="_blank" rel="noopener nofollow">▶ Video</a>`
+        : `<div class="ph">▶ Video</div>`;
+    }
+    case "bookmark": {
+      const url = node.attrs?.url;
+      if (!url) return `<div class="ph">🔖 Bookmark</div>`;
+      const title = node.attrs?.title || url;
+      const desc = node.attrs?.description;
+      return `<a class="bookmark" href="${esc(url)}" target="_blank" rel="noopener nofollow"><span class="bt">${esc(title)}</span>${desc ? `<span class="bd">${esc(desc)}</span>` : ""}<span class="bu">${esc(url)}</span></a>`;
+    }
     default:
       return kids(node);
   }
@@ -109,7 +174,12 @@ ul.tasks{list-style:none;padding-left:2px}li.task{display:flex;gap:8px;align-ite
 .callout{display:flex;gap:12px;background:var(--box);border-radius:10px;padding:14px 16px;margin:10px 0}.cae{font-size:18px;line-height:1.6}
 details{margin:6px 0}summary{cursor:pointer}
 .tw{overflow-x:auto}table{border-collapse:collapse;width:100%;margin:10px 0}th,td{border:1px solid var(--border);padding:7px 10px;text-align:left}th{background:var(--box)}
-.ph{display:inline-block;background:var(--box);color:var(--muted);border-radius:8px;padding:8px 12px;margin:6px 0;font-size:.9em}
+.ph{display:inline-block;background:var(--box);color:var(--muted);border-radius:8px;padding:8px 12px;margin:6px 0;font-size:.9em;text-decoration:none}
+.cols{display:flex;gap:24px;margin:10px 0;align-items:flex-start}.col{flex:1;min-width:0}@media(max-width:640px){.cols{flex-direction:column;gap:0}}
+.video-embed{position:relative;padding-bottom:56.25%;height:0;border-radius:10px;overflow:hidden;margin:10px 0}.video-embed iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+video{max-width:100%;border-radius:10px;margin:8px 0;background:#000}
+.bookmark{display:flex;flex-direction:column;border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin:8px 0;text-decoration:none;color:var(--fg)}.bookmark:hover{background:var(--box)}.bookmark .bt{font-weight:600}.bookmark .bd,.bookmark .bu{color:var(--muted);font-size:.85em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+mark{border-radius:3px;padding:0 1px}
 footer{margin-top:64px;color:var(--muted);font-size:13px;border-top:1px solid var(--border);padding-top:16px}
 </style></head><body><div class="wrap">
 ${emoji ? `<div class="icon">${esc(emoji)}</div>` : ""}

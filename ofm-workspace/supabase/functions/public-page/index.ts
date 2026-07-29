@@ -111,6 +111,14 @@ function block(node: Node, depth = 0, listType: string | null = null, index = 1)
     case "fileBlock":
       lines.push(`📎 ${node.attrs?.name ?? "Attachment"} (${node.attrs?.url ?? ""})`);
       break;
+    case "video":
+      lines.push(`[video] ${node.attrs?.src ?? node.attrs?.path ?? ""}`);
+      break;
+    case "bookmark":
+      lines.push(
+        `🔖 ${node.attrs?.title ?? ""} (${node.attrs?.url ?? ""})`.trim(),
+      );
+      break;
     case "table":
       (node.content ?? []).forEach((row) => {
         const cells = (row.content ?? []).map((c) => inline(c).replace(/\s+/g, " ").trim());
