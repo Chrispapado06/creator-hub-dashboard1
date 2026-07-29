@@ -141,6 +141,21 @@ export function useUpdateDatabase() {
   });
 }
 
+export function useArchiveDatabase() {
+  const qc = useQueryClient();
+  const ws = useCurrentWorkspaceId();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from("databases")
+        .update({ archived_at: new Date().toISOString() } as never)
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: dbsKey(ws) }),
+  });
+}
+
 export function useProperties(databaseId: string | undefined) {
   return useQuery({
     queryKey: propsKey(databaseId ?? ""),
