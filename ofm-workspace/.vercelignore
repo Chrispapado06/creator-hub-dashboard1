@@ -1,0 +1,4 @@
+# The web build never needs the Rust/Tauri side (src-tauri/target alone is ~2.7 GB).
+src-tauri
+node_modules
+dist
