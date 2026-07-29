@@ -41,6 +41,7 @@ const TYPES: { value: DbPropertyType; label: string }[] = [
   { value: "text", label: "Text" },
   { value: "number", label: "Number" },
   { value: "select", label: "Select" },
+  { value: "multi_select", label: "Multi-select" },
   { value: "date", label: "Date" },
   { value: "checkbox", label: "Checkbox" },
   { value: "url", label: "URL" },
@@ -63,7 +64,8 @@ function AddColumn({
       await createProperty.mutateAsync({
         name: name.trim() || "Property",
         type,
-        config: type === "select" ? { options: [] } : {},
+        config:
+          type === "select" || type === "multi_select" ? { options: [] } : {},
         position: nextPosition,
       });
       setName("");
