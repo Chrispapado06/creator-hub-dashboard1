@@ -8,8 +8,10 @@ import { FullScreenSpinner } from "@/components/full-screen-spinner";
 import { Editor } from "@/features/editor/Editor";
 import { useAuth } from "@/features/auth/auth-context";
 import { useCurrentMember } from "@/features/auth/use-current-member";
+import { cn } from "@/lib/utils";
 import { IconPicker } from "./IconPicker";
 import { PageIcon } from "./PageIcon";
+import { PageMenu } from "./PageMenu";
 import { ShareDialog } from "./ShareDialog";
 import {
   useCreatePage,
@@ -30,12 +32,25 @@ export default function PageEditor() {
 
   const [title, setTitle] = useState("");
   const [icon, setIcon] = useState<string | null>(null);
+  const [fullWidth, setFullWidth] = useState(false);
+  const titleRef = useRef<HTMLInputElement>(null);
 
   // Resync local state when navigating between pages.
   useEffect(() => {
     setTitle(page?.title ?? "");
     setIcon(page?.icon ?? null);
+    setFullWidth(
+      pageId ? localStorage.getItem(`ofm-fw-${pageId}`) === "1" : false,
+    );
   }, [page?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function toggleFullWidth() {
+    setFullWidth((v) => {
+      const next = !v;
+      if (pageId) localStorage.setItem(`ofm-fw-${pageId}`, next ? "1" : "0");
+      return next;
+    });
+  }
 
   const contentTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
@@ -124,8 +139,13 @@ export default function PageEditor() {
   );
 
   return (
-    <div className="mx-auto max-w-3xl px-14 py-12">
-      <div className="mb-3 flex h-8 items-center justify-end">
+    <div
+      className={cn(
+        "mx-auto px-14 py-12",
+        fullWidth ? "max-w-5xl" : "max-w-3xl",
+      )}
+    >
+      <div className="mb-3 flex h-8 items-center justify-end gap-1">
         {!canEdit && (
           <span className="mr-auto text-xs text-muted-foreground">
             Read-only
@@ -136,6 +156,23 @@ export default function PageEditor() {
             pageId={pageId}
             published={page.published}
             publicToken={page.publicToken}
+          />
+        )}
+        {canEdit && (
+          <PageMenu
+            page={{
+              id: page.id,
+              title,
+              icon,
+              content: page.content,
+              parentId: page.parentId,
+            }}
+            fullWidth={fullWidth}
+            onToggleFullWidth={toggleFullWidth}
+            onRename={() => {
+              titleRef.current?.focus();
+              titleRef.current?.select();
+            }}
           />
         )}
       </div>
@@ -159,6 +196,7 @@ export default function PageEditor() {
       ) : null}
 
       <input
+        ref={titleRef}
         value={title}
         onChange={(e) => onTitleChange(e.target.value)}
         readOnly={!canEdit}
