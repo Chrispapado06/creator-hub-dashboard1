@@ -414,7 +414,9 @@ export type Database = {
         Row: {
           created_at: string
           created_by: string | null
+          icon: string | null
           id: string
+          logo_url: string | null
           name: string
           slug: string
           updated_at: string
@@ -422,7 +424,9 @@ export type Database = {
         Insert: {
           created_at?: string
           created_by?: string | null
+          icon?: string | null
           id?: string
+          logo_url?: string | null
           name?: string
           slug: string
           updated_at?: string
@@ -430,7 +434,9 @@ export type Database = {
         Update: {
           created_at?: string
           created_by?: string | null
+          icon?: string | null
           id?: string
+          logo_url?: string | null
           name?: string
           slug?: string
           updated_at?: string
@@ -443,6 +449,14 @@ export type Database = {
     }
     Functions: {
       accept_my_invites: { Args: never; Returns: number }
+      add_workspace_member_by_email: {
+        Args: {
+          p_email: string
+          p_workspace: string
+          p_role: Database["public"]["Enums"]["app_role"]
+        }
+        Returns: string
+      }
       can_manage_db: { Args: { p_db: string }; Returns: boolean }
       can_manage_profile: { Args: { p_id: string }; Returns: boolean }
       can_read_db: { Args: { p_db: string }; Returns: boolean }
@@ -456,6 +470,10 @@ export type Database = {
       membership_role: {
         Args: { p_workspace: string }
         Returns: Database["public"]["Enums"]["app_role"]
+      }
+      remove_workspace_member: {
+        Args: { p_user: string; p_workspace: string }
+        Returns: undefined
       }
       revoke_user_sessions: { Args: { p_user: string }; Returns: undefined }
       set_member_role: {

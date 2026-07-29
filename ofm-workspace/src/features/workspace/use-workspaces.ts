@@ -6,6 +6,8 @@ import type { AppRole } from "@/features/auth/use-current-member";
 export interface WorkspaceSummary {
   id: string;
   name: string;
+  icon: string | null;
+  logoUrl: string | null;
   role: AppRole;
 }
 
@@ -18,17 +20,28 @@ export function useWorkspaces() {
     queryFn: async (): Promise<WorkspaceSummary[]> => {
       const { data, error } = await supabase
         .from("memberships")
-        .select("role, workspaces(id, name)")
+        .select("role, workspaces(id, name, icon, logo_url)")
         .eq("user_id", user!.id)
         .eq("status", "active");
       if (error) throw error;
       const rows = (data ?? []) as unknown as {
         role: AppRole;
-        workspaces: { id: string; name: string } | null;
+        workspaces: {
+          id: string;
+          name: string;
+          icon: string | null;
+          logo_url: string | null;
+        } | null;
       }[];
       return rows
         .filter((r) => r.workspaces)
-        .map((r) => ({ id: r.workspaces!.id, name: r.workspaces!.name, role: r.role }))
+        .map((r) => ({
+          id: r.workspaces!.id,
+          name: r.workspaces!.name,
+          icon: r.workspaces!.icon,
+          logoUrl: r.workspaces!.logo_url,
+          role: r.role,
+        }))
         .sort((a, b) => a.name.localeCompare(b.name));
     },
   });

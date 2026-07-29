@@ -23,10 +23,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useWorkspaceStore, useCurrentWorkspaceId } from "@/stores/workspace-store";
 import { useCreateWorkspace, useWorkspaces } from "./use-workspaces";
-
-function initial(name: string) {
-  return (name.trim().charAt(0) || "W").toUpperCase();
-}
+import { WorkspaceLogo } from "./WorkspaceLogo";
 
 export function WorkspaceSwitcher() {
   const { data: workspaces = [] } = useWorkspaces();
@@ -66,9 +63,12 @@ export function WorkspaceSwitcher() {
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button className="flex h-14 w-full items-center gap-2 border-b px-3 text-left transition-colors hover:bg-sidebar-accent/50">
-            <div className="flex size-6 shrink-0 items-center justify-center rounded bg-primary text-xs font-bold text-primary-foreground">
-              {initial(current?.name ?? "W")}
-            </div>
+            <WorkspaceLogo
+              name={current?.name ?? "W"}
+              icon={current?.icon}
+              logoUrl={current?.logoUrl}
+              className="size-6 text-xs"
+            />
             <span className="min-w-0 flex-1 truncate font-semibold">
               {current?.name ?? "Workspace"}
             </span>
@@ -81,9 +81,12 @@ export function WorkspaceSwitcher() {
           </DropdownMenuLabel>
           {workspaces.map((w) => (
             <DropdownMenuItem key={w.id} onClick={() => switchTo(w.id)}>
-              <div className="flex size-5 items-center justify-center rounded bg-muted text-[10px] font-bold">
-                {initial(w.name)}
-              </div>
+              <WorkspaceLogo
+                name={w.name}
+                icon={w.icon}
+                logoUrl={w.logoUrl}
+                className="size-5 text-[10px]"
+              />
               <span className="min-w-0 flex-1 truncate">{w.name}</span>
               {w.id === currentId && <Check className="size-4" />}
             </DropdownMenuItem>

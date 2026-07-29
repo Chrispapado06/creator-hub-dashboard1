@@ -19,6 +19,7 @@ import AcceptInvitePage from "@/features/auth/AcceptInvitePage";
 import { WorkspaceLayout } from "@/features/workspace/WorkspaceLayout";
 import HomePage from "@/features/workspace/HomePage";
 import TeamPage from "@/features/team/TeamPage";
+import SettingsPage from "@/features/workspace/SettingsPage";
 import PageEditor from "@/features/pages/PageEditor";
 import TrashPage from "@/features/pages/TrashPage";
 import DatabasePage from "@/features/databases/DatabasePage";
@@ -87,6 +88,7 @@ export default function App() {
         <Route path="/db/:databaseId" element={<DatabasePage />} />
         <Route path="/trash" element={<TrashPage />} />
         <Route path="/team" element={<TeamPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

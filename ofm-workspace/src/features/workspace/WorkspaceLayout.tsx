@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { Home, Trash2, Users } from "lucide-react";
+import { Home, Settings, Trash2, Users } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import type { CurrentMember } from "@/features/auth/use-current-member";
@@ -42,9 +42,14 @@ export function WorkspaceLayout({ member }: { member: CurrentMember }) {
 
         <div className="space-y-0.5 border-t p-2">
           {isOwner && (
-            <NavLink to="/team" className={navClass}>
-              <Users className="size-4" /> Team
-            </NavLink>
+            <>
+              <NavLink to="/settings" className={navClass}>
+                <Settings className="size-4" /> Settings
+              </NavLink>
+              <NavLink to="/team" className={navClass}>
+                <Users className="size-4" /> Team
+              </NavLink>
+            </>
           )}
           <NavLink to="/trash" className={navClass}>
             <Trash2 className="size-4" /> Trash
