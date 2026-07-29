@@ -1,0 +1,8 @@
+{
+  "name": "ofm-public-viewer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Renders OFM Workspace published pages as styled HTML (Vercel).",
+  "engines": { "node": ">=18" }
+}
