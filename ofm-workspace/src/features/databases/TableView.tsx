@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MoreHorizontal, Plus, Trash2 } from "lucide-react";
+import { Maximize2, MoreHorizontal, Plus, Tags, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,11 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -25,7 +30,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { applyView, visibleProperties } from "./apply-view";
 import { Cell } from "./cells";
+import { OptionManager } from "./OptionManager";
+import { usePeek } from "./peek-context";
 import {
   useCreateProperty,
   useCreateRecord,
@@ -34,8 +42,10 @@ import {
   useProperties,
   useRecords,
   useUpdateRecord,
+  type DbProperty,
   type DbPropertyType,
 } from "./use-databases";
+import type { DbView } from "./use-db-views";
 
 const TYPES: { value: DbPropertyType; label: string }[] = [
   { value: "text", label: "Text" },
@@ -120,13 +130,65 @@ function AddColumn({
   );
 }
 
-export function TableView({ databaseId }: { databaseId: string }) {
+function HeaderCell({
+  databaseId,
+  property,
+  onDelete,
+}: {
+  databaseId: string;
+  property: DbProperty;
+  onDelete: () => void;
+}) {
+  const canEditOptions =
+    property.type === "select" || property.type === "multi_select";
+  return (
+    <div className="db-th">
+      <span className="truncate">{property.name}</span>
+      {canEditOptions && (
+        <Popover>
+          <PopoverTrigger asChild>
+            <button className="db-th-menu" title="Edit options">
+              <Tags className="size-3.5" />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-64">
+            <OptionManager databaseId={databaseId} property={property} />
+          </PopoverContent>
+        </Popover>
+      )}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button className="db-th-menu">
+            <MoreHorizontal className="size-3.5" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start">
+          <DropdownMenuItem className="text-destructive" onClick={onDelete}>
+            <Trash2 className="size-4" /> Delete column
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
+
+export function TableView({
+  databaseId,
+  view,
+}: {
+  databaseId: string;
+  view?: DbView;
+}) {
   const { data: properties = [], isLoading } = useProperties(databaseId);
   const { data: records = [] } = useRecords(databaseId);
   const updateRecord = useUpdateRecord(databaseId);
   const createRecord = useCreateRecord(databaseId);
   const deleteRecord = useDeleteRecord(databaseId);
   const deleteProperty = useDeleteProperty(databaseId);
+  const { open } = usePeek();
+
+  const cols = view ? visibleProperties(properties, view.config) : properties;
+  const rows = view ? applyView(records, properties, view.config) : records;
 
   function setCell(
     recordId: string,
@@ -149,26 +211,13 @@ export function TableView({ databaseId }: { databaseId: string }) {
         <table className="db-table">
           <thead>
             <tr>
-              {properties.map((p) => (
+              {cols.map((p) => (
                 <th key={p.id}>
-                  <div className="db-th">
-                    <span className="truncate">{p.name}</span>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <button className="db-th-menu">
-                          <MoreHorizontal className="size-3.5" />
-                        </button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="start">
-                        <DropdownMenuItem
-                          className="text-destructive"
-                          onClick={() => deleteProperty.mutate(p.id)}
-                        >
-                          <Trash2 className="size-4" /> Delete column
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
+                  <HeaderCell
+                    databaseId={databaseId}
+                    property={p}
+                    onDelete={() => deleteProperty.mutate(p.id)}
+                  />
                 </th>
               ))}
               <th className="db-add-th">
@@ -177,9 +226,9 @@ export function TableView({ databaseId }: { databaseId: string }) {
             </tr>
           </thead>
           <tbody>
-            {records.map((r) => (
+            {rows.map((r) => (
               <tr key={r.id} className="group">
-                {properties.map((p) => (
+                {cols.map((p) => (
                   <td key={p.id}>
                     <Cell
                       property={p}
@@ -189,20 +238,29 @@ export function TableView({ databaseId }: { databaseId: string }) {
                   </td>
                 ))}
                 <td className="db-row-actions">
-                  <button
-                    className="text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive"
-                    title="Delete row"
-                    onClick={() => deleteRecord.mutate(r.id)}
-                  >
-                    <Trash2 className="size-3.5" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      className="text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-foreground"
+                      title="Open row"
+                      onClick={() => open(r.id)}
+                    >
+                      <Maximize2 className="size-3.5" />
+                    </button>
+                    <button
+                      className="text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive"
+                      title="Delete row"
+                      onClick={() => deleteRecord.mutate(r.id)}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
-            {records.length === 0 && (
+            {rows.length === 0 && (
               <tr>
                 <td
-                  colSpan={properties.length + 1}
+                  colSpan={cols.length + 1}
                   className="px-3 py-6 text-center text-sm text-muted-foreground"
                 >
                   No rows yet.

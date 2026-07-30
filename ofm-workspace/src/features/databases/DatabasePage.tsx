@@ -4,7 +4,7 @@ import { useParams } from "react-router-dom";
 import { FullScreenSpinner } from "@/components/full-screen-spinner";
 import { IconPicker } from "@/features/pages/IconPicker";
 import { PageIcon } from "@/features/pages/PageIcon";
-import { TableView } from "./TableView";
+import { DatabaseViews } from "./DatabaseViews";
 import { useDatabase, useUpdateDatabase } from "./use-databases";
 
 export default function DatabasePage() {
@@ -58,8 +58,7 @@ export default function DatabasePage() {
         />
       </div>
 
-      <div className="mb-2 border-b pb-2 text-sm font-medium">Table</div>
-      <TableView databaseId={databaseId!} />
+      <DatabaseViews databaseId={databaseId!} />
     </div>
   );
 }

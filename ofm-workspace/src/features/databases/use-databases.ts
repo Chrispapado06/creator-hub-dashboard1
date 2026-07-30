@@ -34,6 +34,21 @@ export interface DbRecord {
   id: string;
   properties: Record<string, unknown>;
   position: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+/** The property used as a record's title — the first text property, else the first. */
+export function getTitleProp(properties: DbProperty[]): DbProperty | undefined {
+  return properties.find((p) => p.type === "text") ?? properties[0];
+}
+export function recordTitle(
+  record: DbRecord,
+  properties: DbProperty[],
+): string {
+  const tp = getTitleProp(properties);
+  const v = tp ? record.properties?.[tp.id] : null;
+  return v == null || v === "" ? "Untitled" : String(v);
 }
 
 export interface DatabaseMeta {
@@ -179,7 +194,7 @@ export function useRecords(databaseId: string | undefined) {
     queryFn: async (): Promise<DbRecord[]> => {
       const { data, error } = await supabase
         .from("db_records")
-        .select("id,properties,position")
+        .select("id,properties,position,created_at,updated_at")
         .eq("database_id", databaseId!)
         .order("position", { ascending: true });
       if (error) throw error;

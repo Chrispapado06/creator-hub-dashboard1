@@ -9,7 +9,7 @@ import { useNavigate } from "react-router-dom";
 import { ArrowUpRight, Table2 } from "lucide-react";
 
 import { PageIcon } from "@/features/pages/PageIcon";
-import { TableView } from "@/features/databases/TableView";
+import { DatabaseViews } from "@/features/databases/DatabaseViews";
 import { useDatabase, useUpdateDatabase } from "@/features/databases/use-databases";
 
 /** A Notion-style database embedded inside a page. Stores just the databaseId
@@ -63,7 +63,7 @@ function DatabaseViewNode({ node }: NodeViewProps) {
           <ArrowUpRight className="size-4" />
         </button>
       </div>
-      <TableView databaseId={databaseId} />
+      <DatabaseViews databaseId={databaseId} />
     </NodeViewWrapper>
   );
 }

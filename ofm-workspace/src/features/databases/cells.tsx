@@ -19,7 +19,7 @@ import type { DbProperty } from "./use-databases";
 // Notion-style option colors (light chip bg + dark text — readable in both app
 // themes since the chip carries its own background). Also the target the Notion
 // importer maps select/multi_select/status option colors onto.
-const OPTION_COLORS: Record<string, string> = {
+export const OPTION_COLORS: Record<string, string> = {
   default: "#e3e2e0",
   gray: "#e3e2e0",
   brown: "#eee0da",
@@ -32,14 +32,19 @@ const OPTION_COLORS: Record<string, string> = {
   red: "#ffe2dd",
 };
 
-function chipStyle(color?: string) {
+/** Selectable colors for the option editor (excludes the "default" alias). */
+export const OPTION_COLOR_KEYS = [
+  "gray", "brown", "orange", "yellow", "green", "blue", "purple", "pink", "red",
+];
+
+export function chipStyle(color?: string) {
   return {
     backgroundColor: OPTION_COLORS[color ?? "default"] ?? OPTION_COLORS.default,
     color: "#37352f",
   };
 }
 
-function Chip({ label, color }: { label: string; color?: string }) {
+export function Chip({ label, color }: { label: string; color?: string }) {
   return (
     <span
       className="inline-block max-w-full truncate rounded px-1.5 py-0.5 text-xs"
@@ -48,6 +53,59 @@ function Chip({ label, color }: { label: string; color?: string }) {
       {label}
     </span>
   );
+}
+
+/** Compact, read-only render of a property's value (for board/gallery/list cards). */
+export function PropertyValue({
+  property,
+  value,
+}: {
+  property: DbProperty;
+  value: unknown;
+}) {
+  if (value == null || value === "" || (Array.isArray(value) && !value.length))
+    return null;
+  switch (property.type) {
+    case "checkbox":
+      return (
+        <input
+          type="checkbox"
+          checked={Boolean(value)}
+          readOnly
+          className="size-3.5 accent-[var(--primary)]"
+        />
+      );
+    case "select": {
+      const o = (property.config.options ?? []).find((x) => x.id === value);
+      return o ? <Chip label={o.label} color={o.color} /> : null;
+    }
+    case "multi_select": {
+      const opts = property.config.options ?? [];
+      const ids = Array.isArray(value) ? (value as string[]) : [];
+      return (
+        <span className="flex flex-wrap gap-1">
+          {ids.map((id) => {
+            const o = opts.find((x) => x.id === id);
+            return o ? <Chip key={id} label={o.label} color={o.color} /> : null;
+          })}
+        </span>
+      );
+    }
+    case "url":
+      return (
+        <a
+          href={String(value)}
+          target="_blank"
+          rel="noreferrer"
+          className="truncate text-primary underline"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {String(value)}
+        </a>
+      );
+    default:
+      return <span className="truncate">{String(value)}</span>;
+  }
 }
 
 function TextCell({
