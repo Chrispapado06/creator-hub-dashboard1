@@ -425,6 +425,55 @@
   }
 }
 
+/* ── inline database ── */
+.tiptap .inline-db {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin: 0.6rem 0;
+  overflow: hidden;
+}
+.tiptap .inline-db-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--muted);
+}
+.tiptap .inline-db-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+}
+.tiptap .inline-db-title {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  outline: none;
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: inherit;
+}
+.tiptap .inline-db-open {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  border-radius: 6px;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.tiptap .inline-db-open:hover {
+  background: var(--accent);
+}
+.tiptap .inline-db-empty {
+  padding: 0.75rem;
+  color: var(--muted-foreground);
+}
+
 /* ── video ── */
 .tiptap .video-block {
   margin: 0.5rem 0;

@@ -13,6 +13,7 @@ import { IconPicker } from "./IconPicker";
 import { PageIcon } from "./PageIcon";
 import { PageMenu } from "./PageMenu";
 import { ShareDialog } from "./ShareDialog";
+import { useCreateDatabase } from "@/features/databases/use-databases";
 import {
   useCreatePage,
   usePage,
@@ -28,6 +29,7 @@ export default function PageEditor() {
   const update = useUpdatePage();
   const saveContent = useSavePageContent();
   const createPage = useCreatePage();
+  const createDatabase = useCreateDatabase();
   const navigate = useNavigate();
 
   const [title, setTitle] = useState("");
@@ -94,6 +96,26 @@ export default function PageEditor() {
       }
     },
     [pageId, createPage, saveContent, navigate],
+  );
+
+  // "/database": create a database and embed it inline at the cursor.
+  const handleCreateDatabase = useCallback(
+    async (editor: TiptapEditor, range: Range) => {
+      if (!pageId) return;
+      editor.chain().focus().deleteRange(range).run();
+      try {
+        const dbId = await createDatabase.mutateAsync({});
+        editor
+          .chain()
+          .focus()
+          .insertContent({ type: "databaseView", attrs: { databaseId: dbId } })
+          .run();
+        await saveContent.mutateAsync({ id: pageId, content: editor.getJSON() });
+      } catch (e) {
+        toast.error((e as Error).message);
+      }
+    },
+    [pageId, createDatabase, saveContent],
   );
 
   function onTitleChange(v: string) {
@@ -210,6 +232,7 @@ export default function PageEditor() {
         editable={canEdit}
         onChange={onContentChange}
         onCreatePage={canEdit ? handleCreateSubpage : undefined}
+        onCreateDatabase={canEdit ? handleCreateDatabase : undefined}
       />
     </div>
   );

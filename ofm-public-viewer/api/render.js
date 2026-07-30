@@ -125,6 +125,8 @@ function renderNode(node) {
       return `<div class="ph">📎 ${esc(node.attrs?.name ?? "Attachment")}</div>`;
     case "pageLink":
       return `<div class="plink">${node.attrs?.icon ? esc(node.attrs.icon) : "📄"} <span>${esc(node.attrs?.title || "Untitled")}</span></div>`;
+    case "databaseView":
+      return `<div class="ph">📊 Database — open in the app to view</div>`;
     case "columnList":
       return `<div class="cols">${kids(node)}</div>`;
     case "column":

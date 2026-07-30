@@ -23,6 +23,7 @@ import { PageLink } from "./extensions/page-link";
 import { ColumnList, Column } from "./extensions/columns";
 import { Video } from "./extensions/video";
 import { Bookmark } from "./extensions/bookmark";
+import { DatabaseView } from "./extensions/database-view";
 import { SlashCommand } from "./slash-command";
 import { BubbleToolbar } from "./BubbleToolbar";
 
@@ -31,11 +32,13 @@ export function Editor({
   editable = true,
   onChange,
   onCreatePage,
+  onCreateDatabase,
 }: {
   initialContent?: unknown;
   editable?: boolean;
   onChange?: (json: JSONContent) => void;
   onCreatePage?: (editor: TiptapEditor, range: Range) => void;
+  onCreateDatabase?: (editor: TiptapEditor, range: Range) => void;
 }) {
   const editor = useEditor({
     editable,
@@ -52,6 +55,7 @@ export function Editor({
       Bookmark,
       ColumnList,
       Column,
+      DatabaseView,
       Table.configure({ resizable: true }),
       TableRow,
       TableHeader,
@@ -60,7 +64,10 @@ export function Editor({
       Toggle,
       FileBlock,
       PageLink,
-      SlashCommand.configure({ onCreatePage: onCreatePage ?? null }),
+      SlashCommand.configure({
+        onCreatePage: onCreatePage ?? null,
+        onCreateDatabase: onCreateDatabase ?? null,
+      }),
       Placeholder.configure({
         placeholder: ({ node }) =>
           node.type.name === "heading"

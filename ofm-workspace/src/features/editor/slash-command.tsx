@@ -15,6 +15,7 @@ import {
   ChevronRight,
   Code2,
   Columns2,
+  Database,
   FileText,
   Heading1,
   Heading2,
@@ -341,15 +342,17 @@ function place(el: HTMLElement | null, rect: (() => DOMRect | null) | null) {
 
 interface SlashCommandOptions {
   onCreatePage: ((editor: Editor, range: Range) => void) | null;
+  onCreateDatabase: ((editor: Editor, range: Range) => void) | null;
 }
 
 export const SlashCommand = Extension.create<SlashCommandOptions>({
   name: "slashCommand",
   addOptions() {
-    return { onCreatePage: null };
+    return { onCreatePage: null, onCreateDatabase: null };
   },
   addProseMirrorPlugins() {
     const onCreatePage = this.options.onCreatePage;
+    const onCreateDatabase = this.options.onCreateDatabase;
     const pageCommand: CommandItem[] = onCreatePage
       ? [
           {
@@ -361,7 +364,18 @@ export const SlashCommand = Extension.create<SlashCommandOptions>({
           },
         ]
       : [];
-    const commands = [...pageCommand, ...SLASH_COMMANDS];
+    const databaseCommand: CommandItem[] = onCreateDatabase
+      ? [
+          {
+            title: "Database",
+            subtitle: "Insert a table/database inside this page",
+            icon: Database,
+            keywords: ["database", "table", "grid", "inline", "collection"],
+            run: (editor, range) => onCreateDatabase(editor, range),
+          },
+        ]
+      : [];
+    const commands = [...pageCommand, ...databaseCommand, ...SLASH_COMMANDS];
     return [
       Suggestion<CommandItem>({
         editor: this.editor,

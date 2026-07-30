@@ -119,6 +119,9 @@ function block(node: Node, depth = 0, listType: string | null = null, index = 1)
         `🔖 ${node.attrs?.title ?? ""} (${node.attrs?.url ?? ""})`.trim(),
       );
       break;
+    case "databaseView":
+      lines.push("[database]");
+      break;
     case "table":
       (node.content ?? []).forEach((row) => {
         const cells = (row.content ?? []).map((c) => inline(c).replace(/\s+/g, " ").trim());
