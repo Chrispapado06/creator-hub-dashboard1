@@ -1,25 +1,22 @@
-name: OFM Workspace — Release
+name: OFM Workspace — Windows build
 
-# Publishes a downloadable macOS build + auto-update artifacts to a GitHub
-# Release whenever you push a tag like `ofm-v0.1.0`.
-#
-# Required repo secrets (Settings → Secrets and variables → Actions):
-#   TAURI_SIGNING_PRIVATE_KEY           the updater private key (base64)
-#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  its password (empty string if none)
-#   VITE_SUPABASE_URL                   your Supabase project URL
-#   VITE_SUPABASE_PUBLISHABLE_KEY       your Supabase publishable/anon key
-#
-# GITHUB_TOKEN is provided automatically. The app's updater endpoint points at
-# this repo's latest release, so future tags auto-update installed apps.
+# Builds a downloadable Windows installer (.exe, NSIS) on GitHub's Windows
+# runners and publishes it to a GitHub Release, whenever a tag like `ofm-v0.1.0`
+# is pushed. No repo secrets required:
+#   * the Supabase anon key is a PUBLIC client key (RLS-protected), inlined below;
+#   * updater artifacts are disabled for this build, so no signing key is needed;
+#   * GITHUB_TOKEN (auto-provided) publishes the release.
+# The macOS build + auto-update are handled separately (self-hosted on Supabase).
 
 on:
   push:
     tags:
       - "ofm-v*"
+  workflow_dispatch:
 
 jobs:
-  release:
-    runs-on: macos-latest
+  windows:
+    runs-on: windows-latest
     permissions:
       contents: write
     steps:
@@ -29,13 +26,9 @@ jobs:
         with:
           node-version: 20
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache cargo
-        uses: swatinem/rust-cache@v2
+      - uses: swatinem/rust-cache@v2
         with:
           workspaces: ofm-workspace/src-tauri
 
@@ -43,20 +36,18 @@ jobs:
         working-directory: ofm-workspace
         run: npm ci
 
-      - name: Build, sign & publish release
+      - name: Build & publish Windows installer
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_SUPABASE_URL: https://jzlrwlqytyqhlpuyblld.supabase.co
+          VITE_SUPABASE_PUBLISHABLE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6bHJ3bHF5dHlxaGxwdXlibGxkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUzMjgzMDYsImV4cCI6MjEwMDkwNDMwNn0.8IaC-jGMDk95e2YgKhuGXiT0Aikb3-osjq6HKzmhh-k
           VITE_PUBLIC_VIEWER_URL: https://ofm-public-viewer.vercel.app
         with:
           projectPath: ofm-workspace
           tagName: ${{ github.ref_name }}
           releaseName: "OFM Workspace ${{ github.ref_name }}"
-          releaseBody: "Download the .dmg below to install. Installed apps auto-update on future releases."
+          releaseBody: "Windows installer (.exe) below. Download and run to install."
           releaseDraft: false
           prerelease: false
-          args: --target universal-apple-darwin
+          args: '--bundles nsis --config {"bundle":{"createUpdaterArtifacts":false}}'
