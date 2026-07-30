@@ -123,6 +123,8 @@ function renderNode(node) {
       return `<td>${kids(node)}</td>`;
     case "fileBlock":
       return `<div class="ph">📎 ${esc(node.attrs?.name ?? "Attachment")}</div>`;
+    case "pageLink":
+      return `<div class="plink">${node.attrs?.icon ? esc(node.attrs.icon) : "📄"} <span>${esc(node.attrs?.title || "Untitled")}</span></div>`;
     case "columnList":
       return `<div class="cols">${kids(node)}</div>`;
     case "column":
@@ -180,6 +182,7 @@ details{margin:6px 0}summary{cursor:pointer}
 video{max-width:100%;border-radius:10px;margin:8px 0;background:#000}
 .bookmark{display:flex;flex-direction:column;border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin:8px 0;text-decoration:none;color:var(--fg)}.bookmark:hover{background:var(--box)}.bookmark .bt{font-weight:600}.bookmark .bd,.bookmark .bu{color:var(--muted);font-size:.85em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 mark{border-radius:3px;padding:0 1px}
+.plink{display:flex;align-items:center;gap:8px;padding:4px 6px;margin:2px 0;border-radius:6px;font-weight:500}.plink span{text-decoration:underline;text-decoration-color:var(--border);text-underline-offset:3px}.plink:hover{background:var(--box)}
 footer{margin-top:64px;color:var(--muted);font-size:13px;border-top:1px solid var(--border);padding-top:16px}
 </style></head><body><div class="wrap">
 ${emoji ? `<div class="icon">${esc(emoji)}</div>` : ""}
