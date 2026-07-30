@@ -29,7 +29,6 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const DEFAULT_WORKSPACE_ID =
   Deno.env.get("DEFAULT_WORKSPACE_ID") ?? "00000000-0000-0000-0000-000000000001";
-const ALLOWED_ORIGIN = Deno.env.get("ALLOWED_ORIGIN") ?? ""; // set to your app origin
 // New members are created instantly with this shared password (no email link).
 // They sign in with their email + this password and can change it later.
 const DEFAULT_PASSWORD = Deno.env.get("DEFAULT_MEMBER_PASSWORD") ?? "uncvrd2026";
@@ -38,13 +37,13 @@ const ROLES = new Set(["owner", "manager", "chatter"]);
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 function cors(reqOrigin: string | null) {
-  // Restrict to the configured origin; never echo an arbitrary origin.
-  const allow = ALLOWED_ORIGIN
-    ? (reqOrigin === ALLOWED_ORIGIN ? ALLOWED_ORIGIN : ALLOWED_ORIGIN)
-    : "null";
+  // This function is gated by the caller's JWT + a server-side active-owner check,
+  // so CORS is not the security boundary. Reflect the caller's origin so the app
+  // works from any host (Vercel web app, Tauri desktop, localhost dev).
   return {
-    "Access-Control-Allow-Origin": allow,
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Origin": reqOrigin || "*",
+    "Access-Control-Allow-Headers":
+      "authorization, x-client-info, apikey, content-type, x-supabase-api-version",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Vary": "Origin",
   };
