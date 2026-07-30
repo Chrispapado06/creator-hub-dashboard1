@@ -8,6 +8,7 @@ export interface WorkspaceSummary {
   name: string;
   icon: string | null;
   logoUrl: string | null;
+  createdBy: string | null;
   role: AppRole;
 }
 
@@ -20,7 +21,7 @@ export function useWorkspaces() {
     queryFn: async (): Promise<WorkspaceSummary[]> => {
       const { data, error } = await supabase
         .from("memberships")
-        .select("role, workspaces(id, name, icon, logo_url)")
+        .select("role, workspaces(id, name, icon, logo_url, created_by)")
         .eq("user_id", user!.id)
         .eq("status", "active");
       if (error) throw error;
@@ -31,6 +32,7 @@ export function useWorkspaces() {
           name: string;
           icon: string | null;
           logo_url: string | null;
+          created_by: string | null;
         } | null;
       }[];
       return rows
@@ -40,6 +42,7 @@ export function useWorkspaces() {
           name: r.workspaces!.name,
           icon: r.workspaces!.icon,
           logoUrl: r.workspaces!.logo_url,
+          createdBy: r.workspaces!.created_by,
           role: r.role,
         }))
         .sort((a, b) => a.name.localeCompare(b.name));

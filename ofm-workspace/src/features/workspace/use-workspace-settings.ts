@@ -62,6 +62,20 @@ export function useAddWorkspaceMember() {
   });
 }
 
+/** Delete the whole workspace — creator-only (enforced by the RPC). */
+export function useDeleteWorkspace() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (workspaceId: string) => {
+      const { error } = await supabase.rpc("delete_workspace", {
+        p_workspace: workspaceId,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["my-workspaces"] }),
+  });
+}
+
 /** Revoke a user's access to this workspace (owner-only RPC). */
 export function useRemoveWorkspaceMember() {
   const qc = useQueryClient();

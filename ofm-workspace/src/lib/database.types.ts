@@ -461,6 +461,7 @@ export type Database = {
       can_manage_profile: { Args: { p_id: string }; Returns: boolean }
       can_read_db: { Args: { p_db: string }; Returns: boolean }
       create_workspace: { Args: { p_name: string }; Returns: string }
+      delete_workspace: { Args: { p_workspace: string }; Returns: undefined }
       custom_access_token_hook: { Args: { event: Json }; Returns: Json }
       db_workspace: { Args: { p_db: string }; Returns: string }
       is_active_member: { Args: { p_workspace: string }; Returns: boolean }

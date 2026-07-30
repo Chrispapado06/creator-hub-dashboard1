@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { ImagePlus, Loader2, Trash2, UserPlus, X } from "lucide-react";
 
@@ -6,15 +7,28 @@ import {
   useCurrentMember,
   type AppRole,
 } from "@/features/auth/use-current-member";
-import { useCurrentWorkspaceId } from "@/stores/workspace-store";
+import { useAuth } from "@/features/auth/auth-context";
+import {
+  useCurrentWorkspaceId,
+  useWorkspaceStore,
+} from "@/stores/workspace-store";
 import { useWorkspaces } from "./use-workspaces";
 import { WorkspaceLogo } from "./WorkspaceLogo";
 import {
   useAddWorkspaceMember,
+  useDeleteWorkspace,
   useRemoveWorkspaceMember,
   useUpdateWorkspace,
   useUploadWorkspaceLogo,
 } from "./use-workspace-settings";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useSetMemberRole, useTeamMembers, type TeamMember } from "@/features/team/use-team";
 import { IconPicker } from "@/features/pages/IconPicker";
 import { RoleBadge } from "./role-badge";
@@ -348,6 +362,82 @@ function AccessSection() {
   );
 }
 
+function DangerSection() {
+  const { user } = useAuth();
+  const wsId = useCurrentWorkspaceId();
+  const setCurrent = useWorkspaceStore((s) => s.setCurrentWorkspaceId);
+  const { data: workspaces = [] } = useWorkspaces();
+  const current = workspaces.find((w) => w.id === wsId);
+  const del = useDeleteWorkspace();
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const [confirm, setConfirm] = useState("");
+
+  // Only the workspace's creator sees this.
+  if (!current || !user || current.createdBy !== user.id) return null;
+
+  async function doDelete() {
+    if (!current) return;
+    try {
+      await del.mutateAsync(current.id);
+      const next = workspaces.find((w) => w.id !== current.id);
+      setCurrent(next ? next.id : null);
+      setOpen(false);
+      toast.success(`Deleted “${current.name}”`);
+      navigate("/");
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  }
+
+  return (
+    <section className="space-y-3 rounded-lg border border-destructive/40 p-5">
+      <div>
+        <h2 className="text-lg font-semibold text-destructive">Danger zone</h2>
+        <p className="text-sm text-muted-foreground">
+          Permanently delete this workspace and everything in it — pages,
+          databases, and access. This cannot be undone. Only you (the creator)
+          can do this.
+        </p>
+      </div>
+      <Button variant="destructive" onClick={() => { setConfirm(""); setOpen(true); }}>
+        <Trash2 className="size-4" /> Delete workspace
+      </Button>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete “{current.name}”?</DialogTitle>
+            <DialogDescription>
+              This permanently deletes the workspace and all of its pages and
+              databases. Type <strong>{current.name}</strong> to confirm.
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            autoFocus
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            placeholder={current.name}
+          />
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={confirm.trim() !== current.name || del.isPending}
+              onClick={doDelete}
+            >
+              {del.isPending && <Loader2 className="size-4 animate-spin" />}
+              Delete forever
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </section>
+  );
+}
+
 export default function SettingsPage() {
   const { data: me } = useCurrentMember();
 
@@ -374,6 +464,7 @@ export default function SettingsPage() {
       </header>
       <GeneralSection />
       <AccessSection />
+      <DangerSection />
     </div>
   );
 }
