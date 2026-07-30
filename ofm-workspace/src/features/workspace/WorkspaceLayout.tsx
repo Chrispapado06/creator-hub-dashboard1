@@ -1,10 +1,11 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { Home, Settings, Trash2, Users } from "lucide-react";
+import { Home, Search, Settings, Trash2, Users } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import type { CurrentMember } from "@/features/auth/use-current-member";
 import { PageTree } from "@/features/pages/PageTree";
 import { DatabaseList } from "@/features/databases/DatabaseList";
+import { CommandPalette, openCommandPalette } from "@/features/search/CommandPalette";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 import { UserMenu } from "./UserMenu";
 
@@ -29,6 +30,17 @@ export function WorkspaceLayout({ member }: { member: CurrentMember }) {
         <WorkspaceSwitcher />
 
         <div className="flex-1 overflow-y-auto p-2">
+          <button
+            type="button"
+            onClick={openCommandPalette}
+            className={cn(
+              navItem,
+              "w-full text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
+            )}
+          >
+            <Search className="size-4" /> Search
+            <span className="ml-auto text-xs text-muted-foreground">⌘K</span>
+          </button>
           <NavLink to="/" end className={navClass}>
             <Home className="size-4" /> Home
           </NavLink>
@@ -61,6 +73,8 @@ export function WorkspaceLayout({ member }: { member: CurrentMember }) {
       <main className="flex-1 overflow-auto">
         <Outlet />
       </main>
+
+      <CommandPalette />
     </div>
   );
 }
