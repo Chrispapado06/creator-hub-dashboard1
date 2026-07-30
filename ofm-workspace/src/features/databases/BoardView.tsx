@@ -150,9 +150,24 @@ export function BoardView({
     const rec = records.find((r) => r.id === String(e.active.id));
     if (!rec) return;
     const key = col === "__none" ? null : col;
+
+    let val: unknown;
+    if (groupProp!.type === "multi_select") {
+      // Merge: drop the source column's tag, add the target's, keep the rest.
+      const cur = Array.isArray(rec.properties[groupProp!.id])
+        ? [...(rec.properties[groupProp!.id] as string[])]
+        : [];
+      if (key == null) val = [];
+      else {
+        const src = cur[0];
+        val = [key, ...cur.filter((id) => id !== src && id !== key)];
+      }
+    } else {
+      val = key; // single-select: option id or null
+    }
     update.mutate({
       id: rec.id,
-      properties: { ...rec.properties, [groupProp!.id]: valueForColumn(key) },
+      properties: { ...rec.properties, [groupProp!.id]: val },
     });
   }
 

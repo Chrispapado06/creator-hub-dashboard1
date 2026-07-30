@@ -1,6 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import type { ViewConfig, ViewType } from "./view-types";
+
+// View writes require can_manage_db (owner/manager/creator); surface RLS denials.
+const toastError = (e: unknown) => toast.error((e as Error)?.message ?? "Action failed");
 
 export interface DbView {
   id: string;
@@ -52,6 +56,7 @@ export function useCreateView(databaseId: string) {
       return (data as { id: string }).id;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: key(databaseId) }),
+    onError: toastError,
   });
 }
 
@@ -69,6 +74,7 @@ export function useUpdateView(databaseId: string) {
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: key(databaseId) }),
+    onError: toastError,
   });
 }
 
@@ -80,5 +86,6 @@ export function useDeleteView(databaseId: string) {
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: key(databaseId) }),
+    onError: toastError,
   });
 }

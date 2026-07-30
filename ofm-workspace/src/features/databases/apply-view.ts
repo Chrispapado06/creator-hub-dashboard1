@@ -40,19 +40,19 @@ function matchFilter(
     case "gte": return Number(v) >= Number(f.value);
     case "lt": return Number(v) < Number(f.value);
     case "lte": return Number(v) <= Number(f.value);
-    case "before": return String(v ?? "") < String(f.value ?? "");
-    case "after": return String(v ?? "") > String(f.value ?? "");
-    case "on_or_before": return String(v ?? "") <= String(f.value ?? "");
-    case "on_or_after": return String(v ?? "") >= String(f.value ?? "");
+    // relational (date) ops: an empty value never satisfies them
+    case "before": return !isEmpty(v) && String(v) < String(f.value ?? "");
+    case "after": return !isEmpty(v) && String(v) > String(f.value ?? "");
+    case "on_or_before": return !isEmpty(v) && String(v) <= String(f.value ?? "");
+    case "on_or_after": return !isEmpty(v) && String(v) >= String(f.value ?? "");
     default:
       return true;
   }
 }
 
+// Compares two NON-empty values (empties are handled by the caller so the
+// empties-last rule is never sign-flipped by a descending sort).
 function compare(a: unknown, b: unknown, prop: DbProperty | undefined): number {
-  if (isEmpty(a) && isEmpty(b)) return 0;
-  if (isEmpty(a)) return 1; // empties last
-  if (isEmpty(b)) return -1;
   if (prop?.type === "number") return Number(a) - Number(b);
   if (prop?.type === "checkbox") return (a ? 1 : 0) - (b ? 1 : 0);
   if (prop?.type === "select") {
@@ -80,8 +80,15 @@ export function applyView(
   if (sorts.length) {
     out = [...out].sort((ra, rb) => {
       for (const s of sorts) {
-        const p = byId.get(s.propId);
-        const c = compare(rawValue(ra, s.propId), rawValue(rb, s.propId), p);
+        const va = rawValue(ra, s.propId);
+        const vb = rawValue(rb, s.propId);
+        const ea = isEmpty(va);
+        const eb = isEmpty(vb);
+        // Empties always sort last, regardless of asc/desc (not sign-flipped).
+        if (ea && eb) continue;
+        if (ea) return 1;
+        if (eb) return -1;
+        const c = compare(va, vb, byId.get(s.propId));
         if (c !== 0) return s.direction === "desc" ? -c : c;
       }
       return ra.position - rb.position;

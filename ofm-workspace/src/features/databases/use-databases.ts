@@ -1,7 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { useCurrentWorkspaceId } from "@/stores/workspace-store";
 import { useAuth } from "@/features/auth/auth-context";
+
+/** Surfaces RLS/permission errors (e.g. a chatter editing schema) as a toast. */
+const toastError = (e: unknown) => toast.error((e as Error)?.message ?? "Action failed");
 
 export type DbPropertyType =
   | "text"
@@ -236,6 +240,7 @@ export function useUpdateProperty(databaseId: string) {
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: propsKey(databaseId) }),
+    onError: toastError,
   });
 }
 
@@ -247,6 +252,7 @@ export function useDeleteProperty(databaseId: string) {
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: propsKey(databaseId) }),
+    onError: toastError,
   });
 }
 
@@ -294,8 +300,9 @@ export function useUpdateRecord(databaseId: string) {
       );
       return { prev };
     },
-    onError: (_e, _v, ctx) => {
+    onError: (e, _v, ctx) => {
       if (ctx?.prev) qc.setQueryData(recordsKey(databaseId), ctx.prev);
+      toastError(e);
     },
     onSettled: () => qc.invalidateQueries({ queryKey: recordsKey(databaseId) }),
   });
@@ -309,5 +316,6 @@ export function useDeleteRecord(databaseId: string) {
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: recordsKey(databaseId) }),
+    onError: toastError,
   });
 }
