@@ -10,3 +10,7 @@ export const DEEP_LINK_SCHEME = "ofm";
 /** Public download for the macOS desktop app (Apple Silicon), hosted on Supabase Storage. */
 export const DOWNLOAD_MAC_URL =
   "https://jzlrwlqytyqhlpuyblld.supabase.co/storage/v1/object/public/downloads/OFM-Workspace-0.1.0-aarch64.dmg";
+
+/** Public download for the Windows desktop app (.exe installer), from GitHub Releases. */
+export const DOWNLOAD_WIN_URL =
+  "https://github.com/Chrispapado06/creator-hub-dashboard1/releases/download/ofm-v0.1.0/OFM.Workspace_0.1.0_x64-setup.exe";
