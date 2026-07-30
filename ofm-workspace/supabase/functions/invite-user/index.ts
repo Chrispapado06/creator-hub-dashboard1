@@ -6,10 +6,10 @@
 //   1. verifies the caller JWT server-side,
 //   2. confirms the caller is an ACTIVE OWNER of the target workspace,
 //   3. records/refreshes a pending invites audit row,
-//   4. creates the auth user + sends the invite email (invitee sets their OWN
-//      password on the emailed link),  OR, if the user already exists, resolves
-//      them via the AUTH ADMIN API (authoritative — never via the client-writable
-//      profiles table),
+//   4. creates the auth user INSTANTLY with a shared default password + confirmed
+//      email (they sign in with email + DEFAULT_MEMBER_PASSWORD, no email link),
+//      OR, if the user already exists, resolves them via the AUTH ADMIN API
+//      (authoritative — never via the client-writable profiles table),
 //   5. provisions the membership directly with the service_role (idempotent).
 //
 // Membership is created here — NOT by any DB trigger — so an email that happens
@@ -29,8 +29,10 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const DEFAULT_WORKSPACE_ID =
   Deno.env.get("DEFAULT_WORKSPACE_ID") ?? "00000000-0000-0000-0000-000000000001";
-const REDIRECT_TO = Deno.env.get("INVITE_REDIRECT_URL") || undefined;
 const ALLOWED_ORIGIN = Deno.env.get("ALLOWED_ORIGIN") ?? ""; // set to your app origin
+// New members are created instantly with this shared password (no email link).
+// They sign in with their email + this password and can change it later.
+const DEFAULT_PASSWORD = Deno.env.get("DEFAULT_MEMBER_PASSWORD") ?? "uncvrd2026";
 
 const ROLES = new Set(["owner", "manager", "chatter"]);
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -117,27 +119,26 @@ Deno.serve(async (req) => {
     );
     if (invErr) return json(500, { error: `Invite record failed: ${invErr.message}` });
 
-    // 5. Create the auth user + send the email, or resolve an existing user.
+    // 5. Create the auth user instantly with the shared default password (email
+    //    pre-confirmed so they can sign in immediately — no email link). If the
+    //    address already exists, resolve it via the admin API and leave that
+    //    user's own password untouched.
     let userId: string;
-    const { data: invited, error: sendErr } = await admin.auth.admin.inviteUserByEmail(email, {
-      data: { workspace_id: workspaceId, role },
-      redirectTo: REDIRECT_TO,
+    let created = false;
+    const { data: made, error: createErr } = await admin.auth.admin.createUser({
+      email,
+      password: DEFAULT_PASSWORD,
+      email_confirm: true,
+      user_metadata: { workspace_id: workspaceId, role },
     });
-
-    if (sendErr) {
-      // Already-registered address: resolve authoritatively via auth admin API.
+    if (createErr) {
       const existing = await findUserByEmail(admin, email);
       if (!existing)
-        return json(409, { error: `Could not invite: ${sendErr.message}` });
+        return json(409, { error: `Could not create user: ${createErr.message}` });
       userId = existing.id;
-      // Re-send a set-password/magic link so they can (re)join.
-      if (REDIRECT_TO) {
-        await admin.auth.admin.generateLink({
-          type: "magiclink", email, options: { redirectTo: REDIRECT_TO },
-        }).catch(() => {});
-      }
     } else {
-      userId = invited.user!.id;
+      userId = made.user!.id;
+      created = true;
     }
 
     // 6. Provision the membership (idempotent). Re-inviting a previously
@@ -159,7 +160,9 @@ Deno.serve(async (req) => {
       email,
       role,
       workspace_id: workspaceId,
-      mode: sendErr ? "existing_user_added" : "invited",
+      created,
+      default_password: created ? DEFAULT_PASSWORD : null,
+      mode: created ? "created" : "existing_user_added",
     });
   } catch (e) {
     return json(500, { error: (e as Error)?.message ?? String(e) });

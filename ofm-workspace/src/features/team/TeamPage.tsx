@@ -54,6 +54,10 @@ import {
 } from "@/components/ui/form";
 import { Skeleton } from "@/components/ui/skeleton";
 
+// Shown to the admin so they can share it; must match DEFAULT_MEMBER_PASSWORD in
+// the invite-user edge function.
+const DEFAULT_MEMBER_PASSWORD = "uncvrd2026";
+
 const inviteSchema = z.object({
   email: z.email("Enter a valid email"),
   role: z.enum(["owner", "manager", "chatter"]),
@@ -71,7 +75,9 @@ function InviteDialog() {
   async function onSubmit(values: InviteValues) {
     try {
       await invite.mutateAsync(values);
-      toast.success(`Invite sent to ${values.email}`);
+      toast.success(
+        `${values.email} added — they log in with password ${DEFAULT_MEMBER_PASSWORD}`,
+      );
       form.reset({ email: "", role: "chatter" });
       setOpen(false);
     } catch (e) {
@@ -83,14 +89,16 @@ function InviteDialog() {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button>
-          <UserPlus className="size-4" /> Invite member
+          <UserPlus className="size-4" /> Add member
         </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Invite a team member</DialogTitle>
+          <DialogTitle>Add a team member</DialogTitle>
           <DialogDescription>
-            They'll get an email to set their password and join the workspace.
+            Their account is created instantly — no email needed. Give them their
+            email and the password <strong>{DEFAULT_MEMBER_PASSWORD}</strong> to
+            sign in (they can change it afterwards).
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -143,7 +151,7 @@ function InviteDialog() {
         <DialogFooter>
           <Button type="submit" form="invite-form" disabled={invite.isPending}>
             {invite.isPending && <Loader2 className="size-4 animate-spin" />}
-            Send invite
+            Add member
           </Button>
         </DialogFooter>
       </DialogContent>
