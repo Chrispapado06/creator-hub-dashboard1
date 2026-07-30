@@ -16,6 +16,15 @@ export function PageIcon({
   className?: string;
   emojiClassName?: string;
 }) {
+  if (icon && icon.startsWith("img:")) {
+    return (
+      <img
+        src={icon.slice(4)}
+        alt=""
+        className={cn(className, "rounded object-cover")}
+      />
+    );
+  }
   if (icon && icon.startsWith("si:")) {
     const brand = BRAND_BY_SLUG[icon.slice(3)];
     if (brand) {

@@ -1,4 +1,6 @@
 import { useState, type ReactNode } from "react";
+import { ImagePlus, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -6,6 +8,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { uploadIcon } from "@/features/editor/upload";
 import { BRAND_ICONS, brandValue } from "./icons";
 
 const EMOJIS = [
@@ -27,19 +30,40 @@ export function IconPicker({
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState<"emoji" | "brands">("emoji");
+  const [tab, setTab] = useState<"emoji" | "brands" | "upload">("emoji");
+  const [uploading, setUploading] = useState(false);
 
   const choose = (v: string) => {
     onPick(v);
     setOpen(false);
   };
 
+  function pickImage() {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+    input.onchange = async () => {
+      const f = input.files?.[0];
+      if (!f) return;
+      setUploading(true);
+      try {
+        const url = await uploadIcon(f);
+        choose(`img:${url}`);
+      } catch (e) {
+        toast.error((e as Error).message);
+      } finally {
+        setUploading(false);
+      }
+    };
+    input.click();
+  }
+
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-72 p-2">
         <div className="mb-2 flex gap-1 rounded-md bg-muted p-0.5 text-sm">
-          {(["emoji", "brands"] as const).map((t) => (
+          {(["emoji", "brands", "upload"] as const).map((t) => (
             <button
               key={t}
               type="button"
@@ -56,7 +80,7 @@ export function IconPicker({
           ))}
         </div>
 
-        {tab === "emoji" ? (
+        {tab === "emoji" && (
           <div className="grid grid-cols-8 gap-1">
             {EMOJIS.map((e) => (
               <button
@@ -69,7 +93,9 @@ export function IconPicker({
               </button>
             ))}
           </div>
-        ) : (
+        )}
+
+        {tab === "brands" && (
           <div className="grid max-h-56 grid-cols-8 gap-1 overflow-y-auto">
             {BRAND_ICONS.map((b) => (
               <button
@@ -85,6 +111,27 @@ export function IconPicker({
                 </svg>
               </button>
             ))}
+          </div>
+        )}
+
+        {tab === "upload" && (
+          <div className="flex flex-col items-center gap-2 py-5">
+            <button
+              type="button"
+              onClick={pickImage}
+              disabled={uploading}
+              className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors hover:bg-accent disabled:opacity-60"
+            >
+              {uploading ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <ImagePlus className="size-4" />
+              )}
+              {uploading ? "Uploading…" : "Choose image"}
+            </button>
+            <p className="text-xs text-muted-foreground">
+              PNG, JPG, or SVG — a square image works best.
+            </p>
           </div>
         )}
 
