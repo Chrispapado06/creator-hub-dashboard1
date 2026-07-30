@@ -1,7 +1,9 @@
 import { useState } from "react";
-import { KeyRound, LogOut, Monitor, Moon, Sun } from "lucide-react";
+import { Download, KeyRound, LogOut, Monitor, Moon, Sun } from "lucide-react";
 import { toast } from "sonner";
+import { isTauri } from "@tauri-apps/api/core";
 
+import { DOWNLOAD_MAC_URL } from "@/lib/constants";
 import { supabase } from "@/lib/supabase";
 import { useTheme } from "@/lib/theme";
 import { useAuth } from "@/features/auth/auth-context";
@@ -104,6 +106,15 @@ export function UserMenu({ member }: { member: CurrentMember }) {
             </DropdownMenuRadioItem>
           </DropdownMenuRadioGroup>
           <DropdownMenuSeparator />
+          {!isTauri() && (
+            <DropdownMenuItem
+              onClick={() =>
+                window.open(DOWNLOAD_MAC_URL, "_blank", "noopener,noreferrer")
+              }
+            >
+              <Download className="size-4" /> Download Mac app
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem onClick={() => { setPw(""); setPwOpen(true); }}>
             <KeyRound className="size-4" /> Change password
           </DropdownMenuItem>
