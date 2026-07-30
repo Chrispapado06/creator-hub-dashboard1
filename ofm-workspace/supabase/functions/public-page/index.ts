@@ -140,6 +140,27 @@ function renderText(title: string, icon: string | null, doc: Node): string {
   return `${head}\n${"=".repeat(Math.max(4, Math.min(head.length, 60)))}\n\n${body}\n`;
 }
 
+// Published pages are served to anyone, but uploaded images/videos/files live in
+// the PRIVATE page-assets bucket. This function has the service role, so it mints
+// short-lived signed URLs for each asset `path` and writes them onto the node
+// (src for image/video, url for fileBlock) so the public viewer can render them.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function signAssets(node: Node, admin: any): Promise<void> {
+  if (!node || typeof node !== "object") return;
+  const path = node.attrs?.path as string | undefined;
+  if (path && (node.type === "image" || node.type === "video" || node.type === "fileBlock")) {
+    const { data: signed } = await admin.storage
+      .from("page-assets")
+      .createSignedUrl(path, 3600);
+    if (signed?.signedUrl) {
+      node.attrs = node.attrs ?? {};
+      if (node.type === "fileBlock") node.attrs.url = signed.signedUrl;
+      else node.attrs.src = signed.signedUrl;
+    }
+  }
+  for (const c of node.content ?? []) await signAssets(c, admin);
+}
+
 Deno.serve(async (req) => {
   const url = new URL(req.url);
   const token = url.pathname.split("/").filter(Boolean).pop() ?? "";
@@ -177,6 +198,7 @@ Deno.serve(async (req) => {
   const doc = (data.content ?? { type: "doc", content: [] }) as Node;
 
   if (wantsJson) {
+    await signAssets(doc, admin); // resolve private asset paths -> signed URLs
     return new Response(
       JSON.stringify({ title: data.title, icon: data.icon, content: doc }),
       { headers: { "content-type": "application/json; charset=utf-8", ...cors } },

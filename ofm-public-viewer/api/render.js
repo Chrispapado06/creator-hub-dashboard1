@@ -121,8 +121,13 @@ function renderNode(node) {
       return `<th>${kids(node)}</th>`;
     case "tableCell":
       return `<td>${kids(node)}</td>`;
-    case "fileBlock":
-      return `<div class="ph">📎 ${esc(node.attrs?.name ?? "Attachment")}</div>`;
+    case "fileBlock": {
+      const name = esc(node.attrs?.name ?? "Attachment");
+      const furl = node.attrs?.url;
+      return furl
+        ? `<a class="ph" href="${esc(furl)}" target="_blank" rel="noopener nofollow">📎 ${name}</a>`
+        : `<div class="ph">📎 ${name}</div>`;
+    }
     case "pageLink":
       return `<div class="plink">${node.attrs?.icon ? esc(node.attrs.icon) : "📄"} <span>${esc(node.attrs?.title || "Untitled")}</span></div>`;
     case "databaseView":
