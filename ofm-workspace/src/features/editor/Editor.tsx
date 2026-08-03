@@ -14,7 +14,9 @@ import Highlight from "@tiptap/extension-highlight";
 import TextAlign from "@tiptap/extension-text-align";
 import { DragHandle } from "@tiptap/extension-drag-handle-react";
 import { GripVertical } from "lucide-react";
+import { toast } from "sonner";
 
+import { uploadAsset } from "./upload";
 import { Callout } from "./extensions/callout";
 import { Toggle } from "./extensions/toggle";
 import { FileBlock } from "./extensions/file-block";
@@ -26,6 +28,40 @@ import { Bookmark } from "./extensions/bookmark";
 import { DatabaseView } from "./extensions/database-view";
 import { SlashCommand } from "./slash-command";
 import { BubbleToolbar } from "./BubbleToolbar";
+
+/** Pick the right block for a dropped/pasted file (reel -> video, etc.). */
+function nodeForFile(file: File, path: string, name: string, size: number) {
+  const isVideo =
+    file.type.startsWith("video/") || /\.(mp4|mov|webm|m4v|ogv)$/i.test(name);
+  const isImage =
+    file.type.startsWith("image/") ||
+    /\.(png|jpe?g|gif|webp|svg|avif|bmp)$/i.test(name);
+  if (isVideo) return { type: "video", attrs: { path } };
+  if (isImage) return { type: "image", attrs: { path, alt: name } };
+  return { type: "fileBlock", attrs: { path, name, size } };
+}
+
+/** Upload dropped/pasted files to storage and insert them as blocks. */
+async function uploadFilesInto(
+  editor: TiptapEditor,
+  files: File[],
+  pos: number | null,
+) {
+  let at = pos;
+  for (const file of files) {
+    const tid = toast.loading(`Uploading ${file.name}…`);
+    try {
+      const { path, name, size } = await uploadAsset(file);
+      const node = nodeForFile(file, path, name, size);
+      if (at != null) editor.chain().focus().insertContentAt(at, node).run();
+      else editor.chain().focus().insertContent(node).run();
+      at = null; // subsequent files append after the first
+      toast.success(`${file.name} added`, { id: tid });
+    } catch (e) {
+      toast.error((e as Error).message, { id: tid });
+    }
+  }
+}
 
 export function Editor({
   initialContent,
@@ -80,6 +116,29 @@ export function Editor({
     onUpdate: ({ editor }) => onChange?.(editor.getJSON()),
     editorProps: {
       attributes: { class: "tiptap" },
+      // Drag a downloaded reel/image/file onto the page -> upload + embed.
+      handleDrop: (view, event, _slice, moved) => {
+        if (moved) return false; // internal block re-order, let TipTap handle it
+        const dt = (event as DragEvent).dataTransfer;
+        const files = dt ? Array.from(dt.files) : [];
+        if (!files.length || !view.editable) return false;
+        event.preventDefault();
+        const coords = view.posAtCoords({
+          left: (event as DragEvent).clientX,
+          top: (event as DragEvent).clientY,
+        });
+        if (editor) void uploadFilesInto(editor, files, coords?.pos ?? null);
+        return true;
+      },
+      // Paste an image/video file from the clipboard -> upload + embed.
+      handlePaste: (view, event) => {
+        const cd = (event as ClipboardEvent).clipboardData;
+        const files = cd ? Array.from(cd.files) : [];
+        if (!files.length || !view.editable) return false;
+        event.preventDefault();
+        if (editor) void uploadFilesInto(editor, files, null);
+        return true;
+      },
     },
   });
 
