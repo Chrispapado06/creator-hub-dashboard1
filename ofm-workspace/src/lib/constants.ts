@@ -9,7 +9,7 @@ export const DEEP_LINK_SCHEME = "ofm";
 
 /** Public download for the macOS desktop app (universal — Intel + Apple Silicon). */
 export const DOWNLOAD_MAC_URL =
-  "https://jzlrwlqytyqhlpuyblld.supabase.co/storage/v1/object/public/downloads/OFM-Workspace-0.1.0-universal.dmg";
+  "https://jzlrwlqytyqhlpuyblld.supabase.co/storage/v1/object/public/downloads/OFM-Workspace-0.1.1-universal.dmg";
 
 /** Public download for the Windows desktop app (.exe installer), from GitHub Releases. */
 export const DOWNLOAD_WIN_URL =
