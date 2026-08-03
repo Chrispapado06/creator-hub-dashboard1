@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { EditorContent, useEditor, type JSONContent } from "@tiptap/react";
 import type { Editor as TiptapEditor, Range } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
@@ -13,7 +13,7 @@ import { TextStyle, Color } from "@tiptap/extension-text-style";
 import Highlight from "@tiptap/extension-highlight";
 import TextAlign from "@tiptap/extension-text-align";
 import { DragHandle } from "@tiptap/extension-drag-handle-react";
-import { GripVertical } from "lucide-react";
+import { Copy, GripVertical, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { uploadAsset } from "./upload";
@@ -146,12 +146,80 @@ export function Editor({
     editor?.setEditable(editable);
   }, [editable, editor]);
 
+  // The block the drag-handle is currently hovering (for its Delete/Duplicate menu).
+  const handlePos = useRef<number | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  function deleteBlock() {
+    setMenuOpen(false);
+    const pos = handlePos.current;
+    if (pos == null || !editor) return;
+    const node = editor.state.doc.nodeAt(pos);
+    if (!node) return;
+    editor
+      .chain()
+      .focus()
+      .deleteRange({ from: pos, to: pos + node.nodeSize })
+      .run();
+  }
+  function duplicateBlock() {
+    setMenuOpen(false);
+    const pos = handlePos.current;
+    if (pos == null || !editor) return;
+    const node = editor.state.doc.nodeAt(pos);
+    if (!node) return;
+    editor
+      .chain()
+      .focus()
+      .insertContentAt(pos + node.nodeSize, node.toJSON())
+      .run();
+  }
+
   return (
     <div className="editor-shell">
       {editor && (
-        <DragHandle editor={editor}>
-          <div className="drag-handle" title="Drag to move, click for actions">
-            <GripVertical className="size-4" />
+        <DragHandle
+          editor={editor}
+          onNodeChange={(d) => {
+            handlePos.current = d.pos;
+          }}
+        >
+          <div className="relative">
+            <button
+              type="button"
+              className="drag-handle"
+              title="Drag to move · click for actions"
+              onClick={(e) => {
+                e.stopPropagation();
+                setMenuOpen((o) => !o);
+              }}
+            >
+              <GripVertical className="size-4" />
+            </button>
+            {menuOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setMenuOpen(false)}
+                />
+                <div className="absolute left-0 top-full z-50 mt-1 min-w-36 rounded-lg border bg-popover p-1 text-popover-foreground shadow-md">
+                  <button
+                    type="button"
+                    onClick={duplicateBlock}
+                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
+                  >
+                    <Copy className="size-4" /> Duplicate
+                  </button>
+                  <button
+                    type="button"
+                    onClick={deleteBlock}
+                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-destructive hover:bg-accent"
+                  >
+                    <Trash2 className="size-4" /> Delete
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </DragHandle>
       )}
