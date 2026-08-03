@@ -13,4 +13,4 @@ export const DOWNLOAD_MAC_URL =
 
 /** Public download for the Windows desktop app (.exe installer), from GitHub Releases. */
 export const DOWNLOAD_WIN_URL =
-  "https://github.com/Chrispapado06/creator-hub-dashboard1/releases/download/ofm-v0.1.0/OFM.Workspace_0.1.0_x64-setup.exe";
+  "https://github.com/Chrispapado06/creator-hub-dashboard1/releases/download/ofm-v0.1.1/OFM.Workspace_0.1.1_x64-setup.exe";
