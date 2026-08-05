@@ -101,10 +101,14 @@ function renderNode(node) {
       return "<hr/>";
     case "hardBreak":
       return "<br/>";
-    case "image":
+    case "image": {
+      const iw = node.attrs?.width
+        ? ` style="width:${Number(node.attrs.width)}px;max-width:100%"`
+        : "";
       return node.attrs?.src
-        ? `<img src="${esc(node.attrs.src)}" alt="${esc(node.attrs?.alt)}"/>`
+        ? `<img src="${esc(node.attrs.src)}" alt="${esc(node.attrs?.alt)}"${iw}/>`
         : `<div class="ph">🖼️ image</div>`;
+    }
     case "callout":
       return `<div class="callout"><div class="cae">${esc(node.attrs?.emoji ?? "💡")}</div><div>${kids(node)}</div></div>`;
     case "toggle": {
@@ -139,10 +143,13 @@ function renderNode(node) {
     case "video": {
       const src = node.attrs?.src;
       const info = src ? videoEmbed(src) : null;
+      const w = node.attrs?.width ? Number(node.attrs.width) : null;
+      const wrap = (inner) =>
+        w ? `<div style="width:${w}px;max-width:100%">${inner}</div>` : inner;
       if (info?.kind === "iframe")
-        return `<div class="video-embed"><iframe src="${esc(info.url)}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen title="Embedded video"></iframe></div>`;
+        return wrap(`<div class="video-embed"><iframe src="${esc(info.url)}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen title="Embedded video"></iframe></div>`);
       if (info?.kind === "file")
-        return `<video src="${esc(info.url)}" controls></video>`;
+        return wrap(`<video src="${esc(info.url)}" controls style="width:100%"></video>`);
       // Uploaded (private-bucket) videos can't be signed server-side -> link/placeholder.
       return src
         ? `<a class="ph" href="${esc(src)}" target="_blank" rel="noopener nofollow">▶ Video</a>`

@@ -222,6 +222,56 @@
   color: var(--muted-foreground);
   font-size: 0.85rem;
 }
+/* ── resizable media (image / video) ── */
+.tiptap .resizable-frame {
+  position: relative;
+  margin: 0.25rem 0;
+}
+.tiptap .resizable-frame img,
+.tiptap .resizable-frame > video {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+.tiptap .resizable-frame.has-width img,
+.tiptap .resizable-frame.has-width > video,
+.tiptap .resizable-frame.has-width .video-embed {
+  width: 100%;
+}
+.tiptap .rz-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: ew-resize;
+  opacity: 0;
+  transition: opacity 0.12s;
+  user-select: none;
+  z-index: 2;
+}
+.tiptap .resizable-frame:hover .rz-handle {
+  opacity: 1;
+}
+.tiptap .rz-left {
+  left: -4px;
+}
+.tiptap .rz-right {
+  right: -4px;
+}
+.tiptap .rz-handle::before {
+  content: "";
+  width: 5px;
+  height: 48px;
+  max-height: 55%;
+  border-radius: 6px;
+  background: rgba(15, 15, 15, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
 .tiptap ul[data-type="taskList"] {
   list-style: none;
   padding-left: 0.1rem;

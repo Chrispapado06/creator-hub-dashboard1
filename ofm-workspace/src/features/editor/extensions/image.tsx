@@ -7,16 +7,19 @@ import {
 } from "@tiptap/react";
 
 import { signedAssetUrl } from "../upload";
+import { ResizableFrame } from "./resizable-frame";
 
 /**
  * Image node that stores the storage `path` and resolves a short-lived signed
  * URL on render (refreshing before it expires), instead of persisting a
  * long-lived URL in the document. Falls back to a plain `src` for external URLs.
+ * Draggable width (persisted in the `width` attr).
  */
-function ImageView({ node }: NodeViewProps) {
+function ImageView({ node, updateAttributes, editor }: NodeViewProps) {
   const path = (node.attrs.path as string | null) ?? null;
   const src = (node.attrs.src as string | null) ?? null;
   const alt = (node.attrs.alt as string | null) ?? "";
+  const width = (node.attrs.width as number | null) ?? null;
   const [url, setUrl] = useState<string | null>(path ? null : src);
 
   useEffect(() => {
@@ -39,11 +42,17 @@ function ImageView({ node }: NodeViewProps) {
 
   return (
     <NodeViewWrapper className="image-block">
-      {url ? (
-        <img src={url} alt={alt} />
-      ) : (
-        <div className="image-loading">Loading image…</div>
-      )}
+      <ResizableFrame
+        width={width}
+        editable={editor.isEditable}
+        onResize={(w) => updateAttributes({ width: w })}
+      >
+        {url ? (
+          <img src={url} alt={alt} />
+        ) : (
+          <div className="image-loading">Loading image…</div>
+        )}
+      </ResizableFrame>
     </NodeViewWrapper>
   );
 }
@@ -56,6 +65,14 @@ export const PageImage = Image.extend({
         default: null,
         parseHTML: (el) => el.getAttribute("data-path"),
         renderHTML: (attrs) => (attrs.path ? { "data-path": attrs.path } : {}),
+      },
+      width: {
+        default: null,
+        parseHTML: (el) => {
+          const w = el.getAttribute("data-width");
+          return w ? Number(w) : null;
+        },
+        renderHTML: (attrs) => (attrs.width ? { "data-width": attrs.width } : {}),
       },
     };
   },

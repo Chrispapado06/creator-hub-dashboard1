@@ -8,6 +8,7 @@ import {
 import { toast } from "sonner";
 
 import { signedAssetUrl, uploadAsset } from "../upload";
+import { ResizableFrame } from "./resizable-frame";
 
 /** Turn a pasted URL into an embeddable iframe URL, or flag it as a direct file. */
 function embedInfo(raw: string): { kind: "iframe" | "file"; url: string } | null {
@@ -47,6 +48,8 @@ function embedInfo(raw: string): { kind: "iframe" | "file"; url: string } | null
 function VideoView({ node, updateAttributes, editor, deleteNode }: NodeViewProps) {
   const path = (node.attrs.path as string | null) ?? null;
   const src = (node.attrs.src as string | null) ?? null;
+  const width = (node.attrs.width as number | null) ?? null;
+  const resize = (w: number | null) => updateAttributes({ width: w });
   const [resolved, setResolved] = useState<string | null>(path ? null : src);
   const [draft, setDraft] = useState("");
 
@@ -69,11 +72,13 @@ function VideoView({ node, updateAttributes, editor, deleteNode }: NodeViewProps
   if (path) {
     return (
       <NodeViewWrapper className="video-block" contentEditable={false}>
-        {resolved ? (
-          <video src={resolved} controls />
-        ) : (
-          <div className="image-loading">Loading video…</div>
-        )}
+        <ResizableFrame width={width} editable={editor.isEditable} onResize={resize}>
+          {resolved ? (
+            <video src={resolved} controls />
+          ) : (
+            <div className="image-loading">Loading video…</div>
+          )}
+        </ResizableFrame>
       </NodeViewWrapper>
     );
   }
@@ -82,18 +87,20 @@ function VideoView({ node, updateAttributes, editor, deleteNode }: NodeViewProps
   if (src && info) {
     return (
       <NodeViewWrapper className="video-block" contentEditable={false}>
-        {info.kind === "iframe" ? (
-          <div className="video-embed">
-            <iframe
-              src={info.url}
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-              allowFullScreen
-              title="Embedded video"
-            />
-          </div>
-        ) : (
-          <video src={info.url} controls />
-        )}
+        <ResizableFrame width={width} editable={editor.isEditable} onResize={resize}>
+          {info.kind === "iframe" ? (
+            <div className="video-embed">
+              <iframe
+                src={info.url}
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
+                title="Embedded video"
+              />
+            </div>
+          ) : (
+            <video src={info.url} controls />
+          )}
+        </ResizableFrame>
       </NodeViewWrapper>
     );
   }
@@ -179,6 +186,14 @@ export const Video = Node.create({
         renderHTML: (attrs) => (attrs.path ? { "data-path": attrs.path } : {}),
       },
       title: { default: null },
+      width: {
+        default: null,
+        parseHTML: (el) => {
+          const w = el.getAttribute("data-width");
+          return w ? Number(w) : null;
+        },
+        renderHTML: (attrs) => (attrs.width ? { "data-width": attrs.width } : {}),
+      },
     };
   },
 
