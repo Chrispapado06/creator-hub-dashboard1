@@ -99,6 +99,40 @@ function prettyDue(d?: string | null): string {
   return `${Number(m[3])} ${months[Number(m[2]) - 1]}`;
 }
 
+// ── Live Discord digest ──────────────────────────────────────────────────────
+// Every morning the bot posts each person's task list into their Discord channel
+// (api/discord-digest.js). Whenever a list changes here, we ask that endpoint to
+// re-render today's posted digests and edit the changed ones in place — so a task
+// ticked off in the dashboard vanishes from Discord a second later, instead of
+// sitting there until tomorrow's post.
+//
+// Debounced: ticking five things off in a row collapses into ONE re-render. The
+// server re-reads the DB and skips people whose text didn't change, so calling
+// this after any mutation is cheap and always safe. Never throws.
+let digestTimer: ReturnType<typeof setTimeout> | null = null;
+
+function sendDigestRefresh(): void {
+  if (digestTimer) { clearTimeout(digestTimer); digestTimer = null; }
+  void fetch("/api/discord-digest", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode: "refresh" }),
+    keepalive: true, // still delivered if the tab closes right after
+  }).catch((e) => console.error("[digest] refresh failed:", e));
+}
+
+export function refreshDigests(): void {
+  if (digestTimer) clearTimeout(digestTimer);
+  digestTimer = setTimeout(sendDigestRefresh, 800);
+}
+
+// Tab closed or backgrounded mid-debounce → send it now rather than lose it.
+if (typeof document !== "undefined") {
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden" && digestTimer) sendDigestRefresh();
+  });
+}
+
 // ── Mutations ────────────────────────────────────────────────────────────────
 
 /**
@@ -117,6 +151,7 @@ export async function completeActiveStep(
     p_caller_username: caller,
   });
   if (error) return { error: error.message, completed: false };
+  refreshDigests();
 
   // Post-commit, best-effort ping.
   if (data?.pipeline_completed) {
@@ -142,6 +177,7 @@ export async function skipStep(
     p_caller_username: caller,
   });
   if (error) return { error: error.message };
+  refreshDigests();
   if (data?.pipeline_completed) {
     await notify({ content: `✅ **${pipelineTitle}** complete.` }).catch(() => {});
   } else if (data) {
@@ -179,6 +215,7 @@ export async function startPipeline(
     p_parallel: parallel,
   });
   if (error) return { error: error.message };
+  refreshDigests();
 
   // Ping every first-wave owner — the single step-1 owner (sequential) or ALL
   // owners (parallel).
@@ -202,6 +239,7 @@ async function resolveStep(
     p_new_status: status,
   });
   if (error) return { error: error.message, completed: false };
+  refreshDigests();
 
   if (data?.pipeline_completed) {
     await notify({ content: `✅ **${data.pipeline_title ?? pipelineTitle}** complete.` }).catch(() => {});
@@ -242,6 +280,7 @@ export async function reassignStep(
     p_caller_username: caller,
   });
   if (error) return { error: error.message };
+  refreshDigests(); // it left one person's list and joined another's
   if (data?.is_active) {
     await notifyChatter(data.assignee_id, `🔁 **${pipelineTitle}** — reassigned to you: **${data.step_name}**`);
   }
@@ -256,6 +295,7 @@ export async function cancelPipeline(pipelineId: string): Promise<{ error: strin
     p_pipeline_id: pipelineId,
     p_caller_username: caller,
   });
+  if (!error) refreshDigests();
   return { error: error?.message ?? null };
 }
 
@@ -286,6 +326,7 @@ export async function addStandaloneTask(args: {
     .select("id, assignee_id")
     .single();
   if (error) return { error: error.message };
+  refreshDigests(); // it appears in their pinned digest too, not just as a ping
 
   // Best-effort ping to the assignee across every channel they've set up.
   await notifyChatter(
@@ -296,12 +337,13 @@ export async function addStandaloneTask(args: {
   return { error: null };
 }
 
-/** Mark a standalone task done (plain update). */
+/** Mark a standalone task done (plain update), then drop it from their digest. */
 export async function completeStandaloneTask(id: string): Promise<{ error: string | null }> {
   const { error } = await sb
     .from("standalone_tasks")
     .update({ status: "done", completed_at: new Date().toISOString() })
     .eq("id", id);
+  if (!error) refreshDigests();
   return { error: error?.message ?? null };
 }
 
@@ -328,8 +370,10 @@ export type RecurringTask = {
  * of a person's tasks — instead of N separate "Recurring task due" pings.
  */
 export async function generateDueRecurringTasks(): Promise<void> {
-  const { error } = await sb.rpc("generate_due_recurring_tasks", {});
-  if (error) console.error("[recurring] generate failed:", error.message);
+  const { data, error } = await sb.rpc("generate_due_recurring_tasks", {});
+  if (error) { console.error("[recurring] generate failed:", error.message); return; }
+  // Only when something was actually materialised — this runs on every page load.
+  if (Array.isArray(data) && data.length > 0) refreshDigests();
 }
 
 export async function listRecurringTasks(): Promise<RecurringTask[]> {

@@ -1,13 +1,24 @@
-// Daily per-person task digest, posted by the Discord bot.
+// Daily per-person task digest, posted by the Discord bot — and kept LIVE.
 //
 // Each morning (Vercel cron) the bot posts every active member's tasks for the
 // day — pipeline steps waiting on them + open one-off tasks — into THEIR channel
 // (and @-mentions them, and pins it, replacing yesterday's pin). People with no
 // channel set get a DM via discord_user_id; people with nothing on their plate
-// are skipped.
+// are skipped. The message id is stored in discord_digest_posts.
 //
-// Secured by CRON_SECRET: Vercel sends `Authorization: Bearer <CRON_SECRET>`.
-// Manual test: send the same value as the `x-cron-secret` header.
+// TWO MODES:
+//   • broadcast (GET, cron)              — post today's digest to everyone
+//   • refresh   (POST {mode:"refresh"})  — re-render today's already-posted
+//     digests from live DB state and EDIT them in place, so a task ticked off in
+//     the dashboard disappears from Discord within a second. The dashboard calls
+//     this after every task mutation (src/lib/tasks.ts → refreshDigests).
+//
+// Broadcast is secured by CRON_SECRET: Vercel sends
+// `Authorization: Bearer <CRON_SECRET>` (manual test: same value as the
+// `x-cron-secret` header). Refresh is deliberately NOT behind that secret — the
+// browser can't hold it — and doesn't need to be: it accepts no content and no
+// target, it can only re-render messages the bot itself posted today, from the
+// database's own state.
 //
 // Vercel env vars: DISCORD_BOT_TOKEN, CRON_SECRET, VITE_SUPABASE_URL,
 // VITE_SUPABASE_ANON_KEY (the last two already set for the client build).
@@ -53,6 +64,20 @@ async function postToChannel(channelId, content) {
   });
   if (!r.ok) throw new Error(`post ${r.status}: ${(await r.text().catch(() => "")).slice(0, 160)}`);
   return r.json();
+}
+
+// Edit an already-posted digest. allowed_mentions is emptied so the edit can
+// never re-ping anyone — the <@id> line still RENDERS as a mention, Discord just
+// doesn't notify again. Returns "gone" when the message no longer exists (someone
+// deleted it), so the caller can forget it instead of retrying forever.
+async function editMessage(channelId, messageId, content) {
+  const r = await dapi(`/channels/${channelId}/messages/${messageId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ content: String(content).slice(0, 1900), allowed_mentions: { parse: [] } }),
+  });
+  if (r.ok) return "ok";
+  if (r.status === 404 || r.status === 403) return "gone";
+  throw new Error(`edit ${r.status}: ${(await r.text().catch(() => "")).slice(0, 160)}`);
 }
 
 async function openDM(recipientId) {
@@ -106,15 +131,188 @@ async function sbRpc(fn, args) {
   return r.json().catch(() => null);
 }
 
-async function sbWrite(method, path, body) {
+async function sbWrite(method, path, body, prefer) {
   try {
     const r = await fetch(`${SB_URL}/rest/v1/${path}`, {
       method,
-      headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
-      body: JSON.stringify(body),
+      headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, "Content-Type": "application/json", Prefer: prefer || "return=minimal" },
+      body: body === undefined ? undefined : JSON.stringify(body),
     });
     return r.ok;
   } catch { return false; }
+}
+
+// The two task reads, shared verbatim by the morning post and every refresh.
+// Explicitly ORDERED: without it PostgREST returns rows in physical order, which
+// can shuffle between calls and make a refresh rewrite a list that didn't change.
+const STEPS_QUERY = "task_pipeline_steps?status=eq.active&select=assignee_id,step_name,created_at,task_pipelines!inner(title,status)&task_pipelines.status=eq.active&order=created_at.asc";
+const TASKS_QUERY = "standalone_tasks?status=eq.open&select=assignee_id,title,due_date,created_at&order=created_at.asc";
+
+// ── The digest text ──────────────────────────────────────────────────────────
+// The ONE place the message is built, so a live-edited digest is byte-identical
+// to a freshly posted one minus the lines that got ticked off.
+//
+// `extra` replays the sections that aren't derived from open tasks — 🎬 Content
+// and ⏰ Coming up — exactly as the morning post rendered them.
+function buildDigest({ dateLabel, discordUserId, steps, tasks, extra }) {
+  const content = Array.isArray(extra && extra.content) ? extra.content : [];
+  const reminders = Array.isArray(extra && extra.reminders) ? extra.reminders : [];
+  const total = steps.length + tasks.length;
+
+  let msg = `## 🗓️ Your tasks — ${dateLabel}\n`;
+  if (discordUserId) msg += `<@${discordUserId}>\n`;
+  if (steps.length) {
+    msg += `\n### 🔁 Pipelines waiting on you (${steps.length})\n` +
+      steps.map((s) => `- **${(s.task_pipelines && s.task_pipelines.title) || "Pipeline"}** · ${s.step_name}`).join("\n") + "\n";
+  }
+  if (tasks.length) {
+    msg += `\n### 📋 To-do (${tasks.length})\n` +
+      tasks.map((t) => `- ${t.title}${t.due_date ? ` · _due ${prettyDate(t.due_date)}_` : ""}`).join("\n") + "\n";
+  }
+  if (content.length) {
+    msg += `\n### 🎬 Content\n` + content.map((x) => `- ${x}`).join("\n") + "\n";
+  }
+  if (reminders.length) {
+    msg += `\n### ⏰ Coming up\n` + reminders.map((x) => `- ${x}`).join("\n") + "\n";
+  }
+
+  if (total > 0) msg += `\n-# ${total} task${total === 1 ? "" : "s"} today · tick them off in the dashboard → Tasks 💪`;
+  else if (content.length + reminders.length > 0) msg += `\n-# Nothing due today · heads-up above 👀`;
+  else msg += `\n-# ✅ All ticked off — nothing left on your list today. Nice one 🎉`;
+  return msg;
+}
+
+// "Thursday 6 August" for a "YYYY-MM-DD" string (matches the morning post's
+// en-GB label; used only as a fallback when a stored digest predates `extra`).
+function dayLabel(dateStr) {
+  const d = new Date(`${String(dateStr).slice(0, 10)}T12:00:00Z`);
+  return Number.isNaN(d.getTime())
+    ? String(dateStr)
+    : d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
+}
+
+// Read the 🎬/⏰ sections (and the date label) back OUT of a digest we didn't
+// post ourselves — the inverse of buildDigest, used when adopting an existing
+// message. Those sections can't be recomputed on demand (their source logic has
+// side effects), so we recover them from the text and replay them.
+function parseDigest(text) {
+  const lines = String(text || "").split("\n");
+  const m = /^##\s*🗓️\s*Your tasks\s*—\s*(.+)$/.exec((lines[0] || "").trim());
+  const grab = (heading) => {
+    const i = lines.findIndex((l) => l.trim().startsWith(heading));
+    if (i < 0) return [];
+    const out = [];
+    for (let j = i + 1; j < lines.length; j++) {
+      if (lines[j].startsWith("###") || lines[j].startsWith("-#")) break; // next section / footer
+      if (lines[j].startsWith("- ")) out.push(lines[j].slice(2));
+    }
+    return out;
+  };
+  return { dateLabel: m ? m[1].trim() : "", content: grab("### 🎬 Content"), reminders: grab("### ⏰ Coming up") };
+}
+
+const DIGEST_HEADER = "## 🗓️ Your tasks —";
+
+// Adopt today's digest for someone we have no stored id for — it was posted
+// before this feature existed, or the bot restarted. Scans the tail of their
+// channel for the bot's own digest from today, recovers its sections, and takes
+// ownership so it becomes live-editable from now on. Returns null if there
+// isn't one.
+async function adoptDigest(channelId, botId, today) {
+  const r = await dapi(`/channels/${channelId}/messages?limit=20`, { method: "GET" });
+  if (!r.ok) return null;
+  const msgs = await r.json().catch(() => []);
+  const found = (Array.isArray(msgs) ? msgs : []).find(
+    (m) => m && m.author && m.author.id === botId &&
+      String(m.content || "").startsWith(DIGEST_HEADER) &&
+      String(m.timestamp || "").slice(0, 10) === today,
+  );
+  if (!found) return null;
+  return { message_id: found.id, content: found.content, extra: parseDigest(found.content) };
+}
+
+// ── Live refresh ─────────────────────────────────────────────────────────────
+// Re-render every digest posted TODAY from current DB state and edit the ones
+// whose text actually changed. Idempotent and cheap: a refresh that changes
+// nothing makes zero Discord calls, so the dashboard can fire it after any task
+// mutation without thinking about rate limits.
+async function refreshToday(today) {
+  // Today's digests — falling back to yesterday's while they're still the newest
+  // post (the cron runs at 08:00 UTC, so between midnight and then the pinned
+  // message is still yesterday's and should stay accurate).
+  const recent = await sbGet(
+    `discord_digest_posts?day=gte.${shiftDate(today, -1)}&select=chatter_id,day,channel_id,message_id,extra,content&order=day.desc`,
+  );
+  const newestDay = recent.length ? recent[0].day : today;
+  const posts = recent.filter((p) => p.day === newestDay);
+
+  const [chatters, steps, tasks] = await Promise.all([
+    sbGet("chatters?status=eq.active&select=id,name,discord_user_id,discord_channel_id"),
+    sbGet(STEPS_QUERY),
+    sbGet(TASKS_QUERY),
+  ]);
+  const byId = {};
+  for (const c of chatters) byId[c.id] = c;
+  const stepsBy = {};
+  for (const s of steps) (stepsBy[s.assignee_id] = stepsBy[s.assignee_id] || []).push(s);
+  const tasksBy = {};
+  for (const t of tasks) (tasksBy[t.assignee_id] = tasksBy[t.assignee_id] || []).push(t);
+
+  // Adoption pass — only for people whose digest we don't already track AND who
+  // have something on their list (no point scanning an empty channel).
+  let adopted = 0;
+  const tracked = new Set(posts.map((p) => p.chatter_id));
+  const candidates = chatters.filter(
+    (c) => c.discord_channel_id && !tracked.has(c.id) &&
+      ((stepsBy[c.id] || []).length + (tasksBy[c.id] || []).length) > 0,
+  );
+  if (candidates.length) {
+    const botId = await dapi("/users/@me", { method: "GET" }).then((r) => r.json()).then((u) => u && u.id).catch(() => null);
+    for (const c of botId ? candidates : []) {
+      try {
+        const found = await adoptDigest(c.discord_channel_id, botId, today);
+        if (found) {
+          posts.push({ chatter_id: c.id, day: today, channel_id: c.discord_channel_id, ...found });
+          adopted++;
+        }
+      } catch { /* best-effort */ }
+    }
+  }
+  if (!posts.length) return { checked: 0, adopted, edited: 0, gone: 0, warnings: [] };
+
+  let edited = 0, gone = 0;
+  const warnings = [];
+  for (const p of posts) {
+    const extra = p.extra && typeof p.extra === "object" ? p.extra : {};
+    const msg = buildDigest({
+      dateLabel: extra.dateLabel || dayLabel(p.day),
+      discordUserId: (byId[p.chatter_id] || {}).discord_user_id,
+      steps: stepsBy[p.chatter_id] || [],
+      tasks: tasksBy[p.chatter_id] || [],
+      extra,
+    });
+    if (msg === p.content) continue; // nothing changed for this person
+
+    try {
+      const result = await editMessage(p.channel_id, p.message_id, msg);
+      if (result === "gone") {
+        await sbWrite("DELETE", `discord_digest_posts?chatter_id=eq.${p.chatter_id}&day=eq.${p.day}`);
+        gone++;
+        continue;
+      }
+      // Upsert (not update): an adopted digest has no row yet.
+      await sbWrite(
+        "POST",
+        "discord_digest_posts",
+        { chatter_id: p.chatter_id, day: p.day, channel_id: p.channel_id, message_id: p.message_id, extra, content: msg },
+        "resolution=merge-duplicates,return=minimal",
+      );
+      edited++;
+    } catch (e) {
+      warnings.push(`${(byId[p.chatter_id] || {}).name || p.chatter_id}: ${String((e && e.message) || e)}`);
+    }
+  }
+  return { checked: posts.length, adopted, edited, gone, warnings };
 }
 
 // One-shot tidy: delete the BOT'S OWN recent messages in a channel (e.g. the old
@@ -148,6 +346,25 @@ async function purgeBotMessages(channelId, botId) {
 }
 
 export default async function handler(req, res) {
+  const today = new Date().toISOString().slice(0, 10);
+
+  // Vercel parses JSON bodies automatically; fall back to a manual parse.
+  let body = req.body;
+  if (typeof body === "string") { try { body = JSON.parse(body); } catch { body = {}; } }
+
+  // ── Refresh mode (no cron secret — see the header comment) ────────────────
+  if (req.method === "POST" && body && body.mode === "refresh") {
+    if (!TOKEN || !SB_URL || !SB_KEY) return res.status(200).json({ ok: false, error: "not configured" });
+    try {
+      const out = await refreshToday(today);
+      return res.status(200).json({ ok: true, mode: "refresh", day: today, ...out });
+    } catch (e) {
+      console.error("[discord-digest] refresh:", e && e.message);
+      return res.status(200).json({ ok: false, mode: "refresh", error: String((e && e.message) || e) });
+    }
+  }
+
+  // ── Broadcast mode (the morning cron) ─────────────────────────────────────
   if (CRON_SECRET) {
     const ok = req.headers.authorization === `Bearer ${CRON_SECRET}` || req.headers["x-cron-secret"] === CRON_SECRET;
     if (!ok) return res.status(401).json({ ok: false, error: "unauthorized" });
@@ -158,7 +375,6 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: false, error: "not configured (DISCORD_BOT_TOKEN / VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY)" });
   }
 
-  const today = new Date().toISOString().slice(0, 10);
   try {
     const botId = await dapi("/users/@me", { method: "GET" }).then((r) => r.json()).then((u) => u && u.id).catch(() => null);
 
@@ -168,8 +384,8 @@ export default async function handler(req, res) {
 
     const [chatters, steps, tasks] = await Promise.all([
       sbGet("chatters?status=eq.active&select=id,name,discord_user_id,discord_channel_id&order=name"),
-      sbGet("task_pipeline_steps?status=eq.active&select=assignee_id,step_name,task_pipelines!inner(title,status)&task_pipelines.status=eq.active"),
-      sbGet("standalone_tasks?status=eq.open&select=assignee_id,title,due_date"),
+      sbGet(STEPS_QUERY),
+      sbGet(TASKS_QUERY),
     ]);
 
     const stepsBy = {};
@@ -257,42 +473,38 @@ export default async function handler(req, res) {
       if (ms.length + mt.length + mr.length + mc.length === 0) { empty++; continue; }
 
       const dateLabel = new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
-      const total = ms.length + mt.length;
-      let msg = `## 🗓️ Your tasks — ${dateLabel}\n`;
-      if (c.discord_user_id) msg += `<@${c.discord_user_id}>\n`;
-      if (ms.length) {
-        msg += `\n### 🔁 Pipelines waiting on you (${ms.length})\n` +
-          ms.map((s) => `- **${(s.task_pipelines && s.task_pipelines.title) || "Pipeline"}** · ${s.step_name}`).join("\n") + "\n";
-      }
-      if (mt.length) {
-        msg += `\n### 📋 To-do (${mt.length})\n` +
-          mt.map((t) => `- ${t.title}${t.due_date ? ` · _due ${prettyDate(t.due_date)}_` : ""}`).join("\n") + "\n";
-      }
-      if (mc.length) {
-        msg += `\n### 🎬 Content\n` +
-          mc.map((x) => `- ${x}`).join("\n") + "\n";
-      }
-      if (mr.length) {
-        msg += `\n### ⏰ Coming up\n` +
-          mr.map((x) => `- ${x}`).join("\n") + "\n";
-      }
-      msg += total > 0
-        ? `\n-# ${total} task${total === 1 ? "" : "s"} today · tick them off in the dashboard → Tasks 💪`
-        : `\n-# Nothing due today · heads-up above 👀`;
+      const extra = { dateLabel, content: mc, reminders: mr };
+      const msg = buildDigest({ dateLabel, discordUserId: c.discord_user_id, steps: ms, tasks: mt, extra });
 
       try {
-        if (c.discord_channel_id) {
-          const posted = await postToChannel(c.discord_channel_id, msg);
-          if (botId && posted && posted.id) await pinDaily(c.discord_channel_id, posted.id, botId);
+        let channelId = c.discord_channel_id;
+        let posted;
+        if (channelId) {
+          posted = await postToChannel(channelId, msg);
+          if (botId && posted && posted.id) await pinDaily(channelId, posted.id, botId);
         } else {
-          const dmId = await openDM(c.discord_user_id);
-          await postToChannel(dmId, msg);
+          channelId = await openDM(c.discord_user_id);
+          posted = await postToChannel(channelId, msg);
+        }
+        // Remember which message is today's digest so completions can edit it
+        // live (refresh mode). `extra` is replayed on every edit so the 🎬/⏰
+        // sections survive without re-running their side-effectful queries.
+        if (posted && posted.id) {
+          await sbWrite(
+            "POST",
+            "discord_digest_posts",
+            { chatter_id: c.id, day: today, channel_id: channelId, message_id: posted.id, extra, content: msg },
+            "resolution=merge-duplicates,return=minimal",
+          );
         }
         sent++;
       } catch (e) {
         warnings.push(`${c.name}: ${String((e && e.message) || e)}`);
       }
     }
+
+    // Forget digests older than a week — they can't be refreshed any more.
+    await sbWrite("DELETE", `discord_digest_posts?day=lt.${shiftDate(today, -7)}`);
 
     return res.status(200).json({ ok: true, day: today, clean, purged, purgeDetail, sent, empty, skipped, warnings });
   } catch (e) {
