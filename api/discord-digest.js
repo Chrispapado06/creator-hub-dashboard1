@@ -231,6 +231,17 @@ async function adoptDigest(channelId, botId, today) {
   return { message_id: found.id, content: found.content, extra: parseDigest(found.content) };
 }
 
+// Remember a digest as the live one for its day. Upsert, not update: an adopted
+// digest has no row yet.
+function storePost(p, extra, content) {
+  return sbWrite(
+    "POST",
+    "discord_digest_posts",
+    { chatter_id: p.chatter_id, day: p.day, channel_id: p.channel_id, message_id: p.message_id, extra, content },
+    "resolution=merge-duplicates,return=minimal",
+  );
+}
+
 // ── Live refresh ─────────────────────────────────────────────────────────────
 // Re-render every digest posted TODAY from current DB state and edit the ones
 // whose text actually changed. Idempotent and cheap: a refresh that changes
@@ -268,15 +279,13 @@ async function refreshToday(today) {
   );
   if (candidates.length) {
     const botId = await dapi("/users/@me", { method: "GET" }).then((r) => r.json()).then((u) => u && u.id).catch(() => null);
-    for (const c of botId ? candidates : []) {
-      try {
-        const found = await adoptDigest(c.discord_channel_id, botId, today);
-        if (found) {
-          posts.push({ chatter_id: c.id, day: today, channel_id: c.discord_channel_id, ...found });
-          adopted++;
-        }
-      } catch { /* best-effort */ }
-    }
+    // In parallel — one channel read each, and a refresh shouldn't get slower
+    // the more people are on the team.
+    const found = await Promise.all((botId ? candidates : []).map((c) =>
+      adoptDigest(c.discord_channel_id, botId, today)
+        .then((f) => (f ? { chatter_id: c.id, day: today, channel_id: c.discord_channel_id, adopted: true, ...f } : null))
+        .catch(() => null)));
+    for (const f of found.filter(Boolean)) { posts.push(f); adopted++; }
   }
   if (!posts.length) return { checked: 0, adopted, edited: 0, gone: 0, warnings: [] };
 
@@ -291,7 +300,12 @@ async function refreshToday(today) {
       tasks: tasksBy[p.chatter_id] || [],
       extra,
     });
-    if (msg === p.content) continue; // nothing changed for this person
+    // Nothing changed for this person — but if we only just adopted their
+    // digest, still record it, or we'd rescan their channel on every refresh.
+    if (msg === p.content) {
+      if (p.adopted) await storePost(p, extra, msg);
+      continue;
+    }
 
     try {
       const result = await editMessage(p.channel_id, p.message_id, msg);
@@ -300,13 +314,7 @@ async function refreshToday(today) {
         gone++;
         continue;
       }
-      // Upsert (not update): an adopted digest has no row yet.
-      await sbWrite(
-        "POST",
-        "discord_digest_posts",
-        { chatter_id: p.chatter_id, day: p.day, channel_id: p.channel_id, message_id: p.message_id, extra, content: msg },
-        "resolution=merge-duplicates,return=minimal",
-      );
+      await storePost(p, extra, msg);
       edited++;
     } catch (e) {
       warnings.push(`${(byId[p.chatter_id] || {}).name || p.chatter_id}: ${String((e && e.message) || e)}`);
