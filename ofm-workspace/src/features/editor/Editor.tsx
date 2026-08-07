@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { EditorContent, useEditor, type JSONContent } from "@tiptap/react";
 import type { Editor as TiptapEditor, Range } from "@tiptap/core";
+import type { EditorView } from "@tiptap/pm/view";
 import StarterKit from "@tiptap/starter-kit";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
@@ -28,6 +29,9 @@ import { Bookmark } from "./extensions/bookmark";
 import { DatabaseView } from "./extensions/database-view";
 import { SlashCommand } from "./slash-command";
 import { BubbleToolbar } from "./BubbleToolbar";
+
+/** Stable empty doc so an empty page's `content` keeps a constant identity. */
+const EMPTY_DOC: JSONContent = { type: "doc", content: [] };
 
 /** Pick the right block for a dropped/pasted file (reel -> video, etc.). */
 function nodeForFile(file: File, path: string, name: string, size: number) {
@@ -76,9 +80,21 @@ export function Editor({
   onCreatePage?: (editor: TiptapEditor, range: Range) => void;
   onCreateDatabase?: (editor: TiptapEditor, range: Range) => void;
 }) {
-  const editor = useEditor({
-    editable,
-    extensions: [
+  // Keep the latest callbacks in refs so the editor options below can be created
+  // ONCE (stable identity). Re-creating extensions/editorProps every render made
+  // TipTap re-run setOptions on each render (e.g. after autosave), which closed
+  // the open slash menu after a second or two.
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  const onCreatePageRef = useRef(onCreatePage);
+  onCreatePageRef.current = onCreatePage;
+  const onCreateDatabaseRef = useRef(onCreateDatabase);
+  onCreateDatabaseRef.current = onCreateDatabase;
+  const editorRef = useRef<TiptapEditor | null>(null);
+  const contentRef = useRef(initialContent); // captured once; the editor owns the doc after
+
+  const extensions = useMemo(
+    () => [
       StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
       TaskList,
       TaskItem.configure({ nested: true }),
@@ -101,8 +117,12 @@ export function Editor({
       FileBlock,
       PageLink,
       SlashCommand.configure({
-        onCreatePage: onCreatePage ?? null,
-        onCreateDatabase: onCreateDatabase ?? null,
+        onCreatePage: onCreatePage
+          ? (e, r) => onCreatePageRef.current?.(e, r)
+          : null,
+        onCreateDatabase: onCreateDatabase
+          ? (e, r) => onCreateDatabaseRef.current?.(e, r)
+          : null,
       }),
       Placeholder.configure({
         placeholder: ({ node }) =>
@@ -112,12 +132,15 @@ export function Editor({
         includeChildren: false,
       }),
     ],
-    content: (initialContent as JSONContent) ?? { type: "doc", content: [] },
-    onUpdate: ({ editor }) => onChange?.(editor.getJSON()),
-    editorProps: {
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  const editorProps = useMemo(
+    () => ({
       attributes: { class: "tiptap" },
       // Drag a downloaded reel/image/file onto the page -> upload + embed.
-      handleDrop: (view, event, _slice, moved) => {
+      handleDrop: (view: EditorView, event: Event, _slice: unknown, moved: boolean) => {
         if (moved) return false; // internal block re-order, let TipTap handle it
         const dt = (event as DragEvent).dataTransfer;
         const files = dt ? Array.from(dt.files) : [];
@@ -127,20 +150,32 @@ export function Editor({
           left: (event as DragEvent).clientX,
           top: (event as DragEvent).clientY,
         });
-        if (editor) void uploadFilesInto(editor, files, coords?.pos ?? null);
+        const ed = editorRef.current;
+        if (ed) void uploadFilesInto(ed, files, coords?.pos ?? null);
         return true;
       },
       // Paste an image/video file from the clipboard -> upload + embed.
-      handlePaste: (view, event) => {
+      handlePaste: (view: EditorView, event: Event) => {
         const cd = (event as ClipboardEvent).clipboardData;
         const files = cd ? Array.from(cd.files) : [];
         if (!files.length || !view.editable) return false;
         event.preventDefault();
-        if (editor) void uploadFilesInto(editor, files, null);
+        const ed = editorRef.current;
+        if (ed) void uploadFilesInto(ed, files, null);
         return true;
       },
-    },
+    }),
+    [],
+  );
+
+  const editor = useEditor({
+    editable,
+    extensions,
+    content: (contentRef.current as JSONContent) ?? EMPTY_DOC,
+    onUpdate: ({ editor }) => onChangeRef.current?.(editor.getJSON()),
+    editorProps,
   });
+  editorRef.current = editor;
 
   useEffect(() => {
     editor?.setEditable(editable);
