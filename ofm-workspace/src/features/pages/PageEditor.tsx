@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { JSONContent } from "@tiptap/react";
 import type { Editor as TiptapEditor, Range } from "@tiptap/core";
 import { toast } from "sonner";
@@ -17,8 +18,10 @@ import { useCreateDatabase } from "@/features/databases/use-databases";
 import {
   useCreatePage,
   usePage,
+  usePages,
   useSavePageContent,
   useUpdatePage,
+  type PageNode,
 } from "./use-pages";
 
 export default function PageEditor() {
@@ -26,10 +29,28 @@ export default function PageEditor() {
   const { user } = useAuth();
   const { data: member } = useCurrentMember();
   const { data: page, isLoading, isError } = usePage(pageId);
+  const { data: pages = [] } = usePages();
   const update = useUpdatePage();
   const saveContent = useSavePageContent();
   const createPage = useCreatePage();
   const createDatabase = useCreateDatabase();
+
+  // Ancestor chain (root -> parent) for the breadcrumb trail, so from a deep
+  // sub-page you can jump straight up to any parent or Home.
+  const ancestors = useMemo<PageNode[]>(() => {
+    if (!pageId) return [];
+    const byId = new Map(pages.map((p) => [p.id, p]));
+    const chain: PageNode[] = [];
+    let cur = byId.get(pageId)?.parentId ?? page?.parentId ?? null;
+    let guard = 0;
+    while (cur && guard++ < 25) {
+      const p = byId.get(cur);
+      if (!p) break;
+      chain.unshift(p);
+      cur = p.parentId;
+    }
+    return chain;
+  }, [pages, pageId, page?.parentId]);
   const navigate = useNavigate();
 
   const [title, setTitle] = useState("");
@@ -152,6 +173,12 @@ export default function PageEditor() {
     member?.role === "manager" ||
     page.createdBy === user?.id;
 
+  // Collapse very deep trails: first ancestor … last two ancestors.
+  const crumbTrail: (PageNode | "ellipsis")[] =
+    ancestors.length > 4
+      ? [ancestors[0], "ellipsis", ...ancestors.slice(-2)]
+      : ancestors;
+
   const bigIcon = (
     <PageIcon
       icon={icon}
@@ -167,6 +194,56 @@ export default function PageEditor() {
         fullWidth ? "max-w-5xl" : "max-w-3xl",
       )}
     >
+      <nav className="mb-2 flex items-center gap-0.5 overflow-x-auto text-sm text-muted-foreground">
+        <button
+          type="button"
+          onClick={() => navigate(-1)}
+          title="Back"
+          className="mr-1 shrink-0 rounded p-1 hover:bg-accent hover:text-foreground"
+        >
+          <ChevronLeft className="size-4" />
+        </button>
+        <Link
+          to="/"
+          className="shrink-0 rounded px-1.5 py-0.5 hover:bg-accent hover:text-foreground"
+        >
+          Home
+        </Link>
+        {crumbTrail.map((a, i) =>
+          a === "ellipsis" ? (
+            <span key={`ellipsis-${i}`} className="flex shrink-0 items-center gap-0.5">
+              <ChevronRight className="size-3.5 opacity-60" />
+              <span className="px-1">…</span>
+            </span>
+          ) : (
+            <span key={a.id} className="flex min-w-0 items-center gap-0.5">
+              <ChevronRight className="size-3.5 shrink-0 opacity-60" />
+              <Link
+                to={`/page/${a.id}`}
+                title={a.title || "Untitled"}
+                className="flex min-w-0 max-w-[10rem] items-center gap-1 rounded px-1.5 py-0.5 hover:bg-accent hover:text-foreground"
+              >
+                <PageIcon
+                  icon={a.icon}
+                  className="size-4 shrink-0"
+                  emojiClassName="text-sm leading-none"
+                />
+                <span className="truncate">{a.title || "Untitled"}</span>
+              </Link>
+            </span>
+          ),
+        )}
+        <ChevronRight className="size-3.5 shrink-0 opacity-60" />
+        <span className="flex min-w-0 max-w-[14rem] items-center gap-1 px-1.5 py-0.5 text-foreground">
+          <PageIcon
+            icon={icon}
+            className="size-4 shrink-0"
+            emojiClassName="text-sm leading-none"
+          />
+          <span className="truncate">{title || "Untitled"}</span>
+        </span>
+      </nav>
+
       <div className="mb-3 flex h-8 items-center justify-end gap-1">
         {!canEdit && (
           <span className="mr-auto text-xs text-muted-foreground">
