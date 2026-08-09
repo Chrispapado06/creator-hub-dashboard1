@@ -2919,6 +2919,11 @@
       "ts": "2026-08-09T10:57:07+00:00",
       "amount": 9000,
       "state": "new"
+    },
+    "acct_7aa411ae5ab947feba989fe9f63f7a60:87822536": {
+      "ts": "2026-08-09T17:08:40+00:00",
+      "amount": 3537,
+      "state": "new"
     }
   },
   "bootstrapped": {
