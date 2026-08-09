@@ -174,8 +174,9 @@ function page(title, icon, doc) {
 <meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
 <meta name="robots" content="noindex"/><title>${t}</title>
 <style>
-:root{color-scheme:light dark;--fg:#1f2328;--muted:#6b7280;--border:#e5e7eb;--bg:#fff;--box:#f6f6f7;}
-@media (prefers-color-scheme:dark){:root{--fg:#e6e6e6;--muted:#9ca3af;--border:#2a2a2a;--bg:#191919;--box:#242424;}}
+/* Always light — published pages stay white so text never blends into a dark bg,
+   regardless of the reader's OS/browser dark-mode setting. */
+:root{color-scheme:light;--fg:#1f2328;--muted:#6b7280;--border:#e5e7eb;--bg:#fff;--box:#f6f6f7;}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
 .wrap{max-width:720px;margin:0 auto;padding:64px 24px 120px}.icon{font-size:56px;line-height:1;margin-bottom:12px}
 h1.t{font-size:40px;font-weight:800;letter-spacing:-.02em;margin:0 0 24px}
