@@ -1,0 +1,191 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ---------------------------------------------------------------------------
+   ICEFALL DESIGN SYSTEM
+   A single cinematic dark theme. Colours MUST be oklch (house rule).
+   Derived from the brand reference palette:
+   #080B0D  #111214  #1C1D20  #E6E6E6  #A78B5C
+   ------------------------------------------------------------------------- */
+
+:root {
+  /* Surfaces — near-black through graphite */
+  --ice-obsidian: oklch(0.147 0.0068 236); /* #080B0D  app canvas   */
+  --ice-graphite: oklch(0.182 0.0044 264.5); /* #111214  cards        */
+  --ice-slate: oklch(0.2309 0.006 271.2); /* #1C1D20  raised       */
+  --ice-elevated: oklch(0.2733 0.0075 274.7); /* #26272B  inputs/chips  */
+
+  /* Ink — off-white, never pure */
+  --ice-snow: oklch(0.9249 0 89.9); /* #E6E6E6  primary text */
+  --ice-mist: oklch(0.645 0.0088 253.9); /* #8A8E93  secondary    */
+  --ice-mist-dim: oklch(0.4876 0.0108 258.4); /* #5C6066  tertiary     */
+
+  /* Accent — muted champagne / alpine gold. Restraint is the point. */
+  --ice-gold: oklch(0.6515 0.0722 79.9); /* #A78B5C */
+  --ice-gold-bright: oklch(0.7583 0.0733 80.4); /* #C9AC7B */
+  --ice-gold-deep: oklch(0.5234 0.0626 79.9); /* #7D663F */
+
+  /* Semantic — same low-saturation register, never loud */
+  --ice-summit: oklch(0.6166 0.057 148.1); /* #6E8F72  complete    */
+  --ice-alert: oklch(0.7035 0.1089 72.4); /* #C9944D  caution     */
+  --ice-danger: oklch(0.5631 0.1288 34.3); /* #B4553F  severe      */
+
+  /* The one border treatment in the entire app */
+  --ice-hairline: oklch(1 0 0 / 7%);
+  --ice-hairline-strong: oklch(1 0 0 / 12%);
+
+  --radius-card: 14px;
+  --radius-tile: 10px;
+  --radius-pill: 999px;
+
+  /* Motion — one curve, everywhere */
+  --ease-alpine: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-fast: 180ms;
+  --dur-base: 260ms;
+  --dur-slow: 420ms;
+
+  /* Layout */
+  --shell-max: 430px;
+  --tabbar-h: 64px;
+}
+
+@theme inline {
+  --color-obsidian: var(--ice-obsidian);
+  --color-graphite: var(--ice-graphite);
+  --color-slate: var(--ice-slate);
+  --color-elevated: var(--ice-elevated);
+
+  --color-snow: var(--ice-snow);
+  --color-mist: var(--ice-mist);
+  --color-mist-dim: var(--ice-mist-dim);
+
+  --color-gold: var(--ice-gold);
+  --color-gold-bright: var(--ice-gold-bright);
+  --color-gold-deep: var(--ice-gold-deep);
+
+  --color-summit: var(--ice-summit);
+  --color-alert: var(--ice-alert);
+  --color-danger: var(--ice-danger);
+
+  --color-hairline: var(--ice-hairline);
+  --color-hairline-strong: var(--ice-hairline-strong);
+
+  --font-sans: "Inter Tight", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-serif: "Instrument Serif", ui-serif, Georgia, serif;
+
+  --radius-card: var(--radius-card);
+  --radius-tile: var(--radius-tile);
+
+  --ease-alpine: var(--ease-alpine);
+}
+
+@layer base {
+  * {
+    border-color: var(--ice-hairline);
+  }
+
+  html {
+    background: var(--ice-obsidian);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    margin: 0;
+    background: var(--ice-obsidian);
+    color: var(--ice-snow);
+    font-family: var(--font-sans);
+    font-feature-settings: "kern", "liga", "calt", "ss01";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    overscroll-behavior-y: none;
+  }
+
+  /* Every number in this app is tabular. Metrics must not jitter. */
+  .tnum,
+  [data-metric] {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+
+  ::selection {
+    background: oklch(0.6515 0.0722 79.9 / 28%);
+    color: var(--ice-snow);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ice-gold);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-weight: 500;
+    letter-spacing: -0.02em;
+  }
+}
+
+@layer components {
+  /* The uppercase tracked micro-label used throughout the reference. */
+  .section-label {
+    font-size: 10px;
+    line-height: 1;
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ice-mist-dim);
+  }
+
+  /* Editorial display face, used sparingly for hero lines only. */
+  .display {
+    font-family: var(--font-serif);
+    font-weight: 400;
+    letter-spacing: -0.015em;
+    line-height: 1.08;
+  }
+
+  /* Photo scrims — how every image meets type in this app. */
+  .scrim-bottom {
+    background: linear-gradient(
+      to top,
+      oklch(0.147 0.0068 236 / 96%) 0%,
+      oklch(0.147 0.0068 236 / 72%) 32%,
+      oklch(0.147 0.0068 236 / 12%) 70%,
+      transparent 100%
+    );
+  }
+
+  .scrim-full {
+    background: linear-gradient(
+      to top,
+      oklch(0.147 0.0068 236 / 98%) 0%,
+      oklch(0.147 0.0068 236 / 55%) 55%,
+      oklch(0.147 0.0068 236 / 35%) 100%
+    );
+  }
+
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Very fine film grain. Keeps large black fields from banding and reads
+     as photographic rather than digital. Must stay near-invisible. */
+  .grain::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.03;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+}

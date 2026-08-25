@@ -1,0 +1,249 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ---------------------------------------------------------------------------
+   ICEFALL DESIGN SYSTEM — web
+   A single cinematic dark theme. Colours MUST be oklch (house rule).
+
+   ALPINE BLUE, 2026-08. Ported verbatim from `icefall-app/src/index.css` so the
+   marketing site and the product are the same brand rather than two that look
+   similar. The accent was champagne gold (#A78B5C) until this revision; it is
+   now azure (#4B9BFF), and the surfaces carry a blue cast rather than a neutral
+   one.
+
+   THE TOKEN IS NAMED FOR ITS COLOUR, AND IT WAS RENAMED WITH THE VALUE — the
+   same pass the app took. `--ice-gold` holding a blue would be a lie.
+
+   Reference palette:
+   #05070B  #0E1219  #161B24  #EAEEF5  #4B9BFF
+   ------------------------------------------------------------------------- */
+
+:root {
+  /* Surfaces — near-black through graphite, all carrying a blue cast */
+  --ice-obsidian: oklch(0.1277 0.0108 259.6); /* #05070B  page canvas  */
+  --ice-graphite: oklch(0.1814 0.0158 261.5); /* #0E1219  cards        */
+  --ice-slate: oklch(0.2213 0.0192 262.1); /* #161B24  raised       */
+  --ice-elevated: oklch(0.2627 0.0231 259.3); /* #1E2530  inputs/chips  */
+
+  /* Ink — off-white, never pure, faintly cold */
+  --ice-snow: oklch(0.9481 0.0103 261.8); /* #EAEEF5  primary text */
+  --ice-mist: oklch(0.6653 0.0287 264.4); /* #8B94A6  secondary    */
+  --ice-mist-dim: oklch(0.4986 0.0309 264.2); /* #5A6375  tertiary     */
+
+  /* Accent — alpine azure */
+  --ice-azure: oklch(0.6868 0.1674 255.4); /* #4B9BFF */
+  --ice-azure-bright: oklch(0.8013 0.1024 253.4); /* #8FC2FF */
+  --ice-azure-deep: oklch(0.5464 0.1745 260.1); /* #2C6BD4 */
+  --ice-azure-glow: oklch(0.6868 0.1674 255.4 / 38%);
+
+  /*
+   * The top stop of the primary button's gradient, and only that.
+   *
+   * The mockup's CTA is a blue of about #3B82F6 carrying white text, which is
+   * 3.7:1 — under AA for text this size. Dropping the top stop to L 0.625 takes
+   * the worst point on the button to ~4.2:1 and the bottom to 5:1, and is not
+   * distinguishable from the mockup at a glance. Legibility wins a tie that
+   * close.
+   */
+  --ice-azure-cta: oklch(0.625 0.178 256);
+
+  /* Semantic — hue-separated from the accent so state never reads as chrome */
+  --ice-summit: oklch(0.6687 0.1119 149.6); /* #5FA86F  complete    */
+  --ice-alert: oklch(0.7471 0.127 77.8); /* #D9A244  caution     */
+  --ice-danger: oklch(0.5871 0.1472 32.9); /* #C4553F  severe      */
+
+  /* The one border treatment in the entire app */
+  --ice-hairline: oklch(1 0 0 / 7%);
+  --ice-hairline-strong: oklch(1 0 0 / 12%);
+
+  --radius-card: 14px;
+  --radius-tile: 10px;
+  --radius-pill: 999px;
+
+  /* Motion — one curve, everywhere */
+  --ease-alpine: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-fast: 180ms;
+  --dur-base: 260ms;
+  --dur-slow: 420ms;
+
+  /* Layout */
+  --shell-max: 430px;
+  --tabbar-h: 64px;
+}
+
+@theme inline {
+  --color-obsidian: var(--ice-obsidian);
+  --color-graphite: var(--ice-graphite);
+  --color-slate: var(--ice-slate);
+  --color-elevated: var(--ice-elevated);
+
+  --color-snow: var(--ice-snow);
+  --color-mist: var(--ice-mist);
+  --color-mist-dim: var(--ice-mist-dim);
+
+  --color-azure: var(--ice-azure);
+  --color-azure-bright: var(--ice-azure-bright);
+  --color-azure-deep: var(--ice-azure-deep);
+  --color-azure-glow: var(--ice-azure-glow);
+  --color-azure-cta: var(--ice-azure-cta);
+
+  --color-summit: var(--ice-summit);
+  --color-alert: var(--ice-alert);
+  --color-danger: var(--ice-danger);
+
+  --color-hairline: var(--ice-hairline);
+  --color-hairline-strong: var(--ice-hairline-strong);
+
+  --font-sans: "Inter Tight", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-serif: "Instrument Serif", ui-serif, Georgia, serif;
+
+  --radius-card: var(--radius-card);
+  --radius-tile: var(--radius-tile);
+
+  --ease-alpine: var(--ease-alpine);
+}
+
+@layer base {
+  * {
+    border-color: var(--ice-hairline);
+  }
+
+  html {
+    background: var(--ice-obsidian);
+    -webkit-tap-highlight-color: transparent;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    margin: 0;
+    background: var(--ice-obsidian);
+    color: var(--ice-snow);
+    font-family: var(--font-sans);
+    font-feature-settings: "kern", "liga", "calt", "ss01";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    overscroll-behavior-y: none;
+  }
+
+  /* Every number in this app is tabular. Metrics must not jitter. */
+  .tnum,
+  [data-metric] {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+
+  ::selection {
+    background: oklch(0.6868 0.1674 255.4 / 28%);
+    color: var(--ice-snow);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ice-azure);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-weight: 500;
+    letter-spacing: -0.02em;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+  }
+}
+
+@layer components {
+  /* The uppercase tracked micro-label used throughout the reference. */
+  .section-label {
+    font-size: 10px;
+    line-height: 1;
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ice-mist-dim);
+  }
+
+  /* Editorial display face, used sparingly for hero lines only. */
+  .display {
+    font-family: var(--font-serif);
+    font-weight: 400;
+    letter-spacing: -0.015em;
+    line-height: 1.08;
+  }
+
+  /* Photo scrims — how every image meets type in this app. */
+  .scrim-bottom {
+    background: linear-gradient(
+      to top,
+      oklch(0.1277 0.0108 259.6 / 96%) 0%,
+      oklch(0.1277 0.0108 259.6 / 72%) 32%,
+      oklch(0.1277 0.0108 259.6 / 12%) 70%,
+      transparent 100%
+    );
+  }
+
+  .scrim-full {
+    background: linear-gradient(
+      to top,
+      oklch(0.1277 0.0108 259.6 / 98%) 0%,
+      oklch(0.1277 0.0108 259.6 / 55%) 55%,
+      oklch(0.1277 0.0108 259.6 / 35%) 100%
+    );
+  }
+
+  /*
+   * The hero scrim.
+   *
+   * The landing photograph is full-bleed behind the whole first screen, and the
+   * headline sits over its left third. Two gradients rather than one: a
+   * left-to-right wash that buys contrast for the type, and a bottom fade that
+   * lands the photo into the section below it with no visible edge — the header
+   * and the banner have to read as one surface.
+   */
+  .scrim-hero {
+    background:
+      linear-gradient(
+        to right,
+        oklch(0.1277 0.0108 259.6 / 97%) 0%,
+        oklch(0.1277 0.0108 259.6 / 88%) 26%,
+        oklch(0.1277 0.0108 259.6 / 55%) 52%,
+        oklch(0.1277 0.0108 259.6 / 30%) 78%,
+        oklch(0.1277 0.0108 259.6 / 42%) 100%
+      ),
+      linear-gradient(
+        to top,
+        oklch(0.1277 0.0108 259.6) 0%,
+        oklch(0.1277 0.0108 259.6 / 82%) 12%,
+        oklch(0.1277 0.0108 259.6 / 0%) 46%
+      );
+  }
+
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Very fine film grain. Keeps large black fields from banding and reads
+     as photographic rather than digital. Must stay near-invisible. */
+  .grain::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.03;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+}

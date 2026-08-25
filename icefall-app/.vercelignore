@@ -1,0 +1,11 @@
+# Third-party operator logos — REAL companies' trademarks, attached to invented
+# ratings and prices. These stay out of every deployment regardless of the
+# VITE_SHOW_DEMO flag; OperatorCard falls back to a monogram, which costs the
+# mockup very little and keeps other people's marks off ICEFALL's servers.
+public/img/operators
+
+# NOTE: public/img/guides is deliberately NOT ignored. Those portraits are
+# GAN-generated faces of people who do not exist, so an exposed file harms
+# nobody, and they are needed to review the marketplace on a phone. They are
+# still gitignored. See src/lib/demoFlag.ts for the protection requirement that
+# governs the demo data they belong to.

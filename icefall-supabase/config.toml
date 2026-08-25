@@ -1,0 +1,5 @@
+# Minimal project config. `supabase link --project-ref …` fills in the rest.
+project_id = "icefall"
+
+[db]
+major_version = 15

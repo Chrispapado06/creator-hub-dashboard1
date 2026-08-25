@@ -1,0 +1,319 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ---------------------------------------------------------------------------
+   ICEFALL DESIGN SYSTEM
+   A single cinematic dark theme. Colours MUST be oklch (house rule).
+
+   ALPINE BLUE, 2026-08. The accent was champagne gold (#A78B5C) until this
+   revision; it is now azure (#4B9BFF), and the surfaces carry a blue cast
+   rather than a neutral one — obsidian moved from #080B0D to #05070B and every
+   grey gained hue 259-264 so the app reads as cold light on snow instead of
+   warm light on rock.
+
+   THE TOKEN IS NAMED FOR ITS COLOUR, AND IT WAS RENAMED WITH THE VALUE.
+   `--ice-gold` holding a blue would have been a lie that survived in 104 files
+   and every future reader's head, so the rename went through the whole tree in
+   one pass: gold -> azure, GOLD -> AZURE, gold-bright/-deep likewise.
+
+   Reference palette:
+   #05070B  #0E1219  #161B24  #EAEEF5  #4B9BFF
+   ------------------------------------------------------------------------- */
+
+:root {
+  /* Surfaces — near-black through graphite, all carrying a blue cast */
+  --ice-obsidian: oklch(0.1277 0.0108 259.6); /* #05070B  app canvas   */
+  --ice-graphite: oklch(0.1814 0.0158 261.5); /* #0E1219  cards        */
+  --ice-slate: oklch(0.2213 0.0192 262.1); /* #161B24  raised       */
+  --ice-elevated: oklch(0.2627 0.0231 259.3); /* #1E2530  inputs/chips  */
+
+  /* Ink — off-white, never pure, faintly cold */
+  --ice-snow: oklch(0.9481 0.0103 261.8); /* #EAEEF5  primary text */
+  --ice-mist: oklch(0.6653 0.0287 264.4); /* #8B94A6  secondary    */
+  --ice-mist-dim: oklch(0.4986 0.0309 264.2); /* #5A6375  tertiary     */
+
+  /*
+   * Accent — alpine azure.
+   *
+   * Louder than the champagne it replaced (chroma 0.167 against 0.072), which
+   * is the point: it now carries the active tab, the START control and the
+   * progress fills, and it has to survive being read at 10px over photography.
+   */
+  --ice-azure: oklch(0.6868 0.1674 255.4); /* #4B9BFF */
+  --ice-azure-bright: oklch(0.8013 0.1024 253.4); /* #8FC2FF */
+  --ice-azure-deep: oklch(0.5464 0.1745 260.1); /* #2C6BD4 */
+
+  /* Semantic — hue-separated from the accent so state never reads as chrome */
+  --ice-summit: oklch(0.6687 0.1119 149.6); /* #5FA86F  complete    */
+  --ice-alert: oklch(0.7471 0.127 77.8); /* #D9A244  caution     */
+  --ice-danger: oklch(0.5871 0.1472 32.9); /* #C4553F  severe      */
+
+  /* The glow under the START control and the active tab */
+  --ice-azure-glow: oklch(0.6868 0.1674 255.4 / 38%);
+
+  /* The one border treatment in the entire app */
+  --ice-hairline: oklch(1 0 0 / 7%);
+  --ice-hairline-strong: oklch(1 0 0 / 12%);
+
+  --radius-card: 14px;
+  --radius-tile: 10px;
+  --radius-pill: 999px;
+
+  /* Motion — one curve, everywhere */
+  --ease-alpine: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-fast: 180ms;
+  --dur-base: 260ms;
+  --dur-slow: 420ms;
+
+  /* Layout */
+  --shell-max: 430px;
+  --tabbar-h: 64px;
+}
+
+@theme inline {
+  --color-obsidian: var(--ice-obsidian);
+  --color-graphite: var(--ice-graphite);
+  --color-slate: var(--ice-slate);
+  --color-elevated: var(--ice-elevated);
+
+  --color-snow: var(--ice-snow);
+  --color-mist: var(--ice-mist);
+  --color-mist-dim: var(--ice-mist-dim);
+
+  --color-azure: var(--ice-azure);
+  --color-azure-bright: var(--ice-azure-bright);
+  --color-azure-deep: var(--ice-azure-deep);
+  --color-azure-glow: var(--ice-azure-glow);
+
+  --color-summit: var(--ice-summit);
+  --color-alert: var(--ice-alert);
+  --color-danger: var(--ice-danger);
+
+  --color-hairline: var(--ice-hairline);
+  --color-hairline-strong: var(--ice-hairline-strong);
+
+  --font-sans: "Inter Tight", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-serif: "Instrument Serif", ui-serif, Georgia, serif;
+
+  --radius-card: var(--radius-card);
+  --radius-tile: var(--radius-tile);
+
+  --ease-alpine: var(--ease-alpine);
+}
+
+@layer base {
+  * {
+    border-color: var(--ice-hairline);
+  }
+
+  html {
+    background: var(--ice-obsidian);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    margin: 0;
+    background: var(--ice-obsidian);
+    color: var(--ice-snow);
+    font-family: var(--font-sans);
+    font-feature-settings: "kern", "liga", "calt", "ss01";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    overscroll-behavior-y: none;
+  }
+
+  /* Every number in this app is tabular. Metrics must not jitter. */
+  .tnum,
+  [data-metric] {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+
+  ::selection {
+    background: oklch(0.6515 0.0722 79.9 / 28%);
+    color: var(--ice-snow);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ice-azure);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-weight: 500;
+    letter-spacing: -0.02em;
+  }
+}
+
+@layer components {
+  /* The uppercase tracked micro-label used throughout the reference. */
+  .section-label {
+    font-size: 10px;
+    line-height: 1;
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ice-mist-dim);
+  }
+
+  /* Editorial display face, used sparingly for hero lines only. */
+  .display {
+    font-family: var(--font-serif);
+    font-weight: 400;
+    letter-spacing: -0.015em;
+    line-height: 1.08;
+  }
+
+  /* Photo scrims — how every image meets type in this app. */
+  .scrim-bottom {
+    background: linear-gradient(
+      to top,
+      oklch(0.147 0.0068 236 / 96%) 0%,
+      oklch(0.147 0.0068 236 / 72%) 32%,
+      oklch(0.147 0.0068 236 / 12%) 70%,
+      transparent 100%
+    );
+  }
+
+  .scrim-full {
+    background: linear-gradient(
+      to top,
+      oklch(0.147 0.0068 236 / 98%) 0%,
+      oklch(0.147 0.0068 236 / 55%) 55%,
+      oklch(0.147 0.0068 236 / 35%) 100%
+    );
+  }
+
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Very fine film grain. Keeps large black fields from banding and reads
+     as photographic rather than digital. Must stay near-invisible. */
+  .grain::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.03;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+}
+
+/* Live position marker on the terrain map. Defined here because the marker is
+   built as plain DOM by MapLibre and can't carry a Tailwind class. */
+@keyframes icefall-pulse {
+  0% { transform: scale(0.6); opacity: 0.5; }
+  70% { transform: scale(1.5); opacity: 0; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+
+/* MapLibre paints its own controls; keep them out of the way of ours. */
+.maplibregl-ctrl-attrib,
+.maplibregl-ctrl-logo {
+  display: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Search loader — "the app is working on it".
+   Plain CSS keyframes rather than framer-motion so the global
+   prefers-reduced-motion rule above neutralises all of it for free.
+   --------------------------------------------------------------------------- */
+
+/* Concentric rings pushing outward from the mark: a search radiating outward
+   from where the athlete said they are. */
+@keyframes icefall-radar-ring {
+  0%   { transform: scale(0.28); opacity: 0; }
+  12%  { opacity: 0.85; }
+  100% { transform: scale(1); opacity: 0; }
+}
+
+/* The sweep hand. One slow revolution — a scan, not a spinner. */
+@keyframes icefall-radar-sweep {
+  to { transform: rotate(360deg); }
+}
+
+/* Light travelling across a placeholder row, left to right. */
+@keyframes icefall-shimmer {
+  0%   { transform: translateX(-120%); }
+  100% { transform: translateX(220%); }
+}
+
+@keyframes icefall-breathe {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 1; }
+}
+
+.icefall-radar-ring {
+  animation: icefall-radar-ring 2.6s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+.icefall-radar-sweep {
+  animation: icefall-radar-sweep 2.6s linear infinite;
+}
+.icefall-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    oklch(1 0 0 / 6%) 45%,
+    oklch(1 0 0 / 6%) 55%,
+    transparent
+  );
+  animation: icefall-shimmer 1.6s ease-in-out infinite;
+}
+.icefall-breathe {
+  animation: icefall-breathe 2.2s ease-in-out infinite;
+}
+
+/*
+ * Result pins on the search map.
+ *
+ * Styled here rather than inline because MapLibre owns the marker element — it
+ * is created with `document.createElement`, outside React, so Tailwind classes
+ * on a JSX node never reach it.
+ */
+.icefall-pin {
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: var(--ice-azure);
+  border: 2px solid var(--ice-obsidian);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.55);
+  cursor: pointer;
+  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.icefall-pin[data-selected="true"] {
+  width: 20px;
+  height: 20px;
+  background: var(--ice-snow);
+  border-color: var(--ice-azure);
+  transform: scale(1.05);
+  z-index: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .icefall-pin { transition: none; }
+}

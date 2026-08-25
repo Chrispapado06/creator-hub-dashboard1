@@ -1,0 +1,12 @@
+{
+  "name": "icefall-supabase",
+  "private": true,
+  "type": "module",
+  "description": "Schema, policies and security tests for the ICEFALL database. Shared by icefall-app and icefall-admin.",
+  "scripts": {
+    "test": "node tests/rls.test.mjs"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.5"
+  }
+}

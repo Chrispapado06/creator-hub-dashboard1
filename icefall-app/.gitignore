@@ -1,0 +1,16 @@
+node_modules
+dist
+dist-ssr
+*.local
+.DS_Store
+.env
+.env.*
+!.env.example
+.vercel
+
+# Third-party operator logos — local design mockup only, never shipped
+public/img/operators/
+
+# GAN-generated demo guide portraits — faces of people who do not exist, local
+# design mockup only, never shipped. GuidePortrait falls back to initials.
+public/img/guides/

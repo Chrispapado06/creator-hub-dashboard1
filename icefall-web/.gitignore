@@ -1,0 +1,14 @@
+node_modules
+dist
+*.local
+.DS_Store
+.env
+.env.*
+!server/.env.example
+.vercel
+# GAN-generated demo portraits — local design mockup only, never shipped.
+public/img/guides
+
+# Waitlist signups captured by the local dev API server (server/index.mjs).
+# Development only — production writes to Supabase.
+server/.data

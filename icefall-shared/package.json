@@ -1,0 +1,10 @@
+{
+  "name": "icefall-shared",
+  "private": true,
+  "type": "module",
+  "description": "Canonical domain model shared by icefall-app, icefall-guide and icefall-admin. Edit here, then run `npm run sync`.",
+  "scripts": {
+    "test": "npx tsx money.test.ts",
+    "sync": "for a in icefall-app icefall-guide icefall-admin; do mkdir -p ../$a/src/money && cp money.ts ../$a/src/money/model.ts; done && echo 'copied to all three apps'"
+  }
+}

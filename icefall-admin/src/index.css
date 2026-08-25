@@ -1,0 +1,116 @@
+@import "tailwindcss";
+
+/**
+ * ICEFALL Operations — the staff side.
+ *
+ * DELIBERATELY NOT THE ATHLETE APP'S SKIN. The product is near-black, cinematic
+ * and photographic; this is a dense, light, data-forward work tool. The contrast
+ * is the point: at a glance you always know whether you are looking at what a
+ * customer sees or at the back office, and nobody pastes a screenshot of one
+ * thinking it is the other.
+ *
+ * Colours are oklch, per the house rule. Light-only for now — a CRM is read in
+ * daylight next to a spreadsheet, and a half-built dark theme is worse than none.
+ */
+
+@theme inline {
+  --color-canvas: var(--adm-canvas);
+  --color-surface: var(--adm-surface);
+  --color-raised: var(--adm-raised);
+  --color-line: var(--adm-line);
+  --color-line-soft: var(--adm-line-soft);
+  --color-ink: var(--adm-ink);
+  --color-muted: var(--adm-muted);
+  --color-faint: var(--adm-faint);
+  --color-accent: var(--adm-accent);
+  --color-accent-ink: var(--adm-accent-ink);
+  --color-accent-soft: var(--adm-accent-soft);
+
+  --color-stage-new: var(--adm-stage-new);
+  --color-stage-qualified: var(--adm-stage-qualified);
+  --color-stage-proposal: var(--adm-stage-proposal);
+  --color-stage-negotiation: var(--adm-stage-negotiation);
+  --color-stage-won: var(--adm-stage-won);
+  --color-stage-lost: var(--adm-stage-lost);
+
+  --font-sans: "Inter Tight", ui-sans-serif, system-ui, sans-serif;
+
+  --radius-card: 10px;
+  --radius-tile: 8px;
+  --radius-pill: 999px;
+}
+
+:root {
+  --adm-canvas: oklch(0.973 0.0025 255);
+  --adm-surface: oklch(1 0 0);
+  --adm-raised: oklch(0.988 0.002 255);
+  --adm-line: oklch(0.906 0.005 255);
+  --adm-line-soft: oklch(0.945 0.004 255);
+  --adm-ink: oklch(0.235 0.012 255);
+  --adm-muted: oklch(0.522 0.014 255);
+  --adm-faint: oklch(0.665 0.012 255);
+
+  /* ICEFALL gold, darkened until it is legible as text on white. The brand
+     accent at its original lightness fails contrast here. */
+  --adm-accent: oklch(0.552 0.098 76);
+  --adm-accent-ink: oklch(0.42 0.085 74);
+  --adm-accent-soft: oklch(0.955 0.028 84);
+
+  --adm-stage-new: oklch(0.598 0.128 252);
+  --adm-stage-qualified: oklch(0.578 0.142 292);
+  --adm-stage-proposal: oklch(0.68 0.132 68);
+  --adm-stage-negotiation: oklch(0.638 0.128 32);
+  --adm-stage-won: oklch(0.578 0.118 152);
+  --adm-stage-lost: oklch(0.598 0.14 22);
+}
+
+* {
+  border-color: var(--adm-line);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--adm-canvas);
+  color: var(--adm-ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Every figure in a CRM is compared against the one above it. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+.label {
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--adm-faint);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
