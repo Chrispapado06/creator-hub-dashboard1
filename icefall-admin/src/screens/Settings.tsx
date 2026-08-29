@@ -1,14 +1,19 @@
 import { Database, KeyRound } from "lucide-react";
 import { Card, PageHead, Pill, SectionLabel } from "@/components/ui";
+import { BACKEND_NOT_CONNECTED, isBackendConfigured } from "@/backend/client";
 
 /**
  * Deliberately honest about what is not wired yet, rather than showing toggles
  * that save nothing.
+ *
+ * THE CONNECTION STATUS IS NOT READ FROM THE ENVIRONMENT — see
+ * `backend/client.ts` for the bug that taught us why. In short: the two Supabase
+ * variables became defined in this app the day the project was provisioned, and
+ * this screen started claiming it was reading live data while having no client
+ * to read it with. Credentials are not a connection.
  */
 export default function Settings() {
-  const configured = Boolean(
-    import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-  );
+  const configured = isBackendConfigured();
 
   return (
     <>
@@ -26,15 +31,22 @@ export default function Settings() {
                 </Pill>
               </div>
               <p className="mt-2 text-[12.5px] leading-relaxed text-muted">
-                {configured
-                  ? "Reading live data from the shared ICEFALL database."
-                  : "Every figure in this app is placeholder data until a Supabase project is linked. The schema and its security policies are already written and tested — see icefall-supabase/."}
+                {configured ? "Reading live data from the shared ICEFALL database." : BACKEND_NOT_CONNECTED}
               </p>
+              {/*
+                THE ENV-VAR SNIPPET WAS REMOVED ON PURPOSE. It used to print the
+                two variables to set, which read as "do this and you are
+                connected". Both are now set in this app's `.env.local` and it is
+                still not connected, because the missing piece is a client and a
+                query rather than a credential. Printing the recipe for a step
+                already completed would send a reader to check the one thing that
+                is not the problem.
+              */}
               {!configured && (
-                <pre className="mt-3 overflow-x-auto rounded-tile bg-raised p-3 text-[11.5px] leading-relaxed text-muted ring-1 ring-line">
-{`VITE_SUPABASE_URL=https://<ref>.supabase.co
-VITE_SUPABASE_PUBLISHABLE_KEY=<publishable key>`}
-                </pre>
+                <p className="mt-3 text-[11.5px] leading-relaxed text-faint">
+                  Both Supabase variables are already set here. What is missing is the
+                  client and the read paths, which is a code change rather than configuration.
+                </p>
               )}
             </div>
           </div>

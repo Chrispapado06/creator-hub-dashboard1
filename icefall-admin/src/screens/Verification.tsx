@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Check, FileText, ShieldAlert, X } from "lucide-react";
 import { Avatar, Button, Card, DemoBanner, PageHead, Pill, SectionLabel } from "@/components/ui";
 import { cn } from "@/lib/utils";
+import { expiryStatus, formatDay } from "@/lib/day";
 
 /**
  * The review queue — where a guide is approved or not.
@@ -35,9 +36,9 @@ const QUEUE: Applicant[] = [
     submitted: "14 Aug 2026",
     waitingDays: 3,
     docs: [
-      { label: "Guiding qualification", file: "ifmga-carnet.pdf", expires: "31 Dec 2028", ref: "CH-5120" },
-      { label: "First aid", file: "wfr.pdf", expires: "12 May 2027" },
-      { label: "Insurance", file: "liability.pdf", expires: "31 Mar 2027", ref: "POL-44190" },
+      { label: "Guiding qualification", file: "ifmga-carnet.pdf", expires: "2028-12-31", ref: "CH-5120" },
+      { label: "First aid", file: "wfr.pdf", expires: "2027-05-12" },
+      { label: "Insurance", file: "liability.pdf", expires: "2027-03-31", ref: "POL-44190" },
       { label: "Photo identity", file: "id.jpg", expires: null },
     ],
     flags: [],
@@ -49,8 +50,8 @@ const QUEUE: Applicant[] = [
     submitted: "16 Aug 2026",
     waitingDays: 1,
     docs: [
-      { label: "Guiding qualification", file: "carnet-scan.jpg", expires: "30 Jun 2027", ref: "IT-2288" },
-      { label: "First aid", file: "first-aid.pdf", expires: "02 Feb 2026" },
+      { label: "Guiding qualification", file: "carnet-scan.jpg", expires: "2027-06-30", ref: "IT-2288" },
+      { label: "First aid", file: "first-aid.pdf", expires: "2026-02-02" },
       { label: "Photo identity", file: "passport.jpg", expires: null },
     ],
     flags: ["First aid certificate expired 02 Feb 2026", "No insurance certificate supplied"],
@@ -62,10 +63,10 @@ const QUEUE: Applicant[] = [
     submitted: "09 Aug 2026",
     waitingDays: 8,
     docs: [
-      { label: "Guiding qualification", file: "licence.pdf", expires: "31 Dec 2027", ref: "PL-0913" },
-      { label: "First aid", file: "wfr-2026.pdf", expires: "18 Sep 2027" },
-      { label: "Insurance", file: "policy.pdf", expires: "31 Dec 2026", ref: "PL-INS-771" },
-      { label: "Avalanche training", file: "avy-2.pdf", expires: "01 Nov 2028" },
+      { label: "Guiding qualification", file: "licence.pdf", expires: "2027-12-31", ref: "PL-0913" },
+      { label: "First aid", file: "wfr-2026.pdf", expires: "2027-09-18" },
+      { label: "Insurance", file: "policy.pdf", expires: "2026-12-31", ref: "PL-INS-771" },
+      { label: "Avalanche training", file: "avy-2.pdf", expires: "2028-11-01" },
       { label: "Photo identity", file: "id-card.png", expires: null },
     ],
     flags: [],
@@ -165,7 +166,20 @@ export default function Verification() {
             </div>
             <ul className="divide-y divide-line-soft">
               {app.docs.map((d) => {
-                const expired = d.expires ? new Date(d.expires) < new Date() : false;
+                // FOUR OUTCOMES, NOT TWO — see `lib/day.ts`.
+                //
+                // "Expired" and "we hold a date we cannot read" both block
+                // approval, but they are opposite accusations: one says this
+                // guide let their paperwork lapse, the other says ICEFALL broke
+                // its own record. Showing "Expired" for an unreadable value
+                // tells a professional their certificate ran out when it may be
+                // perfectly current — and it is our bug, not theirs.
+                //
+                // The predicate underneath fails CLOSED: unreadable counts as
+                // lapsed. The earlier version of this file answered "not
+                // expired" for every value it could not parse, which waved a
+                // genuinely expired certificate straight past the reviewer.
+                const expiry = expiryStatus(d.expires);
                 return (
                   <li key={d.label} className="flex items-center gap-3 px-4 py-3">
                     <FileText size={15} strokeWidth={1.7} className="shrink-0 text-faint" />
@@ -175,13 +189,27 @@ export default function Verification() {
                         {d.file}
                         {d.ref && ` · Ref ${d.ref}`}
                       </p>
+                      {/*
+                        The literal oklch below, not `text-amber` — this app
+                        defines no `amber` colour token, so `text-amber` would
+                        compile to nothing and this warning would render as
+                        ordinary grey body text. Matches the amber `Pill`.
+                      */}
+                      {expiry.kind === "unreadable" && (
+                        <p className="mt-1 text-[11.5px] leading-relaxed text-[oklch(0.48_0.1_70)]">
+                          The expiry date ICEFALL holds for this document cannot be read. That is our
+                          record at fault, not necessarily the certificate — check the document itself
+                          before deciding.
+                        </p>
+                      )}
                     </div>
-                    {d.expires ? (
-                      <Pill tone={expired ? "red" : "neutral"}>
-                        {expired ? "Expired" : "Expires"} {d.expires}
-                      </Pill>
-                    ) : (
-                      <Pill>No expiry</Pill>
+                    {expiry.kind === "none" && <Pill>No expiry recorded</Pill>}
+                    {expiry.kind === "unreadable" && <Pill tone="amber">Date unreadable</Pill>}
+                    {expiry.kind === "expired" && (
+                      <Pill tone="red">Expired {formatDay(expiry.day)}</Pill>
+                    )}
+                    {expiry.kind === "valid" && (
+                      <Pill tone="neutral">Expires {formatDay(expiry.day)}</Pill>
                     )}
                     <Button variant="secondary" size="sm">
                       Open
