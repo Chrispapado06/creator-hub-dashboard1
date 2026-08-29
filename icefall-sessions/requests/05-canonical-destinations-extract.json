@@ -1,0 +1,3518 @@
+{
+ "generatedBy": "brain session, from icefall-web (Session 02's owned catalogues)",
+ "source": {
+  "mountains": "icefall-web/src/data/peaks.ts",
+  "treks": "icefall-web/src/data/trekRecords.ts"
+ },
+ "counts": {
+  "mountains": 52,
+  "treks": 252
+ },
+ "mountains": [
+  {
+   "id": "everest",
+   "name": "Mount Everest",
+   "elevation_m": "8849",
+   "range": "Mahalangur Himal",
+   "country": "Nepal / China",
+   "region": "Himalaya & Asia"
+  },
+  {
+   "id": "k2",
+   "name": "K2",
+   "elevation_m": "8611",
+   "range": "Karakoram",
+   "country": "Pakistan / China",
+   "region": "Himalaya & Asia"
+  },
+  {
+   "id": "kangchenjunga",
+   "name": "Kangchenjunga",
+   "elevation_m": "8586",
+   "range": "Kangchenjunga Himal",
+   "country": "Nepal / India",
+   "region": "Himalaya & Asia"
+  },
+  {
+   "id": "lhotse",
+   "name": "Lhotse",
+   "elevation_m": "8516",
+   "range": "Mahalangur Himal",
+   "country": "Nepal / China",
+   "region": "Himalaya & Asia"
+  },
+  {
+   "id": "makalu",
+   "name": "Makalu",
+   "elevation_m": "8485",
+   "range": "Mahalangur Himal",
+   "country": "Nepal / China",
+   "region": "Himalaya & Asia"
+  },
+  {
+   "id": "cho-oyu",
+   "name": "Cho Oyu",
+   "elevation_m": "8188",
+   "range": "Mahalangur Himal",
+   "country": "Nepal / China",
+   "region": "Himalaya & Asia"
+  },
+  {
+   "id": "dhaulagiri",
+   "name": "Dhaulagiri I",
+   "elevation_m": "8167",
+   "range": "Dhaulagiri Himal",
+   "country": "Nepal",
+   "region": "Himalaya & Asia"
+  },
+  {
+   "id": "manaslu",
+   "name": "Manaslu",
+   "elevation_m": "8163",
+   "range": "Mansiri Himal",
+   "country": "Nepal",
+   "region": "Himalaya & Asia"
+  },
+  {
+   "id": "nanga-parbat",
+   "name": "Nanga Parbat",
+   "elevation_m": "8126",
+   "range": "Himalaya",
+   "country": "Pakistan",
+   "region": "Himalaya & Asia"
+  },
+  {
+   "id": "annapurna",
+   "name": "Annapurna I",
+   "elevation_m": "8091",
+   "range": "Annapurna Himal",
+   "country": "Nepal",
+   "region": "Himalaya & Asia"
+  },
+  {
+   "id": "gasherbrum-i",
+   "name": "Gasherbrum I",
+   "elevation_m": "8080",
+   "range": "Karakoram",
+   "country": "Pakistan / China",
+   "region": "Himalaya & Asia"
+  },
+  {
+   "id": "broad-peak",
+   "name": "Broad Peak",
+   "elevation_m": "8051",
+   "range": "Karakoram",
+   "country": "Pakistan / China",
+   "region": "Himalaya & Asia"
+  },
+  {
+   "id": "gasherbrum-ii",
+   "name": "Gasherbrum II",
+   "elevation_m": "8035",
+   "range": "Karakoram",
+   "country": "Pakistan / China",
+   "region": "Himalaya & Asia"
+  },
+  {
+   "id": "shishapangma",
+   "name": "Shishapangma",
+   "elevation_m": "8027",
+   "range": "Jugal Himal",
+   "country": "China",
+   "region": "Himalaya & Asia"
+  },
+  {
+   "id": "muztagh-tower",
+   "name": "Muztagh Tower",
+   "elevation_m": "7276",
+   "range": "Karakoram",
+   "country": "Pakistan / China",
+   "region": "Himalaya & Asia"
+  },
+  {
+   "id": "lenin-peak",
+   "name": "Lenin Peak",
+   "elevation_m": "7134",
+   "range": "Trans-Alay",
+   "country": "Kyrgyzstan / Tajikistan",
+   "region": "Himalaya & Asia"
+  },
+  {
+   "id": "baruntse",
+   "name": "Baruntse",
+   "elevation_m": "7129",
+   "range": "Mahalangur Himal",
+   "country": "Nepal",
+   "region": "Himalaya & Asia"
+  },
+  {
+   "id": "himlung-himal",
+   "name": "Himlung Himal",
+   "elevation_m": "7126",
+   "range": "Peri Himal",
+   "country": "Nepal",
+   "region": "Himalaya & Asia"
+  },
+  {
+   "id": "khan-tengri",
+   "name": "Khan Tengri",
+   "elevation_m": "7010",
+   "range": "Tian Shan",
+   "country": "Kazakhstan / Kyrgyzstan",
+   "region": "Himalaya & Asia"
+  },
+  {
+   "id": "ama-dablam",
+   "name": "Ama Dablam",
+   "elevation_m": "6814",
+   "range": "Mahalangur Himal",
+   "country": "Nepal",
+   "region": "Himalaya & Asia"
+  },
+  {
+   "id": "kailash",
+   "name": "Mount Kailash",
+   "elevation_m": "6638",
+   "range": "Gangdise",
+   "country": "China",
+   "region": "Himalaya & Asia"
+  },
+  {
+   "id": "mera-peak",
+   "name": "Mera Peak",
+   "elevation_m": "6476",
+   "range": "Mahalangur Himal",
+   "country": "Nepal",
+   "region": "Himalaya & Asia"
+  },
+  {
+   "id": "island-peak",
+   "name": "Island Peak",
+   "elevation_m": "6189",
+   "range": "Mahalangur Himal",
+   "country": "Nepal",
+   "region": "Himalaya & Asia"
+  },
+  {
+   "id": "lobuche-east",
+   "name": "Lobuche East",
+   "elevation_m": "6119",
+   "range": "Mahalangur Himal",
+   "country": "Nepal",
+   "region": "Himalaya & Asia"
+  },
+  {
+   "id": "aconcagua",
+   "name": "Aconcagua",
+   "elevation_m": "6961",
+   "range": "Andes",
+   "country": "Argentina",
+   "region": "Americas"
+  },
+  {
+   "id": "ojos-del-salado",
+   "name": "Ojos del Salado",
+   "elevation_m": "6893",
+   "range": "Andes",
+   "country": "Chile / Argentina",
+   "region": "Americas"
+  },
+  {
+   "id": "huascaran",
+   "name": "Huascar\u00e1n",
+   "elevation_m": "6768",
+   "range": "Cordillera Blanca",
+   "country": "Peru",
+   "region": "Americas"
+  },
+  {
+   "id": "chimborazo",
+   "name": "Chimborazo",
+   "elevation_m": "6263",
+   "range": "Andes",
+   "country": "Ecuador",
+   "region": "Americas"
+  },
+  {
+   "id": "denali",
+   "name": "Denali",
+   "elevation_m": "6190",
+   "range": "Alaska Range",
+   "country": "United States",
+   "region": "Americas"
+  },
+  {
+   "id": "logan",
+   "name": "Mount Logan",
+   "elevation_m": "5959",
+   "range": "Saint Elias Mountains",
+   "country": "Canada",
+   "region": "Americas"
+  },
+  {
+   "id": "alpamayo",
+   "name": "Alpamayo",
+   "elevation_m": "5947",
+   "range": "Cordillera Blanca",
+   "country": "Peru",
+   "region": "Americas"
+  },
+  {
+   "id": "cotopaxi",
+   "name": "Cotopaxi",
+   "elevation_m": "5897",
+   "range": "Andes",
+   "country": "Ecuador",
+   "region": "Americas"
+  },
+  {
+   "id": "rainier",
+   "name": "Mount Rainier",
+   "elevation_m": "4392",
+   "range": "Cascades",
+   "country": "United States",
+   "region": "Americas"
+  },
+  {
+   "id": "baker",
+   "name": "Mount Baker",
+   "elevation_m": "3286",
+   "range": "Cascades",
+   "country": "United States",
+   "region": "Americas"
+  },
+  {
+   "id": "elbrus",
+   "name": "Mount Elbrus",
+   "elevation_m": "5642",
+   "range": "Caucasus",
+   "country": "Russia",
+   "region": "Europe"
+  },
+  {
+   "id": "dykh-tau",
+   "name": "Dykh-Tau",
+   "elevation_m": "5205",
+   "range": "Caucasus",
+   "country": "Russia",
+   "region": "Europe"
+  },
+  {
+   "id": "ararat",
+   "name": "Mount Ararat",
+   "elevation_m": "5137",
+   "range": "Armenian Highlands",
+   "country": "Turkey",
+   "region": "Europe"
+  },
+  {
+   "id": "kazbek",
+   "name": "Mount Kazbek",
+   "elevation_m": "5054",
+   "range": "Caucasus",
+   "country": "Georgia / Russia",
+   "region": "Europe"
+  },
+  {
+   "id": "mont-blanc",
+   "name": "Mont Blanc",
+   "elevation_m": "4806",
+   "range": "Graian Alps",
+   "country": "France / Italy",
+   "region": "Europe"
+  },
+  {
+   "id": "matterhorn",
+   "name": "Matterhorn",
+   "elevation_m": "4478",
+   "range": "Pennine Alps",
+   "country": "Switzerland / Italy",
+   "region": "Europe"
+  },
+  {
+   "id": "eiger",
+   "name": "Eiger",
+   "elevation_m": "3967",
+   "range": "Bernese Alps",
+   "country": "Switzerland",
+   "region": "Europe"
+  },
+  {
+   "id": "grossglockner",
+   "name": "Grossglockner",
+   "elevation_m": "3798",
+   "range": "Hohe Tauern",
+   "country": "Austria",
+   "region": "Europe"
+  },
+  {
+   "id": "kilimanjaro",
+   "name": "Mount Kilimanjaro",
+   "elevation_m": "5895",
+   "range": "Eastern Rift",
+   "country": "Tanzania",
+   "region": "Africa"
+  },
+  {
+   "id": "mount-kenya",
+   "name": "Mount Kenya",
+   "elevation_m": "5199",
+   "range": "Eastern Rift",
+   "country": "Kenya",
+   "region": "Africa"
+  },
+  {
+   "id": "stanley",
+   "name": "Mount Stanley",
+   "elevation_m": "5109",
+   "range": "Rwenzori",
+   "country": "Uganda / DR Congo",
+   "region": "Africa"
+  },
+  {
+   "id": "speke",
+   "name": "Mount Speke",
+   "elevation_m": "4890",
+   "range": "Rwenzori",
+   "country": "Uganda",
+   "region": "Africa"
+  },
+  {
+   "id": "toubkal",
+   "name": "Mount Toubkal",
+   "elevation_m": "4167",
+   "range": "High Atlas",
+   "country": "Morocco",
+   "region": "Africa"
+  },
+  {
+   "id": "vinson",
+   "name": "Vinson Massif",
+   "elevation_m": "4892",
+   "range": "Sentinel Range",
+   "country": "Antarctica",
+   "region": "Oceania & Antarctica"
+  },
+  {
+   "id": "carstensz",
+   "name": "Carstensz Pyramid",
+   "elevation_m": "4884",
+   "range": "Sudirman Range",
+   "country": "Indonesia",
+   "region": "Oceania & Antarctica"
+  },
+  {
+   "id": "aoraki",
+   "name": "Aoraki / Mount Cook",
+   "elevation_m": "3724",
+   "range": "Southern Alps",
+   "country": "New Zealand",
+   "region": "Oceania & Antarctica"
+  },
+  {
+   "id": "fuji",
+   "name": "Mount Fuji",
+   "elevation_m": "3776",
+   "range": "Fuji Volcanic Zone",
+   "country": "Japan",
+   "region": "Himalaya & Asia"
+  },
+  {
+   "id": "kosciuszko",
+   "name": "Mount Kosciuszko",
+   "elevation_m": "2228",
+   "range": "Snowy Mountains",
+   "country": "Australia",
+   "region": "Oceania & Antarctica"
+  }
+ ],
+ "treks": [
+  {
+   "id": "tour-du-mont-blanc",
+   "name": "Tour du Mont Blanc",
+   "region": "alps",
+   "country": "France / Italy / Switzerland",
+   "mountainIds": [
+    "mont-blanc"
+   ],
+   "durationDays": [
+    10,
+    11
+   ],
+   "maxAltitudeM": 2665
+  },
+  {
+   "id": "walkers-haute-route",
+   "name": "Walker's Haute Route",
+   "region": "alps",
+   "country": "France / Switzerland",
+   "mountainIds": [
+    "mont-blanc",
+    "matterhorn"
+   ],
+   "durationDays": [
+    13,
+    14
+   ],
+   "maxAltitudeM": 2987
+  },
+  {
+   "id": "chamonix-zermatt-haute-route",
+   "name": "Chamonix\u2013Zermatt Haute Route",
+   "region": "alps",
+   "country": "France / Switzerland",
+   "mountainIds": [
+    "mont-blanc",
+    "matterhorn"
+   ],
+   "durationDays": [
+    6,
+    7
+   ],
+   "maxAltitudeM": 3710
+  },
+  {
+   "id": "tour-du-matterhorn",
+   "name": "Tour du Matterhorn",
+   "region": "alps",
+   "country": "Switzerland / Italy",
+   "mountainIds": [
+    "matterhorn"
+   ],
+   "durationDays": [
+    9,
+    11
+   ],
+   "maxAltitudeM": 3295
+  },
+  {
+   "id": "tour-des-combins",
+   "name": "Tour des Combins",
+   "region": "alps",
+   "country": "Switzerland / Italy",
+   "mountainIds": [],
+   "durationDays": [
+    6,
+    8
+   ],
+   "maxAltitudeM": 2846
+  },
+  {
+   "id": "tour-de-la-vanoise",
+   "name": "Tour de la Vanoise",
+   "region": "alps",
+   "country": "France",
+   "mountainIds": [],
+   "durationDays": [
+    10,
+    11
+   ],
+   "maxAltitudeM": 2796
+  },
+  {
+   "id": "tour-du-queyras",
+   "name": "Tour du Queyras",
+   "region": "alps",
+   "country": "France",
+   "mountainIds": [],
+   "durationDays": [
+    8,
+    10
+   ],
+   "maxAltitudeM": 2884
+  },
+  {
+   "id": "via-alpina",
+   "name": "Via Alpina",
+   "region": "alps",
+   "country": "Italy / Slovenia / Austria / Germany / Liechtenstein / Switzerland / France / Monaco",
+   "mountainIds": [],
+   "durationDays": null,
+   "maxAltitudeM": 3019
+  },
+  {
+   "id": "stubai-high-trail",
+   "name": "Stubai High Trail",
+   "region": "alps",
+   "country": "Austria",
+   "mountainIds": [],
+   "durationDays": [
+    8,
+    9
+   ],
+   "maxAltitudeM": 2858
+  },
+  {
+   "id": "berlin-high-trail",
+   "name": "Berlin High Trail",
+   "region": "alps",
+   "country": "Austria",
+   "mountainIds": [],
+   "durationDays": [
+    7,
+    8
+   ],
+   "maxAltitudeM": 3134
+  },
+  {
+   "id": "zillertal-alps-high-trail",
+   "name": "Zillertal Alps High Trail",
+   "region": "alps",
+   "country": "Austria",
+   "mountainIds": [],
+   "durationDays": [
+    7,
+    8
+   ],
+   "maxAltitudeM": 3134
+  },
+  {
+   "id": "adlerweg",
+   "name": "Adlerweg",
+   "region": "alps",
+   "country": "Austria",
+   "mountainIds": [],
+   "durationDays": [
+    24,
+    33
+   ],
+   "maxAltitudeM": 2870
+  },
+  {
+   "id": "e5-alpine-crossing",
+   "name": "E5 Alpine Crossing",
+   "region": "alps",
+   "country": "Germany / Austria / Italy",
+   "mountainIds": [],
+   "durationDays": [
+    6,
+    8
+   ],
+   "maxAltitudeM": 2995
+  },
+  {
+   "id": "gran-paradiso-trek",
+   "name": "Gran Paradiso Trek",
+   "region": "alps",
+   "country": "Italy",
+   "mountainIds": [],
+   "durationDays": [
+    12,
+    14
+   ],
+   "maxAltitudeM": 3296
+  },
+  {
+   "id": "tour-of-the-bernina",
+   "name": "Tour of the Bernina",
+   "region": "alps",
+   "country": "Switzerland / Italy",
+   "mountainIds": [],
+   "durationDays": [
+    8,
+    9
+   ],
+   "maxAltitudeM": null
+  },
+  {
+   "id": "chimborazo-circuit",
+   "name": "Chimborazo Circuit",
+   "region": "andes-north",
+   "country": "Ecuador",
+   "mountainIds": [
+    "chimborazo"
+   ],
+   "durationDays": [
+    4,
+    5
+   ],
+   "maxAltitudeM": 4800
+  },
+  {
+   "id": "choro-trek",
+   "name": "Choro Trek",
+   "region": "andes-north",
+   "country": "Bolivia",
+   "mountainIds": [],
+   "durationDays": [
+    3,
+    4
+   ],
+   "maxAltitudeM": 4859
+  },
+  {
+   "id": "condor-trek",
+   "name": "Condor Trek",
+   "region": "andes-north",
+   "country": "Ecuador",
+   "mountainIds": [],
+   "durationDays": [
+    4,
+    5
+   ],
+   "maxAltitudeM": 4500
+  },
+  {
+   "id": "condoriri-trek",
+   "name": "Condoriri Trek",
+   "region": "andes-north",
+   "country": "Bolivia",
+   "mountainIds": [],
+   "durationDays": [
+    3,
+    5
+   ],
+   "maxAltitudeM": 5100
+  },
+  {
+   "id": "cordillera-apolobamba-trek",
+   "name": "Cordillera Apolobamba Trek",
+   "region": "andes-north",
+   "country": "Bolivia",
+   "mountainIds": [],
+   "durationDays": [
+    6,
+    8
+   ],
+   "maxAltitudeM": 5100
+  },
+  {
+   "id": "cordillera-real-trek",
+   "name": "Cordillera Real Trek",
+   "region": "andes-north",
+   "country": "Bolivia",
+   "mountainIds": [],
+   "durationDays": [
+    12,
+    12
+   ],
+   "maxAltitudeM": 5100
+  },
+  {
+   "id": "cotopaxi-base-camp-and-refuge-trek",
+   "name": "Cotopaxi Base Camp and Refuge Trek",
+   "region": "andes-north",
+   "country": "Ecuador",
+   "mountainIds": [
+    "cotopaxi"
+   ],
+   "durationDays": [
+    2,
+    2
+   ],
+   "maxAltitudeM": 4864
+  },
+  {
+   "id": "el-altar-trek",
+   "name": "El Altar Trek",
+   "region": "andes-north",
+   "country": "Ecuador",
+   "mountainIds": [],
+   "durationDays": [
+    3,
+    4
+   ],
+   "maxAltitudeM": 4300
+  },
+  {
+   "id": "illampu-circuit",
+   "name": "Illampu Circuit",
+   "region": "andes-north",
+   "country": "Bolivia",
+   "mountainIds": [],
+   "durationDays": [
+    6,
+    7
+   ],
+   "maxAltitudeM": 5045
+  },
+  {
+   "id": "ingapirca-inca-trail",
+   "name": "Ingapirca Inca Trail",
+   "region": "andes-north",
+   "country": "Ecuador",
+   "mountainIds": [],
+   "durationDays": [
+    3,
+    3
+   ],
+   "maxAltitudeM": 4400
+  },
+  {
+   "id": "quilotoa-loop",
+   "name": "Quilotoa Loop",
+   "region": "andes-north",
+   "country": "Ecuador",
+   "mountainIds": [],
+   "durationDays": [
+    3,
+    4
+   ],
+   "maxAltitudeM": 3914
+  },
+  {
+   "id": "quilotoa-chimborazo-trek",
+   "name": "Quilotoa\u2013Chimborazo Trek",
+   "region": "andes-north",
+   "country": "Ecuador",
+   "mountainIds": [
+    "chimborazo"
+   ],
+   "durationDays": [
+    8,
+    14
+   ],
+   "maxAltitudeM": 5000
+  },
+  {
+   "id": "sajama-circuit",
+   "name": "Sajama Circuit",
+   "region": "andes-north",
+   "country": "Bolivia",
+   "mountainIds": [],
+   "durationDays": [
+    4,
+    5
+   ],
+   "maxAltitudeM": 4900
+  },
+  {
+   "id": "takesi-trek",
+   "name": "Takesi Trek",
+   "region": "andes-north",
+   "country": "Bolivia",
+   "mountainIds": [],
+   "durationDays": [
+    2,
+    3
+   ],
+   "maxAltitudeM": 4700
+  },
+  {
+   "id": "yunga-cruz-trek",
+   "name": "Yunga Cruz Trek",
+   "region": "andes-north",
+   "country": "Bolivia",
+   "mountainIds": [],
+   "durationDays": [
+    3,
+    4
+   ],
+   "maxAltitudeM": 4700
+  },
+  {
+   "id": "annapurna-circuit-trek",
+   "name": "Annapurna Circuit Trek",
+   "region": "annapurna",
+   "country": "Nepal",
+   "mountainIds": [
+    "annapurna"
+   ],
+   "durationDays": [
+    12,
+    20
+   ],
+   "maxAltitudeM": 5416
+  },
+  {
+   "id": "annapurna-circuit-tilicho-lake",
+   "name": "Annapurna Circuit + Tilicho Lake",
+   "region": "annapurna",
+   "country": "Nepal",
+   "mountainIds": [
+    "annapurna"
+   ],
+   "durationDays": [
+    15,
+    20
+   ],
+   "maxAltitudeM": 5416
+  },
+  {
+   "id": "annapurna-base-camp-trek",
+   "name": "Annapurna Base Camp Trek",
+   "region": "annapurna",
+   "country": "Nepal",
+   "mountainIds": [
+    "annapurna"
+   ],
+   "durationDays": [
+    7,
+    12
+   ],
+   "maxAltitudeM": 4130
+  },
+  {
+   "id": "annapurna-sanctuary-trek",
+   "name": "Annapurna Sanctuary Trek",
+   "region": "annapurna",
+   "country": "Nepal",
+   "mountainIds": [
+    "annapurna"
+   ],
+   "durationDays": [
+    9,
+    14
+   ],
+   "maxAltitudeM": 4130
+  },
+  {
+   "id": "mardi-himal-trek",
+   "name": "Mardi Himal Trek",
+   "region": "annapurna",
+   "country": "Nepal",
+   "mountainIds": [],
+   "durationDays": [
+    5,
+    7
+   ],
+   "maxAltitudeM": 4500
+  },
+  {
+   "id": "ghorepani-poon-hill-trek",
+   "name": "Ghorepani\u2013Poon Hill Trek",
+   "region": "annapurna",
+   "country": "Nepal",
+   "mountainIds": [],
+   "durationDays": [
+    4,
+    5
+   ],
+   "maxAltitudeM": 3210
+  },
+  {
+   "id": "khopra-ridge-trek",
+   "name": "Khopra Ridge Trek",
+   "region": "annapurna",
+   "country": "Nepal",
+   "mountainIds": [],
+   "durationDays": [
+    6,
+    9
+   ],
+   "maxAltitudeM": 3660
+  },
+  {
+   "id": "nar-phu-valley-trek",
+   "name": "Nar Phu Valley Trek",
+   "region": "annapurna",
+   "country": "Nepal",
+   "mountainIds": [],
+   "durationDays": [
+    10,
+    15
+   ],
+   "maxAltitudeM": 5320
+  },
+  {
+   "id": "tilicho-lake-trek",
+   "name": "Tilicho Lake Trek",
+   "region": "annapurna",
+   "country": "Nepal",
+   "mountainIds": [],
+   "durationDays": [
+    7,
+    14
+   ],
+   "maxAltitudeM": 4919
+  },
+  {
+   "id": "jomsom-muktinath-trek",
+   "name": "Jomsom\u2013Muktinath Trek",
+   "region": "annapurna",
+   "country": "Nepal",
+   "mountainIds": [],
+   "durationDays": [
+    5,
+    10
+   ],
+   "maxAltitudeM": 3762
+  },
+  {
+   "id": "mount-toubkal-circuit-trek",
+   "name": "Mount Toubkal Circuit Trek",
+   "region": "atlas",
+   "country": "Morocco",
+   "mountainIds": [
+    "toubkal"
+   ],
+   "durationDays": [
+    6,
+    8
+   ],
+   "maxAltitudeM": 4167
+  },
+  {
+   "id": "high-atlas-trek",
+   "name": "High Atlas Trek",
+   "region": "atlas",
+   "country": "Morocco",
+   "mountainIds": [],
+   "durationDays": null,
+   "maxAltitudeM": null
+  },
+  {
+   "id": "mgoun-massif-trek",
+   "name": "M'Goun Massif Trek",
+   "region": "atlas",
+   "country": "Morocco",
+   "mountainIds": [],
+   "durationDays": [
+    5,
+    7
+   ],
+   "maxAltitudeM": 4071
+  },
+  {
+   "id": "jebel-saghro-trek",
+   "name": "Jebel Saghro Trek",
+   "region": "atlas",
+   "country": "Morocco",
+   "mountainIds": [],
+   "durationDays": [
+    6,
+    8
+   ],
+   "maxAltitudeM": 2592
+  },
+  {
+   "id": "australian-alps-walking-track",
+   "name": "Australian Alps Walking Track",
+   "region": "australia",
+   "country": "Australia",
+   "mountainIds": [
+    "kosciuszko"
+   ],
+   "durationDays": [
+    30,
+    60
+   ],
+   "maxAltitudeM": 2228
+  },
+  {
+   "id": "bibbulmun-track",
+   "name": "Bibbulmun Track",
+   "region": "australia",
+   "country": "Australia",
+   "mountainIds": [],
+   "durationDays": [
+    42,
+    56
+   ],
+   "maxAltitudeM": 582
+  },
+  {
+   "id": "cape-to-cape-track",
+   "name": "Cape to Cape Track",
+   "region": "australia",
+   "country": "Australia",
+   "mountainIds": [],
+   "durationDays": [
+    5,
+    8
+   ],
+   "maxAltitudeM": null
+  },
+  {
+   "id": "great-ocean-walk",
+   "name": "Great Ocean Walk",
+   "region": "australia",
+   "country": "Australia",
+   "mountainIds": [],
+   "durationDays": [
+    7,
+    8
+   ],
+   "maxAltitudeM": null
+  },
+  {
+   "id": "heysen-trail",
+   "name": "Heysen Trail",
+   "region": "australia",
+   "country": "Australia",
+   "mountainIds": [],
+   "durationDays": [
+    50,
+    60
+   ],
+   "maxAltitudeM": null
+  },
+  {
+   "id": "larapinta-trail",
+   "name": "Larapinta Trail",
+   "region": "australia",
+   "country": "Australia",
+   "mountainIds": [],
+   "durationDays": [
+    15,
+    17
+   ],
+   "maxAltitudeM": 1380
+  },
+  {
+   "id": "main-range-track",
+   "name": "Main Range Track",
+   "region": "australia",
+   "country": "Australia",
+   "mountainIds": [
+    "kosciuszko"
+   ],
+   "durationDays": [
+    1,
+    1
+   ],
+   "maxAltitudeM": 2228
+  },
+  {
+   "id": "overland-track",
+   "name": "Overland Track",
+   "region": "australia",
+   "country": "Australia",
+   "mountainIds": [],
+   "durationDays": [
+    6,
+    6
+   ],
+   "maxAltitudeM": 1250
+  },
+  {
+   "id": "six-foot-track",
+   "name": "Six Foot Track",
+   "region": "australia",
+   "country": "Australia",
+   "mountainIds": [],
+   "durationDays": [
+    3,
+    3
+   ],
+   "maxAltitudeM": null
+  },
+  {
+   "id": "south-coast-track",
+   "name": "South Coast Track",
+   "region": "australia",
+   "country": "Australia",
+   "mountainIds": [],
+   "durationDays": [
+    6,
+    8
+   ],
+   "maxAltitudeM": 900
+  },
+  {
+   "id": "thorsborne-trail",
+   "name": "Thorsborne Trail",
+   "region": "australia",
+   "country": "Australia",
+   "mountainIds": [],
+   "durationDays": [
+    3,
+    4
+   ],
+   "maxAltitudeM": null
+  },
+  {
+   "id": "three-capes-track",
+   "name": "Three Capes Track",
+   "region": "australia",
+   "country": "Australia",
+   "mountainIds": [],
+   "durationDays": [
+    4,
+    4
+   ],
+   "maxAltitudeM": 490
+  },
+  {
+   "id": "bumdra-trek",
+   "name": "Bumdra Trek",
+   "region": "bhutan",
+   "country": "Bhutan",
+   "mountainIds": [],
+   "durationDays": [
+    2,
+    2
+   ],
+   "maxAltitudeM": 3800
+  },
+  {
+   "id": "bumthang-owl-trek",
+   "name": "Bumthang Owl Trek",
+   "region": "bhutan",
+   "country": "Bhutan",
+   "mountainIds": [],
+   "durationDays": [
+    3,
+    3
+   ],
+   "maxAltitudeM": 3870
+  },
+  {
+   "id": "dagala-thousand-lakes-trek",
+   "name": "Dagala Thousand Lakes Trek",
+   "region": "bhutan",
+   "country": "Bhutan",
+   "mountainIds": [],
+   "durationDays": [
+    5,
+    6
+   ],
+   "maxAltitudeM": null
+  },
+  {
+   "id": "druk-path-trek",
+   "name": "Druk Path Trek",
+   "region": "bhutan",
+   "country": "Bhutan",
+   "mountainIds": [],
+   "durationDays": [
+    5,
+    6
+   ],
+   "maxAltitudeM": 4210
+  },
+  {
+   "id": "jomolhari-trek",
+   "name": "Jomolhari Trek",
+   "region": "bhutan",
+   "country": "Bhutan",
+   "mountainIds": [],
+   "durationDays": [
+    6,
+    9
+   ],
+   "maxAltitudeM": 4930
+  },
+  {
+   "id": "laya-gasa-trek",
+   "name": "Laya\u2013Gasa Trek",
+   "region": "bhutan",
+   "country": "Bhutan",
+   "mountainIds": [],
+   "durationDays": [
+    10,
+    14
+   ],
+   "maxAltitudeM": 5005
+  },
+  {
+   "id": "merak-sakteng-trek",
+   "name": "Merak\u2013Sakteng Trek",
+   "region": "bhutan",
+   "country": "Bhutan",
+   "mountainIds": [],
+   "durationDays": [
+    7,
+    9
+   ],
+   "maxAltitudeM": 4153
+  },
+  {
+   "id": "nabji-korphu-trail",
+   "name": "Nabji Korphu Trail",
+   "region": "bhutan",
+   "country": "Bhutan",
+   "mountainIds": [],
+   "durationDays": [
+    3,
+    4
+   ],
+   "maxAltitudeM": 1636
+  },
+  {
+   "id": "snowman-trek",
+   "name": "Snowman Trek",
+   "region": "bhutan",
+   "country": "Bhutan",
+   "mountainIds": [],
+   "durationDays": [
+    25,
+    30
+   ],
+   "maxAltitudeM": 5320
+  },
+  {
+   "id": "trans-bhutan-trail",
+   "name": "Trans Bhutan Trail",
+   "region": "bhutan",
+   "country": "Bhutan",
+   "mountainIds": [],
+   "durationDays": [
+    25,
+    36
+   ],
+   "maxAltitudeM": null
+  },
+  {
+   "id": "ala-archa-trek",
+   "name": "Ala Archa Trek",
+   "region": "central-asia",
+   "country": "Kyrgyzstan",
+   "mountainIds": [],
+   "durationDays": [
+    1,
+    2
+   ],
+   "maxAltitudeM": 3400
+  },
+  {
+   "id": "ala-kul-trek",
+   "name": "Ala-Kul Trek",
+   "region": "central-asia",
+   "country": "Kyrgyzstan",
+   "mountainIds": [],
+   "durationDays": [
+    3,
+    4
+   ],
+   "maxAltitudeM": 3860
+  },
+  {
+   "id": "arslanbob-walnut-forest-trek",
+   "name": "Arslanbob Walnut Forest Trek",
+   "region": "central-asia",
+   "country": "Kyrgyzstan",
+   "mountainIds": [],
+   "durationDays": [
+    2,
+    3
+   ],
+   "maxAltitudeM": 2200
+  },
+  {
+   "id": "bartang-valley-trek",
+   "name": "Bartang Valley Trek",
+   "region": "central-asia",
+   "country": "Tajikistan",
+   "mountainIds": [],
+   "durationDays": [
+    7,
+    10
+   ],
+   "maxAltitudeM": 4600
+  },
+  {
+   "id": "fann-mountains-trek",
+   "name": "Fann Mountains Trek",
+   "region": "central-asia",
+   "country": "Tajikistan",
+   "mountainIds": [],
+   "durationDays": [
+    4,
+    4
+   ],
+   "maxAltitudeM": 3780
+  },
+  {
+   "id": "heights-of-alay-trek",
+   "name": "Heights of Alay Trek",
+   "region": "central-asia",
+   "country": "Kyrgyzstan",
+   "mountainIds": [],
+   "durationDays": [
+    7,
+    9
+   ],
+   "maxAltitudeM": 4200
+  },
+  {
+   "id": "jyrgalan-boz-uchuk-lakes-trek",
+   "name": "Jyrgalan Boz Uchuk Lakes Trek",
+   "region": "central-asia",
+   "country": "Kyrgyzstan",
+   "mountainIds": [],
+   "durationDays": [
+    3,
+    4
+   ],
+   "maxAltitudeM": 3400
+  },
+  {
+   "id": "keskenkija-loop",
+   "name": "Keskenkija Loop",
+   "region": "central-asia",
+   "country": "Kyrgyzstan",
+   "mountainIds": [],
+   "durationDays": [
+    3,
+    3
+   ],
+   "maxAltitudeM": 3300
+  },
+  {
+   "id": "kol-suu-lake-trek",
+   "name": "Kol Suu Lake Trek",
+   "region": "central-asia",
+   "country": "Kyrgyzstan",
+   "mountainIds": [],
+   "durationDays": [
+    3,
+    4
+   ],
+   "maxAltitudeM": 3500
+  },
+  {
+   "id": "pamir-trek",
+   "name": "Pamir Trek",
+   "region": "central-asia",
+   "country": "Tajikistan",
+   "mountainIds": [],
+   "durationDays": null,
+   "maxAltitudeM": 5010
+  },
+  {
+   "id": "peak-lenin-base-camp-trek",
+   "name": "Peak Lenin Base Camp Trek",
+   "region": "central-asia",
+   "country": "Kyrgyzstan",
+   "mountainIds": [
+    "lenin-peak"
+   ],
+   "durationDays": [
+    4,
+    6
+   ],
+   "maxAltitudeM": 4400
+  },
+  {
+   "id": "seven-lakes-trek",
+   "name": "Seven Lakes Trek",
+   "region": "central-asia",
+   "country": "Tajikistan",
+   "mountainIds": [],
+   "durationDays": [
+    1,
+    2
+   ],
+   "maxAltitudeM": 2400
+  },
+  {
+   "id": "song-kul-trek",
+   "name": "Song-Kul Trek",
+   "region": "central-asia",
+   "country": "Kyrgyzstan",
+   "mountainIds": [],
+   "durationDays": [
+    2,
+    4
+   ],
+   "maxAltitudeM": null
+  },
+  {
+   "id": "tien-shan-trek",
+   "name": "Tien Shan Trek",
+   "region": "central-asia",
+   "country": "Kyrgyzstan",
+   "mountainIds": [
+    "khan-tengri"
+   ],
+   "durationDays": [
+    10,
+    10
+   ],
+   "maxAltitudeM": 4000
+  },
+  {
+   "id": "huayhuash-circuit-trek",
+   "name": "Huayhuash Circuit Trek",
+   "region": "cordillera",
+   "country": "Peru",
+   "mountainIds": [],
+   "durationDays": [
+    8,
+    12
+   ],
+   "maxAltitudeM": 5000
+  },
+  {
+   "id": "santa-cruz-trek",
+   "name": "Santa Cruz Trek",
+   "region": "cordillera",
+   "country": "Peru",
+   "mountainIds": [],
+   "durationDays": [
+    3,
+    4
+   ],
+   "maxAltitudeM": 4750
+  },
+  {
+   "id": "alpamayo-circuit-trek",
+   "name": "Alpamayo Circuit Trek",
+   "region": "cordillera",
+   "country": "Peru",
+   "mountainIds": [
+    "alpamayo"
+   ],
+   "durationDays": [
+    10,
+    12
+   ],
+   "maxAltitudeM": 4850
+  },
+  {
+   "id": "cedros-alpamayo-traverse",
+   "name": "Cedros\u2013Alpamayo Traverse",
+   "region": "cordillera",
+   "country": "Peru",
+   "mountainIds": [
+    "alpamayo"
+   ],
+   "durationDays": [
+    8,
+    10
+   ],
+   "maxAltitudeM": 4860
+  },
+  {
+   "id": "colca-canyon-trek",
+   "name": "Colca Canyon Trek",
+   "region": "cordillera",
+   "country": "Peru",
+   "mountainIds": [],
+   "durationDays": [
+    2,
+    3
+   ],
+   "maxAltitudeM": 3287
+  },
+  {
+   "id": "cotahuasi-canyon-trek",
+   "name": "Cotahuasi Canyon Trek",
+   "region": "cordillera",
+   "country": "Peru",
+   "mountainIds": [],
+   "durationDays": [
+    3,
+    5
+   ],
+   "maxAltitudeM": null
+  },
+  {
+   "id": "inca-trail-to-machu-picchu",
+   "name": "Inca Trail to Machu Picchu",
+   "region": "cusco",
+   "country": "Peru",
+   "mountainIds": [],
+   "durationDays": [
+    4,
+    4
+   ],
+   "maxAltitudeM": 4215
+  },
+  {
+   "id": "short-inca-trail",
+   "name": "Short Inca Trail",
+   "region": "cusco",
+   "country": "Peru",
+   "mountainIds": [],
+   "durationDays": [
+    2,
+    2
+   ],
+   "maxAltitudeM": 2720
+  },
+  {
+   "id": "salkantay-trek",
+   "name": "Salkantay Trek",
+   "region": "cusco",
+   "country": "Peru",
+   "mountainIds": [],
+   "durationDays": [
+    4,
+    5
+   ],
+   "maxAltitudeM": 4630
+  },
+  {
+   "id": "salkantay-inca-trail-trek",
+   "name": "Salkantay\u2013Inca Trail Trek",
+   "region": "cusco",
+   "country": "Peru",
+   "mountainIds": [],
+   "durationDays": [
+    7,
+    7
+   ],
+   "maxAltitudeM": 5100
+  },
+  {
+   "id": "lares-trek",
+   "name": "Lares Trek",
+   "region": "cusco",
+   "country": "Peru",
+   "mountainIds": [],
+   "durationDays": [
+    3,
+    4
+   ],
+   "maxAltitudeM": 4450
+  },
+  {
+   "id": "choquequirao-trek",
+   "name": "Choquequirao Trek",
+   "region": "cusco",
+   "country": "Peru",
+   "mountainIds": [],
+   "durationDays": [
+    4,
+    5
+   ],
+   "maxAltitudeM": 3050
+  },
+  {
+   "id": "choquequirao-machu-picchu-trek",
+   "name": "Choquequirao\u2013Machu Picchu Trek",
+   "region": "cusco",
+   "country": "Peru",
+   "mountainIds": [],
+   "durationDays": [
+    8,
+    9
+   ],
+   "maxAltitudeM": 4668
+  },
+  {
+   "id": "ausangate-trek",
+   "name": "Ausangate Trek",
+   "region": "cusco",
+   "country": "Peru",
+   "mountainIds": [],
+   "durationDays": [
+    4,
+    6
+   ],
+   "maxAltitudeM": 5165
+  },
+  {
+   "id": "ausangate-rainbow-mountain-trek",
+   "name": "Ausangate & Rainbow Mountain Trek",
+   "region": "cusco",
+   "country": "Peru",
+   "mountainIds": [],
+   "durationDays": [
+    6,
+    7
+   ],
+   "maxAltitudeM": 5165
+  },
+  {
+   "id": "huchuy-qosqo-trek",
+   "name": "Huchuy Qosqo Trek",
+   "region": "cusco",
+   "country": "Peru",
+   "mountainIds": [],
+   "durationDays": [
+    2,
+    3
+   ],
+   "maxAltitudeM": 4200
+  },
+  {
+   "id": "ancascocha-trek",
+   "name": "Ancascocha Trek",
+   "region": "cusco",
+   "country": "Peru",
+   "mountainIds": [],
+   "durationDays": [
+    4,
+    5
+   ],
+   "maxAltitudeM": 4650
+  },
+  {
+   "id": "vilcabamba-to-machu-picchu",
+   "name": "Vilcabamba to Machu Picchu",
+   "region": "cusco",
+   "country": "Peru",
+   "mountainIds": [],
+   "durationDays": [
+    5,
+    7
+   ],
+   "maxAltitudeM": 4600
+  },
+  {
+   "id": "dolomites-alta-via-1",
+   "name": "Dolomites Alta Via 1",
+   "region": "dolomites",
+   "country": "Italy",
+   "mountainIds": [],
+   "durationDays": [
+    7,
+    12
+   ],
+   "maxAltitudeM": 2752
+  },
+  {
+   "id": "dolomites-alta-via-2",
+   "name": "Dolomites Alta Via 2",
+   "region": "dolomites",
+   "country": "Italy",
+   "mountainIds": [],
+   "durationDays": [
+    12,
+    15
+   ],
+   "maxAltitudeM": 2885
+  },
+  {
+   "id": "dolomites-alta-via-3",
+   "name": "Dolomites Alta Via 3",
+   "region": "dolomites",
+   "country": "Italy",
+   "mountainIds": [],
+   "durationDays": [
+    8,
+    10
+   ],
+   "maxAltitudeM": 2378
+  },
+  {
+   "id": "dolomites-alta-via-4",
+   "name": "Dolomites Alta Via 4",
+   "region": "dolomites",
+   "country": "Italy",
+   "mountainIds": [],
+   "durationDays": [
+    6,
+    6
+   ],
+   "maxAltitudeM": 2624
+  },
+  {
+   "id": "dolomites-alta-via-5",
+   "name": "Dolomites Alta Via 5",
+   "region": "dolomites",
+   "country": "Italy",
+   "mountainIds": [],
+   "durationDays": [
+    6,
+    7
+   ],
+   "maxAltitudeM": 2644
+  },
+  {
+   "id": "dolomites-alta-via-6",
+   "name": "Dolomites Alta Via 6",
+   "region": "dolomites",
+   "country": "Italy",
+   "mountainIds": [],
+   "durationDays": [
+    10,
+    11
+   ],
+   "maxAltitudeM": 2450
+  },
+  {
+   "id": "cathedral-peak-circuit",
+   "name": "Cathedral Peak Circuit",
+   "region": "drakensberg",
+   "country": "South Africa",
+   "mountainIds": [],
+   "durationDays": [
+    2,
+    3
+   ],
+   "maxAltitudeM": null
+  },
+  {
+   "id": "drakensberg-amphitheatre-trek",
+   "name": "Drakensberg Amphitheatre Trek",
+   "region": "drakensberg",
+   "country": "South Africa",
+   "mountainIds": [],
+   "durationDays": [
+    1,
+    2
+   ],
+   "maxAltitudeM": 3000
+  },
+  {
+   "id": "drakensberg-grand-traverse",
+   "name": "Drakensberg Grand Traverse",
+   "region": "drakensberg",
+   "country": "South Africa / Lesotho",
+   "mountainIds": [],
+   "durationDays": [
+    10,
+    14
+   ],
+   "maxAltitudeM": 3482
+  },
+  {
+   "id": "giants-cup-trail",
+   "name": "Giant's Cup Trail",
+   "region": "drakensberg",
+   "country": "South Africa",
+   "mountainIds": [],
+   "durationDays": [
+    5,
+    5
+   ],
+   "maxAltitudeM": null
+  },
+  {
+   "id": "injisuthi-to-cathedral-peak-traverse",
+   "name": "Injisuthi to Cathedral Peak Traverse",
+   "region": "drakensberg",
+   "country": "South Africa / Lesotho",
+   "mountainIds": [],
+   "durationDays": [
+    5,
+    6
+   ],
+   "maxAltitudeM": null
+  },
+  {
+   "id": "mnweni-circuit",
+   "name": "Mnweni Circuit",
+   "region": "drakensberg",
+   "country": "South Africa / Lesotho",
+   "mountainIds": [],
+   "durationDays": [
+    3,
+    4
+   ],
+   "maxAltitudeM": null
+  },
+  {
+   "id": "rhino-peak-hike",
+   "name": "Rhino Peak Hike",
+   "region": "drakensberg",
+   "country": "South Africa",
+   "mountainIds": [],
+   "durationDays": [
+    1,
+    2
+   ],
+   "maxAltitudeM": 3051
+  },
+  {
+   "id": "sani-pass-to-thabana-ntlenyana",
+   "name": "Sani Pass to Thabana Ntlenyana",
+   "region": "drakensberg",
+   "country": "South Africa / Lesotho",
+   "mountainIds": [],
+   "durationDays": [
+    2,
+    3
+   ],
+   "maxAltitudeM": 3482
+  },
+  {
+   "id": "kilimanjaro-machame-route",
+   "name": "Kilimanjaro Machame Route",
+   "region": "east-africa",
+   "country": "Tanzania",
+   "mountainIds": [
+    "kilimanjaro"
+   ],
+   "durationDays": [
+    6,
+    7
+   ],
+   "maxAltitudeM": 5895
+  },
+  {
+   "id": "kilimanjaro-lemosho-route",
+   "name": "Kilimanjaro Lemosho Route",
+   "region": "east-africa",
+   "country": "Tanzania",
+   "mountainIds": [
+    "kilimanjaro"
+   ],
+   "durationDays": [
+    7,
+    8
+   ],
+   "maxAltitudeM": 5895
+  },
+  {
+   "id": "kilimanjaro-rongai-route",
+   "name": "Kilimanjaro Rongai Route",
+   "region": "east-africa",
+   "country": "Tanzania",
+   "mountainIds": [
+    "kilimanjaro"
+   ],
+   "durationDays": [
+    6,
+    7
+   ],
+   "maxAltitudeM": 5895
+  },
+  {
+   "id": "kilimanjaro-northern-circuit",
+   "name": "Kilimanjaro Northern Circuit",
+   "region": "east-africa",
+   "country": "Tanzania",
+   "mountainIds": [
+    "kilimanjaro"
+   ],
+   "durationDays": [
+    8,
+    9
+   ],
+   "maxAltitudeM": 5895
+  },
+  {
+   "id": "kilimanjaro-marangu-route",
+   "name": "Kilimanjaro Marangu Route",
+   "region": "east-africa",
+   "country": "Tanzania",
+   "mountainIds": [
+    "kilimanjaro"
+   ],
+   "durationDays": [
+    5,
+    6
+   ],
+   "maxAltitudeM": 5895
+  },
+  {
+   "id": "mount-meru-trek",
+   "name": "Mount Meru Trek",
+   "region": "east-africa",
+   "country": "Tanzania",
+   "mountainIds": [],
+   "durationDays": [
+    3,
+    4
+   ],
+   "maxAltitudeM": 4562
+  },
+  {
+   "id": "mount-kenya-sirimon-route",
+   "name": "Mount Kenya Sirimon Route",
+   "region": "east-africa",
+   "country": "Kenya",
+   "mountainIds": [
+    "mount-kenya"
+   ],
+   "durationDays": [
+    4,
+    5
+   ],
+   "maxAltitudeM": 4985
+  },
+  {
+   "id": "mount-kenya-chogoria-route",
+   "name": "Mount Kenya Chogoria Route",
+   "region": "east-africa",
+   "country": "Kenya",
+   "mountainIds": [
+    "mount-kenya"
+   ],
+   "durationDays": [
+    4,
+    6
+   ],
+   "maxAltitudeM": 4985
+  },
+  {
+   "id": "mount-kenya-naro-moru-route",
+   "name": "Mount Kenya Naro Moru Route",
+   "region": "east-africa",
+   "country": "Kenya",
+   "mountainIds": [
+    "mount-kenya"
+   ],
+   "durationDays": [
+    3,
+    4
+   ],
+   "maxAltitudeM": 4985
+  },
+  {
+   "id": "rwenzori-central-circuit",
+   "name": "Rwenzori Central Circuit",
+   "region": "east-africa",
+   "country": "Uganda",
+   "mountainIds": [
+    "stanley",
+    "speke"
+   ],
+   "durationDays": [
+    7,
+    9
+   ],
+   "maxAltitudeM": 4372
+  },
+  {
+   "id": "rwenzori-kilembe-trail",
+   "name": "Rwenzori Kilembe Trail",
+   "region": "east-africa",
+   "country": "Uganda",
+   "mountainIds": [
+    "stanley"
+   ],
+   "durationDays": [
+    7,
+    8
+   ],
+   "maxAltitudeM": 4450
+  },
+  {
+   "id": "simien-mountains-trek",
+   "name": "Simien Mountains Trek",
+   "region": "east-africa",
+   "country": "Ethiopia",
+   "mountainIds": [],
+   "durationDays": [
+    4,
+    10
+   ],
+   "maxAltitudeM": 4550
+  },
+  {
+   "id": "bale-mountains-trek",
+   "name": "Bale Mountains Trek",
+   "region": "east-africa",
+   "country": "Ethiopia",
+   "mountainIds": [],
+   "durationDays": [
+    6,
+    9
+   ],
+   "maxAltitudeM": 4377
+  },
+  {
+   "id": "camino-franc-s",
+   "name": "Camino Franc\u00e9s",
+   "region": "iberia",
+   "country": "France / Spain",
+   "mountainIds": [],
+   "durationDays": [
+    30,
+    35
+   ],
+   "maxAltitudeM": 1505
+  },
+  {
+   "id": "camino-portugu-s",
+   "name": "Camino Portugu\u00e9s",
+   "region": "iberia",
+   "country": "Portugal / Spain",
+   "mountainIds": [],
+   "durationDays": [
+    12,
+    14
+   ],
+   "maxAltitudeM": 405
+  },
+  {
+   "id": "camino-portugu-s-coastal",
+   "name": "Camino Portugu\u00e9s Coastal",
+   "region": "iberia",
+   "country": "Portugal / Spain",
+   "mountainIds": [],
+   "durationDays": [
+    12,
+    15
+   ],
+   "maxAltitudeM": null
+  },
+  {
+   "id": "camino-del-norte",
+   "name": "Camino del Norte",
+   "region": "iberia",
+   "country": "Spain",
+   "mountainIds": [],
+   "durationDays": [
+    32,
+    40
+   ],
+   "maxAltitudeM": 708
+  },
+  {
+   "id": "camino-primitivo",
+   "name": "Camino Primitivo",
+   "region": "iberia",
+   "country": "Spain",
+   "mountainIds": [],
+   "durationDays": [
+    14,
+    16
+   ],
+   "maxAltitudeM": 1200
+  },
+  {
+   "id": "camino-ingl-s",
+   "name": "Camino Ingl\u00e9s",
+   "region": "iberia",
+   "country": "Spain",
+   "mountainIds": [],
+   "durationDays": [
+    5,
+    6
+   ],
+   "maxAltitudeM": 454
+  },
+  {
+   "id": "via-de-la-plata",
+   "name": "Via de la Plata",
+   "region": "iberia",
+   "country": "Spain",
+   "mountainIds": [],
+   "durationDays": [
+    42,
+    56
+   ],
+   "maxAltitudeM": 1360
+  },
+  {
+   "id": "camino-finisterre",
+   "name": "Camino Finisterre",
+   "region": "iberia",
+   "country": "Spain",
+   "mountainIds": [],
+   "durationDays": [
+    4,
+    6
+   ],
+   "maxAltitudeM": 556
+  },
+  {
+   "id": "gr20-corsica-trek",
+   "name": "GR20 Corsica Trek",
+   "region": "iberia",
+   "country": "France",
+   "mountainIds": [],
+   "durationDays": [
+    15,
+    16
+   ],
+   "maxAltitudeM": 2607
+  },
+  {
+   "id": "gr10-pyrenees",
+   "name": "GR10 Pyrenees",
+   "region": "iberia",
+   "country": "France",
+   "mountainIds": [],
+   "durationDays": [
+    50,
+    60
+   ],
+   "maxAltitudeM": 2734
+  },
+  {
+   "id": "gr11-pyrenees",
+   "name": "GR11 Pyrenees",
+   "region": "iberia",
+   "country": "Spain",
+   "mountainIds": [],
+   "durationDays": [
+    42,
+    50
+   ],
+   "maxAltitudeM": 2800
+  },
+  {
+   "id": "amalfi-coast-path-of-the-gods",
+   "name": "Amalfi Coast / Path of the Gods",
+   "region": "iberia",
+   "country": "Italy",
+   "mountainIds": [],
+   "durationDays": [
+    1,
+    1
+   ],
+   "maxAltitudeM": 650
+  },
+  {
+   "id": "via-francigena",
+   "name": "Via Francigena",
+   "region": "iberia",
+   "country": "United Kingdom / France / Switzerland / Italy",
+   "mountainIds": [],
+   "durationDays": [
+    90,
+    100
+   ],
+   "maxAltitudeM": 2473
+  },
+  {
+   "id": "mallorca-gr221",
+   "name": "Mallorca GR221",
+   "region": "iberia",
+   "country": "Spain",
+   "mountainIds": [],
+   "durationDays": [
+    8,
+    10
+   ],
+   "maxAltitudeM": 1205
+  },
+  {
+   "id": "la-gomera-gr132",
+   "name": "La Gomera GR132",
+   "region": "iberia",
+   "country": "Spain",
+   "mountainIds": [],
+   "durationDays": [
+    6,
+    8
+   ],
+   "maxAltitudeM": 879
+  },
+  {
+   "id": "laugavegur-trail",
+   "name": "Laugavegur Trail",
+   "region": "iceland",
+   "country": "Iceland",
+   "mountainIds": [],
+   "durationDays": [
+    3,
+    4
+   ],
+   "maxAltitudeM": 1050
+  },
+  {
+   "id": "fimmv-r-uh-ls-trek",
+   "name": "Fimmv\u00f6r\u00f0uh\u00e1ls Trek",
+   "region": "iceland",
+   "country": "Iceland",
+   "mountainIds": [],
+   "durationDays": [
+    1,
+    2
+   ],
+   "maxAltitudeM": 1045
+  },
+  {
+   "id": "laugavegur-fimmv-r-uh-ls-trek",
+   "name": "Laugavegur & Fimmv\u00f6r\u00f0uh\u00e1ls Trek",
+   "region": "iceland",
+   "country": "Iceland",
+   "mountainIds": [],
+   "durationDays": [
+    5,
+    6
+   ],
+   "maxAltitudeM": 1050
+  },
+  {
+   "id": "hornstrandir-trek",
+   "name": "Hornstrandir Trek",
+   "region": "iceland",
+   "country": "Iceland",
+   "mountainIds": [],
+   "durationDays": [
+    3,
+    7
+   ],
+   "maxAltitudeM": null
+  },
+  {
+   "id": "kjalvegur-trail",
+   "name": "Kjalvegur Trail",
+   "region": "iceland",
+   "country": "Iceland",
+   "mountainIds": [],
+   "durationDays": [
+    2,
+    3
+   ],
+   "maxAltitudeM": 778
+  },
+  {
+   "id": "daisetsuzan-grand-traverse",
+   "name": "Daisetsuzan Grand Traverse",
+   "region": "japan",
+   "country": "Japan",
+   "mountainIds": [],
+   "durationDays": [
+    5,
+    7
+   ],
+   "maxAltitudeM": 2291
+  },
+  {
+   "id": "hakuba-three-peaks-traverse",
+   "name": "Hakuba Three Peaks Traverse",
+   "region": "japan",
+   "country": "Japan",
+   "mountainIds": [],
+   "durationDays": [
+    2,
+    3
+   ],
+   "maxAltitudeM": 2932
+  },
+  {
+   "id": "kumano-kodo",
+   "name": "Kumano Kodo",
+   "region": "japan",
+   "country": "Japan",
+   "mountainIds": [],
+   "durationDays": [
+    4,
+    6
+   ],
+   "maxAltitudeM": null
+  },
+  {
+   "id": "kumano-kodo-kohechi",
+   "name": "Kumano Kodo Kohechi",
+   "region": "japan",
+   "country": "Japan",
+   "mountainIds": [],
+   "durationDays": [
+    4,
+    4
+   ],
+   "maxAltitudeM": 1220
+  },
+  {
+   "id": "michinoku-coastal-trail",
+   "name": "Michinoku Coastal Trail",
+   "region": "japan",
+   "country": "Japan",
+   "mountainIds": [],
+   "durationDays": [
+    45,
+    60
+   ],
+   "maxAltitudeM": null
+  },
+  {
+   "id": "mount-fuji-climbing-routes",
+   "name": "Mount Fuji Climbing Routes",
+   "region": "japan",
+   "country": "Japan",
+   "mountainIds": [
+    "fuji"
+   ],
+   "durationDays": [
+    1,
+    2
+   ],
+   "maxAltitudeM": 3776
+  },
+  {
+   "id": "mount-ontake-pilgrim-route",
+   "name": "Mount Ontake Pilgrim Route",
+   "region": "japan",
+   "country": "Japan",
+   "mountainIds": [],
+   "durationDays": [
+    2,
+    2
+   ],
+   "maxAltitudeM": 3067
+  },
+  {
+   "id": "nakasendo-trail",
+   "name": "Nakasendo Trail",
+   "region": "japan",
+   "country": "Japan",
+   "mountainIds": [],
+   "durationDays": null,
+   "maxAltitudeM": 1531
+  },
+  {
+   "id": "northern-alps-trekking-circuit",
+   "name": "Northern Alps Trekking Circuit",
+   "region": "japan",
+   "country": "Japan",
+   "mountainIds": [],
+   "durationDays": null,
+   "maxAltitudeM": 3190
+  },
+  {
+   "id": "shikoku-pilgrimage",
+   "name": "Shikoku Pilgrimage",
+   "region": "japan",
+   "country": "Japan",
+   "mountainIds": [],
+   "durationDays": [
+    30,
+    60
+   ],
+   "maxAltitudeM": 912
+  },
+  {
+   "id": "tateyama-kurobe-alpine-trek",
+   "name": "Tateyama\u2013Kurobe Alpine Trek",
+   "region": "japan",
+   "country": "Japan",
+   "mountainIds": [],
+   "durationDays": null,
+   "maxAltitudeM": 3015
+  },
+  {
+   "id": "yakushima-miyanoura-dake",
+   "name": "Yakushima Miyanoura-dake",
+   "region": "japan",
+   "country": "Japan",
+   "mountainIds": [],
+   "durationDays": [
+    2,
+    2
+   ],
+   "maxAltitudeM": 1936
+  },
+  {
+   "id": "everest-base-camp-trek",
+   "name": "Everest Base Camp Trek",
+   "region": "khumbu",
+   "country": "Nepal",
+   "mountainIds": [
+    "everest"
+   ],
+   "durationDays": [
+    12,
+    14
+   ],
+   "maxAltitudeM": 5545
+  },
+  {
+   "id": "everest-base-camp-via-gokyo-lakes",
+   "name": "Everest Base Camp via Gokyo Lakes",
+   "region": "khumbu",
+   "country": "Nepal",
+   "mountainIds": [
+    "everest"
+   ],
+   "durationDays": [
+    16,
+    18
+   ],
+   "maxAltitudeM": 5545
+  },
+  {
+   "id": "everest-three-passes-trek",
+   "name": "Everest Three Passes Trek",
+   "region": "khumbu",
+   "country": "Nepal",
+   "mountainIds": [
+    "everest",
+    "lobuche-east"
+   ],
+   "durationDays": [
+    18,
+    21
+   ],
+   "maxAltitudeM": 5545
+  },
+  {
+   "id": "gokyo-lakes-trek",
+   "name": "Gokyo Lakes Trek",
+   "region": "khumbu",
+   "country": "Nepal",
+   "mountainIds": [],
+   "durationDays": [
+    12,
+    14
+   ],
+   "maxAltitudeM": 5357
+  },
+  {
+   "id": "gokyo-renjo-la-trek",
+   "name": "Gokyo\u2013Renjo La Trek",
+   "region": "khumbu",
+   "country": "Nepal",
+   "mountainIds": [],
+   "durationDays": [
+    13,
+    15
+   ],
+   "maxAltitudeM": 5360
+  },
+  {
+   "id": "cho-la-pass-trek",
+   "name": "Cho La Pass Trek",
+   "region": "khumbu",
+   "country": "Nepal",
+   "mountainIds": [
+    "everest"
+   ],
+   "durationDays": [
+    15,
+    18
+   ],
+   "maxAltitudeM": 5545
+  },
+  {
+   "id": "everest-view-trek",
+   "name": "Everest View Trek",
+   "region": "khumbu",
+   "country": "Nepal",
+   "mountainIds": [],
+   "durationDays": [
+    5,
+    7
+   ],
+   "maxAltitudeM": 3880
+  },
+  {
+   "id": "ama-dablam-base-camp-trek",
+   "name": "Ama Dablam Base Camp Trek",
+   "region": "khumbu",
+   "country": "Nepal",
+   "mountainIds": [
+    "ama-dablam"
+   ],
+   "durationDays": [
+    8,
+    11
+   ],
+   "maxAltitudeM": 4570
+  },
+  {
+   "id": "everest-high-passes-island-peak-trek",
+   "name": "Everest High Passes & Island Peak Trek",
+   "region": "khumbu",
+   "country": "Nepal",
+   "mountainIds": [
+    "everest",
+    "island-peak",
+    "lobuche-east"
+   ],
+   "durationDays": [
+    21,
+    23
+   ],
+   "maxAltitudeM": 6189
+  },
+  {
+   "id": "jiri-to-everest-base-camp-trek",
+   "name": "Jiri to Everest Base Camp Trek",
+   "region": "khumbu",
+   "country": "Nepal",
+   "mountainIds": [
+    "everest"
+   ],
+   "durationDays": [
+    18,
+    24
+   ],
+   "maxAltitudeM": 5545
+  },
+  {
+   "id": "langtang-valley-trek",
+   "name": "Langtang Valley Trek",
+   "region": "langtang",
+   "country": "Nepal",
+   "mountainIds": [],
+   "durationDays": [
+    7,
+    9
+   ],
+   "maxAltitudeM": 4773
+  },
+  {
+   "id": "langtang-gosaikunda-trek",
+   "name": "Langtang\u2013Gosaikunda Trek",
+   "region": "langtang",
+   "country": "Nepal",
+   "mountainIds": [],
+   "durationDays": [
+    12,
+    15
+   ],
+   "maxAltitudeM": 4610
+  },
+  {
+   "id": "gosaikunda-trek",
+   "name": "Gosaikunda Trek",
+   "region": "langtang",
+   "country": "Nepal",
+   "mountainIds": [],
+   "durationDays": [
+    5,
+    7
+   ],
+   "maxAltitudeM": 4380
+  },
+  {
+   "id": "helambu-trek",
+   "name": "Helambu Trek",
+   "region": "langtang",
+   "country": "Nepal",
+   "mountainIds": [],
+   "durationDays": [
+    5,
+    7
+   ],
+   "maxAltitudeM": 3650
+  },
+  {
+   "id": "tamang-heritage-trail",
+   "name": "Tamang Heritage Trail",
+   "region": "langtang",
+   "country": "Nepal",
+   "mountainIds": [],
+   "durationDays": [
+    6,
+    8
+   ],
+   "maxAltitudeM": 3165
+  },
+  {
+   "id": "manaslu-circuit-trek",
+   "name": "Manaslu Circuit Trek",
+   "region": "nepal-remote",
+   "country": "Nepal",
+   "mountainIds": [
+    "manaslu"
+   ],
+   "durationDays": [
+    13,
+    16
+   ],
+   "maxAltitudeM": 5106
+  },
+  {
+   "id": "tsum-valley-trek",
+   "name": "Tsum Valley Trek",
+   "region": "nepal-remote",
+   "country": "Nepal",
+   "mountainIds": [],
+   "durationDays": [
+    11,
+    18
+   ],
+   "maxAltitudeM": 3700
+  },
+  {
+   "id": "upper-mustang-trek",
+   "name": "Upper Mustang Trek",
+   "region": "nepal-remote",
+   "country": "Nepal",
+   "mountainIds": [],
+   "durationDays": [
+    10,
+    16
+   ],
+   "maxAltitudeM": 4230
+  },
+  {
+   "id": "upper-dolpo-trek",
+   "name": "Upper Dolpo Trek",
+   "region": "nepal-remote",
+   "country": "Nepal",
+   "mountainIds": [],
+   "durationDays": [
+    21,
+    27
+   ],
+   "maxAltitudeM": null
+  },
+  {
+   "id": "lower-dolpo-trek",
+   "name": "Lower Dolpo Trek",
+   "region": "nepal-remote",
+   "country": "Nepal",
+   "mountainIds": [],
+   "durationDays": [
+    15,
+    20
+   ],
+   "maxAltitudeM": 5190
+  },
+  {
+   "id": "kanchenjunga-base-camp-trek",
+   "name": "Kanchenjunga Base Camp Trek",
+   "region": "nepal-remote",
+   "country": "Nepal",
+   "mountainIds": [
+    "kangchenjunga"
+   ],
+   "durationDays": [
+    20,
+    24
+   ],
+   "maxAltitudeM": 5143
+  },
+  {
+   "id": "makalu-base-camp-trek",
+   "name": "Makalu Base Camp Trek",
+   "region": "nepal-remote",
+   "country": "Nepal",
+   "mountainIds": [
+    "makalu"
+   ],
+   "durationDays": [
+    18,
+    22
+   ],
+   "maxAltitudeM": 4870
+  },
+  {
+   "id": "dhaulagiri-circuit-trek",
+   "name": "Dhaulagiri Circuit Trek",
+   "region": "nepal-remote",
+   "country": "Nepal",
+   "mountainIds": [
+    "dhaulagiri"
+   ],
+   "durationDays": [
+    17,
+    21
+   ],
+   "maxAltitudeM": 5360
+  },
+  {
+   "id": "nar-phu-annapurna-circuit",
+   "name": "Nar Phu + Annapurna Circuit",
+   "region": "nepal-remote",
+   "country": "Nepal",
+   "mountainIds": [
+    "annapurna"
+   ],
+   "durationDays": [
+    17,
+    21
+   ],
+   "maxAltitudeM": 5416
+  },
+  {
+   "id": "ruby-valley-trek",
+   "name": "Ruby Valley Trek",
+   "region": "nepal-remote",
+   "country": "Nepal",
+   "mountainIds": [],
+   "durationDays": [
+    7,
+    12
+   ],
+   "maxAltitudeM": 3842
+  },
+  {
+   "id": "rara-lake-trek",
+   "name": "Rara Lake Trek",
+   "region": "nepal-remote",
+   "country": "Nepal",
+   "mountainIds": [],
+   "durationDays": [
+    10,
+    15
+   ],
+   "maxAltitudeM": 3691
+  },
+  {
+   "id": "abel-tasman-coast-track",
+   "name": "Abel Tasman Coast Track",
+   "region": "new-zealand",
+   "country": "New Zealand",
+   "mountainIds": [],
+   "durationDays": [
+    3,
+    5
+   ],
+   "maxAltitudeM": 200
+  },
+  {
+   "id": "copland-track",
+   "name": "Copland Track",
+   "region": "new-zealand",
+   "country": "New Zealand",
+   "mountainIds": [
+    "aoraki"
+   ],
+   "durationDays": [
+    2,
+    3
+   ],
+   "maxAltitudeM": null
+  },
+  {
+   "id": "gillespie-pass-circuit",
+   "name": "Gillespie Pass Circuit",
+   "region": "new-zealand",
+   "country": "New Zealand",
+   "mountainIds": [],
+   "durationDays": [
+    3,
+    3
+   ],
+   "maxAltitudeM": 1500
+  },
+  {
+   "id": "heaphy-track",
+   "name": "Heaphy Track",
+   "region": "new-zealand",
+   "country": "New Zealand",
+   "mountainIds": [],
+   "durationDays": [
+    4,
+    6
+   ],
+   "maxAltitudeM": 915
+  },
+  {
+   "id": "hump-ridge-track",
+   "name": "Hump Ridge Track",
+   "region": "new-zealand",
+   "country": "New Zealand",
+   "mountainIds": [],
+   "durationDays": [
+    3,
+    3
+   ],
+   "maxAltitudeM": null
+  },
+  {
+   "id": "kepler-track",
+   "name": "Kepler Track",
+   "region": "new-zealand",
+   "country": "New Zealand",
+   "mountainIds": [],
+   "durationDays": [
+    3,
+    4
+   ],
+   "maxAltitudeM": 1472
+  },
+  {
+   "id": "milford-track",
+   "name": "Milford Track",
+   "region": "new-zealand",
+   "country": "New Zealand",
+   "mountainIds": [],
+   "durationDays": [
+    4,
+    4
+   ],
+   "maxAltitudeM": 1154
+  },
+  {
+   "id": "mueller-hut-route",
+   "name": "Mueller Hut Route",
+   "region": "new-zealand",
+   "country": "New Zealand",
+   "mountainIds": [
+    "aoraki"
+   ],
+   "durationDays": [
+    1,
+    2
+   ],
+   "maxAltitudeM": 1800
+  },
+  {
+   "id": "paparoa-track",
+   "name": "Paparoa Track",
+   "region": "new-zealand",
+   "country": "New Zealand",
+   "mountainIds": [],
+   "durationDays": [
+    3,
+    3
+   ],
+   "maxAltitudeM": null
+  },
+  {
+   "id": "rakiura-track",
+   "name": "Rakiura Track",
+   "region": "new-zealand",
+   "country": "New Zealand",
+   "mountainIds": [],
+   "durationDays": [
+    3,
+    3
+   ],
+   "maxAltitudeM": null
+  },
+  {
+   "id": "rees-dart-track",
+   "name": "Rees-Dart Track",
+   "region": "new-zealand",
+   "country": "New Zealand",
+   "mountainIds": [],
+   "durationDays": [
+    4,
+    5
+   ],
+   "maxAltitudeM": 1447
+  },
+  {
+   "id": "routeburn-track",
+   "name": "Routeburn Track",
+   "region": "new-zealand",
+   "country": "New Zealand",
+   "mountainIds": [],
+   "durationDays": [
+    2,
+    4
+   ],
+   "maxAltitudeM": 1255
+  },
+  {
+   "id": "stewart-island-north-west-circuit",
+   "name": "Stewart Island North-West Circuit",
+   "region": "new-zealand",
+   "country": "New Zealand",
+   "mountainIds": [],
+   "durationDays": [
+    8,
+    10
+   ],
+   "maxAltitudeM": null
+  },
+  {
+   "id": "te-araroa",
+   "name": "Te Araroa",
+   "region": "new-zealand",
+   "country": "New Zealand",
+   "mountainIds": [],
+   "durationDays": [
+    120,
+    180
+   ],
+   "maxAltitudeM": 1925
+  },
+  {
+   "id": "tongariro-alpine-crossing",
+   "name": "Tongariro Alpine Crossing",
+   "region": "new-zealand",
+   "country": "New Zealand",
+   "mountainIds": [],
+   "durationDays": [
+    1,
+    1
+   ],
+   "maxAltitudeM": 1886
+  },
+  {
+   "id": "tongariro-northern-circuit",
+   "name": "Tongariro Northern Circuit",
+   "region": "new-zealand",
+   "country": "New Zealand",
+   "mountainIds": [],
+   "durationDays": [
+    3,
+    4
+   ],
+   "maxAltitudeM": 1886
+  },
+  {
+   "id": "travers-sabine-circuit",
+   "name": "Travers\u2013Sabine Circuit",
+   "region": "new-zealand",
+   "country": "New Zealand",
+   "mountainIds": [],
+   "durationDays": [
+    5,
+    6
+   ],
+   "maxAltitudeM": 1787
+  },
+  {
+   "id": "appalachian-trail",
+   "name": "Appalachian Trail",
+   "region": "north-america",
+   "country": "United States",
+   "mountainIds": [],
+   "durationDays": [
+    150,
+    210
+   ],
+   "maxAltitudeM": 2025
+  },
+  {
+   "id": "arizona-trail",
+   "name": "Arizona Trail",
+   "region": "north-america",
+   "country": "United States",
+   "mountainIds": [],
+   "durationDays": null,
+   "maxAltitudeM": null
+  },
+  {
+   "id": "berg-lake-trail",
+   "name": "Berg Lake Trail",
+   "region": "north-america",
+   "country": "Canada",
+   "mountainIds": [],
+   "durationDays": [
+    2,
+    3
+   ],
+   "maxAltitudeM": 1646
+  },
+  {
+   "id": "chilkoot-trail",
+   "name": "Chilkoot Trail",
+   "region": "north-america",
+   "country": "United States",
+   "mountainIds": [],
+   "durationDays": [
+    3,
+    5
+   ],
+   "maxAltitudeM": 1067
+  },
+  {
+   "id": "colorado-trail",
+   "name": "Colorado Trail",
+   "region": "north-america",
+   "country": "United States",
+   "mountainIds": [],
+   "durationDays": [
+    28,
+    42
+   ],
+   "maxAltitudeM": 4045
+  },
+  {
+   "id": "continental-divide-trail",
+   "name": "Continental Divide Trail",
+   "region": "north-america",
+   "country": "United States",
+   "mountainIds": [],
+   "durationDays": [
+    150,
+    200
+   ],
+   "maxAltitudeM": 4350
+  },
+  {
+   "id": "grand-canyon-rim-to-rim",
+   "name": "Grand Canyon Rim-to-Rim",
+   "region": "north-america",
+   "country": "United States",
+   "mountainIds": [],
+   "durationDays": [
+    1,
+    3
+   ],
+   "maxAltitudeM": 2512
+  },
+  {
+   "id": "high-sierra-trail",
+   "name": "High Sierra Trail",
+   "region": "north-america",
+   "country": "United States",
+   "mountainIds": [],
+   "durationDays": [
+    6,
+    10
+   ],
+   "maxAltitudeM": 4421
+  },
+  {
+   "id": "john-muir-trail",
+   "name": "John Muir Trail",
+   "region": "north-america",
+   "country": "United States",
+   "mountainIds": [],
+   "durationDays": [
+    18,
+    24
+   ],
+   "maxAltitudeM": 4421
+  },
+  {
+   "id": "juan-de-fuca-trail",
+   "name": "Juan de Fuca Trail",
+   "region": "north-america",
+   "country": "Canada",
+   "mountainIds": [],
+   "durationDays": [
+    4,
+    6
+   ],
+   "maxAltitudeM": null
+  },
+  {
+   "id": "mount-baker-chain-lakes-loop",
+   "name": "Mount Baker Chain Lakes Loop",
+   "region": "north-america",
+   "country": "United States",
+   "mountainIds": [
+    "baker"
+   ],
+   "durationDays": [
+    1,
+    2
+   ],
+   "maxAltitudeM": 1650
+  },
+  {
+   "id": "pacific-crest-trail",
+   "name": "Pacific Crest Trail",
+   "region": "north-america",
+   "country": "United States",
+   "mountainIds": [],
+   "durationDays": [
+    120,
+    180
+   ],
+   "maxAltitudeM": 4009
+  },
+  {
+   "id": "rae-lakes-loop",
+   "name": "Rae Lakes Loop",
+   "region": "north-america",
+   "country": "United States",
+   "mountainIds": [],
+   "durationDays": [
+    4,
+    5
+   ],
+   "maxAltitudeM": 3650
+  },
+  {
+   "id": "rockwall-trail",
+   "name": "Rockwall Trail",
+   "region": "north-america",
+   "country": "Canada",
+   "mountainIds": [],
+   "durationDays": null,
+   "maxAltitudeM": null
+  },
+  {
+   "id": "skyline-trail-jasper",
+   "name": "Skyline Trail Jasper",
+   "region": "north-america",
+   "country": "Canada",
+   "mountainIds": [],
+   "durationDays": [
+    2,
+    3
+   ],
+   "maxAltitudeM": 2511
+  },
+  {
+   "id": "teton-crest-trail",
+   "name": "Teton Crest Trail",
+   "region": "north-america",
+   "country": "United States",
+   "mountainIds": [],
+   "durationDays": [
+    4,
+    5
+   ],
+   "maxAltitudeM": 3290
+  },
+  {
+   "id": "the-long-trail",
+   "name": "The Long Trail",
+   "region": "north-america",
+   "country": "United States",
+   "mountainIds": [],
+   "durationDays": [
+    20,
+    30
+   ],
+   "maxAltitudeM": 1339
+  },
+  {
+   "id": "west-coast-trail",
+   "name": "West Coast Trail",
+   "region": "north-america",
+   "country": "Canada",
+   "mountainIds": [],
+   "durationDays": [
+    6,
+    8
+   ],
+   "maxAltitudeM": null
+  },
+  {
+   "id": "wonderland-trail",
+   "name": "Wonderland Trail",
+   "region": "north-america",
+   "country": "United States",
+   "mountainIds": [
+    "rainier"
+   ],
+   "durationDays": [
+    10,
+    14
+   ],
+   "maxAltitudeM": 2060
+  },
+  {
+   "id": "yosemite-high-country-trek",
+   "name": "Yosemite High Country Trek",
+   "region": "north-america",
+   "country": "United States",
+   "mountainIds": [],
+   "durationDays": null,
+   "maxAltitudeM": null
+  },
+  {
+   "id": "zion-traverse",
+   "name": "Zion Traverse",
+   "region": "north-america",
+   "country": "United States",
+   "mountainIds": [],
+   "durationDays": null,
+   "maxAltitudeM": null
+  },
+  {
+   "id": "torres-del-paine-w-trek",
+   "name": "Torres del Paine W Trek",
+   "region": "patagonia",
+   "country": "Chile",
+   "mountainIds": [],
+   "durationDays": [
+    4,
+    5
+   ],
+   "maxAltitudeM": 870
+  },
+  {
+   "id": "torres-del-paine-o-circuit",
+   "name": "Torres del Paine O Circuit",
+   "region": "patagonia",
+   "country": "Chile",
+   "mountainIds": [],
+   "durationDays": [
+    7,
+    9
+   ],
+   "maxAltitudeM": 1200
+  },
+  {
+   "id": "torres-del-paine-q-circuit",
+   "name": "Torres del Paine Q Circuit",
+   "region": "patagonia",
+   "country": "Chile",
+   "mountainIds": [],
+   "durationDays": [
+    8,
+    10
+   ],
+   "maxAltitudeM": 1200
+  },
+  {
+   "id": "dientes-de-navarino-trek",
+   "name": "Dientes de Navarino Trek",
+   "region": "patagonia",
+   "country": "Chile",
+   "mountainIds": [],
+   "durationDays": [
+    4,
+    6
+   ],
+   "maxAltitudeM": 850
+  },
+  {
+   "id": "huemul-circuit-trek",
+   "name": "Huemul Circuit Trek",
+   "region": "patagonia",
+   "country": "Argentina",
+   "mountainIds": [],
+   "durationDays": [
+    4,
+    4
+   ],
+   "maxAltitudeM": 1450
+  },
+  {
+   "id": "ohiggins-glacier-trek",
+   "name": "O'Higgins Glacier Trek",
+   "region": "patagonia",
+   "country": "Chile",
+   "mountainIds": [],
+   "durationDays": [
+    4,
+    4
+   ],
+   "maxAltitudeM": null
+  },
+  {
+   "id": "cerro-castillo-circuit",
+   "name": "Cerro Castillo Circuit",
+   "region": "patagonia",
+   "country": "Chile",
+   "mountainIds": [],
+   "durationDays": [
+    4,
+    4
+   ],
+   "maxAltitudeM": 1300
+  },
+  {
+   "id": "cochamo-valley-trek",
+   "name": "Cochamo Valley Trek",
+   "region": "patagonia",
+   "country": "Chile",
+   "mountainIds": [],
+   "durationDays": [
+    3,
+    4
+   ],
+   "maxAltitudeM": null
+  },
+  {
+   "id": "villa-ohiggins-el-chalten-trek",
+   "name": "Villa O'Higgins\u2013El Chalten Trek",
+   "region": "patagonia",
+   "country": "Chile / Argentina",
+   "mountainIds": [],
+   "durationDays": [
+    1,
+    2
+   ],
+   "maxAltitudeM": null
+  },
+  {
+   "id": "fitz-roy-el-chalten-trek",
+   "name": "Fitz Roy / El Chalten Trek",
+   "region": "patagonia",
+   "country": "Argentina",
+   "mountainIds": [],
+   "durationDays": [
+    2,
+    3
+   ],
+   "maxAltitudeM": 1150
+  },
+  {
+   "id": "laguna-de-los-tres-trek",
+   "name": "Laguna de los Tres Trek",
+   "region": "patagonia",
+   "country": "Argentina",
+   "mountainIds": [],
+   "durationDays": [
+    1,
+    1
+   ],
+   "maxAltitudeM": 1150
+  },
+  {
+   "id": "patagonia-ohiggins-trek",
+   "name": "Patagonia O'Higgins Trek",
+   "region": "patagonia",
+   "country": "Chile",
+   "mountainIds": [],
+   "durationDays": null,
+   "maxAltitudeM": null
+  },
+  {
+   "id": "beara-way",
+   "name": "Beara Way",
+   "region": "uk-ireland",
+   "country": "Ireland",
+   "mountainIds": [],
+   "durationDays": [
+    9,
+    9
+   ],
+   "maxAltitudeM": null
+  },
+  {
+   "id": "cape-wrath-trail",
+   "name": "Cape Wrath Trail",
+   "region": "uk-ireland",
+   "country": "United Kingdom",
+   "mountainIds": [],
+   "durationDays": [
+    16,
+    21
+   ],
+   "maxAltitudeM": null
+  },
+  {
+   "id": "coast-to-coast-walk",
+   "name": "Coast-to-Coast Walk",
+   "region": "uk-ireland",
+   "country": "United Kingdom",
+   "mountainIds": [],
+   "durationDays": [
+    12,
+    15
+   ],
+   "maxAltitudeM": 780
+  },
+  {
+   "id": "cotswold-way",
+   "name": "Cotswold Way",
+   "region": "uk-ireland",
+   "country": "United Kingdom",
+   "mountainIds": [],
+   "durationDays": [
+    7,
+    10
+   ],
+   "maxAltitudeM": 330
+  },
+  {
+   "id": "cumbria-way",
+   "name": "Cumbria Way",
+   "region": "uk-ireland",
+   "country": "United Kingdom",
+   "mountainIds": [],
+   "durationDays": [
+    5,
+    6
+   ],
+   "maxAltitudeM": 658
+  },
+  {
+   "id": "dales-way",
+   "name": "Dales Way",
+   "region": "uk-ireland",
+   "country": "United Kingdom",
+   "mountainIds": [],
+   "durationDays": [
+    6,
+    8
+   ],
+   "maxAltitudeM": 520
+  },
+  {
+   "id": "dingle-way",
+   "name": "Dingle Way",
+   "region": "uk-ireland",
+   "country": "Ireland",
+   "mountainIds": [],
+   "durationDays": [
+    7,
+    8
+   ],
+   "maxAltitudeM": 640
+  },
+  {
+   "id": "great-glen-way",
+   "name": "Great Glen Way",
+   "region": "uk-ireland",
+   "country": "United Kingdom",
+   "mountainIds": [],
+   "durationDays": [
+    5,
+    7
+   ],
+   "maxAltitudeM": 375
+  },
+  {
+   "id": "hadrians-wall-path",
+   "name": "Hadrian's Wall Path",
+   "region": "uk-ireland",
+   "country": "United Kingdom",
+   "mountainIds": [],
+   "durationDays": [
+    6,
+    8
+   ],
+   "maxAltitudeM": 345
+  },
+  {
+   "id": "kerry-way",
+   "name": "Kerry Way",
+   "region": "uk-ireland",
+   "country": "Ireland",
+   "mountainIds": [],
+   "durationDays": [
+    9,
+    9
+   ],
+   "maxAltitudeM": 385
+  },
+  {
+   "id": "offas-dyke-path",
+   "name": "Offa's Dyke Path",
+   "region": "uk-ireland",
+   "country": "United Kingdom",
+   "mountainIds": [],
+   "durationDays": [
+    12,
+    14
+   ],
+   "maxAltitudeM": 703
+  },
+  {
+   "id": "pembrokeshire-coast-path",
+   "name": "Pembrokeshire Coast Path",
+   "region": "uk-ireland",
+   "country": "United Kingdom",
+   "mountainIds": [],
+   "durationDays": [
+    12,
+    15
+   ],
+   "maxAltitudeM": 175
+  },
+  {
+   "id": "pennine-way",
+   "name": "Pennine Way",
+   "region": "uk-ireland",
+   "country": "United Kingdom",
+   "mountainIds": [],
+   "durationDays": [
+    16,
+    19
+   ],
+   "maxAltitudeM": 893
+  },
+  {
+   "id": "skye-trail",
+   "name": "Skye Trail",
+   "region": "uk-ireland",
+   "country": "United Kingdom",
+   "mountainIds": [],
+   "durationDays": [
+    7,
+    7
+   ],
+   "maxAltitudeM": 719
+  },
+  {
+   "id": "south-west-coast-path",
+   "name": "South West Coast Path",
+   "region": "uk-ireland",
+   "country": "United Kingdom",
+   "mountainIds": [],
+   "durationDays": [
+    30,
+    60
+   ],
+   "maxAltitudeM": 318
+  },
+  {
+   "id": "southern-upland-way",
+   "name": "Southern Upland Way",
+   "region": "uk-ireland",
+   "country": "United Kingdom",
+   "mountainIds": [],
+   "durationDays": [
+    12,
+    16
+   ],
+   "maxAltitudeM": 725
+  },
+  {
+   "id": "the-ridgeway",
+   "name": "The Ridgeway",
+   "region": "uk-ireland",
+   "country": "United Kingdom",
+   "mountainIds": [],
+   "durationDays": [
+    5,
+    6
+   ],
+   "maxAltitudeM": null
+  },
+  {
+   "id": "west-highland-way",
+   "name": "West Highland Way",
+   "region": "uk-ireland",
+   "country": "United Kingdom",
+   "mountainIds": [],
+   "durationDays": [
+    7,
+    8
+   ],
+   "maxAltitudeM": 550
+  },
+  {
+   "id": "wicklow-way",
+   "name": "Wicklow Way",
+   "region": "uk-ireland",
+   "country": "Ireland",
+   "mountainIds": [],
+   "durationDays": [
+    5,
+    7
+   ],
+   "maxAltitudeM": 630
+  }
+ ]
+}
