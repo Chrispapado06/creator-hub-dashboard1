@@ -24,7 +24,7 @@ export function PhoneShell({ children }: { children: React.ReactNode }) {
       {/* Brand lockup beside the device on wide screens */}
       <div className="pointer-events-none fixed left-[8%] top-1/2 hidden -translate-y-1/2 xl:block">
         <IcefallLockup size="lg" className="items-start" />
-        <p className="section-label mt-3 text-gold">Guide</p>
+        <p className="section-label mt-3 text-azure">Guide</p>
         <p className="mt-6 max-w-[15rem] text-[13px] leading-relaxed text-mist-dim">
           Run your season — your dates, your clients, your qualifications.
         </p>

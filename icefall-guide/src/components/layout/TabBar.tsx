@@ -2,7 +2,7 @@ import { BadgeCheck, CalendarRange, House, MessageCircle, User } from "lucide-re
 import { NavLink, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
-import { ENQUIRIES } from "@/data/demo";
+import { ENQUIRIES, isUnanswered } from "@/data/demo";
 
 /**
  * Primary navigation, five even tabs.
@@ -22,7 +22,21 @@ const TABS = [
 
 export function TabBar() {
   const { pathname } = useLocation();
-  const unread = ENQUIRIES.filter((e) => e.unread).length;
+  /**
+   * THE SECOND READER OF THE SEED, and the reason §6e exists.
+   *
+   * Gating `ENQUIRIES` at its definition stops the invented clients reaching a
+   * screen. It does NOT travel to this badge: an aggregate over a now-empty
+   * array is a different bug from an ungated fixture, and it only appears in
+   * production. Here it is benign — an empty list counts zero and the badge
+   * hides — but "benign" is a thing you confirm by looking, not by assuming,
+   * and the compiler only surfaced this file because the shape changed too.
+   *
+   * `unread` is gone as a stored flag. Whether a client is waiting is derived
+   * from whether they have been answered, so a badge cannot disagree with the
+   * screen it points at.
+   */
+  const waiting = ENQUIRIES.filter(isUnanswered).length;
 
   return (
     <nav
@@ -34,7 +48,7 @@ export function TabBar() {
         {TABS.map((tab) => {
           const active = tab.to === "/" ? pathname === "/" : pathname.startsWith(tab.to);
           const Icon = tab.icon;
-          const badge = tab.to === "/enquiries" ? unread : 0;
+          const badge = tab.to === "/enquiries" ? waiting : 0;
 
           return (
             <li key={tab.to} className="flex-1">
@@ -46,7 +60,7 @@ export function TabBar() {
                 {active && (
                   <motion.span
                     layoutId="tab-indicator"
-                    className="absolute inset-x-[22%] top-0 h-px bg-gold"
+                    className="absolute inset-x-[22%] top-0 h-px bg-azure"
                     transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
                   />
                 )}
@@ -56,11 +70,11 @@ export function TabBar() {
                     strokeWidth={active ? 1.7 : 1.4}
                     className={cn(
                       "transition-colors duration-200",
-                      active ? "text-gold" : "text-mist-dim group-hover:text-mist",
+                      active ? "text-azure" : "text-mist-dim group-hover:text-mist",
                     )}
                   />
                   {badge > 0 && (
-                    <span className="tnum absolute -right-2 -top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-gold px-1 text-[9px] font-medium text-obsidian">
+                    <span className="tnum absolute -right-2 -top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-azure px-1 text-[9px] font-medium text-obsidian">
                       {badge}
                     </span>
                   )}
@@ -68,7 +82,7 @@ export function TabBar() {
                 <span
                   className={cn(
                     "text-[9px] font-medium uppercase tracking-[0.14em] transition-colors duration-200",
-                    active ? "text-gold" : "text-mist-dim group-hover:text-mist",
+                    active ? "text-azure" : "text-mist-dim group-hover:text-mist",
                   )}
                 >
                   {tab.label}

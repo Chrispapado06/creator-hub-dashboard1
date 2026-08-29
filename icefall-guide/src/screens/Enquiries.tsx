@@ -3,7 +3,9 @@ import { ChevronLeft, Clock, Send } from "lucide-react";
 import { Rise, Screen, ScreenHeader, Stagger } from "@/components/layout/chrome";
 import { Badge, Button, Card, Disclaimer } from "@/components/ui/primitives";
 import { Notice, inputClass } from "@/components/guide";
-import { DEMO_NOTICE, ENQUIRIES, fmtDate } from "@/data/demo";
+import { DEMO_NOTICE, ENQUIRIES, fmtDate, isUnanswered, waitingHours } from "@/data/demo";
+import { SHOW_DEMO_DATA } from "@/lib/demoFlag";
+import { BACKEND_NOT_CONNECTED } from "@/backend/client";
 import { cn } from "@/lib/utils";
 
 /**
@@ -52,8 +54,10 @@ export default function Enquiries() {
               placeholder="Replying is not connected yet."
               className={cn(inputClass, "resize-none disabled:opacity-60")}
             />
-            <div className="mt-2.5 flex items-center justify-between gap-3">
-              <p className="text-[11px] text-mist-dim">Nothing is sent from this build.</p>
+            <div className="mt-2.5 flex items-start justify-between gap-3">
+              <p className="max-w-[62%] text-[11px] leading-relaxed text-mist-dim">
+                {BACKEND_NOT_CONNECTED}
+              </p>
               <Button size="sm" disabled>
                 <Send size={13} strokeWidth={1.8} />
                 Reply
@@ -70,9 +74,11 @@ export default function Enquiries() {
       <Stagger>
         <ScreenHeader title="Clients" subtitle="Athletes asking about your dates." />
 
-        <Rise>
-          <Disclaimer>{DEMO_NOTICE}</Disclaimer>
-        </Rise>
+        {SHOW_DEMO_DATA && ENQUIRIES.length > 0 && (
+          <Rise>
+            <Disclaimer>{DEMO_NOTICE}</Disclaimer>
+          </Rise>
+        )}
 
         <Rise className="space-y-2.5 pt-5">
           {ENQUIRIES.map((e) => (
@@ -82,16 +88,16 @@ export default function Enquiries() {
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <p className="text-[14px] text-snow">{e.client}</p>
-                      {e.unread && <span className="h-1.5 w-1.5 rounded-full bg-gold" />}
+                      {isUnanswered(e) && <span className="h-1.5 w-1.5 rounded-full bg-azure" />}
                     </div>
                     <p className="mt-0.5 text-[11.5px] text-mist-dim">
                       {e.peak} · {e.dates}
                     </p>
                   </div>
-                  {e.waitingHours > 0 && (
-                    <Badge tone={e.waitingHours > 12 ? "danger" : "alert"}>
+                  {isUnanswered(e) && (
+                    <Badge tone={waitingHours(e) > 12 ? "danger" : "alert"}>
                       <Clock size={10} strokeWidth={2} />
-                      {e.waitingHours} h
+                      {waitingHours(e)} h
                     </Badge>
                   )}
                 </div>
@@ -101,9 +107,18 @@ export default function Enquiries() {
               </Card>
             </button>
           ))}
+
+          {ENQUIRIES.length === 0 && (
+            <Card>
+              <p className="py-4 text-center text-[13px] leading-relaxed text-mist-dim">
+                No client has written to you yet. Nothing has gone missing — ICEFALL has no server
+                connected, so no enquiry can reach this device.
+              </p>
+            </Card>
+          )}
         </Rise>
 
-        <Rise className="pt-6">
+        <Rise className="pt-6 pb-2">
           <Notice tone="neutral">
             Response time is the one thing every client feels. When messaging is connected, an
             unanswered enquiry will chase you here and then by email — not to police you, but

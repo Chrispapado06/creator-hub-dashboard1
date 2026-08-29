@@ -132,7 +132,7 @@ export function SegmentedTabs<T extends string>({
               {active && (
                 <motion.span
                   layoutId={`seg-${tabs.map((x) => x.value).join("")}`}
-                  className="absolute inset-x-0 -bottom-px h-px bg-gold"
+                  className="absolute inset-x-0 -bottom-px h-px bg-azure"
                   transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
                 />
               )}

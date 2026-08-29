@@ -32,7 +32,7 @@ export default function Auth() {
     <div className="no-scrollbar flex-1 overflow-y-auto px-5 pb-10">
       <div className="pb-7 pt-10 text-center">
         <IcefallLockup className="items-center" />
-        <p className="section-label mt-3 text-gold">Guide</p>
+        <p className="section-label mt-3 text-azure">Guide</p>
         <h1 className="display mt-6 text-[26px] text-snow">
           {mode === "in" ? "Welcome back." : "Guide with ICEFALL."}
         </h1>
@@ -65,7 +65,7 @@ export default function Auth() {
 
           <p className="mt-5 text-center text-[12.5px] text-mist">
             New to ICEFALL?{" "}
-            <button onClick={() => setMode("up")} className="text-gold">
+            <button onClick={() => setMode("up")} className="text-azure">
               Apply to guide
             </button>
           </p>
@@ -78,7 +78,7 @@ export default function Auth() {
                 <span
                   className={cn(
                     "h-[2px] rounded-pill transition-colors",
-                    i < step ? "bg-gold" : i === step ? "bg-gold/55" : "bg-elevated",
+                    i < step ? "bg-azure" : i === step ? "bg-azure/55" : "bg-elevated",
                   )}
                 />
                 <span
@@ -125,7 +125,7 @@ export default function Auth() {
 
           <p className="mt-5 text-center text-[12.5px] text-mist">
             Already applied?{" "}
-            <button onClick={() => setMode("in")} className="text-gold">
+            <button onClick={() => setMode("in")} className="text-azure">
               Sign in
             </button>
           </p>
@@ -145,7 +145,7 @@ function AccountStep() {
   return (
     <div className="space-y-4">
       <Field label="Name, as printed on your licence" hint="We check this matches your photo ID.">
-        <input className={inputClass} placeholder="Tobias Frei" autoComplete="name" />
+        <input className={inputClass} placeholder="Your full name" autoComplete="name" />
       </Field>
       <Field label="Email">
         <input type="email" className={inputClass} placeholder="you@example.com" autoComplete="email" />
@@ -161,17 +161,17 @@ function WorkStep() {
   return (
     <div className="space-y-4">
       <Field label="Where you work from" hint="A town or valley — not your home address.">
-        <input className={inputClass} placeholder="Zermatt, Valais" />
+        <input className={inputClass} placeholder="Town or valley" />
       </Field>
       <Field label="What you guide" hint="One line. The first thing an athlete reads.">
-        <input className={inputClass} placeholder="Matterhorn Hörnli ridge and hard mixed ground" />
+        <input className={inputClass} placeholder="The routes and ground you guide" />
       </Field>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Years guiding">
-          <input type="number" min={0} className={inputClass} placeholder="11" />
+          <input type="number" min={0} className={inputClass} placeholder="Years" />
         </Field>
         <Field label="Day rate (EUR)">
-          <input type="number" min={0} className={inputClass} placeholder="690" />
+          <input type="number" min={0} className={inputClass} placeholder="Rate" />
         </Field>
       </div>
       <Notice tone="neutral">
@@ -185,9 +185,9 @@ function WorkStep() {
 function DocumentsStep() {
   return (
     <div>
-      <Notice tone="gold" className="mb-4">
+      <Notice tone="azure" className="mb-4">
         <div className="flex gap-2.5">
-          <ShieldCheck size={15} strokeWidth={1.8} className="mt-px shrink-0 text-gold" />
+          <ShieldCheck size={15} strokeWidth={1.8} className="mt-px shrink-0 text-azure" />
           <div>
             <p className="text-snow">Why we ask for these</p>
             <p className="mt-1.5">

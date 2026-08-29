@@ -14,10 +14,10 @@ const button = cva(
   {
     variants: {
       variant: {
-        // The single gold call to action. One per screen, at most.
-        primary: "bg-gold text-obsidian hover:bg-gold-bright",
+        // The single azure call to action. One per screen, at most.
+        primary: "bg-azure text-obsidian hover:bg-azure-bright",
         secondary:
-          "border border-hairline-strong text-snow hover:border-gold/50 hover:bg-white/[0.03]",
+          "border border-hairline-strong text-snow hover:border-azure/50 hover:bg-white/[0.03]",
         ghost: "text-mist hover:text-snow hover:bg-white/[0.04]",
         danger: "border border-danger/40 text-danger hover:bg-danger/10",
       },
@@ -131,17 +131,22 @@ export function Metric({
 /* Badge                                                                       */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Variants are spelled out, never interpolated — see the argument in
+ * `components/guide.tsx`. `bg-${tone}/10` compiles to nothing and is invisible
+ * to the dead-class audit at the same time.
+ */
 const badge = cva(
   "inline-flex items-center gap-1.5 rounded-full text-[10px] font-medium uppercase tracking-[0.12em]",
   {
     variants: {
       tone: {
         neutral: "border border-hairline-strong bg-white/[0.03] text-mist",
-        gold: "border border-gold/35 bg-gold/10 text-gold",
+        azure: "border border-azure/35 bg-azure/10 text-azure",
         summit: "border border-summit/35 bg-summit/10 text-summit",
         alert: "border border-alert/35 bg-alert/10 text-alert",
         danger: "border border-danger/40 bg-danger/10 text-danger",
-        solid: "bg-gold text-obsidian",
+        solid: "bg-azure text-obsidian",
       },
       size: { sm: "px-2 py-[3px]", md: "px-2.5 py-1" },
     },
@@ -217,7 +222,7 @@ export function Disclaimer({
   return (
     <p
       className={cn(
-        "border-l border-gold/30 pl-3 text-[11px] leading-relaxed text-mist-dim",
+        "border-l border-azure/30 pl-3 text-[11px] leading-relaxed text-mist-dim",
         className,
       )}
     >

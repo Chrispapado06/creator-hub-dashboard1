@@ -3,11 +3,15 @@ import { Rise, Screen, ScreenHeader, Stagger } from "@/components/layout/chrome"
 import { Badge, Button, Card, Disclaimer, SectionLabel } from "@/components/ui/primitives";
 import { Notice } from "@/components/guide";
 import { APPLICATION, DEMO_NOTICE, fmtDate } from "@/data/demo";
+import { SHOW_DEMO_DATA } from "@/lib/demoFlag";
+import { daysUntil, hasExpired, parseDay } from "@/lib/day";
+import { GUIDE_NOTICES } from "@/domain/honesty";
 import {
   CREDENTIAL_SPECS,
   STATUS_COPY,
   effectiveStatus,
   expiringSoon,
+  expiryDate,
   verificationSentence,
   type CredentialKind,
 } from "@/data/model";
@@ -36,9 +40,11 @@ export default function Verification() {
       <Stagger>
         <ScreenHeader title="Verification" subtitle="What ICEFALL has checked — and what it has not." />
 
-        <Rise>
-          <Disclaimer>{DEMO_NOTICE}</Disclaimer>
-        </Rise>
+        {SHOW_DEMO_DATA && APPLICATION.documents.length > 0 && (
+          <Rise>
+            <Disclaimer>{DEMO_NOTICE}</Disclaimer>
+          </Rise>
+        )}
 
         {/* ---- Status ------------------------------------------------------ */}
         <Rise className="pt-5">
@@ -78,19 +84,51 @@ export default function Verification() {
                   <ul className="mt-2 space-y-1">
                     {soon.map((d) => {
                       const spec = CREDENTIAL_SPECS.find((s) => s.kind === d.kind);
-                      const days = Math.ceil(
-                        (new Date(d.expiresAt!).getTime() - Date.now()) / 86_400_000,
-                      );
+                      /*
+                        `parseDay` and `startOfDay`, not `new Date` and `now`.
+                        This countdown measured to UTC midnight while `fmtDate`
+                        beside it rendered the same string as a LOCAL day, so the
+                        two disagreed by one across most of the planet — and at
+                        the boundary it printed "(-1 days)" for a certificate the
+                        app still treats as valid, three lines above copy saying
+                        the last day is still theirs to work. Whole local days,
+                        from the start of today, so the number means what the
+                        guide's calendar means.
+                      */
+                      const on = expiryDate(d)!;
+                      // `expiringSoon` only returns readable dates, so this is
+                      // never null here — but the compiler asking is the point:
+                      // the unreadable case is handled in the lapse path below,
+                      // not silently rendered as a countdown of NaN.
+                      const days = daysUntil(on) ?? 0;
                       return (
-                        <li key={d.kind} className="tnum">
-                          {spec?.label} — {fmtDate(d.expiresAt!)}{" "}
-                          <span className="text-alert">({days} days)</span>
+                        <li key={d.kind}>
+                          <span className="tnum">
+                            {spec?.label} — {fmtDate(on)}{" "}
+                            <span className="text-alert">
+                              ({days === 0 ? "today" : days === 1 ? "1 day" : `${days} days`})
+                            </span>
+                          </span>
+                          {/*
+                            WHO TOLD US THIS DATE, beside the date that is about
+                            to hide their listing. A countdown is a materially
+                            weaker claim when nobody has read the document it
+                            came from — and the guide is the one person able to
+                            tell us it is wrong.
+                          */}
+                          {d.expiry.status === "recorded" &&
+                            d.expiry.source === "stated_by_holder" && (
+                              <span className="mt-0.5 block text-[11px] leading-relaxed text-mist-dim">
+                                {GUIDE_NOTICES.expiryProvenance(d.expiry.source)}
+                              </span>
+                            )}
                         </li>
                       );
                     })}
                   </ul>
                   <p className="mt-2.5 text-mist-dim">
-                    Your listing hides itself automatically when it expires. That is not a rejection
+                    Your listing hides itself the day after a document expires — the last day is still yours to
+                    work. That is not a rejection
                     — replace the document and you are back the same day.
                   </p>
                 </div>
@@ -105,7 +143,27 @@ export default function Verification() {
           <div className="mt-3 space-y-2.5">
             {CREDENTIAL_SPECS.map((spec) => {
               const doc = docFor(spec.kind);
-              const expired = doc?.expiresAt ? new Date(doc.expiresAt) < new Date() : false;
+              /*
+                THE THIRD INSTANCE OF ONE BUG IN THIS FILE, and the one that
+                contradicted the app about itself. This read
+                `new Date(doc.expiresAt) < new Date()` — UTC midnight, against
+                this moment — while `effectiveStatus` compares a LOCAL day
+                against the START of today. So a certificate expiring today got
+                a red "Expired" badge on the same screen that told the guide the
+                last day is still theirs to work, and in most timezones it got
+                one a day early besides.
+              */
+              const docExpiry = doc ? expiryDate(doc) : null;
+              /**
+               * ONE FUNCTION DECIDES THIS, and it is the same one the lapse
+               * status uses, so a badge cannot disagree with whether the guide
+               * is actually listed. It also treats an unreadable date as
+               * expired — a safety test that cannot read its input must not
+               * answer "safe". Before this, `new Date(anything-unparseable)`
+               * compared as NOT expired, so a damaged date read as valid.
+               */
+              const unreadable = docExpiry !== null && parseDay(docExpiry) === null;
+              const expired = docExpiry !== null && hasExpired(docExpiry);
               const good = Boolean(doc) && !expired;
 
               return (
@@ -124,7 +182,15 @@ export default function Verification() {
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-[13.5px] text-snow">{spec.label}</p>
                         {!spec.required && <Badge>If applicable</Badge>}
-                        {expired && <Badge tone="danger">Expired</Badge>}
+                        {/*
+                          "EXPIRED" sat directly above "This is our fault, not a
+                          lapse" — one card contradicting itself. Unreadable and
+                          expired are hidden for the same reason and are not the
+                          same statement, and the guide's next action differs.
+                        */}
+                        {expired && (
+                          <Badge tone="danger">{unreadable ? "Date unreadable" : "Expired"}</Badge>
+                        )}
                       </div>
 
                       <p className="mt-1.5 text-[11.5px] leading-relaxed text-mist-dim">
@@ -132,16 +198,39 @@ export default function Verification() {
                       </p>
 
                       {doc ? (
-                        <p className="tnum mt-2 text-[11.5px] text-mist">
-                          {doc.fileName}
-                          {doc.reference && ` · ${doc.reference}`}
-                          {doc.expiresAt && ` · expires ${fmtDate(doc.expiresAt)}`}
-                        </p>
+                        <>
+                          <p className="tnum mt-2 text-[11.5px] text-mist">
+                            {doc.fileName}
+                            {doc.reference && ` · ${doc.reference}`}
+                            {docExpiry === null
+                              ? ` · ${GUIDE_NOTICES.EXPIRY_NOT_RECORDED.toLowerCase().replace(/\.$/, "")}`
+                              : unreadable
+                                ? ""
+                                : ` · expires ${fmtDate(docExpiry)}`}
+                          </p>
+                          {unreadable && (
+                            <p className="mt-2 text-[11.5px] leading-relaxed text-danger">
+                              {GUIDE_NOTICES.EXPIRY_UNREADABLE}
+                            </p>
+                          )}
+                        </>
                       ) : (
                         <p className="mt-2 text-[11.5px] text-mist-dim">Not uploaded.</p>
                       )}
 
-                      <Button variant="secondary" size="sm" className="mt-3">
+                      {/*
+                        DISABLED, AND THE WORST INSTANCE OF ITS CLASS IN THIS APP.
+                        There is no storage connected, so this button had no
+                        handler: it looked live, clicked, and did nothing. On this
+                        screen the person pressing it is a guide whose certificate
+                        is expiring, replacing it to keep their listing up — they
+                        would have believed they had. "A control that writes into
+                        nothing is indistinguishable, to the person using it, from
+                        one that works" (owner decision 14). The signup flow
+                        already disables its upload buttons and says why; this is
+                        the same rule, on the screen where it costs more.
+                      */}
+                      <Button variant="secondary" size="sm" className="mt-3" disabled>
                         <Upload size={13} strokeWidth={1.8} />
                         {doc ? "Replace" : "Upload"}
                       </Button>
@@ -151,6 +240,13 @@ export default function Verification() {
               );
             })}
           </div>
+        </Rise>
+
+        <Rise className="pt-4">
+          <Disclaimer>
+            Uploading is disabled — there is no document storage connected, so a file picker here
+            would take your documents nowhere. Nothing you have already sent us is affected.
+          </Disclaimer>
         </Rise>
 
         {/* ---- What the check is -------------------------------------------- */}
