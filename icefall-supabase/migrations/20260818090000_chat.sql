@@ -189,28 +189,23 @@ revoke all on public.reports from anon;
 /* RULE (server-side, pending the bookings table)                             */
 /* ========================================================================== */
 
--- A GUIDE OR COMPANY MAY ONLY MESSAGE A CLIENT AFTER A PAID BOOKING.
+-- SUPERSEDED — see 20260829160000_crm_first_message_gate.sql.
 --
--- The app enforces this in the UI (a guide/company thread is locked until a
--- booking exists), but a UI gate is bypassable — anyone can call the API
--- directly. It must therefore also live in `messages_insert`, as an extra
--- conjunct on top of participation and the block check:
+-- This block used to instruct the next reader to add a paid-booking conjunct to
+-- `messages_insert` once `public.bookings` existed. That instruction is now
+-- WRONG and is removed rather than left to be followed: the rule it described
+-- was written for the phone app's book-then-talk flow, and the operator
+-- marketplace runs the other way — a customer enquires, an operator replies, and
+-- only then is there a booking. Applying it verbatim would have frozen every
+-- lead at `new`, because "contacted" means the operator replied.
 --
---     and (
---       t.kind in ('group')                         -- party chat is not gated
---       or not exists (                              -- both are athletes = peers
---         select 1 from public.thread_participants tp
---         join public.profiles p on p.id = tp.profile_id
---         where tp.thread_id = messages.thread_id and p.role in ('guide','operator')
---       )
---       or exists (                                  -- a paid booking links them
---         select 1 from public.bookings bk
---         where bk.thread_id = messages.thread_id and bk.status <> 'awaiting_deposit'
---       )
---     )
+-- The owner settled it as decision 19: A GUIDE OR OPERATOR MAY REPLY, BUT MAY
+-- NEVER SEND THE FIRST MESSAGE IN A THREAD. That blocks the actual risk — cold
+-- off-platform solicitation — at no cost to the enquiry flow, and it never has
+-- to reason about booking status vocabulary, which the old version got wrong
+-- anyway (it tested `awaiting_deposit`, a guide-stream status that does not
+-- exist on an expedition booking).
 --
--- It is written here rather than applied because `public.bookings` does not
--- exist yet — the money model lives in `icefall-shared/money.ts` and has not
--- been given a table. When it is, fold the clause above into the messages
--- insert policy and add a test to `tests/rls.test.mjs` (an athlete cannot
--- message a guide with no booking; can once a booking row exists).
+-- A stale instruction in a migration is worse than no instruction: somebody
+-- would have implemented it, and the tests would have gone green while the
+-- marketplace stopped working.
