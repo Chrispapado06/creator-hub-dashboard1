@@ -1,0 +1,363 @@
+[
+ {
+  "id": "beara-way",
+  "name": "Beara Way",
+  "regionId": "uk-ireland",
+  "country": "Ireland",
+  "mountainIds": [],
+  "durationDays": [
+   9,
+   9
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": null,
+  "season": "April – October",
+  "priceFromEur": null,
+  "style": "Circuit",
+  "summary": "A circuit of the Beara Peninsula in Cork and Kerry, given as 206 km, or 242 km once Sport Ireland's spurs and loops are counted, walked in about nine days. It stays below the Caha and Slieve Miskish tops but crosses their passes repeatedly, for well over 5,000 m of ascent in total.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "cape-wrath-trail",
+  "name": "Cape Wrath Trail",
+  "regionId": "uk-ireland",
+  "country": "United Kingdom",
+  "mountainIds": [],
+  "durationDays": [
+   16,
+   21
+  ],
+  "difficulty": "Very strenuous",
+  "maxAltitudeM": null,
+  "season": "May – June, September",
+  "priceFromEur": null,
+  "style": "Long distance",
+  "summary": "Roughly 370 km from Fort William to the lighthouse at Cape Wrath, through Knoydart, Torridon and Sutherland. Unwaymarked and largely unbridged: the line is a matter of choice, and river crossings decide the day.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "coast-to-coast-walk",
+  "name": "Coast-to-Coast Walk",
+  "regionId": "uk-ireland",
+  "country": "United Kingdom",
+  "mountainIds": [],
+  "durationDays": [
+   12,
+   15
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 780,
+  "season": "April – October",
+  "priceFromEur": null,
+  "style": "Long distance",
+  "summary": "Wainwright's line across northern England, about 300 km from St Bees on the Irish Sea to Robin Hood's Bay on the North Sea, through the Lake District, the Yorkshire Dales and the North York Moors. The highest point is Kidsty Pike at 780 m, in the Lakeland section that carries most of the climbing.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "cotswold-way",
+  "name": "Cotswold Way",
+  "regionId": "uk-ireland",
+  "country": "United Kingdom",
+  "mountainIds": [],
+  "durationDays": [
+   7,
+   10
+  ],
+  "difficulty": "Easy",
+  "maxAltitudeM": 330,
+  "season": "March – October",
+  "priceFromEur": null,
+  "style": "Long distance",
+  "summary": "164 km from Chipping Campden to Bath along the western edge of the Cotswold escarpment, through beech hanger and limestone grassland with the Severn Vale below. Gentle underfoot, with frequent short climbs back onto the edge.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "cumbria-way",
+  "name": "Cumbria Way",
+  "regionId": "uk-ireland",
+  "country": "United Kingdom",
+  "mountainIds": [],
+  "durationDays": [
+   5,
+   6
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": 658,
+  "season": "April – October",
+  "priceFromEur": null,
+  "style": "Long distance",
+  "summary": "A 112 km walk through the Lake District from Ulverston to Carlisle, using the valleys — Coniston, Langdale, Borrowdale — rather than the ridges. The one high crossing is High Pike at 658 m on the Caldbeck Fells, and the Stake Pass and Back o' Skiddaw sections are remote.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "dales-way",
+  "name": "Dales Way",
+  "regionId": "uk-ireland",
+  "country": "United Kingdom",
+  "mountainIds": [],
+  "durationDays": [
+   6,
+   8
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": 520,
+  "season": "March – October",
+  "priceFromEur": null,
+  "style": "Valley",
+  "summary": "126 km from Ilkley to Bowness-on-Windermere, following the Wharfe, the Dee, the Lune and the Kent through the Yorkshire Dales into the Lake District. Largely riverside walking; the only sustained climb is over the Cam High Road at about 520 m between Buckden and Ribblehead.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "dingle-way",
+  "name": "Dingle Way",
+  "regionId": "uk-ireland",
+  "country": "Ireland",
+  "mountainIds": [],
+  "durationDays": [
+   7,
+   8
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 640,
+  "season": "April – October",
+  "priceFromEur": null,
+  "style": "Circuit",
+  "summary": "A 162 km loop of the Dingle Peninsula starting and finishing in Tralee, mixing cliff path, boreen and more than 20 km of beach. The high point is the saddle on the shoulder of Mount Brandon at about 640 m, the one section that is genuinely a mountain crossing.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "great-glen-way",
+  "name": "Great Glen Way",
+  "regionId": "uk-ireland",
+  "country": "United Kingdom",
+  "mountainIds": [],
+  "durationDays": [
+   5,
+   7
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": 375,
+  "season": "April – October",
+  "priceFromEur": null,
+  "style": "Long distance",
+  "summary": "A 125 km route from Fort William to Inverness following the Caledonian Canal and the shores of Loch Lochy, Loch Oich and Loch Ness. Mostly canal towpath and forest track, with an optional high-level variant above Loch Ness.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "hadrians-wall-path",
+  "name": "Hadrian's Wall Path",
+  "regionId": "uk-ireland",
+  "country": "United Kingdom",
+  "mountainIds": [],
+  "durationDays": [
+   6,
+   8
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": 345,
+  "season": "May – October",
+  "priceFromEur": null,
+  "style": "Long distance",
+  "summary": "A 135 km National Trail coast to coast along the Roman frontier, from Wallsend on the Tyne to Bowness-on-Solway. The central crags section is a switchback of short steep climbs, topping out at Whinshields Crag, 345 m; the trail managers ask walkers to keep to the May–October window to limit erosion of the archaeology.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "kerry-way",
+  "name": "Kerry Way",
+  "regionId": "uk-ireland",
+  "country": "Ireland",
+  "mountainIds": [],
+  "durationDays": [
+   9,
+   9
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 385,
+  "season": "April – October",
+  "priceFromEur": null,
+  "style": "Circuit",
+  "summary": "The longest of Ireland's waymarked ways, a circuit of the Iveragh Peninsula from Killarney of roughly 214 km in nine stages. Old butter roads and green tracks over moorland shoulders rather than summits, high point Windy Gap at 385 m, and much of it wet underfoot.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "offas-dyke-path",
+  "name": "Offa's Dyke Path",
+  "regionId": "uk-ireland",
+  "country": "United Kingdom",
+  "mountainIds": [],
+  "durationDays": [
+   12,
+   14
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 703,
+  "season": "April – October",
+  "priceFromEur": null,
+  "style": "Long distance",
+  "summary": "285 km from Sedbury Cliffs near Chepstow to Prestatyn on the north Welsh coast, tracking the eighth-century earthwork raised by the King of Mercia. It crosses the border between England and Wales more than twenty times.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "pembrokeshire-coast-path",
+  "name": "Pembrokeshire Coast Path",
+  "regionId": "uk-ireland",
+  "country": "United Kingdom",
+  "mountainIds": [],
+  "durationDays": [
+   12,
+   15
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": 175,
+  "season": "April – September",
+  "priceFromEur": null,
+  "style": "Coastal",
+  "summary": "300 km from St Dogmaels to Amroth around the only wholly coastal national park in Britain, past Strumble Head, St Davids and the Castlemartin range. Best walked in spring, when the cliffs carry thrift and the seabird colonies are full.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "pennine-way",
+  "name": "Pennine Way",
+  "regionId": "uk-ireland",
+  "country": "United Kingdom",
+  "mountainIds": [],
+  "durationDays": [
+   16,
+   19
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 893,
+  "season": "Mid-May – September",
+  "priceFromEur": null,
+  "style": "Long distance",
+  "summary": "Britain's first National Trail, 431 km along the spine of northern England from Edale to Kirk Yetholm in the Scottish Borders. Peat moorland, gritstone edges and the Cheviots, with Cross Fell at 893 m the high point and long exposed days between shelter.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "skye-trail",
+  "name": "Skye Trail",
+  "regionId": "uk-ireland",
+  "country": "United Kingdom",
+  "mountainIds": [],
+  "durationDays": [
+   7,
+   7
+  ],
+  "difficulty": "Very strenuous",
+  "maxAltitudeM": 719,
+  "season": "May – September",
+  "priceFromEur": null,
+  "style": "Traverse",
+  "summary": "An unofficial and unwaymarked 128 km traverse of the Isle of Skye from Rubha Hunish to Broadford, including the full Trotternish ridge and the coast under the Cuillin. Around 4,500 m of ascent, much of it pathless, so it needs navigation in cloud and self-sufficiency between villages.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "south-west-coast-path",
+  "name": "South West Coast Path",
+  "regionId": "uk-ireland",
+  "country": "United Kingdom",
+  "mountainIds": [],
+  "durationDays": [
+   30,
+   60
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 318,
+  "season": "March – October",
+  "priceFromEur": null,
+  "style": "Coastal",
+  "summary": "England's longest National Trail, 1,014 km from Minehead round Devon and Cornwall to Poole Harbour. Nothing on it is high — the top point is Great Hangman at 318 m — but the path climbs and drops at every valley mouth, for roughly 35,000 m of ascent overall, and most people walk it in sections rather than in one go.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "southern-upland-way",
+  "name": "Southern Upland Way",
+  "regionId": "uk-ireland",
+  "country": "United Kingdom",
+  "mountainIds": [],
+  "durationDays": [
+   12,
+   16
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 725,
+  "season": "May – September",
+  "priceFromEur": null,
+  "style": "Traverse",
+  "summary": "344 km coast to coast across southern Scotland from Portpatrick to Cockburnspath, over the Galloway hills, Lowther Hill and the Moorfoots. Long, remote stages and few resupply points make it harder than its modest heights suggest.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "the-ridgeway",
+  "name": "The Ridgeway",
+  "regionId": "uk-ireland",
+  "country": "United Kingdom",
+  "mountainIds": [],
+  "durationDays": [
+   5,
+   6
+  ],
+  "difficulty": "Easy",
+  "maxAltitudeM": null,
+  "season": "March – October",
+  "priceFromEur": null,
+  "style": "Long distance",
+  "summary": "139 km from Overton Hill near Avebury to Ivinghoe Beacon in the Chilterns, on a chalk track used for some five thousand years. It passes Barbury Castle, the Uffington White Horse and Wayland's Smithy.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "west-highland-way",
+  "name": "West Highland Way",
+  "regionId": "uk-ireland",
+  "country": "United Kingdom",
+  "mountainIds": [],
+  "durationDays": [
+   7,
+   8
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": 550,
+  "season": "April – October",
+  "priceFromEur": null,
+  "style": "Long distance",
+  "summary": "Scotland's first long-distance route, 154 km from Milngavie on the edge of Glasgow to Fort William, along Loch Lomond and across Rannoch Moor. The highest point is the Devil's Staircase above Kinlochleven at about 550 m.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "wicklow-way",
+  "name": "Wicklow Way",
+  "regionId": "uk-ireland",
+  "country": "Ireland",
+  "mountainIds": [],
+  "durationDays": [
+   5,
+   7
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 630,
+  "season": "April – October",
+  "priceFromEur": null,
+  "style": "Long distance",
+  "summary": "Ireland's oldest waymarked trail, 131 km from Marlay Park on the edge of Dublin south through the Wicklow Mountains to Clonegal. Forest track, open mountain and country road, with White Hill at 630 m the highest point; Sport Ireland grades it strenuous.",
+  "operatorIds": [],
+  "guideIds": []
+ }
+]

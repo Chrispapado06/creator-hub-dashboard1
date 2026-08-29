@@ -225,7 +225,8 @@ function ResultRow({
             <p className="tnum text-[22px] font-light text-snow">{formatEur(cost.total)}</p>
             <p className="text-[11px] text-mist-dim">total · {pax} {pax === 1 ? "climber" : "climbers"}</p>
             <dl className="mt-2.5 space-y-1 border-t border-hairline pt-2.5 text-[11.5px]">
-              <CostLine label="Guiding + fee" value={formatEur(cost.guide.total)} />
+              {/* "Guiding + fee" until 2026-08-28. There is no fee to add now. */}
+              <CostLine label="Guiding" value={formatEur(cost.guidingCents)} />
               {withFlights && cost.flightCents > 0 && <CostLine label={`Flights · ${pax}×`} value={formatEur(cost.flightCents)} />}
               {withStay && cost.lodgeCents > 0 && <CostLine label={`Stay · ${cost.nights}n`} value={formatEur(cost.lodgeCents)} />}
             </dl>

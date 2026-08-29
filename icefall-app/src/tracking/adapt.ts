@@ -83,14 +83,17 @@ export function recordedToActivity(r: RecordedActivity): Activity {
     avgHr: r.avgHeartRateBpm ?? undefined,
     maxHr: r.maxHeartRateBpm ?? undefined,
     calories: r.calories ? Math.round(r.calories) : undefined,
-    // Only present when a sensor actually reported it.
+    // Only present when a sensor actually reported it — and only the reading
+    // that sensor actually took. Wind is left off entirely (no phone measures
+    // it, and the `windKph: 0` that used to sit here was printed as "0 km/h"),
+    // and the icon says the figure came off the device rather than drawing a
+    // cloud nobody looked at.
     conditions:
       r.temperatureC != null
         ? {
             tempC: Math.round(r.temperatureC),
-            windKph: 0,
             summary: "Recorded on device",
-            icon: "cloud" as const,
+            icon: "device" as const,
           }
         : undefined,
     track,

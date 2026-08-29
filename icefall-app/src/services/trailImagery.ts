@@ -209,9 +209,19 @@ export function photoCaption(name: string, photo: TrailPhoto): string {
   if (photo.kind === "of") {
     return `${name} · Wikimedia Commons`;
   }
-  // "near" — Geograph. Their terms require the photographer credited by name
-  // with a link to the photo page and to the licence; this is the text half
-  // of that (see `TrailImage`'s pageUrl for the linked half on the hero).
+  /*
+   * "near" — from Geograph OR from Commons, and the caption must say which.
+   *
+   * This used to hardcode "CC BY-SA 2.0 · Geograph" for every `near` entry,
+   * which was true while Geograph was the only source of them. It is not any
+   * more: the worldwide sweep adds Commons photographs under CC BY 4.0,
+   * CC BY-SA 3.0 and others. Naming the wrong site and the wrong licence is
+   * not a cosmetic bug — both sites' terms require the photographer credited
+   * and the actual licence named, so the fields on the entry are used rather
+   * than assumed.
+   */
   const cat = photo.category ? `${photo.category} near ` : "Near ";
-  return `${cat}${name} · ${photo.credit ?? "Unknown photographer"} · CC BY-SA 2.0 · Geograph`;
+  const who = photo.credit ?? "Unknown photographer";
+  const site = photo.source === "geograph" ? "Geograph" : "Wikimedia Commons";
+  return `${cat}${name} · ${who} · ${photo.license} · ${site}`;
 }

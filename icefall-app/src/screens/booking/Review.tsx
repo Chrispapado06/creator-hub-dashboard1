@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { CalendarClock, Check, Lock, ShieldCheck, Users } from "lucide-react";
+import { CalendarClock, Check, CreditCard, Lock, ShieldCheck, Users } from "lucide-react";
 import { Rise, Screen, Stagger } from "@/components/layout/chrome";
 import { Button, Card, Disclaimer, SectionLabel } from "@/components/ui/primitives";
 import {
@@ -10,8 +10,7 @@ import {
   TrustBlock,
   WhatHappensNext,
 } from "@/components/booking/parts";
-import { VisaMark } from "@/components/booking/PayMarks";
-import { BOOKING, GUIDE, SERVICE_FEE_EXPLAINER } from "./data";
+import { BOOKING, BOOKING_NOTICE } from "./data";
 import { PAYMENTS_NOT_CONNECTED, formatEur, refundFor } from "@/money/model";
 import { cn } from "@/lib/utils";
 
@@ -19,7 +18,6 @@ import { cn } from "@/lib/utils";
 export default function Review() {
   const navigate = useNavigate();
   const [agreed, setAgreed] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
 
   const freeUntil = new Date(
     new Date(BOOKING.departureIso).getTime() - 14 * 86_400_000,
@@ -27,7 +25,7 @@ export default function Review() {
 
   // Computed, not asserted: what they would actually get back today.
   const today = refundFor(BOOKING.cancellation, {
-    paid: BOOKING.pricing.total,
+    paid: BOOKING.totals.total,
     departureIso: BOOKING.departureIso,
     by: "client",
   });
@@ -37,49 +35,46 @@ export default function Review() {
       <Stagger>
         <StepHeader title="Review & confirm" onBack={() => navigate(-1)} />
 
+        {/* THE "SECURE CHECKOUT" CARD IS GONE.
+            A green-ticked panel at the top of this screen said "Your card
+            details are entered with our payment provider and encrypted in
+            transit" — present tense, about a provider that does not exist, on
+            the last screen before someone believes money is moving. The true
+            version of that sentence is in `TrustBlock` below in the tense it
+            belongs in, and `PAYMENTS_NOT_CONNECTED` sits beside the confirm
+            button, which is where the claim would actually be acted on. */}
         <Rise>
-          <Card className="border-summit/30">
-            <div className="flex items-start gap-3">
-              <ShieldCheck size={18} strokeWidth={1.6} className="mt-px shrink-0 text-summit" />
-              <div>
-                <p className="text-[13.5px] text-snow">Secure checkout</p>
-                <p className="mt-1.5 text-[12px] leading-relaxed text-mist">
-                  Your card details are entered with our payment provider and encrypted in transit.
-                  ICEFALL never sees or stores your card number.
-                </p>
-              </div>
-            </div>
-          </Card>
+          <BookingSummary />
         </Rise>
 
-        <Rise className="pt-6">
-          <BookingSummary onVerified={() => setNote(GUIDE.verificationSentence)} />
+        <Rise className="pt-3">
+          <Disclaimer>{BOOKING_NOTICE}</Disclaimer>
         </Rise>
-
-        {note && (
-          <Rise className="pt-3">
-            <Disclaimer>{note}</Disclaimer>
-          </Rise>
-        )}
 
         <Rise className="pt-4">
-          <PriceLines onFeeInfo={() => setNote(SERVICE_FEE_EXPLAINER)} />
+          <PriceLines />
         </Rise>
 
         {/* ---- Method --------------------------------------------------------- */}
+        {/* THERE IS NO CARD, SO NO CARD IS DRAWN.
+            This row used to render a Visa mark and "•••• 4242 · Change" — the
+            exact fabricated payment record `screens/auth/Trial.tsx` bans by
+            name. Nothing has ever taken a card, nothing stores one, and a
+            masked number beside a brand mark is read as "my card is on file"
+            on the last screen before someone believes money moves. The row
+            below says what is actually true and keeps the way back to the
+            method step. */}
         <Rise className="pt-6">
           <SectionLabel>Payment method</SectionLabel>
           <Card className="mt-3">
             <div className="flex items-center gap-3">
-              <VisaMark className="h-6 w-auto shrink-0" />
-              <span className="tnum flex-1 text-[13.5px] tracking-[0.12em] text-snow">
-                •••• 4242
-              </span>
+              <CreditCard size={17} strokeWidth={1.6} className="shrink-0 text-mist-dim" />
+              <span className="flex-1 text-[13px] text-mist">No card is stored</span>
               <button
                 onClick={() => navigate("/book/payment")}
                 className="shrink-0 text-[12.5px] text-azure"
               >
-                Change
+                Back
               </button>
             </div>
           </Card>
@@ -107,7 +102,7 @@ export default function Review() {
                 Free cancellation until <span className="text-mist">{freeUntil}</span> — 14 days
                 before you start. Cancelling today returns{" "}
                 <span className="tnum text-mist">{formatEur(today.refund)}</span> of{" "}
-                {formatEur(BOOKING.pricing.total)}.
+                {formatEur(BOOKING.totals.total)}.
               </p>
               <p className="mt-2 pl-[26px] text-[11.5px] leading-relaxed text-mist-dim">
                 If the guide judges the route unsafe, or conditions prevent an attempt, you are
@@ -147,7 +142,7 @@ export default function Review() {
             Confirm &amp; book
           </Button>
           <p className="tnum mt-3 text-center text-[12px] text-mist">
-            You would be charged {formatEur(BOOKING.pricing.total)}
+            You would be charged {formatEur(BOOKING.totals.total)}
           </p>
           {!agreed && (
             <p className="mt-1.5 text-center text-[11px] text-mist-dim">

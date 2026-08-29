@@ -1,0 +1,223 @@
+[
+ {
+  "id": "daisetsuzan-grand-traverse",
+  "name": "Daisetsuzan Grand Traverse",
+  "regionId": "japan",
+  "country": "Japan",
+  "mountainIds": [],
+  "durationDays": [
+   5,
+   7
+  ],
+  "difficulty": "Very strenuous",
+  "maxAltitudeM": 2291,
+  "season": "July – September",
+  "priceFromEur": null,
+  "style": "Traverse",
+  "summary": "Roughly 55 km across the volcanic plateau of central Hokkaido from Asahidake to Tokachidake, over Japan's largest national park and its earliest autumn colour. Emergency huts are unstaffed and unprovisioned, and bears are a genuine consideration.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "hakuba-three-peaks-traverse",
+  "name": "Hakuba Three Peaks Traverse",
+  "regionId": "japan",
+  "country": "Japan",
+  "mountainIds": [],
+  "durationDays": [
+   2,
+   3
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 2932,
+  "season": "July – September",
+  "priceFromEur": null,
+  "style": "Traverse",
+  "summary": "The northern Hida ridge from the Daisekkei snow gully to Shirouma-dake at 2,932 m, then south over Shakushidake and Yarigatake to Yarionsen. A hut-to-hut route with a permanent snow slope on the ascent, so an axe and crampons are usual into August.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "kumano-kodo",
+  "name": "Kumano Kodo",
+  "regionId": "japan",
+  "country": "Japan",
+  "mountainIds": [],
+  "durationDays": [
+   4,
+   6
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": null,
+  "season": "Year-round; spring and autumn are the popular walking seasons, summer is hot and humid",
+  "priceFromEur": null,
+  "style": "Pilgrimage",
+  "summary": "A network of pilgrimage trails through the forested Kii Peninsula linking the three Kumano grand shrines. Most walkers take the Nakahechi from Takijiri-oji, four walking days to Nachi with village inns and onsen along the way; days run eight to eleven hours and the hardest section, Ogumotori-goe, climbs about 1,260 m in 14 km.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "kumano-kodo-kohechi",
+  "name": "Kumano Kodo Kohechi",
+  "regionId": "japan",
+  "country": "Japan",
+  "mountainIds": [],
+  "durationDays": [
+   4,
+   4
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 1220,
+  "season": "April – June, October – November",
+  "priceFromEur": null,
+  "style": "Pilgrimage",
+  "summary": "The hardest of the Kumano pilgrimage routes, about 70 km straight over the Kii peninsula from Koyasan to Hongu across three passes above 1,000 m. Far quieter than the Nakahechi, with long forest stages and very little between villages.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "michinoku-coastal-trail",
+  "name": "Michinoku Coastal Trail",
+  "regionId": "japan",
+  "country": "Japan",
+  "mountainIds": [],
+  "durationDays": [
+   45,
+   60
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": null,
+  "season": "April – November",
+  "priceFromEur": null,
+  "style": "Coastal",
+  "summary": "1,025 km down the Pacific coast of Tohoku from Hachinohe to Soma, opened in 2019 through the areas struck by the 2011 tsunami. It links cliff, fishing village and rebuilt town, and much of its purpose is to bring walkers back to the region.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "mount-fuji-climbing-routes",
+  "name": "Mount Fuji Climbing Routes",
+  "regionId": "japan",
+  "country": "Japan",
+  "mountainIds": [
+   "fuji"
+  ],
+  "durationDays": [
+   1,
+   2
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 3776,
+  "season": "1 July – early September (Yoshida, Subashiri); 10 July – early September (Fujinomiya, Gotemba)",
+  "priceFromEur": null,
+  "style": "Pilgrimage",
+  "summary": "An out-and-back ascent of Japan's highest mountain on one of four trails from the fifth stations — Yoshida (2,305 m), Fujinomiya (2,400 m), Subashiri (2,000 m) or Gotemba (1,440 m) — walked either in a long day or with a few hours in a mountain hut. The path is made ground rather than climbing, but it gains around 1,400 m to the 3,776 m summit, takes five to seven hours up and three to four down, and altitude sickness is common.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "mount-ontake-pilgrim-route",
+  "name": "Mount Ontake Pilgrim Route",
+  "regionId": "japan",
+  "country": "Japan",
+  "mountainIds": [],
+  "durationDays": [
+   2,
+   2
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 3067,
+  "season": "July – September",
+  "priceFromEur": null,
+  "style": "Pilgrimage",
+  "summary": "The Kurosawa ascent of Ontake, at 3,067 m the second highest volcano in Japan and a centre of the Ontake-kyo mountain faith, past stone monuments and shrine huts. The summit crater erupted without warning in 2014 and access is regulated.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "nakasendo-trail",
+  "name": "Nakasendo Trail",
+  "regionId": "japan",
+  "country": "Japan",
+  "mountainIds": [],
+  "durationDays": null,
+  "difficulty": "Moderate",
+  "maxAltitudeM": 1531,
+  "season": null,
+  "priceFromEur": null,
+  "style": "Long distance",
+  "summary": "The Edo-period highway between Tokyo and Kyoto, about 534 km through 69 post towns, of which the best-preserved walking sections are in the Kiso Valley between Magome, Tsumago and Narai. Wada Pass at 1,531 m is the high point of the full route; the much-walked Kiso section tops out at Torii Pass, 1,197 m, and can be done in a few days rather than the five weeks the whole road takes.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "northern-alps-trekking-circuit",
+  "name": "Northern Alps Trekking Circuit",
+  "regionId": "japan",
+  "country": "Japan",
+  "mountainIds": [],
+  "durationDays": null,
+  "difficulty": "Very strenuous",
+  "maxAltitudeM": 3190,
+  "season": "July – September",
+  "priceFromEur": null,
+  "style": "Circuit",
+  "summary": "The hut-to-hut circuit in the Hida range from Kamikochi (1,500 m) up the Yarisawa valley to Yarigatake, south along the ridge over the Daikiretto to the Hotaka peaks, and back down to Kamikochi. Oku-Hotakadake at 3,190 m is the high point; the Daikiretto is graded E, the top band of Nagano's grading table and one of Japan's hardest non-technical routes, and gentler versions of the circuit avoid it by going up to Karasawa and Hotaka directly.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "shikoku-pilgrimage",
+  "name": "Shikoku Pilgrimage",
+  "regionId": "japan",
+  "country": "Japan",
+  "mountainIds": [],
+  "durationDays": [
+   30,
+   60
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 912,
+  "season": null,
+  "priceFromEur": null,
+  "style": "Pilgrimage",
+  "summary": "A circuit of 88 temples around the island of Shikoku, roughly 1,200 km on foot and usually 30 to 60 days, largely on roads and village lanes with steep climbs to the hill temples. Temple 66, Unpenji, at 912 m, is the highest of the 88 and the high point of the walking route.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "tateyama-kurobe-alpine-trek",
+  "name": "Tateyama–Kurobe Alpine Trek",
+  "regionId": "japan",
+  "country": "Japan",
+  "mountainIds": [],
+  "durationDays": null,
+  "difficulty": "Moderate",
+  "maxAltitudeM": 3015,
+  "season": "Mid-April – 30 November (Alpine Route operating season); the ridge trails hold snow well into summer",
+  "priceFromEur": null,
+  "style": "Traverse",
+  "summary": "Walking above the Tateyama Kurobe Alpine Route, the 37.2 km cable-car and bus corridor from Toyama to Ogizawa whose own high point is Murodo at 2,450 m. From Murodo the usual walk climbs by Ichinokoshi to Oyama and follows the ridge to Onanjiyama at 3,015 m, the highest of Tateyama's three summits.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "yakushima-miyanoura-dake",
+  "name": "Yakushima Miyanoura-dake",
+  "regionId": "japan",
+  "country": "Japan",
+  "mountainIds": [],
+  "durationDays": [
+   2,
+   2
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 1936,
+  "season": "March – November",
+  "priceFromEur": null,
+  "style": "Traverse",
+  "summary": "From the Arakawa trailhead past the Jomon Sugi, a cedar thought to be thousands of years old, up through moss forest to Miyanoura-dake at 1,936 m, the highest point in Kyushu. The island is among the wettest places in Japan and the granite is slick in rain.",
+  "operatorIds": [],
+  "guideIds": []
+ }
+]

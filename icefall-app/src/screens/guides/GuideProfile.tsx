@@ -469,7 +469,7 @@ export default function GuideProfile() {
 function GuideMissing() {
   return (
     <Screen>
-      <ScreenHeader title="Guide" back="/explore/guides" />
+      <ScreenHeader title="Guide" />
       <Stagger>
         <Rise className="pt-4">
           <Card>

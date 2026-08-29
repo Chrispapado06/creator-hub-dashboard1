@@ -1,0 +1,293 @@
+[
+ {
+  "id": "chimborazo-circuit",
+  "name": "Chimborazo Circuit",
+  "regionId": "andes-north",
+  "country": "Ecuador",
+  "mountainIds": [
+   "chimborazo"
+  ],
+  "durationDays": [
+   4,
+   5
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 4800,
+  "season": "June – August, December – January",
+  "priceFromEur": null,
+  "style": "Circuit",
+  "summary": "A loop of the Chimborazo reserve at between 4,000 m and 4,800 m, round the highest mountain in Ecuador and the point on the surface furthest from the centre of the earth. Vicuña, sand and wind; the summit itself is a climb, not a walk.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "choro-trek",
+  "name": "Choro Trek",
+  "regionId": "andes-north",
+  "country": "Bolivia",
+  "mountainIds": [],
+  "durationDays": [
+   3,
+   4
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": 4859,
+  "season": "April – October",
+  "priceFromEur": null,
+  "style": "Traverse",
+  "summary": "A pre-Hispanic stone road from La Cumbre above La Paz over the Chucura pass, then a long descent through the Cotapata cloud forest to Chairo in the Yungas at about 1,400 m. The high point comes early and the rest is some 3,400 m of downhill over three days.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "condor-trek",
+  "name": "Condor Trek",
+  "regionId": "andes-north",
+  "country": "Ecuador",
+  "mountainIds": [],
+  "durationDays": [
+   4,
+   5
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 4500,
+  "season": "June – September",
+  "priceFromEur": null,
+  "style": "Traverse",
+  "summary": "From the Papallacta pass across the páramo of the Antisana and Cotopaxi reserves, camping between 3,800 m and 4,300 m with both volcanoes in view. Named for the Andean condors that still nest on the Antisana cliffs.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "condoriri-trek",
+  "name": "Condoriri Trek",
+  "regionId": "andes-north",
+  "country": "Bolivia",
+  "mountainIds": [],
+  "durationDays": [
+   3,
+   5
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 5100,
+  "season": "May – October (dry season)",
+  "priceFromEur": null,
+  "style": "High pass",
+  "summary": "A short high trek through the Condoriri group of the Cordillera Real, running from the Tuni reservoir past the Jurikhota and Chiar Khota lakes and over the Austria pass, with every camp above 4,600 m. Longer versions add the walk-up of Pico Austria at roughly 5,300 m.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "cordillera-apolobamba-trek",
+  "name": "Cordillera Apolobamba Trek",
+  "regionId": "andes-north",
+  "country": "Bolivia",
+  "mountainIds": [],
+  "durationDays": [
+   6,
+   8
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 5100,
+  "season": "May – September",
+  "priceFromEur": null,
+  "style": "Traverse",
+  "summary": "North of the Cordillera Real along the Peruvian border, from Curva to Pelechuco through the Apolobamba range, over passes above 5,000 m past Kallawaya healer villages and vicuña herds. Among the least visited trekking areas in the Andes.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "cordillera-real-trek",
+  "name": "Cordillera Real Trek",
+  "regionId": "andes-north",
+  "country": "Bolivia",
+  "mountainIds": [],
+  "durationDays": [
+   12,
+   12
+  ],
+  "difficulty": "Very strenuous",
+  "maxAltitudeM": 5100,
+  "season": "May – October (dry season)",
+  "priceFromEur": null,
+  "style": "Traverse",
+  "summary": "The full traverse of the Cordillera Real, about 200 km from Sorata under Illampu to the eastern side of Huayna Potosí, crossing roughly a dozen passes and camping between 4,200 m and 4,600 m. Five to six hours of walking a day for close to two weeks, with no road access for most of it.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "cotopaxi-base-camp-and-refuge-trek",
+  "name": "Cotopaxi Base Camp and Refuge Trek",
+  "regionId": "andes-north",
+  "country": "Ecuador",
+  "mountainIds": [
+   "cotopaxi"
+  ],
+  "durationDays": [
+   2,
+   2
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": 4864,
+  "season": "June – August, December – January",
+  "priceFromEur": null,
+  "style": "Base camp",
+  "summary": "From the Limpiopungo plain across the páramo to the José Rivas refuge at 4,864 m on the northern flank of Cotopaxi, and on to the glacier snout above it. Walked for its own sake and as the standard acclimatisation before the summit night.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "el-altar-trek",
+  "name": "El Altar Trek",
+  "regionId": "andes-north",
+  "country": "Ecuador",
+  "mountainIds": [],
+  "durationDays": [
+   3,
+   4
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 4300,
+  "season": "June – September, December – February",
+  "priceFromEur": null,
+  "style": "Valley",
+  "summary": "Up the Collanes valley from Candelaria to the amphitheatre of El Altar, a collapsed volcano whose nine peaks stand round the yellow lake in its crater. The valley floor is a bog for most of the year and horses are usual.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "illampu-circuit",
+  "name": "Illampu Circuit",
+  "regionId": "andes-north",
+  "country": "Bolivia",
+  "mountainIds": [],
+  "durationDays": [
+   6,
+   7
+  ],
+  "difficulty": "Very strenuous",
+  "maxAltitudeM": 5045,
+  "season": "May – September",
+  "priceFromEur": null,
+  "style": "Circuit",
+  "summary": "A loop from Sorata round Illampu and Ancohuma at the northern end of the Cordillera Real, crossing four passes with the highest at about 5,045 m. Remote, with camping throughout and Aymara villages that see few walkers.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "ingapirca-inca-trail",
+  "name": "Ingapirca Inca Trail",
+  "regionId": "andes-north",
+  "country": "Ecuador",
+  "mountainIds": [],
+  "durationDays": [
+   3,
+   3
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": 4400,
+  "season": "June – September",
+  "priceFromEur": null,
+  "style": "Traverse",
+  "summary": "Forty kilometres of surviving Inca road across the Cañari páramo from Achupallas to Ingapirca, the largest Inca site in Ecuador. Three days over open moor with lakes and paved sections of the Camino Real still in place.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "quilotoa-loop",
+  "name": "Quilotoa Loop",
+  "regionId": "andes-north",
+  "country": "Ecuador",
+  "mountainIds": [],
+  "durationDays": [
+   3,
+   4
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": 3914,
+  "season": "Year-round; driest June – September",
+  "priceFromEur": null,
+  "style": "Traverse",
+  "summary": "A village-to-village walk in the Ecuadorian highlands, normally Sigchos to Isinliví, Chugchilán and the Quilotoa crater rim, sleeping in family-run hostels along the way. The last day drops into the Toachi canyon and climbs roughly 1,000 m to the rim above the lake.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "quilotoa-chimborazo-trek",
+  "name": "Quilotoa–Chimborazo Trek",
+  "regionId": "andes-north",
+  "country": "Ecuador",
+  "mountainIds": [
+   "chimborazo"
+  ],
+  "durationDays": [
+   8,
+   14
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": 5000,
+  "season": "Year-round; driest June – September",
+  "priceFromEur": null,
+  "style": "Traverse",
+  "summary": "Not one standard footpath but an operator-assembled highland itinerary that links the Quilotoa crater to the Chimborazo reserve, with páramo day walks of two to six hours and road transfers between the massifs. Published versions run from eight to fourteen days and usually top out at the Chimborazo refuges near 5,000 m.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "sajama-circuit",
+  "name": "Sajama Circuit",
+  "regionId": "andes-north",
+  "country": "Bolivia",
+  "mountainIds": [],
+  "durationDays": [
+   4,
+   5
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 4900,
+  "season": "May – September",
+  "priceFromEur": null,
+  "style": "Circuit",
+  "summary": "Round Nevado Sajama, at 6,542 m the highest mountain in Bolivia, across the altiplano of the national park between geysers, hot springs and the highest forest in the world. Nothing on the route drops below 4,200 m.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "takesi-trek",
+  "name": "Takesi Trek",
+  "regionId": "andes-north",
+  "country": "Bolivia",
+  "mountainIds": [],
+  "durationDays": [
+   2,
+   3
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": 4700,
+  "season": "April – October",
+  "priceFromEur": null,
+  "style": "Traverse",
+  "summary": "A pre-Hispanic paved road that crosses the Cordillera Real from the San Francisco mine over an apacheta pass at about 4,700 m and then descends steadily through cloud forest to Yanacachi in the Yungas. Most of the route is downhill, losing roughly 2,500 m.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "yunga-cruz-trek",
+  "name": "Yunga Cruz Trek",
+  "regionId": "andes-north",
+  "country": "Bolivia",
+  "mountainIds": [],
+  "durationDays": [
+   3,
+   4
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 4700,
+  "season": "May – September",
+  "priceFromEur": null,
+  "style": "Traverse",
+  "summary": "The hardest and least walked of the three Inca roads out of La Paz, from Chuñavi along a high ridge before dropping steeply into the Yungas at Chulumani. Water is scarce on the ridge and the path is overgrown in places.",
+  "operatorIds": [],
+  "guideIds": []
+ }
+]

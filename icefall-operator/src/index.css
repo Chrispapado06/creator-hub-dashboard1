@@ -1,0 +1,174 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter+Tight:wght@300;400;500;600&family=Instrument+Serif:ital@0;1&display=swap");
+@import "tailwindcss";
+
+/**
+ * ICEFALL Operator Portal — light, clean, a work tool.
+ *
+ * OWNER DECISION, constitution §6 #18 (2026-08-29), REVERSING #9 for this app.
+ * The owner's final operator mockup set is light — white sidebar, white cards,
+ * dark text — and it wins over the earlier dark set. The athlete surfaces
+ * (icefall-app, icefall-web) stay dark and are untouched; both CRMs are now
+ * light work tools. The deliberate portal-feels-like-the-athlete-app register
+ * split from #9 is gone, knowingly.
+ *
+ * THE TOKEN NAMES ARE THE SAME AS THE DARK VERSION AND THE VALUES ARE NOT.
+ * `canvas` is still the page, `surface` still a card, `ink` still primary
+ * text — so every screen follows the theme without a rewrite, and there is one
+ * place to look when a colour is wrong.
+ *
+ * The accent stays alpine azure (decision: the mockup's gold buttons predate
+ * the azure rebrand and lose to it), darkened here for contrast on white —
+ * same hue as the athlete app's, different lightness for a different ground.
+ *
+ * Colours are oklch, per the house rule.
+ */
+
+@theme inline {
+  --color-canvas: var(--op-canvas);
+  --color-surface: var(--op-surface);
+  --color-raised: var(--op-raised);
+  --color-elevated: var(--op-elevated);
+  --color-line: var(--op-line);
+  --color-line-soft: var(--op-line-soft);
+  --color-ink: var(--op-ink);
+  --color-muted: var(--op-muted);
+  --color-faint: var(--op-faint);
+
+  --color-azure: var(--op-azure);
+  --color-azure-ink: var(--op-azure-bright);
+  --color-azure-soft: var(--op-azure-soft);
+  --color-azure-glow: var(--op-azure-glow);
+
+  --color-live: var(--op-live);
+  --color-live-soft: var(--op-live-soft);
+  --color-pending: var(--op-pending);
+  --color-pending-soft: var(--op-pending-soft);
+  --color-draft: var(--op-draft);
+  --color-draft-soft: var(--op-draft-soft);
+  --color-rejected: var(--op-rejected);
+  --color-rejected-soft: var(--op-rejected-soft);
+  --color-expired: var(--op-expired);
+  --color-expired-soft: var(--op-expired-soft);
+
+  --font-sans: "Inter Tight", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-serif: "Instrument Serif", "Iowan Old Style", Georgia, serif;
+
+  --radius-card: 14px;
+  --radius-tile: 10px;
+  --radius-pill: 999px;
+
+  --ease-alpine: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+:root {
+  /* Surfaces — the page a cool near-white, cards pure white above it */
+  --op-canvas: oklch(0.9761 0.0029 264.5); /* #F6F7F9  app canvas   */
+  --op-surface: oklch(1 0 0);              /* #FFFFFF  cards        */
+  --op-raised: oklch(0.9611 0.0038 264.5); /* #F1F2F5  hover        */
+  --op-elevated: oklch(0.9851 0.0018 264.5); /* #FAFBFC inputs      */
+
+  /* Ink — near-black through slate, faintly cold */
+  --op-ink: oklch(0.2444 0.0201 263.4);  /* #1C2230 */
+  --op-muted: oklch(0.5251 0.0257 264.4); /* #626B7E */
+  --op-faint: oklch(0.6857 0.0217 264.6); /* #939BAB */
+
+  /* The one border treatment in the whole family */
+  --op-line: oklch(0 0 0 / 9%);
+  --op-line-soft: oklch(0 0 0 / 5%);
+
+  /* Alpine azure — same hue as the athlete app, weighted for white ground */
+  --op-azure: oklch(0.5729 0.1798 257.5);   /* #2E77E5-ish, buttons */
+  --op-azure-bright: oklch(0.5052 0.1745 259.4); /* darker: hover, azure text */
+  --op-azure-soft: oklch(0.5729 0.1798 257.5 / 10%);
+  --op-azure-glow: oklch(0.5729 0.1798 257.5 / 24%);
+
+  /*
+   * The five publication states (spec §17), darkened so each reads as text on
+   * its own soft wash. Same semantic hues as the athlete app: summit green for
+   * live, alert amber for awaiting review, danger red for rejected.
+   */
+  --op-live: oklch(0.5432 0.1112 152.2);
+  --op-live-soft: oklch(0.5432 0.1112 152.2 / 11%);
+  --op-pending: oklch(0.5837 0.1197 66.6);
+  --op-pending-soft: oklch(0.5837 0.1197 66.6 / 12%);
+  --op-draft: oklch(0.5251 0.0257 264.4);
+  --op-draft-soft: oklch(0 0 0 / 6%);
+  --op-rejected: oklch(0.5253 0.1697 29.2);
+  --op-rejected-soft: oklch(0.5253 0.1697 29.2 / 10%);
+  --op-expired: oklch(0.5215 0.0787 299.4);
+  --op-expired-soft: oklch(0.5215 0.0787 299.4 / 11%);
+}
+
+* {
+  border-color: var(--op-line);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--op-canvas);
+  color: var(--op-ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Every figure in this tool is compared against the one above it. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/**
+ * The serif is for NAMES AND FIGURES — a company, a mountain, a headline
+ * number. Not for UI text. It is what stops a dense operational screen reading
+ * as a spreadsheet.
+ */
+.ser {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+/** The small caps label used throughout the reference canvas. */
+.lbl {
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--op-faint);
+}
+
+/** An outline, never a shadow — the family's one border treatment. */
+.hairline {
+  border: 1px solid var(--op-line);
+}
+
+input,
+textarea,
+select {
+  color-scheme: light;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--op-azure);
+  outline-offset: 2px;
+}
+
+::placeholder {
+  color: var(--op-faint);
+}
+
+::selection {
+  background: var(--op-azure-glow);
+}

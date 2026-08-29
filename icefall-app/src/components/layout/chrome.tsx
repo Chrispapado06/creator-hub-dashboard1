@@ -124,7 +124,7 @@ export function SegmentedTabs<T extends string>({
   const scroller = useRef<HTMLDivElement | null>(null);
   const [clipped, setClipped] = useState(false);
 
-  // Explore now carries five tabs, which overflow 375 px. The strip has always
+  // Explore now carries six tabs, which overflow 375 px. The strip has always
   // scrolled, but silently: the fifth label was clipped with nothing to say it
   // could be reached, and selecting it from elsewhere left it off-screen.
   useEffect(() => {

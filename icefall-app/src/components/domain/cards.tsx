@@ -7,6 +7,7 @@ import {
   MessageSquare,
   Mountain as MountainIcon,
   Sun,
+  Thermometer,
   Wind,
   Zap,
   Check,
@@ -93,6 +94,8 @@ const WEATHER_ICON = {
   rain: CloudRain,
   wind: Wind,
   storm: Zap,
+  /** A thermometer reading off the device, and no observation of the sky. */
+  device: Thermometer,
 } as const;
 
 export function WeatherStrip({
@@ -108,8 +111,13 @@ export function WeatherStrip({
       <Icon size={15} strokeWidth={1.5} className="shrink-0 text-azure" />
       <span className="tnum shrink-0 whitespace-nowrap text-snow">{conditions.tempC}°</span>
       <span className="shrink-0 text-mist-dim">·</span>
-      <span className="tnum shrink-0 whitespace-nowrap">{conditions.windKph} km/h</span>
-      <span className="shrink-0 text-mist-dim">·</span>
+      {/* Omitted, not zeroed. See `Conditions.windKph`. */}
+      {conditions.windKph != null && (
+        <>
+          <span className="tnum shrink-0 whitespace-nowrap">{conditions.windKph} km/h</span>
+          <span className="shrink-0 text-mist-dim">·</span>
+        </>
+      )}
       <span className="min-w-0 truncate">{conditions.summary}</span>
     </div>
   );

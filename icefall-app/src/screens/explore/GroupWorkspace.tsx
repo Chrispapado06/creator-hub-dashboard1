@@ -257,7 +257,7 @@ function Workspace({ group }: { group: Expedition }) {
 
   return (
     <Screen>
-      <ScreenHeader title={group.peakName} subtitle="Group workspace" back />
+      <ScreenHeader title={group.peakName} subtitle="Group workspace" />
 
       <Stagger>
         <Rise>
@@ -376,7 +376,7 @@ function Workspace({ group }: { group: Expedition }) {
 function NotOnThisDevice() {
   return (
     <Screen>
-      <ScreenHeader title="Group" back />
+      <ScreenHeader title="Group" />
       <Stagger>
         <Rise>
           <Card className="py-8">

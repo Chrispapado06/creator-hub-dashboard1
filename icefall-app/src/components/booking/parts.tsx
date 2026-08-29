@@ -1,11 +1,10 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { BadgeCheck, CalendarDays, ChevronRight, Lock, ShieldCheck, Star, Users } from "lucide-react";
+import { CalendarDays, ChevronRight, Lock, ShieldCheck, UserRound, Users } from "lucide-react";
 import { Card, SectionLabel } from "@/components/ui/primitives";
 import { useMountainImage } from "@/components/domain/MountainImage";
 import { cn } from "@/lib/utils";
-import { StripeMark } from "./PayMarks";
-import { BOOKING, GUIDE } from "@/screens/booking/data";
+import { BOOKING, FEE_DISCLOSURE, GUIDE } from "@/screens/booking/data";
 import { formatEur } from "@/money/model";
 
 /* -------------------------------------------------------------------------- */
@@ -13,35 +12,23 @@ import { formatEur } from "@/money/model";
 /* -------------------------------------------------------------------------- */
 
 /**
- * The verified tick.
+ * THE VERIFIED TICK IS GONE, AND SO ARE THE STARS.
  *
- * It is a BUTTON, not decoration, and what it opens is the exact sentence
- * ICEFALL is entitled to say: a member of staff read this guide's documents on
- * a date, and did not ring the association. A bare tick means "trust this
- * person" to someone about to follow them onto a glacier, and ICEFALL has not
- * earned the right to say that much.
+ * This block used to render a tick that opened "Documents checked by ICEFALL on
+ * 5 Jun 2026", and, in its full-size form, a five-star row reading 4.9 (127).
+ * Both were invented. ICEFALL has read nobody's documents and holds no reviews
+ * to average, and a tick plus a rating beside a name is precisely the pair a
+ * client reads as "this person has been checked and other people were happy" —
+ * the two claims most likely to decide who they follow onto a glacier.
+ *
+ * What stands in their place is the guide's own claim about their licence,
+ * labelled as a claim, and one sentence saying ICEFALL has not checked it. That
+ * is less reassuring and it is what is true. If document checks are ever run,
+ * the record comes back carrying the date they actually happened.
  */
-export function VerifiedTick({ onClick }: { onClick?: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={GUIDE.verificationSentence}
-      aria-label={GUIDE.verificationSentence}
-      className="shrink-0 text-azure transition-opacity hover:opacity-80"
-    >
-      <BadgeCheck size={15} strokeWidth={2} />
-    </button>
-  );
-}
+export function GuideRow({ compact }: { compact?: boolean }) {
+  if (GUIDE === null) return <NoGuideRow compact={compact} />;
 
-export function GuideRow({
-  compact,
-  onVerified,
-}: {
-  compact?: boolean;
-  onVerified?: () => void;
-}) {
   return (
     <div className="flex items-center gap-3">
       <span
@@ -54,35 +41,54 @@ export function GuideRow({
       </span>
 
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5">
-          <p className={cn("truncate text-snow", compact ? "text-[14px]" : "text-[16px]")}>
-            {GUIDE.name}
-          </p>
-          <VerifiedTick onClick={onVerified} />
-        </div>
-        <p className="mt-0.5 truncate text-[11.5px] text-mist">{GUIDE.credential}</p>
+        <p className={cn("truncate text-snow", compact ? "text-[14px]" : "text-[16px]")}>
+          {GUIDE.name}
+        </p>
+        <p className="mt-0.5 truncate text-[11.5px] text-mist">{GUIDE.claimedCredential}</p>
 
         {compact ? (
-          <Link to="/explore/guides" className="mt-1 inline-flex items-center gap-0.5 text-[11.5px] text-azure">
+          <Link
+            to="/explore/guides"
+            className="mt-1 inline-flex items-center gap-0.5 text-[11.5px] text-azure"
+          >
             View profile <ChevronRight size={12} strokeWidth={1.9} />
           </Link>
         ) : (
-          <div className="mt-1.5 flex items-center gap-1.5">
-            <span className="flex items-center gap-[1px]" aria-hidden>
-              {[1, 2, 3, 4, 5].map((i) => (
-                <Star
-                  key={i}
-                  size={11}
-                  strokeWidth={1.6}
-                  className={i <= Math.round(GUIDE.rating) ? "text-azure" : "text-mist-dim/50"}
-                  fill={i <= Math.round(GUIDE.rating) ? "currentColor" : "none"}
-                />
-              ))}
-            </span>
-            <span className="tnum text-[12px] text-snow">{GUIDE.rating.toFixed(1)}</span>
-            <span className="tnum text-[11.5px] text-mist-dim">({GUIDE.reviews})</span>
-          </div>
+          <p className="mt-1.5 text-[11.5px] leading-relaxed text-mist-dim">
+            ICEFALL has not checked this licence.
+          </p>
         )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * What the row is in an ordinary build: empty.
+ *
+ * The layout has to survive having no guide, because in production there is
+ * none — and an avatar with a plausible name dropped into the gap is how the
+ * fabricated guide got here in the first place.
+ */
+function NoGuideRow({ compact }: { compact?: boolean }) {
+  return (
+    <div className="flex items-center gap-3">
+      <span
+        className={cn(
+          "grid shrink-0 place-items-center rounded-full border border-dashed border-hairline-strong text-mist-dim",
+          compact ? "h-11 w-11" : "h-14 w-14",
+        )}
+      >
+        <UserRound size={compact ? 17 : 21} strokeWidth={1.4} />
+      </span>
+
+      <div className="min-w-0 flex-1">
+        <p className={cn("truncate text-mist", compact ? "text-[14px]" : "text-[16px]")}>
+          No guide attached
+        </p>
+        <p className="mt-0.5 text-[11.5px] leading-relaxed text-mist-dim">
+          Nobody has listed with ICEFALL yet
+        </p>
       </div>
     </div>
   );
@@ -132,13 +138,13 @@ export function MountainRow({ compact }: { compact?: boolean }) {
 }
 
 /** Guide + mountain, the block that repeats on payment and review. */
-export function BookingSummary({ onVerified }: { onVerified?: () => void }) {
+export function BookingSummary() {
   return (
     <>
       <SectionLabel>Booking summary</SectionLabel>
       <Card className="mt-3" inset={false}>
         <div className="p-4">
-          <GuideRow compact onVerified={onVerified} />
+          <GuideRow compact />
         </div>
         <div className="border-t border-hairline p-4">
           <MountainRow compact />
@@ -152,8 +158,20 @@ export function BookingSummary({ onVerified }: { onVerified?: () => void }) {
 /* Price                                                                       */
 /* -------------------------------------------------------------------------- */
 
-export function PriceLines({ onFeeInfo }: { onFeeInfo?: () => void }) {
-  const p = BOOKING.pricing;
+/**
+ * ONE LINE AND A TOTAL, AND THEY ARE THE SAME NUMBER.
+ *
+ * There was a second row here — "ICEFALL service fee (5%)" with its own amount
+ * and an (i) that opened an explainer — because the model added a fee on top of
+ * the guide's rate. It does not any more: ICEFALL's 10% is deducted from what
+ * the guide receives, so the client's total is the guide's rate and nothing
+ * else, and a fee row would be charging them for something twice.
+ *
+ * The disclosure below is not a charge. It says where ICEFALL's money comes
+ * from, which the client is entitled to know and which is a statement about the
+ * guide's earnings rather than about their bill.
+ */
+export function PriceLines() {
   return (
     <Card className="mt-3">
       <div className="flex items-baseline justify-between gap-3">
@@ -163,27 +181,15 @@ export function PriceLines({ onFeeInfo }: { onFeeInfo?: () => void }) {
             {formatEur(BOOKING.dayRate)} / day
           </p>
         </div>
-        <p className="tnum shrink-0 text-[14px] text-snow">{formatEur(p.guideFee)}</p>
-      </div>
-
-      <div className="mt-3 flex items-baseline justify-between gap-3">
-        <button
-          type="button"
-          onClick={onFeeInfo}
-          className="flex items-center gap-1.5 text-[13px] text-mist transition-colors hover:text-snow"
-        >
-          ICEFALL service fee ({BOOKING.serviceFeePct}%)
-          <span className="grid h-[14px] w-[14px] place-items-center rounded-full border border-hairline-strong text-[9px] text-mist-dim">
-            i
-          </span>
-        </button>
-        <p className="tnum shrink-0 text-[14px] text-snow">{formatEur(p.serviceFee)}</p>
+        <p className="tnum shrink-0 text-[14px] text-snow">{formatEur(BOOKING.totals.total)}</p>
       </div>
 
       <div className="mt-3.5 flex items-baseline justify-between gap-3 border-t border-hairline pt-3.5">
         <p className="text-[14px] text-snow">Total</p>
-        <p className="tnum text-[19px] font-light text-azure">{formatEur(p.total)}</p>
+        <p className="tnum text-[19px] font-light text-azure">{formatEur(BOOKING.totals.total)}</p>
       </div>
+
+      <p className="mt-3 text-[11px] leading-relaxed text-mist-dim">{FEE_DISCLOSURE}</p>
     </Card>
   );
 }
@@ -192,9 +198,19 @@ export function PriceLines({ onFeeInfo }: { onFeeInfo?: () => void }) {
 /* What happens next                                                           */
 /* -------------------------------------------------------------------------- */
 
-const STEPS = [
-  ["Booking confirmed", "You'll get a confirmation with everything in one place."],
-  ["Guide notified", `${GUIDE.firstName} is told straight away and will be in touch within 24 hours.`],
+/**
+ * Written in the conditional, because none of it happens yet. The guide step
+ * names the guide only when there is one — with no listing attached, "Tomás is
+ * told straight away" would be a promise about a person who is not there.
+ */
+const STEPS: readonly (readonly [string, string])[] = [
+  ["Booking confirmed", "You would get a confirmation with everything in one place."],
+  [
+    "Guide notified",
+    GUIDE
+      ? `${GUIDE.firstName} would be told straight away and would be in touch within 24 hours.`
+      : "Your guide would be told straight away and would be in touch within 24 hours.",
+  ],
   ["Plan together", "Itinerary, logistics, and anything particular to you."],
   ["Be ready", "Prepare for your objective — ICEFALL's training plan follows your dates."],
   ["Summit", "The part nobody can promise you. Go well."],
@@ -231,12 +247,20 @@ export function WhatHappensNext() {
 /**
  * The reassurance block.
  *
- * Every claim here is one ICEFALL can actually stand behind. Deliberately NOT
- * said, because they are the usual wording and they are not true: "100% secure"
- * (nobody can promise that), and "all guides are verified" — ICEFALL reads the
- * documents a guide uploads, which is a real check but a much narrower claim
- * than the phrase implies. The wording below is what the verification screen
- * says, so a client cannot be told two different things.
+ * Every claim here is one ICEFALL can actually stand behind, and after the
+ * verification record came out of this flow that meant putting the rest of the
+ * block into the same tense. It previously read "Card details go straight to our
+ * payment provider", "Processed by Stripe. Encrypted in transit, PCI-compliant"
+ * and "We read every guide's licence, insurance and first aid before they can
+ * list" — three present-tense descriptions of infrastructure that does not
+ * exist. No processor is connected, none has been chosen publicly, and no
+ * guide's documents have ever been read. Describing an intention in the present
+ * tense is how an intention gets read as a fact.
+ *
+ * Still deliberately NOT said, because they are the usual wording and they are
+ * not true: "100% secure" (nobody can promise that), and "all guides are
+ * verified" — reading the documents a guide uploads is a real check but a much
+ * narrower claim than the phrase implies.
  */
 export function TrustBlock() {
   return (
@@ -247,8 +271,9 @@ export function TrustBlock() {
           <div>
             <p className="text-[13.5px] text-snow">Booking through ICEFALL</p>
             <p className="mt-1.5 text-[12px] leading-relaxed text-mist">
-              Card details go straight to our payment provider — ICEFALL never sees or stores your
-              card number. Your money is held until the day you meet your guide.
+              None of this is running yet. When payments are connected, card details will go
+              straight to the provider — ICEFALL will never see or store your card number — and
+              your money will be held until the day you meet your guide.
             </p>
           </div>
         </div>
@@ -256,17 +281,12 @@ export function TrustBlock() {
 
       <div className="grid grid-cols-2 gap-3">
         <TrustTile
-          title="Documents checked"
-          body="We read every guide's licence, insurance and first aid before they can list. We do not contact the issuing association."
+          title="Document checks"
+          body="No guide's documents have been read, because no guide has listed. When they can, we will read the licence, insurance and first aid before a listing goes live — and we will not contact the issuing association."
         />
         <TrustTile
           title="Payments"
-          body={
-            <>
-              Processed by <StripeMark className="inline-block h-3.5 w-auto align-[-2px] text-snow" />
-              <span className="sr-only">Stripe</span>. Encrypted in transit, PCI-compliant.
-            </>
-          }
+          body="No payment provider is connected. When one is, card entry will run inside its own hosted fields, so the number never reaches ICEFALL."
         />
       </div>
 

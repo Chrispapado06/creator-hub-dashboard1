@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="240" height="240">
+  <defs>
+    <linearGradient id="alp" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#131A26"/><stop offset="100%" stop-color="#07090E"/>
+    </linearGradient>
+  </defs>
+  <rect width="240" height="240" fill="url(#alp)"/>
+  <!-- shield -->
+  <path d="M120 44 L180 66 V120 C180 150 154 168 120 180 C86 168 60 150 60 120 V66 Z"
+        fill="none" stroke="#4B9BFF" stroke-width="2" opacity="0.55"/>
+  <!-- aiguille -->
+  <path d="M84 142 L120 76 L156 142 Z" fill="#EAEEF5"/>
+  <path d="M120 76 L136 106 L122 112 L110 100 Z" fill="#07090E" opacity="0.30"/>
+  <!-- crossed axes -->
+  <path d="M92 128 L148 96" stroke="#4B9BFF" stroke-width="2.4" stroke-linecap="round" opacity="0.9"/>
+  <path d="M148 128 L92 96" stroke="#4B9BFF" stroke-width="2.4" stroke-linecap="round" opacity="0.9"/>
+  <text x="120" y="206" text-anchor="middle" font-family="Inter Tight, Helvetica, Arial, sans-serif"
+        font-size="24" font-weight="600" fill="#EAEEF5" textLength="172" lengthAdjust="spacingAndGlyphs">CHAMONIX</text>
+  <text x="120" y="224" text-anchor="middle" font-family="Inter Tight, Helvetica, Arial, sans-serif"
+        font-size="11" font-weight="400" fill="#8B94A6" textLength="150" lengthAdjust="spacingAndGlyphs">ALPINE GUIDES</text>
+</svg>

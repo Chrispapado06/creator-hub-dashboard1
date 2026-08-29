@@ -4,15 +4,30 @@ import { Container } from "@/components/Shell";
 import { Badge, Button, Card, GuidePhoto, Label, Rating, VerifiedTick } from "@/components/ui";
 import { guideById, verificationSentence } from "@/data/demo";
 import { useAuth } from "@/lib/auth";
-import { formatEur, priceBooking } from "@/money/model";
+import { formatEur, FLEXIBLE_POLICY, GUIDE_FEE_DISCLOSURE } from "@/money/model";
+
+/**
+ * The notice window that refunds in full, read off the policy rather than typed.
+ *
+ * A GUIDE DAY IS NOT AN EXPEDITION, and they carry different policies.
+ * `FLEXIBLE_POLICY` — free cancellation to 14 days, then nothing — is the one
+ * that governs booking a guide; `STANDARD_POLICY`'s tiered 60/30/14 schedule
+ * governs an expedition, and `/app` prints that one on its trip and company
+ * pages. Both are correct, for different things.
+ *
+ * The bug here was never the number. It was that "14 days" was typed into three
+ * separate sentences as prose, so nothing tied it to the policy it was
+ * describing and it could drift the moment the policy moved.
+ */
+const FREE_CANCEL_DAYS = FLEXIBLE_POLICY.tiers.find((t) => t.refundPct === 100)?.daysBefore ?? 0;
 
 /**
  * A guide's listing.
  *
  * The Airbnb detail pattern: a wide left column of substance, a sticky right
  * column that books. What differs is the honesty — the verified line says what
- * ICEFALL actually checked, the price shows the service fee added on top rather
- * than hidden, and messaging is only promised AFTER a booking, never before.
+ * ICEFALL actually checked, the advertised price is the whole of what a climber
+ * pays, and messaging is only promised AFTER a booking, never before.
  */
 export default function GuideDetail() {
   const { id } = useParams<{ id: string }>();
@@ -20,9 +35,6 @@ export default function GuideDetail() {
   const { requireAuth } = useAuth();
   const guide = guideById(id ?? "");
   if (!guide) return <Navigate to="/guides" replace />;
-
-  // Indicative: a real quote spans the trip. One day, so the fee maths is legible.
-  const pricing = priceBooking(guide.dayRate);
 
   return (
     <Container className="py-10">
@@ -111,15 +123,25 @@ export default function GuideDetail() {
                 <Rating value={guide.rating} reviews={guide.reviews} />
               </div>
 
-              {/* Price transparency: the service fee is ADDED, shown, never buried. */}
-              <dl className="mt-4 space-y-2 border-t border-hairline pt-4 text-[13px]">
-                <Line label="Guiding, one day" value={formatEur(pricing.guideFee)} />
-                <Line label="ICEFALL service fee" value={formatEur(pricing.serviceFee)} muted />
-                <div className="flex items-baseline justify-between border-t border-hairline pt-2.5">
-                  <dt className="text-snow">Total, per day</dt>
-                  <dd className="tnum text-[15px] text-snow">{formatEur(pricing.total)}</dd>
-                </div>
-              </dl>
+              {/*
+                THE BREAKDOWN IS GONE BECAUSE THERE IS NOTHING TO BREAK DOWN.
+
+                This was three rows — guiding, "ICEFALL service fee", total —
+                and it existed to prove the fee was added in the open rather
+                than buried. Under the deducted model the fee is not added at
+                all: the guide's day rate IS the price. The three rows would
+                now print the same figure, a zero, and the same figure again,
+                which reads as a breakdown that has gone wrong rather than as
+                a price with nothing hidden in it.
+
+                The sentence below replaces it. That transparency is now
+                carried by GUIDE_FEE_DISCLOSURE and by nothing else, so it must
+                not be dropped in review — a climber can no longer check the
+                arithmetic themselves, and this is what they get instead.
+              */}
+              <p className="mt-4 border-t border-hairline pt-4 text-[11.5px] leading-relaxed text-mist-dim">
+                {GUIDE_FEE_DISCLOSURE}
+              </p>
 
               <Button
                 size="lg"
@@ -132,8 +154,8 @@ export default function GuideDetail() {
               <div className="mt-4 flex items-start gap-2.5 rounded-tile border border-hairline bg-obsidian/40 p-3">
                 <Lock size={14} strokeWidth={1.7} className="mt-px shrink-0 text-mist-dim" />
                 <p className="text-[11.5px] leading-relaxed text-mist-dim">
-                  Your money is held until the day you meet. Free cancellation up to 14 days before
-                  you start.
+                  Your money is held until the day you meet. Free cancellation up to{" "}
+                  {FREE_CANCEL_DAYS} days before you start.
                 </p>
               </div>
 
@@ -162,15 +184,6 @@ function Fact({ label, value }: { label: string; value: string }) {
     <div>
       <Label>{label}</Label>
       <p className="tnum mt-1.5 text-[16px] font-light text-snow">{value}</p>
-    </div>
-  );
-}
-
-function Line({ label, value, muted }: { label: string; value: string; muted?: boolean }) {
-  return (
-    <div className="flex items-baseline justify-between">
-      <dt className={muted ? "text-mist-dim" : "text-mist"}>{label}</dt>
-      <dd className={`tnum ${muted ? "text-mist-dim" : "text-mist"}`}>{value}</dd>
     </div>
   );
 }

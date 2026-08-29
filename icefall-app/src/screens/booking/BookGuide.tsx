@@ -1,16 +1,14 @@
-import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Check, ChevronRight, Lock, Minus } from "lucide-react";
 import { Rise, Screen, Stagger } from "@/components/layout/chrome";
 import { Button, Card, Disclaimer, SectionLabel } from "@/components/ui/primitives";
 import { GuideRow, MountainRow, StepHeader } from "@/components/booking/parts";
-import { BOOKING, GUIDE } from "./data";
+import { BOOKING, BOOKING_NOTICE, FEE_DISCLOSURE } from "./data";
 import { PAYMENTS_NOT_CONNECTED, formatEur } from "@/money/model";
 
 /** Step 1 of 3 — what you are booking, and what it costs before fees. */
 export default function BookGuide() {
   const navigate = useNavigate();
-  const [note, setNote] = useState<string | null>(null);
 
   return (
     <Screen>
@@ -19,15 +17,15 @@ export default function BookGuide() {
 
         <Rise>
           <Card>
-            <GuideRow onVerified={() => setNote(GUIDE.verificationSentence)} />
+            <GuideRow />
           </Card>
         </Rise>
 
-        {note && (
-          <Rise className="pt-3">
-            <Disclaimer>{note}</Disclaimer>
-          </Rise>
-        )}
+        {/* Printed, not hidden behind a tap. Whether there is a guide at all is
+            the first thing this screen has to be straight about. */}
+        <Rise className="pt-3">
+          <Disclaimer>{BOOKING_NOTICE}</Disclaimer>
+        </Rise>
 
         <Rise className="pt-6">
           <SectionLabel>Your booking</SectionLabel>
@@ -109,11 +107,14 @@ export default function BookGuide() {
                 </p>
               </div>
               <p className="tnum text-[24px] font-light text-azure">
-                {formatEur(BOOKING.pricing.guideFee)}
+                {formatEur(BOOKING.totals.total)}
               </p>
             </div>
-            <p className="mt-2.5 border-t border-hairline pt-2.5 text-[11px] text-mist-dim">
-              ICEFALL's {BOOKING.serviceFeePct}% service fee is added at the next step.
+            {/* This said "ICEFALL's 5% service fee is added at the next step."
+                Nothing is added at any step now — the rate above is what the
+                client pays, and ICEFALL's cut comes out of the guide's side. */}
+            <p className="mt-2.5 border-t border-hairline pt-2.5 text-[11px] leading-relaxed text-mist-dim">
+              {FEE_DISCLOSURE}
             </p>
           </Card>
 

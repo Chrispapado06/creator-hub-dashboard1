@@ -1,4 +1,4 @@
-import { eur, priceBooking, type Cents, type Pricing } from "@/money/model";
+import { eur, type Cents } from "@/money/model";
 import { GUIDES, type Guide } from "@/data/demo";
 import { originByCode, searchFlights, type Airport, type Itinerary } from "@/lib/flights";
 
@@ -228,19 +228,66 @@ export function nightsOf(days: number): number {
 }
 
 export interface TripCost {
-  guide: Pricing;
+  /**
+   * What the client pays for the guiding: the guide's own rate, nothing added.
+   *
+   * A DAY RATE BUYS THE ROPE TEAM, NOT A SEAT — it is deliberately not
+   * multiplied by party size. That used to be encoded only as the ABSENCE of a
+   * `* args.pax` below, which is invisible in review and one careless edit from
+   * doubling every two-person booking. Saying it here is the guard.
+   */
+  guidingCents: Cents;
   days: number;
   nights: number;
+  /** Passed through at fare. */
   flightCents: Cents;
+  /** Passed through at rate. */
   lodgeCents: Cents;
-  /** Everything the client pays ICEFALL for the trip as configured. */
+  /**
+   * Everything the client pays ICEFALL for the trip as configured.
+   *
+   * This BUNDLES flights and lodging, so it must never be handed to anything
+   * that computes a share of it: ICEFALL earns on the guiding it can stand
+   * behind, and taking a cut of an airline seat would also make it a package
+   * organiser under EU/UK law (see the note in `flights.ts`). Passing it to
+   * `instalmentsFor` is correct; passing it to a commission function is not.
+   */
   total: Cents;
 }
 
 /**
- * Cost a whole trip. Flights and lodging are passed through at price — ICEFALL
- * earns its service fee on the GUIDING it can stand behind, not by marking up an
- * airline seat or a hotel bed (see the package-organiser note in flights.ts).
+ * Cost a whole trip.
+ *
+ * ── WHY THERE IS NO COMMISSION ARITHMETIC IN THIS FILE ──────────────────────
+ *
+ * ICEFALL's cut is 10% DEDUCTED from the guide's fee, not added to it (settled
+ * 2026-08-28; the worked example is above `GUIDE_COMMISSION_PCT` in
+ * `money/model.ts`). A guide charging €1,000 means the climber pays €1,000, the
+ * guide receives €900, and ICEFALL keeps €100.
+ *
+ * The consequence here is the whole point of the deducted arrangement: **what
+ * the climber pays no longer depends on the commission at all.** So this path
+ * computes no commission, carries no commission field, and does not import the
+ * rate. Changing `GUIDE_COMMISSION_PCT` from 10 to 12 changes not one cent of
+ * any number below, and a file that prices a climber's basket should not react
+ * to it.
+ *
+ * This replaced a `priceBooking()` returning `{ guideFee, serviceFee, total }`
+ * with the fee ADDED on top, which two screens rendered as its own line. There
+ * is no second number to show now, and a commission row in a column that sums
+ * to a total would read as an addition — reinstating in the UI exactly the
+ * arrangement the owner removed. The field is ABSENT rather than
+ * present-and-documented-as-unrenderable, because in this codebase data that
+ * must not surface is gated at its definition, not at the render site.
+ *
+ * IF ICEFALL-WEB EVER SHOWS WHAT A GUIDE EARNS, do not hand-write the split
+ * here. `totalsFor()` owns the rounding rule — it rounds the commission down so
+ * the remainder goes to the guide, because a marketplace that rounds in its own
+ * favour on every booking is quietly skimming. A request is filed with the
+ * money model's owner for a flat-amount entry point to call instead.
+ *
+ * Flights and lodging are passed through at price and carry no commission at
+ * all — see the package-organiser note in `flights.ts`.
  */
 export function tripCost(args: {
   guide: Guide;
@@ -249,17 +296,18 @@ export function tripCost(args: {
   flight?: Itinerary | null;
   lodge?: Lodge | null;
 }): TripCost {
-  const guide = priceBooking(args.guide.dayRate * args.days);
+  // Not multiplied by pax — see the note on `guidingCents`.
+  const guidingCents = args.guide.dayRate * args.days;
   const flightCents = args.flight ? args.flight.perPersonCents * args.pax : 0;
   const nights = nightsOf(args.days);
   const lodgeCents = args.lodge ? args.lodge.nightlyCents * args.pax * nights : 0;
   return {
-    guide,
+    guidingCents,
     days: args.days,
     nights,
     flightCents,
     lodgeCents,
-    total: guide.total + flightCents + lodgeCents,
+    total: guidingCents + flightCents + lodgeCents,
   };
 }
 

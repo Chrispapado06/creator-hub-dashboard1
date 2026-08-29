@@ -26,6 +26,12 @@ import { normalise as normaliseBudget, type BudgetState } from "@/coach/budget";
  */
 const STORAGE_KEY = "icefall.state.v1";
 
+/** See `addHydration`: the demo athlete's day, in DEV only. Zero everywhere else. */
+const SEEDED_HYDRATION_ML = import.meta.env.DEV ? 1850 : 0;
+
+/** See the `goals` memo: the demo athlete's objectives, in DEV only. */
+const SEEDED_GOALS: Goal[] = import.meta.env.DEV ? GOALS : [];
+
 /**
  * A mountain the athlete is keeping an eye on. Holds enough to render a row
  * without a lookup, because discovered peaks aren't in any local table.
@@ -557,6 +563,26 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
        */
       summits: import.meta.env.DEV ? USER.summits : [],
       achievements: import.meta.env.DEV ? USER.achievements : [],
+      /**
+       * AND THE SAME APPLIES TO THE LEVEL, WHICH THIS FIX ORIGINALLY MISSED.
+       *
+       * `...USER` also carried `level: 24`, `xp: 12540` and `xpToNext: 14000`,
+       * so a fresh install opened the Profile at Level 24 with 12,540 XP and
+       * "1,460 XP to level 25" — sitting directly beneath career totals that
+       * had just been corrected to zero. A level is a claim about what the
+       * athlete has done, exactly like a summit, and there is no XP engine in
+       * the app: nothing awards it, nothing spends it, and the curve those
+       * three numbers imply was never designed. Points ARE real (they are
+       * awarded per recorded activity by `tracking/points.ts`), and the Profile
+       * shows those instead.
+       *
+       * `xpToNext: 0` is the marker for "no progression model is running", and
+       * the Profile reads it that way rather than printing a threshold nobody
+       * chose.
+       */
+      level: import.meta.env.DEV ? USER.level : 1,
+      xp: import.meta.env.DEV ? USER.xp : 0,
+      xpToNext: import.meta.env.DEV ? USER.xpToNext : 0,
       // A real date for this install, not "three years before whenever you
       // happen to open the app".
       memberSince: state.memberSince ?? USER.memberSince,
@@ -564,12 +590,45 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     [state.name, state.disciplines, state.experience, state.onboarded, state.memberSince],
   );
 
-  const goals = useMemo<Goal[]>(() => [...state.customGoals, ...GOALS], [state.customGoals]);
+  /**
+   * THE OBJECTIVE IS THE ATHLETE'S, OR THERE ISN'T ONE.
+   *
+   * The three fixture goals were merged in unconditionally, so a production
+   * install carried Mont Blanc via the Goûter Route, the Matterhorn and Everest
+   * as this person's own active objectives — with `trainingStartedAt` eleven
+   * weeks ago, `preparation: 62`, and a gap list making direct claims about what
+   * they had and had not done: *"Altitude exposure above 4,000 m — one rotation
+   * completed of three"*, *"Crevasse rescue refresher outstanding"*, *"Loaded
+   * carries at 15 kg not yet started"*.
+   *
+   * Worse than a stray card, because `usePrimaryGoal` sorts by SOONEST target
+   * date rather than preferring the athlete's own. Mont Blanc sits eight months
+   * out, so an athlete who finished onboarding naming an objective further away
+   * had the fixture's mountain promoted over their own — and Home, the Coach,
+   * the kit checklist, the conditions band and the benchmark all orient on the
+   * primary goal. The whole app pointed at a mountain they never chose and told
+   * them they were twelve weeks into training for it.
+   *
+   * Same rule as the summits, the achievements and the level above: in DEV the
+   * fixture is worth having so a populated app can be judged, and nowhere else.
+   */
+  const goals = useMemo<Goal[]>(() => [...state.customGoals, ...SEEDED_GOALS], [state.customGoals]);
 
   const completeOnboarding = useCallback((a: OnboardingAnswers) => {
     setState((s) => {
-      // Only create a goal when the athlete named one we don't already track.
-      const existing = GOALS.find(
+      /**
+       * Only create a goal when the athlete named one we don't already track —
+       * and "already track" has to mean the list they will actually see.
+       *
+       * This read `GOALS` directly. Once the fixture became DEV-only that was a
+       * bypass with teeth: in production an athlete who typed "Mont Blanc",
+       * "Matterhorn" or "Everest" during onboarding would match a fixture goal
+       * that is no longer in `goals`, so no objective was created and they
+       * finished onboarding with none at all — having just named one. Matching
+       * against `SEEDED_GOALS` keeps the dedupe honest in DEV and inert in
+       * production, which is what the check was for.
+       */
+      const existing = SEEDED_GOALS.find(
         (g) =>
           g.mountainId === a.goalMountainId ||
           g.name.toLowerCase() === a.goalName.trim().toLowerCase(),
@@ -1252,8 +1311,18 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  /**
+   * A FRESH INSTALL HAS DRUNK NOTHING.
+   *
+   * The default here was 1,850 ml, inherited from the demo athlete's day, so
+   * the nutrition screen opened claiming the athlete had already drunk 1.8 L
+   * before they touched it — the same fixture-as-personal-record mistake as the
+   * summits below, in a place nobody was looking. In DEV the seeded figure is
+   * still useful for judging a populated screen; everywhere else it starts at
+   * nothing and only their own taps move it.
+   */
   const addHydration = useCallback((ml: number) => {
-    setState((s) => ({ ...s, hydrationMl: Math.max(0, (s.hydrationMl ?? 1850) + ml) }));
+    setState((s) => ({ ...s, hydrationMl: Math.max(0, (s.hydrationMl ?? SEEDED_HYDRATION_ML) + ml) }));
   }, []);
 
   const setBodyMassKg = useCallback((kg: number) => {
@@ -1337,7 +1406,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       resetAll,
       isSessionComplete,
       toggleSession,
-      hydrationMl: state.hydrationMl ?? 1850,
+      hydrationMl: state.hydrationMl ?? SEEDED_HYDRATION_ML,
       addHydration,
       bodyMassKg: state.bodyMassKg ?? 72,
       setBodyMassKg,

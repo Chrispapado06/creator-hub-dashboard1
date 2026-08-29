@@ -3,6 +3,18 @@ import { Clock, MapPin } from "lucide-react";
 import { Badge, GuidePhoto, Rating, VerifiedTick } from "@/components/ui";
 import { formatEur } from "@/money/model";
 import type { Expedition, Guide } from "@/data/demo";
+import { peakFallback, peakImage } from "@/app/peakPlate";
+
+/**
+ * These cards pointed at `/img/<peakId>.jpg` — a path where exactly six
+ * photographs live. The catalogue has 52 peaks, so 45 images on the preview
+ * landing page and the preview expeditions list rendered as broken boxes.
+ *
+ * The bundled photographs are under `/img/peaks/`, and `/app` has long since
+ * settled how to reach them: `peakImage` for the path, `peakFallback` for a
+ * drawn plate when the photograph is missing or fails. Never a photograph of a
+ * different mountain — see peakPlate.ts.
+ */
 
 /** The Airbnb-style listing card for a guide. */
 export function GuideCard({ guide }: { guide: Guide }) {
@@ -13,7 +25,15 @@ export function GuideCard({ guide }: { guide: Guide }) {
             stock alpine shot to a person. */}
         <div className="relative h-44 overflow-hidden bg-slate">
           <img
-            src={`/img/${guide.heroPeak}.jpg`}
+            src={peakImage(guide.heroPeak)}
+            onError={(ev) => {
+              // Never a photograph of a different mountain — see peakPlate.ts.
+              const el = ev.currentTarget;
+              if (!el.dataset.fellBack) {
+                el.dataset.fellBack = "1";
+                el.src = peakFallback(guide.heroPeak);
+              }
+            }}
             alt=""
             aria-hidden
             className="h-full w-full object-cover opacity-80 transition-transform duration-500 group-hover:scale-[1.04]"
@@ -67,7 +87,14 @@ export function ExpeditionCard({ expedition: e }: { expedition: Expedition }) {
       <div className="overflow-hidden rounded-card border border-hairline bg-graphite transition-colors group-hover:border-hairline-strong">
         <div className="relative h-36 overflow-hidden bg-slate">
           <img
-            src={`/img/${e.heroPeak}.jpg`}
+            src={peakImage(e.heroPeak)}
+            onError={(ev) => {
+              const el = ev.currentTarget;
+              if (!el.dataset.fellBack) {
+                el.dataset.fellBack = "1";
+                el.src = peakFallback(e.heroPeak);
+              }
+            }}
             alt=""
             aria-hidden
             className="h-full w-full object-cover opacity-80 transition-transform duration-500 group-hover:scale-[1.04]"

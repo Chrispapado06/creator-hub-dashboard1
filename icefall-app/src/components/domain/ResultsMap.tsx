@@ -73,14 +73,14 @@ export function ResultsMap({
         id: `${LINE_SOURCE}-casing`,
         type: "line",
         source: LINE_SOURCE,
-        paint: { "line-color": "#080B0D", "line-width": 5, "line-opacity": 0.7 },
+        paint: { "line-color": "#05070B", "line-width": 5, "line-opacity": 0.7 }, // --ice-obsidian
         layout: { "line-cap": "round", "line-join": "round" },
       });
       m.addLayer({
         id: `${LINE_SOURCE}-line`,
         type: "line",
         source: LINE_SOURCE,
-        paint: { "line-color": "#A78B5C", "line-width": 2.4 },
+        paint: { "line-color": "#4B9BFF", "line-width": 2.4 }, // --ice-azure
         layout: { "line-cap": "round", "line-join": "round" },
       });
     });

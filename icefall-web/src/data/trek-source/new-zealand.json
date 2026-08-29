@@ -1,0 +1,329 @@
+[
+ {
+  "id": "abel-tasman-coast-track",
+  "name": "Abel Tasman Coast Track",
+  "regionId": "new-zealand",
+  "country": "New Zealand",
+  "mountainIds": [],
+  "durationDays": [
+   3,
+   5
+  ],
+  "difficulty": "Easy",
+  "maxAltitudeM": 200,
+  "season": "All year, busiest October – April",
+  "priceFromEur": null,
+  "style": "Coastal",
+  "summary": "A 60 km walk along the granite bays and estuaries of Abel Tasman National Park between Marahau and Wainui. Low, sheltered and well graded, but two tidal crossings set the day's timing and water taxis are commonly used to shorten or split the route.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "copland-track",
+  "name": "Copland Track",
+  "regionId": "new-zealand",
+  "country": "New Zealand",
+  "mountainIds": [
+   "aoraki"
+  ],
+  "durationDays": [
+   2,
+   3
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": null,
+  "season": "November – April",
+  "priceFromEur": null,
+  "style": "Valley",
+  "summary": "18 km each way up the Copland valley on the West Coast side of the divide to Welcome Flat, where hot springs sit in front of the Sierra Range. The valley floor is straightforward; the pass at its head is an alpine crossing and a different proposition.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "gillespie-pass-circuit",
+  "name": "Gillespie Pass Circuit",
+  "regionId": "new-zealand",
+  "country": "New Zealand",
+  "mountainIds": [],
+  "durationDays": [
+   3,
+   3
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 1500,
+  "season": "December – March",
+  "priceFromEur": null,
+  "style": "Circuit",
+  "summary": "58 km in the Makarora headwaters, up the Young valley, over Gillespie Pass at about 1,500 m and out down the Wilkin, most parties finishing with a jetboat back to the road. Steep tussock and scree above the bushline, with the Siberia valley as the reward.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "heaphy-track",
+  "name": "Heaphy Track",
+  "regionId": "new-zealand",
+  "country": "New Zealand",
+  "mountainIds": [],
+  "durationDays": [
+   4,
+   6
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": 915,
+  "season": "All year; open to mountain bikes 1 May – 30 November",
+  "priceFromEur": null,
+  "style": "Traverse",
+  "summary": "The longest Great Walk at 78.4 km, crossing Kahurangi National Park from Golden Bay over the Gouland Downs tussock to the nikau palm coast at Kohaihai. The high point, Flanagans Corner, is 915 m — the climbing is spread out rather than steep.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "hump-ridge-track",
+  "name": "Hump Ridge Track",
+  "regionId": "new-zealand",
+  "country": "New Zealand",
+  "mountainIds": [],
+  "durationDays": [
+   3,
+   3
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": null,
+  "season": "October – April",
+  "priceFromEur": null,
+  "style": "Circuit",
+  "summary": "61 km in Fiordland from Rarakau near Tuatapere, climbing to the sandstone tors of the Hump Ridge and returning along the beach and the old Port Craig timber viaducts. Became New Zealand's eleventh Great Walk in 2024.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "kepler-track",
+  "name": "Kepler Track",
+  "regionId": "new-zealand",
+  "country": "New Zealand",
+  "mountainIds": [],
+  "durationDays": [
+   3,
+   4
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": 1472,
+  "season": "Great Walk season, late October – 30 April",
+  "priceFromEur": null,
+  "style": "Circuit",
+  "summary": "A 60 km loop out of Te Anau that climbs to the exposed ridge above the bushline past Mount Luxmore, then drops through beech forest to the Iris Burn and back along Lake Manapouri. The high section is the reason for the grade — there is no shelter on it in bad weather.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "milford-track",
+  "name": "Milford Track",
+  "regionId": "new-zealand",
+  "country": "New Zealand",
+  "mountainIds": [],
+  "durationDays": [
+   4,
+   4
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": 1154,
+  "season": "Great Walk season, 1 November – 30 April",
+  "priceFromEur": null,
+  "style": "Traverse",
+  "summary": "A one-way 53.5 km walk in Fiordland from the head of Lake Te Anau down the Clinton valley, over Mackinnon Pass and out along the Arthur to Milford Sound. Walked in one direction only on fixed dates, with huts booked in advance.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "mueller-hut-route",
+  "name": "Mueller Hut Route",
+  "regionId": "new-zealand",
+  "country": "New Zealand",
+  "mountainIds": [
+   "aoraki"
+  ],
+  "durationDays": [
+   1,
+   2
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 1800,
+  "season": "November – April",
+  "priceFromEur": null,
+  "style": "Base camp",
+  "summary": "1,000 m of ascent in 5.2 km from White Horse Hill above Mount Cook village, up the Sealy Tarns steps and the boulder slope to the hut on the Mueller ridge. It looks straight across at Aoraki, the Hooker and the ice cliffs of Mount Sefton.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "paparoa-track",
+  "name": "Paparoa Track",
+  "regionId": "new-zealand",
+  "country": "New Zealand",
+  "mountainIds": [],
+  "durationDays": [
+   3,
+   3
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": null,
+  "season": "All year; check for snow and ice on the tops in winter",
+  "priceFromEur": null,
+  "style": "Traverse",
+  "summary": "A 55 km route across the Paparoa Range from Blackball to Punakaiki, opened in 2019 and shared with mountain bikers. It follows the escarpment along Moonlight Tops before descending the Pororari valley; DOC does not publish a single high-point figure for the ridge.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "rakiura-track",
+  "name": "Rakiura Track",
+  "regionId": "new-zealand",
+  "country": "New Zealand",
+  "mountainIds": [],
+  "durationDays": [
+   3,
+   3
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": null,
+  "season": "All year",
+  "priceFromEur": null,
+  "style": "Circuit",
+  "summary": "A 32 km loop from Oban on Stewart Island / Rakiura through coastal forest and around Paterson Inlet. Low-lying and often muddy rather than steep, and open the whole year, though huts must be booked in advance.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "rees-dart-track",
+  "name": "Rees-Dart Track",
+  "regionId": "new-zealand",
+  "country": "New Zealand",
+  "mountainIds": [],
+  "durationDays": [
+   4,
+   5
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 1447,
+  "season": "November – April",
+  "priceFromEur": null,
+  "style": "Circuit",
+  "summary": "A 70 km loop out of Glenorchy up the Rees valley, over Rees Saddle at 1,447 m and down the Dart, with a side trip to the Dart Glacier. Unbridged side creeks and a genuinely alpine pass put it a step beyond the Great Walks.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "routeburn-track",
+  "name": "Routeburn Track",
+  "regionId": "new-zealand",
+  "country": "New Zealand",
+  "mountainIds": [],
+  "durationDays": [
+   2,
+   4
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": 1255,
+  "season": "Great Walk season, 1 November – 30 April",
+  "priceFromEur": null,
+  "style": "High pass",
+  "summary": "A 32 km crossing between Mount Aspiring and Fiordland national parks, from the Routeburn valley over Harris Saddle and down the Hollyford face to The Divide. Most walkers take three days; the Conical Hill viewpoint is a side trip from the saddle.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "stewart-island-north-west-circuit",
+  "name": "Stewart Island North-West Circuit",
+  "regionId": "new-zealand",
+  "country": "New Zealand",
+  "mountainIds": [],
+  "durationDays": [
+   8,
+   10
+  ],
+  "difficulty": "Very strenuous",
+  "maxAltitudeM": null,
+  "season": null,
+  "priceFromEur": null,
+  "style": "Circuit",
+  "summary": "A 125 km remote circuit of the northern half of Stewart Island / Rakiura, linking beaches and headlands by an unformed, notoriously muddy track. It is a self-sufficient trip on a scale different from the Great Walks, and parties carry all their food for eight to ten days.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "te-araroa",
+  "name": "Te Araroa",
+  "regionId": "new-zealand",
+  "country": "New Zealand",
+  "mountainIds": [],
+  "durationDays": [
+   120,
+   180
+  ],
+  "difficulty": "Very strenuous",
+  "maxAltitudeM": 1925,
+  "season": "October – March",
+  "priceFromEur": null,
+  "style": "Long distance",
+  "summary": "Some 3,000 km from Cape Reinga to Bluff, joining beaches, forest tracks, farmland and alpine sections into a single line down both islands. Its high point is Stag Saddle above Lake Tekapo; long river fords and road walking are part of the route, not a failure of it.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "tongariro-alpine-crossing",
+  "name": "Tongariro Alpine Crossing",
+  "regionId": "new-zealand",
+  "country": "New Zealand",
+  "mountainIds": [],
+  "durationDays": [
+   1,
+   1
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 1886,
+  "season": "November – April",
+  "priceFromEur": null,
+  "style": "High pass",
+  "summary": "19.4 km across the volcanic saddle between Mount Tongariro and Mount Ngauruhoe, over the South Crater and Red Crater to the Emerald Lakes and down to Ketetahi. Often called the finest one-day walk in the country, and busy enough that the road end is now shuttle-only.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "tongariro-northern-circuit",
+  "name": "Tongariro Northern Circuit",
+  "regionId": "new-zealand",
+  "country": "New Zealand",
+  "mountainIds": [],
+  "durationDays": [
+   3,
+   4
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": 1886,
+  "season": "Great Walk season, late October – 30 April",
+  "priceFromEur": null,
+  "style": "Circuit",
+  "summary": "A loop around Ngauruhoe in Tongariro National Park that includes the Red Crater and Emerald Lakes section shared with the Tongariro Alpine Crossing. Volcanic, open and fully exposed to weather; outside the Great Walk season it is an alpine trip.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "travers-sabine-circuit",
+  "name": "Travers–Sabine Circuit",
+  "regionId": "new-zealand",
+  "country": "New Zealand",
+  "mountainIds": [],
+  "durationDays": [
+   5,
+   6
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 1787,
+  "season": "October – May",
+  "priceFromEur": null,
+  "style": "Circuit",
+  "summary": "An 80 km circuit in Nelson Lakes National Park up the Travers valley, over Poukirikiri / Travers Saddle and back down the Sabine to Lake Rotoroa. The saddle is a genuine alpine pass that holds snow into spring and can freeze at any time of year.",
+  "operatorIds": [],
+  "guideIds": []
+ }
+]

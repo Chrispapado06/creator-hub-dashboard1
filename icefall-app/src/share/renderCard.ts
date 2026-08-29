@@ -124,12 +124,25 @@ export interface ShareCardData {
   avgHeartRateBpm?: number | null;
 }
 
-const AZURE = "#A78B5C";
-const AZURE_BRIGHT = "#C9AC7B";
-const SNOW = "#E6E6E6";
-const MIST = "#8A8E93";
-const MIST_DIM = "#5C6066";
-const OBSIDIAN = "#080B0D";
+/*
+ * THE CANVAS PALETTE, KEPT IN STEP WITH `index.css`.
+ *
+ * Canvas takes no CSS variables, so the tokens are restated here as hex — and
+ * because they are restated, they went stale silently. These six carried the
+ * retired champagne gold under azure NAMES, which is why grepping the tree for
+ * "gold" found nothing and nobody noticed for the whole rebrand. Every share
+ * card an athlete exported rendered in the old brand while the picker's own
+ * copy described "black and azure".
+ *
+ * Values below are `src/index.css` converted from oklch, and that file is the
+ * one that decides. Change a token there and change it here in the same pass.
+ */
+const AZURE = "#4B9BFF"; /* --ice-azure        */
+const AZURE_BRIGHT = "#8FC2FF"; /* --ice-azure-bright */
+const SNOW = "#EAEEF5"; /* --ice-snow         */
+const MIST = "#8B94A6"; /* --ice-mist         */
+const MIST_DIM = "#5A6375"; /* --ice-mist-dim     */
+const OBSIDIAN = "#05070B"; /* --ice-obsidian     */
 
 const SANS = '"Inter Tight", "Inter", system-ui, sans-serif';
 const SERIF = '"Instrument Serif", Georgia, serif';

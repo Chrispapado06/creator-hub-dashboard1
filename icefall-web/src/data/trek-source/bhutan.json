@@ -1,0 +1,192 @@
+[
+ {
+  "id": "bumdra-trek",
+  "name": "Bumdra Trek",
+  "regionId": "bhutan",
+  "country": "Bhutan",
+  "mountainIds": [],
+  "durationDays": [
+   2,
+   2
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": 3800,
+  "season": "March – June, September – November",
+  "priceFromEur": null,
+  "style": "Traverse",
+  "summary": "A two-day walk from the Sang Choekor college above Paro up to a camp at about 3,800 m near Bumdra monastery, then down the ridge past Taktsang into the Paro valley. It is the shortest camping trek commonly sold in Bhutan.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "bumthang-owl-trek",
+  "name": "Bumthang Owl Trek",
+  "regionId": "bhutan",
+  "country": "Bhutan",
+  "mountainIds": [],
+  "durationDays": [
+   3,
+   3
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": 3870,
+  "season": "March – May, September – November",
+  "priceFromEur": null,
+  "style": "Traverse",
+  "summary": "A short route in central Bhutan from Menchugang to Jakar over Kitiphu ridge at about 3,870 m, through blue pine and rhododendron with the Himalaya to the north on a clear morning. Named for the owls heard from the first camp.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "dagala-thousand-lakes-trek",
+  "name": "Dagala Thousand Lakes Trek",
+  "regionId": "bhutan",
+  "country": "Bhutan",
+  "mountainIds": [],
+  "durationDays": [
+   5,
+   6
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": null,
+  "season": "April – June, September – November",
+  "priceFromEur": null,
+  "style": "Circuit",
+  "summary": "A short loop out of the Thimphu valley from Genekha onto the Dagala plateau, camping among its glacial lakes before descending to Chamgang. Operators publish high points anywhere between about 4,100 m and 4,700 m depending on which passes and side trips their itinerary includes.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "druk-path-trek",
+  "name": "Druk Path Trek",
+  "regionId": "bhutan",
+  "country": "Bhutan",
+  "mountainIds": [],
+  "durationDays": [
+   5,
+   6
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": 4210,
+  "season": "March – June, September – November",
+  "priceFromEur": null,
+  "style": "Traverse",
+  "summary": "A short high route from Paro to Thimphu along the ridge between the two valleys, camping beside Jimilang Tsho and Simkota Tsho and crossing Phume La at 4,210 m. The camps are close together, so the days are short despite the altitude.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "jomolhari-trek",
+  "name": "Jomolhari Trek",
+  "regionId": "bhutan",
+  "country": "Bhutan",
+  "mountainIds": [],
+  "durationDays": [
+   6,
+   9
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 4930,
+  "season": "March – June, September – November",
+  "priceFromEur": null,
+  "style": "High pass",
+  "summary": "The classic western Bhutan route from the upper Paro valley to the Jangothang camp below Jomolhari, then over Nyile La and Yeli La past Lingshi and down to the Thimphu valley. Several nights are spent above 4,000 m and both passes are close to 4,900 m.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "laya-gasa-trek",
+  "name": "Laya–Gasa Trek",
+  "regionId": "bhutan",
+  "country": "Bhutan",
+  "mountainIds": [],
+  "durationDays": [
+   10,
+   14
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 5005,
+  "season": "April – June, September – November",
+  "priceFromEur": null,
+  "style": "Traverse",
+  "summary": "A traverse from the Paro valley past Jomolhari and Lingshi to the highland village of Laya and down to the hot springs at Gasa, crossing Sinche La at 5,005 m. It shares its first days with the Jomolhari Trek before turning north-east, and most camps sit above 4,000 m.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "merak-sakteng-trek",
+  "name": "Merak–Sakteng Trek",
+  "regionId": "bhutan",
+  "country": "Bhutan",
+  "mountainIds": [],
+  "durationDays": [
+   7,
+   9
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": 4153,
+  "season": "March – June, September – November",
+  "priceFromEur": null,
+  "style": "Traverse",
+  "summary": "An eastern Bhutan route between the Brokpa herding villages of Merak and Sakteng, usually walked from Chaling to Phongmey and crossing Nyakchung La at 4,153 m. Nights are split between camps and village homestays, and the route stays lower than the western Bhutan treks.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "nabji-korphu-trail",
+  "name": "Nabji Korphu Trail",
+  "regionId": "bhutan",
+  "country": "Bhutan",
+  "mountainIds": [],
+  "durationDays": [
+   3,
+   4
+  ],
+  "difficulty": "Easy",
+  "maxAltitudeM": 1636,
+  "season": "October – March",
+  "priceFromEur": null,
+  "style": "Valley",
+  "summary": "A low winter route through Jigme Singye Wangchuck National Park between the villages of Nabji and Korphu, run as a community tourism project with village homestays. Subtropical forest, golden langur and no altitude to speak of.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "snowman-trek",
+  "name": "Snowman Trek",
+  "regionId": "bhutan",
+  "country": "Bhutan",
+  "mountainIds": [],
+  "durationDays": [
+   25,
+   30
+  ],
+  "difficulty": "Very strenuous",
+  "maxAltitudeM": 5320,
+  "season": "Mid-June – mid-October",
+  "priceFromEur": null,
+  "style": "Long distance",
+  "summary": "A traverse of northern Bhutan from the Laya region through Lunana to Sephu or Bumthang, about 347 km over eleven passes, several of them above 5,000 m. It is remote and weather-dependent, and parties regularly turn back when snow closes a pass.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "trans-bhutan-trail",
+  "name": "Trans Bhutan Trail",
+  "regionId": "bhutan",
+  "country": "Bhutan",
+  "mountainIds": [],
+  "durationDays": [
+   25,
+   36
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": null,
+  "season": "March – May, September – November",
+  "priceFromEur": null,
+  "style": "Long distance",
+  "summary": "403 km across the country from Haa to Trashigang, the restored pilgrim and messenger route that linked the dzongs for five centuries. Closed and overgrown for sixty years, cleared and reopened in 2022; it can be walked whole or in sections.",
+  "operatorIds": [],
+  "guideIds": []
+ }
+]

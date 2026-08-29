@@ -909,22 +909,56 @@ function StatsTab({
           <Stat size="lg" value={fmtElevation(stats.elevationM)} unit="m" label="Elevation gain" />
           <Stat size="lg" value={fmtHours(stats.timeHours)} label="Time" />
         </div>
+
+        {/* These four used to open at 128 activities, 1,245 km, 78,540 m and
+            156 hours on a fresh install, inherited from the demo athlete. They
+            now start at nothing, which is correct and reads harshly without a
+            sentence saying what they count and what they do not. */}
+        <p className="mt-3 text-[11.5px] leading-relaxed text-mist-dim">
+          {stats.activities === 0
+            ? "Nothing recorded yet. These count what you record in ICEFALL — they do not include anything you climbed before installing it."
+            : "Counted from what you have recorded in ICEFALL. Anything you climbed before installing it is not included."}
+        </p>
       </Rise>
 
+      {/* `xpToNext === 0` means no progression model is running — see the note
+          in `state/AppState.tsx`. The bar is not drawn empty and the level is
+          not printed as 1, because both would still be presenting a system that
+          does not exist. Points are shown either way: those are awarded per
+          recorded activity and are the one earned figure on this screen. */}
       <Rise className="pt-6">
-        <div className="flex items-baseline justify-between">
-          <SectionLabel>Level {level}</SectionLabel>
-          <span className="tnum text-[11.5px] text-mist-dim">
-            {xp.toLocaleString("en-GB")} XP
-            {points > 0 && ` · ${points.toLocaleString("en-GB")} pts`}
-          </span>
-        </div>
-        <div className="mt-2.5 h-[3px] overflow-hidden rounded-full bg-white/[0.06]">
-          <div className="h-full rounded-full bg-azure" style={{ width: `${xpPct}%` }} />
-        </div>
-        <p className="tnum mt-2 text-[10.5px] text-mist-dim">
-          {(xpToNext - xp).toLocaleString("en-GB")} XP to level {level + 1}
-        </p>
+        {xpToNext > 0 ? (
+          <>
+            <div className="flex items-baseline justify-between">
+              <SectionLabel>Level {level}</SectionLabel>
+              <span className="tnum text-[11.5px] text-mist-dim">
+                {xp.toLocaleString("en-GB")} XP
+                {points > 0 && ` · ${points.toLocaleString("en-GB")} pts`}
+              </span>
+            </div>
+            <div className="mt-2.5 h-[3px] overflow-hidden rounded-full bg-white/[0.06]">
+              <div className="h-full rounded-full bg-azure" style={{ width: `${xpPct}%` }} />
+            </div>
+            <p className="tnum mt-2 text-[10.5px] text-mist-dim">
+              {(xpToNext - xp).toLocaleString("en-GB")} XP to level {level + 1}
+            </p>
+          </>
+        ) : (
+          <>
+            <div className="flex items-baseline justify-between">
+              <SectionLabel>Points</SectionLabel>
+              <span className="tnum text-[11.5px] text-mist-dim">
+                {points.toLocaleString("en-GB")} pts
+              </span>
+            </div>
+            {/* Copy stays about the product. Why the level went is an argument
+                for `state/AppState.tsx`, not for the athlete's Profile. */}
+            <p className="mt-2 text-[11px] leading-relaxed text-mist-dim">
+              Awarded for what you record. ICEFALL has no levels and no XP — a level would be a
+              claim about you, and there is no system behind one to earn.
+            </p>
+          </>
+        )}
       </Rise>
 
       <Rise className="pt-6">

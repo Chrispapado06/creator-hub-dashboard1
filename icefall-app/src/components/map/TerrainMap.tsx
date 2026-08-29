@@ -190,7 +190,7 @@ export function TerrainMap({
         source: ROUTE_SOURCE,
         layout: { "line-cap": "round", "line-join": "round" },
         paint: {
-          "line-color": "#A78B5C",
+          "line-color": "#4B9BFF", // --ice-azure
           "line-width": ["interpolate", ["linear"], ["zoom"], 10, 6, 16, 14],
           "line-opacity": 0.28,
           "line-blur": 6,
@@ -202,7 +202,7 @@ export function TerrainMap({
         source: ROUTE_SOURCE,
         layout: { "line-cap": "round", "line-join": "round" },
         paint: {
-          "line-color": "#C9AC7B",
+          "line-color": "#8FC2FF", // --ice-azure-bright
           "line-width": ["interpolate", ["linear"], ["zoom"], 10, 2, 16, 4.5],
         },
       });
@@ -436,17 +436,23 @@ function MapButton({
   );
 }
 
-/** Brand markers, built as DOM so they inherit the design tokens. */
+/**
+ * Brand markers, built as DOM.
+ *
+ * The hex is restated inline, so it does NOT inherit anything — which is how
+ * the start dot, the live dot and its pulse were still drawing the retired
+ * champagne gold after the alpine-azure rebrand. Values are `src/index.css`.
+ */
 function dot(kind: "start" | "live") {
   const el = document.createElement("div");
   if (kind === "start") {
     el.style.cssText =
-      "width:12px;height:12px;border-radius:9999px;background:#080B0D;border:2px solid #E6E6E6;box-shadow:0 0 0 2px rgba(8,11,13,.6)";
+      "width:12px;height:12px;border-radius:9999px;background:#05070B;border:2px solid #EAEEF5;box-shadow:0 0 0 2px rgba(5,7,11,.6)";
   } else {
     el.style.cssText = "position:relative;width:16px;height:16px";
     el.innerHTML = `
-      <span style="position:absolute;inset:-8px;border-radius:9999px;background:rgba(167,139,92,.22);animation:icefall-pulse 2.4s ease-out infinite"></span>
-      <span style="position:absolute;inset:0;border-radius:9999px;background:#A78B5C;border:2px solid #080B0D"></span>`;
+      <span style="position:absolute;inset:-8px;border-radius:9999px;background:rgba(75,155,255,.22);animation:icefall-pulse 2.4s ease-out infinite"></span>
+      <span style="position:absolute;inset:0;border-radius:9999px;background:#4B9BFF;border:2px solid #05070B"></span>`;
   }
   return el;
 }

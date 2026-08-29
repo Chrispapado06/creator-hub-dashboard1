@@ -28,9 +28,33 @@ import Waitlist from "@/screens/Waitlist";
 
 const Marketplace = import.meta.env.DEV ? lazy(() => import("@/screens/Marketplace")) : null;
 
+/**
+ * The signed-in web app — the desktop half of ICEFALL, behind the waitlist.
+ *
+ * Everything the phone app does EXCEPT recording an activity, which needs the
+ * sensors in your pocket. Gated the same way as the marketplace above: the
+ * `lazy()` call is inside the DEV test, so Rollup drops the whole thing from a
+ * production build rather than shipping a signed-in dashboard to a site whose
+ * only public page is a waitlist.
+ *
+ * When there is real authentication, this moves out of the DEV guard and behind
+ * that instead — the route stays /app either way.
+ */
+const AppShell = import.meta.env.DEV ? lazy(() => import("@/app/Routes")) : null;
+
 export default function App() {
   return (
     <Routes>
+      {AppShell && (
+        <Route
+          path="/app/*"
+          element={
+            <Suspense fallback={null}>
+              <AppShell />
+            </Suspense>
+          }
+        />
+      )}
       {Marketplace && (
         <Route
           path="/preview/*"

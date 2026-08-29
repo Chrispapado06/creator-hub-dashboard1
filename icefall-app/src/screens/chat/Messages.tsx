@@ -1,45 +1,114 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { BadgeCheck, Check, CloudOff, Lock, Search, Users } from "lucide-react";
-import { Rise, Screen, ScreenHeader, SegmentedTabs, Stagger } from "@/components/layout/chrome";
+import { useMemo, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import {
+  Check, CloudOff, Lock, Mountain as MountainIcon, Pin,
+  Plus, Search, SlidersHorizontal, User, Users,
+} from "lucide-react";
+import { Rise, Screen, Stagger } from "@/components/layout/chrome";
 import { Avatar, Card, Disclaimer } from "@/components/ui/primitives";
-import { fmtDay, isLocked, lastMessage, type Counterparty } from "./data";
+import { fmtDay, isLocked, lastMessage, type Conversation } from "./data";
 import { useConversations } from "./useConversations";
 import { BACKEND_NOT_CONNECTED } from "@/backend/client";
 import { cn } from "@/lib/utils";
 
-type Filter = "all" | "guide" | "athlete" | "group";
+/**
+ * CHAT — the conversation list.
+ *
+ * Grouped by WHO, not by recency. Expedition companies, guides and groups are
+ * three different relationships: one is a business you may be about to send
+ * five figures to, one is a person roped to you on a mountain, and one is the
+ * party you are going with. A single date-ordered list flattens that into
+ * "things that pinged", and the company you are mid-negotiation with ends up
+ * below a photography club because somebody posted a picture.
+ *
+ * ── WHAT IS REAL HERE ───────────────────────────────────────────────────────
+ *
+ * Nothing arrives. ICEFALL has no server, so no message sends, no reply comes
+ * back and no unread count is real — `BACKEND_NOT_CONNECTED` says so at the
+ * foot of the screen, and it is not moved off it. The threads in this list are
+ * `DEMO_CONVERSATIONS`, which is gated on `import.meta.env.DEV` and therefore
+ * cannot reach a deployment at all: four of them carry real companies' names,
+ * and the words attributed to them were written by ICEFALL.
+ *
+ * ── DELIBERATELY ABSENT ─────────────────────────────────────────────────────
+ *
+ * The design puts a green presence dot on two of the guides. Presence needs a
+ * server to report it, so a dot that is always green is a claim that someone is
+ * reachable when nobody is. It is not drawn.
+ */
 
-const TABS = [
-  { value: "all" as const, label: "All" },
-  { value: "guide" as const, label: "Guides" },
-  { value: "athlete" as const, label: "People" },
-  { value: "group" as const, label: "Groups" },
+type Filter = "all" | "company" | "guide" | "group";
+
+const TABS: { value: Filter; label: string; icon: typeof User }[] = [
+  { value: "all", label: "All", icon: MountainIcon },
+  { value: "guide", label: "Guides", icon: User },
+  { value: "group", label: "Groups", icon: Users },
+  { value: "company", label: "Companies", icon: MountainIcon },
 ];
 
-/** The conversation list. */
 export default function Messages() {
-  const navigate = useNavigate();
   const [tab, setTab] = useState<Filter>("all");
   const [q, setQ] = useState("");
   const conversations = useConversations();
 
-  const list = conversations.filter((c) => {
-    const byTab =
-      tab === "all" ||
-      (tab === "guide" ? c.kind === "guide" || c.kind === "company" : c.kind === tab);
-    const byQ = !q.trim() || c.name.toLowerCase().includes(q.trim().toLowerCase());
-    return byTab && byQ;
-  });
+  const needle = q.trim().toLowerCase();
+  const matching = useMemo(
+    () =>
+      conversations.filter(
+        (c) =>
+          needle === "" ||
+          c.name.toLowerCase().includes(needle) ||
+          (lastMessage(c)?.body ?? "").toLowerCase().includes(needle),
+      ),
+    [conversations, needle],
+  );
 
-  const queued = conversations.flatMap((c) => c.messages).filter((m) => m.state === "queued");
+  /**
+   * Most recent first, and anything with nothing in it last.
+   *
+   * A locked company with no messages was sorting above a thread you are
+   * mid-negotiation with, because the list was in declaration order. A section
+   * headed by an empty conversation reads as though nothing has happened in it.
+   */
+  const byRecency = (a: Conversation, b: Conversation) => {
+    const at = (c: Conversation) => lastMessage(c)?.at ?? "";
+    const [x, y] = [at(a), at(b)];
+    if (x === "" && y === "") return a.name.localeCompare(b.name, "en-GB");
+    if (x === "") return 1;
+    if (y === "") return -1;
+    return y.localeCompare(x);
+  };
+
+  const of = (kind: Filter) => matching.filter((c) => c.kind === kind).sort(byRecency);
+  const companies = of("company");
+  const guides = of("guide");
+  const groups = of("group");
+  // Peers have no section of their own in this design, so they ride with the
+  // rest rather than vanishing from a list they are genuinely in.
+  const others = matching.filter((c) => c.kind === "athlete").sort(byRecency);
+
+  const showAll = tab === "all";
 
   return (
     <Screen>
       <Stagger>
-        <ScreenHeader title="Messages" subtitle="Guides, companies and other mountaineers." />
+        <Rise className="flex items-start justify-between gap-3 pb-1 pt-6">
+          <div className="min-w-0">
+            <h1 className="text-[27px] font-light tracking-[-0.02em] text-snow">Chat</h1>
+            <p className="mt-1.5 max-w-[30ch] text-[12.5px] leading-relaxed text-mist">
+              Expedition companies, guides and the people you are going with.
+            </p>
+          </div>
+          <Link
+            to="/messages/new"
+            className="mt-1 flex shrink-0 items-center gap-1.5 rounded-pill border border-azure/45 px-3.5 py-2 text-[11.5px] text-azure transition-colors hover:bg-azure/10"
+          >
+            <Plus size={13} strokeWidth={2} />
+            New
+          </Link>
+        </Rise>
 
-        <Rise>
+        <Rise className="pt-4">
           <div className="relative">
             <Search
               size={15}
@@ -47,122 +116,79 @@ export default function Messages() {
               className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-mist-dim"
             />
             <input
+              type="search"
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Search conversations"
-              className="w-full rounded-pill border border-hairline bg-graphite py-2.5 pl-10 pr-4 text-[13.5px] text-snow outline-none placeholder:text-mist-dim focus:border-azure"
+              placeholder="Search messages…"
+              aria-label="Search messages"
+              className="w-full rounded-pill border border-hairline bg-graphite py-2.5 pl-10 pr-10 text-[13.5px] text-snow outline-none placeholder:text-mist-dim focus:border-azure [&::-webkit-search-cancel-button]:hidden"
+            />
+            <SlidersHorizontal
+              size={14}
+              strokeWidth={1.7}
+              aria-hidden
+              className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-mist-dim"
             />
           </div>
         </Rise>
 
-        {/* The one state a mountaineering app must never hide. */}
-        {queued.length > 0 && (
-          <Rise className="pt-4">
-            <Card className="border-alert/30">
-              <div className="flex items-start gap-2.5">
-                <CloudOff size={15} strokeWidth={1.7} className="mt-px shrink-0 text-alert" />
-                <p className="text-[12px] leading-relaxed text-mist">
-                  <span className="text-snow">
-                    {queued.length} message{queued.length === 1 ? "" : "s"} waiting to send.
-                  </span>{" "}
-                  They are on this device only and will go out when you have signal.
-                </p>
-              </div>
+        <Rise className="no-scrollbar -mx-5 mt-5 flex gap-1 overflow-x-auto px-5">
+          {TABS.map((t) => (
+            <button
+              key={t.value}
+              type="button"
+              onClick={() => setTab(t.value)}
+              aria-pressed={t.value === tab}
+              className={cn(
+                "flex shrink-0 items-center gap-1.5 rounded-pill border px-3.5 py-2 text-[12px] transition-colors",
+                t.value === tab
+                  ? "border-azure/55 bg-azure/[0.12] text-azure"
+                  : "border-hairline-strong text-mist hover:text-snow",
+              )}
+            >
+              <t.icon size={13} strokeWidth={1.8} />
+              {t.label}
+            </button>
+          ))}
+        </Rise>
+
+        {(showAll || tab === "company") && (
+          <Section title="Expedition companies" icon={MountainIcon} count={companies.length}>
+            <RowCard rows={companies} />
+          </Section>
+        )}
+
+        {(showAll || tab === "guide") && (
+          <Section title="Guides" icon={User} count={guides.length}>
+            {showAll ? <GuideStrip guides={guides} /> : <RowCard rows={guides} />}
+          </Section>
+        )}
+
+        {(showAll || tab === "group") && (
+          <Section title="Groups" icon={Users} count={groups.length}>
+            <RowCard rows={groups} />
+          </Section>
+        )}
+
+        {showAll && others.length > 0 && (
+          <Section title="People" icon={User} count={others.length}>
+            <RowCard rows={others} />
+          </Section>
+        )}
+
+        {matching.length === 0 && (
+          <Rise className="pt-6">
+            <Card>
+              <p className="text-[13px] leading-relaxed text-mist">
+                {conversations.length === 0
+                  ? "No conversations yet. Open a mountain, find a guide or an expedition company, and write to them."
+                  : `Nothing matches “${q.trim()}”.`}
+              </p>
             </Card>
           </Rise>
         )}
 
-        <Rise className="pt-5">
-          <SegmentedTabs tabs={TABS} value={tab} onChange={setTab} />
-        </Rise>
-
-        <Rise className="pt-4">
-          <Card inset={false}>
-            <ul className="divide-y divide-hairline">
-              {list.map((c) => {
-                const last = lastMessage(c);
-                return (
-                  <li key={c.id}>
-                    <button
-                      onClick={() => navigate(`/messages/${c.id}`)}
-                      className="flex w-full items-start gap-3 px-4 py-3.5 text-left transition-colors hover:bg-white/[0.02]"
-                    >
-                      {c.kind === "group" ? (
-                        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-hairline-strong bg-slate text-mist">
-                          <Users size={17} strokeWidth={1.6} />
-                        </span>
-                      ) : (
-                        <Avatar name={c.name} size={44} />
-                      )}
-
-                      <span className="min-w-0 flex-1">
-                        <span className="flex items-center gap-1.5">
-                          <span className="truncate text-[14px] text-snow">{c.name}</span>
-                          {c.verifiedOn && (
-                            <BadgeCheck
-                              size={13}
-                              strokeWidth={2}
-                              className="shrink-0 text-azure"
-                              aria-label={`Documents checked by ICEFALL on ${c.verifiedOn}`}
-                            />
-                          )}
-                          <KindTag kind={c.kind} members={c.members} />
-                        </span>
-
-                        {isLocked(c) ? (
-                          <span className="mt-1 flex items-center gap-1 text-[12px] text-mist-dim">
-                            <Lock size={11} strokeWidth={1.9} className="shrink-0" />
-                            Book to message
-                          </span>
-                        ) : (
-                          <span className="mt-1 block truncate text-[12px] text-mist">
-                            {last?.state === "queued" && (
-                              <CloudOff
-                                size={11}
-                                strokeWidth={1.9}
-                                className="mr-1 inline-block align-[-1px] text-alert"
-                              />
-                            )}
-                            {last?.state === "sent" && (
-                              <Check
-                                size={11}
-                                strokeWidth={2.2}
-                                className="mr-1 inline-block align-[-1px] text-mist-dim"
-                              />
-                            )}
-                            {last?.from === "me" && last?.state !== "queued" ? "You: " : ""}
-                            {last?.body}
-                          </span>
-                        )}
-                      </span>
-
-                      <span className="flex shrink-0 flex-col items-end gap-1.5">
-                        <span className="tnum text-[10.5px] text-mist-dim">
-                          {last ? fmtDay(last.at) : ""}
-                        </span>
-                        {c.unread > 0 && (
-                          <span className="tnum grid h-[18px] min-w-[18px] place-items-center rounded-full bg-azure px-1.5 text-[10px] font-medium text-obsidian">
-                            {c.unread}
-                          </span>
-                        )}
-                      </span>
-                    </button>
-                  </li>
-                );
-              })}
-
-              {list.length === 0 && (
-                <li className="px-4 py-8 text-center text-[13px] leading-relaxed text-mist-dim">
-                  {conversations.length === 0
-                    ? "No conversations yet. Open a mountain, find a guide or an expedition company, and write to them."
-                    : "Nothing matches."}
-                </li>
-              )}
-            </ul>
-          </Card>
-        </Rise>
-
-        <Rise className="pt-6">
+        <Rise className="pt-7">
           <Disclaimer>{BACKEND_NOT_CONNECTED}</Disclaimer>
         </Rise>
       </Stagger>
@@ -170,24 +196,197 @@ export default function Messages() {
   );
 }
 
-function KindTag({ kind, members }: { kind: Counterparty; members?: number }) {
-  const label =
-    kind === "guide"
-      ? "Guide"
-      : kind === "company"
-        ? "Company"
-        : kind === "group"
-          ? `${members ?? 0} people`
-          : null;
-  if (!label) return null;
+/* -------------------------------------------------------------------------- */
+/* Pieces                                                                      */
+/* -------------------------------------------------------------------------- */
+
+function Section({
+  title,
+  icon: Icon,
+  count,
+  children,
+}: {
+  title: string;
+  icon: typeof User;
+  count: number;
+  children: React.ReactNode;
+}) {
+  if (count === 0) return null;
   return (
-    <span
-      className={cn(
-        "shrink-0 rounded-pill border px-1.5 py-[1px] text-[9.5px] uppercase tracking-[0.1em]",
-        kind === "group" ? "border-hairline-strong text-mist-dim" : "border-azure/30 text-azure/80",
-      )}
-    >
-      {label}
-    </span>
+    <>
+      <Rise className="flex items-center gap-2 pt-7">
+        <Icon size={15} strokeWidth={1.7} className="text-azure" />
+        <h2 className="text-[14px] text-snow">{title}</h2>
+        <span className="tnum ml-auto text-[11.5px] text-mist-dim">{count}</span>
+      </Rise>
+      <div className="pt-3">{children}</div>
+    </>
   );
+}
+
+/** The company / group / people list — one card, hairline-divided rows. */
+function RowCard({ rows }: { rows: Conversation[] }) {
+  const navigate = useNavigate();
+
+  return (
+    <Rise>
+      <Card inset={false}>
+        <ul className="divide-y divide-hairline">
+          {rows.map((c) => {
+            const last = lastMessage(c);
+            const locked = isLocked(c);
+
+            return (
+              <li key={c.id}>
+                <button
+                  onClick={() => navigate(`/messages/${c.id}`)}
+                  className="flex w-full items-start gap-3 px-4 py-3.5 text-left transition-colors hover:bg-white/[0.02]"
+                >
+                  <Mark conversation={c} />
+
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-1.5">
+                      <span className="truncate text-[14px] text-snow">{c.name}</span>
+                      {/* No tick here either — see `Thread.tsx`. ICEFALL has
+                          checked nobody's documents, so there is no date to put
+                          behind one and no tick to draw. */}
+                    </span>
+
+                    {c.kind === "group" && c.members !== undefined && (
+                      <span className="tnum mt-0.5 block text-[11px] text-mist-dim">
+                        {c.members} members
+                      </span>
+                    )}
+
+                    {locked ? (
+                      <span className="mt-1 flex items-center gap-1 text-[12px] text-mist-dim">
+                        <Lock size={11} strokeWidth={1.9} className="shrink-0" />
+                        Book to message
+                      </span>
+                    ) : (
+                      <span className="mt-1 clamp-2 block text-[12px] leading-snug text-mist">
+                        {last?.state === "queued" && (
+                          <CloudOff
+                            size={11}
+                            strokeWidth={1.9}
+                            className="mr-1 inline-block align-[-1px] text-alert"
+                          />
+                        )}
+                        {last?.state === "sent" && (
+                          <Check
+                            size={11}
+                            strokeWidth={2.2}
+                            className="mr-1 inline-block align-[-1px] text-mist-dim"
+                          />
+                        )}
+                        {last?.from === "me" && last?.state !== "queued"
+                          ? "You: "
+                          : last?.author !== undefined
+                            ? `${last.author}: `
+                            : ""}
+                        {last?.body}
+                      </span>
+                    )}
+                  </span>
+
+                  <span className="flex shrink-0 flex-col items-end gap-1.5">
+                    <span className="tnum text-[10.5px] text-mist-dim">
+                      {last ? fmtDay(last.at) : ""}
+                    </span>
+                    {c.pinned === true && (
+                      <Pin size={12} strokeWidth={1.8} aria-label="Pinned" className="text-mist-dim" />
+                    )}
+                    {c.unread > 0 && (
+                      <span className="tnum grid h-[18px] min-w-[18px] place-items-center rounded-full bg-azure px-1.5 text-[10px] font-medium text-obsidian">
+                        {c.unread}
+                      </span>
+                    )}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </Card>
+    </Rise>
+  );
+}
+
+/** Guides, as the design draws them on the overview: a horizontal strip. */
+function GuideStrip({ guides }: { guides: Conversation[] }) {
+  const navigate = useNavigate();
+
+  return (
+    <Rise className="no-scrollbar -mx-5 flex gap-3 overflow-x-auto px-5">
+      {guides.map((c) => {
+        const last = lastMessage(c);
+        return (
+          <button
+            key={c.id}
+            type="button"
+            onClick={() => navigate(`/messages/${c.id}`)}
+            className="w-[188px] shrink-0 rounded-card border border-hairline bg-graphite p-3.5 text-left transition-colors hover:border-hairline-strong"
+          >
+            <div className="flex items-start gap-2.5">
+              <Avatar name={c.name} size={36} />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[13px] text-snow">{c.name}</p>
+                {c.credential !== undefined && (
+                  <p className="truncate text-[10.5px] text-mist-dim">{c.credential}</p>
+                )}
+              </div>
+              {c.unread > 0 && (
+                <span className="tnum grid h-[18px] min-w-[18px] shrink-0 place-items-center rounded-full bg-azure px-1.5 text-[10px] font-medium text-obsidian">
+                  {c.unread}
+                </span>
+              )}
+            </div>
+            <p className="mt-2.5 clamp-2 text-[11.5px] leading-snug text-mist">{last?.body}</p>
+            <p className="tnum mt-2 text-[10px] text-mist-dim">{last ? fmtDay(last.at) : ""}</p>
+          </button>
+        );
+      })}
+    </Rise>
+  );
+}
+
+/**
+ * The tile beside a row.
+ *
+ * A company gets its mark, a group its peak photograph, anyone else their
+ * initials. Company logos are gitignored and vercelignored, so `onError` is not
+ * an edge case — it is what every deployment does.
+ */
+function Mark({ conversation: c }: { conversation: Conversation }) {
+  const [failed, setFailed] = useState(false);
+  const src = c.kind === "company" ? c.logo : c.kind === "group" ? c.photo : undefined;
+
+  if (src !== undefined && !failed) {
+    return (
+      <span
+        className={cn(
+          "grid h-11 w-11 shrink-0 place-items-center overflow-hidden border border-hairline bg-elevated",
+          c.kind === "group" ? "rounded-full" : "rounded-tile",
+        )}
+      >
+        <img
+          src={src}
+          alt=""
+          aria-hidden
+          loading="lazy"
+          onError={() => setFailed(true)}
+          className={cn("h-full w-full", c.kind === "group" ? "object-cover" : "object-contain p-1")}
+        />
+      </span>
+    );
+  }
+
+  if (c.kind === "group") {
+    return (
+      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-hairline-strong bg-slate text-mist">
+        <Users size={17} strokeWidth={1.6} />
+      </span>
+    );
+  }
+  return <Avatar name={c.name} size={44} />;
 }

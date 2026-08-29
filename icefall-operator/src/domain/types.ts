@@ -1,0 +1,690 @@
+/**
+ * The Operator CRM's entity model.
+ *
+ * These types mirror the SHIPPED schema in `icefall-supabase/migrations/`
+ * (`20260828100000_crm_foundation.sql`, `20260828110000_crm_marketplace.sql`),
+ * as specified back to this session in
+ * `icefall-sessions/requests/03-schema-contract-for-operator-crm.md`. Where the
+ * database uses a word, this file uses the same word — `kind` not `type`,
+ * `state` not `status` on a version, `admin`/`sales` not
+ * `company_admin`/`sales_employee`. A translation layer between the client and
+ * the schema is a place for two vocabularies to drift, and this app is one of
+ * two interfaces onto one backend.
+ *
+ * Three corrections from the contract are load-bearing and easy to get wrong:
+ *
+ *   1. A MOUNTAIN'S ID IS ITS SLUG. `mountains.id` is `text` — "everest",
+ *      "ama-dablam". Not a uuid, and there is no separate slug column, because
+ *      `icefall-web` already keys 52 peaks and every trek record by exactly
+ *      these strings.
+ *   2. AUTHORIZATION AND PLACEMENT ARE TWO TABLES. `CompanyMountain` decides
+ *      what an operator may edit; `Placement` is the paid slot. They have
+ *      different lifecycles — a placement can expire without touching a
+ *      company's right to edit its own trips, which is exactly what spec §18
+ *      requires.
+ *   3. PLACEMENT EXPIRY IS DERIVED, NEVER STORED. Nothing writes to the
+ *      placements table on a timer. `PlacementStatus` is the view.
+ */
+
+import type { BookingValue, Cents } from "./honesty";
+
+/* ========================================================================== */
+/* Publication                                                                */
+/* ========================================================================== */
+
+/** `products.status`. Note `pending_review`, not `pending`. */
+export type ProductStatus = "draft" | "pending_review" | "live" | "archived";
+
+/** `content_versions.state` — the per-change lifecycle. */
+export type ContentVersionState =
+  | "draft"
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "changes_requested"
+  | "superseded";
+
+export type ContentEntityType = "company" | "product" | "media_asset";
+
+/**
+ * The five chips spec §17 requires, as one closed union for the UI.
+ *
+ * Deliberately its own type rather than a reuse of `ProductStatus`: "Expired"
+ * belongs to a placement and never to a product, and a single union would let a
+ * screen render a product as expired, which would tell an operator their trip
+ * had been withdrawn when only a commercial arrangement had lapsed.
+ */
+export type ChipStatus = "live" | "draft" | "pending" | "rejected" | "expired" | "archived";
+
+export function chipForProduct(status: ProductStatus): ChipStatus {
+  return status === "pending_review" ? "pending" : status;
+}
+
+/* ========================================================================== */
+/* People and companies                                                       */
+/* ========================================================================== */
+
+/**
+ * Two roles. That is the whole permission model (spec §3), and the union cannot
+ * express a third, so it cannot grow one by accident.
+ */
+export type CompanyRole = "admin" | "sales";
+
+export type CompanyUserStatus = "active" | "invited" | "disabled";
+
+export interface CompanyUser {
+  id: string;
+  companyId: string;
+  profileId: string;
+  displayName: string;
+  email: string;
+  role: CompanyRole;
+  status: CompanyUserStatus;
+  invitedBy: string | null;
+  createdAt: string;
+}
+
+export interface Certification {
+  /** The body's short form, set typographically. Never a reproduced logo. */
+  mark: string;
+  /** "Certified", "Member", "Bonded" — what the relationship actually is. */
+  note: string;
+  full: string;
+}
+
+export interface TeamMember {
+  name: string;
+  role: string;
+}
+
+export interface FaqEntry {
+  q: string;
+  a: string;
+}
+
+/**
+ * The canonical company record — the LIVE, approved values.
+ *
+ * NOTE WHAT IS ABSENT. No `phone`, no `email`, no `whatsapp`, no `bookingUrl`.
+ * Spec §2 and §5 forbid customer escape routes in operator content, and the
+ * cheapest enforcement is for the fields not to exist: you cannot render, leak
+ * or forget to strip a property that was never modelled.
+ *
+ * ALSO ABSENT, AND MORE IMPORTANTLY: everything on `company_internal` — account
+ * owner, source, priority, tags, ICEFALL's internal notes. That is a separate
+ * table in the schema precisely because RLS is row-level; had those columns
+ * stayed on `companies`, an operator reading their own row would read ICEFALL's
+ * commercial position on them. There is no operator-facing policy on it, and
+ * nothing in this app may grow a field from it.
+ */
+export interface Company {
+  id: string;
+  name: string;
+  slug: string;
+  status: "active" | "suspended" | "archived";
+  logoMediaId: string | null;
+  tagline: string | null;
+  description: string | null;
+  about: string | null;
+  city: string | null;
+  country: string | null;
+  certifications: Certification[];
+  team: TeamMember[];
+  faq: FaqEntry[];
+  /**
+   * The operator's own claims about itself, reviewed by ICEFALL like any other
+   * content. DATA, never hardcoded: `icefall-web` currently asserts "24/7
+   * Support" for every operator including a real one, which is ICEFALL making a
+   * promise on a company's behalf that the company never made.
+   */
+  whyChooseUs: { label: string; detail: string }[];
+  foundedYear: number | null;
+  languages: string[];
+  /** The wide image behind the company's name on its public page. */
+  bannerMediaId: string | null;
+  /*
+   * NO `video` FIELD, deliberately. Owner decision #15 (2026-08-29): the
+   * promotional film belongs to the mountain surface, not the company. The
+   * `PromoVideo` type survives below because products and mountains still use
+   * it — only the company lost the field.
+   */
+  /**
+   * When ICEFALL checked this company's documents.
+   *
+   * Named `documents_checked_at` in the schema — Session 03 adopted this from
+   * the request, replacing `verified_at`, because "verified" can be misread as
+   * "the issuing association confirmed it" and ICEFALL has contacted nobody.
+   * Null until a staff action recorded a real check; there is no operator write
+   * path, and a coherence constraint makes a date on an unchecked company
+   * unstorable.
+   */
+  documentsCheckedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/* ========================================================================== */
+/* Mountains, authorization, and placement — three separate things            */
+/* ========================================================================== */
+
+/** `mountains.id` IS the slug: "everest", "ama-dablam", "mont-blanc". */
+export interface Mountain {
+  id: string;
+  name: string;
+  elevationM: number | null;
+  range: string | null;
+  country: string | null;
+  region: string | null;
+}
+
+/** `company_mountains.status` — what an operator may EDIT. Not a placement. */
+export type MountainAccessStatus = "active" | "suspended" | "ended";
+
+/**
+ * THE AUTHORIZATION BOUNDARY (spec §16), and nothing else.
+ *
+ * No position, no price, no term. Those live on `Placement`. Keeping them apart
+ * is what lets spec §18's two edge cases behave independently: a placement can
+ * expire while the operator keeps editing their trips, and access can be
+ * withdrawn while the placement record stays intact for the audit trail.
+ *
+ * In the database `authenticated` gets SELECT here and no write of any kind.
+ */
+export interface CompanyMountain {
+  readonly id: string;
+  readonly companyId: string;
+  /** Text — the mountain's slug. */
+  readonly mountainId: string;
+  readonly status: MountainAccessStatus;
+  readonly assignedAt: string;
+}
+
+/** `placements.status`. There is no stored `expired` — see `PlacementStatus`. */
+export type PlacementStatus = "reserved" | "active" | "cancelled";
+
+/**
+ * The paid slot, #1–#5.
+ *
+ * OPERATORS CANNOT WRITE THIS, AND NEITHER CAN STAFF BY PLAIN UPDATE. In the
+ * shipped schema `authenticated` holds SELECT only — ICEFALL administrators
+ * included — and all four write paths are functions that record an audit event
+ * in the same statement. That closed a hole a policy could not: a policy can
+ * permit a write but cannot compel the writer to log it.
+ *
+ * Every field is `readonly` here for the same reason it is unwritable there.
+ */
+export interface Placement {
+  readonly id: string;
+  readonly companyId: string;
+  readonly mountainId: string;
+  readonly slotPosition: 1 | 2 | 3 | 4 | 5;
+  readonly startsOn: string | null;
+  readonly endsOn: string | null;
+  readonly status: PlacementStatus;
+  readonly priceCents: Cents | null;
+  readonly currency: string;
+}
+
+/**
+ * The `placement_status` view.
+ *
+ * `effectiveStatus` is DERIVED at read time, which is why an expired placement
+ * still holds its position: nothing ran on a timer to take it away. Spec §2 —
+ * expiry creates a reminder and never reorders the mountain.
+ */
+export interface PlacementStatusRow {
+  readonly placementId: string;
+  readonly effectiveStatus: PlacementStatus | "expired";
+  readonly needsReview: boolean;
+  readonly daysRemaining: number | null;
+}
+
+/* ========================================================================== */
+/* Products                                                                   */
+/* ========================================================================== */
+
+/** `products.kind`. Expedition and Trek are distinct types, one infrastructure. */
+export type ProductKind = "expedition" | "trek";
+
+export interface ItineraryDay {
+  day: number;
+  title: string;
+  detail: string;
+}
+
+/**
+ * The live product record.
+ *
+ * THE PUBLICATION BOUNDARY IS ON THIS TABLE'S UPDATE POLICY: it matches only
+ * rows whose `status = 'draft'`. So while a product is a draft the operator
+ * edits it directly, and the moment it is live or in review every write is
+ * refused and the only route is a `ContentVersion`. Screens must branch on
+ * exactly that, which is what `isDirectlyEditable` below is for.
+ */
+export interface Product {
+  id: string;
+  companyId: string;
+  kind: ProductKind;
+  name: string;
+  slug: string;
+  status: ProductStatus;
+  description: string | null;
+  durationDays: number | null;
+  difficulty: string | null;
+  /**
+   * The highest point the trip actually reaches, when that is not the summit.
+   *
+   * An Everest Base Camp trek tops out at 5,364 m. Without this the page reads
+   * the mountain's altitude and tells a climber they are going to 8,849 m — a
+   * nine-hundred-per-cent overstatement of the number that decides whether they
+   * can do it.
+   */
+  maxAltitudeM: number | null;
+  priceFromCents: Cents | null;
+  priceToCents: Cents | null;
+  currency: string;
+  seasonality: string | null;
+  itinerary: ItineraryDay[];
+  equipment: string[];
+  inclusions: string[];
+  exclusions: string[];
+  faq: FaqEntry[];
+  mountainIds: string[];
+  archivedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Can this row be written directly, or does it need a version?
+ *
+ * One function, used by every screen, so the rule lives in one place and matches
+ * the UPDATE policy's `USING` clause exactly.
+ */
+export const isDirectlyEditable = (p: Product): boolean => p.status === "draft";
+
+export type DepartureAvailability = "available" | "limited" | "full" | "unavailable";
+
+/**
+ * A dated departure, with a SPLIT WRITE PATH — the owner's decision of
+ * 2026-08-28, enforced in the database as column privileges:
+ *
+ *   availability / spotsTotal / spotsLeft   operator writes directly
+ *   departureDate / endDate / priceCents    staff only, via set_departure_terms
+ *
+ * Availability is a fact about the operator's own logistics and going stale
+ * hurts the climber who enquires on a sold-out trip. Price and the existence of
+ * a departure are advertised claims, and they are what an operator has most
+ * reason to overstate.
+ */
+export interface ProductDeparture {
+  id: string;
+  productId: string;
+  departureDate: string;
+  endDate: string | null;
+  availability: DepartureAvailability;
+  /** Null is "not stated". Never defaulted to 0 — that would read as sold out. */
+  spotsTotal: number | null;
+  spotsLeft: number | null;
+  priceCents: Cents | null;
+}
+
+/** The columns `authenticated` actually holds an UPDATE grant on. */
+export const DEPARTURE_DIRECT_FIELDS = ["availability", "spotsTotal", "spotsLeft"] as const;
+
+/* ========================================================================== */
+/* Media                                                                      */
+/* ========================================================================== */
+
+/**
+ * A promotional film, and its source.
+ *
+ * A CLOSED UNION WITH AN EXPLICIT `none`, not a nullable id. "No video" is a
+ * choice the operator made, and it has to be distinguishable from "a video whose
+ * source we failed to record" — the same reason a booking's missing value is a
+ * status rather than a null.
+ *
+ * `youtubeId` is an id, never a URL: the player builds a youtube-nocookie embed
+ * from it and mounts that iframe ONLY after a click, exactly as
+ * `icefall-web/src/app/TripDetail.tsx` does. Storing a full URL would invite
+ * somebody to render it directly and quietly reintroduce a third-party request
+ * on page load for every reader who never presses play.
+ */
+export type PromoVideo =
+  | { source: "none" }
+  | { source: "youtube"; youtubeId: string }
+  | { source: "upload"; mediaId: string };
+
+/** `media_assets.kind`. `document` covers certifications and insurance papers. */
+export type MediaKind = "image" | "video" | "document";
+
+/** `media_assets.state`. Three, not the five publication chips. */
+export type MediaState = "pending" | "approved" | "rejected";
+
+export interface MediaAsset {
+  id: string;
+  companyId: string;
+  /** Null when the asset belongs to the company rather than one trip. */
+  productId: string | null;
+  kind: MediaKind;
+  /** `<company_id>/<company|product_id>/<file>` in the private bucket. */
+  storagePath: string;
+  mimeType: string | null;
+  byteSize: number | null;
+  widthPx: number | null;
+  heightPx: number | null;
+  altText: string | null;
+  /**
+   * Both required before ICEFALL can approve a photograph — the database
+   * refuses an approval without them. Never invent either: an unattributed
+   * image is one nobody has established we may publish.
+   */
+  licence: string | null;
+  credit: string | null;
+  state: MediaState;
+  /** Non-empty whenever `state` is rejected; a refusal without one is refused. */
+  decisionReason: string | null;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
+}
+
+/* ========================================================================== */
+/* ContentVersion — the publication boundary                                  */
+/* ========================================================================== */
+
+/**
+ * A proposed change and its decision.
+ *
+ * `payload` is a PARTIAL PATCH — only the fields being changed. That is what
+ * makes two pending versions on one product able to coexist while their field
+ * sets are disjoint, so an operator fixing a typo is not blocked behind a price
+ * change waiting on review.
+ *
+ * `baseSnapshot` records the live values of those same fields as they stood when
+ * editing started. At approval, if any has moved, the change is refused rather
+ * than applied over the top — which catches the case a version counter misses:
+ * ICEFALL editing a field directly while an operator's change to it sits
+ * pending.
+ *
+ * `changedFields` is derived by a trigger. DO NOT SET IT; it will be overwritten.
+ *
+ * `decisionReason` is guaranteed non-empty on a rejection — a refusal without a
+ * reason is refused by a constraint, so the screen can render it without a
+ * fallback.
+ */
+export interface ContentVersion {
+  id: string;
+  entityType: ContentEntityType;
+  entityId: string;
+  companyId: string;
+  payload: Record<string, unknown>;
+  baseSnapshot: Record<string, unknown>;
+  changedFields: string[];
+  state: ContentVersionState;
+  /** Set by the advisory contact-details validator; surfaced in review. */
+  flags: string[];
+  submittedBy: string | null;
+  submittedAt: string | null;
+  decidedBy: string | null;
+  decidedAt: string | null;
+  decisionReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/* ========================================================================== */
+/* Conversations, leads, bookings                                             */
+/* ========================================================================== */
+
+/**
+ * A customer conversation — the existing `threads` table, extended.
+ *
+ * Not a second messaging system. The message an operator reads here is the same
+ * row the climber sent, so the two cannot drift.
+ */
+export interface Conversation {
+  id: string;
+  companyId: string;
+  customerId: string;
+  customerName: string;
+  productId: string | null;
+  mountainId: string | null;
+  leadId: string | null;
+  /**
+   * The product name as it stood when the enquiry was written.
+   *
+   * Spec §18: a conversation about an archived product keeps its history and
+   * shows the name the customer actually saw.
+   */
+  productNameAtCreation: string | null;
+  sourcePage: string | null;
+  lastMessageAt: string;
+  /** Per-person, so "unread" is a fact about a user, not about a message. */
+  unread: boolean;
+}
+
+export interface Message {
+  id: string;
+  conversationId: string;
+  senderId: string;
+  senderName: string;
+  fromCompany: boolean;
+  body: string;
+  createdAt: string;
+}
+
+/**
+ * An internal sales note.
+ *
+ * A SEPARATE TABLE FROM `messages`, and Session 03 confirmed this was a real
+ * hole in the original plan: the existing `messages_select` policy shows every
+ * thread participant every row, so an internal note stored as a message reaches
+ * the customer it is about. It also stays out of the realtime publication.
+ */
+export interface ConversationNote {
+  id: string;
+  conversationId: string;
+  companyId: string;
+  authorId: string;
+  authorName: string;
+  body: string;
+  createdAt: string;
+}
+
+/** Spec §10's pipeline, plus `disputed` from the shipped shape. */
+export type LeadStatus = "new" | "contacted" | "qualified" | "quoted" | "booked" | "lost" | "disputed";
+
+/** The six stages an operator moves a lead through. `disputed` is ICEFALL's. */
+export const LEAD_PIPELINE: readonly LeadStatus[] = [
+  "new",
+  "contacted",
+  "qualified",
+  "quoted",
+  "booked",
+  "lost",
+] as const;
+
+/**
+ * WHO PRODUCED THIS LEAD — and therefore whose result it is.
+ *
+ * `icefall`: a climber enquired through an ICEFALL surface. These are the only
+ * leads that may be counted in the scorecard screens, because those screens
+ * exist to answer "is ICEFALL worth what I pay for it".
+ *
+ * `company`: the operator typed it in themselves — a phone call, a referral, a
+ * repeat client. Legitimate CRM data, theirs to keep in one pipeline, and
+ * NEVER attributable to ICEFALL. Mixing the two would let a busy season read as
+ * ICEFALL performance, and a booking from one would land in a screen headed
+ * "attributed to Icefall because the enquiry started here" — which would be
+ * false, and the sort of false that has money attached to it.
+ */
+export type LeadOrigin = "icefall" | "company";
+
+export interface Lead {
+  id: string;
+  companyId: string;
+  customerId: string;
+  customerName: string;
+  conversationId: string | null;
+  productId: string | null;
+  mountainId: string | null;
+  status: LeadStatus;
+  origin: LeadOrigin;
+  /**
+   * The operator's own labels. Free text, theirs alone.
+   *
+   * Distinct from `company_internal.tags`, which is ICEFALL's commercial view
+   * of a COMPANY and which this app may never read (see the Company comment).
+   * These are a company's labels on their own customers.
+   */
+  tags: string[];
+  /** The sales employee who owns it. */
+  ownerId: string | null;
+  bookingId: string | null;
+  source: string | null;
+  createdAt: string;
+  firstResponseAt: string | null;
+  qualifiedAt: string | null;
+  quotedAt: string | null;
+  bookedAt: string | null;
+  lostAt: string | null;
+  lostReason: string | null;
+}
+
+export interface LeadNote {
+  id: string;
+  leadId: string;
+  authorId: string;
+  authorName: string;
+  body: string;
+  createdAt: string;
+}
+
+/** `bookings.status`. What the Bookings screen filters on. */
+export type BookingStatus = "pending" | "confirmed" | "completed" | "cancelled";
+
+export interface Booking {
+  id: string;
+  status: BookingStatus;
+  leadId: string | null;
+  companyId: string;
+  productId: string | null;
+  mountainId: string | null;
+  /**
+   * Spec §18: a booking may be recorded without a value.
+   *
+   * A discriminated union rather than `number | null`, mirroring the schema's
+   * `value_cents` + `value_status` pair and its coherence constraint: `reported`
+   * requires a figure, the other two require NULL. Storing an unknown value as 0
+   * is unrepresentable in the database, and unrepresentable here too.
+   */
+  value: BookingValue;
+  currency: string;
+  bookedAt: string;
+  startsOn: string | null;
+  /**
+   * The referral rate as it stood at conversion.
+   *
+   * Written once, never looked up at read time, so settling the rate later
+   * cannot rewrite historical revenue. Null while the rate is unset — the owner
+   * has deliberately not chosen between two figures, and a placeholder must read
+   * as a placeholder.
+   */
+  referralPctAtBooking: number | null;
+}
+
+/* ========================================================================== */
+/* Notifications                                                              */
+/* ========================================================================== */
+
+export type NotificationType =
+  | "enquiry_new"
+  | "message_new"
+  | "lead_assigned"
+  | "lead_status_changed"
+  | "booking_recorded"
+  /** An edit went to Icefall and is awaiting review. The submitter's receipt. */
+  | "content_submitted"
+  | "content_approved"
+  | "content_rejected"
+  | "content_changes_requested"
+  | "info_missing"
+  | "admin_message"
+  /**
+   * Spec §2: when a placement expires the system creates a reminder and does NOT
+   * reorder the mountain. These two are that reminder. Nothing in this codebase
+   * may write a placement position in response to either — and in the shipped
+   * schema nothing could, because the write path does not exist.
+   */
+  | "placement_expiring"
+  | "placement_expired";
+
+export interface OperatorNotification {
+  id: string;
+  companyUserId: string;
+  companyId: string;
+  type: NotificationType;
+  title: string;
+  body: string;
+  href: string | null;
+  createdAt: string;
+  readAt: string | null;
+}
+
+/* ========================================================================== */
+/* Analytics                                                                  */
+/* ========================================================================== */
+
+export type AnalyticsEventType =
+  | "listing_view"
+  | "enquiry_started"
+  | "lead_qualified"
+  | "booking_recorded";
+
+/**
+ * Where an event came from, and therefore whether it may be believed.
+ *
+ * `client` rows are emitted by a consumer app with the public anon key, so
+ * anyone holding that key — including the company the row flatters — can write
+ * one. `server` rows come from a trusted emitter.
+ *
+ * THE SCHEMA ENFORCES THE ASYMMETRY: the insert policy on `analytics_events`
+ * has `with check (source = 'client' or is_staff())`, so a signed-in user
+ * cannot claim a row came from the server.
+ *
+ * ANYTHING COMMERCIAL MUST FILTER TO `server`. An operator's view count feeds a
+ * renewal decision, and a figure the operator could inflate themselves is not a
+ * measurement — it is the fabricated-number failure with extra steps, and worse
+ * than the honest empty state because it looks real.
+ */
+export type AnalyticsSource = "client" | "server";
+
+export interface AnalyticsEvent {
+  id: string;
+  occurredAt: string;
+  eventType: AnalyticsEventType;
+  /** Trust level. Not the page — see `sourcePage`. */
+  source: AnalyticsSource;
+  companyId: string;
+  mountainId: string | null;
+  productId: string | null;
+  conversationId: string | null;
+  leadId: string | null;
+  /** The page the event happened on. */
+  sourcePage: string | null;
+}
+
+/**
+ * The counted funnel for a window.
+ *
+ * There is no `views` here on purpose — it is a `Reading` on the summary types,
+ * because NOTHING IN THE ICEFALL FAMILY EMITS A LISTING-VIEW EVENT YET. Typing
+ * it as a number would make rendering a zero the path of least resistance, and
+ * an operator weighing paid placement would read that zero as a measurement.
+ */
+export interface FunnelCounts {
+  enquiries: number;
+  qualified: number;
+  bookings: number;
+}

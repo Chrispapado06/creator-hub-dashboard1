@@ -80,18 +80,100 @@ function ring(
 }
 
 /**
+ * The trail's REAL shape, projected into the plate's box.
+ *
+ * WHY A DRAWN LINE BEATS A PHOTOGRAPH OF THE GROUND HERE — measured, not felt:
+ * the satellite layer that sits above this plate is keyed to the trail's centre
+ * COORDINATE at zoom 12, and four tiles at z12 span several kilometres. Two
+ * walks that start from the same village therefore resolve to the same four
+ * tiles. Across the 77,141 trails in the index, 66,176 of them — 85.8% — share
+ * their satellite picture with at least one other trail, and a single mosaic is
+ * the illustration for 88 different routes. "Sentier des Gardes" and "Lac
+ * Cornu" are two different walks of two different lengths showing one identical
+ * glacier.
+ *
+ * A route's geometry is unique to it by definition. Drawing the line is both
+ * the more honest picture — it is measured data about THIS trail rather than
+ * imagery of the general area — and the only one that actually tells two
+ * neighbouring walks apart.
+ *
+ * The projection is equirectangular with a cos(lat) correction, which is wrong
+ * at continental scale and irrelevant here: the longest trail in the index
+ * still occupies a box small enough that the error is far under one pixel.
+ */
+function routePath(
+  segments: [number, number][][],
+): { d: string; start: [number, number]; end: [number, number] } | null {
+  const parts = segments.filter((s) => s.length >= 2);
+  if (!parts.length) return null;
+
+  const all = parts.flat();
+  const k = Math.cos((all[0][0] * Math.PI) / 180) || 1;
+  const px = (lon: number) => lon * k;
+  const py = (lat: number) => -lat; // screen y grows downward
+
+  const xs = all.map(([, lon]) => px(lon));
+  const ys = all.map(([lat]) => py(lat));
+  const minX = Math.min(...xs);
+  const minY = Math.min(...ys);
+  const spanX = Math.max(...xs) - minX || 1e-9;
+  const spanY = Math.max(...ys) - minY || 1e-9;
+
+  // Fit inside the box with room to breathe, preserving aspect so a ridge walk
+  // stays long and thin instead of being stretched into a blob.
+  const pad = 22;
+  const scale = Math.min((W - pad * 2) / spanX, (H - pad * 2) / spanY);
+  const ox = (W - spanX * scale) / 2;
+  const oy = (H - spanY * scale) / 2;
+
+  const at = ([lat, lon]: [number, number]): [number, number] => [
+    ox + (px(lon) - minX) * scale,
+    oy + (py(lat) - minY) * scale,
+  ];
+
+  /*
+   * ONE SUBPATH PER SEGMENT — not one continuous line through all of them.
+   *
+   * A relation's member ways come back from Overpass in no particular order and
+   * are not necessarily joined end to end (a route can legitimately be split,
+   * branched, or mapped in pieces). Concatenating them into a single polyline
+   * draws a straight connector between the end of one way and the start of the
+   * next, wherever those happen to be. Tested on three Tatra relations that
+   * produced a triangle of long straight lines across the whole plate: geometry
+   * that is not in OSM and does not exist on the ground. Each way is therefore
+   * moved to and drawn on its own, so every stroke on the plate is a stretch of
+   * path someone actually surveyed.
+   */
+  const d = parts
+    .map((seg) => "M" + seg.map((pt) => at(pt).map((n) => n.toFixed(1)).join(",")).join("L"))
+    .join("");
+
+  const longest = parts.reduce((a, b) => (b.length > a.length ? b : a));
+  return { d, start: at(longest[0]), end: at(longest[longest.length - 1]) };
+}
+
+/**
  * The palette, as LITERALS.
  *
  * `plateDataUri` renders into an `<img>`, and an image document cannot see the
  * host page's custom properties — `var(--ice-azure)` inside it resolves to
  * nothing and the plate comes out blank. These are the same values `index.css`
  * defines, in the hex the tokens document.
+ *
+ * THEY MUST BE UPDATED BY HAND WHEN THE TOKENS MOVE, AND ONCE THEY WERE NOT:
+ * `azure` sat at #A78B5C — the champagne gold from before the alpine-blue
+ * rebrand — long after `--ice-azure` became #4B9BFF. Nothing broke loudly.
+ * `TrailPlate` (the component) reads the live custom properties and drew blue,
+ * while `plateDataUri` drew gold into every `<img>` that used it, so mountain
+ * plates and trail plates were different colours in the same app. The three
+ * greys were stale in the same way: they were the pre-rebrand neutrals, with
+ * no blue cast. If you change a token in `index.css`, change it here too.
  */
 const INK = {
-  obsidian: "#080B0D",
-  slate: "#1C1D20",
-  azure: "#A78B5C",
-  mist: "#8A8E93",
+  obsidian: "#05070B",
+  slate: "#161B24",
+  azure: "#4B9BFF",
+  mist: "#8B94A6",
 };
 
 interface Plate {
@@ -189,13 +271,25 @@ export function plateDataUri(seed: number | string): string {
 
 export function TrailPlate({
   seed,
+  line,
   className,
 }: {
   /** The trail's OSM id, or anything else stable and unique to it. */
   seed: number | string;
+  /**
+   * The trail's real geometry: one array of [lat, lon] pairs per member way.
+   *
+   * OPTIONAL ON PURPOSE. The plate's entire reason for existing is that it
+   * paints instantly with nothing fetched, so geometry can only ever be an
+   * upgrade applied when a caller already holds the line — never something
+   * this component goes and asks for. Without it the drawing falls back to the
+   * generated contours, which is what every caller got before.
+   */
+  line?: [number, number][][];
   className?: string;
 }) {
   const { rings, ridge, gradId } = useMemo(() => buildPlate(seed), [seed]);
+  const route = useMemo(() => (line ? routePath(line) : null), [line]);
 
   return (
     <svg
@@ -214,18 +308,56 @@ export function TrailPlate({
 
       <rect width={W} height={H} fill={`url(#${gradId})`} />
 
+      {/*
+        The generated contours. When the real line is present they drop back to
+        being texture — the invented ground must never compete with the one
+        piece of measured truth on the card.
+      */}
       <g fill="none" strokeWidth="1" vectorEffect="non-scaling-stroke">
         {rings.map((c, i) => (
           <path
             key={i}
             d={c.d}
             stroke={c.azure ? "var(--ice-azure)" : "var(--ice-mist)"}
-            opacity={c.opacity}
+            opacity={route ? (Number(c.opacity) * 0.45).toFixed(3) : c.opacity}
           />
         ))}
       </g>
 
       <path d={ridge} fill="var(--ice-obsidian)" opacity="0.55" />
+
+      {/* The trail itself — real, measured, and unique to this route. */}
+      {route && (
+        <g fill="none" vectorEffect="non-scaling-stroke">
+          {/* A dark casing first, so the line reads over both the pale
+              contours and the dark ridge without a glow that would make it
+              look like a rendering effect rather than a plotted route. */}
+          <path
+            d={route.d}
+            stroke="var(--ice-obsidian)"
+            strokeWidth="4.5"
+            strokeOpacity="0.7"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <path
+            d={route.d}
+            stroke="var(--ice-azure)"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <circle cx={route.start[0]} cy={route.start[1]} r="3.4" fill="var(--ice-snow)" />
+          <circle
+            cx={route.end[0]}
+            cy={route.end[1]}
+            r="3.4"
+            fill="var(--ice-obsidian)"
+            stroke="var(--ice-snow)"
+            strokeWidth="1.6"
+          />
+        </g>
+      )}
     </svg>
   );
 }

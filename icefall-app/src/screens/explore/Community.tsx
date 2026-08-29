@@ -47,6 +47,9 @@ export default function Community() {
   const results = useMemo(() => searchSocial(query), [query]);
   const searching = results.ran;
 
+  /** Whether the FEED is empty, as distinct from this filter matching nothing. */
+  const feedEmpty = communityPosts().length === 0;
+
   const posts = useMemo(() => {
     const all = communityPosts();
     const spec = FEED_FILTERS.find((f) => f.id === filter);
@@ -162,10 +165,19 @@ export default function Community() {
           <Rise className="pt-4">
             <Card>
               <p className="text-[13px] text-snow">Nothing here yet.</p>
+              {/* THREE DIFFERENT EMPTINESSES, AND THEY ARE NOT THE SAME
+                  STATEMENT. "No posts match this filter" implies there are
+                  posts — that somewhere behind the filter is a feed. In a
+                  production build there is not: ICEFALL has no accounts, so
+                  nobody has posted anything, and saying so is the honest answer
+                  rather than one that reads as a filter that came back empty.
+                  Same rule as the people directory further down this screen. */}
               <p className="mt-1.5 text-[11.5px] leading-relaxed text-mist-dim">
-                {filter === "my-mountains" && !goal
-                  ? "Set an objective and this fills with what other people are doing on it."
-                  : "No posts match this filter."}
+                {feedEmpty
+                  ? "ICEFALL has no accounts yet, so nobody has posted anything. This is an empty network rather than a filter that came back with nothing — when people can post, what they write appears here."
+                  : filter === "my-mountains" && !goal
+                    ? "Set an objective and this fills with what other people are doing on it."
+                    : "No posts match this filter."}
               </p>
             </Card>
           </Rise>

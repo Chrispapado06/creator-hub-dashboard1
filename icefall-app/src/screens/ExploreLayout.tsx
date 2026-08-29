@@ -33,6 +33,7 @@ const TABS: readonly { value: string; label: string }[] = [
   { value: "/explore/mountains", label: "Mountains" },
   { value: "/explore/social", label: "Social" },
   { value: "/explore/expeditions", label: "Expeditions" },
+  { value: "/explore/treks", label: "Treks" },
   { value: "/explore/guides", label: "Guides" },
 ];
 
@@ -57,13 +58,30 @@ export default function ExploreLayout() {
   // resolve for anything already linking to them.
   const lit = /^\/explore\/(people|groups)\b/.test(pathname) ? "/explore/social" : active;
 
+  /**
+   * Where the chevron goes.
+   *
+   * On a TAB ROOT it goes to the hub, which is the only way back there.
+   *
+   * On a DETAIL route it goes back in history instead. This header is shared by
+   * every screen under /explore, and mountain, peak and trail pages render no
+   * header of their own — so this chevron was the only way off them, and it
+   * always went to the hub. Opening Mont Blanc from Expeditions and pressing
+   * back landed you on the hub rather than the list you came from, which is the
+   * bug this fixes. History is the right answer because the same peak page is
+   * reached from Expeditions, from Mountains and from search, and each of them
+   * deserves to be returned to.
+   */
+  const onTabRoot = TABS.some((t) => t.value === pathname);
+  const back = onHub ? undefined : onTabRoot ? HUB : true;
+
   return (
     // This header clears the notch, so nested `Screen`s must not clear it again.
     <div className="flex h-full flex-col" style={{ "--screen-safe-top": "0px" } as React.CSSProperties}>
       <div className="shrink-0 px-5" style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
         {/* The chevron is the way back to the hub from a tab. Without it the
             hub would be reachable only by leaving Explore and returning. */}
-        <ScreenHeader title="Explore" back={onHub ? undefined : HUB} large />
+        <ScreenHeader title="Explore" back={back} large />
         <SegmentedTabs tabs={TABS} value={lit} onChange={(v) => navigate(v)} variant="section" />
       </div>
       {/* Must be a flex column: `Screen` inside uses `flex-1 overflow-y-auto`,

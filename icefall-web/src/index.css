@@ -49,6 +49,19 @@
    */
   --ice-azure-cta: oklch(0.625 0.178 256);
 
+  /*
+   * Gilt — the ONE sanctioned exception to the single-accent rule.
+   *
+   * Everything in this app is azure. The best-match expedition card is gold,
+   * because it was asked for by name ("make the colour around the reccomended
+   * expedition company yellow/gold bit shiny") and because a recommendation
+   * that is merely a brighter blue does not read as different in kind from the
+   * cards beside it. Ported from the phone app so the two agree.
+   */
+  --ice-gilt: oklch(0.7938 0.1274 84.5); /* #E5B455 */
+  --ice-gilt-bright: oklch(0.8867 0.0836 88.9); /* #F6D9A0 */
+  --ice-gilt-deep: oklch(0.6312 0.1113 75.3); /* #A97B33 */
+
   /* Semantic — hue-separated from the accent so state never reads as chrome */
   --ice-summit: oklch(0.6687 0.1119 149.6); /* #5FA86F  complete    */
   --ice-alert: oklch(0.7471 0.127 77.8); /* #D9A244  caution     */
@@ -89,6 +102,10 @@
   --color-azure-glow: var(--ice-azure-glow);
   --color-azure-cta: var(--ice-azure-cta);
 
+  --color-gilt: var(--ice-gilt);
+  --color-gilt-bright: var(--ice-gilt-bright);
+  --color-gilt-deep: var(--ice-gilt-deep);
+
   --color-summit: var(--ice-summit);
   --color-alert: var(--ice-alert);
   --color-danger: var(--ice-danger);
@@ -101,6 +118,15 @@
 
   --radius-card: var(--radius-card);
   --radius-tile: var(--radius-tile);
+  /*
+   * `--radius-pill` was declared on `:root` but never re-exported here, and
+   * Tailwind v4 generates utilities ONLY from `@theme` — so `rounded-pill`
+   * compiled to nothing and every chip, badge, pill button and toggle track
+   * using it has been rendering with square corners. 57 of them in the phone
+   * app alone. Declaring a custom property is not the same as registering a
+   * utility, and nothing warns you.
+   */
+  --radius-pill: var(--radius-pill);
 
   --ease-alpine: var(--ease-alpine);
 }
@@ -225,6 +251,61 @@
         oklch(0.1277 0.0108 259.6 / 82%) 12%,
         oklch(0.1277 0.0108 259.6 / 0%) 46%
       );
+  }
+
+  /*
+   * The best-match card's surface. A soft raking sheen rather than a flat gold
+   * fill — at card size a flat fill reads as an alert, not a recommendation.
+   */
+  .gilt-sheen {
+    background-image:
+      linear-gradient(
+        118deg,
+        oklch(0.8867 0.0836 88.9 / 14%) 0%,
+        oklch(0.7938 0.1274 84.5 / 6%) 26%,
+        transparent 58%
+      ),
+      linear-gradient(
+        to bottom,
+        oklch(0.7938 0.1274 84.5 / 7%) 0%,
+        oklch(0.7938 0.1274 84.5 / 3%) 100%
+      );
+    box-shadow:
+      inset 0 1px 0 0 oklch(0.8867 0.0836 88.9 / 16%),
+      0 0 24px -8px oklch(0.7938 0.1274 84.5 / 28%);
+  }
+
+  /*
+   * Two-line clamp that actually clamps. Tailwind v4.2's `line-clamp-*` emits
+   * the modern unprefixed property, which resolves with `display: flow-root`
+   * here and clips to a height rather than a line — showing the wrong lines.
+   */
+  .clamp-2 {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+  }
+
+  /*
+   * Map pins. `maplibregl.Marker` takes a plain DOM element, so these cannot be
+   * Tailwind classes on a component — the element is built in JS.
+   */
+  .icefall-pin {
+    width: 14px;
+    height: 14px;
+    border-radius: 999px;
+    border: 2px solid oklch(0.9481 0.0103 261.8);
+    background: var(--ice-azure);
+    box-shadow: 0 0 0 4px oklch(0.1277 0.0108 259.6 / 55%);
+    cursor: pointer;
+    transition:
+      transform 160ms var(--ease-alpine),
+      background-color 160ms var(--ease-alpine);
+  }
+  .icefall-pin[data-selected="true"] {
+    background: var(--ice-snow);
+    transform: scale(1.45);
   }
 
   .no-scrollbar {

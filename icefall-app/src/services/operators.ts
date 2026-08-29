@@ -14,6 +14,50 @@ import { SHOW_DEMO_DATA } from "@/lib/demoFlag";
  * above it don't change.
  */
 
+
+/**
+ * One trip a listing runs.
+ *
+ * INVENTED IN FULL, like everything else on `demo: true` entries — the price,
+ * the ratio, the itinerary, the inclusions and the departures. The departures
+ * are the sharpest of these: "5 spots left" is both a fabricated number and a
+ * scarcity cue designed to hurry a decision, and the decision here is which
+ * company to follow onto an 8,000 m mountain. It renders behind the demo gate
+ * and nowhere else, and a real one must come from the operator's own booking
+ * system or not exist.
+ */
+export interface Trip {
+  id: string;
+  name: string;
+  days: number;
+  country: string;
+  priceFromEur: number;
+  rating: number;
+  reviewCount: number;
+  badge?: "popular" | "best-value" | "premium";
+  /** An ICEFALL peak photograph, never the company's own imagery. */
+  photo: string;
+
+  /* ---- The trip's own page ---------------------------------------------- */
+  /** The peak, when the trip is an ascent — links the page to real route data. */
+  peakName?: string;
+  elevationM?: number;
+  region?: string;
+  difficultyLabel?: string;
+  /** "1:5" — climbers per guide. */
+  guideRatio?: string;
+  bestSeason?: string;
+  about?: string;
+  /** The six tiles under "price includes". */
+  inclusions?: { label: string; detail: string }[];
+  /** What the price does NOT cover — the half of a quote people get caught by. */
+  excluded?: string[];
+  highlights?: string[];
+  itinerary?: { days: string; label: string }[];
+  departures?: { id: string; date: string; days: number; spotsLeft: number; priceFromEur: number; badge?: string }[];
+  faq?: { q: string; a: string }[];
+}
+
 export interface Operator {
   id: string;
   name: string;
@@ -50,14 +94,43 @@ export interface Operator {
   priceFromEur?: number;
   priceToEur?: number;
   /**
-   * Third-party trademark, used in a LOCAL design mockup only.
-   * public/img/operators is gitignored AND vercelignored — unconditionally, so
-   * these never reach any deployment — and the card falls back to a monogram
-   * when the file is absent.
+   * NOTHING SETS THIS ANY MORE, AND THAT IS THE POINT.
+   *
+   * It held third-party trademarks for four real companies. Those companies are
+   * now invented (see `DEMO_OPERATORS`), an invented company has no mark, and
+   * every card renders the monogram fallback. The field survives for a real
+   * operator's own logo once operators can list — uploaded by them, not
+   * collected by us. `public/img/operators` stays gitignored and vercelignored
+   * regardless.
    */
   logo?: string;
   blurb?: string;
   popularObjectives?: string[];
+
+  /* ---- Company profile, mockup-only ------------------------------------- */
+  /**
+   * Everything below drives the company profile screen and is invented in
+   * exactly the same way as the fields above — including, for the four entries
+   * that name real businesses, the statistics, the operational claims and the
+   * reviews. A review is a named person's account of a trip they did not take,
+   * and a "92% summit rate" is a commercial claim nobody made. Both are gated
+   * on `demo: true` behind SHOW_DEMO_DATA, and neither may ever be promoted to
+   * a production build without the company itself supplying it in writing.
+   */
+  tagline?: string;
+  expeditionCount?: number;
+  summiteerCount?: number;
+  about?: string;
+  /** The four pillar tiles. */
+  pillars?: { label: string; detail: string }[];
+  /** The highlights list beside the about card. */
+  highlights?: { label: string; detail: string }[];
+  /** Trips this listing runs — the featured strip, and a page each. */
+  trips?: Trip[];
+  reviews?: { id: string; author: string; stars: number; agoLabel: string; body: string }[];
+  /** ICEFALL's own mountain photography — see the note on `trips.photo`. */
+  gallery?: string[];
+  faq?: { q: string; a: string }[];
 }
 
 export const OPERATOR_DISCLAIMER =
@@ -135,29 +208,38 @@ const OPERATORS: Operator[] = [
  * badged DEMO. Set SHOW_DEMO_OPERATORS to false to remove them entirely.
  */
 /**
- * LOCAL DESIGN MOCKUP ONLY — MUST NOT SHIP.
+ * LOCAL DESIGN MOCKUP — INVENTED COMPANIES, INVENTED FIGURES.
  *
- * These four are real businesses. The ratings, review counts, years and prices
- * attached to them here are INVENTED by ICEFALL for the purpose of evaluating
- * this layout, and publishing invented commercial claims about identifiable
- * companies is defamatory and passes their trademarks off as ICEFALL content.
+ * These four USED TO BE REAL BUSINESSES: Seven Summit Treks, Adventure
+ * Consultants, Elite Exped and 14 Peaks Expedition, each carrying ratings,
+ * review counts, summiteer totals, prices and a "92% summit rate" that ICEFALL
+ * made up. Publishing invented commercial claims about an identifiable company
+ * is defamatory whoever reads it, and it left one deployment setting — Vercel
+ * Deployment Protection — as the only thing standing between the claim and the
+ * public. A configuration checkbox is not a place to keep a legal exposure.
  *
- * Hence: gated. An ordinary production build resolves this to false and the
- * directory falls back to the honest sample listings. A build made with
- * VITE_SHOW_DEMO=1 shows them, and may only be deployed behind Vercel
- * Deployment Protection — see `@/lib/demoFlag`. Their LOGOS ship nowhere at
- * all: public/img/operators stays vercelignored, so the cards render monograms
- * and these companies' marks never sit on an ICEFALL server.
+ * So the names are now invented, built from the same constructed surnames as
+ * the demo guides in `guides/types.ts` so the whole demo cast is recognisably
+ * one invention, and the logos are gone — an invented company has no mark, and
+ * the cards fall back to a monogram, which is what they already did on any
+ * machine that was not the designer's.
+ *
+ * The FIGURES are still invented, which is why this stays gated: an ordinary
+ * production build resolves the flag to false, the array is `[]` at definition,
+ * and the directory falls back to the honest sample listings. What has changed
+ * is that the failure mode if it ever leaks is an embarrassment rather than a
+ * commercial claim about somebody else's business.
  */
 export const SHOW_DEMO_OPERATORS = SHOW_DEMO_DATA;
 
-export const DEMO_OPERATORS: Operator[] = [
+export const DEMO_OPERATORS: Operator[] = !SHOW_DEMO_OPERATORS
+  ? []
+  : [
   {
     id: "demo-summit",
     priceFromEur: 52000,
     priceToEur: 68000,
-    name: "Seven Summit Treks",
-    logo: "/img/operators/sst.png",
+    name: "Falkenrath Expeditions",
     certification: "8,000 m expedition operator",
     regions: ["Nepal", "China", "India", "Pakistan"],
     minElevationM: 5000,
@@ -178,15 +260,14 @@ export const DEMO_OPERATORS: Operator[] = [
     id: "demo-altitude",
     priceFromEur: 2400,
     priceToEur: 4800,
-    name: "Adventure Consultants",
-    logo: "/img/operators/ac.png",
-    certification: "Guided expeditions since 1991",
+    name: "Halvorsen Alpine",
+    certification: "Small-group expedition operator",
     regions: ["Nepal", "New Zealand", "Argentina", "Tanzania", "France", "Switzerland", "Italy"],
     minElevationM: 2500,
     responseHours: 24,
     sample: true,
     demo: true,
-    city: "Wanaka, New Zealand",
+    city: "Innsbruck, Austria",
     coverage: "Worldwide",
     rating: 4.8,
     reviewCount: 96,
@@ -198,28 +279,26 @@ export const DEMO_OPERATORS: Operator[] = [
     id: "demo-peak",
     priceFromEur: 1800,
     priceToEur: 6500,
-    name: "Elite Exped",
-    logo: "/img/operators/ee.svg",
+    name: "Zelenika High Altitude",
     certification: "High-altitude expeditions",
     regions: ["Nepal", "Pakistan", "China", "United Kingdom"],
     minElevationM: 2000,
     responseHours: 36,
     sample: true,
     demo: true,
-    city: "London, United Kingdom",
+    city: "Chamonix, France",
     coverage: "Worldwide",
     rating: 4.7,
     reviewCount: 64,
     yearsExperience: 10,
     membersJoined: 18,
-    blurb: "From first-time trekkers to high-altitude climbers, we make mountains accessible.",
+    blurb: "First trekking peaks through to the 8,000 m programmes, on one ladder.",
   },
   {
     id: "demo-north",
     priceFromEur: 3200,
     priceToEur: 9500,
-    name: "14 Peaks Expedition",
-    logo: "/img/operators/p14.png",
+    name: "Callaghan Himalaya",
     certification: "Himalayan expedition operator",
     regions: ["Nepal", "China", "India"],
     minElevationM: 3000,
@@ -234,10 +313,384 @@ export const DEMO_OPERATORS: Operator[] = [
     membersJoined: 15,
     blurb: "Specialists in alpine climbs and remote wilderness expeditions.",
   },
-];
+  ];
 
+/**
+ * The company-profile fields, kept apart from the listings above.
+ *
+ * Separated so the line between "what the directory needs" and "what the mockup
+ * needs" stays visible: everything here is presentation, all of it invented,
+ * and all of it attached to businesses that are real. Merged in below rather
+ * than written into the four literals, so deleting this one constant is all it
+ * takes to strip every fabricated statistic, claim and review from the build.
+ *
+ * Prices are EUR, like every other figure in ICEFALL. The design they came from
+ * showed USD; converting the currency label without converting the number would
+ * have been a third invented fact on top of the two already here.
+ */
+const DEMO_PROFILES: Record<string, Partial<Operator>> = !SHOW_DEMO_OPERATORS
+  ? {}
+  : {
+  "demo-summit": {
+    tagline: "Everest expedition specialists",
+    yearsExperience: 25,
+    expeditionCount: 500,
+    summiteerCount: 1250,
+    about:
+      "A high-altitude expedition company working mainly on Everest, with guides, Sherpas and support staff who return to the same mountain season after season.",
+    pillars: [
+      { label: "Safety first", detail: "Our top priority" },
+      { label: "Expert guides", detail: "IFMGA certified" },
+      { label: "High success", detail: "Rate not published" },
+      { label: "Sustainable", detail: "Eco responsible" },
+    ],
+    highlights: [
+      { label: "Everest specialists", detail: "150+ Everest expeditions run" },
+      { label: "High altitude experts", detail: "All 8,000 m peaks covered" },
+      { label: "Premium support", detail: "1:1 Sherpa ratio on the summit push" },
+      { label: "Medical support", detail: "Doctor on call for the expedition" },
+      { label: "Equipment included", detail: "Tents, oxygen and group gear" },
+      { label: "Sustainability focused", detail: "Carry-out policy above base camp" },
+    ],
+    trips: [
+      {
+        id: "t-eve",
+        name: "Everest Expedition (8,848 m)",
+        days: 60,
+        country: "Nepal",
+        priceFromEur: 62000,
+        rating: 4.9,
+        reviewCount: 86,
+        badge: "premium",
+        photo: "/img/everest.jpg",
+        peakName: "Everest",
+        elevationM: 8848,
+        region: "Khumbu Region, Nepal",
+        difficultyLabel: "Challenging",
+        guideRatio: "1:5",
+        bestSeason: "Mar – May / Sep – Nov",
+        about:
+          "A high-altitude ascent for climbers with 7,000 m experience behind them. Staged acclimatisation rotations, supplementary oxygen above the South Col and a Sherpa team that works the route every season.",
+        inclusions: [
+          { label: "Permits & fees", detail: "All climbing permits and government fees" },
+          { label: "Guides & Sherpas", detail: "Licensed guides and experienced Sherpas" },
+          { label: "Accommodation", detail: "Hotels in the city and tents on the mountain" },
+          { label: "Meals & nutrition", detail: "All meals during the expedition" },
+          { label: "Oxygen & gear", detail: "Supplementary oxygen and technical gear" },
+          { label: "Safety & support", detail: "Medical support and communications" },
+        ],
+        highlights: [
+          "Summit the highest mountain in the world",
+          "Sherpa team that returns to the route every season",
+          "Acclimatisation planned around safety, not the schedule",
+          "Oxygen cached high on the route",
+          "Views across the Khumbu from the South Col",
+        ],
+        itinerary: [
+          { days: "Day 1–2", label: "Arrival in Kathmandu" },
+          { days: "Day 3–7", label: "Trek to Everest Base Camp" },
+          { days: "Day 8–20", label: "Acclimatisation & rotations" },
+          { days: "Day 21–40", label: "Summit push" },
+          { days: "Day 41–60", label: "Descent & return to Kathmandu" },
+        ],
+        departures: [
+          { id: "d1", date: "12 March 2027", days: 60, spotsLeft: 5, priceFromEur: 62000, badge: "Popular" },
+          { id: "d2", date: "25 March 2027", days: 60, spotsLeft: 3, priceFromEur: 62000 },
+          { id: "d3", date: "10 September 2027", days: 60, spotsLeft: 6, priceFromEur: 62000 },
+        ],
+        faq: [
+          { q: "What experience do I need?", a: "A previous ascent above 7,000 m, and a season of glacier travel with crampons and axe." },
+          { q: "Is oxygen included?", a: "Yes, above the South Col. Confirm the number of bottles per climber in writing." },
+          { q: "What if I turn back?", a: "The guide's decision on the mountain is final. Ask what is refunded before you pay." },
+        ],
+      },
+      { id: "t-ebc", peakName: "Everest Base Camp", elevationM: 5364, name: "Everest Base Camp Trek", days: 14, country: "Nepal", priceFromEur: 2150, rating: 4.8, reviewCount: 210, badge: "best-value", photo: "/img/everest-1.jpg" },
+      { id: "t-lho", peakName: "Lhotse", elevationM: 8516, name: "Everest & Lhotse Expedition", days: 68, country: "Nepal", priceFromEur: 68500, rating: 5.0, reviewCount: 32, badge: "premium", photo: "/img/everest-3.jpg" },
+      { id: "t-ama", peakName: "Ama Dablam", elevationM: 6812, name: "Ama Dablam Expedition (6,812 m)", days: 35, country: "Nepal", priceFromEur: 18500, rating: 4.8, reviewCount: 64, photo: "/img/gran-paradiso.jpg" },
+    ],
+    reviews: [
+      { id: "r1", author: "Alex Martin", stars: 5, agoLabel: "2 weeks ago", body: "Incredible experience on our Everest expedition. The guides were exceptional and the whole team made us feel safe and supported every step of the way." },
+      { id: "r2", author: "Sophie Renard", stars: 5, agoLabel: "1 month ago", body: "Rotations were well paced and nobody was rushed. The Sherpa team knew the route intimately and the food at base camp was far better than expected." },
+    ],
+    gallery: ["/img/everest.jpg", "/img/everest-1.jpg", "/img/everest-3.jpg", "/img/denali.jpg", "/img/aconcagua.jpg"],
+    faq: [
+      { q: "What is included in the price?", a: "Permits, base camp accommodation, group equipment, oxygen and Sherpa support. International flights and personal kit are not." },
+      { q: "What experience do I need?", a: "Previous experience above 7,000 m, and a season of glacier travel with crampons and axe." },
+      { q: "What happens if I have to turn back?", a: "The guide's decision on the mountain is final. Ask before you pay what is refunded and what is not." },
+    ],
+  },
+  "demo-altitude": {
+    tagline: "Small groups, stated ratios",
+    yearsExperience: 34,
+    expeditionCount: 900,
+    summiteerCount: 3100,
+    about:
+      "A long-established guiding company running small-group expeditions across the Himalaya, the Andes and Alaska, with a fixed guide-to-client ratio.",
+    pillars: [
+      { label: "Small groups", detail: "Fixed ratios" },
+      { label: "Expert guides", detail: "IFMGA certified" },
+      { label: "Established", detail: "Two decades" },
+      { label: "Worldwide", detail: "Six continents" },
+    ],
+    highlights: [
+      { label: "Small-group guiding", detail: "Ratios stated before you book" },
+      { label: "Seven Summits programme", detail: "All seven run annually" },
+      { label: "Acclimatisation built in", detail: "Staged rotations, no shortcuts" },
+      { label: "Medical screening", detail: "Required before departure" },
+    ],
+    trips: [
+      { id: "t-acon", peakName: "Aconcagua", elevationM: 6961, name: "Aconcagua (6,961 m)", days: 20, country: "Argentina", priceFromEur: 6400, rating: 4.8, reviewCount: 74, badge: "popular", photo: "/img/aconcagua.jpg" },
+      { id: "t-den", peakName: "Denali", elevationM: 6190, name: "Denali West Buttress", days: 24, country: "United States", priceFromEur: 11500, rating: 4.9, reviewCount: 41, photo: "/img/denali.jpg" },
+      { id: "t-mb", peakName: "Mont Blanc", elevationM: 4808, name: "Mont Blanc Ascent", days: 6, country: "France", priceFromEur: 2400, rating: 4.7, reviewCount: 132, badge: "best-value", photo: "/img/mont-blanc.jpg" },
+    ],
+    reviews: [
+      { id: "r1", author: "Lucas Pereira", stars: 5, agoLabel: "3 weeks ago", body: "Ratios were exactly as advertised and the acclimatisation plan was sensible rather than rushed. Turned back one team on weather and I respected the call." },
+    ],
+    gallery: ["/img/aconcagua.jpg", "/img/denali.jpg", "/img/mont-blanc.jpg", "/img/eiger.jpg"],
+    faq: [
+      { q: "What is the guide ratio?", a: "Stated per trip before booking and held to on the mountain." },
+      { q: "Do you screen clients?", a: "Yes — previous altitude and a medical are required for the 6,000 m and 8,000 m programmes." },
+    ],
+  },
+  "demo-peak": {
+    tagline: "Trekking peaks through to 8,000 m",
+    yearsExperience: 9,
+    expeditionCount: 210,
+    summiteerCount: 640,
+    about:
+      "A younger operator focused on 8,000 m peaks with heavy oxygen logistics and a large Sherpa team.",
+    pillars: [
+      { label: "8,000 m focus", detail: "Fourteen peaks" },
+      { label: "Strong logistics", detail: "Oxygen and fixed lines" },
+      { label: "Large teams", detail: "Deep Sherpa support" },
+      { label: "Fast rotations", detail: "Shorter expeditions" },
+    ],
+    highlights: [
+      { label: "Oxygen logistics", detail: "Bottles cached high on the route" },
+      { label: "Fixed-line teams", detail: "Own rope-fixing crews" },
+      { label: "Shorter windows", detail: "Compressed schedules" },
+    ],
+    trips: [
+      { id: "t-mana", peakName: "Manaslu", elevationM: 8163, name: "Manaslu (8,163 m)", days: 42, country: "Nepal", priceFromEur: 16800, rating: 4.7, reviewCount: 38, badge: "popular", photo: "/img/everest-3.jpg" },
+      { id: "t-island", peakName: "Island Peak", elevationM: 6189, name: "Island Peak", days: 16, country: "Nepal", priceFromEur: 2900, rating: 4.6, reviewCount: 91, badge: "best-value", photo: "/img/everest-1.jpg" },
+    ],
+    reviews: [
+      { id: "r1", author: "Mira Halvorsen", stars: 4, agoLabel: "2 months ago", body: "Logistics were the strongest part — oxygen was where they said it would be. Communication before the trip could have been better." },
+    ],
+    gallery: ["/img/everest-3.jpg", "/img/everest-1.jpg", "/img/toubkal.jpg"],
+    faq: [{ q: "Is oxygen included?", a: "On the 8,000 m programmes, yes. Confirm the number of bottles per climber in writing." }],
+  },
+  "demo-north": {
+    tagline: "Himalayan expedition operator",
+    yearsExperience: 15,
+    expeditionCount: 380,
+    summiteerCount: 1020,
+    about:
+      "A Nepal-based operator running the Himalayan 8,000 m peaks and the trekking peaks around them.",
+    pillars: [
+      { label: "Nepal based", detail: "Local operation" },
+      { label: "Fourteen peaks", detail: "All 8,000ers" },
+      { label: "Trekking peaks", detail: "First-timers welcome" },
+      { label: "Own staff", detail: "Directly employed" },
+    ],
+    highlights: [
+      { label: "Locally operated", detail: "Kathmandu head office" },
+      { label: "Directly employed staff", detail: "No subcontracting" },
+      { label: "Trekking-peak ladder", detail: "A route into higher objectives" },
+    ],
+    trips: [
+      { id: "t-mera", peakName: "Mera Peak", elevationM: 6476, name: "Mera Peak", days: 18, country: "Nepal", priceFromEur: 3200, rating: 4.6, reviewCount: 58, badge: "best-value", photo: "/img/toubkal.jpg" },
+      { id: "t-lobu", peakName: "Lobuche East", elevationM: 6119, name: "Lobuche East", days: 15, country: "Nepal", priceFromEur: 2700, rating: 4.5, reviewCount: 44, photo: "/img/triglav.jpg" },
+    ],
+    reviews: [
+      { id: "r1", author: "Nikolai Petrov", stars: 5, agoLabel: "5 weeks ago", body: "Good value and the staff were the same people from the office to the mountain, which mattered more than I expected." },
+    ],
+    gallery: ["/img/toubkal.jpg", "/img/triglav.jpg", "/img/mount-olympus.jpg"],
+    faq: [{ q: "Do you take beginners?", a: "On the trekking peaks, yes. The 8,000 m programmes require previous high-altitude experience." }],
+  },
+  };
+
+/**
+ * Merged in rather than written into the literals above, so removing
+ * DEMO_PROFILES removes every fabricated statistic, claim and review at once.
+ */
+
+/**
+ * Fill in whatever a trip does not spell out for itself.
+ *
+ * Ten of the eleven trips carried a name, a price and nothing else, so every
+ * tab on their page rendered empty. Rather than paste the same paragraph under
+ * all of them, this DERIVES the missing parts from what the trip already
+ * states — its length, its altitude and its country — so the content stays
+ * internally consistent: a 14-day trek gets a trek's itinerary, an 8,000 m
+ * ascent gets rotations and oxygen, and neither borrows the other's.
+ *
+ * Still invented, still gated behind `demo`. The point is that the layout can
+ * be judged with something coherent in it, not that any of it is true.
+ */
+function withTripDetail(t: Trip): Trip {
+  const alt = t.elevationM ?? 0;
+
+  /*
+   * Altitude alone is the wrong signal.
+   *
+   * Everest Base Camp sits at 5,364 m and is a walking trek — no rope, no
+   * crampons — while Mont Blanc at 4,808 m is a glaciated alpine ascent. Sorting
+   * purely on height called the first one technical and, before these trips
+   * carried an elevation at all, called the second one "guided walking on a
+   * waymarked route". Both are wrong in the direction that matters: a route
+   * description is what somebody uses to decide whether they are qualified to
+   * be on it.
+   */
+  const trek = /\btrek\b|base camp/i.test(t.name);
+  const big = !trek && alt >= 8000;
+  const high = !trek && alt >= 6000;
+  const technical = !trek && alt >= 4000;
+
+  const phase = (from: number, to: number) => (from === to ? `Day ${from}` : `Day ${from}–${to}`);
+  const d = t.days;
+
+  // Proportional to the trip's real length, so the last day is always day `d`.
+  const itinerary =
+    t.itinerary ??
+    (big
+      ? [
+          { days: phase(1, 2), label: `Arrival and briefing` },
+          { days: phase(3, Math.round(d * 0.18)), label: "Trek to base camp" },
+          { days: phase(Math.round(d * 0.18) + 1, Math.round(d * 0.55)), label: "Acclimatisation rotations" },
+          { days: phase(Math.round(d * 0.55) + 1, Math.round(d * 0.8)), label: "Summit push" },
+          { days: phase(Math.round(d * 0.8) + 1, d), label: "Descent and return" },
+        ]
+      : high
+        ? [
+            { days: phase(1, 2), label: "Arrival and kit check" },
+            { days: phase(3, Math.round(d * 0.35)), label: "Approach and base camp" },
+            { days: phase(Math.round(d * 0.35) + 1, Math.round(d * 0.7)), label: "Acclimatisation" },
+            { days: phase(Math.round(d * 0.7) + 1, Math.round(d * 0.88)), label: "Summit attempt" },
+            { days: phase(Math.round(d * 0.88) + 1, d), label: "Descent and return" },
+          ]
+        : [
+            { days: phase(1, 1), label: "Arrival and briefing" },
+            { days: phase(2, Math.round(d * 0.45)), label: "Approach on foot" },
+            { days: phase(Math.round(d * 0.45) + 1, Math.round(d * 0.75)), label: "High camps" },
+            { days: phase(Math.round(d * 0.75) + 1, Math.round(d * 0.9)), label: "Summit day" },
+            { days: phase(Math.round(d * 0.9) + 1, d), label: "Return" },
+          ]);
+
+  const inclusions =
+    t.inclusions ??
+    [
+      { label: "Permits & fees", detail: `${t.country} climbing permits and park fees` },
+      { label: "Guides", detail: technical ? "Licensed guides and high-altitude staff" : "Licensed mountain guides" },
+      { label: "Accommodation", detail: high ? "Lodges on the approach, tents on the mountain" : "Huts and mountain accommodation" },
+      { label: "Meals", detail: "All meals from the start of the trek" },
+      ...(big || high
+        ? [{ label: "Oxygen & gear", detail: big ? "Supplementary oxygen and group technical gear" : "Group technical gear and fixed lines" }]
+        : [{ label: "Group gear", detail: "Ropes, hardware and shared equipment" }]),
+      { label: "Safety & support", detail: "Communications and evacuation coordination" },
+    ];
+
+  const excluded =
+    t.excluded ??
+    [
+      "International flights and visas",
+      "Personal clothing, boots and technical kit",
+      "Travel and evacuation insurance — required, and your responsibility",
+      "Summit bonuses and staff tips",
+      ...(big ? ["Extra oxygen bottles beyond the stated allocation"] : []),
+    ];
+
+  const highlights =
+    t.highlights ??
+    [
+      t.peakName !== undefined
+        ? `${trek ? "Reach" : "Summit"} ${t.peakName}${alt > 0 ? ` at ${alt.toLocaleString("en-GB")} m` : ""}`
+        : t.name,
+      technical ? "Roped glacier travel with a guided team" : "Walking days on a waymarked route",
+      high || technical
+        ? "Acclimatisation planned around safety, not the schedule"
+        : "Paced for a mixed-ability group",
+      `${d} days in ${t.country}`,
+    ];
+
+  const about =
+    t.about ??
+    `A ${d}-day guided ${big ? "8,000 m expedition" : high ? "high-altitude expedition" : technical ? "alpine ascent" : "trek"} in ${t.country}${
+      t.peakName !== undefined ? `, on ${t.peakName}` : ""
+    }. ${
+      big
+        ? "Staged rotations, supplementary oxygen high on the route and a support team that works it every season."
+        : high
+          ? "Built around a proper acclimatisation profile, with the summit attempt placed where the weather window usually sits."
+          : technical
+            ? "Glacier travel, a hut approach and an alpine start on summit day."
+            : "Walking days with a guide, with baggage moved between overnight stops."
+    }`;
+
+  const departures =
+    t.departures ??
+    [
+      { id: `${t.id}-d1`, date: "12 March 2027", days: d, spotsLeft: 5, priceFromEur: t.priceFromEur, badge: "Popular" },
+      { id: `${t.id}-d2`, date: "25 April 2027", days: d, spotsLeft: 3, priceFromEur: t.priceFromEur },
+      { id: `${t.id}-d3`, date: "10 September 2027", days: d, spotsLeft: 6, priceFromEur: t.priceFromEur },
+    ];
+
+  const faq =
+    t.faq ??
+    [
+      {
+        q: "What experience do I need?",
+        a: big
+          ? "A previous ascent above 7,000 m, and a season of glacier travel with crampons and axe."
+          : high
+            ? "Previous experience above 4,000 m and confident use of crampons and axe."
+            : technical
+              ? "Comfortable on steep snow in crampons, and happy moving roped on a glacier."
+              : "Good hill fitness and several consecutive days on your feet.",
+      },
+      {
+        q: "What is not included?",
+        a: "Flights, personal kit, insurance and tips. The full list is under Inclusions — get it back from the operator in writing.",
+      },
+      {
+        q: "What happens if I turn back?",
+        a: "The guide's decision on the mountain is final. Ask what is refunded before you pay.",
+      },
+    ];
+
+  return {
+    ...t,
+    about,
+    highlights,
+    inclusions,
+    excluded,
+    itinerary,
+    departures,
+    faq,
+    difficultyLabel: t.difficultyLabel ?? (big ? "Extreme" : high ? "Challenging" : technical ? "Demanding" : "Moderate"),
+    guideRatio: t.guideRatio ?? (big ? "1:1 on the summit push" : high ? "1:2" : "1:6"),
+    bestSeason: t.bestSeason ?? (t.country === "Nepal" ? "Mar – May / Sep – Nov" : "Jun – Sep"),
+    region: t.region ?? t.country,
+  };
+}
+
+for (const operator of DEMO_OPERATORS) {
+  Object.assign(operator, DEMO_PROFILES[operator.id] ?? {});
+  // Every trip gets a full page, not just the one that was written by hand.
+  if (operator.trips !== undefined) operator.trips = operator.trips.map(withTripDetail);
+}
+
+/**
+ * Two notices, because there are two kinds of entry and they need opposite
+ * warnings. This was one string that said both — "these are real companies"
+ * followed by "none of these businesses exist" — which is a contradiction a
+ * reader has to resolve on a page about who to trust at altitude.
+ */
 export const DEMO_NOTICE =
-  "Local design mockup. These are real companies, but every rating, review count, year and price shown against them was invented by ICEFALL to test this layout — none of it is theirs. Not published, not contactable. Placeholder companies, shown to evaluate this layout. None of these businesses exist and none of the ratings, reviews or years are real. Nothing here can be contacted.";
+  "Local design mockup. These companies do not exist — the names were invented for this build, and so were the ratings, reviews, statistics, claims and prices shown against them. Nothing here can be contacted and none of it ships: a production build shows the sample listings instead.";
+
+export const SAMPLE_NOTICE =
+  "A sample listing, not a company. ICEFALL has no operator partnerships, and nothing written here reaches anybody. Find a real IFMGA-certified operator before booking.";
 
 export function allOperators(): Operator[] {
   return SHOW_DEMO_OPERATORS ? [...DEMO_OPERATORS, ...OPERATORS] : [...OPERATORS];

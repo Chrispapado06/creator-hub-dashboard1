@@ -19,7 +19,14 @@ import {
 import { useFlights, useStays } from "@/lib/live";
 import { guideById } from "@/data/demo";
 import { useAuth } from "@/lib/auth";
-import { formatEur, instalmentsFor } from "@/money/model";
+import { formatEur, instalmentsFor, FLEXIBLE_POLICY } from "@/money/model";
+
+/**
+ * This screen books a GUIDE, so it prints `FLEXIBLE_POLICY` — not the tiered
+ * `STANDARD_POLICY` that governs an expedition. See the fuller note on the same
+ * constant in `GuideDetail.tsx`. Read off the policy rather than typed in.
+ */
+const FREE_CANCEL_DAYS = FLEXIBLE_POLICY.tiers.find((t) => t.refundPct === 100)?.daysBefore ?? 0;
 import { cn } from "@/lib/utils";
 
 /**
@@ -155,7 +162,7 @@ export default function BookingConfirm() {
           <p className="mt-2.5 text-[13.5px] leading-relaxed text-mist">
             You're booked with {guide.name} for {days} {days === 1 ? "day" : "days"}, {formatRange(range)}.
             Your channel with them is now open — plan the trip, and remember your deposit is refundable
-            up to 14 days before you start.
+            up to {FREE_CANCEL_DAYS} days before you start.
           </p>
           <div className="mt-4 flex flex-wrap justify-center gap-2">
             {selectedFlight && (
@@ -331,9 +338,8 @@ export default function BookingConfirm() {
               <div className="flex gap-2.5">
                 <ShieldCheck size={16} strokeWidth={1.6} className="mt-px shrink-0 text-summit" />
                 <p className="text-[12.5px] leading-relaxed text-mist">
-                  Free cancellation on the guiding up to 14 days before you start. If the guide judges
-                  the route unsafe, or conditions prevent an attempt, you are refunded in full —
-                  including on the morning. Flights and stays follow their own providers' rules, not this one.
+                  {FLEXIBLE_POLICY.note} Flights and stays follow their own providers&rsquo; rules,
+                  not this one.
                 </p>
               </div>
             </Card>
@@ -356,8 +362,15 @@ export default function BookingConfirm() {
               </div>
 
               <dl className="mt-4 space-y-2 text-[13px]">
-                <Line label={`Guiding — ${days} ${days === 1 ? "day" : "days"}`} value={formatEur(cost!.guide.guideFee)} />
-                <Line label="ICEFALL service fee" value={formatEur(cost!.guide.serviceFee)} muted />
+                {/*
+                  There is no "ICEFALL service fee" row here any more, and it
+                  was deleted rather than renamed. ICEFALL's 10% comes OUT of
+                  the guiding figure on the line above; nothing is added to this
+                  climber's bill. A row in a column that sums to a total is read
+                  as an addition whatever it is called, so renaming it would
+                  have kept the false statement and only changed its wording.
+                */}
+                <Line label={`Guiding — ${days} ${days === 1 ? "day" : "days"}`} value={formatEur(cost!.guidingCents)} />
                 {selectedFlight && (
                   <Line label={`Flights · ${party}× ${origin.code}–${gateway.code}`} value={formatEur(cost!.flightCents)} />
                 )}

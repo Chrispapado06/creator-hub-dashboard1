@@ -1,0 +1,393 @@
+[
+ {
+  "id": "appalachian-trail",
+  "name": "Appalachian Trail",
+  "regionId": "north-america",
+  "country": "United States",
+  "mountainIds": [],
+  "durationDays": [
+   150,
+   210
+  ],
+  "difficulty": "Very strenuous",
+  "maxAltitudeM": 2025,
+  "season": "March – October (northbound thru-hike)",
+  "priceFromEur": null,
+  "style": "Long distance",
+  "summary": "About 3,536 km along the Appalachian ridges from Springer Mountain in Georgia to Katahdin in Maine, taking five to seven months end to end. Nothing on it is high — the summit of Kuwohi at 2,025 m is the top — but the cumulative ascent is very large.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "arizona-trail",
+  "name": "Arizona Trail",
+  "regionId": "north-america",
+  "country": "United States",
+  "mountainIds": [],
+  "durationDays": null,
+  "difficulty": "Very strenuous",
+  "maxAltitudeM": null,
+  "season": "Year-round at lower elevations; summer and autumn at higher elevations",
+  "priceFromEur": null,
+  "style": "Long distance",
+  "summary": "1,300 km across Arizona from the Mexican border to Utah, through sky-island ranges, the Sonoran desert, a full crossing of the Grand Canyon and the forests of the Kaibab Plateau, with the Gila River at 520 m as its lowest point. The highest point of the completed route is not published by the Arizona Trail Association pages we could reach, and the 9,600 ft figure that circulates refers to a proposed section, so it is left unrecorded.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "berg-lake-trail",
+  "name": "Berg Lake Trail",
+  "regionId": "north-america",
+  "country": "Canada",
+  "mountainIds": [],
+  "durationDays": [
+   2,
+   3
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": 1646,
+  "season": "July – September",
+  "priceFromEur": null,
+  "style": "Valley",
+  "summary": "23 km each way up the Robson valley past Kinney Lake and the Valley of a Thousand Falls to Berg Lake, under the 3,000 m north face of Mount Robson and the glacier that calves into it. Reservations open in a single release each spring.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "chilkoot-trail",
+  "name": "Chilkoot Trail",
+  "regionId": "north-america",
+  "country": "United States",
+  "mountainIds": [],
+  "durationDays": [
+   3,
+   5
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 1067,
+  "season": "July – early September",
+  "priceFromEur": null,
+  "style": "High pass",
+  "summary": "53 km from Dyea in Alaska over the Chilkoot Pass into British Columbia, the route stampeders carried a tonne of goods over in the winter of 1897. The Scales and the pass itself are a boulder scramble, and the artefacts along the way are protected.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "colorado-trail",
+  "name": "Colorado Trail",
+  "regionId": "north-america",
+  "country": "United States",
+  "mountainIds": [],
+  "durationDays": [
+   28,
+   42
+  ],
+  "difficulty": "Very strenuous",
+  "maxAltitudeM": 4045,
+  "season": "July – September",
+  "priceFromEur": null,
+  "style": "Long distance",
+  "summary": "782 km from near Denver to Durango across eight mountain ranges, most of it above 3,000 m. The high point is 4,045 m on the slopes of Coney in the San Juans, and a thru-hike normally takes four to six weeks.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "continental-divide-trail",
+  "name": "Continental Divide Trail",
+  "regionId": "north-america",
+  "country": "United States",
+  "mountainIds": [],
+  "durationDays": [
+   150,
+   200
+  ],
+  "difficulty": "Very strenuous",
+  "maxAltitudeM": 4350,
+  "season": "April – September",
+  "priceFromEur": null,
+  "style": "Long distance",
+  "summary": "Some 4,990 km from the Mexican border to Canada along the divide through New Mexico, Colorado, Wyoming, Idaho and Montana. The least finished of the American long trails: parts are cross-country, and route choice is left to the walker.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "grand-canyon-rim-to-rim",
+  "name": "Grand Canyon Rim-to-Rim",
+  "regionId": "north-america",
+  "country": "United States",
+  "mountainIds": [],
+  "durationDays": [
+   1,
+   3
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 2512,
+  "season": "Mid-May – mid-October; the inner canyon is dangerously hot in midsummer",
+  "priceFromEur": null,
+  "style": "Traverse",
+  "summary": "A crossing of the Grand Canyon on the corridor trails, usually North Kaibab down from the North Rim at 2,512 m to the Colorado at about 730 m, then South Kaibab or Bright Angel back up to the South Rim — roughly 33 to 36 km with about 1,780 m of descent and 1,360 to 1,480 m of climb. Fit hikers do it in one long day; most take two or three with a night at Cottonwood or Bright Angel. The North Rim highway is closed from 1 December to 15 May.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "high-sierra-trail",
+  "name": "High Sierra Trail",
+  "regionId": "north-america",
+  "country": "United States",
+  "mountainIds": [],
+  "durationDays": [
+   6,
+   10
+  ],
+  "difficulty": "Very strenuous",
+  "maxAltitudeM": 4421,
+  "season": "July – September",
+  "priceFromEur": null,
+  "style": "Traverse",
+  "summary": "A west-to-east crossing of the Sierra Nevada from Crescent Meadow in Sequoia National Park, over Kaweah Gap at 3,300 m and down the Kern before joining the John Muir Trail. The usual 116 km itinerary finishes over the summit of Mount Whitney and down to Whitney Portal, which is where the 4,421 m maximum comes from; walkers who stop at the John Muir Trail junction top out at Kaweah Gap instead.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "john-muir-trail",
+  "name": "John Muir Trail",
+  "regionId": "north-america",
+  "country": "United States",
+  "mountainIds": [],
+  "durationDays": [
+   18,
+   24
+  ],
+  "difficulty": "Very strenuous",
+  "maxAltitudeM": 4421,
+  "season": "July – September",
+  "priceFromEur": null,
+  "style": "Long distance",
+  "summary": "About 340 km through the Sierra Nevada from Yosemite Valley to the summit of Mount Whitney, crossing a series of passes above 3,300 m with long stretches between resupply points. The 4,421 m figure is Whitney itself, which is the trail's southern terminus and a point on the route rather than a peak beside it.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "juan-de-fuca-trail",
+  "name": "Juan de Fuca Trail",
+  "regionId": "north-america",
+  "country": "Canada",
+  "mountainIds": [],
+  "durationDays": [
+   4,
+   6
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": null,
+  "season": "No formal closed season; storm damage regularly closes sections in winter",
+  "priceFromEur": null,
+  "style": "Coastal",
+  "summary": "Forty-seven kilometres of rugged coast south of the West Coast Trail, from China Beach to Botanical Beach, with no reservation required. BC Parks describes it as a trail for experienced backcountry hikers, and the repeated climbs in and out of creek gullies add close to 1,800 m of ascent.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "mount-baker-chain-lakes-loop",
+  "name": "Mount Baker Chain Lakes Loop",
+  "regionId": "north-america",
+  "country": "United States",
+  "mountainIds": [
+   "baker"
+  ],
+  "durationDays": [
+   1,
+   2
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": 1650,
+  "season": "Late July – September",
+  "priceFromEur": null,
+  "style": "Circuit",
+  "summary": "A 10.5 km loop from Artist Point over Herman Saddle to Iceberg, Hayes and Bagley lakes, facing Mount Shuksan on one side and Mount Baker on the other. The road to the trailhead is among the snowiest in the world and rarely opens before late July.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "pacific-crest-trail",
+  "name": "Pacific Crest Trail",
+  "regionId": "north-america",
+  "country": "United States",
+  "mountainIds": [],
+  "durationDays": [
+   120,
+   180
+  ],
+  "difficulty": "Very strenuous",
+  "maxAltitudeM": 4009,
+  "season": "Late April – late September",
+  "priceFromEur": null,
+  "style": "Long distance",
+  "summary": "4,270 km from the Mexican border to Canada through the deserts of southern California, the Sierra Nevada and the Cascades. A thru-hike takes four to six months and the highest point is Forester Pass at 4,009 m.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "rae-lakes-loop",
+  "name": "Rae Lakes Loop",
+  "regionId": "north-america",
+  "country": "United States",
+  "mountainIds": [],
+  "durationDays": [
+   4,
+   5
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 3650,
+  "season": "July – September",
+  "priceFromEur": null,
+  "style": "Circuit",
+  "summary": "66 km in Kings Canyon from Roads End up Bubbs Creek, over Glen Pass at about 3,650 m to the Rae Lakes and back down Woods Creek. The classic High Sierra loop, and a bear canister is required rather than advised.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "rockwall-trail",
+  "name": "Rockwall Trail",
+  "regionId": "north-america",
+  "country": "Canada",
+  "mountainIds": [],
+  "durationDays": null,
+  "difficulty": null,
+  "maxAltitudeM": null,
+  "season": null,
+  "priceFromEur": null,
+  "style": "High pass",
+  "summary": "A multi-day backcountry route in Kootenay National Park along the limestone escarpment of the Vermilion Range, reached from Highway 93 by the 10.7 km Floe Creek trail and continuing past Helmet Falls through Goodsir Pass into Yoho. Parks Canada does not publish length, pass elevations or a season on its Kootenay backcountry pages, so those are left unrecorded here.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "skyline-trail-jasper",
+  "name": "Skyline Trail Jasper",
+  "regionId": "north-america",
+  "country": "Canada",
+  "mountainIds": [],
+  "durationDays": [
+   2,
+   3
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 2511,
+  "season": "July – September",
+  "priceFromEur": null,
+  "style": "Traverse",
+  "summary": "A 44 km point-to-point across the alpine between Maligne Lake and Signal Mountain in Jasper National Park, with most of the route above treeline. The high point is the Notch at 2,511 m, where cornices often survive well into August.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "teton-crest-trail",
+  "name": "Teton Crest Trail",
+  "regionId": "north-america",
+  "country": "United States",
+  "mountainIds": [],
+  "durationDays": [
+   4,
+   5
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 3290,
+  "season": "July – September",
+  "priceFromEur": null,
+  "style": "Traverse",
+  "summary": "About 64 km along the western side of the Teton range from Teton Pass or the Rendezvous tram to String Lake, over Death Canyon Shelf, Hurricane Pass and Paintbrush Divide. Backcountry permits are drawn by lottery and snow lingers on Paintbrush into July.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "the-long-trail",
+  "name": "The Long Trail",
+  "regionId": "north-america",
+  "country": "United States",
+  "mountainIds": [],
+  "durationDays": [
+   20,
+   30
+  ],
+  "difficulty": "Very strenuous",
+  "maxAltitudeM": 1339,
+  "season": "June – October",
+  "priceFromEur": null,
+  "style": "Long distance",
+  "summary": "439 km up the spine of Vermont from Massachusetts to Quebec over Mount Mansfield and Camel's Hump, built between 1910 and 1930 and the oldest long-distance path in the United States. Rooted, rocky and steep out of all proportion to its heights.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "west-coast-trail",
+  "name": "West Coast Trail",
+  "regionId": "north-america",
+  "country": "Canada",
+  "mountainIds": [],
+  "durationDays": [
+   6,
+   8
+  ],
+  "difficulty": "Very strenuous",
+  "maxAltitudeM": null,
+  "season": "May – September",
+  "priceFromEur": null,
+  "style": "Coastal",
+  "summary": "Seventy-five kilometres of Vancouver Island shoreline between Pachena Bay and Gordon River, on beach, boardwalk, mud and more than a hundred ladder systems. Parks Canada reserves it from 1 May to 30 September and says it should only be attempted by hikers with multi-day backcountry experience.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "wonderland-trail",
+  "name": "Wonderland Trail",
+  "regionId": "north-america",
+  "country": "United States",
+  "mountainIds": [
+   "rainier"
+  ],
+  "durationDays": [
+   10,
+   14
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 2060,
+  "season": "Late July – September",
+  "priceFromEur": null,
+  "style": "Circuit",
+  "summary": "A 150 km circuit right round Mount Rainier, repeatedly dropping into forested valleys and climbing back to the alpine, which is where most of its considerable ascent comes from. The highest point on the loop is Panhandle Gap at about 2,060 m, and snow lies on it into early July in many years.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "yosemite-high-country-trek",
+  "name": "Yosemite High Country Trek",
+  "regionId": "north-america",
+  "country": "United States",
+  "mountainIds": [],
+  "durationDays": null,
+  "difficulty": null,
+  "maxAltitudeM": null,
+  "season": "July – September",
+  "priceFromEur": null,
+  "style": "Circuit",
+  "summary": "Backpacking in the granite country above Tuolumne Meadows, typically linking the trails between the High Sierra Camps — May Lake, Glen Aulin, Vogelsang, Merced Lake and Sunrise — which sit between about 2,180 m and 3,140 m. This is a family of operator itineraries rather than one waymarked route, so no single distance, duration or high point applies; the camps themselves open from June or July until September.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "zion-traverse",
+  "name": "Zion Traverse",
+  "regionId": "north-america",
+  "country": "United States",
+  "mountainIds": [],
+  "durationDays": null,
+  "difficulty": "Strenuous",
+  "maxAltitudeM": null,
+  "season": "Spring and autumn — the Lava Point road is unplowed in winter and the low desert sections are extremely hot in summer",
+  "priceFromEur": null,
+  "style": "Traverse",
+  "summary": "A roughly 80 km link-up of Zion's trails from the Lee Pass trailhead in the Kolob Canyons to the East Rim, by way of La Verkin Creek, Hop Valley, Wildcat Canyon and the West Rim. It is a combination of trails rather than a single waymarked route, water has to be planned around springs, and the park's wilderness guide has recorded periods when the West Rim and East Rim trails could not be connected at all.",
+  "operatorIds": [],
+  "guideIds": []
+ }
+]

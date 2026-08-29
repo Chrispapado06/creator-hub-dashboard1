@@ -15,6 +15,7 @@ import {
   EXPERIENCE_BAND_COPY,
   GUIDE_VIEW_NOTICE,
   PLATFORM_COMMISSION_PCT,
+  platformNetFor,
   REVIEWS_NEED_BOOKINGS_NOTICE,
   VERIFICATION_CATEGORIES,
   VERIFICATION_NOT_RUN_NOTICE,
@@ -349,8 +350,13 @@ function RequestCard({
             {terms && !open && (
               <div className="mt-3 rounded-tile border border-hairline bg-obsidian/40 p-3.5">
                 <p className="section-label">Sent to the client</p>
+                {/* Deliberately the CLIENT's view, on the guide's screen. This
+                    block reproduces the document the client received, and the
+                    client's document has no platform-fee line. The guide's own
+                    deduction is on the quote composer and the earnings card. */}
                 <PriceBreakdown
                   className="mt-2.5 border-0 bg-transparent p-0"
+                  audience="client"
                   guideFeeEur={terms.guideFeeEur}
                   additionalCosts={terms.additionalCosts}
                 />
@@ -590,11 +596,22 @@ function TermsComposer({ quote, onDone }: { quote: GuideQuote; onDone: () => voi
             same substitution this feature refuses everywhere else. */}
         {feeValid ? (
           <>
-            <PriceBreakdown className="mt-2.5" guideFeeEur={feeNumber} additionalCosts={lines} />
+            <PriceBreakdown
+              className="mt-2.5"
+              audience="guide"
+              guideFeeEur={feeNumber}
+              additionalCosts={lines}
+            />
+            {/* Worked in full rather than stated as a percentage. This sentence
+                read "ICEFALL's 12% is added on top of your fee rather than
+                taken out of it" — the opposite of what the earnings card on
+                this same screen has always computed, and the opposite of the
+                model. It is the guide's own money; it gets three numbers and no
+                inference. */}
             <p className="tnum mt-2.5 text-[11px] leading-relaxed text-mist-dim">
-              You receive {fmtPrice(totals.guideFeeEur)}. ICEFALL's {PLATFORM_COMMISSION_PCT}% is
-              added on top of your fee rather than taken out of it, so the client pays{" "}
-              {fmtPrice(totals.totalEur)}.
+              The client pays {fmtPrice(totals.totalEur)}. ICEFALL's {PLATFORM_COMMISSION_PCT}% —{" "}
+              {fmtPrice(totals.platformFeeEur)} — comes out of your fee rather than being added to
+              theirs, so you receive {fmtPrice(totals.guideReceivesEur)}.
             </p>
           </>
         ) : (
@@ -820,7 +837,7 @@ function ListingTab() {
             {listing.dayRateEur === undefined ? (
               <NotKnown reason="No rate set" />
             ) : (
-              `Clients see ${fmtPrice(listing.dayRateEur)} a day. ICEFALL adds ${PLATFORM_COMMISSION_PCT}% on top of your fee at the quote stage.`
+              `Clients see ${fmtPrice(listing.dayRateEur)} a day and pay ${fmtPrice(listing.dayRateEur)} a day. ICEFALL's ${PLATFORM_COMMISSION_PCT}% comes out of it, so you receive ${fmtPrice(platformNetFor(listing.dayRateEur))} a day.`
             )}
           </p>
         </Card>

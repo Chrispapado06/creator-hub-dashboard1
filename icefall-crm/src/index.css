@@ -1,0 +1,173 @@
+@import "tailwindcss";
+
+/**
+ * ICEFALL Business — the internal CRM.
+ *
+ * DESIGN LANGUAGE TAKEN FROM THE OWNER'S SECOND MOCKUP (2026-08-28), which
+ * supersedes the first: a light shell rather than a dark one, generous rounding,
+ * cards separated by soft shadow instead of hairline borders, pastel tiles for
+ * the figures that matter, and black for the one primary action on a screen.
+ *
+ * IT IS STILL NOT THE ATHLETE APP'S SKIN. The product is near-black, cinematic
+ * and photographic; this is light, soft and administrative. The contrast is the
+ * point: at a glance you always know whether you are looking at what a customer
+ * sees or at the back office.
+ *
+ * WHERE AZURE SURVIVES, AND WHY. The mockup's palette is neutral plus pastel,
+ * with black as the action colour. ICEFALL's accent is alpine azure and that is
+ * a settled decision, not a preference — so azure stays as the interactive
+ * accent (active navigation, links, focus) where the mockup uses black-on-grey,
+ * and black is used for buttons exactly as drawn. The two coexist because the
+ * mockup's own palette is almost hueless; azure is the only colour with an
+ * opinion and it never fights the pastels.
+ *
+ * THE PASTELS CARRY MEANING, NOT DECORATION. Butter, sky and lilac are assigned
+ * to figures in the mockup's own order — money owed, money held, money pending.
+ * A tile whose figure is UNAVAILABLE drops to plain surface rather than keeping
+ * its colour, so a missing number never looks like a reported one.
+ */
+
+@theme inline {
+  --color-canvas: var(--crm-canvas);
+  --color-surface: var(--crm-surface);
+  --color-raised: var(--crm-raised);
+  --color-panel: var(--crm-panel);
+  --color-line: var(--crm-line);
+  --color-line-soft: var(--crm-line-soft);
+  --color-ink: var(--crm-ink);
+  --color-muted: var(--crm-muted);
+  --color-faint: var(--crm-faint);
+  --color-accent: var(--crm-accent);
+  --color-accent-ink: var(--crm-accent-ink);
+  --color-accent-soft: var(--crm-accent-soft);
+  --color-solid: var(--crm-solid);
+
+  --color-butter: var(--crm-butter);
+  --color-sky: var(--crm-sky);
+  --color-lilac: var(--crm-lilac);
+  --color-mint: var(--crm-mint);
+
+  --color-ok: var(--crm-ok);
+  --color-warn: var(--crm-warn);
+  --color-bad: var(--crm-bad);
+
+  /* The mockup's face is wide, round and geometric with heavy weights — Inter
+     Tight is a NARROW Inter and reads as a different product entirely. */
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+
+  /* Generous, per the mockup. A 10px card in this language reads as a bug. */
+  --radius-card: 22px;
+  --radius-tile: 14px;
+  --radius-chip: 11px;
+  --radius-pill: 999px;
+
+  --shadow-soft: 0 1px 2px oklch(0 0 0 / 4%), 0 8px 24px oklch(0 0 0 / 5%);
+  --shadow-lift: 0 1px 2px oklch(0 0 0 / 5%), 0 14px 34px oklch(0 0 0 / 7%);
+}
+
+:root {
+  --crm-canvas: oklch(0.962 0.0015 260);
+  --crm-surface: oklch(1 0 0);
+  --crm-raised: oklch(0.978 0.0015 260);
+  /* The grey the right-hand column sits on in the mockup. */
+  --crm-panel: oklch(0.948 0.002 260);
+  --crm-line: oklch(0.918 0.003 260);
+  --crm-line-soft: oklch(0.952 0.002 260);
+
+  --crm-ink: oklch(0.215 0.006 264);
+  --crm-muted: oklch(0.565 0.008 264);
+  --crm-faint: oklch(0.695 0.007 264);
+
+  /* Black, for the one primary action on a screen. */
+  --crm-solid: oklch(0.205 0.006 264);
+
+  /* Alpine azure, hue 255.4 held exactly, darkened for legibility on white. */
+  --crm-accent: oklch(0.548 0.155 255.4);
+  --crm-accent-ink: oklch(0.438 0.132 255.4);
+  --crm-accent-soft: oklch(0.955 0.026 255.4);
+
+  /* Sampled from the mockup's own tiles rather than guessed — the first pass was
+     pale enough that the screen read as monochrome from a normal distance, which
+     is the whole thing these tiles are for. */
+  --crm-butter: oklch(0.873 0.147 92);   /* #F5D45F */
+  --crm-sky: oklch(0.866 0.049 236);     /* #C3D9E9 */
+  --crm-lilac: oklch(0.876 0.055 316);   /* #E4D4EA */
+  --crm-mint: oklch(0.888 0.078 160);    /* a fourth, in the same register */
+
+  --crm-ok: oklch(0.62 0.16 150);
+  --crm-warn: oklch(0.74 0.145 66);
+  --crm-bad: oklch(0.60 0.20 25);
+
+  /* The ten pipeline stages. Read off the data, never assembled into a class
+     name — Tailwind scans source text, so `bg-${stage}` generates nothing. */
+  --crm-stage-prospect: oklch(0.70 0.02 260);
+  --crm-stage-contacted: oklch(0.66 0.09 250);
+  --crm-stage-conversation: oklch(0.64 0.12 252);
+  --crm-stage-proposal: oklch(0.65 0.12 300);
+  --crm-stage-negotiation: oklch(0.72 0.13 72);
+  --crm-stage-won: oklch(0.64 0.13 152);
+  --crm-stage-onboarding: oklch(0.68 0.09 195);
+  --crm-stage-active: oklch(0.60 0.14 152);
+  --crm-stage-renewal: oklch(0.70 0.13 36);
+  --crm-stage-lost: oklch(0.64 0.16 25);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--crm-canvas);
+  color: var(--crm-ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Every figure in a CRM is compared against the one above it. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+.label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--crm-muted);
+}
+
+/* The small uppercase group headings in the sidebar. */
+.navgroup {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--crm-faint);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--crm-accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

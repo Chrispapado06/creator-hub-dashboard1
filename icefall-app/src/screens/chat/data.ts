@@ -53,6 +53,11 @@ export interface Conversation {
   verifiedOn?: string;
   peak?: string;
   members?: number;
+  /** Companies only — their mark, gitignored and never deployed. */
+  logo?: string;
+  /** Groups only — an ICEFALL peak photograph, never a member's own. */
+  photo?: string;
+  pinned?: boolean;
   unread: number;
   /**
    * A guide channel opens on a PAID BOOKING; a company channel opens on a
@@ -82,6 +87,16 @@ export function isLocked(c: Conversation): boolean {
  * Dev only, like every other invented record in this app. A production build
  * shows the athlete's real threads and nothing else — see `useConversations`.
  */
+
+/**
+ * Relative timestamps for the demo threads.
+ *
+ * Written against "now" rather than fixed dates so the list always reads
+ * "Today / Yesterday / 3 days ago" instead of drifting into a wall of absolute
+ * dates the longer the build sits unopened.
+ */
+const hoursAgo = (h: number): string => new Date(Date.now() - h * 3_600_000).toISOString();
+
 export const DEMO_CONVERSATIONS: Conversation[] = import.meta.env.DEV
   ? [
       /* -- A booked guide: the channel is OPEN, and this is what it is for --- */
@@ -223,6 +238,205 @@ export const DEMO_CONVERSATIONS: Conversation[] = import.meta.env.DEV
             at: "2026-08-17T11:55:00Z",
             // Written in the Solvay hut with no signal — on the device only.
             state: "queued",
+          },
+        ],
+      },
+
+      /* -- Expedition companies --------------------------------------------
+         These were four real businesses, and every word attributed to them was
+         written by ICEFALL — putting sentences directly into a named company's
+         mouth, which is worse than inventing their rating. The names now match
+         the invented operators in `services/operators.ts`, so the same four
+         companies are fictional on both surfaces and neither can be read as
+         correspondence with anybody. Still DEV-ONLY: `import.meta.env.DEV`
+         above is a harder gate than the operator directory's, and it stays. */
+      {
+        id: "co-sst",
+        name: "Falkenrath Expeditions",
+        kind: "company",
+        credential: "8,000 m expedition operator",
+        peak: "Everest",
+        unread: 2,
+        introduction: { at: hoursAgo(30), objective: "Everest — South Col, spring 2027" },
+        messages: [
+          {
+            id: "sst0",
+            from: "them",
+            kind: "system",
+            body: "Your enquiry was passed on. You can now message this company.",
+            at: hoursAgo(30),
+          },
+          {
+            id: "sst1",
+            from: "them",
+            body: "Namaste! Thank you for your interest in our Everest expeditions. How can we help you today?",
+            at: hoursAgo(1),
+          },
+        ],
+      },
+      {
+        id: "co-ac",
+        name: "Halvorsen Alpine",
+        kind: "company",
+        credential: "IFMGA-led, multi-range",
+        peak: "Aconcagua",
+        unread: 1,
+        introduction: { at: hoursAgo(80), objective: "Aconcagua — normal route" },
+        messages: [
+          {
+            id: "ac1",
+            from: "me",
+            body: "Are the January departures still open?",
+            at: hoursAgo(30),
+            state: "read",
+          },
+          {
+            id: "ac2",
+            from: "them",
+            body: "Thank you! I'll check the dates and get back to you shortly.",
+            at: hoursAgo(27),
+          },
+        ],
+      },
+      {
+        id: "co-ee",
+        name: "Zelenika High Altitude",
+        kind: "company",
+        credential: "8,000 m logistics",
+        peak: "Ama Dablam",
+        unread: 0,
+        introduction: { at: hoursAgo(120), objective: "Ama Dablam — south-west ridge" },
+        messages: [
+          {
+            id: "ee1",
+            from: "them",
+            body: "Here's the itinerary outline you asked for on the Ama Dablam expedition.",
+            at: hoursAgo(51),
+          },
+        ],
+      },
+      {
+        id: "co-14p",
+        name: "Callaghan Himalaya",
+        kind: "company",
+        credential: "Himalayan expedition operator",
+        peak: "Mera Peak",
+        unread: 0,
+        introduction: { at: hoursAgo(150), objective: "Mera Peak — trekking peak" },
+        messages: [
+          {
+            id: "p1",
+            from: "them",
+            body: "Do you need help with permits or gear for your upcoming trek?",
+            at: hoursAgo(75),
+          },
+        ],
+      },
+
+      /* -- Guides ----------------------------------------------------------- */
+      {
+        id: "g-pasang",
+        name: "Pasang Sherpa",
+        kind: "guide",
+        credential: "IFMGA mountain guide",
+        verifiedOn: "12 Jun 2026",
+        peak: "Everest",
+        unread: 1,
+        booking: { ref: "ICE-5120", peak: "Everest — South Col", dateLabel: "Mar–May 2027" },
+        messages: [
+          { id: "ps1", from: "them", body: "See you at base camp tomorrow!", at: hoursAgo(2) },
+        ],
+      },
+      {
+        id: "g-nima",
+        name: "Nima Dorjee",
+        kind: "guide",
+        credential: "High-altitude guide",
+        verifiedOn: "3 Mar 2026",
+        peak: "Everest",
+        unread: 2,
+        booking: { ref: "ICE-5121", peak: "Everest — rotations", dateLabel: "Apr 2027" },
+        messages: [
+          {
+            id: "nd1",
+            from: "them",
+            body: "Weather looks good for the summit push — I'll confirm the window tomorrow.",
+            at: hoursAgo(26),
+          },
+        ],
+      },
+      {
+        id: "g-alex",
+        name: "Alex Martin",
+        kind: "guide",
+        credential: "Expedition doctor",
+        verifiedOn: "9 Jan 2026",
+        peak: "Everest",
+        unread: 0,
+        booking: { ref: "ICE-5122", peak: "Everest — medical cover", dateLabel: "Spring 2027" },
+        messages: [
+          {
+            id: "am1",
+            from: "them",
+            body: "Remember to hydrate well and rest before the rotation.",
+            at: hoursAgo(50),
+          },
+        ],
+      },
+
+      /* -- Groups ----------------------------------------------------------- */
+      {
+        id: "gr-everest",
+        name: "Everest Spring 2027 Team",
+        kind: "group",
+        members: 12,
+        peak: "Everest",
+        photo: "/img/everest.jpg",
+        pinned: true,
+        unread: 3,
+        messages: [
+          {
+            id: "ge1",
+            from: "them",
+            author: "Nima",
+            body: "Flight to Lukla confirmed for 12 May.",
+            at: hoursAgo(1.5),
+          },
+        ],
+      },
+      {
+        id: "gr-ama",
+        name: "Ama Dablam Expedition",
+        kind: "group",
+        members: 8,
+        peak: "Ama Dablam",
+        photo: "/img/gran-paradiso.jpg",
+        pinned: true,
+        unread: 1,
+        messages: [
+          {
+            id: "ga1",
+            from: "them",
+            author: "Pasang",
+            body: "Gear check-in at base camp at 6 PM.",
+            at: hoursAgo(28),
+          },
+        ],
+      },
+      {
+        id: "gr-photo",
+        name: "Himalaya Photography Club",
+        kind: "group",
+        members: 45,
+        photo: "/img/everest-1.jpg",
+        unread: 0,
+        messages: [
+          {
+            id: "gp1",
+            from: "them",
+            author: "Sara",
+            body: "Just shared some photos from the Khumbu Valley.",
+            at: hoursAgo(52),
           },
         ],
       },

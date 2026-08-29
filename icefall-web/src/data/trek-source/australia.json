@@ -1,0 +1,234 @@
+[
+ {
+  "id": "australian-alps-walking-track",
+  "name": "Australian Alps Walking Track",
+  "regionId": "australia",
+  "country": "Australia",
+  "mountainIds": [
+   "kosciuszko"
+  ],
+  "durationDays": [
+   30,
+   60
+  ],
+  "difficulty": "Very strenuous",
+  "maxAltitudeM": 2228,
+  "season": "December – March; snow lies on long sections through winter and spring",
+  "priceFromEur": null,
+  "style": "Long distance",
+  "summary": "A 655 km route along the ridges and high plains from Walhalla in Victoria to Tharwa near Canberra, crossing the Baw Baw Plateau, the Bogong High Plains and the Main Range in Kosciuszko National Park. It is remote and unserviced for long stretches, needs food drops and real navigation, and most walkers take a month or more.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "bibbulmun-track",
+  "name": "Bibbulmun Track",
+  "regionId": "australia",
+  "country": "Australia",
+  "mountainIds": [],
+  "durationDays": [
+   42,
+   56
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 582,
+  "season": "April – November; summer walking is not recommended",
+  "priceFromEur": null,
+  "style": "Long distance",
+  "summary": "A roughly 1,000 km walk from Kalamunda in the hills outside Perth to Albany on the south coast, crossing the Darling Range and then running through jarrah and karri forest to the coast. Three-sided shelters and campsites sit about a day apart, and end-to-end walkers usually take six to eight weeks.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "cape-to-cape-track",
+  "name": "Cape to Cape Track",
+  "regionId": "australia",
+  "country": "Australia",
+  "mountainIds": [],
+  "durationDays": [
+   5,
+   8
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": null,
+  "season": "April – November",
+  "priceFromEur": null,
+  "style": "Coastal",
+  "summary": "123 km between the lighthouses at Cape Naturaliste and Cape Leeuwin in the south-west of Western Australia, over granite headlands, limestone cliffs and long stretches of soft sand. Wildflowers from August, and whales offshore in spring.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "great-ocean-walk",
+  "name": "Great Ocean Walk",
+  "regionId": "australia",
+  "country": "Australia",
+  "mountainIds": [],
+  "durationDays": [
+   7,
+   8
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": null,
+  "season": "September – May",
+  "priceFromEur": null,
+  "style": "Coastal",
+  "summary": "104 km from Apollo Bay to the Twelve Apostles along the Victorian coast, through the Otway forest and out onto cliff top and beach. Hike-in campsites only, and several sections are tide-dependent.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "heysen-trail",
+  "name": "Heysen Trail",
+  "regionId": "australia",
+  "country": "Australia",
+  "mountainIds": [],
+  "durationDays": [
+   50,
+   60
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": null,
+  "season": "May – October (much of the trail is closed for the Fire Danger Season, usually November – April)",
+  "priceFromEur": null,
+  "style": "Long distance",
+  "summary": "A 1,200 km marked route the length of the Mount Lofty and Flinders Ranges, from Cape Jervis on the Fleurieu Peninsula to Parachilna Gorge, walked either as a through-hike or in sections over several years. Some stretches run as much as seven days between resupply points, and the water tanks along it can be empty in dry weather.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "larapinta-trail",
+  "name": "Larapinta Trail",
+  "regionId": "australia",
+  "country": "Australia",
+  "mountainIds": [],
+  "durationDays": [
+   15,
+   17
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 1380,
+  "season": "April – August",
+  "priceFromEur": null,
+  "style": "Long distance",
+  "summary": "A roughly 223 km end-to-end walk along the West MacDonnell Ranges, from the Alice Springs Telegraph Station to the summit of Mount Sonder, divided into twelve sections with water tanks at each trailhead. Heat and water are the governing constraints: natural sources are few and unreliable, and the trail is not walked in the summer months.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "main-range-track",
+  "name": "Main Range Track",
+  "regionId": "australia",
+  "country": "Australia",
+  "mountainIds": [
+   "kosciuszko"
+  ],
+  "durationDays": [
+   1,
+   1
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": 2228,
+  "season": "December – March",
+  "priceFromEur": null,
+  "style": "Circuit",
+  "summary": "A 22 km loop from Charlotte Pass over Mount Kosciuszko, at 2,228 m the highest point on the Australian mainland, past Blue Lake and Club Lake. The only glacial lakes on the continent sit under the ridge, and the weather above the treeline is alpine in any season.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "overland-track",
+  "name": "Overland Track",
+  "regionId": "australia",
+  "country": "Australia",
+  "mountainIds": [],
+  "durationDays": [
+   6,
+   6
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 1250,
+  "season": "October – May (booked summer season); June – September for experienced winter parties",
+  "priceFromEur": null,
+  "style": "Traverse",
+  "summary": "A 65 km one-way crossing of the Cradle Mountain–Lake St Clair reserve, walked north to south from Ronny Creek past Waterfall Valley, Pelion and Kia Ora to Narcissus Hut on Lake St Clair. Booking and a fixed start date are compulsory in the summer season, and the summits beside the track, including Mount Ossa, are optional side trips rather than part of the route.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "six-foot-track",
+  "name": "Six Foot Track",
+  "regionId": "australia",
+  "country": "Australia",
+  "mountainIds": [],
+  "durationDays": [
+   3,
+   3
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": null,
+  "season": "March – November",
+  "priceFromEur": null,
+  "style": "Long distance",
+  "summary": "45 km from Katoomba in the Blue Mountains to the Jenolan Caves, dropping into the Megalong valley, crossing the Coxs River by swing bridge and climbing the Black Range. Cut in 1884 as a bridle track six feet wide, which is where the name comes from.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "south-coast-track",
+  "name": "South Coast Track",
+  "regionId": "australia",
+  "country": "Australia",
+  "mountainIds": [],
+  "durationDays": [
+   6,
+   8
+  ],
+  "difficulty": "Very strenuous",
+  "maxAltitudeM": 900,
+  "season": "December – March",
+  "priceFromEur": null,
+  "style": "Coastal",
+  "summary": "85 km across the Tasmanian south-west wilderness from Melaleuca, reached by light aircraft, to Cockle Creek. Deep mud, the Ironbound Range and a boat crossing of New River Lagoon; there is no road out until the end.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "thorsborne-trail",
+  "name": "Thorsborne Trail",
+  "regionId": "australia",
+  "country": "Australia",
+  "mountainIds": [],
+  "durationDays": [
+   3,
+   4
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": null,
+  "season": "April – September",
+  "priceFromEur": null,
+  "style": "Coastal",
+  "summary": "32 km down the eastern side of Hinchinbrook Island in tropical Queensland, between rainforest, mangrove and empty beaches under Mount Bowen. Numbers are capped at forty walkers at a time and permits go months in advance.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "three-capes-track",
+  "name": "Three Capes Track",
+  "regionId": "australia",
+  "country": "Australia",
+  "mountainIds": [],
+  "durationDays": [
+   4,
+   4
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": 490,
+  "season": "Year-round, apart from a two-week maintenance closure each April",
+  "priceFromEur": null,
+  "style": "Coastal",
+  "summary": "A 48 km hut walk on the Tasman Peninsula, beginning with a boat from Port Arthur to Denmans Cove and ending at Fortescue Bay, with out-and-back legs to Cape Pillar and Cape Hauy. The track is hardened and graded for most of its length, and walkers stay in three fixed cabins in a set order.",
+  "operatorIds": [],
+  "guideIds": []
+ }
+]

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Navigate, useNavigate, useParams } from "react-router-dom";
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
-  Bookmark, ChevronLeft, ExternalLink, Loader2, MapPin, MoreHorizontal,
+  Bookmark, ChevronLeft, ChevronRight, ExternalLink, Loader2, MapPin, MoreHorizontal,
   Navigation, Route as RouteIcon, Share2, Star, Users, X,
   Download,
 } from "lucide-react";
@@ -18,6 +18,7 @@ import {
   ofCaption, photosOfNamed, type PlacePhoto,
 } from "@/services/placePhotos";
 import { RATING_NOTICE, fmtPeople, ratingFor } from "@/routes/ratings";
+import { operatorsFor } from "@/services/operators";
 import { TrailImage } from "@/components/domain/TrailImage";
 import type { TrailPhoto } from "@/services/trailImagery";
 import { trailWaypoints, orderedWaypoints, type TrailWaypoint } from "@/services/trailWaypoints";
@@ -111,7 +112,25 @@ const TABS: { id: Tab; label: string }[] = [
 export default function TrailDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [params] = useSearchParams();
   const osmId = Number(id);
+
+  /**
+   * The expedition this approach was opened from, when there was one.
+   *
+   * Set by the Expeditions hikes tab. Absent when the same trail is opened from
+   * Find, and the guided section stays hidden in that case — see `GuidedBy`.
+   */
+  const guided = useMemo(() => {
+    const peakName = (params.get("peak") ?? "").trim();
+    if (peakName === "") return null;
+    const elevationM = Number(params.get("elevation"));
+    return {
+      peakName,
+      elevationM: Number.isFinite(elevationM) && elevationM > 0 ? elevationM : 0,
+      country: params.get("country") ?? undefined,
+    };
+  }, [params]);
 
   const [trail, setTrail] = useState<Trail | null | undefined>(undefined);
   const [tab, setTab] = useState<Tab>("trail");
@@ -416,96 +435,6 @@ export default function TrailDetail() {
             </div>
           </Rise>
 
-          {/* ---- Figures ------------------------------------------------- */}
-          <Rise className="pt-4">
-            <div className="grid grid-cols-4 gap-2 border-b border-hairline py-4">
-              <Stat
-                label="Moving time"
-                value={
-                  trail.durationH
-                    ? formatHours(trail.durationH)
-                    : movingH
-                      ? formatHours(movingH)
-                      : facts.loading
-                        ? "…"
-                        : "—"
-                }
-                unit={trail.durationH ? "as mapped" : movingH ? "DIN 33466" : "not known"}
-              />
-              <Stat
-                label="Length"
-                value={km ? `${km.toFixed(1)} km` : facts.loading ? "…" : "—"}
-                unit={
-                  trail.lengthKm ? "as mapped" : computedKm ? "measured" : km ? "measured" : undefined
-                }
-              />
-              <Stat
-                label="Ascent"
-                value={
-                  trail.ascentM
-                    ? `${trail.ascentM.toLocaleString()} m`
-                    : facts.elevation
-                      ? `${facts.elevation.ascentM.toLocaleString()} m`
-                      : facts.loading
-                        ? "…"
-                        : "—"
-                }
-                unit={trail.ascentM ? "as mapped" : facts.elevation ? "computed" : "not known"}
-              />
-              <Stat
-                label="Grade"
-                value={grade ? (SAC_LABEL[grade]?.split(" · ")[0] ?? "—") : "—"}
-                unit={
-                  grade
-                    ? trail.sacScale
-                      ? SAC_LABEL[grade]?.split(" · ")[1]
-                      : "hardest section"
-                    : "not graded"
-                }
-              />
-            </div>
-
-            {/* ---- The vertical story ------------------------------------ */}
-            {facts.elevation && km && (
-              <div className="mt-5">
-                <div className="flex items-baseline justify-between">
-                  <p className="section-label text-mist">Elevation</p>
-                  <p className="tnum text-[11.5px] text-mist">
-                    ↑ {facts.elevation.ascentM.toLocaleString()} m · ↓{" "}
-                    {facts.elevation.descentM.toLocaleString()} m
-                  </p>
-                </div>
-                <ElevationProfile
-                  className="mt-2.5"
-                  elevation={facts.elevation}
-                  lengthKm={km}
-                />
-              </div>
-            )}
-
-            {/* ---- What it is made of ------------------------------------ */}
-            {facts.ways && (
-              <>
-                <BreakdownBar
-                  className="mt-5"
-                  title="Underfoot"
-                  segments={surfaceBreakdown(facts.ways)}
-                />
-                <BreakdownBar
-                  className="mt-5"
-                  title="Way type"
-                  segments={waytypeBreakdown(facts.ways)}
-                />
-              </>
-            )}
-
-            {/* Shorter than it was. The point — these are OSM's numbers, not
-                ICEFALL's — survives; the paragraph explaining it twice does not. */}
-            <p className="mt-3 text-[11px] text-mist-dim">
-              Figures as mapped in OpenStreetMap. Blank where nobody recorded it.
-            </p>
-          </Rise>
-
           {/* ---- Tabs ----------------------------------------------------- */}
           <Rise className="pt-5">
             <div className="flex gap-5 border-b border-hairline">
@@ -528,6 +457,106 @@ export default function TrailDetail() {
             <div className="pt-4">
               {tab === "trail" && (
                 <div className="space-y-2.5">
+                {/* The figures belong to the TRAIL tab, not to the page.
+          They used to sit between the actions and the tab strip, which put
+          a screen of statistics between "Save / Directions / Share" and the
+          three things those actions are about — and left the numbers on
+          screen while you were looking at the map or the photographs, where
+          they answer nothing. */}
+                <Rise className="pt-4">
+                  {/* Two columns on a phone, four when there is room.
+                      Four cells across 390 px leaves ~82 px each, and `Stat`
+                      sets its value and unit on one baseline — so "85.8 km"
+                      plus "measured" wrapped onto three ragged lines and the
+                      labels stopped lining up. Pre-existing; visible now that
+                      the figures sit inside the tab. */}
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-4 border-b border-hairline py-4 sm:grid-cols-4 sm:gap-2">
+                    <Stat
+                      label="Moving time"
+                      value={
+                        trail.durationH
+                          ? formatHours(trail.durationH)
+                          : movingH
+                            ? formatHours(movingH)
+                            : facts.loading
+                              ? "…"
+                              : "—"
+                      }
+                      unit={trail.durationH ? "as mapped" : movingH ? "DIN 33466" : "not known"}
+                    />
+                    <Stat
+                      label="Length"
+                      value={km ? `${km.toFixed(1)} km` : facts.loading ? "…" : "—"}
+                      unit={
+                        trail.lengthKm ? "as mapped" : computedKm ? "measured" : km ? "measured" : undefined
+                      }
+                    />
+                    <Stat
+                      label="Ascent"
+                      value={
+                        trail.ascentM
+                          ? `${trail.ascentM.toLocaleString()} m`
+                          : facts.elevation
+                            ? `${facts.elevation.ascentM.toLocaleString()} m`
+                            : facts.loading
+                              ? "…"
+                              : "—"
+                      }
+                      unit={trail.ascentM ? "as mapped" : facts.elevation ? "computed" : "not known"}
+                    />
+                    <Stat
+                      label="Grade"
+                      value={grade ? (SAC_LABEL[grade]?.split(" · ")[0] ?? "—") : "—"}
+                      unit={
+                        grade
+                          ? trail.sacScale
+                            ? SAC_LABEL[grade]?.split(" · ")[1]
+                            : "hardest section"
+                          : "not graded"
+                      }
+                    />
+                  </div>
+
+                  {/* ---- The vertical story ------------------------------------ */}
+                  {facts.elevation && km && (
+                    <div className="mt-5">
+                      <div className="flex items-baseline justify-between">
+                        <p className="section-label text-mist">Elevation</p>
+                        <p className="tnum text-[11.5px] text-mist">
+                          ↑ {facts.elevation.ascentM.toLocaleString()} m · ↓{" "}
+                          {facts.elevation.descentM.toLocaleString()} m
+                        </p>
+                      </div>
+                      <ElevationProfile
+                        className="mt-2.5"
+                        elevation={facts.elevation}
+                        lengthKm={km}
+                      />
+                    </div>
+                  )}
+
+                  {/* ---- What it is made of ------------------------------------ */}
+                  {facts.ways && (
+                    <>
+                      <BreakdownBar
+                        className="mt-5"
+                        title="Underfoot"
+                        segments={surfaceBreakdown(facts.ways)}
+                      />
+                      <BreakdownBar
+                        className="mt-5"
+                        title="Way type"
+                        segments={waytypeBreakdown(facts.ways)}
+                      />
+                    </>
+                  )}
+
+                  {/* Shorter than it was. The point — these are OSM's numbers, not
+                      ICEFALL's — survives; the paragraph explaining it twice does not. */}
+                  <p className="mt-3 text-[11px] text-mist-dim">
+                    Figures as mapped in OpenStreetMap. Blank where nobody recorded it.
+                  </p>
+                </Rise>
                   {trail.description && (
                     <Card>
                       <p className="section-label">Description</p>
@@ -578,6 +607,45 @@ export default function TrailDetail() {
                           }`
                         : ""}
                     </p>
+                  </Card>
+                  {/* ---- Look it up elsewhere -------------------------------
+                      ICEFALL holds OSM's line and little else — no photographs
+                      for most trails, no trip reports, no conditions. Rather
+                      than imply that absence is all there is, this points at
+                      the places that do have it. The query carries the trail's
+                      name and its country so a generic name ("Blue trail")
+                      lands somewhere useful. */}
+                  <Card>
+                    <p className="section-label">Look it up</p>
+                    <div className="mt-2.5 flex flex-wrap gap-2">
+                      <a
+                        href={googleSearchUrl(trail.name, trail.operator)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 rounded-pill border border-hairline-strong px-3 py-1.5 text-[12px] text-mist transition-colors hover:border-azure/50 hover:text-snow"
+                      >
+                        View on Google
+                        <ExternalLink size={11} strokeWidth={1.8} />
+                      </a>
+                      <a
+                        href={googleImagesUrl(trail.name, trail.operator)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 rounded-pill border border-hairline-strong px-3 py-1.5 text-[12px] text-mist transition-colors hover:border-azure/50 hover:text-snow"
+                      >
+                        Photos on Google
+                        <ExternalLink size={11} strokeWidth={1.8} />
+                      </a>
+                      <a
+                        href={osmRelationUrl(trail.osmId)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 rounded-pill border border-hairline-strong px-3 py-1.5 text-[12px] text-mist transition-colors hover:border-azure/50 hover:text-snow"
+                      >
+                        On OpenStreetMap
+                        <ExternalLink size={11} strokeWidth={1.8} />
+                      </a>
+                    </div>
                   </Card>
                   {trail.website && (
                     <Card>
@@ -729,6 +797,14 @@ export default function TrailDetail() {
               <Disclaimer>{RATING_NOTICE}</Disclaimer>
             </Rise>
           )}
+
+          {guided !== null && (
+            <GuidedBy
+              peakName={guided.peakName}
+              elevationM={guided.elevationM}
+              country={guided.country}
+            />
+          )}
         </Stagger>
       </div>
 
@@ -842,4 +918,105 @@ function downloadGpx(name: string, line: LatLon[]) {
   a.download = `${name.replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-").toLowerCase() || "trail"}.gpx`;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Guided by                                                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Companies that work the mountain this approach leads to.
+ *
+ * A walk-in is where an expedition starts, so someone reading about the
+ * approach is often the same person deciding who to climb with.
+ *
+ * Matched on the PEAK the athlete arrived from — carried in the query string by
+ * the Expeditions hikes tab — not on the trail. A `Trail` records no country
+ * and no summit altitude, so matching on the path alone would either list
+ * nothing or list companies with no connection to where it is. Open the same
+ * trail from Find and this section does not appear, which is correct: there is
+ * no expedition in that context to guide.
+ *
+ * No operator has said anything about this trail, and none guides it as a
+ * product. The copy says so, because a list of companies under a route reads as
+ * an endorsement unless it is told not to.
+ */
+function GuidedBy({ peakName, elevationM, country }: {
+  peakName: string;
+  elevationM: number;
+  country?: string;
+}) {
+  const listings = useMemo(
+    () =>
+      operatorsFor({ country, elevationM })
+        .slice(0, 3)
+        .sort((a, b) => a.name.localeCompare(b.name, "en-GB")),
+    [country, elevationM],
+  );
+
+  if (listings.length === 0) return null;
+
+  return (
+    <Rise className="pt-8">
+      <p className="section-label">Guided expeditions on {peakName}</p>
+      <p className="mt-1.5 text-[11.5px] leading-relaxed text-mist-dim">
+        Companies listed for this mountain's country and altitude. None of them guides this trail,
+        and none has said anything about it — a starting point for research, not a recommendation.
+      </p>
+      <div className="mt-3 space-y-2.5">
+        {listings.map((o) => (
+          <Link
+            key={o.id}
+            to={`/operator/${o.id}?${new URLSearchParams({
+              peak: peakName,
+              elevation: String(elevationM),
+              ...(country !== undefined ? { country } : {}),
+            }).toString()}`}
+            className="flex items-center gap-3.5 rounded-card border border-hairline bg-graphite p-3.5 transition-colors hover:border-hairline-strong"
+          >
+            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-tile border border-hairline bg-elevated text-[12px] tracking-[0.06em] text-mist">
+              {o.name
+                .replace(/[^A-Za-z0-9 ]/g, " ")
+                .split(/\s+/)
+                .filter(Boolean)
+                .slice(0, 2)
+                .map((w) => w[0]!.toUpperCase())
+                .join("")}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[13.5px] text-snow">{o.name}</span>
+              <span className="mt-0.5 block truncate text-[11.5px] text-mist-dim">
+                {o.certification}
+              </span>
+            </span>
+            <ChevronRight size={15} strokeWidth={1.8} className="shrink-0 text-mist-dim" />
+          </Link>
+        ))}
+      </div>
+    </Rise>
+  );
+}
+
+/**
+ * The trail, on Google.
+ *
+ * `Trail` carries no country, so the operator's name is the disambiguator when
+ * there is one — "Blue trail" alone finds nothing useful, "Blue trail
+ * thestoopwalk.webs.com" finds the route. Deliberately not guessing a country
+ * from the coordinates: a wrong one in the query is worse than none.
+ */
+function googleSearchUrl(name: string, hint?: string): string {
+  const q = [name, hint, "hiking trail"].filter(Boolean).join(" ");
+  return `https://www.google.com/search?q=${encodeURIComponent(q)}`;
+}
+
+/** The same query, on Google Images. */
+function googleImagesUrl(name: string, hint?: string): string {
+  const q = [name, hint, "hiking trail"].filter(Boolean).join(" ");
+  return `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(q)}`;
+}
+
+/** The relation itself, for anyone who wants to check or fix the data. */
+function osmRelationUrl(osmId: number): string {
+  return `https://www.openstreetmap.org/relation/${osmId}`;
 }

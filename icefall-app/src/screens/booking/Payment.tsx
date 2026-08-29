@@ -11,7 +11,7 @@ import {
   MastercardMark,
   VisaMark,
 } from "@/components/booking/PayMarks";
-import { BOOKING, GUIDE, SERVICE_FEE_EXPLAINER } from "./data";
+import { BOOKING, BOOKING_NOTICE } from "./data";
 import { PAYMENTS_NOT_CONNECTED, formatEur } from "@/money/model";
 import { cn } from "@/lib/utils";
 
@@ -21,8 +21,6 @@ type Method = "card" | "apple" | "google" | "bank";
 export default function Payment() {
   const navigate = useNavigate();
   const [method, setMethod] = useState<Method>("card");
-  const [saveCard, setSaveCard] = useState(true);
-  const [note, setNote] = useState<string | null>(null);
 
   return (
     <Screen>
@@ -30,17 +28,15 @@ export default function Payment() {
         <StepHeader title="Payment" onBack={() => navigate(-1)} />
 
         <Rise>
-          <BookingSummary onVerified={() => setNote(GUIDE.verificationSentence)} />
+          <BookingSummary />
         </Rise>
 
-        {note && (
-          <Rise className="pt-3">
-            <Disclaimer>{note}</Disclaimer>
-          </Rise>
-        )}
+        <Rise className="pt-3">
+          <Disclaimer>{BOOKING_NOTICE}</Disclaimer>
+        </Rise>
 
         <Rise className="pt-4">
-          <PriceLines onFeeInfo={() => setNote(SERVICE_FEE_EXPLAINER)} />
+          <PriceLines />
         </Rise>
 
         {/* ---- Method -------------------------------------------------------- */}
@@ -107,30 +103,17 @@ export default function Payment() {
                 inside PCI scope. Building real-looking inputs now and swapping
                 them later is how that mistake gets shipped. */}
             <Disclaimer className="mt-3">
-              These fields are inert. Real card entry runs inside our payment provider's own hosted
-              fields, so the number never reaches ICEFALL.
+              These fields are inert, and no payment provider is connected. When one is, real card
+              entry will run inside its own hosted fields, so the number never reaches ICEFALL.
             </Disclaimer>
 
-            <button
-              type="button"
-              onClick={() => setSaveCard((s) => !s)}
-              className="mt-4 flex w-full items-center justify-between gap-3 rounded-tile border border-hairline bg-graphite px-4 py-3.5"
-            >
-              <span className="text-[13px] text-snow">Save card for future bookings</span>
-              <span
-                className={cn(
-                  "relative h-[26px] w-[46px] shrink-0 rounded-full transition-colors",
-                  saveCard ? "bg-azure" : "bg-elevated",
-                )}
-              >
-                <span
-                  className={cn(
-                    "absolute top-[3px] h-5 w-5 rounded-full bg-obsidian transition-all",
-                    saveCard ? "left-[23px]" : "left-[3px]",
-                  )}
-                />
-              </span>
-            </button>
+            {/* NO "SAVE CARD FOR FUTURE BOOKINGS" TOGGLE.
+                A switch offering to keep a card is a claim that there is a card
+                and somewhere to keep it. There is neither — no processor, no
+                vault, no account — and the toggle defaulted to on, so the
+                screen asserted a stored card on the client's behalf without
+                them touching it. `screens/auth/Trial.tsx` bans a card on file
+                for the same reason it bans the masked number. */}
           </Rise>
         )}
 
@@ -150,7 +133,7 @@ export default function Payment() {
         <Rise className="pt-7">
           <Button size="lg" className="w-full" onClick={() => navigate("/book/review")}>
             <Lock size={15} strokeWidth={1.8} />
-            Review — {formatEur(BOOKING.pricing.total)}
+            Review — {formatEur(BOOKING.totals.total)}
           </Button>
 
           <p className="mt-3 text-center text-[11px] leading-relaxed text-mist-dim">

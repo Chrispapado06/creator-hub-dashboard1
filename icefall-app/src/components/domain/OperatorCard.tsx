@@ -93,7 +93,7 @@ export function OperatorCard({
 
   const composeHref = peak
     ? `/inbox/new?operator=${o.id}&peak=${encodeURIComponent(peak.name)}&elevation=${peak.elevationM}${peak.goalId ? `&goal=${peak.goalId}` : ""}`
-    : `/explore/operator/${o.id}`;
+    : `/operator/${o.id}`;
 
   const price =
     o.priceFromEur !== undefined

@@ -24,10 +24,21 @@ export const MAP_ATTRIBUTION = `${OSM_ATTRIBUTION} · ${DEM_ATTRIBUTION}`;
 /** Terrain source id, referenced when toggling 3D. */
 export const TERRAIN_SOURCE = "icefall-dem";
 
-const OBSIDIAN = "#080B0D";
-const AZURE = "#A78B5C";
-const SNOW = "#E6E6E6";
-const MIST = "#8A8E93";
+/*
+ * THE MAP PALETTE, KEPT IN STEP WITH `index.css`.
+ *
+ * A MapLibre style spec takes no CSS variables, so the tokens are restated as
+ * hex — and being restated, they went stale silently. These four held the
+ * retired champagne gold under azure NAMES, so the terrain map, the route line
+ * and the live position marker all still drew in the old brand while a grep for
+ * "gold" across the tree returned nothing.
+ *
+ * Values are `src/index.css` converted from oklch, and that file decides.
+ */
+const OBSIDIAN = "#05070B"; /* --ice-obsidian */
+const AZURE = "#4B9BFF"; /* --ice-azure    */
+const SNOW = "#EAEEF5"; /* --ice-snow     */
+const MIST = "#8B94A6"; /* --ice-mist     */
 
 export const icefallMapStyle: StyleSpecification = {
   version: 8,

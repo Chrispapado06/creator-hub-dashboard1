@@ -22,6 +22,7 @@ import {
   X,
 } from "lucide-react";
 import { Badge, Button, Card, Disclaimer, SectionLabel, sharePage } from "@/components/ui/primitives";
+import { treksForMountain } from "@/treks";
 import { Sheet, SheetRow } from "@/components/ui/Sheet";
 import { ProgressRing } from "@/components/ui/charts";
 import { Rise, Screen, Stagger } from "@/components/layout/chrome";
@@ -602,6 +603,41 @@ function Overview({
           alt={data.name}
         />
       </Rise>
+
+      {/*
+       * WALKING ROUTES, KEPT SEPARATE FROM CLIMBING ROUTES.
+       *
+       * The Routes tab above is how you climb this mountain. These are walks
+       * to and around it, and they belong to people who are not climbing it at
+       * all. Listing them together would put a fortnight's valley walking under
+       * the same heading as a summit route.
+       */}
+      {data.curatedId && treksForMountain(data.curatedId).length > 0 && (
+        <Rise className="pt-6">
+          <SectionLabel>Treks here</SectionLabel>
+          <Card className="mt-3">
+            <p className="text-sm text-mist/70">
+              {treksForMountain(data.curatedId).length}{" "}
+              {treksForMountain(data.curatedId).length === 1 ? "route" : "routes"} walk to or around{" "}
+              {data.name} — walking, not climbing.
+            </p>
+            <div className="mt-3 space-y-1.5">
+              {treksForMountain(data.curatedId).map((t) => (
+                <Link
+                  key={t.id}
+                  to={`/explore/trek/${t.id}`}
+                  className="flex items-baseline justify-between gap-3 rounded-xl bg-obsidian/40 px-3 py-2"
+                >
+                  <span className="min-w-0 truncate text-sm text-mist">{t.name}</span>
+                  <span className="shrink-0 text-xs tabular-nums text-mist/45">
+                    {t.durationDays ? `${t.durationDays[0]}–${t.durationDays[1]} days` : "—"}
+                  </span>
+                </Link>
+              ))}
+            </div>
+          </Card>
+        </Rise>
+      )}
 
       {data.lat !== undefined && data.lon !== undefined && (
         <Rise className="pt-6">

@@ -53,10 +53,24 @@ export interface Split {
 
 export interface Conditions {
   tempC: number;
-  windKph: number;
+  /**
+   * OPTIONAL, BECAUSE A PHONE DOES NOT MEASURE WIND.
+   *
+   * A recorded activity used to arrive here with `windKph: 0`, which the strip
+   * printed as "0 km/h" — a still day, stated as fact, on every activity the
+   * recorder produced. Nothing on the device can read wind speed. Absent now
+   * means absent, and the strip leaves the segment out rather than inventing a
+   * calm one.
+   */
+  windKph?: number;
   summary: string;
-  /** Lucide-ish descriptor the WeatherStrip maps to an icon. */
-  icon: "clear" | "cloud" | "snow" | "rain" | "wind" | "storm";
+  /**
+   * Lucide-ish descriptor the WeatherStrip maps to an icon. `device` is the
+   * honest option for a recording that carries a thermometer reading and no
+   * observation of the sky — the old fallback drew a cloud, which is a claim
+   * about cloud cover nobody made.
+   */
+  icon: "clear" | "cloud" | "snow" | "rain" | "wind" | "storm" | "device";
   visibilityKm?: number;
 }
 

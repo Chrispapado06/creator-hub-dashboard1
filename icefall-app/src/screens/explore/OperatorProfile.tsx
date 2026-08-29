@@ -1,70 +1,73 @@
 import { useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { ArrowUpRight, ChevronRight, Landmark, MessageSquare, TriangleAlert } from "lucide-react";
-import { Badge, Button, Card, Disclaimer, SectionLabel } from "@/components/ui/primitives";
-import { Rise, Screen, ScreenHeader, Stagger } from "@/components/layout/chrome";
-import { MountainThumb } from "@/components/domain/MountainImage";
+import {
+  ArrowUpRight, Bookmark, ChevronRight, Flag, Heart, Landmark, Leaf, MapPin,
+  MessageSquare, Mountain as MountainIcon, Package, Share2, ShieldCheck, Star,
+  Stethoscope, TriangleAlert, Users,
+} from "lucide-react";
+import { Button, Card, Disclaimer, SectionLabel } from "@/components/ui/primitives";
+import { Rise, Screen, Stagger } from "@/components/layout/chrome";
 import { cn } from "@/lib/utils";
-import { fmtElevation } from "@/lib/format";
+import { fmtElevation, fmtPrice } from "@/lib/format";
+import { sync } from "@/services/repository";
 import { ACCESS_DISCLAIMER, accessFor, operatorSearchUrl } from "@/services/expeditionAccess";
-import { OPERATOR_DISCLAIMER, operatorById, type Operator } from "@/services/operators";
+import {
+  DEMO_NOTICE, OPERATOR_DISCLAIMER, SAMPLE_NOTICE, SHOW_DEMO_OPERATORS, operatorById,
+  type Operator,
+} from "@/services/operators";
 
 /**
- * One operator listing, in full — the destination behind "View profile & chat".
+ * An expedition company's profile — a company, deliberately not a person.
  *
- * WHAT THIS SCREEN IS ALLOWED TO SAY
+ * It carries the app's azure. The gilt gold is reserved for the best-matched
+ * listing on the Expeditions screen — one card, marking one thing — and a whole
+ * surface painted in it would stop that meaning anything.
  *
- * Every entry in `operators.ts` is `sample: true` and named "<Region> — sample
- * listing". There is no real company behind any of them, ICEFALL has no
- * operator partnerships, and nothing composed here is transmitted anywhere.
- * Someone can land on this route from a shared link with no other context, so
- * the sample treatment is the second thing on the page, above the fold, in the
- * accent colour — not a footnote under the action.
+ * ── WHAT IS REAL ON THIS PAGE, AND WHAT IS NOT ──────────────────────────────
  *
- * DELIBERATELY ABSENT, AND WHY
+ * Almost none of it. The statistics, the rating, the reviews, the summit rate,
+ * the Sherpa ratio, the trips and their prices are ALL INVENTED, and four of
+ * these listings carry the names of businesses that exist. Publishing a review
+ * signed by a named person about a trip they never took, or a "92% summit rate"
+ * nobody measured, is a commercial claim about a real company that nobody made.
  *
- *  · No star rating and no review count. There are no reviews. A rating is
- *    user-generated content that does not exist here, and inventing one would
- *    be the single number a climber books on.
- *  · No verification tick, "vetted" or "approved" mark of any kind. ICEFALL
- *    checks nobody — not certification, not insurance, not permits.
- *  · No years in business, founding date, team size or summit count. These are
- *    unverifiable business claims, and for a listing that isn't a business they
- *    are simply fiction.
- *  · No member counts, avatar stacks or "24 climbers enquired" — fabricated
- *    social proof aimed at a decision that can kill someone.
- *  · No "premium partner", featured slot or sponsored ranking. There is no
- *    commercial relationship to disclose, and paid placement at the top of a
- *    safety-critical directory would be a conflict of interest even if there
- *    were one.
- *  · No operator logo or expedition photography. A generated mark would look
- *    like a brand that exists; the monogram tile is plainly a placeholder.
+ * So every one of those fields renders only when `SHOW_DEMO_OPERATORS` is true,
+ * which an ordinary production build resolves to false — see `lib/demoFlag`.
+ * What a shipped build shows instead is the second half of this file: the
+ * certification to insist on, the authority that issues the permit, what the
+ * route demands, and the questions to put in writing before money moves. Those
+ * come from `expeditionAccess.ts`, and they are true.
  *
- * WHAT REPLACES IT
+ * The notice is NOT a footnote. It sits directly beneath the company's name and
+ * above everything it is warning about, because somebody can land here from a
+ * shared link with no other context.
  *
- * The things that actually decide who to trust at altitude, all of them
- * checkable: the certification to insist on, the national authority that issues
- * the permit, the country's practicalities, and the questions to put to any
- * operator in writing before money moves. Those come from `expeditionAccess.ts`
- * and are real.
+ * ── DELIBERATELY ABSENT ─────────────────────────────────────────────────────
+ *
+ * The design has a "Meet the Team — watch our story" video card. There is no
+ * video. A play button that plays nothing is a promise the page cannot keep, so
+ * it is not drawn at all rather than drawn dead.
  */
 
 /* -------------------------------------------------------------------------- */
-/* Enquiry context                                                             */
+/* Context                                                                     */
 /* -------------------------------------------------------------------------- */
 
-/**
- * The objective the reader arrived with, if any.
- *
- * `ComposeEnquiry` bounces straight back to /inbox without a peak name, so the
- * message action is only offered when there is genuinely something to enquire
- * about. An enquiry with no objective is not a thing an operator could answer.
- */
 interface EnquiryContext {
   peakName: string;
-  /** 0 when the caller passed no elevation — never guessed. */
   elevationM: number;
   goalId?: string;
+}
+
+/** What ICEFALL knows about the route, from whichever record holds it. */
+interface RouteFacts {
+  summary?: string;
+  duration: string;
+  seasons: string;
+  difficulty: string;
+  priceFromEur?: number;
+  demands: string[];
+  experience: string;
 }
 
 function readContext(params: URLSearchParams): EnquiryContext | null {
@@ -87,32 +90,28 @@ function composeHref(operatorId: string, ctx: EnquiryContext): string {
   return `/inbox/new?${q.toString()}`;
 }
 
-/* -------------------------------------------------------------------------- */
-/* Mark                                                                        */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Initials for the tile.
- *
- * Built from the words before the dash — the region — so the tile doesn't read
- * "SL" for every listing in the directory. A monogram, never a logo: a drawn
- * mark would imply a brand, and there is no brand.
- */
 function monogram(name: string): string {
-  const head = name.split(/[—–-]/)[0];
-  const words = head
+  return name
+    .replace(/[^A-Za-z0-9 ]/g, " ")
     .split(/\s+/)
-    .map((w) => w.replace(/[^A-Za-z0-9]/g, ""))
-    .filter((w) => w.length > 0);
-
-  const initials = words
+    .filter(Boolean)
     .slice(0, 2)
-    .map((w) => w[0])
-    .join("")
-    .toUpperCase();
-
-  return initials !== "" ? initials : (Array.from(name.trim())[0] ?? "?").toUpperCase();
+    .map((w) => w[0]!.toUpperCase())
+    .join("");
 }
+
+const TABS = ["Overview", "Expeditions", "Reviews", "Gallery", "About"] as const;
+type TabId = (typeof TABS)[number];
+
+/** Fixed icon cycles — the model carries labels, not icons. */
+const PILLAR_ICONS = [ShieldCheck, Users, Heart, Leaf];
+const HIGHLIGHT_ICONS = [MountainIcon, Flag, Users, Stethoscope, Package, Leaf];
+
+const BADGE_LABEL: Record<string, string> = {
+  popular: "Popular",
+  "best-value": "Best value",
+  premium: "Premium",
+};
 
 /* -------------------------------------------------------------------------- */
 /* Screen                                                                      */
@@ -143,339 +142,303 @@ function Profile({
   ctx: EnquiryContext | null;
   contextCountry?: string;
 }) {
-  /**
-   * Which country's permit rules to show. The listing's own regions, or — for
-   * the multi-range fallback listing, which claims no region — whatever country
-   * the objective supplied. ICEFALL never widens a listing's coverage itself.
-   */
-  const countries = useMemo(() => {
-    if (operator.regions.length > 0) return operator.regions;
-    const c = contextCountry?.trim();
-    return c !== undefined && c !== "" ? [c] : [];
-  }, [operator.regions, contextCountry]);
+  const [tab, setTab] = useState<TabId>("Overview");
+  const [logoFailed, setLogoFailed] = useState(false);
 
-  const [picked, setPicked] = useState<string | null>(null);
-
-  // Typed explicitly: `countries[0]` is `string` to the compiler but undefined
-  // on the empty multi-range listing, and the empty case is a real branch.
-  const fallbackCountry = useMemo<string | undefined>(() => {
-    if (contextCountry !== undefined && countries.includes(contextCountry)) return contextCountry;
-    // Lead with a country ICEFALL actually holds guidance for, so the section
-    // opens with something useful rather than an empty state.
-    const informative = countries.find((c) => {
-      const a = accessFor({ country: c, requiresGuide: false, elevationM: 0 });
-      return a.authority !== undefined || a.notes.length > 0;
-    });
-    return informative ?? countries[0];
-  }, [countries, contextCountry]);
-
-  // Falls back automatically when the chosen country is no longer on offer,
-  // e.g. the route param changed to a different listing under the same screen.
-  const country = picked !== null && countries.includes(picked) ? picked : fallbackCountry;
-
-  const access = useMemo(
-    () =>
-      country !== undefined
-        ? accessFor({ country, requiresGuide: false, elevationM: operator.minElevationM })
-        : null,
-    [country, operator.minElevationM],
-  );
+  /** Everything invented. False in any ordinary production build. */
+  const claims = SHOW_DEMO_OPERATORS && operator.demo === true;
 
   /**
-   * The universal pre-booking questions.
-   *
-   * `UNIVERSAL` is private to expeditionAccess, but `accessFor` with no country
-   * returns exactly that list — so the wording stays single-sourced instead of
-   * being retyped here, where it would quietly drift out of date.
+   * The route behind the objective, when ICEFALL holds one. Matched on the
+   * peak's NAME, because this screen is reached with a peak from a curated
+   * objective, the catalogue or a shared link, and only the name survives all
+   * three.
    */
-  const questions = useMemo(() => accessFor({ requiresGuide: true, elevationM: 0 }).notes, []);
+  const route = useMemo((): RouteFacts | undefined => {
+    if (ctx === null) return undefined;
+    const wanted = ctx.peakName.trim().toLowerCase();
 
-  const searchSubject = ctx?.peakName ?? country ?? "";
+    const exp = sync.expeditions.find(
+      (e) => sync.mountainById(e.mountainId)?.name.trim().toLowerCase() === wanted,
+    );
+    if (exp !== undefined) {
+      return {
+        summary: exp.summary,
+        duration: exp.durationLabel,
+        seasons: exp.seasons.join(", "),
+        difficulty: `${exp.difficulty} / 5 · ${exp.difficultyLabel}`,
+        priceFromEur: exp.priceFromEur,
+        demands: exp.prerequisites,
+        experience: exp.requiredExperience,
+      };
+    }
+
+    const mountain = sync.mountains.find((m) => m.name.trim().toLowerCase() === wanted);
+    if (mountain !== undefined) {
+      return {
+        duration: mountain.typicalDurationLabel,
+        seasons: mountain.bestSeasons.join(", "),
+        difficulty: `${mountain.difficulty} / 5 · ${mountain.difficultyLabel}`,
+        demands: mountain.technicalRequirements,
+        experience: mountain.requiredExperience,
+      };
+    }
+    // A catalogue peak: ICEFALL holds a name and a height and nothing else, so
+    // the section does not render rather than being padded out.
+    return undefined;
+  }, [ctx]);
+
+  /** The listing's own regions, or the country the objective supplied. */
+  const permitCountries =
+    operator.regions.length > 0 ? operator.regions : contextCountry ? [contextCountry] : [];
+
+  const heroPhoto = operator.gallery?.[0] ?? "/img/everest.jpg";
 
   return (
-    <Screen>
-      <ScreenHeader title="Operator profile" back="/explore/expeditions" />
+    <Screen padded={false}>
+      {/* ---- Hero ------------------------------------------------------- */}
+      <div className="relative">
+        {/*
+          The banner reads dark, and it darkens to the LEFT.
+          `scrim-full` fades upward from the bottom, which is right for a card
+          whose caption sits along its base — but here the logo tile and the
+          company's name sit in the top-left corner, and a bottom fade left them
+          on the brightest part of the photograph. A rightward gradient puts the
+          near-black under the type and lets the peak keep the right-hand side,
+          which is how the design carries it.
+        */}
+        <div className="absolute inset-0">
+          <img
+            src={heroPhoto}
+            alt=""
+            aria-hidden
+            className="h-full w-full object-cover object-[70%_35%] opacity-[0.72]"
+          />
+          <div className="absolute inset-0 bg-gradient-to-r from-obsidian via-obsidian/80 to-obsidian/25" />
+          <div className="absolute inset-0 bg-gradient-to-t from-obsidian via-obsidian/35 to-transparent" />
+        </div>
 
-      <Stagger>
-        {/* ---------------------------------------------------------------- */}
-        {/* Identity                                                          */}
-        {/* ---------------------------------------------------------------- */}
-        <Rise>
-          <Card className="flex items-start gap-4">
-            <span
-              aria-hidden="true"
-              className="grid h-14 w-14 shrink-0 place-items-center rounded-tile border border-hairline bg-elevated/40 text-[15px] font-medium tracking-[0.1em] text-mist"
+        <div className="relative px-5" style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
+          <div className="flex items-center gap-3 pb-4 pt-4">
+            <button
+              type="button"
+              onClick={() => window.history.back()}
+              aria-label="Back"
+              className="-ml-2 grid h-9 w-9 shrink-0 place-items-center rounded-full text-azure transition-colors hover:bg-white/[0.06]"
             >
-              {monogram(operator.name)}
+              <ChevronRight size={20} strokeWidth={1.8} className="rotate-180" />
+            </button>
+            <span className="text-[14px] text-azure">Expeditions</span>
+            <span className="ml-auto flex items-center gap-1">
+              {/* Saving and sharing a company both need a backend and a share
+                  sheet. Drawn inert rather than wired to nothing. */}
+              <span aria-hidden className="grid h-9 w-9 place-items-center text-mist-dim/70">
+                <Heart size={18} strokeWidth={1.6} />
+              </span>
+              <span aria-hidden className="grid h-9 w-9 place-items-center text-mist-dim/70">
+                <Share2 size={18} strokeWidth={1.6} />
+              </span>
             </span>
-            <div className="min-w-0 flex-1">
-              <h2 className="text-[19px] font-light leading-snug tracking-[-0.02em] text-snow">
-                {operator.name}
-              </h2>
-              <p className="mt-1.5 text-[12px] leading-relaxed text-mist">
-                Expedition operator listing
-              </p>
-              <div className="mt-3">
-                <Badge tone="azure">Sample listing</Badge>
+          </div>
+
+          <div className="flex items-start gap-4 pb-5">
+            <div className="relative shrink-0">
+              <div className="grid h-[92px] w-[92px] place-items-center overflow-hidden rounded-[14px] border border-hairline-strong bg-obsidian">
+                {operator.logo !== undefined && !logoFailed ? (
+                  <img
+                    src={operator.logo}
+                    alt=""
+                    aria-hidden
+                    onError={() => setLogoFailed(true)}
+                    className="h-full w-full object-contain p-2"
+                  />
+                ) : (
+                  <span className="text-[19px] tracking-[0.06em] text-mist">
+                    {monogram(operator.name)}
+                  </span>
+                )}
               </div>
-            </div>
-          </Card>
-        </Rise>
-
-        {/* ---------------------------------------------------------------- */}
-        {/* The sample treatment — above the fold, before anything else.      */}
-        {/* Every listing is typed `sample: true`, so there is no non-sample  */}
-        {/* branch to design for yet; when a real partner exists this panel   */}
-        {/* is what gets a condition, not a redesign.                         */}
-        {/* ---------------------------------------------------------------- */}
-        <Rise className="pt-3">
-          <Card className="border-azure/25 bg-azure/[0.04]">
-            <div className="flex gap-3">
-              <TriangleAlert size={16} strokeWidth={1.6} className="mt-px shrink-0 text-azure" />
-              <div className="min-w-0">
-                <p className="section-label text-azure/85">This is not a real company</p>
-                <ul className="mt-3 space-y-2.5">
-                  {[
-                    "An illustrative listing, shown so you can see how an operator appears in ICEFALL. No business of this name is connected to the app.",
-                    "ICEFALL has no operator partnerships. It does not vet, inspect, endorse or rank anyone, and takes no payment for expeditions.",
-                    "Nothing sent from this profile reaches a business. Enquiries are drafted and kept on this device; no reply will ever arrive.",
-                  ].map((line) => (
-                    <li key={line} className="flex gap-3 text-[13px] leading-relaxed text-snow/85">
-                      <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-azure/70" />
-                      {line}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-          </Card>
-          <Disclaimer className="mt-4">{OPERATOR_DISCLAIMER}</Disclaimer>
-        </Rise>
-
-        {/* ---------------------------------------------------------------- */}
-        {/* What the listing states — claims, labelled as claims.             */}
-        {/* No rating, no review count, no years in business, no team size:   */}
-        {/* the model holds none of it and none of it would be checkable.     */}
-        {/* ---------------------------------------------------------------- */}
-        <Rise className="pt-6">
-          <SectionLabel>What this listing states</SectionLabel>
-          <Card className="mt-3">
-            <dl className="space-y-3.5 text-[13px]">
-              <Fact label="Certification" value={operator.certification} />
-              <Fact
-                label="Regions covered"
-                value={
-                  operator.regions.length > 0
-                    ? operator.regions.join(" · ")
-                    : "Multi-range — no single region"
-                }
-              />
-              <Fact
-                label="Works from"
-                value={
-                  operator.minElevationM > 0
-                    ? `${fmtElevation(operator.minElevationM)} m`
-                    : "No stated minimum"
-                }
-                numeric
-              />
-              <Fact
-                label="Typical response"
-                value={`Within ${operator.responseHours} hours`}
-                numeric
-              />
-            </dl>
-          </Card>
-          <p className="mt-3 text-[11px] leading-relaxed text-mist-dim">
-            Stated by the listing, checked by nobody. IFMGA/UIAGM is the only internationally
-            recognised mountain guide qualification — ask any real operator for the guide's carnet
-            number and confirm it with the national guides association yourself.
-          </p>
-        </Rise>
-
-        {/* ---------------------------------------------------------------- */}
-        {/* Permits — the genuinely checkable part of this screen.            */}
-        {/* ---------------------------------------------------------------- */}
-        <Rise className="pt-6">
-          <SectionLabel>Permits & access</SectionLabel>
-
-          {countries.length > 1 && (
-            <div className="no-scrollbar mt-3 flex gap-2 overflow-x-auto">
-              {countries.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  aria-pressed={c === country}
-                  onClick={() => setPicked(c)}
-                  className={cn(
-                    "shrink-0 rounded-full border px-3.5 py-1.5 text-[12px] transition-colors",
-                    c === country
-                      ? "border-azure/50 bg-azure/10 text-azure"
-                      : "border-hairline text-mist hover:border-hairline-strong hover:text-snow",
-                  )}
+              {claims && (
+                <span
+                  aria-hidden
+                  className="absolute -right-1.5 -top-1.5 grid h-6 w-6 place-items-center rounded-full bg-azure text-obsidian"
                 >
-                  {c}
-                </button>
-              ))}
+                  <ShieldCheck size={13} strokeWidth={2.4} />
+                </span>
+              )}
             </div>
-          )}
 
-          <Card className="mt-3">
-            {country === undefined ? (
-              <p className="text-[13px] leading-relaxed text-mist">
-                Permit rules follow the mountain, not the operator. Open a peak in Explore to see
-                the authority that governs it — the questions below apply wherever you climb.
+            <div className="min-w-0 flex-1 pt-1">
+              <h1 className="text-[21px] font-normal leading-tight text-snow">{operator.name}</h1>
+              {claims && operator.tagline !== undefined && (
+                <p className="mt-1 text-[13.5px] leading-snug text-snow/75">{operator.tagline}</p>
+              )}
+              <p className="mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[12px] text-mist">
+                <MapPin size={12} strokeWidth={1.8} className="shrink-0 text-azure" />
+                {operator.city ?? "Location not stated"}
+                {claims && operator.yearsExperience !== undefined && (
+                  <>
+                    <span className="text-mist-dim">·</span>
+                    {operator.yearsExperience}+ years experience
+                  </>
+                )}
               </p>
-            ) : access?.authority !== undefined ? (
-              <div className="flex gap-3">
-                <Landmark size={15} strokeWidth={1.5} className="mt-0.5 shrink-0 text-azure" />
-                <div className="min-w-0">
-                  <p className="section-label">{country}</p>
-                  <p className="mt-2 text-[13px] leading-relaxed text-snow">{access.authority}</p>
-                  {access.authorityNote !== undefined && (
-                    <p className="mt-1.5 text-[12px] leading-relaxed text-mist">
-                      {access.authorityNote}
-                    </p>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <p className="text-[13px] leading-relaxed text-mist">
-                {/* An absence in the data is not evidence that nothing is required
-                    — some of these countries have no central system, others
-                    ICEFALL simply has not recorded. Saying which would be a
-                    guess, so the copy says neither. */}
-                No central permit authority is recorded for {country}. That may be because none
-                exists, or because ICEFALL does not hold it — confirm with the local guides office
-                and the land manager for the specific peak.
-              </p>
-            )}
+            </div>
+          </div>
+        </div>
+      </div>
 
-            {access !== null && access.notes.length > 0 && (
-              <ul className="mt-4 space-y-2.5 border-t border-hairline pt-4">
-                {access.notes.map((n) => (
-                  <li key={n} className="flex gap-3 text-[12px] leading-relaxed text-mist">
-                    <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-mist-dim" />
-                    {n}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
-        </Rise>
+      <Stagger className="px-5 pb-24">
+        {/* ---- Stats ---------------------------------------------------- */}
+        {claims && (
+          <Rise className="flex items-stretch gap-1 border-b border-hairline pb-4">
+            <Stat
+              icon={MountainIcon}
+              value={`${operator.yearsExperience ?? 0}+`}
+              label="Years experience"
+            />
+            <Stat icon={Flag} value={`${operator.expeditionCount ?? 0}+`} label="Expeditions" />
+            <Stat
+              icon={Users}
+              value={`${(operator.summiteerCount ?? 0).toLocaleString("en-GB")}+`}
+              label="Summiteers"
+            />
+            <Stat
+              icon={Star}
+              value={operator.rating?.toFixed(1) ?? "—"}
+              label={`(${operator.reviewCount ?? 0} reviews)`}
+            />
+          </Rise>
+        )}
 
-        {/* ---------------------------------------------------------------- */}
-        {/* The questions — worth more than any rating this screen refuses.   */}
-        {/* ---------------------------------------------------------------- */}
-        <Rise className="pt-6">
-          <SectionLabel>Ask before you book</SectionLabel>
-          <Card className="mt-3">
-            <ol className="space-y-3.5">
-              {questions.map((q, i) => (
-                <li key={q} className="flex gap-3">
-                  <span className="tnum mt-px w-3 shrink-0 text-[11px] text-azure/70">{i + 1}</span>
-                  <p className="flex-1 text-[12px] leading-relaxed text-mist">{q}</p>
-                </li>
-              ))}
-            </ol>
-          </Card>
-        </Rise>
-
-        {/* ---------------------------------------------------------------- */}
-        {/* Enquiry                                                           */}
-        {/* ---------------------------------------------------------------- */}
-        <Rise className="pt-6">
-          <SectionLabel>Enquiry</SectionLabel>
-          {ctx !== null ? (
-            <>
-              <Card className="mt-3 flex items-center gap-3.5">
-                <MountainThumb
-                  peak={{
-                    name: ctx.peakName,
-                    elevationM: ctx.elevationM > 0 ? ctx.elevationM : undefined,
-                  }}
-                  size={44}
-                />
-                <div className="min-w-0 flex-1">
-                  <p className="section-label">Your objective</p>
-                  <p className="mt-1.5 truncate text-[14px] text-snow">{ctx.peakName}</p>
-                  {ctx.elevationM > 0 && (
-                    <p className="tnum mt-0.5 text-[11px] text-mist-dim">
-                      {fmtElevation(ctx.elevationM)} m
-                    </p>
-                  )}
-                </div>
-              </Card>
-              <Button asChild className="mt-3 w-full">
-                <Link to={composeHref(operator.id, ctx)}>
-                  <MessageSquare size={15} strokeWidth={1.8} />
-                  Message this operator
-                </Link>
-              </Button>
-              <p className="mt-3 text-[11px] leading-relaxed text-mist-dim">
-                Opens a draft asking the questions above. It is saved to your enquiries on this
-                device and is not transmitted — this listing has no inbox.
-              </p>
-            </>
-          ) : (
-            <>
-              <Card className="mt-3">
-                <p className="text-[13px] leading-relaxed text-mist">
-                  An enquiry needs an objective — the peak, the season and the elevation are what an
-                  operator answers. Open a mountain first and message from there.
-                </p>
-              </Card>
-              <Button asChild variant="secondary" className="mt-3 w-full">
-                <Link to="/explore">
-                  Choose a mountain
-                  <ChevronRight size={15} strokeWidth={1.8} />
-                </Link>
-              </Button>
-            </>
-          )}
-        </Rise>
-
-        {/* ---------------------------------------------------------------- */}
-        {/* The outbound route to operators that actually exist.              */}
-        {/* ---------------------------------------------------------------- */}
-        <Rise className="pt-6">
-          <SectionLabel>Find a real operator</SectionLabel>
-          <a
-            href={operatorSearchUrl(searchSubject)}
-            target="_blank"
-            rel="noreferrer noopener"
-            className="mt-3 flex items-center gap-2.5 rounded-card border border-hairline bg-graphite px-4 py-3.5 text-[13px] text-mist transition-colors hover:border-azure/50 hover:text-snow"
+        {/* ---- The two actions ------------------------------------------ */}
+        <Rise className="flex gap-2.5 pt-4">
+          <button
+            type="button"
+            onClick={() => setTab("Expeditions")}
+            className="h-11 flex-1 rounded-tile bg-azure text-[13.5px] font-medium text-obsidian transition-colors hover:bg-azure-bright"
           >
-            <span className="flex-1">
-              Search IFMGA-certified operators
-              {searchSubject !== "" && <span className="text-snow"> · {searchSubject}</span>}
-            </span>
-            <ArrowUpRight size={15} strokeWidth={1.6} className="shrink-0" />
-          </a>
-          <p className="mt-3 text-[11px] leading-relaxed text-mist-dim">
-            {/* Points at the authority only when one was actually named above.
-                A cross-reference to something this screen never showed is a
-                dead instruction, and this is the instruction that matters. */}
-            Cross-check anyone you find with the national guides association and
-            {access?.authority !== undefined
-              ? " the permit authority named above"
-              : " the permit authority for the country you are climbing in"}{" "}
-            before you send money.
-          </p>
-        </Rise>
-
-        <Rise className="pt-6">
-          <Disclaimer>{ACCESS_DISCLAIMER}</Disclaimer>
-        </Rise>
-
-        <Rise className="pt-5">
-          <Link to="/messages">
-            <Button variant="secondary" className="w-full">
-              <MessageSquare size={15} strokeWidth={1.8} />
-              Open your enquiries
+            View expeditions
+          </button>
+          {ctx !== null ? (
+            <Button asChild variant="secondary" className="h-11 flex-1 border-azure/45 text-snow">
+              <Link to={composeHref(operator.id, ctx)}>
+                <MessageSquare size={14} strokeWidth={1.8} />
+                Contact company
+              </Link>
             </Button>
-          </Link>
+          ) : (
+            <Button asChild variant="secondary" className="h-11 flex-1 border-azure/45 text-snow">
+              <Link to="/explore/expeditions">
+                Choose a mountain
+                <ChevronRight size={14} strokeWidth={1.8} />
+              </Link>
+            </Button>
+          )}
         </Rise>
+
+        {/* ---- The notice, above everything it warns about --------------- */}
+        <Rise className="pt-4">
+          <Disclaimer>{claims ? DEMO_NOTICE : SAMPLE_NOTICE}</Disclaimer>
+        </Rise>
+
+        {/* ---- Tabs ------------------------------------------------------ */}
+        <Rise className="no-scrollbar -mx-5 mt-5 flex gap-7 overflow-x-auto border-b border-hairline px-5">
+          {TABS.map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTab(t)}
+              aria-pressed={t === tab}
+              className={cn(
+                "shrink-0 border-b-2 pb-2.5 text-[12px] uppercase tracking-[0.1em] transition-colors",
+                t === tab
+                  ? "border-azure text-azure"
+                  : "border-transparent text-mist-dim hover:text-mist",
+              )}
+            >
+              {t}
+            </button>
+          ))}
+        </Rise>
+
+        {tab === "Overview" && (
+          <>
+            {claims && operator.about !== undefined && (
+              <Rise className="pt-6">
+                <Card>
+                  <p className="text-[11px] uppercase tracking-[0.14em] text-mist-dim">
+                    About {operator.name}
+                  </p>
+                  <p className="mt-3 text-[13px] leading-relaxed text-mist">{operator.about}</p>
+
+                  {operator.pillars !== undefined && (
+                    <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+                      {operator.pillars.map((p, i) => {
+                        const Icon = PILLAR_ICONS[i % PILLAR_ICONS.length]!;
+                        return (
+                          <div
+                            key={p.label}
+                            className="rounded-tile border border-hairline bg-slate/50 px-2.5 py-3 text-center"
+                          >
+                            <Icon size={17} strokeWidth={1.6} className="mx-auto text-azure" />
+                            <p className="mt-2 text-[11.5px] leading-tight text-snow">{p.label}</p>
+                            <p className="mt-1 text-[10px] leading-tight text-mist-dim">
+                              {p.detail}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </Card>
+              </Rise>
+            )}
+
+            {claims && operator.highlights !== undefined && (
+              <Rise className="pt-4">
+                <Card>
+                  <p className="text-[11px] uppercase tracking-[0.14em] text-mist-dim">
+                    Company highlights
+                  </p>
+                  <ul className="mt-1 divide-y divide-hairline">
+                    {operator.highlights.map((h, i) => {
+                      const Icon = HIGHLIGHT_ICONS[i % HIGHLIGHT_ICONS.length]!;
+                      return (
+                        <li key={h.label} className="flex items-center gap-3.5 py-3">
+                          <Icon size={18} strokeWidth={1.5} className="shrink-0 text-azure" />
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-[13px] text-snow">{h.label}</span>
+                            <span className="mt-0.5 block text-[11.5px] text-mist-dim">
+                              {h.detail}
+                            </span>
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </Card>
+              </Rise>
+            )}
+
+            <FeaturedTrips
+              operator={operator}
+              claims={claims}
+              onSeeAll={() => setTab("Expeditions")}
+            />
+            <Reviews operator={operator} claims={claims} compact onSeeAll={() => setTab("Reviews")} />
+          </>
+        )}
+
+        {tab === "Expeditions" && <FeaturedTrips operator={operator} claims={claims} full />}
+
+        {tab === "Reviews" && <Reviews operator={operator} claims={claims} />}
+
+        {tab === "Gallery" && <Gallery operator={operator} />}
+
+        {tab === "About" && (
+          <AboutTab operator={operator} ctx={ctx} route={route} permitCountries={permitCountries} />
+        )}
       </Stagger>
     </Screen>
   );
@@ -484,6 +447,437 @@ function Profile({
 /* -------------------------------------------------------------------------- */
 /* Pieces                                                                      */
 /* -------------------------------------------------------------------------- */
+
+function Stat({
+  icon: Icon,
+  value,
+  label,
+}: {
+  icon: typeof MountainIcon;
+  value: string;
+  label: string;
+}) {
+  return (
+    <div className="min-w-0 flex-1 border-r border-hairline px-1 text-center last:border-r-0">
+      <Icon size={16} strokeWidth={1.6} className="mx-auto text-azure" />
+      <p className="tnum mt-1.5 truncate text-[15px] leading-none text-snow">{value}</p>
+      <p className="mt-1.5 truncate text-[9.5px] leading-tight text-mist-dim">{label}</p>
+    </div>
+  );
+}
+
+function Stars({ value, size = 11 }: { value: number; size?: number }) {
+  return (
+    <span aria-label={`${value.toFixed(1)} out of 5`} className="inline-flex items-center gap-0.5">
+      {[0, 1, 2, 3, 4].map((i) => (
+        <Star
+          key={i}
+          size={size}
+          strokeWidth={0}
+          fill="currentColor"
+          className={i < Math.round(value) ? "text-azure" : "text-mist-dim/40"}
+        />
+      ))}
+    </span>
+  );
+}
+
+function FeaturedTrips({
+  operator,
+  claims,
+  full = false,
+  onSeeAll,
+}: {
+  operator: Operator;
+  claims: boolean;
+  full?: boolean;
+  onSeeAll?: () => void;
+}) {
+  const trips = claims ? (operator.trips ?? []) : [];
+
+  if (trips.length === 0) {
+    return (
+      <Rise className="pt-6">
+        <Card>
+          <p className="text-[13px] leading-relaxed text-mist">
+            This listing publishes no trips. A real operator's programme, its dates and its prices
+            come from them directly — ICEFALL holds none of it and will not invent it.
+          </p>
+        </Card>
+      </Rise>
+    );
+  }
+
+  return (
+    <>
+      <Rise className="flex items-baseline justify-between pt-6">
+        <p className="text-[11px] uppercase tracking-[0.14em] text-mist-dim">
+          {full ? "Expeditions" : "Featured expeditions"}
+        </p>
+        {!full && onSeeAll !== undefined && (
+          <button
+            type="button"
+            onClick={onSeeAll}
+            className="flex items-center gap-0.5 text-[11.5px] text-azure transition-colors hover:text-azure-bright"
+          >
+            View all
+            <ChevronRight size={13} strokeWidth={1.9} />
+          </button>
+        )}
+      </Rise>
+
+      <div
+        className={cn(
+          full ? "mt-3 space-y-3" : "no-scrollbar -mx-5 mt-3 flex gap-3 overflow-x-auto px-5",
+        )}
+      >
+        {trips.map((t) => (
+          <Rise key={t.id} className={full ? undefined : "w-[188px] shrink-0"}>
+            <Link
+              to={`/operator/${operator.id}/trip/${t.id}`}
+              className="block overflow-hidden rounded-card border border-hairline bg-graphite transition-colors hover:border-azure/45"
+            >
+              <div className={cn("relative w-full", full ? "aspect-[16/7]" : "aspect-[16/10]")}>
+                <img
+                  src={t.photo}
+                  alt=""
+                  aria-hidden
+                  loading="lazy"
+                  className="h-full w-full object-cover"
+                />
+                {t.badge !== undefined && (
+                  <span className="absolute left-2.5 top-2.5 rounded-[5px] bg-azure px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em] text-obsidian">
+                    {BADGE_LABEL[t.badge]}
+                  </span>
+                )}
+              </div>
+              <div className="p-3">
+                <p className="text-[13px] leading-tight text-snow">{t.name}</p>
+                <p className="tnum mt-1 text-[11px] text-mist-dim">
+                  {t.days} days · {t.country}
+                </p>
+                <div className="mt-2.5 flex items-end justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="tnum text-[12.5px] text-snow">From {fmtPrice(t.priceFromEur)}</p>
+                    <p className="mt-1 flex items-center gap-1.5">
+                      <Stars value={t.rating} />
+                      <span className="tnum text-[10.5px] text-mist-dim">({t.reviewCount})</span>
+                    </p>
+                  </div>
+                  <Bookmark size={15} strokeWidth={1.6} className="shrink-0 text-mist-dim/70" />
+                </div>
+              </div>
+            </Link>
+          </Rise>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function Reviews({
+  operator,
+  claims,
+  compact = false,
+  onSeeAll,
+}: {
+  operator: Operator;
+  claims: boolean;
+  compact?: boolean;
+  onSeeAll?: () => void;
+}) {
+  const reviews = claims ? (operator.reviews ?? []) : [];
+  const shown = compact ? reviews.slice(0, 1) : reviews;
+
+  if (reviews.length === 0) {
+    return (
+      <Rise className="pt-6">
+        <Card>
+          <p className="text-[13px] leading-relaxed text-mist">
+            No reviews. ICEFALL has no customers, runs no bookings and collects no feedback, so
+            there is nothing to average — a star rating here would be a number nobody gave.
+          </p>
+        </Card>
+      </Rise>
+    );
+  }
+
+  return (
+    <>
+      <Rise className="flex items-baseline justify-between pt-6">
+        <p className="text-[11px] uppercase tracking-[0.14em] text-mist-dim">
+          {compact ? "Recent reviews" : "Reviews"}
+        </p>
+        {compact && onSeeAll !== undefined && (
+          <button
+            type="button"
+            onClick={onSeeAll}
+            className="text-[11.5px] text-azure transition-colors hover:text-azure-bright"
+          >
+            View all
+          </button>
+        )}
+      </Rise>
+
+      <div className="mt-3 space-y-3">
+        {shown.map((r) => (
+          <Rise key={r.id}>
+            <Card>
+              <div className="flex items-center gap-3">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-hairline bg-elevated text-[11px] text-mist">
+                  {monogram(r.author)}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[13px] text-snow">{r.author}</p>
+                  <p className="mt-1 flex items-center gap-2">
+                    <Stars value={r.stars} />
+                    <span className="text-[10.5px] text-mist-dim">{r.agoLabel}</span>
+                  </p>
+                </div>
+              </div>
+              <p className="mt-3 text-[12.5px] leading-relaxed text-mist">{r.body}</p>
+            </Card>
+          </Rise>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function Gallery({ operator }: { operator: Operator }) {
+  const photos = operator.gallery ?? [];
+
+  if (photos.length === 0) {
+    return (
+      <Rise className="pt-6">
+        <Card>
+          <p className="text-[13px] leading-relaxed text-mist">No photographs for this listing.</p>
+        </Card>
+      </Rise>
+    );
+  }
+
+  return (
+    <>
+      <Rise className="pt-6">
+        <p className="text-[11px] uppercase tracking-[0.14em] text-mist-dim">Gallery</p>
+      </Rise>
+      <div className="mt-3 grid grid-cols-2 gap-2.5">
+        {photos.map((src, i) => (
+          <Rise key={src + i} className={i === 0 ? "col-span-2" : undefined}>
+            <div
+              className={cn(
+                "overflow-hidden rounded-tile border border-hairline",
+                i === 0 ? "aspect-[16/9]" : "aspect-square",
+              )}
+            >
+              <img
+                src={src}
+                alt=""
+                aria-hidden
+                loading="lazy"
+                className="h-full w-full object-cover"
+              />
+            </div>
+          </Rise>
+        ))}
+      </div>
+      <Rise className="pt-3">
+        <p className="text-[10.5px] leading-relaxed text-mist-dim">
+          ICEFALL's own mountain photography, not this company's. No operator has supplied images,
+          and passing someone else's expedition photographs off as theirs would be a second
+          invention on top of the first.
+        </p>
+      </Rise>
+    </>
+  );
+}
+
+/**
+ * The half of this screen that is true.
+ *
+ * Certification, the authority that actually issues the permit, what the route
+ * demands, and the questions to put in writing. This is what a production build
+ * shows, and it is the only part a climber should act on.
+ */
+function AboutTab({
+  operator,
+  ctx,
+  route,
+  permitCountries,
+}: {
+  operator: Operator;
+  ctx: EnquiryContext | null;
+  route: RouteFacts | undefined;
+  permitCountries: string[];
+}) {
+  const questions = accessFor({
+    requiresGuide: true,
+    elevationM: ctx?.elevationM ?? operator.minElevationM,
+  }).notes;
+
+  const authorities = permitCountries
+    .map((country) => ({
+      country,
+      access: accessFor({ country, requiresGuide: true, elevationM: operator.minElevationM }),
+    }))
+    .filter((a) => a.access.authority);
+
+  return (
+    <>
+      <Rise className="pt-6">
+        <SectionLabel>What this listing states</SectionLabel>
+        <Card className="mt-3">
+          <dl className="space-y-3.5 text-[13px]">
+            <Fact label="Certification" value={operator.certification} />
+            <Fact
+              label="Regions covered"
+              value={
+                operator.regions.length > 0
+                  ? operator.regions.join(" · ")
+                  : "Multi-range — no single region"
+              }
+            />
+            <Fact
+              label="Works from"
+              value={
+                operator.minElevationM > 0
+                  ? `${fmtElevation(operator.minElevationM)} m`
+                  : "No stated minimum"
+              }
+              numeric
+            />
+            <Fact label="Typical response" value={`Within ${operator.responseHours} hours`} numeric />
+          </dl>
+        </Card>
+        <p className="mt-3 text-[11px] leading-relaxed text-mist-dim">
+          Stated by the listing, checked by nobody. IFMGA/UIAGM is the only internationally
+          recognised mountain guide qualification — ask any real operator for the guide's carnet
+          number and confirm it with the national guides association yourself.
+        </p>
+      </Rise>
+
+      {route !== undefined && (
+        <Rise className="pt-6">
+          <SectionLabel>What you would be climbing</SectionLabel>
+          <Card className="mt-3">
+            {route.summary !== undefined && (
+              <p className="text-[13px] leading-relaxed text-mist">{route.summary}</p>
+            )}
+            <dl
+              className={cn(
+                "space-y-3.5 text-[13px]",
+                route.summary !== undefined && "mt-4 border-t border-hairline pt-4",
+              )}
+            >
+              <Fact label="Duration" value={route.duration} numeric />
+              <Fact label="Season" value={route.seasons} />
+              <Fact label="Difficulty" value={route.difficulty} numeric />
+              <Fact
+                label="Indicative cost"
+                value={
+                  route.priceFromEur !== undefined
+                    ? `from ${fmtPrice(route.priceFromEur)}`
+                    : "Not published"
+                }
+                numeric={route.priceFromEur !== undefined}
+              />
+            </dl>
+            <p className="mt-3.5 text-[11px] leading-relaxed text-mist-dim">
+              {route.priceFromEur !== undefined
+                ? "A planning figure for the route, not a quote and not this listing's price. ICEFALL sells nothing, takes no payment and holds no departure dates — what you pay comes from the operator, and moves with season, group ratio and what they exclude."
+                : "ICEFALL publishes no figure for this peak and will not invent one. Ask the operator what the price covers — guiding ratio, permits, oxygen, transfers and what happens if you turn back are where quotes differ most."}
+            </p>
+          </Card>
+        </Rise>
+      )}
+
+      {route !== undefined && route.demands.length > 0 && (
+        <Rise className="pt-6">
+          <SectionLabel>What it asks of you</SectionLabel>
+          <Card className="mt-3">
+            <ul className="space-y-2.5">
+              {route.demands.map((req) => (
+                <li key={req} className="flex gap-3 text-[13px] leading-relaxed text-mist">
+                  <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-azure" />
+                  {req}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-3.5 text-[11px] leading-relaxed text-mist-dim">{route.experience}</p>
+          </Card>
+        </Rise>
+      )}
+
+      {authorities.length > 0 && (
+        <Rise className="pt-6">
+          <SectionLabel>Permits &amp; access</SectionLabel>
+          <div className="mt-3 space-y-2.5">
+            {authorities.map((a) => (
+              <Card key={a.country}>
+                <p className="flex items-center gap-2 text-[11px] uppercase tracking-[0.14em] text-mist-dim">
+                  <Landmark size={13} strokeWidth={1.7} className="text-azure" />
+                  {a.country}
+                </p>
+                <p className="mt-2 text-[13px] leading-relaxed text-snow/85">{a.access.authority}</p>
+                {a.access.authorityNote !== undefined && (
+                  <p className="mt-1.5 text-[12px] leading-relaxed text-mist">
+                    {a.access.authorityNote}
+                  </p>
+                )}
+              </Card>
+            ))}
+          </div>
+        </Rise>
+      )}
+
+      {operator.faq !== undefined && operator.faq.length > 0 && (
+        <Rise className="pt-6">
+          <SectionLabel>Questions this listing answers</SectionLabel>
+          <div className="mt-3 space-y-2.5">
+            {operator.faq.map((f) => (
+              <Card key={f.q}>
+                <p className="text-[13px] text-snow">{f.q}</p>
+                <p className="mt-1.5 text-[12.5px] leading-relaxed text-mist">{f.a}</p>
+              </Card>
+            ))}
+          </div>
+        </Rise>
+      )}
+
+      <Rise className="pt-6">
+        <SectionLabel>Ask before you book</SectionLabel>
+        <Card className="mt-3">
+          <ul className="space-y-3">
+            {questions.map((q) => (
+              <li key={q} className="flex gap-3 text-[12.5px] leading-relaxed text-mist">
+                <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-azure" />
+                {q}
+              </li>
+            ))}
+          </ul>
+        </Card>
+      </Rise>
+
+      <Rise className="pt-6">
+        <SectionLabel>Find a real operator</SectionLabel>
+        <a
+          href={operatorSearchUrl(ctx?.peakName ?? operator.name)}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="mt-3 flex items-center gap-2.5 rounded-card border border-hairline bg-graphite px-4 py-3.5 text-[13px] text-mist transition-colors hover:border-azure/50 hover:text-snow"
+        >
+          <ArrowUpRight size={15} strokeWidth={1.7} className="shrink-0" />
+          <span className="flex-1">
+            Search certified operators for {ctx?.peakName ?? "your objective"}
+          </span>
+        </a>
+        <Disclaimer className="mt-4">{ACCESS_DISCLAIMER}</Disclaimer>
+        <Disclaimer className="mt-3">{OPERATOR_DISCLAIMER}</Disclaimer>
+      </Rise>
+    </>
+  );
+}
 
 function Fact({ label, value, numeric }: { label: string; value: string; numeric?: boolean }) {
   return (
@@ -497,31 +891,27 @@ function Fact({ label, value, numeric }: { label: string; value: string; numeric
 /**
  * A listing id that resolves to nothing.
  *
- * Rendered as a designed state rather than a redirect: someone following a
- * stale share link deserves to be told the listing doesn't exist — and, more
- * importantly, that none of them ever did.
+ * A designed state rather than a redirect: someone following a stale share link
+ * deserves to be told the listing does not exist — and, more importantly, that
+ * none of them ever did.
  */
 function UnknownListing() {
   return (
     <Screen>
-      <ScreenHeader title="Operator profile" back="/explore/expeditions" />
-      <Stagger>
+      <Stagger className="pt-10">
         <Rise>
-          <Card>
-            <p className="text-[14px] leading-relaxed text-snow">No listing with that reference.</p>
-            <p className="mt-2 text-[13px] leading-relaxed text-mist">
-              The directory holds sample listings only — illustrations of how an operator would
-              appear. None of them is a real company, and ICEFALL has no operator partnerships.
-            </p>
-          </Card>
+          <TriangleAlert size={22} strokeWidth={1.6} className="text-azure" />
+          <h1 className="mt-4 text-[19px] font-light text-snow">No such listing</h1>
+          <p className="mt-2 text-[13px] leading-relaxed text-mist">
+            Nothing here matches that link. ICEFALL has no operator partnerships and lists no real
+            companies, so a listing that has gone is not a company that has closed — it is an entry
+            that was only ever a placeholder.
+          </p>
         </Rise>
-        <Rise className="pt-4">
-          <Disclaimer>{OPERATOR_DISCLAIMER}</Disclaimer>
-        </Rise>
-        <Rise className="pt-5">
+        <Rise className="pt-6">
           <Button asChild variant="secondary" className="w-full">
             <Link to="/explore/expeditions">
-              Back to the directory
+              Back to expeditions
               <ChevronRight size={15} strokeWidth={1.8} />
             </Link>
           </Button>

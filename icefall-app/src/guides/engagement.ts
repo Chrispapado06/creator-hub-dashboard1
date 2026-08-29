@@ -1,4 +1,5 @@
 import { useMemo, useSyncExternalStore } from "react";
+import { GUIDE_COMMISSION_PCT } from "@/money/model";
 import type { Availability } from "./types";
 
 /**
@@ -31,27 +32,62 @@ const STORAGE_KEY = "icefall.guides.engagement.v1";
 /* -------------------------------------------------------------------------- */
 
 /**
- * ICEFALL's share of a booking, as a percentage.
+ * ICEFALL's share of a booking, as a percentage — DEDUCTED FROM THE GUIDE.
  *
  * THE ONE PLACE THIS NUMBER EXISTS. Every sentence that mentions the fee
  * interpolates this constant instead of writing a figure, so changing it here
  * changes the product — rather than leaving stale copy on a confirmation screen
  * telling somebody they were charged something else. Configurable by design: a
- * marketplace commission is a commercial decision that will be revisited.
+ * marketplace commission is a commercial decision that will be revisited, and
+ * it just was.
+ *
+ * THE MODEL, AS THE OWNER STATED IT (2026-08-28, constitution 3b), because a
+ * percentage is ambiguous until somebody works an example:
+ *
+ *     A guide charges €1,000 for a day.
+ *     The client pays €1,000. The guide receives €900. ICEFALL keeps €100.
+ *
+ * So the advertised price IS what the client pays, nothing is added at
+ * checkout, and ICEFALL's cut comes out of the guide's earnings.
+ *
+ * WHAT THIS FILE USED TO DO, because it explains the shape of the change. The
+ * rate was 12 and `quoteTotals` ADDED it: `totalEur = guideFee + additional +
+ * platformFee`. That made this module disagree with `earningsFrom` sixty lines
+ * below, which has always computed `netEur = grossEur - platformFeeEur` — so
+ * one half of the guide's own dashboard told them the client paid extra and
+ * they kept their whole fee, while the other half told them the fee came out of
+ * it. Both cannot be true and the guide is the person who acts on the answer.
+ * The deducted reading is now the only one.
+ *
+ * Engagements already agreed are NOT restated: `earningsFrom` reads the fee
+ * stored on each booking rather than recomputing from this constant. See its
+ * header.
+ *
+ * DERIVED, NOT DECLARED. The rate lives in `money/model.ts` — the canonical
+ * copy generated from `icefall-shared` — and this is an alias so the guide
+ * marketplace and the client checkout cannot hold two different numbers. They
+ * already did once: this file carried 12 while the checkout carried 5, which is
+ * how the same product quoted two commissions. The alias keeps the local name,
+ * because it reads better on a guide's screen than the model's, and keeps the
+ * single source.
  */
-export const PLATFORM_COMMISSION_PCT = 12;
+export const PLATFORM_COMMISSION_PCT = GUIDE_COMMISSION_PCT;
 
 /**
- * The fee is charged on the GUIDE'S FEE ONLY, never on the whole total.
+ * The fee is charged on the GUIDE'S FEE ONLY, never on the whole total — and it
+ * comes OUT of that fee rather than being added beside it.
  *
  * The other lines on a quote are pass-through: hut fees, permits, park entry,
  * lifts, transport. Taking a percentage of a national park's permit would mean
  * ICEFALL earning more because Nepal raised its charges, which is not a service
- * anyone rendered. Stated rather than implied, because "12%" against a €60,000
- * expedition means two very different numbers depending on the base.
+ * anyone rendered. Stated rather than implied, because a percentage against a
+ * €60,000 expedition means two very different numbers depending on the base —
+ * and a third different number depending on whether it is added or deducted,
+ * which is the half this sentence used to leave to inference.
  */
 export const PLATFORM_FEE_BASIS_NOTE =
-  `ICEFALL's fee is ${PLATFORM_COMMISSION_PCT}% of the guide's fee only. ` +
+  `ICEFALL's fee is ${PLATFORM_COMMISSION_PCT}% of the guide's fee only, and it is deducted from ` +
+  "what the guide receives rather than added to what the client pays. " +
   "Permits, huts, lifts, transport and park charges pass through at cost and carry no ICEFALL fee.";
 
 /**
@@ -116,21 +152,44 @@ export interface QuoteTotals {
   additionalEur: number;
   platformFeeEur: number;
   platformCommissionPct: number;
+  /** What the client pays: the guide's fee plus pass-through costs. */
   totalEur: number;
+  /** What reaches the guide once ICEFALL's cut is deducted. */
+  guideReceivesEur: number;
 }
 
 export const sumLines = (lines: QuoteLine[]): number =>
   lines.reduce((total, line) => total + (Number.isFinite(line.amountEur) ? line.amountEur : 0), 0);
 
-/** ICEFALL's fee on a guide fee, rounded to whole euros — as it is displayed. */
+/**
+ * ICEFALL's fee on a guide fee, rounded to whole euros — as it is displayed.
+ *
+ * Taken OUT of the guide's fee. It is never a line the client pays.
+ */
 export const platformFeeFor = (guideFeeEur: number): number =>
   Math.round((Math.max(0, guideFeeEur) * PLATFORM_COMMISSION_PCT) / 100);
+
+/**
+ * What the guide keeps from a fee, once ICEFALL's cut is deducted.
+ *
+ * Its own export so a screen never subtracts the two itself. A guide reading
+ * "you receive" is reading the number they decide to take work on, and two
+ * places doing that arithmetic is how they end up disagreeing.
+ */
+export const platformNetFor = (guideFeeEur: number): number =>
+  Math.max(0, Math.round(guideFeeEur)) - platformFeeFor(guideFeeEur);
 
 /**
  * Every figure a quote or booking displays, computed in one place.
  *
  * The total is built by addition from the lines above it, so a confirmation
- * cannot show a total that disagrees with its own breakdown.
+ * cannot show a total that disagrees with its own breakdown — and the platform
+ * fee is NOT one of those lines. The client's total is the guide's fee plus the
+ * pass-through costs and nothing else; ICEFALL's cut is a division of that
+ * total, not an addition to it.
+ *
+ * `guideReceivesEur` is the figure that matters most on this whole screen,
+ * because it is the one a guide decides whether to accept work on.
  */
 export function quoteTotals(input: {
   guideFeeEur: number;
@@ -144,7 +203,12 @@ export function quoteTotals(input: {
     additionalEur,
     platformFeeEur,
     platformCommissionPct: PLATFORM_COMMISSION_PCT,
-    totalEur: guideFeeEur + additionalEur + platformFeeEur,
+    // The client pays the advertised fee and the pass-through costs. Nothing
+    // is added — see `PLATFORM_COMMISSION_PCT`.
+    totalEur: guideFeeEur + additionalEur,
+    // Pass-through costs are not the guide's earnings, so the commission comes
+    // off the guide's fee and the pass-throughs are untouched by both parties.
+    guideReceivesEur: guideFeeEur - platformFeeEur,
   };
 }
 

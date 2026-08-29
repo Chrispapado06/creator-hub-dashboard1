@@ -190,13 +190,13 @@ export default function Home() {
                 asserted "something is waiting for you" that ICEFALL cannot
                 know. Put it back the day notifications exist and not before.
               */}
-              <button
-                type="button"
+              <Link
+                to="/notifications"
                 aria-label="Notifications"
                 className="relative grid h-9 w-9 place-items-center rounded-full text-snow/90 transition-colors hover:bg-white/[0.07] hover:text-snow"
               >
                 <Bell size={18} strokeWidth={1.5} />
-              </button>
+              </Link>
             </div>
           </header>
 

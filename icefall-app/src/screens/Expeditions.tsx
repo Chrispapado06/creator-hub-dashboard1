@@ -24,13 +24,16 @@ import { fmtDate, fmtElevation, fmtPrice } from "@/lib/format";
 import { sync } from "@/services/repository";
 import { ACCESS_DISCLAIMER, accessFor, operatorSearchUrl } from "@/services/expeditionAccess";
 import {
+  DEMO_NOTICE,
   OPERATOR_DISCLAIMER,
   SHOW_DEMO_OPERATORS,
   allOperators,
   operatorsFor,
   type Operator,
 } from "@/services/operators";
-import { nearbyTrails, type Trail } from "@/services/trails";
+import { NETWORK_LABEL, nearbyTrails, type Trail } from "@/services/trails";
+import { TrailImage } from "@/components/domain/TrailImage";
+import { searchPeaks, type Peak } from "@/services/peaks";
 import { useApp, usePrimaryGoal, type EnquiryThread } from "@/state/AppState";
 import type { Goal, Mountain } from "@/types";
 
@@ -43,9 +46,9 @@ import type { Goal, Mountain } from "@/types";
  * A directory of guiding companies is the one surface in this app where
  * decorating an empty dataset would be dangerous rather than merely dishonest:
  * a climber who rings a company that does not exist, or trusts a rating nobody
- * gave, can end up on a glacier with the wrong people. So this screen renders
- * only what `operators.ts` actually holds — sample listings, each named as a
- * sample — and refuses, individually and on purpose:
+ * gave, can end up on a glacier with the wrong people. So in an ordinary build
+ * this screen renders only what `operators.ts` actually holds — sample
+ * listings, each named as a sample — and refuses, individually and on purpose:
  *
  *   · invented company names     — every card is a listing from the model
  *   · star ratings, review counts — there are no reviews to average
@@ -56,6 +59,22 @@ import type { Goal, Mountain } from "@/types";
  *                                  paid slot at the top of a safety-critical
  *                                  directory would be wrong even if they did
  *   · an inflated result count   — the count line reports what is rendered
+ *
+ * THE ONE EXCEPTION, STATED HERE BECAUSE THIS HEADER USED TO DENY IT.
+ *
+ * A tick, a star rating with a review count, and a "From €X" price do render —
+ * for entries carrying `demo: true`, and only when `SHOW_DEMO_OPERATORS` is on.
+ * That flag is false in any ordinary production build and the demo entries
+ * themselves are `[]` at definition, so none of it reaches a shipped bundle,
+ * let alone a screen. It exists so the mockup can be judged as drawn, and a
+ * build carrying it may only be deployed behind Deployment Protection — the
+ * conditions are in `@/lib/demoFlag` and they are not optional.
+ *
+ * The list above therefore describes what SHIPS, not what the file contains,
+ * and this paragraph is the difference. It was written the other way for a
+ * while: a header claiming to refuse all three sat directly above the code that
+ * renders them, which is worse than either the honest refusal or the honest
+ * exception, because the next person to read it stops checking.
  *
  * What replaces them is the material that actually decides who to trust at
  * altitude: certification, the real permit authority for the range, response
@@ -235,14 +254,27 @@ function objectiveFrom(goal: Goal | undefined): EnquiryObjective | undefined {
 }
 
 /** The existing compose route in Inbox.tsx — the only enquiry flow there is. */
-function enquiryHref(operator: Operator, objective: EnquiryObjective): string {
+/**
+ * Where a company card goes.
+ *
+ * The COMPANY'S PAGE, not a blank enquiry form. Tapping a listing used to drop
+ * straight into "new enquiry" with a message to write — asking someone to make
+ * first contact with a guiding company before they had read a single thing
+ * about it, and before they had seen what it costs. The profile carries the
+ * cost band, what an expedition on this peak actually involves, the permit
+ * authority and the questions to put in writing; the enquiry is the button at
+ * the bottom of it.
+ *
+ * The peak travels in the query string so the profile knows which mountain the
+ * question is about, and the enquiry it composes is pre-addressed to it.
+ */
+function operatorHref(operator: Operator, objective: EnquiryObjective): string {
   const params = new URLSearchParams({
-    operator: operator.id,
     peak: objective.peakName,
     elevation: String(objective.elevationM),
   });
   if (objective.goalId) params.set("goal", objective.goalId);
-  return `/inbox/new?${params.toString()}`;
+  return `/operator/${operator.id}?${params.toString()}`;
 }
 
 /**
@@ -294,24 +326,80 @@ const TABS: readonly { id: TabId; label: string }[] = [
 /** Opening peak when the athlete has no objective set. */
 const DEFAULT_PEAK = "everest";
 
+/**
+ * The curated objectives, as catalogue peaks.
+ *
+ * These ten are the only mountains with a photograph, a grade and a written
+ * route, so they open the rail. Everything past them comes from the peak
+ * catalogue, which is why the rail and the search results share one type.
+ */
+const CURATED_PEAKS: Peak[] = sync.mountains.map((m) => ({
+  id: `curated:${m.id}`,
+  name: m.name,
+  elevationM: m.elevationM,
+  lat: m.coords.lat,
+  lon: m.coords.lon,
+  country: m.country,
+  curatedId: m.id,
+  photo: m.photo,
+}));
+
 export default function Expeditions() {
   const goal = usePrimaryGoal();
   const [tab, setTab] = useState<TabId>("explore");
   const [query, setQuery] = useState("");
-  const [peakId, setPeakId] = useState<string>(goal?.mountainId ?? DEFAULT_PEAK);
+  const [peakId, setPeakId] = useState<string>(
+    goal?.mountainId ? `curated:${goal.mountainId}` : `curated:${DEFAULT_PEAK}`,
+  );
+  const [found, setFound] = useState<Peak[] | null>(null);
+  const [loadingPeaks, setLoadingPeaks] = useState(false);
 
-  const mountains = sync.mountains;
   const needle = query.trim().toLowerCase();
 
-  /** Peaks matching the search — and the rail when nothing is typed. */
-  const shownMountains = useMemo(() => {
-    if (!needle) return mountains;
-    return mountains.filter((m) =>
-      [m.name, m.range, m.country, m.difficultyLabel].some((f) =>
-        f?.toLowerCase().includes(needle),
-      ),
-    );
-  }, [mountains, needle]);
+  /**
+   * Search the WHOLE catalogue, not the ten curated objectives.
+   *
+   * Typing "k2" used to answer "No mountain matches that", because the only
+   * mountains this screen knew were the ten with photographs. `searchPeaks`
+   * reads the precached catalogue and then Overpass, so every summit OSM holds
+   * is reachable from here.
+   *
+   * Debounced, and the in-flight request is abandoned when the query moves on —
+   * otherwise a slow answer for "k" lands after the answer for "k2" and
+   * overwrites it.
+   */
+  useEffect(() => {
+    if (needle.length < 2) {
+      setFound(null);
+      setLoadingPeaks(false);
+      return;
+    }
+    let live = true;
+    const controller = new AbortController();
+    setLoadingPeaks(true);
+
+    const t = window.setTimeout(() => {
+      searchPeaks(needle, controller.signal)
+        .then((peaks) => {
+          if (live) setFound(peaks.slice(0, 24));
+        })
+        .catch(() => {
+          // An unreachable Overpass still leaves the local catalogue's answer.
+          if (live) setFound([]);
+        })
+        .finally(() => {
+          if (live) setLoadingPeaks(false);
+        });
+    }, 280);
+
+    return () => {
+      live = false;
+      controller.abort();
+      window.clearTimeout(t);
+    };
+  }, [needle]);
+
+  const shownMountains = needle.length >= 2 ? (found ?? []) : CURATED_PEAKS;
 
   /**
    * The peak in focus.
@@ -322,8 +410,8 @@ export default function Expeditions() {
    */
   const peak = useMemo(() => {
     if (needle && shownMountains.length > 0) return shownMountains[0];
-    return mountains.find((m) => m.id === peakId) ?? mountains[0];
-  }, [needle, shownMountains, mountains, peakId]);
+    return CURATED_PEAKS.find((m) => m.id === peakId) ?? CURATED_PEAKS[0];
+  }, [needle, shownMountains, peakId]);
 
   /** Every company that works this peak's country at this altitude. */
   const listings = useMemo(() => {
@@ -359,8 +447,8 @@ export default function Expeditions() {
             Expeditions
           </h1>
           <Link
-            to="/messages"
-            aria-label="Messages"
+            to="/notifications"
+            aria-label="Notifications"
             className="grid h-9 w-9 place-items-center rounded-full border border-hairline text-mist transition-colors hover:border-azure/50 hover:text-snow"
           >
             <Bell size={16} strokeWidth={1.7} />
@@ -416,10 +504,11 @@ export default function Expeditions() {
             listings={listings}
             objective={objective}
             searching={needle !== ""}
+            loading={loadingPeaks}
           />
         )}
 
-        {tab === "mountains" && <MountainsTab mountains={shownMountains} />}
+        {tab === "mountains" && <MountainsTab mountains={shownMountains} loading={loadingPeaks} />}
 
         {tab === "hikes" && <HikesTab peak={peak} />}
       </Stagger>
@@ -439,14 +528,16 @@ function ExploreTab({
   listings,
   objective,
   searching,
+  loading,
 }: {
-  peak: Mountain | undefined;
-  mountains: Mountain[];
+  peak: Peak | undefined;
+  mountains: Peak[];
   selectedId: string | undefined;
   onSelect: (id: string) => void;
   listings: Operator[];
   objective: EnquiryObjective | undefined;
   searching: boolean;
+  loading: boolean;
 }) {
   return (
     <>
@@ -480,7 +571,9 @@ function ExploreTab({
       {mountains.length === 0 ? (
         <Rise className="pt-3">
           <Card>
-            <p className="text-[12.5px] text-mist">No mountain matches that.</p>
+            <p className="text-[12.5px] text-mist">
+              {loading ? "Searching every peak…" : "No mountain matches that."}
+            </p>
           </Card>
         </Rise>
       ) : (
@@ -509,15 +602,39 @@ function ExploreTab({
           </Rise>
 
           <div className="mt-3 space-y-2.5">
-            {listings.map((o) => (
-              <Rise key={o.id}>
-                <OperatorCard operator={o} peak={peak} objective={objective} />
-              </Rise>
-            ))}
+            {(() => {
+              // The best match is lifted out and shown first, highlighted; the
+              // rest keep their alphabetical order underneath it.
+              const best = bestMatchFor(listings, peak);
+              const rest = listings.filter((o) => o.id !== best?.id);
+              return (
+                <>
+                  {best && (
+                    <Rise key={best.id}>
+                      <OperatorCard operator={best} peak={peak} objective={objective} featured />
+                    </Rise>
+                  )}
+                  {rest.map((o) => (
+                    <Rise key={o.id}>
+                      <OperatorCard operator={o} peak={peak} objective={objective} />
+                    </Rise>
+                  ))}
+                </>
+              );
+            })()}
           </div>
+
+          <Rise className="pt-3.5">
+            <p className="text-[10.5px] leading-relaxed text-mist-dim">
+              Ordered on how specifically a listing covers {peak.name} — the ground it works and
+              the altitude it works at. No position here is for sale, and ICEFALL takes no part in
+              a booking.
+            </p>
+          </Rise>
 
           <Rise className="pt-5">
             <Disclaimer>{OPERATOR_DISCLAIMER}</Disclaimer>
+            {SHOW_DEMO_OPERATORS && <Disclaimer className="mt-3">{DEMO_NOTICE}</Disclaimer>}
           </Rise>
         </>
       )}
@@ -535,7 +652,7 @@ function MountainTile({
   selected,
   onSelect,
 }: {
-  mountain: Mountain;
+  mountain: Peak;
   selected: boolean;
   onSelect: () => void;
 }) {
@@ -575,96 +692,222 @@ function MountainTile({
 /* -------------------------------------------------------------------------- */
 
 /**
- * One company, laid out as the mockup draws it: mark, name, one line about
- * them, then price / coverage / peak down the right.
+ * The company's mark.
  *
- * THE RATING AND THE TICK ARE GATED, and that is not a detail.
+ * Every card now draws the monogram, because no listing carries a logo. The
+ * four demo entries used to point at four real businesses' marks in
+ * `public/img/operators` — gitignored and vercelignored, so they never left the
+ * designer's machine — and attaching someone else's trademark to a rating
+ * ICEFALL invented would have passed their mark off as our content. The
+ * companies are invented now and an invented company has no mark.
  *
- * The mockup shows every card with a verified tick and "4.9 ★ (128 reviews)"
- * against companies that really exist. ICEFALL has no reviews to average and
- * vets nobody — `guide_profiles.credentials_verified` is a `CHECK (= false)` in
- * the schema for the same reason. Publishing an invented rating and a
- * verification badge against a named business is a commercial claim about a
- * real company that nobody made and nobody can check, and someone choosing who
- * to follow onto a glacier is the last person who should be reading one.
+ * The image path stays supported for the day a real operator uploads their own,
+ * and the `onError` fallback stays because a listing whose logo fails to load
+ * must not change the shape of the card.
+ */
+function OperatorMark({ operator, size }: { operator: Operator; size: number }) {
+  const [failed, setFailed] = useState(false);
+  const showLogo = Boolean(operator.logo) && !failed;
+
+  return (
+    <div
+      style={{ width: size, height: size }}
+      className="grid shrink-0 place-items-center overflow-hidden rounded-tile border border-hairline bg-elevated"
+    >
+      {showLogo ? (
+        <img
+          src={operator.logo}
+          alt=""
+          aria-hidden
+          loading="lazy"
+          onError={() => setFailed(true)}
+          className="h-full w-full object-contain p-1.5"
+        />
+      ) : (
+        <span className="text-[14px] tracking-[0.06em] text-mist">{monogram(operator.name)}</span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * One company.
  *
- * So both render only for entries carrying `demo: true`, which `SHOW_DEMO_DATA`
- * resolves to false in any ordinary production build. In development the card
- * is pixel-for-pixel the mockup; shipped, it shows what is actually known.
+ * THE RATING AND THE TICK ARE GATED, and that is not a detail. The mockup gives
+ * every card a verified tick and "4.9 (128 reviews)" against companies that
+ * really exist. ICEFALL has no reviews to average and vets nobody —
+ * `guide_profiles.credentials_verified` is a `CHECK (= false)` in the schema for
+ * the same reason. So both render only for entries carrying `demo: true`, which
+ * `SHOW_DEMO_DATA` resolves to false in any ordinary production build.
+ *
+ * The layout is block-level rather than inline. `truncate` does nothing on an
+ * inline element — `overflow` does not apply to one — so the first version of
+ * this card let a long certification spill sideways across the column beside it.
  */
 function OperatorCard({
   operator,
   peak,
   objective,
+  featured = false,
 }: {
   operator: Operator;
-  peak: Mountain;
+  peak: Peak;
   objective: EnquiryObjective | undefined;
+  featured?: boolean;
 }) {
   const showClaims = SHOW_DEMO_OPERATORS && operator.demo === true;
-  const target: EnquiryObjective = objective ?? {
+  // Hooks cannot be conditional — resolved always, drawn only when featured.
+  const peakImage = useMountainImage(peak);
+
+  /**
+   * The enquiry is about the peak ON SCREEN, not the athlete's saved goal.
+   *
+   * This read `objective ?? {…peak…}`, so someone training for Mont Blanc who
+   * searched Everest and tapped a company got an Everest listing that opened a
+   * Mont Blanc enquiry. The goal only contributes its id, and only when it is
+   * the same mountain — that is what links the enquiry to the objective without
+   * overriding what the person was actually looking at.
+   */
+  const target: EnquiryObjective = {
     peakName: peak.name,
     elevationM: peak.elevationM,
     countries: countriesOf(peak.country),
+    goalId: objective?.peakName === peak.name ? objective.goalId : undefined,
   };
 
   return (
     <Link
-      to={enquiryHref(operator, target)}
-      className="flex gap-3.5 rounded-card border border-hairline bg-graphite p-3.5 transition-colors hover:border-hairline-strong"
+      to={operatorHref(operator, target)}
+      className={cn(
+        "block overflow-hidden rounded-card border transition-colors",
+        featured
+          ? "gilt-sheen border-gilt/45 bg-graphite hover:border-gilt/75"
+          : "border-hairline bg-graphite hover:border-hairline-strong",
+      )}
     >
-      {/* The mark. Real companies' logos are gitignored and never shipped, so
-          this is a monogram — their trademarks do not sit on ICEFALL's server. */}
-      <span className="grid h-[52px] w-[52px] shrink-0 place-items-center rounded-tile border border-hairline bg-elevated text-[13px] tracking-[0.06em] text-mist">
-        {monogram(operator.name)}
-      </span>
+      {/* The banner belongs to the MOUNTAIN, not the company.
+          Operators have no cover image in the model, and inventing one — or
+          borrowing a photograph from a real company's own marketing — would put
+          a picture on this card that nobody involved chose. The peak is what the
+          match is about, and its photograph is already ours. */}
+      {featured && (
+        <div className="relative aspect-[16/6] w-full">
+          <img
+            src={peakImage.src}
+            alt=""
+            aria-hidden
+            loading="lazy"
+            className="h-full w-full object-cover"
+          />
+          <div className="absolute inset-0 scrim-bottom" />
+          <p className="absolute bottom-2.5 left-3 inline-flex items-center gap-1.5 rounded-pill border border-gilt/45 bg-obsidian/70 px-2.5 py-1 text-[9.5px] font-medium uppercase tracking-[0.14em] text-gilt-bright backdrop-blur-sm">
+            <Star size={9} strokeWidth={0} fill="currentColor" />
+            Best match for {peak.name}
+          </p>
+        </div>
+      )}
 
-      <span className="min-w-0 flex-1">
-        <span className="flex items-start gap-1.5">
-          <span className="text-[14px] leading-tight text-snow">{operator.name}</span>
+      <div className="flex items-start gap-3 p-3.5">
+        <OperatorMark operator={operator} size={featured ? 66 : 58} />
+
+        <div className="min-w-0 flex-1">
+          {/* THE TICK NO LONGER SITS BESIDE THE NAME.
+              Beside it, the tick meant "ICEFALL has checked this company", which
+              is false for every listing in the directory; and structurally it
+              forced the name box narrower than its own text — `min-w-0` with
+              nothing to truncate it — so a two-word company name overflowed
+              underneath it. It now travels inside the demo chip below, where it
+              carries the qualification with it and cannot be read on its own. */}
+          <p className="min-w-0 text-[13.5px] leading-tight text-snow">{operator.name}</p>
+
+          {/* Certification, not the marketing blurb.
+              It is the short, checkable fact this directory exists to show —
+              and it fits one line, where the blurb did not. `line-clamp-2` was
+              the first attempt and clipped to the WRONG lines: Tailwind v4.2
+              emits the unprefixed `line-clamp`, which this engine resolves with
+              `display: flow-root` rather than `-webkit-box`. Other screens in
+              the app use line-clamp too and are worth a look. */}
+          <p className="mt-1 truncate text-[11.5px] leading-snug text-mist-dim">
+            {operator.certification}
+          </p>
+
+          {/* THE RATING IS NOT ON THE ROW. IT DOES NOT FIT, AND IT SHOULD NOT.
+              Measured: this cell is 114px wide on a card with a long name, and
+              chip + star + "4.8" + "(96)" needs 135px, so the review count was
+              being clipped — the label did not fit its cell, and the rule is to
+              shorten the label rather than let it truncate. Shortening it here
+              means dropping the invented figure, which is the right thing to
+              drop: a star rating on a scannable row in a safety-critical
+              directory is the claim a climber acts on fastest and the one this
+              screen can least defend. The demo profile still carries the rating
+              and the review count, where there is room for them and the notice
+              sits beside them.
+              The tick rides inside the chip so it cannot be read as "ICEFALL
+              checked this company" on its own. */}
           {showClaims && (
-            <BadgeCheck size={13} strokeWidth={2} className="mt-px shrink-0 text-azure" />
+            <p className="mt-1.5">
+              <Badge tone="alert">
+                <BadgeCheck size={10} strokeWidth={2.4} />
+                Demo
+              </Badge>
+            </p>
           )}
-        </span>
+        </div>
 
-        <span className="mt-0.5 block truncate text-[11.5px] text-mist-dim">
-          {operator.blurb ?? operator.certification}
-        </span>
+        <div className="flex w-[84px] shrink-0 flex-col items-end gap-0.5 text-right">
+          {operator.priceFromEur != null && (
+            <p className="tnum whitespace-nowrap text-[11.5px] text-snow">From {fmtPrice(operator.priceFromEur)}</p>
+          )}
+          <p className="w-full truncate text-[11px] text-mist-dim">
+            {operator.coverage ?? operator.certification}
+          </p>
+          <p className="tnum text-[11px] text-mist-dim">{fmtElevation(peak.elevationM)} m</p>
+        </div>
 
-        {showClaims && operator.rating != null && (
-          <span className="mt-1.5 flex items-center gap-1.5">
-            <Star size={11} strokeWidth={0} fill="currentColor" className="text-azure" />
-            <span className="tnum text-[11.5px] text-snow">{operator.rating.toFixed(1)}</span>
-            <span className="tnum text-[11px] text-mist-dim">({operator.reviewCount})</span>
-          </span>
-        )}
-      </span>
-
-      <span className="flex w-[104px] shrink-0 flex-col items-end gap-0.5 text-right">
-        {operator.priceFromEur != null && (
-          <span className="tnum text-[12px] text-snow">From {fmtPrice(operator.priceFromEur)}</span>
-        )}
-        <span className="truncate text-[11px] text-mist-dim">
-          {operator.coverage ?? operator.certification}
-        </span>
-        <span className="tnum text-[11px] text-mist-dim">{fmtElevation(peak.elevationM)} m</span>
-      </span>
-
-      <ChevronRight size={16} strokeWidth={1.7} className="mt-4 shrink-0 self-start text-mist-dim" />
+        <ChevronRight
+          size={15}
+          strokeWidth={1.7}
+          className="-mr-0.5 mt-1 shrink-0 self-start text-mist-dim"
+        />
+      </div>
     </Link>
   );
+}
+
+/**
+ * Which listing goes in the highlighted slot.
+ *
+ * ORGANIC, AND NOT FOR SALE. It is the listing that covers this peak most
+ * specifically: one that names the mountain among the ground it works, else the
+ * one whose minimum working altitude sits closest beneath the summit — a
+ * company that operates from 5,000 m is a better answer for Everest than one
+ * that starts at sea level. No commercial relationship exists, and if a
+ * promoted slot is ever sold it must be labelled and kept OUT of this ranking;
+ * a paid position says nothing about a qualification, and this is a directory
+ * people choose a mountain partner from.
+ */
+function bestMatchFor(list: Operator[], peak: Peak): Operator | undefined {
+  if (list.length === 0) return undefined;
+  const named = list.find((o) => o.popularObjectives?.some((p) => p.includes(peak.name)));
+  if (named) return named;
+
+  const capable = list.filter((o) => o.minElevationM <= peak.elevationM);
+  const pool = capable.length > 0 ? capable : list;
+  return [...pool].sort((a, b) => b.minElevationM - a.minElevationM)[0];
 }
 
 /* -------------------------------------------------------------------------- */
 /* Mountains                                                                  */
 /* -------------------------------------------------------------------------- */
 
-function MountainsTab({ mountains }: { mountains: Mountain[] }) {
+function MountainsTab({ mountains, loading }: { mountains: Peak[]; loading: boolean }) {
   if (mountains.length === 0) {
     return (
       <Rise className="pt-6">
         <Card>
-          <p className="text-[12.5px] text-mist">No mountain matches that.</p>
+          <p className="text-[12.5px] text-mist">
+            {loading ? "Searching every peak…" : "No mountain matches that."}
+          </p>
         </Card>
       </Rise>
     );
@@ -674,7 +917,10 @@ function MountainsTab({ mountains }: { mountains: Mountain[] }) {
     <div className="grid grid-cols-2 gap-3 pt-6">
       {mountains.map((m) => (
         <Rise key={m.id}>
-          <Link to={`/explore/mountain/${m.id}`} className="block">
+          <Link
+            to={m.curatedId ? `/explore/mountain/${m.curatedId}` : `/explore/peak/${m.id}`}
+            className="block"
+          >
             <MountainTile mountain={m} selected={false} onSelect={() => {}} />
           </Link>
         </Rise>
@@ -695,7 +941,24 @@ function MountainsTab({ mountains }: { mountains: Mountain[] }) {
  * real data about the real ground around the peak, not another directory. It is
  * the one thing on this screen that needs no company to exist.
  */
-function HikesTab({ peak }: { peak: Mountain | undefined }) {
+/**
+ * Which paths are worth showing beside an expedition.
+ *
+ * Somebody researching who to climb a mountain with wants the named approaches
+ * and the long-distance routes that reach it — not the 400 m link path between
+ * two car parks, which is what "nearest first" surfaces around any trailhead in
+ * the Alps. So a local walking network (`lwn`) is dropped outright, a trail
+ * needs a name to be worth a card, and a broken or missing measurement means it
+ * cannot be judged and is left out too.
+ */
+function isResearchWorthy(t: Trail): boolean {
+  if (t.network === "lwn") return false;
+  if (t.name.trim() === "") return false;
+  if (t.lengthBroken === true || t.lengthKm == null) return false;
+  return true;
+}
+
+function HikesTab({ peak }: { peak: Peak | undefined }) {
   const [trails, setTrails] = useState<Trail[] | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -705,12 +968,15 @@ function HikesTab({ peak }: { peak: Mountain | undefined }) {
     setTrails(null);
     setFailed(false);
 
-    nearbyTrails(peak.coords.lat, peak.coords.lon, {
+    nearbyTrails(peak.lat, peak.lon, {
       radiusM: 30_000,
-      limit: 12,
+      // Ask for plenty, because the filter below throws most of them away.
+      limit: 40,
       rank: "significant",
     })
-      .then((found: Trail[]) => live && setTrails(found))
+      .then((found: Trail[]) => {
+        if (live) setTrails(found.filter(isResearchWorthy).slice(0, 8));
+      })
       .catch(() => live && setFailed(true));
 
     return () => {
@@ -723,10 +989,10 @@ function HikesTab({ peak }: { peak: Mountain | undefined }) {
   return (
     <>
       <Rise className="pt-6">
-        <p className="section-label">Approaches near {peak.name}</p>
+        <p className="section-label">Approaches to {peak.name}</p>
         <p className="mt-1.5 text-[12px] leading-relaxed text-mist-dim">
-          Waymarked paths within 30 km, from OpenStreetMap. These are the walk-ins and valley
-          approaches — not the climb itself.
+          Named and waymarked routes within 30 km, from OpenStreetMap. These are the walk-ins and
+          long-distance routes that reach the mountain — not the climb itself.
         </p>
       </Rise>
 
@@ -743,7 +1009,7 @@ function HikesTab({ peak }: { peak: Mountain | undefined }) {
       {trails === null && !failed && (
         <Rise className="pt-4">
           <Card>
-            <p className="text-[12.5px] text-mist-dim">Looking for paths around {peak.name}…</p>
+            <p className="text-[12.5px] text-mist-dim">Looking for routes around {peak.name}…</p>
           </Card>
         </Rise>
       )}
@@ -751,34 +1017,18 @@ function HikesTab({ peak }: { peak: Mountain | undefined }) {
       {trails?.length === 0 && (
         <Rise className="pt-4">
           <Card>
-            <p className="text-[12.5px] text-mist">
-              No waymarked path is recorded within 30 km of {peak.name}.
+            <p className="text-[12.5px] leading-relaxed text-mist">
+              No named route within 30 km of {peak.name} is recorded with a usable length. The local
+              paths around it were left out rather than padding this list.
             </p>
           </Card>
         </Rise>
       )}
 
-      <div className="mt-3 space-y-2.5">
+      <div className="mt-3 space-y-3">
         {trails?.map((t) => (
           <Rise key={t.id}>
-            <Link
-              to={`/explore/trail/${t.osmId}`}
-              className="flex items-center gap-3.5 rounded-card border border-hairline bg-graphite p-3.5 transition-colors hover:border-hairline-strong"
-            >
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-hairline text-azure">
-                <MountainIcon size={15} strokeWidth={1.7} />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[13.5px] text-snow">{t.name}</span>
-                <span className="tnum mt-0.5 block text-[11.5px] text-mist-dim">
-                  {t.lengthKm != null && !t.lengthBroken
-                    ? `${t.lengthKm.toFixed(1)} km`
-                    : "Length not recorded"}
-                  {t.ref && /[a-z]/i.test(t.ref) ? ` · ${t.ref}` : ""}
-                </span>
-              </span>
-              <ChevronRight size={15} strokeWidth={1.8} className="shrink-0 text-mist-dim" />
-            </Link>
+            <HikeCard trail={t} peak={peak} />
           </Rise>
         ))}
       </div>
@@ -786,44 +1036,74 @@ function HikesTab({ peak }: { peak: Mountain | undefined }) {
   );
 }
 
+/**
+ * A hike, drawn the way Explore draws one.
+ *
+ * `TrailImage` is the same three-layer component the Find tab uses — contour
+ * plate first so the card is never blank, satellite over it, and a verified
+ * photograph on top if Wikidata vouches for this exact relation. Deliberately a
+ * SMALLER card than Find's: that one carries a distance-away badge and a
+ * directions control which make sense when you are standing somewhere choosing
+ * a walk, and make none when you are reading about an expedition company.
+ */
+function HikeCard({ trail, peak }: { trail: Trail; peak: Peak }) {
+  const [caption, setCaption] = useState("Contours — no verified photograph of this trail");
 
-function CompanyRow({
-  operator,
-  objective,
-}: {
-  operator: Operator;
-  objective: EnquiryObjective | undefined;
-}) {
+  /**
+   * The peak travels with the link.
+   *
+   * A `Trail` records no country and no summit altitude, so the trail page has
+   * nothing to match a guiding company against on its own — and matching on
+   * altitude alone would list companies with no connection to where the path
+   * is. Arriving from an expedition carries that context along, and the trail
+   * page shows companies only when it has it.
+   */
+  const href = `/explore/trail/${trail.osmId}?${new URLSearchParams({
+    peak: peak.name,
+    elevation: String(peak.elevationM),
+    ...(peak.country !== undefined ? { country: peak.country } : {}),
+  }).toString()}`;
+
   return (
-    <Card>
-      <div className="flex items-start gap-3.5">
-        <span
-          className="grid h-11 w-11 shrink-0 place-items-center rounded-tile border border-hairline bg-elevated/40 text-[13px] font-light tracking-[0.08em] text-mist"
-          aria-hidden="true"
-        >
-          {monogram(operator.name)}
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-[14px] leading-snug text-snow">{operator.name}</p>
-          <p className="mt-1 text-[12px] leading-relaxed text-mist">{operator.certification}</p>
-          <p className="tnum mt-1.5 text-[11px] text-mist-dim">
-            Typically replies within {operator.responseHours} h ·{" "}
-            {operator.minElevationM > 0
-              ? `from ${fmtElevation(operator.minElevationM)} m`
-              : "any altitude"}
-          </p>
+    <Link to={href} className="block">
+      <div className="overflow-hidden rounded-card border border-hairline bg-graphite transition-colors hover:border-hairline-strong">
+        <div className="relative h-[124px] bg-slate">
+          <TrailImage
+            osmId={trail.osmId}
+            lat={trail.lat}
+            lon={trail.lon}
+            name={trail.name}
+            onCaption={setCaption}
+            className="absolute inset-0 h-full w-full"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-graphite/95 via-transparent to-obsidian/40" />
+
+          {trail.network !== undefined && (
+            <span className="absolute left-3 top-3 rounded-pill border border-hairline-strong bg-obsidian/75 px-2.5 py-1 text-[10.5px] text-snow backdrop-blur">
+              {NETWORK_LABEL[trail.network]}
+            </span>
+          )}
+          {trail.ref !== undefined && /[a-z]/i.test(trail.ref) && (
+            <span className="absolute right-3 top-3 rounded-pill border border-azure/45 bg-obsidian/75 px-2.5 py-1 text-[10.5px] text-azure backdrop-blur">
+              {trail.ref}
+            </span>
+          )}
+          <span className="absolute bottom-2.5 left-3 right-3 truncate text-[10px] text-mist">
+            {caption}
+          </span>
         </div>
-        {objective && (
-          <Link
-            to={enquiryHref(operator, objective)}
-            aria-label={`View ${operator.name} and start an enquiry`}
-            className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full border border-hairline text-mist transition-colors hover:border-azure/50 hover:text-azure"
-          >
-            <MessageSquare size={15} strokeWidth={1.7} />
-          </Link>
-        )}
+
+        <div className="flex items-center gap-3 p-3.5">
+          <div className="min-w-0 flex-1">
+            <h3 className="truncate text-[14px] leading-snug text-snow">{trail.name}</h3>
+            <p className="tnum mt-1 text-[11.5px] text-mist-dim">
+              {trail.lengthKm != null ? `${trail.lengthKm.toFixed(1)} km` : "Length not recorded"}
+            </p>
+          </div>
+          <ChevronRight size={15} strokeWidth={1.8} className="shrink-0 text-mist-dim" />
+        </div>
       </div>
-    </Card>
+    </Link>
   );
 }
 
@@ -855,6 +1135,46 @@ function InvitationsTab() {
         </Disclaimer>
       </Rise>
     </>
+  );
+}
+
+function CompanyRow({
+  operator,
+  objective,
+}: {
+  operator: Operator;
+  objective: EnquiryObjective | undefined;
+}) {
+  return (
+    <Card>
+      <div className="flex items-start gap-3.5">
+        <span
+          className="grid h-11 w-11 shrink-0 place-items-center rounded-tile border border-hairline bg-elevated/40 text-[13px] font-light tracking-[0.08em] text-mist"
+          aria-hidden="true"
+        >
+          {monogram(operator.name)}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[14px] leading-snug text-snow">{operator.name}</p>
+          <p className="mt-1 text-[12px] leading-relaxed text-mist">{operator.certification}</p>
+          <p className="tnum mt-1.5 text-[11px] text-mist-dim">
+            Typically replies within {operator.responseHours} h ·{" "}
+            {operator.minElevationM > 0
+              ? `from ${fmtElevation(operator.minElevationM)} m`
+              : "any altitude"}
+          </p>
+        </div>
+        {objective && (
+          <Link
+            to={operatorHref(operator, objective)}
+            aria-label={`View ${operator.name}`}
+            className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full border border-hairline text-mist transition-colors hover:border-azure/50 hover:text-azure"
+          >
+            <MessageSquare size={15} strokeWidth={1.7} />
+          </Link>
+        )}
+      </div>
+    </Card>
   );
 }
 
@@ -963,7 +1283,7 @@ export function ExpeditionDetail() {
   return (
     <Screen padded={false}>
       <div className="px-5">
-        <ScreenHeader title={exp.name} subtitle={exp.difficultyLabel} back="/explore/expeditions" />
+        <ScreenHeader title={exp.name} subtitle={exp.difficultyLabel} />
       </div>
 
       <Stagger className="px-5">
@@ -1047,6 +1367,7 @@ export function ExpeditionDetail() {
             ))}
           </div>
           <Disclaimer className="mt-4">{OPERATOR_DISCLAIMER}</Disclaimer>
+          {SHOW_DEMO_OPERATORS && <Disclaimer className="mt-3">{DEMO_NOTICE}</Disclaimer>}
         </Rise>
 
         <Rise className="pt-6">

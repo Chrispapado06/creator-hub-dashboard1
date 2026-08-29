@@ -24,9 +24,25 @@
  * their experience or their judgement — nothing in this app does that.
  */
 
+import { SHOW_DEMO_DATA } from "@/lib/demoFlag";
 import type { PostKind } from "./types";
 
-export const SHOW_DEMO_COMMUNITY = true;
+/**
+ * THIS WAS HARD-CODED `true`, WHICH IS NOT A FLAG.
+ *
+ * The header above says the feed is "DEMO CONTENT behind one flag" and that it
+ * "follows the same pattern as `DEMO_OPERATORS`". It did not: `DEMO_OPERATORS`
+ * resolves through `SHOW_DEMO_DATA` and is `[]` at definition in an ordinary
+ * build, while this constant was the literal `true`, so a plain production
+ * bundle both contained and RENDERED nine invented climbers, their invented
+ * summits and their invented "summit verified" badges as the community feed.
+ * The comment describing the safeguard was doing the work the code was not.
+ *
+ * Now it is the same flag as everything else, and the posts are built inside a
+ * guarded function so the names leave the bundle rather than merely leaving the
+ * screen — see the long argument in `guides/types.ts`.
+ */
+export const SHOW_DEMO_COMMUNITY = SHOW_DEMO_DATA;
 
 export const COMMUNITY_DEMO_NOTICE =
   "Placeholder posts, shown to review this layout. ICEFALL has no accounts yet, so nobody has posted anything — these people, times and figures were written by ICEFALL and none of it happened.";
@@ -72,7 +88,20 @@ import type { CommunityPost } from "./types";
  * looking like a bug. The screen resolves these against the clock when it
  * renders.
  */
-export const DEMO_POSTS: CommunityPost[] = [
+/**
+ * Guarded builder, not a top-level literal.
+ *
+ * The `import.meta.env` reads are spelled out INLINE and deliberately do not go
+ * through `SHOW_DEMO_COMMUNITY` or `SHOW_DEMO_DATA`: the build-time
+ * substitution has to be syntactically inside the branch for the branch to
+ * fold, and with a named constant the bundler keeps every literal below. Do not
+ * tidy this — the same edit was already documented as a trap in
+ * `guides/types.ts`, and here it would put nine invented climbers back into the
+ * production bundle with nothing in the app's behaviour to show it.
+ */
+function buildDemoPosts(): CommunityPost[] {
+  if (!import.meta.env.DEV && import.meta.env.VITE_SHOW_DEMO !== "1") return [];
+  return [
   {
     id: "p-activity-1",
     kind: "activity",
@@ -174,7 +203,10 @@ export const DEMO_POSTS: CommunityPost[] = [
     likes: 9,
     comments: 1,
   },
-];
+  ];
+}
+
+export const DEMO_POSTS: CommunityPost[] = buildDemoPosts();
 
 export const communityPosts = (): CommunityPost[] => (SHOW_DEMO_COMMUNITY ? DEMO_POSTS : []);
 

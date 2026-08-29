@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import {
-  BadgeCheck,
   CalendarCheck,
   ChevronLeft,
   CloudOff,
@@ -98,14 +97,16 @@ export default function Thread() {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             <p className="truncate text-[14px] text-snow">{convo.name}</p>
-            {convo.verifiedOn && (
-              <button
-                title={`Documents checked by ICEFALL on ${convo.verifiedOn}. We have not contacted the issuing association.`}
-                className="shrink-0 text-azure"
-              >
-                <BadgeCheck size={13} strokeWidth={2} />
-              </button>
-            )}
+            {/* NO VERIFICATION TICK, AND NO DATE.
+                This rendered "Documents checked by ICEFALL on 5 Jun 2026. We
+                have not contacted the issuing association." Careful second
+                half, invented first half: nobody has read anybody's documents,
+                on that date or any other. It was the same fabricated record
+                that came out of the booking flow (`screens/booking/data.ts`),
+                reaching production by a second path, above a conversation the
+                athlete is using to decide who to hire. `verifiedOn` stays in
+                the fixture type for the day a real check produces a real date,
+                and until then nothing draws it. */}
           </div>
           <p className="truncate text-[11px] text-mist-dim">
             {convo.kind === "group"

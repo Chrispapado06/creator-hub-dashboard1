@@ -53,6 +53,28 @@
   /* The glow under the START control and the active tab */
   --ice-azure-glow: oklch(0.6868 0.1674 255.4 / 38%);
 
+  /*
+   * GILT — the commercial layer.
+   *
+   * Azure is the athlete's own product: their training, their objectives, their
+   * record, the things they own. Gilt is where money and other people's
+   * businesses are — the best-matched listing, and the expedition company
+   * profiles in full. A climber should be able to tell from the colour alone,
+   * before reading a word, that they have crossed from the thing they own into
+   * the thing somebody is selling.
+   *
+   * That is the whole rule, and it only works while it holds: the moment a
+   * non-commercial surface borrows this colour, the distinction stops carrying
+   * any information.
+   *
+   * Deliberately NOT `--ice-alert`. That amber means caution, and a highlight
+   * sharing a colour with a warning tells the reader the opposite of what this
+   * one does.
+   */
+  --ice-gilt: oklch(0.7938 0.1274 84.5); /* #E5B455 */
+  --ice-gilt-bright: oklch(0.8867 0.0836 88.9); /* #F6D9A0 */
+  --ice-gilt-deep: oklch(0.6312 0.1113 75.3); /* #A97B33 */
+
   /* The one border treatment in the entire app */
   --ice-hairline: oklch(1 0 0 / 7%);
   --ice-hairline-strong: oklch(1 0 0 / 12%);
@@ -87,6 +109,10 @@
   --color-azure-deep: var(--ice-azure-deep);
   --color-azure-glow: var(--ice-azure-glow);
 
+  --color-gilt: var(--ice-gilt);
+  --color-gilt-bright: var(--ice-gilt-bright);
+  --color-gilt-deep: var(--ice-gilt-deep);
+
   --color-summit: var(--ice-summit);
   --color-alert: var(--ice-alert);
   --color-danger: var(--ice-danger);
@@ -99,6 +125,15 @@
 
   --radius-card: var(--radius-card);
   --radius-tile: var(--radius-tile);
+  /*
+   * `--radius-pill` was declared on `:root` but never re-exported here, and
+   * Tailwind v4 generates utilities ONLY from `@theme` — so `rounded-pill`
+   * compiled to nothing and every chip, badge, pill button and toggle track
+   * using it has been rendering with square corners. 57 of them in the phone
+   * app alone. Declaring a custom property is not the same as registering a
+   * utility, and nothing warns you.
+   */
+  --radius-pill: var(--radius-pill);
 
   --ease-alpine: var(--ease-alpine);
 }
@@ -189,6 +224,52 @@
       oklch(0.147 0.0068 236 / 55%) 55%,
       oklch(0.147 0.0068 236 / 35%) 100%
     );
+  }
+
+  /*
+   * The best-match card's surface.
+   *
+   * Three layers: a raking highlight across the top-left corner, a faint warm
+   * wash over the whole panel, and the graphite the other cards use underneath.
+   * The gradient is what makes it read as lit metal rather than a coloured box
+   * — a flat gold fill at this size looks like an alert.
+   */
+  .gilt-sheen {
+    background-image:
+      linear-gradient(
+        118deg,
+        oklch(0.8867 0.0836 88.9 / 14%) 0%,
+        oklch(0.7938 0.1274 84.5 / 6%) 26%,
+        transparent 58%
+      ),
+      linear-gradient(
+        to bottom,
+        oklch(0.7938 0.1274 84.5 / 7%) 0%,
+        oklch(0.7938 0.1274 84.5 / 3%) 100%
+      );
+    box-shadow:
+      inset 0 1px 0 0 oklch(0.8867 0.0836 88.9 / 16%),
+      0 0 24px -8px oklch(0.7938 0.1274 84.5 / 28%);
+  }
+
+  /*
+   * Two-line clamp that actually clamps.
+   *
+   * Tailwind v4.2's `line-clamp-2` emits the modern unprefixed `line-clamp`,
+   * which this engine resolves with `display: flow-root` — the text is then
+   * clipped to a height rather than truncated at a line, so it shows the WRONG
+   * lines (a company blurb rendered as "...unforgettable experiences." with its
+   * opening sentence cut away). The -webkit-box form is unambiguous and works
+   * everywhere the app runs.
+   *
+   * `line-clamp-*` is still used in several older screens and every one of them
+   * is suspect; they should move here.
+   */
+  .clamp-2 {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
   }
 
   .no-scrollbar {
@@ -316,4 +397,5 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .icefall-pin { transition: none; }
+
 }

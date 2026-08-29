@@ -23,9 +23,9 @@ import { eur, type Cents } from "@/money/model";
  * trip's "package organiser" — liable for the whole arrangement and required to
  * hold insolvency protection (ATOL-style bonding for the flight). That is a
  * deliberate business decision, not a technical one. Until it is made, the fare
- * is passed through at cost: ICEFALL earns its service fee on the guiding it can
- * actually stand behind, and helps you find the flight without pretending to be
- * the airline. See `PACKAGE_NOTICE`.
+ * is passed through at cost: ICEFALL's cut comes out of the guiding it can
+ * actually stand behind, and it helps you find the flight without pretending to
+ * be the airline. See `PACKAGE_NOTICE`.
  */
 
 export const FLIGHTS_NOTICE =

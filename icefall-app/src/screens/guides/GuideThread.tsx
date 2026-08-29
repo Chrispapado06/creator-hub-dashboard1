@@ -305,6 +305,7 @@ export function GuideThread() {
           ) : (
             <PriceBreakdown
               className="mt-4"
+              audience="client"
               guideFeeEur={guideFeeEur}
               additionalCosts={additionalCosts}
             />
@@ -876,10 +877,14 @@ function BookingConfirmation({
 
       {terms ? (
         <>
-          {/* The platform fee is its own line inside this breakdown — never
-              folded into the guide's fee, and never hidden inside the total. */}
+          {/* THE CLIENT'S VIEW, and it carries no platform-fee line — under the
+              deducted model there is nothing here for them to pay. ICEFALL's
+              cut comes out of the guide's fee, so the client's total is the
+              guide's fee plus the pass-through costs and nothing else. The
+              guide sees the deduction on their own dashboard. */}
           <PriceBreakdown
             className="mt-4"
+            audience="client"
             guideFeeEur={terms.guideFeeEur}
             additionalCosts={terms.additionalCosts}
           />

@@ -186,21 +186,38 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
 /* -------------------------------------------------------------------------- */
 
 /**
- * Guide fee, pass-through costs, ICEFALL's fee, total.
+ * Guide fee, pass-through costs, total — and, for the guide only, the deduction.
  *
- * THE PLATFORM FEE IS ALWAYS ITS OWN LINE. Folding a commission into "guide's
- * fee" would misattribute ICEFALL's cut to the guide, and folding it into the
- * total would hide it. The percentage is interpolated from
- * `PLATFORM_COMMISSION_PCT` rather than written into the sentence, so it stays
- * configurable without leaving a stale number on a confirmation.
+ * THE BREAKDOWN DEPENDS ON WHO IS READING IT, and that is not a styling
+ * preference. Under the deducted model (constitution 3b) ICEFALL's cut is a
+ * division of the guide's fee, not an addition to the client's bill:
+ *
+ *     A guide charges €1,000. The client pays €1,000. The guide receives €900.
+ *
+ * So a CLIENT must not see a platform-fee line at all. There is nothing there
+ * for them to pay, and a line item they are not charged for, sitting above a
+ * total, reads as a charge — the previous version added it to their total and
+ * they genuinely were charged it.
+ *
+ * A GUIDE must see it, and must see what they actually receive, because that
+ * is the number they decide whether to accept work on. It stays its own line
+ * rather than being folded into "guide's fee", which would misattribute
+ * ICEFALL's cut to the guide, or into the total, which would hide it.
+ *
+ * The percentage is interpolated from `PLATFORM_COMMISSION_PCT` rather than
+ * written into the sentence, so it stays configurable without leaving a stale
+ * number on a confirmation.
  */
 export function PriceBreakdown({
   guideFeeEur,
   additionalCosts,
+  audience,
   className,
 }: {
   guideFeeEur: number;
   additionalCosts: QuoteLine[];
+  /** Whose screen this is. Decides whether the deduction is shown at all. */
+  audience: "client" | "guide";
   className?: string;
 }) {
   const totals = quoteTotals({ guideFeeEur, additionalCosts });
@@ -219,18 +236,29 @@ export function PriceBreakdown({
         </>
       )}
 
-      <div className="my-3 h-px bg-hairline" />
-      <PriceRow
-        label="ICEFALL platform fee"
-        note={`${totals.platformCommissionPct}% of the guide's fee`}
-        amount={totals.platformFeeEur}
-      />
-
       <div className="my-3 h-px bg-hairline-strong" />
       <div className="flex items-baseline justify-between gap-3">
-        <span className="text-[13px] text-snow">Total</span>
+        <span className="text-[13px] text-snow">
+          {audience === "guide" ? "Client pays" : "Total"}
+        </span>
         <Money eur={totals.totalEur} className="text-[19px] font-light text-snow" />
       </div>
+
+      {audience === "guide" && (
+        <>
+          <div className="my-3 h-px bg-hairline" />
+          <PriceRow
+            label={`ICEFALL ${totals.platformCommissionPct}%`}
+            note="Deducted from your fee, not added to theirs"
+            amount={totals.platformFeeEur}
+          />
+          <div className="my-3 h-px bg-hairline-strong" />
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="text-[13px] text-snow">You receive</span>
+            <Money eur={totals.guideReceivesEur} className="text-[19px] font-light text-azure" />
+          </div>
+        </>
+      )}
 
       <p className="mt-3 text-[11px] leading-relaxed text-mist-dim">{PLATFORM_FEE_BASIS_NOTE}</p>
     </div>

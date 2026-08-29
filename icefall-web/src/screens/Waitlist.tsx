@@ -60,7 +60,19 @@ const FEATURES = [
   {
     icon: CalendarDays,
     title: "Train with purpose",
-    body: "Personalized training plans that get you summit-ready.",
+    /*
+      This read "Personalized training plans that get you summit-ready."
+      "Summit-ready" is the one thing this product exists to refuse to say: the
+      readiness engine will not issue a summit clearance, and `mountainReadiness`
+      caps a self-report at 70 precisely so a number cannot be read as
+      permission. Promising the outcome on the one page that actually ships,
+      while the app declines to promise it anywhere else, is the contradiction a
+      reader would meet first.
+
+      The replacement promises the work instead of the result — which is also
+      the honest description of what a plan is.
+    */
+    body: "Set your objective, and get the weeks and sessions it actually takes.",
     shot: "/img/screens/training.jpg",
     alt: "An ICEFALL training plan — 26 weeks built backwards from Mont Blanc, with this week's sessions.",
   },

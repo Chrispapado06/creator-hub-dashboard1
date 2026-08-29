@@ -56,7 +56,7 @@ export default function ActivityHistory() {
       <div className="px-5">
         <ScreenHeader
           title="Activity"
-          subtitle={`${feed.length} recorded · ${lifetimePoints.toLocaleString("en-GB")} points`}
+          subtitle={`${feed.filter((a) => !a.simulated).length} recorded · ${lifetimePoints.toLocaleString("en-GB")} points`}
           action={
             <Button asChild size="icon" variant="secondary" aria-label="Start an activity">
               <Link to="/activity/select">
@@ -129,6 +129,8 @@ function Stats({ feed, recordedCount }: { feed: Activity[]; recordedCount: numbe
   const byMode = useMemo(() => {
     const m = new Map<string, { count: number; distanceKm: number; elevationM: number }>();
     for (const a of feed) {
+      // Hand-rolled, so it needs the guard `summarise` now carries by itself.
+      if (a.simulated) continue;
       const cur = m.get(a.mode) ?? { count: 0, distanceKm: 0, elevationM: 0 };
       m.set(a.mode, {
         count: cur.count + 1,
@@ -230,8 +232,13 @@ function Journey({ feed, lifetimePoints }: { feed: Activity[]; lifetimePoints: n
   const recorded = useRecordedActivities();
 
   const year = new Date().getFullYear();
+  // Simulated sessions are dropped before the year card, not after: the totals
+  // beneath it, the highest point, the longest activity and the overlaid routes
+  // all read as a year of real climbing, and one indoor simulator run drawn
+  // among them would be claiming a day nobody spent outside.
   const thisYear = useMemo(
-    () => feed.filter((a) => new Date(a.startedAt).getFullYear() === year),
+    () =>
+      feed.filter((a) => !a.simulated && new Date(a.startedAt).getFullYear() === year),
     [feed, year],
   );
   const totals = useMemo(() => summarise(thisYear), [thisYear]);

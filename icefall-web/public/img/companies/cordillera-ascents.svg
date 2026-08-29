@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="240" height="240">
+  <defs>
+    <linearGradient id="dusk" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2A1F1B"/><stop offset="100%" stop-color="#0B0A0D"/>
+    </linearGradient>
+  </defs>
+  <rect width="240" height="240" fill="url(#dusk)"/>
+  <circle cx="120" cy="118" r="62" fill="none" stroke="#4B9BFF" stroke-width="1.6" opacity="0.42"/>
+  <!-- andean ridgeline -->
+  <path d="M58 150 L86 108 L104 130 L126 84 L150 124 L166 104 L184 150 Z" fill="#EAEEF5"/>
+  <path d="M126 84 L142 112 L128 116 L118 104 Z" fill="#0B0A0D" opacity="0.28"/>
+  <path d="M58 150 L184 150 L184 158 L58 158 Z" fill="#4B9BFF" opacity="0.55"/>
+  <text x="120" y="196" text-anchor="middle" font-family="Inter Tight, Helvetica, Arial, sans-serif"
+        font-size="26" font-weight="600" fill="#EAEEF5" textLength="184" lengthAdjust="spacingAndGlyphs">CORDILLERA</text>
+  <text x="120" y="216" text-anchor="middle" font-family="Inter Tight, Helvetica, Arial, sans-serif"
+        font-size="13" font-weight="400" fill="#8B94A6" textLength="150" lengthAdjust="spacingAndGlyphs">ASCENTS</text>
+</svg>

@@ -93,6 +93,20 @@ export function Badge({
  */
 export function VerifiedTick({ verifiedOn, size = 15 }: { verifiedOn: string; size?: number }) {
   const [open, setOpen] = useState(false);
+
+  /*
+   * NO DATE, NO TICK.
+   *
+   * This used to render the badge unconditionally, so a listing with
+   * `verifiedOn: ""` still got a blue check — and the first listing to have an
+   * empty date was Elite Exped, a REAL company ICEFALL has no relationship
+   * with. The badge is the most load-bearing element on a marketplace card:
+   * it is the difference between "we checked this operator" and "we did not",
+   * on a page where the reader may be choosing who to hire on glaciated ground.
+   * It is never decorative and it is never a default.
+   */
+  if (!verifiedOn) return null;
+
   return (
     <span className="relative inline-flex">
       <button

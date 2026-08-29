@@ -4,11 +4,29 @@ import type { Database } from "./types";
 /**
  * The Supabase client, or null.
  *
- * NULL IS A SUPPORTED STATE, not a failure. ICEFALL has run entirely on
- * localStorage until now, and there is no project provisioned yet — so every
- * surface built on this module must keep working without a backend rather than
- * white-screening on a missing key. `isBackendConfigured()` is the check, and
- * the messaging UI falls back to its local store when it returns false.
+ * NULL IS A SUPPORTED STATE, not a failure. ICEFALL ran entirely on localStorage
+ * for its whole life, so every surface built on this module must keep working
+ * without a backend rather than white-screening on a missing key.
+ *
+ * A PROJECT NOW EXISTS (2026-08-29) AND THIS APP STILL SENDS NOTHING. Since
+ * `.env.local` was written, `isBackendConfigured()` returns **true** — the
+ * credentials are real and the client object is real. What does not exist is a
+ * single query: there is no `.from(`, no `.rpc(` and no write path anywhere in
+ * `src/`. So the predicate is honest about what it measures (a client exists)
+ * and would be a lie if read as "messages can be sent".
+ *
+ * THIS IS WHY THE CHAT SCREENS MUST NOT START BRANCHING ON IT. `Messages.tsx`
+ * and `Thread.tsx` render `BACKEND_NOT_CONNECTED` UNCONDITIONALLY, and that is
+ * correct and must stay until a send path exists. Wrapping those in
+ * `{!isBackendConfigured() && ...}` today would remove the one honest sentence
+ * on the screen and leave a climber believing a message reached a guide, on the
+ * strength of a variable rather than a delivery. The notice comes off in the
+ * same change that makes sending work, not before.
+ *
+ * The sibling app `icefall-admin` learned this the hard way the same day: its
+ * settings screen gated on the env vars directly and flipped itself to
+ * "Connected — reading live data" with no client at all. See
+ * `icefall-admin/src/backend/client.ts`.
  *
  * That also keeps the honest posture the rest of the app has: with no backend,
  * a "sent" message genuinely has not gone anywhere, and the UI says so instead

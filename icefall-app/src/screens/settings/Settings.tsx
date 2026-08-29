@@ -95,19 +95,18 @@ export default function Settings() {
           </div>
         </Rise>
 
-        {/* ---- Profile ---------------------------------------------------- */}
+        {/* ---- Profile ----------------------------------------------------
+            No "Share profile" row here: it is one of the two buttons in the
+            card directly above, and the list repeated it forty pixels lower.
+            "Edit profile" stays, because the card only exposes it by tapping
+            the avatar — which reads as "change my photo", not "edit
+            everything". */}
         <Group label="Profile">
           <LinkRow
             to="/settings/profile"
             icon={User}
             title="Edit profile"
             detail="Your name, photo, bio, experience and what you're looking for."
-          />
-          <LinkRow
-            to="/settings/share"
-            icon={Share2}
-            title="Share profile"
-            detail="Make a profile card and choose who can open it."
           />
           <LinkRow
             to="/settings/verification"

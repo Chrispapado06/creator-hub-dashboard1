@@ -1,0 +1,154 @@
+[
+ {
+  "id": "cathedral-peak-circuit",
+  "name": "Cathedral Peak Circuit",
+  "regionId": "drakensberg",
+  "country": "South Africa",
+  "mountainIds": [],
+  "durationDays": [
+   2,
+   3
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": null,
+  "season": "March – May, September – November",
+  "priceFromEur": null,
+  "style": "Circuit",
+  "summary": "From the Cathedral Peak hotel up Organ Pipes Pass to the escarpment and back by Camel Pass or Mlambonja, under the free-standing spire of Cathedral Peak itself. Steep, loose passes and a long day to the top of the pass.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "drakensberg-amphitheatre-trek",
+  "name": "Drakensberg Amphitheatre Trek",
+  "regionId": "drakensberg",
+  "country": "South Africa",
+  "mountainIds": [],
+  "durationDays": [
+   1,
+   2
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": 3000,
+  "season": "March – May, September – November",
+  "priceFromEur": null,
+  "style": "High pass",
+  "summary": "The climb from the Sentinel car park at 2,500 m onto the escarpment above the Amphitheatre, either up the two chain ladders or by scrambling Kloof Gully, ending at the lip where the Tugela drops off the plateau. It is walked either as a long day or with a night camped on top.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "drakensberg-grand-traverse",
+  "name": "Drakensberg Grand Traverse",
+  "regionId": "drakensberg",
+  "country": "South Africa / Lesotho",
+  "mountainIds": [],
+  "durationDays": [
+   10,
+   14
+  ],
+  "difficulty": "Very strenuous",
+  "maxAltitudeM": 3482,
+  "season": null,
+  "priceFromEur": null,
+  "style": "Traverse",
+  "summary": "An unmarked wilderness route of roughly 220–230 km along the top of the escarpment, from the Sentinel in the north to Bushman's Nek in the south, taking in the traverse's set summits including Thabana Ntlenyana at 3,482 m. There are no signposted paths, huts or resupply, so parties navigate for themselves and carry everything they need.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "giants-cup-trail",
+  "name": "Giant's Cup Trail",
+  "regionId": "drakensberg",
+  "country": "South Africa",
+  "mountainIds": [],
+  "durationDays": [
+   5,
+   5
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": null,
+  "season": "March – November",
+  "priceFromEur": null,
+  "style": "Long distance",
+  "summary": "60 km through the southern Drakensberg from Sani Pass to Bushman's Nek, staying below the escarpment in grassland and sandstone. Five huts, booked in advance, and the only fully waymarked multi-day trail in the range.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "injisuthi-to-cathedral-peak-traverse",
+  "name": "Injisuthi to Cathedral Peak Traverse",
+  "regionId": "drakensberg",
+  "country": "South Africa / Lesotho",
+  "mountainIds": [],
+  "durationDays": [
+   5,
+   6
+  ],
+  "difficulty": "Very strenuous",
+  "maxAltitudeM": null,
+  "season": "March – May, September – October",
+  "priceFromEur": null,
+  "style": "Traverse",
+  "summary": "The classic central section of the escarpment, from Injisuthi under Champagne Castle and the Injisuthi Triplets north to Cathedral Peak. Cave camps, no marked path, and the passes at either end are the crux.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "mnweni-circuit",
+  "name": "Mnweni Circuit",
+  "regionId": "drakensberg",
+  "country": "South Africa / Lesotho",
+  "mountainIds": [],
+  "durationDays": [
+   3,
+   4
+  ],
+  "difficulty": "Very strenuous",
+  "maxAltitudeM": null,
+  "season": "March – May, September – October",
+  "priceFromEur": null,
+  "style": "Circuit",
+  "summary": "Up Rockeries Pass or Mnweni Pass onto the escarpment and back down the other, through the least visited and most spectacular section of the northern Drakensberg. Unmarked, with serious river crossings and a Lesotho border to cross informally.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "rhino-peak-hike",
+  "name": "Rhino Peak Hike",
+  "regionId": "drakensberg",
+  "country": "South Africa",
+  "mountainIds": [],
+  "durationDays": [
+   1,
+   2
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 3051,
+  "season": "March – May, September – November",
+  "priceFromEur": null,
+  "style": "High pass",
+  "summary": "From Cobham up Mashai Pass to the blunt prow of Rhino Peak at the southern end of the escarpment, about 1,400 m of ascent in a day. The last section follows a narrow ridge with a long drop on both sides.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "sani-pass-to-thabana-ntlenyana",
+  "name": "Sani Pass to Thabana Ntlenyana",
+  "regionId": "drakensberg",
+  "country": "South Africa / Lesotho",
+  "mountainIds": [],
+  "durationDays": [
+   2,
+   3
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 3482,
+  "season": "March – May, September – October",
+  "priceFromEur": null,
+  "style": "High pass",
+  "summary": "From the top of the Sani Pass across the Lesotho plateau to Thabana Ntlenyana at 3,482 m, the highest summit in southern Africa. Rolling rather than steep, but at altitude, exposed, and snow-covered for much of winter.",
+  "operatorIds": [],
+  "guideIds": []
+ }
+]

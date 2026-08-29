@@ -72,6 +72,8 @@ const Training = lazy(() => import("@/screens/Training"));
 const Nutrition = lazy(() => import("@/screens/Nutrition"));
 const ExploreLayout = lazy(() => import("@/screens/ExploreLayout"));
 const Mountains = lazy(() => import("@/screens/Mountains"));
+const TreksScreen = lazy(() => import("@/screens/treks/Treks"));
+const TrekDetail = lazy(() => import("@/screens/treks/TrekDetail"));
 const MountainDetail = lazy(() =>
   import("@/screens/Mountains").then((m) => ({ default: m.MountainDetail })),
 );
@@ -89,12 +91,14 @@ const GearDetail = lazy(() => import("@/screens/Gear").then((m) => ({ default: m
 const Private = lazy(() => import("@/screens/Private"));
 const Profile = lazy(() => import("@/screens/Profile"));
 const SavedTrails = lazy(() => import("@/screens/SavedTrails"));
+const Notifications = lazy(() => import("@/screens/Notifications"));
 
 // Expedition network (climbers), distinct from the commercial trips above.
 const CrewExpeditions = lazy(() => import("@/screens/explore/Expeditions"));
 const CreateExpedition = lazy(() => import("@/screens/explore/CreateExpedition"));
 const AthleteProfile = lazy(() => import("@/screens/explore/AthleteProfile"));
 const OperatorProfile = lazy(() => import("@/screens/explore/OperatorProfile"));
+const TripDetail = lazy(() => import("@/screens/explore/TripDetail"));
 const ExploreHub = lazy(() => import("@/screens/explore/ExploreHub"));
 const Groups = lazy(() => import("@/screens/explore/Groups"));
 const GroupWorkspace = lazy(() => import("@/screens/explore/GroupWorkspace"));
@@ -210,6 +214,8 @@ export default function App() {
                 it opens with no account and nothing reaches a server. */}
             <Route path="/p" element={<PublicProfile />} />
             <Route path="/social/post/:id" element={<PostDetail />} />
+            <Route path="/operator/:id" element={<OperatorProfile />} />
+            <Route path="/operator/:id/trip/:tripId" element={<TripDetail />} />
 
             <Route path="/settings" element={<Settings />} />
             <Route path="/settings/professional/:kind" element={<ProApplication />} />
@@ -226,6 +232,7 @@ export default function App() {
             <Route path="/mountain/:goalId/checklist" element={<MountainChecklist />} />
             <Route path="/mountain/:goalId/benchmark" element={<Benchmark />} />
             {/* `new` before `:id` — otherwise the compose route is read as a thread id. */}
+            <Route path="/notifications" element={<Notifications />} />
             <Route path="/messages" element={<Messages />} />
             <Route path="/messages/:id" element={<ChatThread />} />
             <Route path="/book" element={<BookGuide />} />
@@ -265,6 +272,10 @@ export default function App() {
               <Route path="route/:id" element={<RouteDetail />} />
               <Route path="trail/:id" element={<TrailDetail />} />
               <Route path="mountains" element={<Mountains />} />
+              {/* Treks sit beside expeditions, not inside them — a walk to a
+                  mountain and a climb of it are different products. */}
+              <Route path="treks" element={<TreksScreen />} />
+              <Route path="trek/:id" element={<TrekDetail />} />
               <Route path="groups" element={<Groups />} />
               <Route path="groups/new" element={<CreateExpedition />} />
               <Route path="groups/:id" element={<GroupWorkspace />} />
@@ -283,7 +294,6 @@ export default function App() {
               {/* Merged into Social; the old path still resolves. */}
               <Route path="people" element={<Navigate to="/explore/social" replace />} />
               <Route path="people/:id" element={<AthleteProfile />} />
-              <Route path="operator/:id" element={<OperatorProfile />} />
               {/* Static before dynamic so :id cannot swallow them. */}
               <Route path="guides" element={<Guides />} />
               <Route path="guides/dashboard" element={<GuideDashboard />} />

@@ -1,0 +1,269 @@
+[
+ {
+  "id": "ala-archa-trek",
+  "name": "Ala Archa Trek",
+  "regionId": "central-asia",
+  "country": "Kyrgyzstan",
+  "mountainIds": [],
+  "durationDays": [
+   1,
+   2
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": 3400,
+  "season": "June – September",
+  "priceFromEur": null,
+  "style": "Valley",
+  "summary": "A short walk from Bishkek into the Ak-Sai gorge of Ala-Archa park, usually done as a long day or as an overnight to the Ratsek hut at about 3,400 m below the Ak-Sai glacier. The park itself runs from 1,600 m at the gate to 4,860 m on the ridge and is open all year, but the walking season is the summer.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "ala-kul-trek",
+  "name": "Ala-Kul Trek",
+  "regionId": "central-asia",
+  "country": "Kyrgyzstan",
+  "mountainIds": [],
+  "durationDays": [
+   3,
+   4
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": 3860,
+  "season": "June – September",
+  "priceFromEur": null,
+  "style": "High pass",
+  "summary": "The three- or four-day crossing from the Karakol valley over the 3,860 m pass beside Ala-Kul lake and down through the Keldike valley to the hot springs at Altyn Arashan. Yurt camps along the way make a tent optional; the pass is steep and loose on the descent.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "arslanbob-walnut-forest-trek",
+  "name": "Arslanbob Walnut Forest Trek",
+  "regionId": "central-asia",
+  "country": "Kyrgyzstan",
+  "mountainIds": [],
+  "durationDays": [
+   2,
+   3
+  ],
+  "difficulty": "Easy",
+  "maxAltitudeM": 2200,
+  "season": "May – October",
+  "priceFromEur": null,
+  "style": "Valley",
+  "summary": "Day and overnight walking above Arslanbob in the Fergana foothills, through the largest natural walnut forest on earth to the holy lake and the waterfalls. Low, warm and walkable months before the high Tien Shan opens.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "bartang-valley-trek",
+  "name": "Bartang Valley Trek",
+  "regionId": "central-asia",
+  "country": "Tajikistan",
+  "mountainIds": [],
+  "durationDays": [
+   7,
+   10
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 4600,
+  "season": "July – September",
+  "priceFromEur": null,
+  "style": "Valley",
+  "summary": "Walking the side valleys of the Bartang in the western Pamir — Jizev, Gudara, the lakes above Roshorv — between villages reached by one of the worst roads in Central Asia. Homestays, no infrastructure, and the emptiest walking in Tajikistan.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "fann-mountains-trek",
+  "name": "Fann Mountains Trek",
+  "regionId": "central-asia",
+  "country": "Tajikistan",
+  "mountainIds": [],
+  "durationDays": [
+   4,
+   4
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": 3780,
+  "season": "July – mid-September",
+  "priceFromEur": null,
+  "style": "Circuit",
+  "summary": "The four-day loop from Artuch base camp over the 3,780 m Alaudin Pass, linking the Kulikalon and Alaudin lakes, and the most walked route in the Fanns. Harder variants cross the range instead, over the 4,040 m Kaznok Pass or the Chimtarga Pass at about 4,750 m.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "heights-of-alay-trek",
+  "name": "Heights of Alay Trek",
+  "regionId": "central-asia",
+  "country": "Kyrgyzstan",
+  "mountainIds": [],
+  "durationDays": [
+   7,
+   9
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 4200,
+  "season": "July – September",
+  "priceFromEur": null,
+  "style": "Traverse",
+  "summary": "A traverse of the Alay range in southern Kyrgyzstan between Osh and the Alay valley, over several passes above 4,000 m with the Pamir wall and Lenin Peak on the southern horizon. Yurt stays with Kyrgyz herding families are part of the route.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "jyrgalan-boz-uchuk-lakes-trek",
+  "name": "Jyrgalan Boz Uchuk Lakes Trek",
+  "regionId": "central-asia",
+  "country": "Kyrgyzstan",
+  "mountainIds": [],
+  "durationDays": [
+   3,
+   4
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": 3400,
+  "season": "June – September",
+  "priceFromEur": null,
+  "style": "High pass",
+  "summary": "A loop out of the former coal village of Jyrgalan in the eastern Tien Shan, over the Boz Uchuk pass to a chain of lakes and back by Turnaly. Community-run guesthouses and yurt camps along the way, and far fewer walkers than Karakol.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "keskenkija-loop",
+  "name": "Keskenkija Loop",
+  "regionId": "central-asia",
+  "country": "Kyrgyzstan",
+  "mountainIds": [],
+  "durationDays": [
+   3,
+   3
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": 3300,
+  "season": "June – September",
+  "priceFromEur": null,
+  "style": "Circuit",
+  "summary": "A three-day loop from Jyrgalan over the Keskenkija pass through spruce forest and summer pasture, with two nights in tented camps. The first trail the village built when the mine closed, and the easiest introduction to the range.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "kol-suu-lake-trek",
+  "name": "Kol Suu Lake Trek",
+  "regionId": "central-asia",
+  "country": "Kyrgyzstan",
+  "mountainIds": [],
+  "durationDays": [
+   3,
+   4
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": 3500,
+  "season": "July – August",
+  "priceFromEur": null,
+  "style": "Valley",
+  "summary": "Into the Kok-Kiya valley near the Chinese border to Kol Suu, a long fjord of a lake held behind a landslide at about 3,500 m. A border permit is required and the season is short; most parties ride in and walk the upper valley.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "pamir-trek",
+  "name": "Pamir Trek",
+  "regionId": "central-asia",
+  "country": "Tajikistan",
+  "mountainIds": [],
+  "durationDays": null,
+  "difficulty": "Very strenuous",
+  "maxAltitudeM": 5010,
+  "season": "June – early October",
+  "priceFromEur": null,
+  "style": "Long distance",
+  "summary": "Long-distance walking in the Tajik Pamir, of which the one route published end to end is the Pamir Trail: 1,313 km in 79 stages from Shing to Vrang, 61,056 m of ascent, with its high point at about 5,010 m on the Vrang Pass. Most people walk one or two of the nine sections rather than the whole line; there is no organised mountain rescue in the country.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "peak-lenin-base-camp-trek",
+  "name": "Peak Lenin Base Camp Trek",
+  "regionId": "central-asia",
+  "country": "Kyrgyzstan",
+  "mountainIds": [
+   "lenin-peak"
+  ],
+  "durationDays": [
+   4,
+   6
+  ],
+  "difficulty": "Strenuous",
+  "maxAltitudeM": 4400,
+  "season": "July – August",
+  "priceFromEur": null,
+  "style": "Base camp",
+  "summary": "From Achik-Tash meadow at 3,600 m over the Traveller's Pass to Camp 1 at about 4,400 m on the Lenin glacier, under the north face of Lenin Peak. Used as an acclimatisation walk by climbers and as an objective in its own right by everyone else.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "seven-lakes-trek",
+  "name": "Seven Lakes Trek",
+  "regionId": "central-asia",
+  "country": "Tajikistan",
+  "mountainIds": [],
+  "durationDays": [
+   1,
+   2
+  ],
+  "difficulty": "Easy",
+  "maxAltitudeM": 2400,
+  "season": null,
+  "priceFromEur": null,
+  "style": "Valley",
+  "summary": "A walk up the Shing valley south of Panjakent past the seven Haft Kul lakes, which climb from 1,600 m at Mizhgon to 2,400 m at Hazorchashma where the road ends. Fifteen kilometres of track and path from the first lake to the last, done in a day, or in two if you come in over the 3,300 m Komichora Pass from Mogiyon.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "song-kul-trek",
+  "name": "Song-Kul Trek",
+  "regionId": "central-asia",
+  "country": "Kyrgyzstan",
+  "mountainIds": [],
+  "durationDays": [
+   2,
+   4
+  ],
+  "difficulty": "Moderate",
+  "maxAltitudeM": null,
+  "season": "Mid-June – mid-September",
+  "priceFromEur": null,
+  "style": "Traverse",
+  "summary": "The walk in to Song-Kul, the summer pasture lake at 3,016 m in central Kyrgyzstan — most often two days from Kyzart to the north shore, longer from Ming-Kush or on the loops south of the lake. There is no trail around the lake itself, so the trek is the approach over the surrounding passes, sleeping in shepherds' yurts.",
+  "operatorIds": [],
+  "guideIds": []
+ },
+ {
+  "id": "tien-shan-trek",
+  "name": "Tien Shan Trek",
+  "regionId": "central-asia",
+  "country": "Kyrgyzstan",
+  "mountainIds": [
+   "khan-tengri"
+  ],
+  "durationDays": [
+   10,
+   10
+  ],
+  "difficulty": "Very strenuous",
+  "maxAltitudeM": 4000,
+  "season": "July – August",
+  "priceFromEur": null,
+  "style": "Base camp",
+  "summary": "Ten days one way up the South Inylchek glacier in the Central Tien Shan, past Lake Merzbacher to the base camp at about 4,000 m under Khan Tengri, with a helicopter flight out at the end. Most of the route is moraine and glacier confluence, and the line through the ice is re-marked every year.",
+  "operatorIds": [],
+  "guideIds": []
+ }
+]
