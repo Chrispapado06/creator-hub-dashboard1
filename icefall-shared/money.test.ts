@@ -6,9 +6,8 @@ import {
   attributionDeadline,
   isWithinAttribution,
   referralFee,
-  SERVICE_FEE_PCT,
+  GUIDE_COMMISSION_PCT,
   STANDARD_POLICY,
-  priceBooking,
   eur,
   formatEur,
   instalmentsFor,
@@ -16,6 +15,7 @@ import {
   payoutStatusFor,
   refundFor,
   totalsFor,
+  totalsForAmount,
   type Quote,
 } from "./money";
 
@@ -171,15 +171,91 @@ is(
 );
 
 
-/* ---- client-side service fee -------------------------------------------- */
+/* ---- the guide commission, DEDUCTED ------------------------------------- */
 
-const p = priceBooking(eur(4550), 5);
-is("service fee is 5% of the guide fee", p.serviceFee, eur(227.5));
-is("total is guide fee plus service fee", p.total, eur(4777.5));
-is("guide keeps their whole fee", p.guideReceives, eur(4550));
-is("fee is ADDED, not deducted", p.guideReceives === p.guideFee, true);
-is("parts reconcile", p.guideFee + p.serviceFee, p.total);
-is("default fee pct", SERVICE_FEE_PCT, 5);
+// The owner's worked example, as a test. A guide charges EUR 1,000 for a day;
+// the climber pays EUR 1,000; the guide receives EUR 900; ICEFALL keeps EUR 100.
+const dayRate: Quote = {
+  id: "q-day",
+  lines: [{ label: "Guided day", amount: eur(1000), per: "party" }],
+  exclusions: [],
+  cancellation: STANDARD_POLICY,
+  partySize: 1,
+  departureIso: "2027-06-01T00:00:00Z",
+  validUntilIso: "2026-12-01T00:00:00Z",
+};
+const g = totalsFor(dayRate);
+is("the climber pays the advertised price", g.total, eur(1000));
+is("ICEFALL keeps 10% of it", g.commission, eur(100));
+is("the guide receives the rest", g.guideReceives, eur(900));
+is("the fee is DEDUCTED, not added", g.total === eur(1000), true);
+is("parts reconcile", g.commission + g.guideReceives, g.total);
+is("default guide commission pct", GUIDE_COMMISSION_PCT, 10);
+
+// Rounding goes to the guide, never to ICEFALL. Rounding in the platform's
+// favour on every booking is how a marketplace quietly skims.
+const oddDay = totalsFor({ ...dayRate, lines: [{ label: "x", amount: 3333, per: "party" }] });
+is("rounding favours the guide", oddDay.commission + oddDay.guideReceives, 3333);
+is("...and the commission rounds down", oddDay.commission, 333);
+
+/* ---- pass-through costs carry no commission ------------------------------ */
+
+// Owner decision, 2026-08-28: ICEFALL earns on the work somebody did, not on
+// money that merely passed through their hands. A hut raising its charges must
+// never increase what ICEFALL takes.
+const withHuts = totalsFor({
+  ...dayRate,
+  lines: [
+    { label: "Guided day", amount: eur(1000), per: "party" },
+    { label: "Hut beds", amount: eur(240), per: "party", passThrough: true },
+  ],
+});
+is("the climber pays the whole advertised price", withHuts.total, eur(1240));
+is("pass-through is excluded from the basis", withHuts.commissionable, eur(1000));
+is("...and reported separately", withHuts.passedThrough, eur(240));
+is("ICEFALL still keeps 100, not 124", withHuts.commission, eur(100));
+is("the guide receives everything else", withHuts.guideReceives, eur(1140));
+is("parts reconcile", withHuts.commission + withHuts.guideReceives, withHuts.total);
+
+// A per-person pass-through scales with the party, and is still excluded.
+const party = totalsFor({
+  ...dayRate,
+  partySize: 3,
+  lines: [
+    { label: "Guided day", amount: eur(1500), per: "party" },
+    { label: "Lift pass", amount: eur(60), per: "person", passThrough: true },
+  ],
+});
+is("per-person pass-through scales", party.passedThrough, eur(180));
+is("...and the commission ignores all of it", party.commission, eur(150));
+
+// A quote with no flags behaves exactly as before — the flag is opt-in, so no
+// existing quote silently changes what it charges.
+is("an unflagged quote is unchanged", totalsFor(dayRate).commission, eur(100));
+
+// FLOOR, NOT ROUND. 3,335 cents at 10% is 333.5; the half-cent goes to the
+// guide. `Math.round` would have sent it to ICEFALL half the time.
+const halfCent = totalsFor({ ...dayRate, lines: [{ label: "x", amount: 3335, per: "party" }] });
+is("a half-cent goes to the guide, never to ICEFALL", halfCent.commission, 333);
+is("parts still reconcile on a fraction", halfCent.commission + halfCent.guideReceives, 3335);
+
+/* ---- one implementation, two entry points -------------------------------- */
+
+// Session 02 holds a flat total rather than quote lines. The two entry points
+// must not be able to disagree about the deduction or the rounding.
+const flat = totalsForAmount(eur(1240), 1, GUIDE_COMMISSION_PCT, eur(240));
+is("a flat amount deducts the same way", flat.commission, eur(100));
+is("...and reports the same basis", flat.commissionable, eur(1000));
+is("...and the same net to the guide", flat.guideReceives, eur(1140));
+is("the two entry points agree exactly", JSON.stringify(flat), JSON.stringify(withHuts));
+
+// partySize is required and is used, not assumed.
+is("per-person divides by the party", totalsForAmount(eur(900), 3).perPerson, eur(300));
+is("a zero party does not divide by zero", totalsForAmount(eur(900), 0).perPerson, eur(900));
+
+// A flat caller that says nothing about pass-through is asserting there is none.
+is("no pass-through means the whole amount is commissionable",
+  totalsForAmount(eur(1000), 1).commissionable, eur(1000));
 
 /* ---- flexible policy ----------------------------------------------------- */
 const flexDep = "2026-09-16T00:00:00Z"; // 30 days after NOW
@@ -209,6 +285,10 @@ is(
 
 is("referral fee is 10% of a €50k booking", referralFee(eur(50000), 10), eur(5000));
 is("referral fee default rate", referralFee(eur(1000)), referralFee(eur(1000), DEFAULT_REFERRAL_PCT));
+is("the settled referral rate is 7.5%", DEFAULT_REFERRAL_PCT, 7.5);
+is("7.5% of a EUR 50k booking", referralFee(eur(50000)), eur(3750));
+// The two streams must not converge on one number by accident.
+is("guide and referral rates are distinct", GUIDE_COMMISSION_PCT === DEFAULT_REFERRAL_PCT, false);
 is("referral fee never exceeds the booking", referralFee(eur(50000), 10) <= eur(50000), true);
 is("attribution window constant", ATTRIBUTION_WINDOW_MONTHS, 12);
 

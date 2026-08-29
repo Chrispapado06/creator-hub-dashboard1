@@ -91,6 +91,19 @@ export interface QuoteLine {
   amount: Cents;
   /** Per person, or for the whole party. Changes the arithmetic, so it is explicit. */
   per: "person" | "party";
+  /**
+   * A cost the guide collects and hands straight on: a hut bed, a permit, a lift
+   * pass, hired kit. ICEFALL charges NO COMMISSION on it.
+   *
+   * Settled by the product owner 2026-08-28. ICEFALL earns on the work somebody
+   * did, not on money that merely passed through their hands — so a hut raising
+   * its charges must never increase what ICEFALL takes.
+   *
+   * It is a STATED property of the line, never inferred. Nothing can look at a
+   * figure and tell whether it was passed on, which is why this is a flag on the
+   * quote rather than a heuristic in the arithmetic.
+   */
+  passThrough?: boolean;
 }
 
 /**
@@ -164,71 +177,117 @@ export interface Quote {
 /* ========================================================================== */
 
 export interface QuoteTotals {
-  /** Everything the client pays ICEFALL. */
+  /** Everything the client pays. The advertised price, not a larger one. */
   total: Cents;
-  /** ICEFALL's cut, taken from the total — never added on top. */
+  /** The part of the total ICEFALL's commission is actually charged on. */
+  commissionable: Cents;
+  /** Costs the guide passes straight on. Commission-free. */
+  passedThrough: Cents;
+  /** ICEFALL's cut, taken FROM the total — never added on top. */
   commission: Cents;
-  /** What reaches the guide. */
+  /** What reaches the guide, once ICEFALL's cut is deducted. */
   guideReceives: Cents;
   perPerson: Cents;
 }
 
-export function totalsFor(quote: Quote, commissionPct: number): QuoteTotals {
-  const total = quote.lines.reduce(
-    (sum, l) => sum + (l.per === "person" ? l.amount * quote.partySize : l.amount),
-    0,
-  );
-  // Rounded to a whole cent, and the guide gets the remainder. Rounding in
-  // ICEFALL's favour on every booking is how a marketplace quietly skims.
-  const commission = Math.round((total * commissionPct) / 100);
+/**
+ * The one place a commission is computed and rounded.
+ *
+ * Requested by Session 02, whose screens hold a flat total rather than a set of
+ * quote lines and were about to compute the deduction themselves. Their argument
+ * for the shape was right on both counts and is worth keeping:
+ *
+ *   · it returns QuoteTotals, not a bare cents figure, because a primitive
+ *     reopens the drift one level down — every caller then redoes
+ *     `total - commission` and `perPerson` for itself;
+ *   · `partySize` has NO DEFAULT, because a silent 1 produces a wrong
+ *     per-person figure with nothing anywhere to catch it.
+ *
+ * `passedThrough` is the part of the total the guide collects and hands straight
+ * on. It defaults to zero because a caller holding a single flat figure is
+ * asserting that the figure IS the guide's fee; where that is not true, the
+ * caller has to say so. It cannot be inferred — nothing about an amount reveals
+ * whether part of it was a hut bill.
+ */
+export function totalsForAmount(
+  total: Cents,
+  partySize: number,
+  commissionPct: number = GUIDE_COMMISSION_PCT,
+  passedThrough: Cents = 0,
+): QuoteTotals {
+  const commissionable = Math.max(0, total - passedThrough);
+
+  // FLOOR, NOT ROUND.
+  //
+  // `Math.round` sends a half-cent to whoever the rounding favours, and half the
+  // time that is ICEFALL. Rounding in the platform's favour on every booking is
+  // how a marketplace quietly skims — a cent at a time, invisibly, forever.
+  // Floor gives the fraction to the guide, always, and the same rule holds on
+  // the referral side where integer division truncates in the operator's favour.
+  const commission = Math.floor((commissionable * commissionPct) / 100);
+
   return {
     total,
+    commissionable,
+    passedThrough,
     commission,
     guideReceives: total - commission,
-    perPerson: quote.partySize > 0 ? Math.round(total / quote.partySize) : total,
+    perPerson: partySize > 0 ? Math.round(total / partySize) : total,
   };
-}
-
-/* ========================================================================== */
-/* Pricing a booking the way the client sees it                               */
-/* ========================================================================== */
-
-/** ICEFALL's fee, charged to the CLIENT on top of the guide's price. */
-export const SERVICE_FEE_PCT = 5;
-
-export interface Pricing {
-  /** What the guide charges. They receive all of it. */
-  guideFee: Cents;
-  /** ICEFALL's fee, added to what the client pays. */
-  serviceFee: Cents;
-  /** What the client is charged. */
-  total: Cents;
-  guideReceives: Cents;
 }
 
 /**
- * Fee ON TOP, not taken out.
+ * The same arithmetic, from a quote's lines.
  *
- * Two ways to earn on a booking, and they are not the same thing to the people
- * involved. Deducting a commission from the guide's price hides ICEFALL from the
- * client and quietly cuts the guide's rate. Adding a service fee shows the
- * client exactly what the platform costs and leaves the guide's advertised price
- * intact — which is also why the guide's rate card can stay honest.
- *
- * `totalsFor` above still models the deducted-commission arrangement, which is
- * what the partner agreements in `icefall-admin` currently describe. Do not mix
- * them on one booking without deciding, out loud, which one the client is being
- * shown.
+ * Reduces the lines and delegates, so there is exactly one implementation of the
+ * deduction and one rounding rule. `commissionPct` defaults to the settled guide
+ * rate; pass it explicitly only where a partner agreement genuinely differs, and
+ * store the rate you used on the record — a rate looked up at read time silently
+ * rewrites history when it changes.
  */
-export function priceBooking(guideFee: Cents, serviceFeePct = SERVICE_FEE_PCT): Pricing {
-  const serviceFee = Math.round((guideFee * serviceFeePct) / 100);
-  return {
-    guideFee,
-    serviceFee,
-    total: guideFee + serviceFee,
-    guideReceives: guideFee,
-  };
+export function totalsFor(quote: Quote, commissionPct: number = GUIDE_COMMISSION_PCT): QuoteTotals {
+  const lineTotal = (l: QuoteLine) => (l.per === "person" ? l.amount * quote.partySize : l.amount);
+
+  const total = quote.lines.reduce((sum, l) => sum + lineTotal(l), 0);
+  const passedThrough = quote.lines.reduce((sum, l) => sum + (l.passThrough ? lineTotal(l) : 0), 0);
+
+  return totalsForAmount(total, quote.partySize, commissionPct, passedThrough);
 }
+
+/**
+ * ICEFALL's cut of a guide's fee, as a percentage, TAKEN OUT rather than added.
+ *
+ * SETTLED BY THE PRODUCT OWNER, 2026-08-28, as a worked example — which is the
+ * only unambiguous way to state a fee:
+ *
+ *     A guide charges €1,000 for a day.
+ *     The climber pays €1,000. The guide receives €900. ICEFALL keeps €100.
+ *
+ * So the advertised price IS what the climber pays. Nothing is added at
+ * checkout, and there is no service fee anywhere in this model.
+ *
+ * THIS REVERSES AN EARLIER DECISION, and the reversal is why the added-fee path
+ * is deleted rather than deprecated. `priceBooking`, `SERVICE_FEE_PCT` and
+ * `Pricing` used to live here and implemented the opposite arrangement: the
+ * guide kept their full rate and the client paid 5% more. Leaving them in place
+ * "for now" would mean two functions and a comment telling the reader which one
+ * is real — and a comment is exactly what let the phone app drift to a third
+ * number (12%) while the checkout used a fourth. One function, no convention.
+ *
+ * The arithmetic lives in `totalsFor` below, which has always modelled the
+ * deducted arrangement and is now the only model.
+ */
+export const GUIDE_COMMISSION_PCT = 10;
+
+/**
+ * What the client is told they are paying, in this model.
+ *
+ * The whole of it. There is no second number to disclose at checkout, which is
+ * the practical benefit of the deducted arrangement: the price on the card is
+ * the price on the invoice.
+ */
+export const GUIDE_FEE_DISCLOSURE =
+  `The price shown is what you pay. ICEFALL keeps ${GUIDE_COMMISSION_PCT}% of it and the guide receives the rest.`;
 
 /**
  * "Flexible" — free cancellation up to 14 days out, then nothing.
@@ -419,14 +478,36 @@ export function payoutStatusFor(args: {
  * company owes, and the admin side reconciles it against what they report.
  */
 
-/** Default referral rate on a completed expedition booking. Per-partner overridable. */
-export const DEFAULT_REFERRAL_PCT = 10;
+/**
+ * Default referral rate on a completed expedition booking. Per-partner overridable.
+ *
+ * SETTLED BY THE PRODUCT OWNER, 2026-08-28: 7.5%, taken from ICEFALL's own CRM
+ * specification in preference to the 10% this file carried from the start.
+ *
+ * STRUCTURALLY DISTINCT FROM `GUIDE_COMMISSION_PCT`, and they must stay that
+ * way. A guide engagement is money ICEFALL processes and splits; an expedition
+ * referral is a fee ICEFALL invoices a company for an introduction, on money
+ * that never touches the platform. The warning further down about not mixing
+ * the two models on one booking is now load-bearing rather than theoretical.
+ *
+ * Changing this number moves NOTHING that has already been earned: the CRM
+ * stores the applied rate on each commission record rather than looking it up.
+ */
+export const DEFAULT_REFERRAL_PCT = 7.5;
 
 /** A booking counts only if it lands within this long of the introduction. */
 export const ATTRIBUTION_WINDOW_MONTHS = 12;
 
 export function referralFee(bookingValue: Cents, ratePct = DEFAULT_REFERRAL_PCT): Cents {
-  return Math.round((bookingValue * ratePct) / 100);
+  // FLOOR, matching `totalsForAmount` and the database.
+  //
+  // This used `Math.round` while the guide commission a few lines up floored,
+  // with a comment mandating floor so the fraction never falls to ICEFALL. The
+  // CRM therefore QUOTED a referral fee one cent higher than `record_commission`
+  // — which does integer division and truncates — would actually record. A cent
+  // is nothing; two functions in one file disagreeing about which way a fee
+  // rounds is not, because only one of them is what the operator gets invoiced.
+  return Math.floor((bookingValue * ratePct) / 100);
 }
 
 /** The introduction stops earning after this date. */
