@@ -10,7 +10,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { Shell } from "@/components/Shell";
 import { OperatorProvider, useOperator } from "@/state/OperatorContext";
 import { OfflineBanner } from "@/offline/OfflineBanner";
-import { OFFLINE } from "@/offline/offline";
+import { DEMO } from "@/offline/offline";
 import { can, type Permission } from "@/domain/authz";
 import Analytics from "@/screens/Analytics";
 import Bookings from "@/screens/Bookings";
@@ -194,7 +194,7 @@ export default function App() {
         portal cannot measure anything it is showing, so it says so permanently
         rather than once. Renders nothing at all when the flag is unset.
       */}
-      {OFFLINE && <OfflineBanner />}
+      {DEMO && <OfflineBanner />}
       <Router />
     </OperatorProvider>
   );

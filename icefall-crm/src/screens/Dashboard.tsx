@@ -11,11 +11,12 @@ import {
 } from "@/data/queries";
 import { loading, type Result } from "@/data/result";
 import type { Enquiry, RevenueRecord } from "@/data/types";
-import { cn } from "@/lib/utils";
+import { cn, formatDay } from "@/lib/utils";
 import { useStaff } from "@/auth/session";
 import { Donut, DONUT_COLORS, LineChart } from "@/components/charts";
 import { DASHBOARD_MOCKUP } from "@/demo/mockupScreens";
 import { WorldDots } from "@/components/drawn";
+import { RangeControl, rangeBounds, type RangeValue } from "@/components/controls";
 
 /**
  * Dashboard — ONE screen in the owner's drawn layout (their 31 Aug ruling
@@ -45,13 +46,9 @@ import { WorldDots } from "@/components/drawn";
  * UTC formatter, not the viewer's clock, so the footer line is true.
  */
 
-const RANGES = [
-  { id: "7", label: "Last 7 days", days: 7 },
-  { id: "30", label: "Last 30 days", days: 30 },
-  { id: "90", label: "Last 90 days", days: 90 },
-  { id: "all", label: "All time", days: null },
-] as const;
-type RangeId = (typeof RANGES)[number]["id"];
+/** Range label for the chip beside the revenue card. */
+const rangeLabel = (v: RangeValue): string =>
+  v.kind === "all" ? "All time" : v.kind === "days" ? `Last ${v.days} days` : `${formatDay(v.start)} – ${formatDay(v.end)}`;
 
 const utc = new Intl.DateTimeFormat("en-GB", {
   day: "numeric", month: "short", timeZone: "UTC",
@@ -117,7 +114,7 @@ export default function Dashboard() {
    * DemoBanner. Flag off → the honest live reads below, untouched.
    */
   const M = DASHBOARD_MOCKUP;
-  const [range, setRange] = useState<RangeId>("30");
+  const [range, setRange] = useState<RangeValue>({ kind: "days", days: 30 });
   const [counts, setCounts] = useState<Result<{ users: number; guides: number; companies: number; bookings: number }>>(loading);
   const [countries, setCountries] = useState<Result<{ country_code: string | null }[]>>(loading);
   const [revenue, setRevenue] = useState<Result<RevenueRecord[]>>(loading);
@@ -134,13 +131,15 @@ export default function Dashboard() {
     setAsOf(new Date());
   }, []);
 
-  const days = RANGES.find((r) => r.id === range)!.days;
-  const cutoff = days === null ? null : new Date(Date.now() - days * 86_400_000);
+  // ISO strings compare as dates (§6af) — no Date parsing in the filter.
+  const bounds = rangeBounds(range);
 
   const revRows = useMemo(() => {
     if (revenue.state !== "ok") return null;
-    return revenue.value.filter((r) => cutoff === null || new Date(r.recognised_on) >= cutoff);
-  }, [revenue, cutoff]);
+    return revenue.value.filter(
+      (r) => (bounds.start === null || r.recognised_on >= bounds.start) && r.recognised_on <= bounds.end,
+    );
+  }, [revenue, bounds.start, bounds.end]);
 
   const revTotal = revRows ? revRows.reduce((s, r) => s + r.amount_cents, 0) : 0;
 
@@ -199,12 +198,7 @@ export default function Dashboard() {
                 <ChevronDown size={13} strokeWidth={2} className="text-faint" aria-hidden />
               </span>
             ) : (
-              <label className="flex items-center gap-1.5 rounded-tile border border-line bg-surface px-3 py-2 text-[12.5px] font-medium text-ink">
-                <select value={range} onChange={(e) => setRange(e.target.value as RangeId)} className="appearance-none bg-transparent pr-1 outline-none">
-                  {RANGES.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
-                </select>
-                <ChevronDown size={14} strokeWidth={2} className="text-faint" aria-hidden />
-              </label>
+              <RangeControl value={range} onChange={setRange} />
             )}
             {M && (
               <span className="flex items-center gap-1.5 rounded-tile border border-line bg-surface px-3 py-2 text-[12.5px] font-medium text-ink">
@@ -368,7 +362,7 @@ export default function Dashboard() {
                 May 24 – May 30, 2026 <ChevronDown size={12} strokeWidth={2} className="text-faint" aria-hidden />
               </span>
             ) : (
-              <Pill tone="neutral">{RANGES.find((r) => r.id === range)!.label}</Pill>
+              <Pill tone="neutral">{rangeLabel(range)}</Pill>
             )}
           </div>
           {M ? (

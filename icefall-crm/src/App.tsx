@@ -4,7 +4,7 @@ import { DemoBanner } from "@/components/DemoBanner";
 import { Forbidden, Loading, Unavailable } from "@/components/states";
 import { useSession } from "@/auth/session";
 import { NOT_CONFIGURED } from "@/lib/supabase";
-import { OFFLINE } from "@/offline/offline";
+import { DEMO } from "@/offline/offline";
 
 import SignIn from "@/screens/SignIn";
 import Dashboard from "@/screens/Dashboard";
@@ -67,7 +67,7 @@ export default function App() {
   // back — and a dead end is exactly what the offline build exists to prevent.
   // Typing the URL lands on the dashboard instead.
   if (pathname === "/sign-in") {
-    return OFFLINE ? <Navigate to="/admin/dashboard" replace /> : <SignIn />;
+    return DEMO ? <Navigate to="/admin/dashboard" replace /> : <SignIn />;
   }
 
   // The whole application is behind the staff gate, including the dashboard.

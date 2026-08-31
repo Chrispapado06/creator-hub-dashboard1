@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SHOW_DEMO_DATA } from "@/lib/demoFlag";
-import { OFFLINE } from "@/offline/offline";
+import { DEMO } from "@/offline/offline";
 import type { Availability } from "@/guides/types";
 
 /**
@@ -78,7 +78,7 @@ export function AvailabilityCalendar({
   className?: string;
 }) {
   const [anchor, setAnchor] = useState(() => new Date(from));
-  const showDots = (SHOW_DEMO_DATA || OFFLINE) && seed !== undefined;
+  const showDots = (SHOW_DEMO_DATA || DEMO) && seed !== undefined;
 
   // Fourteen days from the start of the anchor's week — the mockup shows a
   // single scrollable run of days rather than a month grid.

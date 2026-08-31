@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from "react";
 import { Plus, Tag as TagIcon, X } from "lucide-react";
 import type { Lead, LeadStatus, Mountain, Product } from "@/domain/types";
 import { LEAD_PIPELINE } from "@/domain/types";
+import { Listbox } from "@/components/controls";
 import { Button, Card, Field, inputClass } from "@/components/ui";
 import { useOperator, useSession } from "@/state/OperatorContext";
 
@@ -351,36 +352,43 @@ export function AddLeadDialog({
               />
             </Field>
 
-            <Field label="Trip" hint="Leave blank if they have not chosen one yet.">
-              <select
+            {/*
+              The kit's Listbox, NOT wrapped in ui.tsx's <label>-based Field:
+              a click inside a label forwards to its first labelable control,
+              which would re-toggle the trigger button the moment an option is
+              picked. The kit brings its own label; the hint keeps Field's
+              styling, below the control.
+            */}
+            <div>
+              <Listbox
+                label="Trip"
                 value={productId}
-                onChange={(e) => setProductId(e.target.value)}
-                className={inputClass}
-              >
-                <option value="">Not decided</option>
-                {products.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
+                onChange={setProductId}
+                options={[
+                  { value: "", label: "Not decided" },
+                  ...products.map((p) => ({ value: p.id, label: p.name })),
+                ]}
+              />
+              <span className="mt-1 block text-[11.5px] leading-snug text-muted">
+                Leave blank if they have not chosen one yet.
+              </span>
+            </div>
 
             {!productId && (
-              <Field label="Mountain" hint="Optional, if you know where they want to go.">
-                <select
+              <div>
+                <Listbox
+                  label="Mountain"
                   value={mountainId}
-                  onChange={(e) => setMountainId(e.target.value)}
-                  className={inputClass}
-                >
-                  <option value="">Not decided</option>
-                  {mountains.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
+                  onChange={setMountainId}
+                  options={[
+                    { value: "", label: "Not decided" },
+                    ...mountains.map((m) => ({ value: m.id, label: m.name })),
+                  ]}
+                />
+                <span className="mt-1 block text-[11.5px] leading-snug text-muted">
+                  Optional, if you know where they want to go.
+                </span>
+              </div>
             )}
 
             <Field label="How they reached you" hint="Your own words — Phone, Referral, Walk-in.">

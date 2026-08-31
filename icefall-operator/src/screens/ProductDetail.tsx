@@ -24,6 +24,7 @@ import { Link, useParams } from "react-router-dom";
 import {
   Button, Card, Field, LockedNotice, Notice, StatusChip, Tabs, formatMoney, inputClass,
 } from "@/components/ui";
+import { Listbox } from "@/components/controls";
 import { ProductOverview } from "@/components/ProductOverview";
 import { can, findContactDetails } from "@/domain/authz";
 import { OPERATOR_NOTICES } from "@/domain/honesty";
@@ -369,19 +370,17 @@ export default function ProductDetail() {
                               : " · spaces not stated"}
                           </div>
                         </div>
-                        <select
-                          className="rounded-tile border border-line bg-elevated px-2 py-1 text-[12.5px] text-ink"
-                          value={d.availability}
-                          onChange={(e) =>
-                            void setAvailability(d.id, { availability: e.target.value as DepartureAvailability })
-                          }
-                        >
-                          {(Object.keys(AVAILABILITY_LABEL) as DepartureAvailability[]).map((a) => (
-                            <option key={a} value={a}>
-                              {AVAILABILITY_LABEL[a]}
-                            </option>
-                          ))}
-                        </select>
+                        <div className="w-[150px]">
+                          <Listbox
+                            value={d.availability}
+                            onChange={(v) =>
+                              void setAvailability(d.id, { availability: v as DepartureAvailability })
+                            }
+                            options={(Object.keys(AVAILABILITY_LABEL) as DepartureAvailability[]).map(
+                              (a) => ({ value: a, label: AVAILABILITY_LABEL[a] }),
+                            )}
+                          />
+                        </div>
                         <input
                           className="tnum w-[96px] rounded-tile border border-line bg-elevated px-2 py-1 text-[12.5px] text-ink"
                           inputMode="numeric"

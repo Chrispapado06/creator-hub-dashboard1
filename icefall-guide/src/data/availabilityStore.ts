@@ -26,15 +26,15 @@
 
 import { DAY_STATES, type DayState } from "./demo";
 import { sampleAllowed } from "@/domain/sampleGate";
-import { OFFLINE } from "@/offline/offline";
+import { DEMO } from "@/lib/demoFlag";
 
 /**
- * AN OFFLINE DEMO GETS ITS OWN DRAWER. It runs on the same origin as the real
+ * A DEMO BUILD GETS ITS OWN DRAWER. It runs on the same origin as the real
  * app, and a demo that overwrote a working guide's own calendar on their own
  * device would be sample data doing real damage. Unset, this is the string it
  * has always been. Same reasoning as `listingStore.ts`.
  */
-const KEY = OFFLINE ? "icefall-guide:offline-demo:availability:v1" : "icefall-guide:availability:v1";
+const KEY = DEMO ? "icefall-guide:offline-demo:availability:v1" : "icefall-guide:availability:v1";
 
 /** What the guide may set. `booked` is derived and deliberately absent. */
 export type SettableState = Exclude<DayState, "booked">;

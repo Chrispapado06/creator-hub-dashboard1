@@ -1,4 +1,5 @@
 import { useCallback, useId, useMemo, useState } from "react";
+import { DateField } from "@/components/ui/DateField";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   CalendarPlus,
@@ -1126,14 +1127,7 @@ function AddSession({
         <div className="flex gap-2.5">
           <label className="min-w-0 flex-1">
             <span className="sr-only">Date</span>
-            <input
-              type="date"
-              value={dayKey}
-              onChange={(e) => setDayKey(e.target.value)}
-              // The native picker follows the page, not the system, without this.
-              style={{ colorScheme: "dark" }}
-              className={cn(INPUT_CLASS, "tnum")}
-            />
+            <DateField label="Date" value={dayKey} onChange={setDayKey} />
           </label>
           <label className="w-[120px] shrink-0">
             <span className="sr-only">Time, optional</span>

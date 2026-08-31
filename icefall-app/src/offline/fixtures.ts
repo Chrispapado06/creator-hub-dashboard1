@@ -23,8 +23,8 @@
  *    measure; offline it can measure nothing at all, so the banner is not
  *    decoration, it is the thing carrying the honesty for the entire build.
  *
- * 3. IT IS ONLY EVER READ BEHIND `if (OFFLINE)`. No production path renders a
- *    single byte of it. The literals are additionally gated on `OFFLINE` at
+ * 3. IT IS ONLY EVER READ BEHIND the demo gates. No production path renders a
+ *    single byte of it. The literals are additionally gated on `DEMO` at
  *    DEFINITION — the pattern `@/lib/demoFlag` documents — so an ordinary build
  *    folds them away rather than shipping invented records inside the bundle
  *    where anybody could read them.
@@ -34,7 +34,7 @@
  *    stores that read localStorage, and seed them.
  */
 
-import { OFFLINE } from "./offline";
+import { DEMO } from "./offline";
 
 import type { Goal } from "@/types";
 import type { Place } from "@/routes/places";
@@ -112,7 +112,7 @@ export const OFFLINE_ATHLETE = {
  * Deliberately different mountains from `data/mock/goals.ts`, so a dev build
  * (which also seeds those) does not show each objective twice.
  */
-export const OFFLINE_GOALS: Goal[] = !OFFLINE
+export const OFFLINE_GOALS: Goal[] = !DEMO
   ? []
   : [
       {
@@ -360,7 +360,7 @@ function buildActivity(spec: ActivitySpec, seed: number): RecordedActivity {
   };
 }
 
-const ACTIVITY_SPECS: ActivitySpec[] = !OFFLINE
+const ACTIVITY_SPECS: ActivitySpec[] = !DEMO
   ? []
   : [
       {
@@ -530,7 +530,7 @@ export const OFFLINE_ATHLETE_META = {
    * Ids from `tracking/records.ts` — not invented ones. A made-up id renders as
    * nothing at all on the Profile, which looks like a bug rather than a badge.
    */
-  earnedAchievements: !OFFLINE
+  earnedAchievements: !DEMO
     ? []
     : ["first-5k", "first-10k", "first-500-ascent", "first-1000-ascent", "above-3000", "alpine-start"],
 };
@@ -539,7 +539,7 @@ export const OFFLINE_ATHLETE_META = {
 /* Profile — settings, posts, summit logs                                      */
 /* -------------------------------------------------------------------------- */
 
-export const OFFLINE_SETTINGS: Partial<SettingsState> = !OFFLINE
+export const OFFLINE_SETTINGS: Partial<SettingsState> = !DEMO
   ? {}
   : {
       username: OFFLINE_ATHLETE.username,
@@ -555,7 +555,7 @@ export const OFFLINE_SETTINGS: Partial<SettingsState> = !OFFLINE
       ageBand: "25-34",
     };
 
-export const OFFLINE_OWN_POSTS: OwnPost[] = !OFFLINE
+export const OFFLINE_OWN_POSTS: OwnPost[] = !DEMO
   ? []
   : [
       {
@@ -588,7 +588,7 @@ export const OFFLINE_OWN_POSTS: OwnPost[] = !OFFLINE
       },
     ];
 
-export const OFFLINE_SUMMIT_LOGS: SummitLog[] = !OFFLINE
+export const OFFLINE_SUMMIT_LOGS: SummitLog[] = !DEMO
   ? []
   : [
       {
@@ -626,7 +626,7 @@ export const OFFLINE_SUMMIT_LOGS: SummitLog[] = !OFFLINE
  * channel on a QUALIFIED ENQUIRY, so two of these are locked and show what a
  * locked channel looks like rather than pretending everything is open.
  */
-export const OFFLINE_CONVERSATIONS: Conversation[] = !OFFLINE
+export const OFFLINE_CONVERSATIONS: Conversation[] = !DEMO
   ? []
   : [
       {
@@ -838,7 +838,7 @@ export const OFFLINE_CONVERSATIONS: Conversation[] = !OFFLINE
 /* Community                                                                   */
 /* -------------------------------------------------------------------------- */
 
-export const OFFLINE_COMMUNITY_POSTS: CommunityPost[] = !OFFLINE
+export const OFFLINE_COMMUNITY_POSTS: CommunityPost[] = !DEMO
   ? []
   : [
       {
@@ -938,7 +938,7 @@ export const OFFLINE_COMMUNITY_POSTS: CommunityPost[] = !OFFLINE
  * ascent count, rate and rating below was made up. `demo: true` keeps them
  * badged and behind the same disclaimer the dev demo data carries.
  */
-export const OFFLINE_GUIDES: Guide[] = !OFFLINE
+export const OFFLINE_GUIDES: Guide[] = !DEMO
   ? []
   : [
       {
@@ -1083,7 +1083,7 @@ export const OFFLINE_GUIDES: Guide[] = !OFFLINE
 /* -------------------------------------------------------------------------- */
 
 /** Where the offline demo can search. Real towns, no geocoder. */
-export const OFFLINE_PLACES: Place[] = !OFFLINE
+export const OFFLINE_PLACES: Place[] = !DEMO
   ? []
   : [
       { id: "s:chamonix", name: "Chamonix", region: "Haute-Savoie, France", lat: 45.9237, lon: 6.8694 },
@@ -1163,7 +1163,7 @@ export function offlineNearbyPeaks(
  * Invented ids in a private range so a fixture can never be mistaken for an OSM
  * relation somebody could look up.
  */
-export const OFFLINE_TRAILS: Trail[] = !OFFLINE
+export const OFFLINE_TRAILS: Trail[] = !DEMO
   ? []
   : [
       {

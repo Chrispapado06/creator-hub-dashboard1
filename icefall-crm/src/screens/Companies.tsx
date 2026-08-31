@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   EllipsisVertical,
@@ -14,6 +13,7 @@ import { OFFLINE } from "@/offline/offline";
 import { cn, formatDay } from "@/lib/utils";
 import { listCompanies, listRevenue } from "@/data/queries";
 import { loading, type Result } from "@/data/result";
+import { Select } from "@/components/controls";
 import type { Company, RevenueRecord } from "@/data/types";
 
 /**
@@ -337,21 +337,17 @@ export default function Companies() {
                   <p className="text-[12px] text-faint">
                     Showing {from} to {to} of {rows.length} results
                   </p>
-                  <label className="flex items-center gap-1.5 rounded-tile border border-line px-2.5 py-1.5 text-[12px] text-muted">
-                    <select
-                      value={perPage}
-                      onChange={(e) => {
-                        setPerPage(Number(e.target.value));
-                        setPage(1);
-                      }}
-                      className="appearance-none bg-transparent outline-none"
-                    >
-                      <option value={8}>8 per page</option>
-                      <option value={16}>16 per page</option>
-                      <option value={24}>24 per page</option>
-                    </select>
-                    <ChevronDown size={13} strokeWidth={2} aria-hidden />
-                  </label>
+                  <Select
+                    value={String(perPage)}
+                    onChange={(v: string) => { setPerPage(Number(v)); setPage(1); }}
+                    ariaLabel="Results per page"
+                    className="w-[130px]"
+                    options={[
+                      { value: "8", label: "8 per page" },
+                      { value: "16", label: "16 per page" },
+                      { value: "24", label: "24 per page" },
+                    ]}
+                  />
                 </div>
               </TableCard>
             </>

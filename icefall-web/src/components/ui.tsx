@@ -11,7 +11,7 @@ export function Button({
   ...rest
 }: {
   children: ReactNode;
-  variant?: "primary" | "secondary" | "ghost";
+  variant?: "primary" | "secondary" | "ghost" | "destructive";
   size?: "sm" | "md" | "lg";
 } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
@@ -19,6 +19,8 @@ export function Button({
       {...rest}
       className={cn(
         "inline-flex items-center justify-center gap-2 rounded-tile font-normal transition-colors",
+        // 11-CONTROLS-CONTRACT: focus-visible ring on everything, no default styling.
+        "outline-none focus-visible:ring-2 focus-visible:ring-azure/60 focus-visible:ring-offset-2 focus-visible:ring-offset-obsidian",
         "disabled:cursor-not-allowed disabled:opacity-45",
         size === "sm" && "h-9 px-3.5 text-[13px]",
         size === "md" && "h-11 px-5 text-[14px]",
@@ -26,6 +28,13 @@ export function Button({
         variant === "primary" && "bg-azure text-obsidian hover:bg-azure-bright",
         variant === "secondary" && "border border-hairline bg-slate text-snow hover:bg-elevated",
         variant === "ghost" && "text-mist hover:bg-slate hover:text-snow",
+        /*
+          Destructive gets its own colour and never the primary style, per the
+          contract — a delete that looks like the main action is a delete that
+          gets pressed by habit. Danger ring to match.
+        */
+        variant === "destructive" &&
+          "border border-danger/50 text-danger hover:bg-danger/10 focus-visible:ring-danger/60",
         className,
       )}
     >

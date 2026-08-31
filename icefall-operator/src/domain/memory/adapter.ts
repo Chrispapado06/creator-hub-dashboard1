@@ -13,12 +13,12 @@
  * about to be deleted.
  */
 
-import type { AnalyticsSummary, DashboardSummary, DraftInput, MountainPerformance, NewProductInput, OperatorBackend, OperatorInsights, OwnerPerformance, ProductPerformance, SourceCount, SourceQuality, StageReach, TrendPoint, WriteResult } from "../adapter";
+import type { AnalyticsRange, AnalyticsSummary, AnalyticsWindow, DashboardSummary, DraftInput, MountainPerformance, NewProductInput, OperatorBackend, OperatorInsights, OwnerPerformance, ProductPerformance, SourceCount, SourceQuality, StageReach, TrendPoint, WriteResult } from "../adapter";
 import type { Session } from "../authz";
 import { can, canEditVersion, canManageMountain, findContactDetailsIn, isCompanyAdmin, ownsCompany } from "../authz";
 import { conversionRate, estimatedGmv, measured, OPERATOR_NOTICES, unavailable, type Reading } from "../honesty";
 import { demoListingViews } from "../demo";
-import { formatDayShort, NOW } from "../dates";
+import { formatDayShort, NOW, parseDay, TODAY } from "../dates";
 import type {
   Booking, Company, CompanyUser, Conversation, ConversationNote, ContentEntityType,
   ContentVersion, FunnelCounts, Lead, LeadNote, LeadStatus, Message, Mountain,
@@ -964,6 +964,30 @@ export const memoryBackend: OperatorBackend = {
   },
 
   /**
+   * `getTrend` over EXACT dates (OP-02). Same counting as `getTrend` — one
+   * point per calendar day, counted from the same lead rows — over the
+   * validated range instead of a trailing window, so the Overview chart
+   * follows whatever dates the operator picked. `resolveWindow` supplies the
+   * strictness: garbage or a reversed range is refused with the reason.
+   */
+  async getTrendRange(session, range): Promise<TrendPoint[]> {
+    const r = resolveWindow(range);
+    const leads = mine(session, db.leads);
+    const out: TrendPoint[] = [];
+    for (let d = r.fromIso; d <= r.toIso; d = shiftDayIso(d, 1)) {
+      const on = (iso: string | null) => iso !== null && iso.slice(0, 10) === d;
+      out.push({
+        day: d,
+        label: formatDayShort(d),
+        enquiries: leads.filter((l) => on(l.createdAt)).length,
+        qualified: leads.filter((l) => on(l.qualifiedAt)).length,
+        bookings: leads.filter((l) => on(l.bookedAt)).length,
+      });
+    }
+    return out;
+  },
+
+  /**
    * The dev-server path for an asset this company owns.
    *
    * Only `approved` assets resolve. A pending or rejected mark must not appear
@@ -1018,8 +1042,8 @@ export const memoryBackend: OperatorBackend = {
    * part of that. The two ICEFALL-attribution figures stay in `getAnalytics`.
    */
   async getInsights(session, window): Promise<OperatorInsights> {
-    const cutoff = window === "week" ? "2026-08-21" : "2026-07-28";
-    const leads = mine(session, db.leads).filter((l) => l.createdAt.slice(0, 10) >= cutoff);
+    const range = resolveWindow(window);
+    const leads = mine(session, db.leads).filter((l) => inRange(l.createdAt, range));
     const products = mine(session, db.products);
     const bookings = mine(session, db.bookings);
 
@@ -1175,15 +1199,18 @@ export const memoryBackend: OperatorBackend = {
 
   async getAnalytics(session, window): Promise<AnalyticsSummary> {
     const leads = mine(session, db.leads);
-    const cutoff = window === "week" ? "2026-08-21" : "2026-07-28";
-    const priorCutoff = window === "week" ? "2026-08-14" : "2026-06-28";
+    const range = resolveWindow(window);
+    /*
+     * The comparison window is the SAME LENGTH, immediately before the range —
+     * a 12-day pick is compared against the 12 days before it, never against a
+     * window of some other size dressed up as "the previous period".
+     */
+    const prevRange = previousRangeOf(range);
 
     const scored = icefallOnly(leads);
-    const inWindow = scored.filter((l) => l.createdAt.slice(0, 10) >= cutoff);
+    const inWindow = scored.filter((l) => inRange(l.createdAt, range));
     const current = funnelFor(inWindow);
-    const prior = funnelFor(
-      scored.filter((l) => l.createdAt.slice(0, 10) >= priorCutoff && l.createdAt.slice(0, 10) < cutoff),
-    );
+    const prior = funnelFor(scored.filter((l) => inRange(l.createdAt, prevRange)));
     /*
      * Revenue counts CONFIRMED and COMPLETED bookings only. A cancelled
      * booking's value is not revenue, and a pending one is not revenue YET —
@@ -1195,6 +1222,10 @@ export const memoryBackend: OperatorBackend = {
         .map((b) => b.value),
     );
 
+    // Null rather than zeroes when the earlier window holds nothing: "no
+    // change" and "nothing to compare against" are different statements. The
+    // RANGE goes null with the counts, so no "vs …" label survives its data.
+    const hasPrior = prior.enquiries + prior.qualified + prior.bookings > 0;
     return {
       views: viewsReading(session),
       funnel: current,
@@ -1202,7 +1233,9 @@ export const memoryBackend: OperatorBackend = {
       conversionRate: conversionRate(current.bookings, current.enquiries),
       estimatedGmv: gmv.total,
       gmvExcludedCount: gmv.excluded,
-      previous: prior.enquiries + prior.qualified + prior.bookings > 0 ? prior : null,
+      previous: hasPrior ? prior : null,
+      range,
+      previousRange: hasPrior ? prevRange : null,
     };
   },
 
@@ -1224,6 +1257,80 @@ export const memoryBackend: OperatorBackend = {
 /* -------------------------------------------------------------------------- */
 /* Measurement                                                                */
 /* -------------------------------------------------------------------------- */
+
+/* -------------------------------------------------------------------------- */
+/* The reporting window (OP-02: exact dates)                                  */
+/* -------------------------------------------------------------------------- */
+
+/** `iso` shifted by whole days, via UTC arithmetic only — no local timezone. */
+function shiftDayIso(iso: string, delta: number): string {
+  const d = parseDay(iso);
+  if (!d) return iso;
+  const t = new Date(Date.UTC(d.year, d.month - 1, d.day + delta));
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${t.getUTCFullYear()}-${pad(t.getUTCMonth() + 1)}-${pad(t.getUTCDate())}`;
+}
+
+/**
+ * The write-path day check, §6af strict: exactly `YYYY-MM-DD` naming a real
+ * calendar day, returned unchanged — everything else is null, never coerced.
+ * (Shifting by zero days normalises through Date.UTC, so "2026-02-31" comes
+ * back as a different string and fails the round-trip.)
+ */
+function strictDay(s: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  return shiftDayIso(s, 0) === s ? s : null;
+}
+
+/** Inclusive length of a validated range, in whole days. */
+function rangeDays(range: AnalyticsRange): number {
+  const a = parseDay(range.fromIso)!;
+  const b = parseDay(range.toIso)!;
+  return Math.round((Date.UTC(b.year, b.month - 1, b.day) - Date.UTC(a.year, a.month - 1, a.day)) / 86_400_000) + 1;
+}
+
+/**
+ * ONE SIGNATURE, ONE ARITHMETIC. The presets are DERIVED ranges — "week" is
+ * the 7 calendar days ending today, "month" the 30, exactly the ranges the
+ * screen's preset pills produce — so a preset and a custom range run the same
+ * code and the label on screen always names the days that were counted.
+ *
+ * Exact dates are refused, not repaired: a malformed day or a reversed range
+ * throws with the reason. No screen can produce either (the calendar control
+ * emits ordered, valid ISO days) — this is the write-path strictness rule
+ * standing guard at the seam regardless.
+ */
+const PRESET_DAYS = { week: 7, month: 30 } as const;
+
+function resolveWindow(window: AnalyticsWindow): AnalyticsRange {
+  if (typeof window === "string") {
+    const days = PRESET_DAYS[window];
+    return { fromIso: shiftDayIso(TODAY, -(days - 1)), toIso: TODAY };
+  }
+  const fromIso = strictDay(window.fromIso);
+  const toIso = strictDay(window.toIso);
+  if (!fromIso || !toIso) {
+    throw new Error(
+      `Refused: "${!fromIso ? window.fromIso : window.toIso}" is not a calendar day. Dates must be YYYY-MM-DD and name a day that exists.`,
+    );
+  }
+  if (fromIso > toIso) {
+    throw new Error(`Refused: the range is reversed — ${fromIso} is after ${toIso}.`);
+  }
+  return { fromIso, toIso };
+}
+
+/** The SAME LENGTH, immediately before the range — the comparison window. */
+function previousRangeOf(range: AnalyticsRange): AnalyticsRange {
+  const len = rangeDays(range);
+  return { fromIso: shiftDayIso(range.fromIso, -len), toIso: shiftDayIso(range.fromIso, -1) };
+}
+
+/** Whether a timestamp's calendar day falls inside the range, inclusive. */
+function inRange(isoTimestamp: string, range: AnalyticsRange): boolean {
+  const day = isoTimestamp.slice(0, 10);
+  return day >= range.fromIso && day <= range.toIso;
+}
 
 /**
  * Enquiries by channel, COUNTED from the same rows every other figure on the

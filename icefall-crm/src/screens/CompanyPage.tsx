@@ -8,6 +8,7 @@ import { createCompany, getCompany, updateCompanyRecord } from "@/data/queries";
 import { OFFLINE } from "@/offline/offline";
 import { NeedsConnection } from "@/offline/OfflineBanner";
 import { loading, type Result } from "@/data/result";
+import { Select } from "@/components/controls";
 import type { Company } from "@/data/types";
 import { cn } from "@/lib/utils";
 
@@ -158,11 +159,17 @@ function CreateCompany() {
           </label>
           <label className="block">
             <span className={label}>Where they stand with ICEFALL</span>
-            <select value={f.status} onChange={set("status")} className={fieldCls}>
-              <option value="prospect">Prospect — not yet in conversation</option>
-              <option value="onboarding">Onboarding — signed, being set up</option>
-              <option value="active">Active — live on the marketplace</option>
-            </select>
+            <Select
+              value={f.status}
+              onChange={(v: string) => set("status")({ target: { value: v } } as React.ChangeEvent<HTMLSelectElement>)}
+              ariaLabel="Company status"
+              className="w-full"
+              options={[
+                { value: "prospect", label: "Prospect — not yet in conversation" },
+                { value: "onboarding", label: "Onboarding — signed, being set up" },
+                { value: "active", label: "Active — live on the marketplace" },
+              ]}
+            />
           </label>
         </div>
 
@@ -177,11 +184,17 @@ function CreateCompany() {
             </label>
             <label className="block">
               <span className={label}>Priority</span>
-              <select value={f.priority} onChange={set("priority")} className={fieldCls}>
-                <option value="low">Low</option>
-                <option value="normal">Normal</option>
-                <option value="high">High</option>
-              </select>
+              <Select
+                value={f.priority}
+                onChange={(v: string) => set("priority")({ target: { value: v } } as React.ChangeEvent<HTMLSelectElement>)}
+                ariaLabel="Priority"
+                className="w-full"
+                options={[
+                  { value: "low", label: "Low" },
+                  { value: "normal", label: "Normal" },
+                  { value: "high", label: "High" },
+                ]}
+              />
             </label>
             <label className="block sm:col-span-2">
               <span className={label}>Notes</span>

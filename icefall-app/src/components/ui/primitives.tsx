@@ -11,6 +11,9 @@ import { initialsFor } from "@/lib/monogram";
 const button = cva(
   "inline-flex items-center justify-center gap-2 font-medium whitespace-nowrap transition-all duration-200 " +
     "ease-[cubic-bezier(.22,1,.36,1)] disabled:pointer-events-none disabled:opacity-40 active:scale-[0.985] " +
+    // 11-CONTROLS-CONTRACT: focus-visible ring on everything. Keyboard users
+    // get the same affordance the hover states give a mouse.
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-azure/60 focus-visible:ring-offset-2 focus-visible:ring-offset-obsidian " +
     "[&_svg]:shrink-0",
   {
     variants: {

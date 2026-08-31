@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Building2, CalendarDays, ChevronDown, Download, SlidersHorizontal, TrendingUp, User } from "lucide-react";
+import { Building2, CalendarDays, Download, SlidersHorizontal, TrendingUp, User } from "lucide-react";
 import { Button, Card, PageHead, Pill, SectionLabel, TableCard } from "@/components/ui";
 import { Resolve } from "@/components/states";
 import { listBookingsDetailed, type BookingDetailed } from "@/data/queries";
@@ -9,6 +9,7 @@ import { Bars, Donut, DONUT_COLORS, LineChart } from "@/components/charts";
 import { GUIDE_COMMISSION_PCT } from "@/money/model";
 import { COMMISSIONS_MOCKUP } from "@/demo/mockupScreens";
 import { ListTabs, LogoDot, Thumb, ViewAllLink, type SourceTab } from "@/components/drawn";
+import { RangeControl, rangeBounds, type RangeValue } from "@/components/controls";
 
 /**
  * Commissions — ONE screen, the owner's drawn layout, two data sources.
@@ -47,11 +48,7 @@ interface Row {
   status: "accrued" | "invoiced" | "paid" | "disputed" | "waived";
 }
 
-const RANGES = [
-  { id: "30", label: "Last 30 days", days: 30 },
-  { id: "90", label: "Last 90 days", days: 90 },
-  { id: "all", label: "All time", days: null },
-] as const;
+
 
 /** Everything the drawn layout needs, from either source. */
 interface Slots {
@@ -69,7 +66,7 @@ interface Slots {
 export default function Commissions() {
   const M = COMMISSIONS_MOCKUP;
   const [result, setResult] = useState<Result<BookingDetailed[]>>(loading);
-  const [range, setRange] = useState<(typeof RANGES)[number]["id"]>("all");
+  const [range, setRange] = useState<RangeValue>({ kind: "all" });
   // One source filter shared by the three tabbed lists. Live mode filters;
   // sample mode's pills are visual — the drawing's figures are fixed.
   const [topTab, setTopTab] = useState<SourceTab>("all");
@@ -80,12 +77,14 @@ export default function Commissions() {
 
   const rows: Row[] | null = useMemo(() => {
     if (result.state !== "ok") return null;
-    const days = RANGES.find((r) => r.id === range)!.days;
-    const cutoff = days === null ? null : Date.now() - days * 86_400_000;
+    // Date-part string comparison on ISO — no Date parsing in a filter (§6af).
+    const bounds = rangeBounds(range);
     const out: Row[] = [];
     for (const b of result.value)
       for (const c of b.commissions) {
-        if (cutoff !== null && new Date(b.booked_at).getTime() < cutoff) continue;
+        const day = b.booked_at.slice(0, 10);
+        if (bounds.start !== null && day < bounds.start) continue;
+        if (day > bounds.end) continue;
         out.push({ booking: b, ...c });
       }
     return out;
@@ -490,12 +489,7 @@ export default function Commissions() {
                 {M.range} <CalendarDays size={13} strokeWidth={2} className="text-faint" aria-hidden />
               </span>
             ) : (
-              <label className="flex items-center gap-1.5 rounded-tile border border-line bg-surface px-3 py-2 text-[12.5px] font-medium text-ink">
-                <select value={range} onChange={(e) => setRange(e.target.value as typeof range)} className="appearance-none bg-transparent pr-1 outline-none">
-                  {RANGES.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
-                </select>
-                <ChevronDown size={14} strokeWidth={2} className="text-faint" aria-hidden />
-              </label>
+              <RangeControl value={range} onChange={setRange} presets={[30, 90]} />
             )}
             <Button variant="secondary"><SlidersHorizontal size={13} strokeWidth={2} /> Filters</Button>
             <Button variant="secondary" onClick={exportCsv}><Download size={14} strokeWidth={2} /> Export</Button>

@@ -2,6 +2,7 @@ import { useLocation } from "react-router-dom";
 import { TriangleAlert } from "lucide-react";
 import { DEMO_NOTICE, SHOW_DEMO_DATA } from "@/lib/demoFlag";
 import { DRAWN_ROUTES } from "@/components/drawn";
+import { OFFLINE } from "@/offline/offline";
 
 /**
  * Says, on the face of the screen, that the numbers are invented.
@@ -17,11 +18,12 @@ import { DRAWN_ROUTES } from "@/components/drawn";
 export function DemoBanner() {
   const { pathname } = useLocation();
   if (!SHOW_DEMO_DATA) return null;
-  // NOT on the drawn screens (brain's ruling, twice): the shared offline
-  // preview carries its own top-strip disclosure, and the drawings start at
-  // the page title — a second banner above them broke the 1:1. Every other
-  // demo-fed screen keeps the marker.
-  if (DRAWN_ROUTES.some((r) => pathname.startsWith(r))) return null;
+  // NOT on the drawn screens WHEN THE OFFLINE STRIP CARRIES THE DISCLOSURE
+  // (the ruling that removed the second banner assumed the strip exists — it
+  // does only on OFFLINE bundles). A public DEMO deployment has no strip, and
+  // invented figures on the open internet without a notice is the one thing
+  // this component exists to prevent — so there, the drawn screens keep it.
+  if (OFFLINE && DRAWN_ROUTES.some((r) => pathname.startsWith(r))) return null;
   // ONE slim marker, not a boxed callout: the owner's drawings start at the
   // page title, and two disclosures are clutter where one is honest.
   return (
@@ -31,7 +33,7 @@ export function DemoBanner() {
     >
       <TriangleAlert size={12} strokeWidth={2} className="shrink-0 text-[oklch(0.58_0.12_70)]" />
       <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[oklch(0.45_0.08_70)]">
-        Offline demo · sample data, not real
+        Demo · sample data, not real
       </p>
     </div>
   );

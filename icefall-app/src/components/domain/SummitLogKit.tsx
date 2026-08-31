@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { DateField } from "@/components/ui/DateField";
 import { Link } from "react-router-dom";
 import { Camera, MessageCircle, Mountain, Trash2, X } from "lucide-react";
 import { Sheet } from "@/components/ui/Sheet";
@@ -61,7 +62,7 @@ export function LogSummitSheet({
           <span className="text-[11px] uppercase tracking-[0.1em] text-mist-dim">
             Date of the ascent
           </span>
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={field} />
+          <DateField label="Date of the ascent" value={date} onChange={setDate} className="mt-1.5" />
         </label>
 
         <label className="block">

@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from "react";
+import { Listbox } from "@/components/Listbox";
 import { Link, Navigate, useSearchParams } from "react-router-dom";
 import {
-  ChevronDown,
   ChevronRight,
   Info,
   Star,
@@ -383,30 +383,19 @@ function Select({
   options: string[];
 }) {
   if (options.length === 0) return null;
+  // Native select retired per 11-CONTROLS-CONTRACT; same value/onChange, new shell.
   return (
-    <div className="relative">
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        aria-label={any}
-        className={cn(
-          "h-9 appearance-none rounded-pill border bg-slate pl-3.5 pr-9 text-[12.5px] outline-none",
-          value ? "border-azure/45 text-azure" : "border-hairline text-mist",
-        )}
-      >
-        <option value="">{any}</option>
-        {options.map((o) => (
-          <option key={o} value={o}>
-            {o}
-          </option>
-        ))}
-      </select>
-      <ChevronDown
-        size={14}
-        strokeWidth={1.8}
-        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-mist-dim"
-      />
-    </div>
+    <Listbox
+      value={value}
+      onChange={onChange}
+      options={options.map((o) => ({ value: o, label: o }))}
+      label={any}
+      placeholder={any}
+      triggerClassName={cn(
+        "h-9 rounded-pill border bg-slate px-3.5 text-[12.5px]",
+        value ? "border-azure/45 text-azure" : "border-hairline text-mist",
+      )}
+    />
   );
 }
 

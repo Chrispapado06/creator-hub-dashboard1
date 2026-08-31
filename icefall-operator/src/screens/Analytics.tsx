@@ -29,12 +29,25 @@
  *   the funnel refuses to draw at all rather than draw zero-width bars from a
  *   share nobody could work out.
  *
- * The week/month toggle drives the tiles, the Overview charts AND everything
- * from `getInsights`. The product ranking tabs are all recorded activity, and
- * each table says in its own words which of the two it is.
+ * THE REPORTING WINDOW (OP-02, the owner by name: "should have to be able to
+ * select exact dates they want to see analytics from"): a date-range control
+ * with preset pills — 7 days · 30 days · Custom — drives the tiles, the
+ * Overview charts AND everything from `getInsights`. The presets are the old
+ * week/month toggle as derived ranges, so nothing the owner knew disappears;
+ * Custom is the addition. The chosen range renders IN WORDS everywhere the old
+ * label appeared, and every "vs" delta names the actual previous window — the
+ * same length, immediately before. The product ranking tabs are all recorded
+ * activity, and each table says in its own words which of the two it is.
+ *
+ * Under DEMO the backend is the frozen fixture implementation, which cannot
+ * resolve exact dates — so this screen keeps its original week/month toggle
+ * there rather than labelling preset data with dates it does not honour.
+ * Spelled DEMO, not OFFLINE, per the flag split (12-DEMO-FLAG-SPLIT.md):
+ * this is a WHERE-DATA-COMES-FROM question, not a connectivity one. That
+ * branch is the fixture's, owned elsewhere, and unchanged.
  */
 
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { TrendChart } from "@/components/TrendChart";
 import { Monogram } from "@/components/Shell";
@@ -42,8 +55,11 @@ import {
   Card, Donut, EmptyState, Figure, MetricTile, Notice, PageHeader, Pill, SectionHeading,
   StatTile, Tabs, formatMoney,
 } from "@/components/ui";
-import type { MountainPerformance, OperatorInsights, SourceQuality } from "@/domain/adapter";
+import { DateRangeField, type DateRange } from "@/components/controls";
+import type { AnalyticsWindow, MountainPerformance, OperatorInsights, SourceQuality } from "@/domain/adapter";
+import { formatDay, formatRange, parseDay, TODAY } from "@/domain/dates";
 import { DEMO_PROFILE_VIEWS, demoViewsDelta, demoViewsReading } from "@/domain/demo";
+import { DEMO } from "@/offline/offline";
 import {
   conversionRate, fold, measured, OPERATOR_NOTICES, unavailable, type Reading,
 } from "@/domain/honesty";
@@ -70,6 +86,33 @@ const SOURCE_ORDER = ["website", "icefall-app", "marketplace", "other"] as const
 function delta(now: number, before: number | undefined): number | null {
   if (before === undefined || before === 0) return null;
   return Math.round(((now - before) / before) * 100);
+}
+
+/* -------------------------------------------------------------------------- */
+/* The reporting window (OP-02)                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * `iso` shifted by whole days, via UTC arithmetic only — the same sums the
+ * adapter and the range control do, so a pill lights exactly when the picked
+ * range IS that preset's range.
+ */
+function shiftDayIso(iso: string, delta: number): string {
+  const d = parseDay(iso);
+  if (!d) return iso;
+  const t = new Date(Date.UTC(d.year, d.month - 1, d.day + delta));
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${t.getUTCFullYear()}-${pad(t.getUTCMonth() + 1)}-${pad(t.getUTCDate())}`;
+}
+
+/** The trailing window a preset pill selects: `days` days ending TODAY. */
+function presetRange(days: number): { from: string; to: string } {
+  return { from: shiftDayIso(TODAY, -(days - 1)), to: TODAY };
+}
+
+/** The range in words. One day reads as the day, not "28 Aug – 28 Aug 2026". */
+function rangeWords(from: string, to: string): string {
+  return from === to ? formatDay(from) : formatRange(from, to);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -730,30 +773,85 @@ function TeamTab({ insights, windowLabel }: { insights: OperatorInsights; window
 export default function Analytics() {
   const session = useSession();
   const { backend, revision } = useOperator();
-  const [window, setWindow] = useState<"week" | "month">("month");
   const [tab, setTab] = useState<SubTab>("overview");
 
-  const data = useAsync(() => backend.getAnalytics(session, window), [session, window, revision], null);
+  /*
+   * TWO PIECES OF RANGE STATE, deliberately. `picked` is whatever the control
+   * holds, half-finished picks included (the first click of a custom range is
+   * `{from, to: null}`). `applied` is the last COMPLETE range and is what every
+   * query runs on — so mid-pick the screen keeps showing the last real window
+   * instead of flashing empty or querying a range with no end.
+   */
+  const [picked, setPicked] = useState<DateRange>(() => presetRange(30));
+  const [applied, setApplied] = useState<{ from: string; to: string }>(() => presetRange(30));
+  const onRange = (v: DateRange) => {
+    setPicked(v);
+    if (v.from && v.to) setApplied({ from: v.from, to: v.to });
+  };
+
+  /** Offline only: the fixture backend's original toggle, unchanged. */
+  const [legacy, setLegacy] = useState<"week" | "month">("month");
+
+  const isPreset = (days: number) => {
+    const p = presetRange(days);
+    return applied.from === p.from && applied.to === p.to;
+  };
+
+  /*
+   * What the seam is asked for. A range equal to a preset is sent AS the
+   * preset — one signature, and the adapter derives the identical range — so
+   * an implementation that only knows the presets (offline) still serves them.
+   * Memoised because a fresh object every render would re-run every query.
+   */
+  const windowArg: AnalyticsWindow = useMemo(() => {
+    if (DEMO) return legacy;
+    if (isPreset(7)) return "week";
+    if (isPreset(30)) return "month";
+    return { fromIso: applied.from, toIso: applied.to };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [legacy, applied.from, applied.to]);
+
+  const data = useAsync(() => backend.getAnalytics(session, windowArg), [session, windowArg, revision], null);
   const insights = useAsync<OperatorInsights | null>(
-    () => backend.getInsights(session, window),
-    [session, window, revision],
+    () => backend.getInsights(session, windowArg),
+    [session, windowArg, revision],
     null,
   );
   const perProduct = useAsync(() => backend.getProductPerformance(session), [session, revision], []);
   const leads = useAsync(() => backend.getLeads(session), [session, revision], []);
   /**
-   * 8 and 32 days match `getAnalytics`'s week/month cutoffs exactly, so the
-   * chart's daily counts sum to the very enquiry figure on the tile above it.
+   * The chart follows the SAME range as the tiles — `getTrendRange` over the
+   * applied dates, presets included, so the daily counts cover exactly the
+   * window the figures above were counted over. Offline (no `getTrendRange`)
+   * the original trailing windows stand, matching the fixture's toggle.
    */
   const trend = useAsync(
-    () => backend.getTrend(session, window === "week" ? 8 : 32),
-    [session, window, revision],
+    () =>
+      DEMO || !backend.getTrendRange
+        ? backend.getTrend(session, legacy === "week" ? 8 : 32)
+        : backend.getTrendRange(session, { fromIso: applied.from, toIso: applied.to }),
+    [session, windowArg, revision],
     [],
   );
 
   if (!data) return null;
 
-  const windowLabel = window === "week" ? "the last week" : "the last month";
+  /*
+   * The label everywhere the old "the last week/month" wording sat is now the
+   * range IN WORDS — taken from the adapter's own resolved `range` when it has
+   * arrived, so the words always name the days that were actually counted.
+   */
+  const shown = !DEMO && data.range ? { from: data.range.fromIso, to: data.range.toIso } : applied;
+  const windowLabel = DEMO
+    ? legacy === "week"
+      ? "the last week"
+      : "the last month"
+    : rangeWords(shown.from, shown.to);
+  /** "vs 23 – 29 Jul 2026" — the ACTUAL previous window, or nothing at all. */
+  const vsNote =
+    !DEMO && data.previousRange
+      ? `vs ${rangeWords(data.previousRange.fromIso, data.previousRange.toIso)}`
+      : undefined;
 
   /* ---- the donut: real per-source counts, channel-stable colours ---------- */
   const counts = new Map(data.enquiriesBySource.map((s) => [s.source, s.count]));
@@ -796,7 +894,7 @@ export default function Analytics() {
     );
   };
 
-  const ALL_TIME = "Ranked by enquiries, then bookings — everything Icefall has recorded for you. The week/month toggle applies to the tiles and the overview, not to this ranking.";
+  const ALL_TIME = "Ranked by enquiries, then bookings — everything Icefall has recorded for you. The selected dates apply to the tiles and the overview, not to this ranking.";
   const NO_LEADS = {
     title: "No enquiries recorded yet",
     detail: "This ranking appears once Icefall records enquiries for you.",
@@ -808,14 +906,31 @@ export default function Analytics() {
         title="Analytics"
         detail="Insights into your performance."
         action={
-          <Tabs
-            active={window}
-            onChange={setWindow}
-            tabs={[
-              { key: "week" as const, label: "This week" },
-              { key: "month" as const, label: "This month" },
-            ]}
-          />
+          DEMO ? (
+            // The fixture backend serves the two presets and nothing else, so
+            // offline keeps the control that promises exactly that.
+            <Tabs
+              active={legacy}
+              onChange={setLegacy}
+              tabs={[
+                { key: "week" as const, label: "This week" },
+                { key: "month" as const, label: "This month" },
+              ]}
+            />
+          ) : (
+            <div className="w-[240px]">
+              <DateRangeField
+                label="Reporting dates"
+                value={picked}
+                onChange={onRange}
+                presets={[
+                  { label: "7 days", days: 7 },
+                  { label: "30 days", days: 30 },
+                  { label: "Custom" },
+                ]}
+              />
+            </div>
+          )
         }
       />
 
@@ -823,30 +938,45 @@ export default function Analytics() {
         {/*
           The ONE sanctioned invention (owner decision 18): a local demo figure
           via @/domain/demo. Everything else on this row is counted.
+
+          ITS DELTA IS FENCED TO THE 30-DAY PRESET. The demo delta was authored
+          as the mockup's month figure; on any other range a made-up percentage
+          would sit beside three deltas computed from a REAL previous window and
+          read as the same kind of fact — a new lie. So off the 30-day preset
+          the tile keeps the demo figure, drops the delta, and says why in a
+          footnote. (Offline keeps the fixture's original behaviour.)
         */}
         <MetricTile
           label="Profile views"
           reading={demoViewsReading(data.views)}
           format={(v) => v.toLocaleString("en-GB")}
-          delta={demoViewsDelta()}
+          delta={DEMO || isPreset(30) ? demoViewsDelta() : null}
+          footnote={
+            !DEMO && DEMO_PROFILE_VIEWS && !isPreset(30)
+              ? "A demo figure for this local build — it does not follow the selected dates, so there is no change to report."
+              : undefined
+          }
         />
         <MetricTile
           label="Enquiries"
           reading={measured(data.funnel.enquiries)}
           format={String}
           delta={delta(data.funnel.enquiries, data.previous?.enquiries)}
+          footnote={delta(data.funnel.enquiries, data.previous?.enquiries) !== null ? vsNote : undefined}
         />
         <MetricTile
           label="Qualified leads"
           reading={measured(data.funnel.qualified)}
           format={String}
           delta={delta(data.funnel.qualified, data.previous?.qualified)}
+          footnote={delta(data.funnel.qualified, data.previous?.qualified) !== null ? vsNote : undefined}
         />
         <MetricTile
           label="Bookings"
           reading={measured(data.funnel.bookings)}
           format={String}
           delta={delta(data.funnel.bookings, data.previous?.bookings)}
+          footnote={delta(data.funnel.bookings, data.previous?.bookings) !== null ? vsNote : undefined}
         />
         <MetricTile
           label="Revenue"
@@ -877,34 +1007,60 @@ export default function Analytics() {
         />
       </div>
 
-      {tab === "overview" && (
-        <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
-          <Card className="p-4">
-            <SectionHeading
-              title="Enquiries over time"
-              detail={`Daily enquiries over ${window === "week" ? "the last week" : "the last month"}.`}
-            />
-            <TrendChart
-              days={trend.map((t) => t.label)}
-              series={[
-                {
-                  key: "enq",
-                  label: "Enquiries",
-                  colour: "var(--op-azure)",
-                  points: trend.map((t) => t.enquiries),
-                },
-              ]}
-            />
-          </Card>
-          <Card className="p-4">
-            <SectionHeading
-              title="Enquiries by source"
-              detail="Which channel each of the period's enquiries arrived through."
-            />
-            <Donut segments={segments} centreLabel="total" />
-          </Card>
-        </div>
-      )}
+      {tab === "overview" &&
+        /*
+         * A range that holds nothing SAYS so. An empty chart and a hollow
+         * donut would leave the operator inferring the statement; the screen
+         * makes it instead. The condition checks the chart's counts as well as
+         * the tile's, because the tile is Icefall-attributed and the chart
+         * counts self-recorded leads too — if either has something, it draws.
+         */
+        (data.funnel.enquiries === 0 &&
+        trend.every((t) => t.enquiries === 0 && t.qualified === 0 && t.bookings === 0) ? (
+          <EmptyState
+            title={`No enquiries ${!DEMO && shown.from === shown.to ? "on" : "over"} ${windowLabel}`}
+            detail="Icefall recorded nothing for you in these dates — that zero is a measurement, not a gap in the data. Pick another range to see recorded activity."
+          />
+        ) : (
+          <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
+            <Card className="p-4">
+              <SectionHeading
+                title="Enquiries over time"
+                detail={`Daily enquiries over ${windowLabel}.`}
+              />
+              {trend.length === 1 ? (
+                /*
+                 * A one-day range is a figure, not a trend — a single point
+                 * pretending to be a line would imply a shape nobody measured.
+                 */
+                <p className="py-8 text-center text-[12.5px] leading-relaxed text-muted">
+                  {trend[0]!.enquiries === 1 ? "1 enquiry" : `${trend[0]!.enquiries} enquiries`} on{" "}
+                  {formatDay(trend[0]!.day)}. One day is a figure, not a trend — pick a longer range
+                  to see a line.
+                </p>
+              ) : (
+                <TrendChart
+                  days={trend.map((t) => t.label)}
+                  series={[
+                    {
+                      key: "enq",
+                      label: "Enquiries",
+                      colour: "var(--op-azure)",
+                      points: trend.map((t) => t.enquiries),
+                    },
+                  ]}
+                />
+              )}
+            </Card>
+            <Card className="p-4">
+              <SectionHeading
+                title="Enquiries by source"
+                detail="Which channel each of the period's enquiries arrived through."
+              />
+              <Donut segments={segments} centreLabel="total" />
+            </Card>
+          </div>
+        ))}
 
       {tab === "expeditions" && (
         <>

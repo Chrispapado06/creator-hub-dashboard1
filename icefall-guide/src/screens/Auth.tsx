@@ -48,7 +48,7 @@ export default function Auth() {
    * is what stops a sign-in form appearing for one frame in a build that has
    * nothing to sign in to. Unset, this is `null` exactly as it always was.
    */
-  const [access, setAccess] = useState<GuideAccess | null>(OFFLINE ? "guide" : null);
+  const [access, setAccess] = useState<GuideAccess | null>(OFFLINE ? "offline" : null);
 
   useEffect(() => {
     void guideAccess().then(setAccess);

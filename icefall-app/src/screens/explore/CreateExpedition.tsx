@@ -5,6 +5,7 @@ import { Check, Loader2, Mountain as MountainIcon, Plus, Search, X } from "lucid
 import { Button, Card, Disclaimer, SectionLabel } from "@/components/ui/primitives";
 import { Rise, Screen, ScreenHeader, Stagger } from "@/components/layout/chrome";
 import { cn } from "@/lib/utils";
+import { DateField as DateFieldControl } from "@/components/ui/DateField";
 import { fmtElevation } from "@/lib/format";
 import { PEAK_ATTRIBUTION, rememberPeaks, searchPeaks, type Peak } from "@/services/peaks";
 import { useApp } from "@/state/AppState";
@@ -589,18 +590,12 @@ function DateField({
   onChange: (v: string) => void;
 }) {
   return (
-    <label className="min-w-0 flex-1">
+    <div className="min-w-0 flex-1">
       <span className="section-label">{label}</span>
-      <input
-        type="date"
-        value={value}
-        min={min}
-        onChange={(e) => onChange(e.target.value)}
-        // The native picker follows the page, not the system, without this.
-        style={{ colorScheme: "dark" }}
-        className="tnum mt-2 h-11 w-full rounded-tile border border-hairline bg-elevated/40 px-3 text-[13px] text-snow outline-none transition-colors focus:border-azure/50"
-      />
-    </label>
+      {/* 11-CONTROLS-CONTRACT: the native picker is retired. Same value, same
+          handler, same min — only the shell changed. */}
+      <DateFieldControl label={label} value={value} min={min} onChange={onChange} className="mt-2" />
+    </div>
   );
 }
 

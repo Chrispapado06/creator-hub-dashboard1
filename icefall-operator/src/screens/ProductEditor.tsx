@@ -46,6 +46,7 @@ import {
   SECTION_STATE_COLOUR, SECTION_STATE_LABEL, pendingFields,
   type SectionState, type Surface,
 } from "@/editor/sections";
+import { Listbox } from "@/components/controls";
 import { Button, LockedNotice, Notice, formatMoney, inputClass } from "@/components/ui";
 import { can, canEditProductDirectly, findContactDetails } from "@/domain/authz";
 import { OPERATOR_NOTICES } from "@/domain/honesty";
@@ -1224,21 +1225,25 @@ function DepartureCard({
           <span className="text-[10px] text-live">Yours — saves the moment you leave the box</span>
         </div>
 
-        <label className="flex flex-col gap-1">
-          <span className="lbl">Availability</span>
-          <select
-            className={inputClass}
+        {/*
+          The kit's Listbox, NOT inside a <label> — a click within a label
+          forwards to its first labelable control, which would re-toggle the
+          trigger when an option is picked. The kit's own `label` prop carries
+          the accessible name instead. Values stay the exact
+          DepartureAvailability strings the backend's allowlist checks.
+        */}
+        <div>
+          <Listbox
+            label="Availability"
             value={d.availability}
             disabled={!canWrite}
-            onChange={(e) => onSave({ availability: e.target.value as DepartureAvailability })}
-          >
-            {(Object.keys(AVAILABILITY_LABEL) as DepartureAvailability[]).map((a) => (
-              <option key={a} value={a}>
-                {AVAILABILITY_LABEL[a]}
-              </option>
-            ))}
-          </select>
-        </label>
+            onChange={(v) => onSave({ availability: v as DepartureAvailability })}
+            options={(Object.keys(AVAILABILITY_LABEL) as DepartureAvailability[]).map((a) => ({
+              value: a,
+              label: AVAILABILITY_LABEL[a],
+            }))}
+          />
+        </div>
 
         <div className="mt-2.5 flex gap-2.5">
           <SpotsField

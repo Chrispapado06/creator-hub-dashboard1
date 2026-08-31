@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   Bold,
-  ChevronDown,
   Image as ImageIcon,
   Italic,
   Link2,
@@ -16,6 +15,7 @@ import { CompanyLogo } from "@/components/CompanyLogo";
 import { OFFLINE } from "@/offline/offline";
 import { cn } from "@/lib/utils";
 import { EDITOR_DEMO, operators } from "@/demo/operators";
+import { Select } from "@/components/controls";
 
 /**
  * Add / Edit Company — built 1:1 to the owner's mockup of 30 Aug 2026.
@@ -65,6 +65,25 @@ function Field({
       </span>
       {children}
     </label>
+  );
+}
+
+/** The unwired form's status choice, in the kit's listbox. */
+function StatusPicker({ initial }: { initial: string }) {
+  const [v, setV] = useState(initial);
+  return (
+    <Select
+      value={v}
+      onChange={setV}
+      ariaLabel="Company status"
+      className="w-full"
+      options={[
+        { value: "active", label: "Active" },
+        { value: "onboarding", label: "Onboarding" },
+        { value: "suspended", label: "Suspended" },
+        { value: "unverified", label: "Unverified" },
+      ]}
+    />
   );
 }
 
@@ -127,20 +146,7 @@ export default function CompanyEdit() {
                 <input className={field} defaultValue={row?.name ?? ""} placeholder="Elite Expeditions" />
               </Field>
               <Field label="Status">
-                <span className="relative block">
-                  <select className={cn(field, "appearance-none pr-8")} defaultValue={row?.status ?? "active"}>
-                    <option value="active">Active</option>
-                    <option value="onboarding">Onboarding</option>
-                    <option value="suspended">Suspended</option>
-                    <option value="unverified">Unverified</option>
-                  </select>
-                  <ChevronDown
-                    size={14}
-                    strokeWidth={2}
-                    className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-faint"
-                    aria-hidden
-                  />
-                </span>
+                <StatusPicker initial={row?.status ?? "active"} />
               </Field>
               <Field label="Tagline">
                 <input className={field} placeholder="Crafting unforgettable mountain experiences" />

@@ -1,6 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "./types";
-import { OFFLINE } from "@/offline/offline";
+import { DEMO } from "@/offline/offline";
 
 /**
  * The Supabase client, or null.
@@ -58,7 +58,7 @@ const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
  * account…". A client that does not exist cannot hang.
  */
 export const supabase: SupabaseClient<Database> | null =
-  !OFFLINE && url && key
+  !DEMO && url && key
     ? createClient<Database>(url, key, {
         auth: {
           persistSession: true,

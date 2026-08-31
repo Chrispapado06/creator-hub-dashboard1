@@ -52,6 +52,10 @@ export function formatRange(range: DateRange): string {
 
 const WEEKDAYS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 
+/** A LOCAL day key — never `toISOString`, which shifts a local midnight a day
+    west of Greenwich. The oldest bug in this codebase, kept out on purpose. */
+const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+
 export function DateRangeField({
   value,
   onChange,
@@ -154,8 +158,25 @@ function Calendar({
   const canPrev = month > new Date(today.getFullYear(), today.getMonth(), 1);
   const canNext = month < maxMonth;
 
+  /*
+    Arrow keys move day-to-day through the visible grid — 11-CONTROLS-CONTRACT.
+    Focus travels to the target day's own button (a roving focus, not a cursor
+    state), so Enter/Space pick exactly what Tab-and-look already could, and
+    screen readers hear each day as they move. Month paging stays on the
+    prev/next buttons, which are themselves tabbable.
+  */
+  function onGridKey(e: React.KeyboardEvent<HTMLDivElement>) {
+    const delta = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[e.key];
+    const iso = (e.target as HTMLElement).getAttribute?.("data-day");
+    if (delta === undefined || !iso) return;
+    e.preventDefault();
+    const [y, m, d] = iso.split("-").map(Number);
+    const next = new Date(y, m, d + delta);
+    (e.currentTarget.querySelector(`[data-day="${dayKey(next)}"]`) as HTMLButtonElement | null)?.focus();
+  }
+
   return (
-    <div>
+    <div onKeyDown={onGridKey}>
       <div className="mb-3 flex items-center justify-between">
         <button
           type="button"
@@ -241,10 +262,13 @@ function MonthGrid({
           const isTo = rangeTo && sameDay(day, rangeTo);
           const inRange = rangeFrom && rangeTo && day > rangeFrom && day < rangeTo;
           const isEnd = isFrom || isTo;
+          const isToday = sameDay(day, today);
           return (
             <button
               key={day.toISOString()}
               type="button"
+              data-day={dayKey(day)}
+              aria-label={day.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
               disabled={past}
               onMouseEnter={() => onHover(day)}
               onMouseLeave={() => onHover(null)}
@@ -255,6 +279,8 @@ function MonthGrid({
                 !past && !isEnd && !inRange && "text-mist hover:bg-slate hover:text-snow",
                 inRange && "rounded-none bg-azure/12 text-snow",
                 isEnd && "bg-azure font-medium text-obsidian",
+                // Today, marked — a ring, so it survives being inside a range.
+                isToday && !isEnd && "ring-1 ring-inset ring-azure/50",
               )}
             >
               {day.getDate()}

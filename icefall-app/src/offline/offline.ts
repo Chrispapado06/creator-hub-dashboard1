@@ -12,3 +12,23 @@
  * file existed.
  */
 export const OFFLINE = import.meta.env.VITE_ICEFALL_OFFLINE === "1";
+
+/**
+ * THE DEMO FLAG — data source, not connectivity.
+ *
+ * `OFFLINE` was quietly answering two different questions: "where does data
+ * come from?" and "does the network exist?". Deploying the flight bundle to
+ * the public internet exposed the conflation — visitors with perfect
+ * connections saw IMAGERY OFFLINE placeholders, because the flag that gave
+ * them a sample identity also told the map the world was unreachable.
+ *
+ * DEMO answers only the first question: sample identity, seeded fixtures,
+ * in-memory writes, no auth walls, no real backend client, the banner. It
+ * says nothing about the network, so maps stream, imagery loads and
+ * conditions stay live.
+ *
+ * An OFFLINE build is a demo by definition — the flight bundle sets one flag
+ * and gets both behaviours, exactly as before. `VITE_ICEFALL_DEMO=1` alone is
+ * the internet demo. Neither set is production, unchanged.
+ */
+export const DEMO = OFFLINE || import.meta.env.VITE_ICEFALL_DEMO === "1";

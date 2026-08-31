@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { ChevronDown, Minus, Mountain, Plus, Search, Users } from "lucide-react";
+import { Listbox, type ListboxOption } from "@/components/Listbox";
+import { Minus, Mountain, Plus, Search, Users } from "lucide-react";
 import { Button } from "@/components/ui";
 import { DateRangeField, type DateRange } from "@/components/DatePicker";
 import { ORIGINS } from "@/lib/flights";
@@ -79,24 +80,23 @@ export function TripSearch({
       {/* The fields */}
       <div className="mt-3 flex flex-col gap-2.5 lg:flex-row lg:items-end">
         <Field label="Mountain" className="lg:flex-1">
-          <Select value={objectiveId} onChange={setObjectiveId} icon={<Mountain size={15} strokeWidth={1.7} />}>
-            {OBJECTIVES.map((o) => (
-              <option key={o.id} value={o.id} className="bg-graphite text-snow">
-                {o.mountain} · {o.region}
-              </option>
-            ))}
-          </Select>
+          <Select
+            value={objectiveId}
+            onChange={setObjectiveId}
+            label="Mountain"
+            icon={<Mountain size={15} strokeWidth={1.7} />}
+            options={OBJECTIVES.map((o) => ({ value: o.id, label: `${o.mountain} · ${o.region}` }))}
+          />
         </Field>
 
         {withFlights && (
           <Field label="Flying from" className="lg:w-[190px]">
-            <Select value={originCode} onChange={setOriginCode}>
-              {ORIGINS.map((o) => (
-                <option key={o.code} value={o.code} className="bg-graphite text-snow">
-                  {o.city} ({o.code})
-                </option>
-              ))}
-            </Select>
+            <Select
+              value={originCode}
+              onChange={setOriginCode}
+              label="Flying from"
+              options={ORIGINS.map((o) => ({ value: o.code, label: `${o.city} (${o.code})` }))}
+            />
           </Field>
         )}
 
@@ -133,28 +133,31 @@ function Field({ label, className, children }: { label: string; className?: stri
 function Select({
   value,
   onChange,
-  children,
+  options,
+  label,
   icon,
 }: {
   value: string;
   onChange: (v: string) => void;
-  children: React.ReactNode;
+  options: ListboxOption[];
+  label: string;
   icon?: React.ReactNode;
 }) {
+  // Native select retired per 11-CONTROLS-CONTRACT; same value/onChange, new shell.
   return (
     <span className="relative flex items-center">
-      {icon && <span className="pointer-events-none absolute left-3 text-mist-dim">{icon}</span>}
-      <select
+      {icon && <span className="pointer-events-none absolute left-3 z-10 text-mist-dim">{icon}</span>}
+      <Listbox
         value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className={cn(
-          "h-[46px] w-full appearance-none truncate rounded-tile border border-hairline bg-obsidian/40 pr-9 text-[13.5px] text-snow outline-none transition-colors hover:border-hairline-strong focus:border-azure/55",
+        onChange={onChange}
+        options={options}
+        label={label}
+        className="w-full"
+        triggerClassName={cn(
+          "h-[46px] rounded-tile border border-hairline bg-obsidian/40 pr-3.5 text-[13.5px] text-snow transition-colors hover:border-hairline-strong",
           icon ? "pl-9" : "pl-3.5",
         )}
-      >
-        {children}
-      </select>
-      <ChevronDown size={15} strokeWidth={1.8} className="pointer-events-none absolute right-3 text-mist-dim" />
+      />
     </span>
   );
 }

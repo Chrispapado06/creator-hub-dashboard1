@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import { DateField } from "@/components/ui/DateField";
+import { Listbox } from "@/components/ui/Listbox";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { Link } from "react-router-dom";
@@ -844,9 +846,6 @@ function Chip({
   );
 }
 
-const controlClass =
-  "w-full rounded-tile border border-hairline bg-obsidian px-3 py-2.5 text-[13px] text-snow outline-none focus:border-azure/50";
-
 /* -------------------------------------------------------------------------- */
 /* Mountain                                                                    */
 /* -------------------------------------------------------------------------- */
@@ -1053,20 +1052,19 @@ function DatesSheet({
       }
     >
       <div className="flex items-center gap-2">
-        <input
-          type="date"
-          aria-label="From"
+        <DateField
+          label="From"
           value={filters.fromIso}
-          onChange={(e) => onChange({ ...filters, fromIso: e.target.value })}
-          className={controlClass}
+          onChange={(iso) => onChange({ ...filters, fromIso: iso })}
+          className="min-w-0 flex-1"
         />
-        <span className="text-[12px] text-mist-dim">to</span>
-        <input
-          type="date"
-          aria-label="To"
+        <span className="shrink-0 text-[12px] text-mist-dim">to</span>
+        <DateField
+          label="To"
+          min={filters.fromIso || undefined}
           value={filters.toIso}
-          onChange={(e) => onChange({ ...filters, toIso: e.target.value })}
-          className={controlClass}
+          onChange={(iso) => onChange({ ...filters, toIso: iso })}
+          className="min-w-0 flex-1"
         />
       </div>
       {/* Stated on the surface that sets them, not somewhere further on. */}
@@ -1403,18 +1401,15 @@ function FiltersSheet({
         />
 
         <Block label="Where they work from">
-          <select
-            className={controlClass}
+          <Listbox
+            label="Where they work from"
             value={filters.country}
-            onChange={(e) => set("country", e.target.value)}
-          >
-            <option value="">Anywhere</option>
-            {options.countries.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
+            onChange={(v) => set("country", v)}
+            options={[
+              { value: "", label: "Anywhere" },
+              ...options.countries.map((c) => ({ value: c, label: c })),
+            ]}
+          />
         </Block>
 
         <Block

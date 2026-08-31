@@ -15,7 +15,7 @@ import type { OperatorBackend } from "@/domain/adapter";
 import type { Session } from "@/domain/authz";
 import { memoryBackend } from "@/domain/memory/adapter";
 import { offlineBackend, OFFLINE_SESSION } from "@/offline/backend";
-import { OFFLINE } from "@/offline/offline";
+import { DEMO } from "@/offline/offline";
 import { ThemeProvider } from "@/state/theme";
 import type { Company, CompanyMountain, Mountain, Placement } from "@/domain/types";
 
@@ -46,30 +46,31 @@ interface OperatorContextValue {
 const Ctx = createContext<OperatorContextValue | null>(null);
 
 /**
- * OFFLINE swaps the whole seam for the fixture implementation. Nothing else in
+ * DEMO swaps the whole seam for the fixture implementation (§ the flag split:
+ * data source is a DEMO question; OFFLINE is only connectivity). Nothing else in
  * this file's normal path changes: with the flag unset this is exactly the
  * `memoryBackend` line it has always been.
  */
-const backend: OperatorBackend = OFFLINE ? offlineBackend : memoryBackend;
+const backend: OperatorBackend = DEMO ? offlineBackend : memoryBackend;
 
 const SESSION_KEY = "icefall-operator.session-email";
 
 export function OperatorProvider({ children }: { children: ReactNode }) {
   /**
-   * OFFLINE STARTS SIGNED IN, AND STARTS RESTORED.
+   * DEMO STARTS SIGNED IN, AND STARTS RESTORED.
    *
    * There is no sign-in offline: a demo that opens on a login wall is a demo
    * nobody gets past on a plane. Seeding the session here — rather than signing
    * in inside an effect — also means `restoring` is already false on the first
    * render, so the route guard never briefly redirects to `/operator/sign-in`.
    */
-  const [session, setSession] = useState<Session | null>(OFFLINE ? OFFLINE_SESSION : null);
+  const [session, setSession] = useState<Session | null>(DEMO ? OFFLINE_SESSION : null);
   const [company, setCompany] = useState<Company | null>(null);
   const [access, setAccess] = useState<CompanyMountain[]>([]);
   const [placements, setPlacements] = useState<Placement[]>([]);
   const [mountains, setMountains] = useState<Mountain[]>([]);
   const [revision, setRevision] = useState(0);
-  const [restoring, setRestoring] = useState(!OFFLINE);
+  const [restoring, setRestoring] = useState(!DEMO);
 
   const refresh = useCallback(() => setRevision((r) => r + 1), []);
 
@@ -88,7 +89,7 @@ export function OperatorProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(() => {
     // Offline there is nowhere to sign out TO — the sign-in screen is exactly
     // the dead end this mode exists to avoid — so the control does nothing.
-    if (OFFLINE) return;
+    if (DEMO) return;
     setSession(null);
     setCompany(null);
     setAccess([]);
@@ -104,7 +105,7 @@ export function OperatorProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     // Offline the session is already seeded above and there is nothing stored
     // to restore from. Reading localStorage here could only undo that.
-    if (OFFLINE) return;
+    if (DEMO) return;
     let cancelled = false;
     (async () => {
       let stored: string | null = null;

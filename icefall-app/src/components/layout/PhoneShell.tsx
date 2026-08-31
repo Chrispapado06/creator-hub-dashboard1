@@ -1,6 +1,6 @@
 import { IcefallLockup } from "@/components/ui/IcefallMark";
 import { OfflineIndicator } from "@/components/layout/OfflineIndicator";
-import { OFFLINE } from "@/offline/offline";
+import { DEMO } from "@/offline/offline";
 import { OfflineBanner } from "@/offline/OfflineBanner";
 
 /**
@@ -47,7 +47,7 @@ export function PhoneShell({ children }: { children: React.ReactNode }) {
           unchanged branch below renders `children` exactly as before so an
           ordinary build's DOM is untouched.
         */}
-        {OFFLINE ? (
+        {DEMO ? (
           <>
             <OfflineBanner />
             <div className="relative flex min-h-0 flex-1 flex-col">{children}</div>

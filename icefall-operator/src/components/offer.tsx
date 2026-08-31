@@ -47,6 +47,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
+import { DateField, Listbox } from "./controls";
 import { Button, Card, Field, Figure, Notice, Pill, inputClass } from "./ui";
 import { TODAY, daysUntil } from "@/domain/dates";
 import { measured, unavailable, type Reading } from "@/domain/honesty";
@@ -198,8 +199,6 @@ export function OfferComposer({
 }) {
   const session = useSession();
   const { backend, refresh } = useOperator();
-  /* Native date pickers, painted for whichever theme is on. See `Toggle`. */
-  const { resolved } = useTheme();
 
   const [lines, setLines] = useState<DraftLine[]>([blankLine()]);
   const [exclusions, setExclusions] = useState<DraftExclusion[]>([]);
@@ -371,24 +370,29 @@ export function OfferComposer({
                     className={`${inputClass} tnum`}
                   />
                 </Field>
-                <Field label="Departure">
-                  <input
-                    type="date"
-                    value={departure}
-                    onChange={(e) => setDeparture(e.target.value)}
-                    style={{ colorScheme: resolved }}
-                    className={`${inputClass} tnum`}
+                {/*
+                  The kit's DateField — ISO strings in and out (§6af), the same
+                  state variables and the same problems-list validation as the
+                  native inputs it replaced. Cleared reads as "" so the
+                  "Set a departure date" refusal stays reachable.
+                */}
+                <DateField
+                  label="Departure"
+                  value={departure || null}
+                  onChange={(v) => setDeparture(v ?? "")}
+                  clearable
+                />
+                <div>
+                  <DateField
+                    label="Holds until"
+                    value={validUntil || null}
+                    onChange={(v) => setValidUntil(v ?? "")}
+                    clearable
                   />
-                </Field>
-                <Field label="Holds until" hint="After this date the price is not binding.">
-                  <input
-                    type="date"
-                    value={validUntil}
-                    onChange={(e) => setValidUntil(e.target.value)}
-                    style={{ colorScheme: resolved }}
-                    className={`${inputClass} tnum`}
-                  />
-                </Field>
+                  <span className="mt-1 block text-[11.5px] leading-snug text-muted">
+                    After this date the price is not binding.
+                  </span>
+                </div>
               </div>
 
               {/* ---------------------------------------------------------- */}
@@ -421,19 +425,36 @@ export function OfferComposer({
                               className={`${inputClass} tnum mt-1`}
                             />
                           </label>
-                          <label className="w-[126px]">
-                            <span className="lbl">Per</span>
-                            <select
-                              value={l.per}
-                              onChange={(e) =>
-                                setLine(l.key, { per: e.target.value as "person" | "party" })
+                          {/*
+                            An open listbox's Escape must close the LIST, not
+                            this dialog — the dialog's document-level Escape
+                            listener would otherwise throw away the whole
+                            draft. When the list is closed, Escape falls
+                            through to the dialog, same as before.
+                          */}
+                          <div
+                            className="w-[126px]"
+                            onKeyDown={(e) => {
+                              if (
+                                e.key === "Escape" &&
+                                (e.target as HTMLElement).closest('[role="listbox"]')
+                              ) {
+                                e.stopPropagation();
                               }
-                              className={`${inputClass} mt-1`}
-                            >
-                              <option value="person">Per person</option>
-                              <option value="party">Whole party</option>
-                            </select>
-                          </label>
+                            }}
+                          >
+                            <Listbox
+                              label="Per"
+                              value={l.per}
+                              options={[
+                                { value: "person", label: "Per person" },
+                                { value: "party", label: "Whole party" },
+                              ]}
+                              onChange={(v) =>
+                                setLine(l.key, { per: v as "person" | "party" })
+                              }
+                            />
+                          </div>
                           <button
                             type="button"
                             aria-label={`Remove line ${l.label || "(unnamed)"}`}

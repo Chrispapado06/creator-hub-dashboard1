@@ -88,3 +88,15 @@ remain unsourced:
 - **"Does hand-off work?"** — enquiries handed off, and desk-time before hand-off (S4).
 - **"Is trust growing?"** — identity checks recorded per week (grey), guide document
   checks and their expiry horizon (gold).
+
+## CTRL — control modernisation sweep (11-CONTROLS-CONTRACT) — DONE 31 Aug
+Inventory 31 Aug, pre-sweep: 17 `<select` across 12 files (CompanyAccess,
+Commissions, Companies, CompanyEdit, CompanyPage, Dashboard, Guides, Products,
+Promotions, Sales, Tasks, Verification) + 4 `type="date"` across 3 files
+(MountainPlacements ×2, Promotions, Tasks). Kit: src/components/controls.tsx
+(Select listbox w/ keyboard+typeahead, DateButton single, RangeControl w/
+preset pills + custom). Re-grepped 31 Aug: ZERO `<select`, ZERO `type="date"` outside the kit's own
+comment. Swept: Promotions(2+1), Dashboard(range), Commissions(range),
+Products(3), Tasks(2+1), Sales, Verification, Guides, Companies, CompanyEdit,
+CompanyPage(2), CompanyAccess, MountainPlacements(2 dates). Keyboard verified
+in-browser (open/typeahead/Enter/Esc, ISO-under-display).

@@ -8,6 +8,7 @@ import {
   revokeInvitation,
 } from "@/data/queries";
 import { loading, type Result } from "@/data/result";
+import { Select } from "@/components/controls";
 import type { CompanyInvitation, CompanyMember } from "@/data/types";
 import { cn, formatDay } from "@/lib/utils";
 
@@ -184,14 +185,16 @@ export function CompanyAccess({ companyId }: { companyId: string }) {
             </label>
             <label className="block">
               <span className="mb-1 block text-[12px] font-medium text-muted">Role at the company</span>
-              <select
+              <Select
                 value={role}
-                onChange={(e) => setRole(e.target.value as "admin" | "sales")}
-                className="h-10 w-full rounded-tile border border-line bg-surface px-3 text-[13px] text-ink outline-none focus:border-accent"
-              >
-                <option value="admin">Admin — manages their team and content</option>
-                <option value="sales">Sales — works leads, cannot invite</option>
-              </select>
+                onChange={(v: string) => setRole(v as "admin" | "sales")}
+                ariaLabel="Role at the company"
+                className="w-full"
+                options={[
+                  { value: "admin", label: "Admin — manages their team and content" },
+                  { value: "sales", label: "Sales — works leads, cannot invite" },
+                ]}
+              />
             </label>
             <Button
               className="!bg-accent text-white hover:opacity-90"

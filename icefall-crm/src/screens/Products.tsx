@@ -14,6 +14,7 @@ import {
 import { loading, type Result } from "@/data/result";
 import { PRODUCTS_MOCKUP } from "@/demo/mockupScreens";
 import { GoldButton } from "@/components/drawn";
+import { Select } from "@/components/controls";
 import type { Company, Enquiry, Product } from "@/data/types";
 
 /**
@@ -321,28 +322,36 @@ export default function Products() {
           placeholder="Search products, companies or mountains…"
           className="h-10 min-w-[240px] flex-1 rounded-tile border border-line bg-surface px-3.5 text-[13px] text-ink outline-none placeholder:text-faint focus:border-accent"
         />
-        <select
+        <Select
           value={companyFilter}
-          onChange={(e) => setCompanyFilter(e.target.value)}
-          className="h-10 rounded-tile border border-line bg-surface px-3 text-[12.5px] text-ink outline-none"
-        >
-          <option value="all">All Companies</option>
-          {companies.state === "ok" && companies.value.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
-        <select className="h-10 rounded-tile border border-line bg-surface px-3 text-[12.5px] text-ink outline-none">
-          <option>All Mountains</option>
-        </select>
-        <select
+          onChange={setCompanyFilter}
+          ariaLabel="Filter by company"
+          className="min-w-[170px]"
+          options={[
+            { value: "all", label: "All Companies" },
+            ...(companies.state === "ok" ? companies.value.map((c) => ({ value: c.id, label: c.name })) : []),
+          ]}
+        />
+        <Select
+          value="all"
+          onChange={() => undefined}
+          ariaLabel="Filter by mountain"
+          className="min-w-[150px]"
+          options={[{ value: "all", label: "All Mountains", hint: "fills when products link a destination" }]}
+        />
+        <Select
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="h-10 rounded-tile border border-line bg-surface px-3 text-[12.5px] text-ink outline-none"
-        >
-          <option value="all">All Statuses</option>
-          <option value="draft">Draft</option>
-          <option value="pending_review">Pending review</option>
-          <option value="live">Live</option>
-          <option value="archived">Archived</option>
-        </select>
+          onChange={setStatusFilter}
+          ariaLabel="Filter by status"
+          className="min-w-[150px]"
+          options={[
+            { value: "all", label: "All Statuses" },
+            { value: "draft", label: "Draft" },
+            { value: "pending_review", label: "Pending review" },
+            { value: "live", label: "Live" },
+            { value: "archived", label: "Archived" },
+          ]}
+        />
       </div>
 
       {M ? (

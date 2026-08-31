@@ -21,6 +21,7 @@
  * round trip as the refusal, so nobody waits twice.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Listbox } from "@/components/ui/Listbox";
 import { useNavigate } from "react-router-dom";
 import { Check, LoaderCircle, X } from "lucide-react";
 import { Button } from "@/components/ui/primitives";
@@ -177,19 +178,22 @@ export function ChooseHandle() {
           autoComplete="address-level2"
         />
 
-        <label className="block">
+        <div>
           <span className="section-label text-mist-dim">Country</span>
-          <select
+          {/* Well past the typeahead threshold, so typing filters — which the
+              native menu never offered on this list of ~200. */}
+          <Listbox
+            label="Country"
             value={country}
-            onChange={(e) => setCountry(e.target.value)}
-            className="mt-2 h-12 w-full rounded-tile border border-hairline bg-elevated/40 px-3 text-[14px] text-snow outline-none focus:border-azure/50"
-          >
-            <option value="">Prefer not to say</option>
-            {COUNTRIES.map((c) => (
-              <option key={c.code} value={c.code}>{c.name}</option>
-            ))}
-          </select>
-        </label>
+            onChange={setCountry}
+            placeholder="Prefer not to say"
+            options={[
+              { value: "", label: "Prefer not to say" },
+              ...COUNTRIES.map((c) => ({ value: c.code, label: c.name })),
+            ]}
+            className="mt-2"
+          />
+        </div>
 
         {error && <p className="text-[12px] leading-relaxed text-[color:var(--danger,#F08A7C)]">{error}</p>}
 

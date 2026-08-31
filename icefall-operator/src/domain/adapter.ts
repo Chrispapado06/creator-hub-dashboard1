@@ -51,6 +51,31 @@ import type {
 } from "./types";
 import type { Reading } from "./honesty";
 
+/**
+ * An exact reporting range — both ends ISO `YYYY-MM-DD`, both INCLUSIVE.
+ *
+ * The owner asked for this by name (OP-02): "should have to be able to select
+ * exact dates they want to see analytics from." §6af applies at this seam like
+ * every other: an implementation must REFUSE an invalid or reversed range with
+ * a reason rather than silently coercing it into something that runs.
+ */
+export interface AnalyticsRange {
+  fromIso: string;
+  toIso: string;
+}
+
+/**
+ * What the analytics reads accept: the two named presets, or exact dates.
+ *
+ * ONE SIGNATURE, NO THIRD CODE PATH. Inside an implementation the presets are
+ * DERIVED ranges — "week" is the 7 calendar days ending today, "month" the 30
+ * — so a preset and a custom range run through the same arithmetic and cannot
+ * drift apart. The string forms stay in the union so an implementation without
+ * exact-date support (the frozen offline fixture) keeps compiling and keeps
+ * serving the presets it always served.
+ */
+export type AnalyticsWindow = "week" | "month" | AnalyticsRange;
+
 /** One day of counted activity. Views is absent — see `TrendSeriesData`. */
 export interface TrendPoint {
   day: string;
@@ -183,8 +208,20 @@ export interface AnalyticsSummary {
   conversionRate: Reading<number>;
   estimatedGmv: Reading<number>;
   gmvExcludedCount: number;
-  /** Previous window, for the week/month comparison in spec §11. */
+  /** Previous window, for the period-on-period comparison in spec §11. */
   previous: FunnelCounts | null;
+  /**
+   * The resolved window this summary was counted over — presets included, so
+   * the screen labels the ACTUAL dates rather than restating the request.
+   * Optional only because the frozen offline fixture predates it.
+   */
+  range?: AnalyticsRange;
+  /**
+   * The window `previous` was counted over: the SAME LENGTH, immediately
+   * before `range`. Null exactly when `previous` is null — a window that held
+   * nothing is not a comparison, and the "vs …" footnote must vanish with it.
+   */
+  previousRange?: AnalyticsRange | null;
 }
 
 export interface DraftInput {
@@ -479,10 +516,19 @@ export interface OperatorBackend {
    * nothing.
    */
   getMediaUrl(session: Session, mediaId: string | null): Promise<string | null>;
+  /**
+   * Daily counts over an EXACT range, for the Overview chart when the operator
+   * has picked their own dates. Optional for the reason `getTreks` is optional:
+   * the frozen offline fixture cannot serve exact dates, and a screen finding
+   * this absent offers the presets only rather than mislabelling preset data
+   * with custom dates. Same strictness as the other range reads: an invalid or
+   * reversed range is refused with a reason.
+   */
+  getTrendRange?(session: Session, range: AnalyticsRange): Promise<TrendPoint[]>;
   getProductPerformance(session: Session): Promise<ProductPerformance[]>;
   /** Measured-only breakdowns: speed, drop-off, channel quality, mountains. */
-  getInsights(session: Session, window: "week" | "month"): Promise<OperatorInsights>;
-  getAnalytics(session: Session, window: "week" | "month"): Promise<AnalyticsSummary>;
+  getInsights(session: Session, window: AnalyticsWindow): Promise<OperatorInsights>;
+  getAnalytics(session: Session, window: AnalyticsWindow): Promise<AnalyticsSummary>;
   getNotifications(session: Session): Promise<OperatorNotification[]>;
   markNotificationRead(session: Session, id: string): Promise<void>;
 }

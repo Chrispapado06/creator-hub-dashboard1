@@ -9,6 +9,7 @@ interface ImportMetaEnv {
    * from `src/offline/`. Anything else — including unset — is the real CRM.
    */
   readonly VITE_ICEFALL_OFFLINE?: string;
+  readonly VITE_ICEFALL_DEMO?: string;
 }
 
 interface ImportMeta {

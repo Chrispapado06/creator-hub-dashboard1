@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="240" height="240">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#182031"/><stop offset="100%" stop-color="#0A0D14"/>
+    </linearGradient>
+    <linearGradient id="snow" x1="0" y1="0" x2="0.3" y2="1">
+      <stop offset="0%" stop-color="#EAEEF5"/><stop offset="100%" stop-color="#8FC2FF"/>
+    </linearGradient>
+  </defs>
+  <rect width="240" height="240" fill="url(#sky)"/>
+  <circle cx="176" cy="58" r="15" fill="#4B9BFF" opacity="0.16"/>
+  <!-- back ridge -->
+  <path d="M18 152 L70 88 L104 130 L132 96 L186 152 Z" fill="#2C6BD4" opacity="0.34"/>
+  <!-- main summit -->
+  <path d="M46 158 L112 62 L178 158 Z" fill="url(#snow)"/>
+  <!-- snow cap shadow -->
+  <path d="M112 62 L138 100 L120 108 L104 94 L88 106 L86 100 Z" fill="#05070B" opacity="0.30"/>
+  <path d="M46 158 L178 158 L168 168 L56 168 Z" fill="#05070B" opacity="0.45"/>
+  <text x="120" y="199" text-anchor="middle" font-family="Inter Tight, Helvetica, Arial, sans-serif"
+        font-size="27" font-weight="600" fill="#EAEEF5" textLength="188" lengthAdjust="spacingAndGlyphs">SOLUKHUMBU</text>
+  <text x="120" y="218" text-anchor="middle" font-family="Inter Tight, Helvetica, Arial, sans-serif"
+        font-size="13" font-weight="400" fill="#8B94A6" textLength="160" lengthAdjust="spacingAndGlyphs">EXPEDITIONS</text>
+</svg>

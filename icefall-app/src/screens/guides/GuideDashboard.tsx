@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { DateField } from "@/components/ui/DateField";
 import { Link } from "react-router-dom";
 import { ChevronLeft, ChevronRight, Plus, Send, X } from "lucide-react";
 import { Badge, Button, Card, Disclaimer, Metric, SectionLabel } from "@/components/ui/primitives";
@@ -578,12 +579,11 @@ function TermsComposer({ quote, onDone }: { quote: GuideQuote; onDone: () => voi
         <FieldLabel hint="A quote with no expiry is not a quote — your costs and your diary both move.">
           Valid until
         </FieldLabel>
-        <TextInput
-          type="date"
+        <DateField
+          label="Quote valid until"
           value={validUntil}
           min={todayKey()}
-          aria-label="Quote valid until"
-          onChange={(e) => setValidUntil(e.target.value)}
+          onChange={setValidUntil}
         />
       </div>
 

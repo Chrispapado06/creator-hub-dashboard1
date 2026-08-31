@@ -1135,6 +1135,77 @@ which is exactly why it will not look like one.
 Recorded now so the audit is ready when the 140000 push lands, rather than
 being remembered afterwards.
 
+### `CTRL-01` Controls modernised — 11-CONTROLS-CONTRACT — **DONE** · session 01, 2026-08-31
+**Inventory before → after: `<select>` 2 → 0 · `type="date"` 8 → 0** (the three
+remaining grep hits are the kit's own doc comments). Buttons already spoke the
+contract's language (primary/secondary/ghost/danger in the `Button` cva); what
+was missing was the **focus-visible ring**, now on the shared base — one rule,
+every Button.
+
+**New kit, `components/ui/`:**
+- `DateField.tsx` — button carrying the date as words ("31 Aug 2026", never
+  dd/mm/yyyy) opening a month-grid popover: arrows move a day, PageUp/Down a
+  month, Enter picks, Escape closes, today ringed, chosen filled, min/max
+  refuse quietly. ISO both directions; strict LOCAL parse (§6af) — and the
+  label is formatted from the local-parsed date, NOT via `fmtDate`, because
+  `fmtDate` does `new Date(iso)` = UTC midnight = the previous day west of
+  Greenwich. **`fmtDate` still has that latent bug for bare dates at its other
+  call sites — flagged, not fixed here; no behaviour rides along.**
+- `Listbox.tsx` — ARIA listbox popover: arrows/Enter/Esc, typeahead past 8
+  options, chosen row ticked. Same value/handler contract as the `<select>` it
+  replaces.
+
+**Eight sites swapped, zero behaviour changes:** CreateExpedition date,
+GuideDashboard "Valid until" (min=today kept), GroupWorkspace day,
+SummitLogKit ascent date, Guides more-filters from/to pair (to gains min=from),
+GuideRequest from/to pair (the from>to coherence rule kept verbatim in the
+handler), Handle country (200 options — the typeahead case), Guides
+where-they-work-from. The MK-03 calendar stays THE range input on
+Find-a-Guide/GuideRequest per the contract; the DateFields beside it replace
+only the native shells. Orphaned `controlClass` removed by hand
+(`noUnusedLocals` is off).
+
+**Verified with real keys, not grep alone** (Session 05's method notes): clicked
+into the pane first, real Tab — landed on the Listbox trigger with a visible
+ring, not BODY. Popover keyboard flow proven in SEPARATE tasks after a probe
+artifact: two synthetic keydowns dispatched in one synchronous task made Enter
+close over the pre-arrow cursor and "fail"; real keystrokes arrive in separate
+tasks and pick correctly (arrow → 2 May 2027, Enter, closed). **A probe that
+compresses two user actions into one task can manufacture a bug the user can
+never hit** — the mirror image of §6ac's stale-listener lesson.
+
+### `PH-29` DEMO/OFFLINE split — the public demo stops claiming the world is unreachable — **DONE** · session 01, 2026-08-31
+The Vercel demo shipped as the flight bundle, so visitors with perfect
+connections saw IMAGERY OFFLINE placeholders. Root cause: **one flag answering
+two questions** — "where does data come from?" and "does the network exist?".
+
+`offline/offline.ts` now carries `DEMO = OFFLINE || VITE_ICEFALL_DEMO === "1"`.
+DEMO governs data source (seed, fixtures, auth skip, client suppression, the
+banner, demo dots/fill, no coach billing); OFFLINE keeps only connectivity
+(the ~15 map/imagery/API modules). Flight bundle = both, unchanged. Internet
+demo = DEMO alone: **maps stream, imagery loads, Overpass answers**. Production
+= neither, untouched.
+
+**The two readers grep missed, found by the build going BLANK:**
+- `seed.ts` bailed on `!OFFLINE` — DEMO had no onboarded athlete, so the
+  onboarding gate pushed /welcome while the route guard pushed /home and the
+  routed area rendered NEITHER. A guard and a gate reading different flags for
+  the same question is §6aa enforced by two components against each other.
+- The fixture arrays are definition-gated (`!OFFLINE ? [] : [...]`) — our own
+  gate-at-the-definition discipline working against the split. Seed ran and
+  wrote `[]`. All 11 literals flipped to `!DEMO`.
+
+The banner now speaks its own mode — "Demo" on the internet build, "Offline
+demo" only when OFFLINE. The one component that exists to keep a build honest
+must not be the thing on it that is wrong.
+
+Verified on `vite preview` of the real `VITE_ICEFALL_DEMO=1` dist, SW and
+storage cleared between builds: /home lands seeded, 8 activities, no IMAGERY
+OFFLINE anywhere, **6 tile.openstreetmap.org requests + live Overpass on
+/explore/routes**. The demo cannot write into the live CRM: the backend client
+stays suppressed, so `enquiryGate` says held-on-device to the public — the
+per-path gate doing exactly what it was built for.
+
 #### Still to build from the mockups
 Find a Guide's inline availability calendar and selector rows; Request Guide's
 price breakdown; the guide profile's four tabs; the Plan screen's session
@@ -1282,7 +1353,65 @@ Free users will also get to see like a pop up add for a guide which wants to spe
 9 items — 7 buildable now, 2 waiting on design, 0 waiting on a decision. Plus `OP-10`,
 which is not a flight note but request 08 from the Company CRM session.
 
-### `OP-01` CompanyProfile — **DONE** · session 04, 2026-08-31
+### `CTRL-OP` Controls modernised — 11-CONTROLS-CONTRACT — **DONE** · session 04, 2026-08-31
+**Inventory before → after: `type="date"` 2 → 0 · `<select>` 10 (across 7
+files) → 0 · 59 raw `<button>` elements audited** (all already through the
+`Button` kit or deliberately styled; the app-global `:focus-visible` ring in
+`index.css` covers every one). After-grep over the tree confirms **zero
+user-facing native date or select outside `src/offline/`** — and in fact zero
+inside it too; the only remaining grep hits are the kit's own doc comments in
+`src/components/controls.tsx`.
+
+**The kit, `src/components/controls.tsx`:** `Listbox` (ARIA listbox popover —
+arrows/Home/End/Enter/Esc, typeahead past ~8 options, same value/handler
+contract as the `<select>` it replaces), `DateField` (date as words, month-grid
+popover, arrow-key day navigation, Enter picks, Esc closes and returns focus to
+the opener), `DateRangeField` (one calendar, start/end chips, preset pills).
+ISO underneath both directions; `strictIsoDay` refuses at the write path
+(§6af). **Theme reconciliation, recorded in the kit header:** the contract
+groups this portal with "the dark apps", but owner decision 18 + OP-09 made it
+LIGHT BY DEFAULT with a dark option — the kit is theme-aware via the existing
+tokens (bg-canvas/surface/raised/elevated, ink/muted/faint, border-line, azure
+primary) and correct in both themes automatically; azure is the primary in
+both. Verified on screen in both themes as Ravi Thapa.
+
+**No behaviour rode along** — same values, same handlers, new shells. The ONE
+sanctioned behaviour addition is the Analytics exact-date range, closed as
+`OP-02a` below.
+
+**Sweep closed · session 04 sweep agent, 2026-08-31.** The swept files:
+`src/components/offer.tsx` (both `type="date"` inputs → `DateField`, same
+state/ISO values/problems-list validation, plus the Per line `<select>` →
+`Listbox`; an open listbox's Escape now stops at the list instead of reaching
+the dialog's close-on-Escape listener, so a draft offer cannot be thrown away
+by closing a dropdown), `src/components/leads.tsx` (Trip + Mountain),
+`src/screens/ProductNew.tsx` (Mountain), `src/screens/Pipeline.tsx` (mountain
++ tag filters — the old sr-only `<label>`s carry over as the kit's `label`
+prop, visually hidden, so the triggers keep their accessible names),
+`src/screens/LeadDetail.tsx` (Assigned to), `src/screens/ProductDetail.tsx` +
+`src/screens/ProductEditor.tsx` (departure availability — values stay the
+exact `DepartureAvailability` allowlist strings). Kit controls are placed
+OUTSIDE `<label>`-wrapping (ui.tsx `Field`) on purpose: a click inside a label
+re-forwards to the first labelable control and would re-toggle the trigger on
+every pick. ProductDetail/ProductEditor departure DATES are read-only text
+locked with Icefall — no typed-date input existed on these surfaces, so
+nothing further to convert. Re-grep after the sweep: the only `type="date"` /
+`<select` hits under `src/` are doc comments (zero in `src/offline/` as well);
+59 raw `<button>` elements outside the kit audited, none rebuilt — all styled,
+all under the global azure `:focus-visible` ring.
+
+Verified live at 5196 as Ravi Thapa, both themes: offer composed and SENT
+end-to-end through `sendMessage` with the new calendars (departure picked in
+the popover travels as ISO into the message body); departure availability
+flipped through the Listbox and read back from the backend after `refresh()`;
+the Pipeline tag filter driven keyboard-only start to finish (Tab to trigger,
+ArrowDown opens, arrows/Home move `aria-activedescendant`, Enter picks, Escape
+closes, focus returns to the trigger). "Change a product difficulty" from the
+brief is impossible by design — difficulty is locked to the route record in
+this portal (ProductEditor says so in its header), so availability is the
+product-write Listbox that was verified instead. `npx tsc --noEmit` clean;
+tests 174/174 (the count moved 169 → 174 with `OP-02a`'s adapter tests, which
+landed mid-sweep from the parallel session). — **DONE** · session 04, 2026-08-31
 - **Function:** Expedition companies can create posts for social media, and get followed by people which includes adding stories and creating promotional psots or videos
 - **DONE** — `icefall-operator/src/screens/Posts.tsx` (the surface),
   `src/screens/CompanyProfile.tsx` (hosts it as the **Posts** tab — the owner's
@@ -1318,7 +1447,54 @@ which is not a flight note but request 08 from the Company CRM session.
     seeded posts reference the credited peak/trek libraries via the
     `ListingPhoto` pattern.
 
-### `OP-02` Analytics — **DESIGN** · needs your design first
+### `OP-02` Analytics — SPLIT §6z-style: function **DONE**, design **OPEN** · session 04, 2026-08-31
+
+#### `OP-02a` Function — exact dates — **DONE** · session 04, 2026-08-31
+- **Function (owner, verbatim):** Should have to be able to select exact dates they want to see analytics from
+- **DONE** — `icefall-operator/src/screens/Analytics.tsx`,
+  `src/domain/adapter.ts`, `src/domain/memory/adapter.ts`,
+  `tests/authz.test.ts` (169 → 174). The one sanctioned behaviour addition of
+  the controls sweep; everything else on Analytics is the same values through
+  the same handlers.
+  - **One signature, no third code path.** `getAnalytics`/`getInsights` accept
+    `"week" | "month" | {fromIso, toIso}` (inclusive days). The presets are now
+    DERIVED ranges — "week" = the 7 calendar days ending today, "month" = 30 —
+    so a preset and a custom range run the same arithmetic. (The old cutoffs
+    were 8/32 trailing days; the tests' restated cutoffs moved with them,
+    which is exactly why they are restated there.)
+  - **The screen control** is the kit's `DateRangeField` with preset pills
+    **7 days · 30 days · Custom** replacing the This week/This month toggle —
+    7 days is the old week, 30 days the old month, so nothing the owner knew
+    disappears. The chosen range renders IN WORDS ("30 Jul – 28 Aug 2026")
+    everywhere the old "the last week/month" label sat, including every
+    sub-tab's own sentences.
+  - **The comparison is the SAME LENGTH, immediately before** — a 3-day pick
+    reads "vs 22 Aug – 24 Aug 2026" on the KPI footnotes. An empty previous
+    window stays null: no delta, no "vs" label (the existing honesty rule,
+    now carrying its dates).
+  - **The demo-views tile cannot borrow credibility from real dates:** its
+    invented +56% delta shows ONLY on the 30-day preset it was authored for.
+    On any other range the tile keeps the demo figure, drops the delta, and
+    says in a footnote that the figure does not follow the selected dates —
+    an invented delta beside three real-window deltas would be a new lie.
+  - **Strict at the write path (§6af):** the adapter REFUSES a reversed range
+    or a non-day ("2026-02-31", dd/mm/yyyy) with the reason, never coerces.
+    The calendar can only emit ordered valid ISO days, so the guard is the
+    seam's, not the screen's. Tested (reversed, impossible day, display
+    format; `getInsights` refuses identically).
+  - **Honesty edges, seen in the browser:** a range with nothing states
+    "No enquiries over 20 Jun – 26 Jun 2026 … that zero is a measurement"
+    instead of empty charts; a ONE-day range works and its chart card says
+    "1 enquiry on 25 Aug 2026. One day is a figure, not a trend" rather than
+    drawing a line through a single point; funnel, donut, channel quality,
+    speed, drop-off and team all follow the range (new `getTrendRange` keeps
+    the Overview chart summing over exactly the picked days).
+  - **The frozen offline fixture** (`src/offline/backend.ts`, owned elsewhere,
+    untouched) cannot resolve exact dates, so offline the screen keeps its
+    original week/month toggle rather than labelling preset data with dates it
+    does not honour; the widened union keeps it compiling as-is.
+
+#### `OP-02b` Design — **DESIGN** · still needs your drawings, unchanged
 - **Design:** REDESIGN NEEDED FROM:
 
 Expeditions
@@ -1328,7 +1504,6 @@ Sources
 Speed
 Drop-off
 Team
-- **Function:** Should have to be able to select exact dates they want to see analytics from
 
 ### `OP-03` Mountains — **DONE** · session 04, 2026-08-31
 - **Function:** So when a company requests to add a mountain, they should select mountain first and then send request to the company. Companies also should edit how many spots they have, there exact Itinerary . Difficulty should be already there since doesnt change + highest point they dont make sense. . Also make Edit page bigger to be seen and preview acc show how prev looks on the app or the web.
@@ -1980,6 +2155,84 @@ were the account's real state.
   screen's "cannot send" stays true; client wiring waits for the brain's GO,
   which will follow a live re-probe, not a file listing.
 
+- **`NEXT-05` Where session 05 resumes (written at stand-down, 2026-09-01
+  ~00:00).** Tomorrow is guide design days 26–29: the five pages the owner's
+  way — Home, Analytics, Clients, Chat, Profile — none pre-drawn; the lightest
+  run of the five apps, scheduled last. The owner's first sign-in has still
+  not happened: the eight pre-registered predictions above stand exactly as
+  written, and that click remains the live verification of the whole session
+  path whenever it lands. The verification dev servers (5201 demo / 5202
+  offline) were stopped at stand-down; restart via launch configs
+  `icefall-guide-demo` / `icefall-guide-offline`.
+
+- **`DEMO-05` The DEMO/OFFLINE split (12-DEMO-FLAG-SPLIT.md) — DONE, verified
+  in both modes, 2026-08-31 night.** And applying it uncovered that **the
+  deployed OFFLINE demo was already broken by my own S3 work**: when sessions
+  began displacing the sample, `guideAccess()`'s flight-build answer of
+  `"guide"` started reading as "a real person is signed in" — so the gate hid
+  the very fixtures the flight build exists to show. §6aj precisely: nobody
+  edited the flag; the world moved under its answer. The public demo the owner
+  escalated about was empty-screened by this, not only offline-suppressed.
+
+  The split, as landed in this tree:
+  - `lib/demoFlag.ts`: `DEMO = OFFLINE || VITE_ICEFALL_DEMO==="1"`, folded
+    into the existing single gate (`SHOW_DEMO_DATA ||= DEMO`) so every seed
+    reader, the sample banner and the sample gate light up under DEMO with no
+    per-reader edits. OFFLINE implies DEMO — a build with no server must show
+    sample data or nothing.
+  - `auth/account.ts`: the flight build now answers `"offline"`, not
+    `"guide"` — the truthful answer, and every reader already handles it
+    (identity → sample branch, gate arms, Support says "kept on this device").
+    The auth-skip trio stays OFFLINE-only ON PURPOSE, diverging from the
+    contract's letter for its meaning: under DEMO the client is LIVE and a
+    signed-out visitor gets the sample with no walls naturally — and a
+    visitor who signs in for real displaces the sample exactly as production
+    does. A DEMO auth-skip would have REINTRODUCED tonight's S3 bug on the
+    public internet.
+  - Store drawers keyed by `DEMO` (data question, not a network one);
+    `vite-env.d.ts` typed; drawer comments swept per §6aa.
+  - Verification harness kept in-tree: `.env.demo` / `.env.offline` +
+    launch configs `icefall-guide-demo` (5201) and `icefall-guide-offline`
+    (5202).
+
+  Verified in the browser, both modes: OFFLINE shows the fixture guide, fixture
+  clients, flight banner, client suppressed, zero network — the regression
+  healed. DEMO shows the sample, the banner, the sign-in door, no flight
+  banner, client constructed — and a throwaway-credentials submit on /welcome
+  returned the server's real invalid-credentials sentence, which only a live
+  round-trip can produce. Flag matrix asserted directly per mode:
+  DEMO {demo:true, offline:false, client:true} ·
+  OFFLINE {demo:true, offline:true, client:false}. `tsc` clean.
+
+- **`CTRL-05` Controls contract (11-CONTROLS-CONTRACT.md) — INVENTORIED AND
+  ALREADY COMPLIANT, 2026-08-31.** The inventory-first discipline, counts as
+  found: `<select` **0** · `type="date"` **0** · default-styled buttons **0**
+  (29 `<button type="button">` instances, all styled) · disabled controls **0**
+  (the last two were deleted earlier tonight in the decision-19 cleanup).
+
+  Why zero before the sweep: every date surface here was already built custom —
+  Availability is an always-visible dark month grid (MK-03's family; semantics
+  untouched per the contract), Analytics runs preset pills + custom range from
+  the owner's earlier "modern date selection" instruction, and the offer
+  composer has no date input at all. Buttons run through one cva kit whose
+  variants are the contract's trio (azure primary, hairline secondary, ghost,
+  danger). ISO-underneath/§6af was already this session's law (`lib/day.ts`
+  strict parse).
+
+  The one gap the grep suggested was a false alarm worth recording (§6h): no
+  `focus-visible` class appears in any component — because the ring is a single
+  global rule in `index.css` (`:focus-visible { outline: 2px solid azure }`),
+  the one-source form the kit asks for. **Verified live, not assumed:** a real
+  Tab keypress in the preview lands on the first control with a computed
+  `2px solid` azure outline. (First probe read BODY — the pane lacked input
+  focus; clicked in, re-ran, then judged.)
+
+  Honest limit, on record: the availability grid's day cells are plain buttons
+  — Tab/Enter navigable (native behaviour, no regression), but no arrow-key
+  grid navigation. The contract requires arrows on single-date POPOVER
+  calendars, which this is not; if the kit later ships shared arrow-grid
+  behaviour, this screen adopts it rather than growing its own.
+
 - **`S5` Consume the queued push — PLANNED and APPROVED; owner sequencing ruling
   2026-08-31: the push happens only after every page of the owner's review notes
   is completed, so this holds longer than first expected. Review-note items that
@@ -2101,6 +2354,35 @@ Section abve needs full redesign
 **The web app has zero notes.** Its marketplace and signed-in desktop app are
 `import.meta.env.DEV`-only by design, so the static offline build could not show
 them — only the waitlist page rendered. Roughly 30 screens still unreviewed.
+
+### `WEB-CTRL` control kit modernisation — inventory (11-CONTROLS-CONTRACT)
+
+**Counted 2026-08-31 before any replacement, per the contract's discipline:**
+
+- Native `<select>`: **7** — `Treks.tsx:148` (sort), `GuideProfile.tsx:455,473`
+  (mountain, group size), `Explore.tsx:388` (sort), `GuidesPage.tsx:337`,
+  `BookingConfirm.tsx:500` (flight origin), `TripSearch.tsx:147` (origin).
+- Native `type="date"`: **0** — booking dates already use the custom two-month
+  `DatePicker.tsx` (human labels, Escape, disabled past). Gap vs contract:
+  no arrow-key navigation inside the month grid; today-mark/aria to verify.
+- `Button` (ui.tsx): azure primary / hairline secondary / ghost exist.
+  Gaps vs contract: **no focus-visible ring, no destructive variant.**
+
+**DONE 2026-08-31.** `components/Listbox.tsx` (full listbox pattern: arrows,
+Home/End, Enter/Space, Escape-returns-focus, typeahead, aria-activedescendant)
+replaced all 7 — re-grep: **0 `<select>` elements** (2 hits are Listbox's own
+comments). Button: focus-visible ring on every variant + a `destructive`
+variant on the danger token, never styled as primary. Calendar: arrow-key
+roving focus across the month grid (local `dayKey`, never `toISOString` — the
+west-of-Greenwich bug kept out), today ringed, per-day aria-labels.
+
+Verified LIVE with real key presses, focus established first (Session 05's
+method): Enter opens · 2×ArrowDown lands "Annapurna (10)" · Enter picks,
+closes, returns focus · Escape returns focus · typeahead "den" → "Denali ·
+Talkeetna, Alaska" · grid walk 1 Oct → 2 Oct → 9 Oct · today ringed and read
+as "Monday, 31 August 2026". One false alarm resolved by method, not
+assumption: "today MISSING" was the calendar correctly opening on the
+future-seeded search month — paged back, ring present.
 
 ### `WEB-AUDIT` every newly-reachable screen walked with empty data — **DONE 2026-08-31, Session 02**
 

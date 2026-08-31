@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Avatar, Button, Card, PageHead, Pill, SectionLabel, Stat } from "@/components/ui";
 import { Resolve } from "@/components/states";
 import { createGuideProfileFor, listGuideCommissions, listGuideProfiles, listProfilesBasic, setGuideListed } from "@/data/queries";
+import { Select } from "@/components/controls";
 import { loading, type Result } from "@/data/result";
 import type { Commission, GuideRow } from "@/data/types";
 import { formatDay } from "@/lib/utils";
@@ -96,17 +97,20 @@ export default function Guides() {
           availability — the honest cold start every real guide sees. The act is audited.
         </p>
         <div className="mt-2.5 flex flex-wrap items-center gap-2">
-          <select
+          <Select
             value={newGuide}
-            onChange={(e) => setNewGuide(e.target.value)}
-            className="h-10 min-w-[240px] rounded-tile border border-line bg-surface px-3 text-[12.5px] text-ink outline-none"
-          >
-            <option value="">Choose a person…</option>
-            {people.state === "ok" &&
-              people.value
-                .filter((p) => guides.state !== "ok" || !guides.value.some((g) => g.id === p.id))
-                .map((p) => <option key={p.id} value={p.id}>{p.display_name} ({p.role})</option>)}
-          </select>
+            onChange={setNewGuide}
+            ariaLabel="Person to create a guide profile for"
+            placeholder="Choose a person…"
+            className="min-w-[260px]"
+            options={
+              people.state === "ok"
+                ? people.value
+                    .filter((p) => guides.state !== "ok" || !guides.value.some((g) => g.id === p.id))
+                    .map((p) => ({ value: p.id, label: p.display_name, hint: p.role }))
+                : []
+            }
+          />
           <Button variant="secondary" disabled={busy || !newGuide} onClick={() => void createFor()}>
             Create guide profile
           </Button>

@@ -1,7 +1,7 @@
 import { supabase, isConfigured, NOT_CONFIGURED } from "@/lib/supabase";
 import { SHOW_DEMO_DATA } from "@/lib/demoFlag";
 import * as demo from "@/demo/dataset";
-import { OFFLINE } from "@/offline/offline";
+import { DEMO } from "@/offline/offline";
 import { read as offlineRead, write as offlineWrite } from "@/offline/store";
 import { failed, ok, unavailable, type Result } from "./result";
 import type { Company, ContentVersion, Mountain, PlacementView, Product, AuditEvent } from "./types";
@@ -33,9 +33,9 @@ async function read<T>(
   // THE AEROPLANE BRANCH, and it is separate from the demo branch above by
   // design. `SHOW_DEMO_DATA` is `import.meta.env.DEV` and collapses the demo
   // arrays to `[]` in a built bundle, so an offline build that relied on it
-  // would be 23 empty screens. `OFFLINE` is a build-time constant, so with the
+  // would be 23 empty screens. `DEMO` is a build-time constant, so with the
   // flag unset this line is dead code and the fixtures are dropped with it.
-  if (OFFLINE && offlineValue) return ok(offlineValue());
+  if (DEMO && offlineValue) return ok(offlineValue());
   if (!isConfigured || !supabase) {
     if (SHOW_DEMO_DATA && demoValue) return ok(demoValue());
     return unavailable<T>(NOT_CONFIGURED);
@@ -149,17 +149,17 @@ const offlineDone = <T,>(apply: () => T): Promise<Result<T>> => Promise.resolve(
  * what makes the audit log complete rather than merely usually-complete.
  */
 export const movePlacement = (placementId: string, slotPosition: number, reason: string) =>
-  OFFLINE
+  DEMO
     ? offlineAck(() => offlineWrite.movePlacement(placementId, slotPosition, reason))
     : call("move_placement", { p_placement_id: placementId, p_slot_position: slotPosition, p_reason: reason });
 
 export const cancelPlacement = (placementId: string, reason: string) =>
-  OFFLINE
+  DEMO
     ? offlineAck(() => offlineWrite.cancelPlacement(placementId, reason))
     : call("cancel_placement", { p_placement_id: placementId, p_reason: reason });
 
 export const approveContentVersion = (versionId: string, reason?: string) =>
-  OFFLINE
+  DEMO
     ? offlineAck(() => offlineWrite.decideContentVersion(versionId, "approved", reason ?? null))
     : call("approve_content_version", { p_version_id: versionId, p_reason: reason ?? null });
 
@@ -175,7 +175,7 @@ export const approveContentVersion = (versionId: string, reason?: string) =>
  * of the reason is that a person wrote it about THIS company.
  */
 export const setCompanyRealBusiness = (companyId: string, value: boolean, reason: string) =>
-  OFFLINE
+  DEMO
     ? offlineAck(() => offlineWrite.setCompanyRealBusiness(companyId, value, reason))
     : call("set_company_real_business", { p_company_id: companyId, p_value: value, p_reason: reason });
 
@@ -184,7 +184,7 @@ export const decideContentVersion = (
   decision: "rejected" | "changes_requested",
   reason: string,
 ) =>
-  OFFLINE
+  DEMO
     ? offlineAck(() => offlineWrite.decideContentVersion(versionId, decision, reason))
     : call("decide_content_version", { p_version_id: versionId, p_decision: decision, p_reason: reason });
 
@@ -344,7 +344,7 @@ export const notifyUnpaidInvoices = async (
 
 /** Notifies. Never acts — it cannot reach `placements` at all. */
 export const raiseExpiryTasks = () =>
-  OFFLINE ? offlineAck(() => offlineWrite.raiseExpiryTasks()) : call("raise_expiry_tasks", {});
+  DEMO ? offlineAck(() => offlineWrite.raiseExpiryTasks()) : call("raise_expiry_tasks", {});
 
 /* -------------------------------------------------------------------------- */
 /* Company record writes — the approver's side of the boundary                */
@@ -883,12 +883,12 @@ export const listCompanyInvitations = (companyId: string) =>
  * on themselves, or the invitation waits forever for a signup that never comes.
  */
 export const inviteCompanyUser = (companyId: string, email: string, role: "admin" | "sales") =>
-  OFFLINE
+  DEMO
     ? offlineAck(() => offlineWrite.inviteCompanyUser(companyId, email, role))
     : call("invite_company_user", { p_company_id: companyId, p_email: email.trim(), p_company_role: role });
 
 export const revokeInvitation = (invitationId: string, reason: string) =>
-  OFFLINE
+  DEMO
     ? offlineAck(() => offlineWrite.revokeInvitation(invitationId, reason))
     : call("revoke_invitation", { p_invitation_id: invitationId, p_reason: reason });
 
@@ -896,7 +896,7 @@ export const createCompany = async (
   intake: CompanyIntake,
   internal?: CompanyIntakeInternal,
 ): Promise<Result<Company>> => {
-  if (OFFLINE) return offlineDone(() => offlineWrite.createCompany(intake));
+  if (DEMO) return offlineDone(() => offlineWrite.createCompany(intake));
   if (!isConfigured || !supabase) return unavailable<Company>(NOT_CONFIGURED);
   // Copied field by field, never spread — the same rule as the preview
   // protocol's "never spread the draft". `real_business` is deliberately NOT
@@ -944,7 +944,7 @@ export const updateCompanyRecord = async (
   id: string,
   patch: Partial<Pick<Company, "name" | "legal_name" | "description" | "countries" | "regions">>,
 ): Promise<Result<Company>> => {
-  if (OFFLINE) return offlineDone(() => offlineWrite.updateCompanyRecord(id, patch));
+  if (DEMO) return offlineDone(() => offlineWrite.updateCompanyRecord(id, patch));
   if (!isConfigured || !supabase) return unavailable<Company>(NOT_CONFIGURED);
   const { data, error } = await supabase
     .from("companies")
@@ -970,7 +970,7 @@ import type { CustomerRecord, GuideRecord, Invoice, Payment, PlacementPrice, Sta
  * argument changes.
  */
 const pending = <T,>(demoValue: () => T, offlineValue?: () => T): Promise<Result<T>> =>
-  OFFLINE && offlineValue
+  DEMO && offlineValue
     ? Promise.resolve(ok(offlineValue()))
     : Promise.resolve(
     SHOW_DEMO_DATA
@@ -1142,7 +1142,7 @@ export const replyToTicket = async (
   body: string,
   internal: boolean,
 ): Promise<Result<null>> => {
-  if (OFFLINE) return offlineAck(() => offlineWrite.replyToTicket(ticketId, body, internal));
+  if (DEMO) return offlineAck(() => offlineWrite.replyToTicket(ticketId, body, internal));
   if (!isConfigured || !supabase) return unavailable<null>(NOT_CONFIGURED);
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) return failed<null>("Not signed in.");
@@ -1161,7 +1161,7 @@ export const setTicketStatus = async (
   status: Ticket["status"],
   resolution?: string,
 ): Promise<Result<null>> => {
-  if (OFFLINE) return offlineAck(() => offlineWrite.setTicketStatus(ticketId, status, resolution));
+  if (DEMO) return offlineAck(() => offlineWrite.setTicketStatus(ticketId, status, resolution));
   if (!isConfigured || !supabase) return unavailable<null>(NOT_CONFIGURED);
   const done = status === "resolved" || status === "closed";
   const { error } = await supabase
@@ -1192,7 +1192,7 @@ export const listIntake = () =>
 export const triageIntake = async (
   intake: IntakeRequest,
 ): Promise<Result<{ id: string; reference: string }>> => {
-  if (OFFLINE) return offlineDone(() => offlineWrite.triageIntake(intake));
+  if (DEMO) return offlineDone(() => offlineWrite.triageIntake(intake));
   if (!isConfigured || !supabase) return unavailable<{ id: string; reference: string }>(NOT_CONFIGURED);
   const { data, error } = await supabase
     .from("support_tickets")

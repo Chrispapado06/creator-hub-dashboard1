@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import { Listbox } from "@/components/Listbox";
 import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
-  BedDouble, Check, ChevronDown, ChevronLeft, Lock, MessageCircle, Plane, PlaneTakeoff,
+  BedDouble, Check, ChevronLeft, Lock, MessageCircle, Plane, PlaneTakeoff,
   ShieldCheck, Users,
 } from "lucide-react";
 import { Container } from "@/components/Shell";
@@ -496,20 +497,13 @@ function Radio({ active }: { active: boolean }) {
 
 function OriginSelect({ value, onChange }: { value: string; onChange: (c: string) => void }) {
   return (
-    <span className="relative inline-flex">
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="appearance-none rounded-tile border border-hairline bg-obsidian/60 py-2 pl-3.5 pr-9 text-[13px] text-snow outline-none transition-colors hover:border-hairline-strong focus:border-azure/55"
-      >
-        {ORIGINS.map((o) => (
-          <option key={o.code} value={o.code} className="bg-graphite text-snow">
-            {o.city} ({o.code})
-          </option>
-        ))}
-      </select>
-      <ChevronDown size={15} strokeWidth={1.8} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-mist-dim" />
-    </span>
+    <Listbox
+      value={value}
+      onChange={onChange}
+      options={ORIGINS.map((o) => ({ value: o.code, label: `${o.city} (${o.code})` }))}
+      label="Flying from"
+      triggerClassName="rounded-tile border border-hairline bg-obsidian/60 py-2 px-3.5 text-[13px] text-snow transition-colors hover:border-hairline-strong"
+    />
   );
 }
 

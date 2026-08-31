@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Megaphone } from "lucide-react";
 import { Button, Card, PageHead, Pill, SectionLabel, TableCard } from "@/components/ui";
 import { GoldButton, Thumb } from "@/components/drawn";
+import { DateButton, Select } from "@/components/controls";
 import {
   createPromotion, listAudienceFacts, listCompanies, listCompanyPosts,
   listDestinations, listProducts, listPromotions, setPromotionStatus,
@@ -196,14 +197,14 @@ export default function Promotions() {
         {/* ── The steps ─────────────────────────────────────────────────── */}
         <div className="space-y-4">
           <StepCard n={1} title="Who is being promoted">
-            <select
+            <Select
               value={companyId}
-              onChange={(e) => setCompanyId(e.target.value)}
-              className="h-10 w-full max-w-sm rounded-tile border border-line bg-surface px-3 text-[12.5px] text-ink outline-none"
-            >
-              <option value="">Choose the company paying for this…</option>
-              {companies.state === "ok" && companies.value.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+              onChange={setCompanyId}
+              ariaLabel="Company paying for this campaign"
+              placeholder="Choose the company paying for this…"
+              className="w-full max-w-sm"
+              options={companies.state === "ok" ? companies.value.map((c) => ({ value: c.id, label: c.name })) : []}
+            />
             {companyId && (
               <div className="mt-3">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.05em] text-faint">What of theirs runs</p>
@@ -239,15 +240,15 @@ export default function Promotions() {
           <StepCard n={2} title="The image">
             <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
               <div>
-                <select
+                <Select
                   value={creative}
-                  onChange={(e) => setCreative(e.target.value)}
-                  className="h-10 w-full rounded-tile border border-line bg-surface px-3 text-[12.5px] text-ink outline-none"
-                >
-                  <option value="">Choose a mountain or trek photo…</option>
-                  {destinations.state === "ok" &&
-                    destinations.value.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-                </select>
+                  onChange={setCreative}
+                  ariaLabel="Photo for the promotion"
+                  placeholder="Choose a mountain or trek photo…"
+                  options={destinations.state === "ok"
+                    ? destinations.value.map((d) => ({ value: d.id, label: d.name, hint: d.kind }))
+                    : []}
+                />
                 <p className="mt-2 text-[11.5px] leading-relaxed text-faint">
                   Photos come from the licensed destination set. Company uploads join in when the
                   media store is wired to this screen.
@@ -339,8 +340,7 @@ export default function Promotions() {
             <div className="flex flex-wrap items-end gap-3">
               <label className="block">
                 <span className="text-[11px] font-semibold uppercase tracking-[0.05em] text-faint">Starts</span>
-                <input type="date" value={startsOn} onChange={(e) => setStartsOn(e.target.value)}
-                  className="mt-1 block h-10 rounded-tile border border-line bg-surface px-3 text-[12.5px] text-ink outline-none" />
+                <DateButton value={startsOn} onChange={setStartsOn} className="mt-1 block" ariaLabel="Campaign start date" />
               </label>
               <label className="block">
                 <span className="text-[11px] font-semibold uppercase tracking-[0.05em] text-faint">Days</span>

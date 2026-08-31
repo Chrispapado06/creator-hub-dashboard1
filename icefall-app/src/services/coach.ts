@@ -11,7 +11,7 @@ import {
   estimateExchangeMicros, type TokenUsage,
 } from "@/coach/budget";
 import { fmtCountdown, fmtDistance, fmtElevation } from "@/lib/format";
-import { OFFLINE } from "@/offline/offline";
+import { DEMO } from "@/offline/offline";
 
 /**
  * ICEFALL Coach.
@@ -219,7 +219,7 @@ export async function askCoach(
 
   // `ENDPOINT` is unset in this build, so the scripted coach already answers
   // everything — but an offline build must not depend on that staying true.
-  if (ENDPOINT && !OFFLINE) {
+  if (ENDPOINT && !DEMO) {
     /* PH-14b. The trek shortlist is RETRIEVED and handed to the model as data
        with a closed-world rule. Without it, a model told to "suggest treks
        near their objective" will produce real-sounding treks ICEFALL does not

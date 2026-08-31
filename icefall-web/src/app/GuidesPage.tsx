@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
+import { Listbox } from "@/components/Listbox";
 import { Link } from "react-router-dom";
 import {
-  BarChart3, Calendar, Check, ChevronDown, ChevronRight, Heart, Mountain as MountainIcon,
+  BarChart3, Calendar, Check, ChevronRight, Heart, Mountain as MountainIcon,
   MessageSquare, Search, Star, Users,
 } from "lucide-react";
 import { GuidePhoto } from "@/components/ui";
@@ -333,20 +334,14 @@ function Choice({
   options: readonly string[];
 }) {
   return (
-    <span className="relative flex items-center">
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full appearance-none bg-transparent pr-5 text-[13px] text-snow outline-none"
-      >
-        {options.map((o) => (
-          <option key={o} value={o} className="bg-graphite">
-            {o}
-          </option>
-        ))}
-      </select>
-      <ChevronDown size={13} className="pointer-events-none absolute right-0 text-mist-dim" />
-    </span>
+    <Listbox
+      value={value}
+      onChange={onChange}
+      options={options.map((o) => ({ value: o, label: o }))}
+      label="Choose"
+      className="w-full"
+      triggerClassName="text-[13px] text-snow"
+    />
   );
 }
 

@@ -25,7 +25,7 @@
  * localStorage at module-evaluation time. Import order is execution order.
  */
 
-import { OFFLINE } from "./offline";
+import { DEMO } from "./offline";
 import {
   OFFLINE_ACTIVITIES,
   OFFLINE_ATHLETE,
@@ -54,7 +54,15 @@ function put(key: string, value: unknown) {
 }
 
 function seed() {
-  if (!OFFLINE) return;
+  /* DEMO, not OFFLINE — the identity is data source, not connectivity. This
+     was the reader the flag split missed on the first pass, and the failure
+     it caused was structural: with DEMO set and no seed, the app had no
+     onboarded athlete, so the onboarding gate pushed toward /welcome while
+     the route guard pushed back to /home, and the routed area rendered
+     neither — a blank frame under a correct banner. A guard and a gate
+     reading DIFFERENT flags for the same question is the §6aa shape again,
+     enforced by two components against each other. */
+  if (!DEMO) return;
   if (typeof localStorage === "undefined") return;
 
   const memberSince = new Date(Date.now() - 720 * 86_400_000).toISOString();

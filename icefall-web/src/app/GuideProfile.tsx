@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Listbox } from "@/components/Listbox";
 import { Link, useParams } from "react-router-dom";
 import {
   Award, Calendar, ChevronLeft, ChevronRight, Clock, Globe, MapPin,
@@ -452,17 +453,14 @@ function Availability({ guide, peaks }: { guide: Guide; peaks: Peak[] }) {
         <span className="section-label block">Mountain</span>
         <span className="mt-1.5 flex items-center gap-2 rounded-tile border border-hairline bg-obsidian/50 px-3 py-2.5">
           <MountainIcon size={14} strokeWidth={1.8} className="shrink-0 text-azure" />
-          <select
+          <Listbox
             value={peakId}
-            onChange={(e) => setPeakId(e.target.value)}
-            className="w-full bg-transparent text-[13px] text-snow outline-none"
-          >
-            {peaks.map((p) => (
-              <option key={p.id} value={p.id} className="bg-graphite">
-                {p.name}
-              </option>
-            ))}
-          </select>
+            onChange={setPeakId}
+            options={peaks.map((p) => ({ value: p.id, label: p.name }))}
+            label="Mountain"
+            className="w-full"
+            triggerClassName="text-[13px] text-snow"
+          />
         </span>
       </label>
 
@@ -470,17 +468,14 @@ function Availability({ guide, peaks }: { guide: Guide; peaks: Peak[] }) {
         <span className="section-label block">Group size</span>
         <span className="mt-1.5 flex items-center gap-2 rounded-tile border border-hairline bg-obsidian/50 px-3 py-2.5">
           <Users size={14} strokeWidth={1.8} className="shrink-0 text-azure" />
-          <select
+          <Listbox
             value={group}
-            onChange={(e) => setGroup(e.target.value)}
-            className="w-full bg-transparent text-[13px] text-snow outline-none"
-          >
-            {["1 climber", "2 climbers", "3 climbers", "4+ climbers"].map((g) => (
-              <option key={g} value={g} className="bg-graphite">
-                {g}
-              </option>
-            ))}
-          </select>
+            onChange={setGroup}
+            options={["1 climber", "2 climbers", "3 climbers", "4+ climbers"].map((g) => ({ value: g, label: g }))}
+            label="Group size"
+            className="w-full"
+            triggerClassName="text-[13px] text-snow"
+          />
         </span>
       </label>
 

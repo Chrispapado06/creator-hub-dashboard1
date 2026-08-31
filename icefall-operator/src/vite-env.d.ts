@@ -18,6 +18,7 @@ interface ImportMetaEnv {
    * be read at all under `noUncheckedIndexedAccess`-strict typing.
    */
   readonly VITE_ICEFALL_OFFLINE?: string;
+  readonly VITE_ICEFALL_DEMO?: string;
 }
 
 interface ImportMeta {

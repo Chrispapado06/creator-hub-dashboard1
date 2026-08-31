@@ -4,6 +4,7 @@ import { Avatar, Button, Card, PageHead, Pill } from "@/components/ui";
 import { Resolve } from "@/components/states";
 import { assignTask, createTask, listOpenTasks, listStaff, raiseExpiryTasks, setTaskStatus } from "@/data/queries";
 import { loading, type Result } from "@/data/result";
+import { DateButton, Select } from "@/components/controls";
 import type { StaffRecord, Task } from "@/data/types";
 import { cn, formatDay } from "@/lib/utils";
 import { may, useStaff } from "@/auth/session";
@@ -121,17 +122,20 @@ export default function Tasks() {
             </label>
             <label className="block">
               <span className="mb-1 block text-[12px] font-medium text-muted">Assign to</span>
-              <select value={form.assigned_to} onChange={(e) => setForm((f) => ({ ...f, assigned_to: e.target.value }))} className={fieldCls}>
-                <option value="">Nobody yet — a queue, not a name</option>
-                {team.state === "ok" &&
-                  team.value.filter((s) => s.active).map((s) => (
-                    <option key={s.profile_id} value={s.profile_id}>{s.name}</option>
-                  ))}
-              </select>
+              <Select
+                value={form.assigned_to}
+                onChange={(v: string) => setForm((f) => ({ ...f, assigned_to: v }))}
+                ariaLabel="Assign to"
+                className="w-full"
+                options={[
+                  { value: "", label: "Nobody yet — a queue, not a name" },
+                  ...(team.state === "ok" ? team.value.filter((s) => s.active).map((s) => ({ value: s.profile_id, label: s.name })) : []),
+                ]}
+              />
             </label>
             <label className="block">
               <span className="mb-1 block text-[12px] font-medium text-muted">Due</span>
-              <input type="date" value={form.due_on} onChange={(e) => setForm((f) => ({ ...f, due_on: e.target.value }))} className={fieldCls} />
+              <DateButton value={form.due_on} onChange={(v: string) => setForm((f) => ({ ...f, due_on: v }))} className="w-full" ariaLabel="Due date" />
             </label>
           </div>
           <div className="mt-3 flex justify-end gap-2">
@@ -186,18 +190,18 @@ export default function Tasks() {
                             Take it
                           </Button>
                         )}
-                        <select
+                        <Select
                           value={t.assigned_to ?? ""}
                           disabled={busy}
-                          onChange={(e) => void act(() => assignTask(t.id, e.target.value || null))}
-                          className="h-8 rounded-[8px] border border-line bg-surface px-2 text-[12px] text-muted outline-none"
-                        >
-                          <option value="">Assign…</option>
-                          {team.state === "ok" &&
-                            team.value.filter((s) => s.active).map((s) => (
-                              <option key={s.profile_id} value={s.profile_id}>{s.name}</option>
-                            ))}
-                        </select>
+                          onChange={(v: string) => void act(() => assignTask(t.id, v || null))}
+                          ariaLabel="Assign this task"
+                          placeholder="Assign…"
+                          className="min-w-[150px]"
+                          options={[
+                            { value: "", label: "Assign…" },
+                            ...(team.state === "ok" ? team.value.filter((s) => s.active).map((s) => ({ value: s.profile_id, label: s.name })) : []),
+                          ]}
+                        />
                         {t.status === "open" && (
                           <Button size="sm" variant="ghost" disabled={busy} onClick={() => void act(() => setTaskStatus(t.id, "in_progress"))}>
                             Start

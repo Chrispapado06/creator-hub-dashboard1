@@ -10,6 +10,7 @@ import {
 import { loading, type Result } from "@/data/result";
 import type { Company, IdentityCheck, VerificationDocument } from "@/data/types";
 import { daysUntil, formatDay, formatMoment } from "@/lib/utils";
+import { Select } from "@/components/controls";
 
 /**
  * The documents companies and guides have sent ICEFALL, and what ICEFALL did
@@ -383,16 +384,14 @@ function IdentitySection() {
           revocation; the audit trail keeps the history.
         </p>
         <div className="mt-2.5 flex flex-wrap items-center gap-2">
-          <select
+          <Select
             value={who}
-            onChange={(e) => setWho(e.target.value)}
-            className="h-10 min-w-[220px] rounded-tile border border-line bg-surface px-3 text-[12.5px] text-ink outline-none"
-          >
-            <option value="">Choose a person…</option>
-            {people.state === "ok" && people.value.map((p) => (
-              <option key={p.id} value={p.id}>{p.display_name} ({p.role})</option>
-            ))}
-          </select>
+            onChange={setWho}
+            ariaLabel="Person whose identity was checked"
+            placeholder="Choose a person…"
+            className="min-w-[240px]"
+            options={people.state === "ok" ? people.value.map((p) => ({ value: p.id, label: p.display_name, hint: p.role })) : []}
+          />
           <input
             value={docRef}
             onChange={(e) => setDocRef(e.target.value)}

@@ -34,13 +34,13 @@
  * not accept an empty one.
  */
 
-import { OFFLINE } from "@/offline/offline";
+import { DEMO } from "@/lib/demoFlag";
 
 /* v2: the listing gained treks, so stored shapes from v1 are not readable. A new
    key rather than a migration — nothing is deployed, and a half-understood
    migration of somebody's own listing is worse than starting it again. */
 /**
- * AN OFFLINE DEMO GETS ITS OWN DRAWER, and this is not tidiness.
+ * A DEMO BUILD GETS ITS OWN DRAWER, and this is not tidiness.
  *
  * The demo runs on the same origin as the real app, so a shared key would mean
  * two things, both bad: the demo would open showing a listing edited against the
@@ -50,7 +50,7 @@ import { OFFLINE } from "@/offline/offline";
  *
  * With the flag unset this is the same string it has always been.
  */
-const KEY = OFFLINE ? "icefall-guide:offline-demo:listing:v2" : "icefall-guide:listing:v2";
+const KEY = DEMO ? "icefall-guide:offline-demo:listing:v2" : "icefall-guide:listing:v2";
 
 /** How hard the guide grades their own offering on that mountain. */
 export type Grade = "Introductory" | "Moderate" | "Technical" | "Expedition";

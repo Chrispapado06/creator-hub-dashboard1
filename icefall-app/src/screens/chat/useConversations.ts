@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useApp } from "@/state/AppState";
 import { DEMO_CONVERSATIONS, type Conversation } from "./data";
-import { OFFLINE } from "@/offline/offline";
+import { DEMO } from "@/offline/offline";
 import { OFFLINE_CONVERSATIONS } from "@/offline/fixtures";
 
 /**
@@ -54,7 +54,7 @@ export function useConversations(): Conversation[] {
      * Messages showing nothing at all. Real threads still sort first; nothing
      * about a production build changes.
      */
-    const invented = OFFLINE ? OFFLINE_CONVERSATIONS : DEMO_CONVERSATIONS;
+    const invented = DEMO ? OFFLINE_CONVERSATIONS : DEMO_CONVERSATIONS;
     return [...real.sort(byRecency), ...invented];
   }, [threads]);
 }

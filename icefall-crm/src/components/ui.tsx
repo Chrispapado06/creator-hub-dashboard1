@@ -59,6 +59,7 @@ export function Button({
       {...rest}
       className={cn(
         "inline-flex items-center justify-center gap-2 rounded-pill font-medium transition-colors",
+        "outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
         "disabled:cursor-not-allowed disabled:opacity-45",
         size === "sm" ? "h-8 px-3.5 text-[12.5px]" : "h-10 px-5 text-[13px]",
         variant === "primary" && "bg-solid text-white hover:opacity-90",

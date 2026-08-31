@@ -25,7 +25,7 @@
  */
 
 import { SHOW_DEMO_DATA } from "@/lib/demoFlag";
-import { OFFLINE } from "@/offline/offline";
+import { DEMO } from "@/offline/offline";
 import { OFFLINE_COMMUNITY_POSTS } from "@/offline/fixtures";
 import type { PostKind } from "./types";
 
@@ -49,7 +49,7 @@ import type { PostKind } from "./types";
  * permanently — so the demo disclaimer belongs on the feed there too. This
  * reads the offline flag; it does not decide it. See `@/offline/offline`.
  */
-export const SHOW_DEMO_COMMUNITY = SHOW_DEMO_DATA || OFFLINE;
+export const SHOW_DEMO_COMMUNITY = SHOW_DEMO_DATA || DEMO;
 
 export const COMMUNITY_DEMO_NOTICE =
   "Placeholder posts, shown to review this layout. Posting is not built, so nobody has posted anything — these people, times and figures were written by ICEFALL and none of it happened.";
@@ -219,7 +219,7 @@ export const communityPosts = (): CommunityPost[] =>
   // The offline build brings its own posts. `DEMO_POSTS` is compiled away in
   // any built bundle (see the guard above), so without this the feed would be
   // empty in exactly the build that most needs something in it.
-  OFFLINE ? OFFLINE_COMMUNITY_POSTS : SHOW_DEMO_COMMUNITY ? DEMO_POSTS : [];
+  DEMO ? OFFLINE_COMMUNITY_POSTS : SHOW_DEMO_COMMUNITY ? DEMO_POSTS : [];
 
 /** "2h ago", "1d ago" — resolved at render, never stored. */
 export function agoLabel(hoursAgo: number): string {

@@ -75,7 +75,7 @@ export function SupportEntry({ topic, className }: { topic: SupportTopic; classN
   const { pathname } = useLocation();
   /* Offline the answer is known before the first paint, so the "Checking…" line
      never appears. Unset, this is `null` exactly as it always was. */
-  const [access, setAccess] = useState<GuideAccess | null>(OFFLINE ? "guide" : null);
+  const [access, setAccess] = useState<GuideAccess | null>(OFFLINE ? "offline" : null);
   const [open, setOpen] = useState(false);
   const [body, setBody] = useState("");
   const [sending, setSending] = useState(false);

@@ -24,7 +24,7 @@ export function GoldButton({ children, className, onClick, disabled }: {
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        "inline-flex h-10 items-center justify-center gap-2 rounded-[10px] px-4 text-[13px] font-semibold text-white transition-colors disabled:opacity-40",
+        "inline-flex h-10 items-center justify-center gap-2 rounded-[10px] px-4 text-[13px] font-semibold text-white transition-colors outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-40",
         className,
       )}
       style={{ background: GOLD }}

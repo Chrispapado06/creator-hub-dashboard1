@@ -7,7 +7,7 @@ import { TabBar } from "@/components/layout/TabBar";
 import { IcefallMark } from "@/components/ui/IcefallMark";
 import { Button } from "@/components/ui/primitives";
 import { useApp } from "@/state/AppState";
-import { OFFLINE } from "@/offline/offline";
+import { DEMO } from "@/offline/offline";
 import { OfflineRouteGuard } from "@/offline/OfflineRouteGuard";
 
 import Splash from "@/screens/Splash";
@@ -193,7 +193,7 @@ export default function App() {
           {/* Offline the athlete is already on the device and already
               onboarded, so the root URL opens the app rather than holding on
               the splash for 2.6 s and then deciding the same thing. */}
-          <Route path="/" element={OFFLINE ? <Navigate to="/home" replace /> : <Splash />} />
+          <Route path="/" element={DEMO ? <Navigate to="/home" replace /> : <Splash />} />
           <Route path="/welcome" element={<Welcome />} />
           <Route path="/auth/create" element={<CreateAccount />} />
           <Route path="/auth/signup" element={<SignUp />} />

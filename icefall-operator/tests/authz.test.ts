@@ -99,6 +99,20 @@ import { isStory, storyState } from "../src/domain/types";
 import type { Company, MediaAsset } from "../src/domain/types";
 import { NOW } from "../src/domain/dates";
 import { findContactDetailsIn } from "../src/domain/authz";
+/*
+ * Added for section 19 — the guard suite over the control-kit sweep (CTRL-OP):
+ * the retirement of native date inputs and `<select>`s behind the kit in
+ * `components/controls.tsx`, and the ONE sanctioned behaviour addition that
+ * rode with it, the Analytics exact-date range (OP-02). Nothing here renders a
+ * component; every check guards a failure that would be silent on screen — a
+ * dd/mm/yyyy string slipping into storage, a range quietly repaired instead of
+ * refused, a "previous period" of a different length dressed up as comparable,
+ * or a native control creeping back onto a user-facing surface.
+ */
+import { DateField, DateRangeField, Listbox, strictIsoDay } from "../src/components/controls";
+import { TODAY, daysUntil } from "../src/domain/dates";
+import { LEADS } from "../src/domain/memory/seed";
+import type { FunnelCounts, Lead } from "../src/domain/types";
 
 let passed = 0;
 const failures: string[] = [];
@@ -918,8 +932,12 @@ async function run() {
    * The adapter's own window cutoffs, restated. Every test below that uses
    * them also asserts they still agree with what the adapter counted, so a
    * change to the adapter fails loudly here rather than drifting silently.
+   *
+   * Since OP-02 the presets are DERIVED ranges — "week" is the 7 calendar days
+   * ending TODAY (2026-08-28), "month" the 30 — the same ranges the screen's
+   * preset pills produce, so the pill, the label and the count line up.
    */
-  const INSIGHT_CUTOFF = { week: "2026-08-21", month: "2026-07-28" } as const;
+  const INSIGHT_CUTOFF = { week: "2026-08-22", month: "2026-07-30" } as const;
 
   const leadsInWindow = async (s: Session, w: "week" | "month") =>
     (await be.getLeads(s)).filter((l) => l.createdAt.slice(0, 10) >= INSIGHT_CUTOFF[w]);
@@ -1322,6 +1340,82 @@ async function run() {
       "and one more lead has been replied to",
     );
     resetStore();
+  });
+
+  /* ---- 7b. Exact dates (OP-02) — one arithmetic, strict at the seam ------ */
+
+  await check("a preset and its equivalent exact range count the SAME leads", async () => {
+    const r = await signIn(RAVI);
+    for (const [preset, fromIso] of [["week", INSIGHT_CUTOFF.week], ["month", INSIGHT_CUTOFF.month]] as const) {
+      const byPreset = await be.getAnalytics(r, preset);
+      const byRange = await be.getAnalytics(r, { fromIso, toIso: "2026-08-28" });
+      eq(byRange.funnel.enquiries, byPreset.funnel.enquiries, `${preset}: same enquiries either way in`);
+      eq(byRange.funnel.bookings, byPreset.funnel.bookings, `${preset}: same bookings`);
+      eq(byRange.range?.fromIso, byPreset.range?.fromIso, `${preset}: and the resolved range is the same range`);
+    }
+  });
+
+  await check("the comparison window is the SAME LENGTH, immediately before", async () => {
+    const r = await signIn(RAVI);
+    const a = await be.getAnalytics(r, { fromIso: "2026-08-15", toIso: "2026-08-26" }); // 12 days
+    assert(a.range, "the summary names the window it counted");
+    if (a.previousRange) {
+      eq(a.previousRange.toIso, "2026-08-14", "the previous window ends the day before the range starts");
+      eq(a.previousRange.fromIso, "2026-08-03", "and is exactly as long — 12 days, not a preset");
+      assert(a.previous, "a named previous window always carries its counts");
+    } else {
+      eq(a.previous, null, "no previous range means no previous counts — they go null together");
+    }
+  });
+
+  await check("a window with nothing before it reports NO previous — deltas must vanish", async () => {
+    const r = await signIn(RAVI);
+    // Early June: the 14 days before 15 Jun hold no seeded leads at all.
+    const a = await be.getAnalytics(r, { fromIso: "2026-06-15", toIso: "2026-06-28" });
+    eq(a.previous, null, "an empty earlier window is null, never zeroes");
+    eq(a.previousRange, null, "and its range goes null with it, so no 'vs …' label survives");
+  });
+
+  await check("a reversed or garbage range is REFUSED with a reason, never coerced", async () => {
+    const r = await signIn(RAVI);
+    for (const bad of [
+      { fromIso: "2026-08-20", toIso: "2026-08-10" }, // reversed
+      { fromIso: "2026-02-31", toIso: "2026-03-05" }, // no such day
+      { fromIso: "20/08/2026", toIso: "2026-08-28" }, // display format is not storage
+    ]) {
+      let refused = "";
+      try {
+        await be.getAnalytics(r, bad);
+      } catch (e) {
+        refused = e instanceof Error ? e.message : String(e);
+      }
+      assert(refused.length > 10, `${bad.fromIso}–${bad.toIso}: refused, with a sentence saying why`);
+      let refusedInsights = false;
+      try {
+        await be.getInsights(r, bad);
+      } catch {
+        refusedInsights = true;
+      }
+      assert(refusedInsights, `${bad.fromIso}–${bad.toIso}: getInsights refuses it too — same seam, same rule`);
+    }
+  });
+
+  await check("the range trend covers exactly the picked days and sums to the window", async () => {
+    const r = await signIn(RAVI);
+    const range = { fromIso: "2026-08-15", toIso: "2026-08-26" };
+    assert(be.getTrendRange, "the memory backend serves exact-date trends");
+    const points = await be.getTrendRange(r, range);
+    eq(points.length, 12, "one point per calendar day, inclusive at both ends");
+    eq(points[0]?.day, "2026-08-15", "starting on the picked start");
+    eq(points[11]?.day, "2026-08-26", "ending on the picked end");
+    const leads = await be.getLeads(r);
+    const expected = leads.filter(
+      (l) => l.createdAt.slice(0, 10) >= range.fromIso && l.createdAt.slice(0, 10) <= range.toIso,
+    ).length;
+    eq(points.reduce((a, p) => a + p.enquiries, 0), expected, "and the days sum to the window's leads");
+    // A one-day range is a range.
+    const oneDay = await be.getTrendRange(r, { fromIso: "2026-08-25", toIso: "2026-08-25" });
+    eq(oneDay.length, 1, "a single day yields a single point");
   });
 
   /* ---- 8. Per-listing views are demo-flagged and deterministic ---------- */
@@ -4914,6 +5008,307 @@ async function run() {
     const r = await signIn(RAVI);
     const video = await be.getPromoVideo!(r);
     assert(video.source === "youtube", "the seeded slot reads back from the social store");
+  });
+
+  /* ====================================================================== */
+  /* 19. The control-kit sweep (CTRL-OP) — dates, selects, and the exact     */
+  /*     Analytics range (OP-02), guarded                                    */
+  /* ====================================================================== */
+
+  /* ---- 19.1 Re-grep to zero, made permanent ------------------------------ */
+
+  await check("RE-GREP TO ZERO — no user-facing native date input or <select> outside src/offline", () => {
+    /*
+     * The contract's inventory rule as a test: the sweep counted 2 native date
+     * inputs and 10 native selects before it started, replaced them, and
+     * re-grepped to zero. This keeps the zero. Comments may still SAY
+     * `<input type="date">` — they explain the rule — so only code is scanned.
+     */
+    const nativeControls = (src: string): string[] => {
+      const code = codeOf(src);
+      const hits: string[] = [];
+      if (/type\s*=\s*(?:"date"|'date'|\{\s*["']date["']\s*\})/.test(code)) hits.push('type="date"');
+      if (/<select[\s>/]/.test(code)) hits.push("<select");
+      return hits;
+    };
+
+    /* The guard has teeth before it is trusted. */
+    eq(nativeControls('<input type="date" value={x} />').length, 1, "the scan must catch a native date input");
+    eq(nativeControls("<select value={v} onChange={f}>").length, 1, "...and a native select");
+    eq(
+      nativeControls('/* the old <select> and `<input type="date">` are retired */\nconst x = 1;').length,
+      0,
+      "...while a comment stating the rule is not breaking it",
+    );
+
+    const srcRoot = new URL("../src/", import.meta.url);
+    const walkAll = (dir: URL, out: string[] = []): string[] => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        if (entry.isDirectory()) {
+          if (entry.name === "offline") continue; // frozen fixture, another session's tree
+          walkAll(new URL(`${entry.name}/`, dir), out);
+        } else if (/\.tsx?$/.test(entry.name)) out.push(new URL(entry.name, dir).pathname);
+      }
+      return out;
+    };
+    const files = walkAll(srcRoot);
+    assert(files.length > 40, `the scan must actually have read the app — found ${files.length} files`);
+
+    const found: string[] = [];
+    for (const file of files) {
+      for (const hit of nativeControls(readFileSync(file, "utf8"))) {
+        found.push(`${file.split("/src/")[1] ?? file} still has ${hit}`);
+      }
+    }
+    eq(found.length, 0, `no user-facing native date/select may remain:\n      ${found.join("\n      ")}`);
+
+    /* And the replacements are real exports, not a grep victory. */
+    for (const [name, fn] of [["Listbox", Listbox], ["DateField", DateField], ["DateRangeField", DateRangeField]] as const) {
+      eq(typeof fn, "function", `the kit's ${name} exists to stand where the native control stood`);
+    }
+  });
+
+  /* ---- 19.2 Strict ISO at the write path (§6af) --------------------------- */
+
+  await check("STRICT ISO AT THE WRITE PATH — strictIsoDay accepts a real day and refuses everything else", () => {
+    eq(strictIsoDay("2026-08-28"), "2026-08-28", "a real YYYY-MM-DD day comes back unchanged");
+    eq(strictIsoDay("2024-02-29"), "2024-02-29", "a real leap day is a real day");
+    for (const bad of [
+      "28/08/2026", // display order — the exact format the sweep retired
+      "2026-8-28", // unpadded
+      "2026-02-30", // a day February does not have
+      "2026-02-29", // not a leap year
+      "2026-13-01", // month 13
+      "2026-00-10", // month 0
+      "2026-08-00", // day 0
+      "2026-08-32", // day 32
+      "2026-08-28T00:00", // a timestamp is not a day
+      "2026-08-28garbage", // trailing garbage
+      " 2026-08-28", // leading whitespace
+      "20260828", // no separators
+      "garbage",
+      "",
+    ]) {
+      eq(strictIsoDay(bad), null, `"${bad}" is refused with null — never coerced into a day`);
+    }
+  });
+
+  await check("clearing an optional date reads as absent, and the composer's refusals stay reachable", () => {
+    /*
+     * Empty-to-null only where the field is OPTIONAL: the composer's DateFields
+     * are clearable, a cleared value maps back to "", and the problems list
+     * still refuses to send without a date — read where it is written, since
+     * the composer needs a DOM to run.
+     */
+    const code = codeOf(composerSrc);
+    assert(code.includes("DateField"), "the composer's dates come from the kit's picker");
+    assert(code.includes("clearable"), "and they are clearable — optional until send");
+    const flatCode = flat(code);
+    assert(flatCode.includes('problems.push("Set a departure date.")'), "no departure, no send");
+    assert(flatCode.includes('problems.push("Set a date this offer holds until.")'), "no hold-until, no send");
+  });
+
+  await check("the Analytics seam REFUSES a malformed or reversed range, with the reason", async () => {
+    resetStore();
+    const r = await signIn(RAVI);
+    const refuses = async (fromIso: string, toIso: string, wants: RegExp) => {
+      try {
+        await be.getAnalytics(r, { fromIso, toIso });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        assert(wants.test(msg), `the refusal for ${fromIso}..${toIso} names the problem — got "${msg}"`);
+        return;
+      }
+      throw new Error(`the range ${fromIso}..${toIso} was accepted — it must be refused, never repaired`);
+    };
+    await refuses("28/08/2026", "2026-08-28", /not a calendar day/i); // display format at the seam
+    await refuses("2026-8-28", "2026-08-28", /not a calendar day/i); // unpadded
+    await refuses("2026-08-01", "2026-02-30", /not a calendar day/i); // a day that does not exist
+    await refuses("2026-08-01", "garbage", /not a calendar day/i);
+    await refuses("2026-08-28", "2026-08-01", /reversed/i); // backwards, with its own reason
+    /* And a valid range sails through the same gate. */
+    const ok = await be.getAnalytics(r, { fromIso: "2026-08-01", toIso: "2026-08-28" });
+    eq(ok.range?.fromIso, "2026-08-01", "a real range is served, echoing the days actually counted");
+    resetStore();
+  });
+
+  /* ---- 19.3 Range arithmetic (OP-02, the sanctioned addition) -------------- */
+
+  /** The seed recounted independently: ICEFALL-origin leads of one company, by calendar day. */
+  const seededFunnel = (companyId: string, fromIso: string, toIso: string): FunnelCounts => {
+    const rows = LEADS.filter(
+      (l: Lead) =>
+        l.companyId === companyId &&
+        l.origin === "icefall" &&
+        l.createdAt.slice(0, 10) >= fromIso &&
+        l.createdAt.slice(0, 10) <= toIso,
+    );
+    return {
+      enquiries: rows.length,
+      qualified: rows.filter((l) => l.qualifiedAt !== null).length,
+      bookings: rows.filter((l) => l.bookedAt !== null).length,
+    };
+  };
+
+  await check("AN EXACT RANGE COUNTS EXACTLY THE SEEDED LEADS INSIDE IT — and only ICEFALL's", async () => {
+    resetStore();
+    const r = await signIn(RAVI);
+    const a = await be.getAnalytics(r, { fromIso: "2026-08-24", toIso: "2026-08-28" });
+
+    /* The known count, stated twice: once by hand, once recounted from seed. */
+    eq(a.funnel.enquiries, 8, "24–28 Aug holds 7 named ICEFALL leads + 1 filler — company-added rows excluded");
+    eq(a.funnel.qualified, 2, "of which Hanne and Priya carry a qualified stamp");
+    eq(a.funnel.bookings, 0, "and none booked in those five days");
+    const independent = seededFunnel(r.user.companyId, "2026-08-24", "2026-08-28");
+    eq(JSON.stringify(a.funnel), JSON.stringify(independent), "the adapter's count equals an independent recount of the seed");
+
+    /* The summary echoes the days it actually counted. */
+    eq(a.range?.fromIso, "2026-08-24", "range.fromIso echoes the request");
+    eq(a.range?.toIso, "2026-08-28", "range.toIso echoes the request");
+
+    /* The donut still sums to the enquiry tile — both derive from the same rows. */
+    eq(
+      a.enquiriesBySource.reduce((s, x) => s + x.count, 0),
+      a.funnel.enquiries,
+      "the source segments sum to the enquiry total over an exact range too",
+    );
+    resetStore();
+  });
+
+  await check("THE COMPARISON WINDOW IS THE SAME LENGTH, IMMEDIATELY BEFORE — never a different size", async () => {
+    resetStore();
+    const r = await signIn(RAVI);
+
+    /* A 5-day pick is compared against exactly the 5 days before it. */
+    const a = await be.getAnalytics(r, { fromIso: "2026-08-24", toIso: "2026-08-28" });
+    eq(a.previousRange?.fromIso, "2026-08-19", "previous window starts 5 days before the pick's start");
+    eq(a.previousRange?.toIso, "2026-08-23", "and ends the day before the pick begins");
+    eq(a.previous?.enquiries, 5, "19–23 Aug holds five filler enquiries — the company-added rows in it do not count");
+    eq(
+      JSON.stringify(a.previous),
+      JSON.stringify(seededFunnel(r.user.companyId, "2026-08-19", "2026-08-23")),
+      "and the previous funnel equals an independent recount of those days",
+    );
+
+    /* The degenerate case: one day compares against the one day before. */
+    const d = await be.getAnalytics(r, { fromIso: TODAY, toIso: TODAY });
+    eq(d.funnel.enquiries, 1, "today (28 Aug) holds exactly one ICEFALL enquiry — Hanne");
+    eq(d.previousRange?.fromIso, "2026-08-27", "a one-day range is compared against one day");
+    eq(d.previousRange?.toIso, "2026-08-27", "the day immediately before");
+    eq(d.previous?.enquiries, 2, "which holds Tomás and Luis — the company's own walk-in that day excluded");
+    resetStore();
+  });
+
+  await check("AN EMPTY PREVIOUS WINDOW YIELDS NULL — no invented delta, and the range vanishes with it", async () => {
+    resetStore();
+    const r = await signIn(RAVI);
+    /* July has 18 enquiries; June has none at all. */
+    const a = await be.getAnalytics(r, { fromIso: "2026-07-01", toIso: "2026-07-31" });
+    eq(a.funnel.enquiries, 18, "July holds the seed's 18 ICEFALL enquiries");
+    eq(a.previous, null, "'nothing to compare against' is null, never a zero pretending to be a measurement");
+    eq(a.previousRange, null, "and no 'vs …' label survives its data");
+    resetStore();
+  });
+
+  await check("THE PRESETS ARE DERIVED RANGES — week and month reproduce the old figures exactly", async () => {
+    /*
+     * The regression that matters: OP-02 added exact dates through the SAME
+     * arithmetic the presets run, so "week" must equal the 7 calendar days
+     * ending TODAY and "month" the 30 — field for field, previous window
+     * included — and both must still show the numbers the screen showed
+     * before the sweep.
+     */
+    resetStore();
+    const r = await signIn(RAVI);
+
+    const week = await be.getAnalytics(r, "week");
+    const weekExact = await be.getAnalytics(r, { fromIso: "2026-08-22", toIso: TODAY });
+    for (const field of ["funnel", "previous", "range", "previousRange"] as const) {
+      eq(
+        JSON.stringify(week[field]),
+        JSON.stringify(weekExact[field]),
+        `week preset and the exact 22–28 Aug range agree on ${field}`,
+      );
+    }
+    eq(week.range?.fromIso, "2026-08-22", "the week preset resolves to the 7 calendar days ending today");
+    eq(week.range?.toIso, TODAY, "ending on the app clock's today, never the machine's");
+    eq(week.funnel.enquiries, 10, "the old week figure: 7 named + 3 filler enquiries");
+    eq(week.funnel.qualified, 3, "Hanne, Priya, and one quoted filler");
+
+    const month = await be.getAnalytics(r, "month");
+    const monthExact = await be.getAnalytics(r, { fromIso: "2026-07-30", toIso: TODAY });
+    for (const field of ["funnel", "previous", "range", "previousRange"] as const) {
+      eq(
+        JSON.stringify(month[field]),
+        JSON.stringify(monthExact[field]),
+        `month preset and the exact 30 Jul–28 Aug range agree on ${field}`,
+      );
+    }
+    eq(month.funnel.enquiries, 28, "the seed's own stated figure: August has exactly 28 ICEFALL enquiries");
+    eq(month.funnel.qualified, 15, "of which 15 reached qualified — the seed's other stated figure");
+    eq(month.funnel.bookings, 2, "and two booked: Charlotte and Benjamin");
+    eq(
+      JSON.stringify(month.funnel),
+      JSON.stringify(seededFunnel(r.user.companyId, "2026-07-30", TODAY)),
+      "all three recounted independently from the seed rows",
+    );
+    resetStore();
+  });
+
+  /* ---- 19.4 Offer dates unchanged in substance ---------------------------- */
+
+  await check("AN OFFER COMPOSED WITH THE NEW PICKERS READS THE SAME — ISO in, formatDay out", async () => {
+    /*
+     * The kit's DateField hands the composer plain ISO strings, exactly what
+     * the native inputs handed it before, so the message a customer reads must
+     * be byte-for-byte the shape it always was: dates through formatDay, no
+     * raw ISO, no dd/mm/yyyy.
+     */
+    const amount = centsFromEuros("1200");
+    assert(amount !== null, "the line amount parses");
+    const quote: Quote = {
+      id: "q-ctrl-sweep",
+      lines: [{ label: "Guiding, permits, 8 days on the hill", amount, per: "person", passThrough: false }],
+      exclusions: [],
+      cancellation: STANDARD_POLICY,
+      partySize: 2,
+      departureIso: "2026-10-15",
+      validUntilIso: "2026-09-14",
+    };
+    const totals = operatorOfferTotals(quote);
+    const body = offerMessageBody({
+      customerName: "Hanne Bakken",
+      subject: "Everest — South Col",
+      quote,
+      totals,
+      nothingExcluded: true,
+    });
+    assert(body.includes("Departure 15 Oct 2026 · 2 climbers"), "the departure reads as formatDay wrote it");
+    assert(body.includes("This offer holds until 14 Sep 2026"), "so does the hold-until line");
+    eq(/\d{4}-\d{2}-\d{2}/.test(body), false, "no ISO day ever reaches the customer's text");
+    eq(/\d{2}\/\d{2}\/\d{4}/.test(body), false, "and no dd/mm/yyyy — the format the sweep retired stays retired");
+    assert(body.includes("Total —"), "the totals line survives the sweep untouched");
+  });
+
+  await check("A PAST HOLDS-UNTIL IS STILL REFUSED — judged against the app clock", () => {
+    /*
+     * The composer needs a DOM, so the refusal is asserted where it is
+     * written, plus the predicate that drives it — the same daysUntil the
+     * screen calls, against TODAY from @/domain/dates, never new Date().
+     */
+    assert((daysUntil("2026-08-20", TODAY) ?? 0) < 0, "the predicate the composer uses reads 20 Aug as past");
+    assert((daysUntil("2026-09-14", TODAY) ?? 0) > 0, "and 14 Sep as still to come");
+    const code = codeOf(composerSrc);
+    assert(
+      flat(code).includes("This offer already expired — the hold-until date is in the past."),
+      "the refusal wording stands, verbatim",
+    );
+    assert(/daysUntil\(validUntil, TODAY\)/.test(code), "judged against the app clock, not the machine's");
+    assert(
+      flat(code).includes("The offer cannot hold past the departure it is for."),
+      "and the hold-past-departure refusal stands with it",
+    );
+    eq(/new Date\(\)\.toISOString|type\s*=\s*"date"/.test(code), false, "no machine clock, no native date input in the composer");
   });
 
   const total = passed + failures.length;

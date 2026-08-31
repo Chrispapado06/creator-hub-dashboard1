@@ -1,3 +1,5 @@
+import { OFFLINE } from "./offline";
+
 /**
  * THE OFFLINE BANNER.
  *
@@ -14,6 +16,12 @@
  * sheet cannot cover it either.
  */
 export function OfflineBanner() {
+  /* The first word is the build's own claim about itself, and it must be the
+     right one. The internet demo saying "Offline demo" over a streaming map is
+     the same lie the flag split just fixed, one layer up — a banner that exists
+     to keep the build honest must not be the thing on it that is wrong. The
+     sample-data half is common to both and does not change. */
+  const mode = OFFLINE ? "Offline demo" : "Demo";
   return (
     <div
       role="status"
@@ -26,7 +34,7 @@ export function OfflineBanner() {
         className="h-1.5 w-1.5 shrink-0 rounded-full bg-obsidian/70"
       />
       <span className="text-[11px] font-semibold uppercase tracking-[0.14em]">
-        Offline demo
+        {mode}
       </span>
       <span aria-hidden className="text-[11px] opacity-50">
         ·

@@ -13,6 +13,7 @@
 
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { Listbox } from "@/components/controls";
 import { Button, Card, Field, inputClass, Notice, PageHeader } from "@/components/ui";
 import { manageableMountainIds } from "@/domain/authz";
 import type { ProductKind } from "@/domain/types";
@@ -87,18 +88,23 @@ export default function ProductNew() {
             />
           </Field>
 
-          <Field
-            label="Mountain"
-            hint="Only the mountains Icefall has assigned to your company are listed."
-          >
-            <select className={inputClass} value={mountainId} onChange={(e) => setMountainId(e.target.value)}>
-              {options.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
-                </option>
-              ))}
-            </select>
-          </Field>
+          {/*
+            The kit's Listbox, outside ui.tsx's <label>-based Field — a click
+            inside a label forwards to its first labelable control, which would
+            re-toggle the trigger when an option is picked. Same options, same
+            value, same handler as the `<select>` it replaces.
+          */}
+          <div>
+            <Listbox
+              label="Mountain"
+              value={mountainId}
+              onChange={setMountainId}
+              options={options.map((m) => ({ value: m.id, label: m.name }))}
+            />
+            <span className="mt-1 block text-[11.5px] leading-snug text-muted">
+              Only the mountains Icefall has assigned to your company are listed.
+            </span>
+          </div>
 
           {error && <Notice tone="rejected">{error}</Notice>}
 

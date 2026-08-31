@@ -10,6 +10,7 @@ import { Resolve } from "@/components/states";
 import { listBookingsDetailed, listCompanies, listDestinations, listEnquiries, listPlacements, listProducts, listLeadDestinations, type BookingDetailed } from "@/data/queries";
 import { formatCents, formatCentsShort, loading, type Result } from "@/data/result";
 import type { Company, Enquiry, Mountain, PlacementView, Product } from "@/data/types";
+import { DateButton } from "@/components/controls";
 import { cn, daysUntil, formatDay } from "@/lib/utils";
 
 /**
@@ -1027,6 +1028,20 @@ function PlacementDrawer({
  * form. Creation is not wired: there is no database behind this build, and a
  * Create button that silently does nothing is worse than one that says so.
  */
+/** The drawer's term pickers, in the kit. The drawer's create path does not
+ * read them yet (the write path is the audited placement functions); they
+ * hold state so the control behaves, and wire in with the rest of the form. */
+function TermDates() {
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      <DateButton value={from} onChange={setFrom} placeholder="Starts" ariaLabel="Term starts" />
+      <DateButton value={to} onChange={setTo} placeholder="Ends" ariaLabel="Term ends" />
+    </div>
+  );
+}
+
 function AddPlacementDrawer({
   mountain, slot, taken, companies, products, onClose,
 }: {
@@ -1127,10 +1142,7 @@ function AddPlacementDrawer({
       </Step>
 
       <Step n={4} label="Term">
-        <div className="grid grid-cols-2 gap-3">
-          <input type="date" className="h-11 rounded-tile border border-line px-3 text-[13px] outline-none focus:border-accent" />
-          <input type="date" className="h-11 rounded-tile border border-line px-3 text-[13px] outline-none focus:border-accent" />
-        </div>
+        <TermDates />
       </Step>
 
       <Step n={5} label="Price">

@@ -48,7 +48,7 @@ import type { GuideVerificationRecord } from "./verification";
 /* -------------------------------------------------------------------------- */
 
 import { SHOW_DEMO_DATA } from "@/lib/demoFlag";
-import { OFFLINE } from "@/offline/offline";
+import { DEMO } from "@/offline/offline";
 import { OFFLINE_GUIDES } from "@/offline/fixtures";
 
 export type Speciality =
@@ -236,7 +236,7 @@ export const NO_GUIDES_NOTICE =
  * DEMO badge belong on these cards there too. This reads the offline flag; it
  * does not decide it. See `@/offline/offline`.
  */
-export const SHOW_DEMO_GUIDES = SHOW_DEMO_DATA || OFFLINE;
+export const SHOW_DEMO_GUIDES = SHOW_DEMO_DATA || DEMO;
 
 export const GUIDE_DEMO_NOTICE =
   "Demonstration data. These guides do not exist: the names were invented for this build, and the qualifications, ascent counts, day rates, availability, ratings and review counts were all made up to show how the marketplace works. Nothing here has been verified, none of them can be contacted, and none of it ships — a production build shows no guides at all.";
@@ -560,7 +560,7 @@ export function allGuides(): Guide[] {
    * exactly the same way, and carries the same `demo: true` badge and the same
    * disclaimer. Real listings still come first the day there are any.
    */
-  if (OFFLINE) return [...OFFLINE_GUIDES, ...GUIDES];
+  if (DEMO) return [...OFFLINE_GUIDES, ...GUIDES];
   return SHOW_DEMO_GUIDES ? [...DEMO_GUIDES, ...GUIDES] : [...GUIDES];
 }
 

@@ -14,16 +14,13 @@
  * NAMED FLAG, it is deterministic, a notice prints wherever it could change a
  * decision, and the file carries an instruction to delete it.
  *
- * THE CONDITION, AND IT IS NOT SATISFIED BY A SETTINGS PAGE. This flag may only
- * be set on a deployment that is NOT publicly readable, and "not publicly
- * readable" means an unauthenticated request has been made and was actually
- * REFUSED. Deployment Protection showing as enabled in a dashboard is not the
- * check; the refused request is. If protection is ever turned off, rebuild
- * without the flag before doing so. What sits behind it is a business dashboard showing revenue,
- * commission rates, pipeline value and operator performance figures that are
- * entirely invented. A screenshot of it is indistinguishable from a screenshot
- * of the real thing — which is exactly why it is useful for judging layout and
- * exactly why it must not leave a protected URL.
+ * THE PROTECTED-URL CONDITION WAS SUPERSEDED BY THE OWNER (31 Aug night,
+ * 12-DEMO-FLAG-SPLIT): public demo deployments now exist by their explicit
+ * instruction, carrying sample figures behind DEMO — which is why DEMO implies
+ * this flag below. The disclosure moved from "never leaves a protected URL" to
+ * "the banner prints on every screen that could change a decision", and the
+ * DemoBanner is that banner. A build with NONE of the flags still contains and
+ * renders nothing invented.
  *
  * THE TRAP: GATE THE DEFINITION, NOT THE RENDER.
  *
@@ -45,8 +42,10 @@
  * deciding what the business is worth. When a Supabase project exists, the real
  * queries answer and this whole directory goes.
  */
+import { DEMO } from "@/offline/offline";
+
 export const SHOW_DEMO_DATA: boolean =
-  import.meta.env.DEV || import.meta.env.VITE_SHOW_DEMO === "1";
+  import.meta.env.DEV || import.meta.env.VITE_SHOW_DEMO === "1" || DEMO;
 
 /** Printed wherever invented figures could be mistaken for measurements. */
 export const DEMO_NOTICE =

@@ -16,6 +16,7 @@ interface ImportMetaEnv {
    * `src/offline/offline.ts`. Unset everywhere by default.
    */
   readonly VITE_ICEFALL_OFFLINE?: string;
+  readonly VITE_ICEFALL_DEMO?: string;
   /** Origin the peak and trek photographs are served from. See `components/Photo.tsx`. */
   readonly VITE_ICEFALL_WEB_ORIGIN?: string;
 }

@@ -18,8 +18,9 @@ import type { LucideIcon } from "lucide-react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Button, Card, Disclaimer, SectionLabel } from "@/components/ui/primitives";
 import { AvailabilityCalendar } from "./AvailabilityCalendar";
+import { DateField } from "@/components/ui/DateField";
 import { SHOW_DEMO_DATA } from "@/lib/demoFlag";
-import { OFFLINE } from "@/offline/offline";
+import { DEMO } from "@/offline/offline";
 import { Rise, Screen, ScreenHeader, Stagger } from "@/components/layout/chrome";
 import { MountainBackdrop, MountainThumb } from "@/components/domain/MountainImage";
 import { cn } from "@/lib/utils";
@@ -68,7 +69,7 @@ import { Caution, TextArea, TextInput } from "./bookingParts";
  *
  * Everything gated on this is invented and says so on screen.
  */
-const DEMO_FILL = SHOW_DEMO_DATA || OFFLINE;
+const DEMO_FILL = SHOW_DEMO_DATA || DEMO;
 
 /** From the owner's mockup. Invented; ICEFALL holds no hut tariff. */
 const DEMO_HUT_PER_NIGHT = 80;
@@ -575,12 +576,10 @@ export function GuideRequest() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <p className="mb-1.5 text-[11px] text-mist-dim">From</p>
-                  <TextInput
-                    type="date"
+                  <DateField
+                    label="First day"
                     value={from}
-                    aria-label="First day"
-                    onChange={(e) => {
-                      const next = e.target.value;
+                    onChange={(next) => {
                       setFrom(next);
                       // Keep the window coherent rather than rejecting it later:
                       // an end before a start is a mis-tap, not an intention.
@@ -590,13 +589,7 @@ export function GuideRequest() {
                 </div>
                 <div>
                   <p className="mb-1.5 text-[11px] text-mist-dim">To</p>
-                  <TextInput
-                    type="date"
-                    value={to}
-                    min={from}
-                    aria-label="Last day"
-                    onChange={(e) => setTo(e.target.value)}
-                  />
+                  <DateField label="Last day" value={to} min={from} onChange={setTo} />
                 </div>
               </div>
               {/* A standing status is not a diary. ICEFALL holds no calendar for

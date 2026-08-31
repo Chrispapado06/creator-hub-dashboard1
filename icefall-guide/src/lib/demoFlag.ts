@@ -1,3 +1,4 @@
+import { OFFLINE } from "@/offline/offline";
 /**
  * Whether this build may render invented demo data.
  *
@@ -49,5 +50,26 @@
  * individually — an aggregate, a sort key, a dedupe or a tab-bar badge counting
  * a now-empty array is a different bug, and it only appears in production.
  */
+/**
+ * DEMO vs OFFLINE — the split (owner escalation, 2026-08-31, contract in
+ * `icefall-sessions/12-DEMO-FLAG-SPLIT.md`). The deployed demos were built
+ * with OFFLINE=1, which suppressed the Supabase client while the visitor's
+ * connection sat right there. The flag conflated two ideas:
+ *
+ *   DEMO    where data comes from + access — sample data, no login walls,
+ *           the sample banner. The network stays LIVE: the client is
+ *           constructed, and a visitor who signs in for real displaces the
+ *           sample exactly as in production.
+ *   OFFLINE whether the network exists — client suppression, photo
+ *           placeholders, the flight banner, in-memory support tickets.
+ *
+ * `VITE_ICEFALL_DEMO=1` alone is the internet demo. `VITE_ICEFALL_OFFLINE=1`
+ * remains exactly the flight build (OFFLINE implies DEMO — a build with no
+ * server must show sample data or nothing). The public-protection warning
+ * above is superseded FOR THE SAMPLE by the owner's explicit instruction to
+ * run public demos; it still stands for anything real.
+ */
+export const DEMO: boolean = OFFLINE || import.meta.env.VITE_ICEFALL_DEMO === "1";
+
 export const SHOW_DEMO_DATA: boolean =
-  import.meta.env.DEV || import.meta.env.VITE_SHOW_DEMO === "1";
+  import.meta.env.DEV || import.meta.env.VITE_SHOW_DEMO === "1" || DEMO;

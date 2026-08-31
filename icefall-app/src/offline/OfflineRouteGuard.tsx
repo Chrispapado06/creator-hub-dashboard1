@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
-import { OFFLINE } from "./offline";
+import { DEMO } from "./offline";
 
 /**
  * Offline, there is no door.
@@ -30,7 +30,7 @@ export function OfflineRouteGuard() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!OFFLINE) return;
+    if (!DEMO) return;
     if (BYPASSED.test(pathname)) navigate("/home", { replace: true });
   }, [pathname, navigate]);
 

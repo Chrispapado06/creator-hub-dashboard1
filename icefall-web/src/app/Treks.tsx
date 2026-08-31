@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { Listbox } from "@/components/Listbox";
 import { useSearchParams } from "react-router-dom";
 import { Search } from "lucide-react";
 import { TREK_DIFFICULTY_ORDER, TREK_REGIONS, type TrekDifficulty } from "@/data/trekTypes";
@@ -138,30 +139,18 @@ function Select({
   any: string;
   options: { value: string; label: string }[];
 }) {
+  // Native select retired per 11-CONTROLS-CONTRACT; same value/onChange, new shell.
   return (
-    <span
-      className={cn(
-        "flex h-10 items-center rounded-pill border px-3.5 transition-colors",
-        value ? "border-azure bg-azure/10" : "border-hairline bg-graphite",
+    <Listbox
+      value={value}
+      onChange={onChange}
+      options={options}
+      label={any}
+      placeholder={any}
+      triggerClassName={cn(
+        "h-10 rounded-pill border px-3.5 text-[12.5px] transition-colors",
+        value ? "border-azure bg-azure/10 text-azure" : "border-hairline bg-graphite text-mist",
       )}
-    >
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className={cn(
-          "bg-transparent pr-1 text-[12.5px] outline-none",
-          value ? "text-azure" : "text-mist",
-        )}
-      >
-        <option value="" className="bg-graphite text-snow">
-          {any}
-        </option>
-        {options.map((o) => (
-          <option key={o.value} value={o.value} className="bg-graphite text-snow">
-            {o.label}
-          </option>
-        ))}
-      </select>
-    </span>
+    />
   );
 }

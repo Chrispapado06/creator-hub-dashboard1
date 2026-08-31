@@ -18,6 +18,7 @@
  */
 
 import { Link, useParams, useSearchParams } from "react-router-dom";
+import { Listbox } from "@/components/controls";
 import { Button, Card, Notice, PageHeader, Pill, formatMoney, inputClass } from "@/components/ui";
 import { OPERATOR_NOTICES } from "@/domain/honesty";
 import { formatDay, timeAgo, NOW } from "@/domain/dates";
@@ -202,23 +203,21 @@ function LeadDeepDetail({ id }: { id: string }) {
 
           <Card className="p-4">
             <h2 className="text-[13px] font-semibold text-ink">Assigned to</h2>
-            <select
-              className={`${inputClass} mt-2`}
-              value={lead.ownerId ?? ""}
-              onChange={async (e) => {
-                await backend.assignLead(session, lead.id, e.target.value || null);
-                refresh();
-              }}
-            >
-              <option value="">Nobody</option>
-              {team
-                .filter((t) => t.status === "active")
-                .map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.displayName}
-                  </option>
-                ))}
-            </select>
+            <div className="mt-2">
+              <Listbox
+                value={lead.ownerId ?? ""}
+                onChange={async (v) => {
+                  await backend.assignLead(session, lead.id, v || null);
+                  refresh();
+                }}
+                options={[
+                  { value: "", label: "Nobody" },
+                  ...team
+                    .filter((t) => t.status === "active")
+                    .map((t) => ({ value: t.id, label: t.displayName })),
+                ]}
+              />
+            </div>
           </Card>
 
           <Card className="p-4">

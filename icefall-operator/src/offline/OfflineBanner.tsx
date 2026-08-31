@@ -1,5 +1,6 @@
 /**
- * The offline banner. Permanent, non-dismissable, above everything.
+ * The demo banner (mounted under DEMO, which OFFLINE implies). Permanent,
+ * non-dismissable, above everything.
  *
  * NOT DECORATION. This portal's one standing rule is that it never puts a
  * figure in front of a company that Icefall did not measure — because that
@@ -31,7 +32,7 @@ export function OfflineBanner() {
       <style>{OFFSET_CSS}</style>
       <div
         role="note"
-        aria-label="Offline demo — the data on screen is sample data, not real"
+        aria-label="Demo — the data on screen is sample data, not real"
         style={{
           position: "fixed",
           top: 0,
@@ -73,7 +74,7 @@ export function OfflineBanner() {
             textOverflow: "ellipsis",
           }}
         >
-          OFFLINE DEMO · sample data, not real
+          DEMO · sample data, not real
         </span>
         <span
           aria-hidden

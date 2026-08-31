@@ -63,6 +63,7 @@ import {
   StageChip,
   TagRow,
 } from "@/components/leads";
+import { Listbox } from "@/components/controls";
 import { NOW, timeAgo } from "@/domain/dates";
 import { bookingValueReading, fold } from "@/domain/honesty";
 import type { Booking, Lead, LeadStatus } from "@/domain/types";
@@ -259,7 +260,7 @@ type OriginKey = "all" | "icefall" | "company";
 type GroupKey = "stage" | "tag";
 
 /**
- * The tag filter's `<select>` values.
+ * The tag filter's listbox values.
  *
  * A tag name cannot be used as the option value directly: the list also needs
  * "everything" and "nothing tagged", and an operator is free to name a tag
@@ -517,47 +518,48 @@ export default function Pipeline() {
                 { key: "company" as const, label: "Added by you", count: originCount("company") },
               ]}
             />
-            <label className="sr-only" htmlFor="pipeline-mountain">
-              Filter by mountain
-            </label>
-            <select
-              id="pipeline-mountain"
-              value={mountainId}
-              onChange={(e) => setMountainId(e.target.value)}
-              className="rounded-tile border border-line bg-elevated px-2.5 py-1.5 text-[13px] text-ink outline-none focus:border-azure"
-            >
-              <option value="">All mountains</option>
-              {mountainOptions.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name} ({m.count})
-                </option>
-              ))}
-            </select>
+            {/*
+              The kit's Listbox in place of the native `<select>`s. The old
+              controls were labelled for screen readers only, and the kit's
+              `label` prop is the only way to give its trigger an accessible
+              name — so the wrapper hides the rendered label the same sr-only
+              way, keeping the aria-labelledby wiring without adding a visible
+              caption the toolbar never had.
+            */}
+            <div className="w-[190px] [&>div>span]:sr-only">
+              <Listbox
+                label="Filter by mountain"
+                value={mountainId}
+                onChange={setMountainId}
+                options={[
+                  { value: "", label: "All mountains" },
+                  ...mountainOptions.map((m) => ({ value: m.id, label: `${m.name} (${m.count})` })),
+                ]}
+              />
+            </div>
 
             {/*
               The tag FILTER, kept alongside the grouping. They answer different
               questions — "show me only cold leads" versus "cut the whole board
               by tag" — and one is not the other.
             */}
-            <label className="sr-only" htmlFor="pipeline-tag">
-              Filter by tag
-            </label>
-            <select
-              id="pipeline-tag"
-              value={tag}
-              onChange={(e) => setTag(e.target.value)}
-              className="rounded-tile border border-line bg-elevated px-2.5 py-1.5 text-[13px] text-ink outline-none focus:border-azure"
-            >
-              <option value={TAG_FILTER_ALL}>All tags</option>
-              {tagOptions.map((t) => (
-                <option key={t.name} value={tagFilterValue(t.name)}>
-                  {t.name} ({t.count})
-                </option>
-              ))}
-              {untaggedCount > 0 && (
-                <option value={TAG_FILTER_UNTAGGED}>Untagged ({untaggedCount})</option>
-              )}
-            </select>
+            <div className="w-[170px] [&>div>span]:sr-only">
+              <Listbox
+                label="Filter by tag"
+                value={tag}
+                onChange={setTag}
+                options={[
+                  { value: TAG_FILTER_ALL, label: "All tags" },
+                  ...tagOptions.map((t) => ({
+                    value: tagFilterValue(t.name),
+                    label: `${t.name} (${t.count})`,
+                  })),
+                  ...(untaggedCount > 0
+                    ? [{ value: TAG_FILTER_UNTAGGED, label: `Untagged (${untaggedCount})` }]
+                    : []),
+                ]}
+              />
+            </div>
 
             <div className="flex items-center gap-2">
               <span className="lbl text-faint">Group by</span>

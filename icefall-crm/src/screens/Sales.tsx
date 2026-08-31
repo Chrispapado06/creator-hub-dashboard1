@@ -6,6 +6,7 @@ import { createDeal, listCompanies, listDeals, moveDeal } from "@/data/queries";
 import { loading, type Result } from "@/data/result";
 import type { Company, Deal, DealStage } from "@/data/types";
 import { cn } from "@/lib/utils";
+import { Select } from "@/components/controls";
 
 /**
  * Sales Pipeline — the mockup's board on the REAL query layer.
@@ -127,17 +128,14 @@ export default function Sales() {
           <div className="grid gap-3 sm:grid-cols-3">
             <label className="block">
               <span className="mb-1 block text-[12px] font-medium text-muted">Company *</span>
-              <select
+              <Select
                 value={form.company_id}
-                onChange={(e) => setForm((f) => ({ ...f, company_id: e.target.value }))}
-                className="h-9 w-full rounded-tile border border-line bg-surface px-2.5 text-[13px] text-ink outline-none"
-              >
-                <option value="">Choose…</option>
-                {companies.state === "ok" &&
-                  companies.value.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-              </select>
+                onChange={(v: string) => setForm((f) => ({ ...f, company_id: v }))}
+                ariaLabel="Company for this deal"
+                placeholder="Choose…"
+                className="w-full"
+                options={companies.state === "ok" ? companies.value.map((c) => ({ value: c.id, label: c.name })) : []}
+              />
               {companies.state === "ok" && companies.value.length === 0 && (
                 <span className="mt-1 block text-[11.5px] text-faint">
                   No companies exist yet — create one on the Companies page first; a deal is a

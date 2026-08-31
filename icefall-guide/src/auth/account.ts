@@ -95,7 +95,14 @@ export async function guideAccess(): Promise<GuideAccess> {
    * desk…" forever on Payouts, Verification and Profile. A build with no client
    * has nothing to check and nothing to wait for.
    */
-  if (OFFLINE_BUILD) return "guide";
+  /* "offline" — NOT "guide". It returned "guide" until 2026-08-31, and that
+     answer aged into a lie the day sessions began displacing the sample: the
+     gate read "guide" as a real person present and hid the very fixtures the
+     flight build exists to show (§6aj — the flag kept doing the old thing).
+     "offline" is the truthful answer, and every reader already handles it:
+     identity falls to the sample branch, the gate arms, Support says "kept on
+     this device". */
+  if (OFFLINE_BUILD) return "offline";
   if (!supabase) return "offline";
 
   const { data: sess } = await supabase.auth.getSession();

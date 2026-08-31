@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import type { Session } from "@supabase/supabase-js";
 import { supabase, isConfigured } from "@/lib/supabase";
 import { SHOW_DEMO_DATA } from "@/lib/demoFlag";
-import { OFFLINE } from "@/offline/offline";
+import { DEMO } from "@/offline/offline";
 import { OFFLINE_IDENTITY } from "@/offline/store";
 import type { StaffRole } from "@/data/types";
 
@@ -48,7 +48,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // false in a built bundle, and an offline build that fell through to
   // `unconfigured` would be one card saying "no data" instead of a CRM.
   const [state, setState] = useState<State>(
-    OFFLINE
+    DEMO
       ? { kind: "staff", identity: OFFLINE_IDENTITY }
       : isConfigured
         ? { kind: "loading" }
@@ -58,7 +58,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   );
 
   useEffect(() => {
-    if (OFFLINE) return;
+    if (DEMO) return;
     // Captured once so TypeScript can see it is non-null inside the closures
     // below; `supabase` itself is `SupabaseClient | null` by design.
     const db = supabase;
