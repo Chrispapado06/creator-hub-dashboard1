@@ -1744,6 +1744,46 @@ const postAudit = (await db.query(
   [athletePost])).rows[0].c;
 check("SOCIAL: the deletion is audited", postAudit === 1, `${postAudit} event(s)`);
 
+
+/* -- Offers, company arm: membership is the coherence rule ------------------ */
+
+const OQUOTE = JSON.stringify({
+  lines: [{ label: "Expedition place", amount: 745000, per: "person" },
+          { label: "Permit", amount: 90000, per: "person", passThrough: true }],
+  exclusions: [], cancellation: { tiers: [], conditionsRefundPct: 100 }, partySize: 2,
+});
+
+// A thread the customer opened, with Northwind's Nia in it.
+const offerTh = (await db.query(
+  `insert into public.threads (peak_name, created_by) values ('Everest enquiry', $1) returning id`,
+  [athlete])).rows[0].id;
+await db.query(`insert into public.thread_participants (thread_id, profile_id) values ($1,$2),($1,$3)`,
+  [offerTh, athlete, opN]);
+await db.query(`insert into public.messages (thread_id, sender_id, body) values ($1,$2,'What would two places cost?')`,
+  [offerTh, athlete]);
+
+r = await as(opN, () => db.query(
+  `select (public.send_offer($1, $2, $3::jsonb, now() + interval '14 days', 'company', $4)).id`,
+  [offerTh, athlete, OQUOTE, northwind]));
+check("OFFER: a member offers for their company", r.ok, r.ok ? "sent" : r.error);
+
+r = await as(opN, () => db.query(
+  `select public.send_offer($1, $2, $3::jsonb, now() + interval '14 days', 'company', $4)`,
+  [offerTh, athlete, OQUOTE, serac]));
+check("OFFER: nobody offers for a company they are not in", !r.ok, r.ok ? "SPOKE FOR SERAC" : r.error);
+
+const companyOffer = (await db.query(
+  `insert into public.offers (thread_id, sender_id, seller_kind, company_id, recipient_id, quote, valid_until)
+   values ($1,$2,'company',$3,$4,$5::jsonb, now() + interval '14 days') returning id`,
+  [offerTh, opN, northwind, athlete, OQUOTE])).rows[0].id;
+
+r = await as(opNsales, () => db.query(`select id from public.offers where id = $1`, [companyOffer]));
+check("OFFER: the company's team sees the company's offer", r.ok && rows(r) === 1, r.ok ? `${rows(r)}` : r.error);
+r = await as(opS, () => db.query(`select id from public.offers where id = $1`, [companyOffer]));
+check("OFFER: another company sees nothing", r.ok && rows(r) === 0, r.ok ? `${rows(r)} LEAKED` : r.error);
+r = await as(boss, () => db.query(`select id from public.offers where id = $1`, [companyOffer]));
+check("OFFER: staff oversight reads it", r.ok && rows(r) === 1, r.ok ? `${rows(r)}` : r.error);
+
 console.log("\nCRM ATTACK RESULTS\n" + "=".repeat(76));
 let failed = 0;
 for (const t of results) {

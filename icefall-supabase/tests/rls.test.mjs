@@ -390,6 +390,105 @@ check("availability: clearing a day is a DELETE — back to 'not said'", r.ok &&
   r.ok ? "cleared" : r.error);
 
 
+/* -- Offers: one lifecycle, guide arm --------------------------------------- */
+
+const QUOTE = JSON.stringify({
+  lines: [{ label: "Guiding", amount: 180000, per: "person" },
+          { label: "Hut", amount: 24000, per: "party", passThrough: true }],
+  exclusions: [], cancellation: { tiers: [], conditionsRefundPct: 100 }, partySize: 2,
+});
+
+r = await as(guide, () => db.query(
+  `select (public.send_offer($1, $2, $3::jsonb, now() + interval '7 days', 'guide')).id`,
+  [threadId, alice, QUOTE]));
+check("OFFER: a guide offers inside the thread the customer opened", r.ok, r.ok ? "sent" : r.error);
+
+r = await as(bob, () => db.query(
+  `select public.send_offer($1, $2, $3::jsonb, now() + interval '7 days', 'guide')`,
+  [threadId, alice, QUOTE]));
+check("OFFER: an outsider cannot offer into the thread", !r.ok, r.ok ? "OFFERED" : r.error);
+
+r = await as(alice, () => db.query(
+  `select public.send_offer($1, $2, $3::jsonb, now() + interval '7 days', 'guide')`,
+  [threadId, guide, QUOTE]));
+check("OFFER: you cannot wear a seller kind you are not", !r.ok, r.ok ? "SOLD AS GUIDE" : r.error);
+
+// A thread the customer never opened: decision 19 carries to offers.
+const coldTh = (await db.query(
+  `insert into public.threads (peak_name, created_by) values ('Cold offer', $1) returning id`, [guide])).rows[0].id;
+await db.query(`insert into public.thread_participants (thread_id, profile_id) values ($1,$2),($1,$3)`,
+  [coldTh, guide, bob]);
+r = await as(guide, () => db.query(
+  `select public.send_offer($1, $2, $3::jsonb, now() + interval '7 days', 'guide')`,
+  [coldTh, bob, QUOTE]));
+check("OFFER: a cold offer is a cold call — refused", !r.ok, r.ok ? "COLD-OFFERED" : r.error);
+
+// Seeded lifecycle rows (superuser stands in for already-sent offers).
+const offerA = (await db.query(
+  `insert into public.offers (thread_id, sender_id, seller_kind, recipient_id, quote, valid_until)
+   values ($1,$2,'guide',$3,$4::jsonb, now() + interval '7 days') returning id`,
+  [threadId, guide, alice, QUOTE])).rows[0].id;
+
+r = await as(bob, () => db.query(`select id from public.offers`));
+check("OFFER: an outsider sees no offer at all", r.ok && r.value.rows.length === 0,
+  r.ok ? `${r.value.rows.length} LEAKED` : r.error);
+
+r = await as(alice, () => db.query(
+  `select public.offer_state(o) as s from public.offers o where o.id = $1`, [offerA]));
+check("OFFER: the recipient sees it, state open", r.ok && r.value.rows[0]?.s === "open",
+  r.ok ? r.value.rows[0]?.s : r.error);
+
+r = await as(alice, () => db.query(`select (public.accept_offer($1)).accepted_at`, [offerA]));
+check("OFFER: the recipient accepts", r.ok && r.value.rows[0].accepted_at !== null, r.ok ? "accepted" : r.error);
+
+r = await as(guide, () => db.query(`select public.accept_offer($1)`, [offerA]));
+check("OFFER: the seller cannot accept their own offer", !r.ok, r.ok ? "SELF-ACCEPTED" : r.error);
+
+r = await as(alice, async () => {
+  await db.query(`select public.decline_offer($1, 'too pricey')`, [offerA]);
+  return db.query(`select public.accept_offer($1)`, [offerA]);
+});
+check("OFFER: one outcome only — declined cannot become accepted", !r.ok, r.ok ? "TWO OUTCOMES" : r.error);
+
+r = await as(guide, () => db.query(
+  `update public.offers set quote = '{"lines":[{"label":"more","amount":999999,"per":"party"}],"exclusions":[],"cancellation":{},"partySize":2}'::jsonb where id = $1 returning 1`,
+  [offerA]));
+check("OFFER: the quote is what the customer saw — uneditable", !r.ok, r.ok ? "EDITED" : r.error);
+
+// Amending: a new offer supersedes; two live offers never coexist.
+r = await as(guide, async () => {
+  const first = (await db.query(
+    `select (public.send_offer($1, $2, $3::jsonb, now() + interval '7 days', 'guide')).id`,
+    [threadId, alice, QUOTE])).rows[0].id;
+  await db.query(
+    `select public.send_offer($1, $2, $3::jsonb, now() + interval '7 days', 'guide', null, $4)`,
+    [threadId, alice, QUOTE, first]);
+  return db.query(`select public.offer_state(o) as s from public.offers o where o.id = $1`, [first]);
+});
+check("OFFER: amending supersedes the old offer in the same act",
+  r.ok && r.value.rows[0].s === "superseded", r.ok ? r.value.rows[0].s : r.error);
+
+// Withdrawal cannot un-agree an agreement.
+const offerB = (await db.query(
+  `insert into public.offers (thread_id, sender_id, seller_kind, recipient_id, quote, valid_until, accepted_at)
+   values ($1,$2,'guide',$3,$4::jsonb, now() + interval '7 days', now()) returning id`,
+  [threadId, guide, alice, QUOTE])).rows[0].id;
+r = await as(guide, () => db.query(`select public.withdraw_offer($1, 'changed my mind')`, [offerB]));
+check("OFFER: an accepted offer cannot be withdrawn", !r.ok, r.ok ? "WITHDRAWN" : r.error);
+
+// Expiry is derived and blocks acceptance without any job running.
+const offerC = (await db.query(
+  `insert into public.offers (thread_id, sender_id, seller_kind, recipient_id, quote, valid_until, created_at)
+   values ($1,$2,'guide',$3,$4::jsonb, now() - interval '1 day', now() - interval '10 days') returning id`,
+  [threadId, guide, alice, QUOTE])).rows[0].id;
+r = await as(alice, () => db.query(
+  `select public.offer_state(o) as s from public.offers o where o.id = $1`, [offerC]));
+check("OFFER: past valid_until the state derives to expired", r.ok && r.value.rows[0].s === "expired",
+  r.ok ? r.value.rows[0].s : r.error);
+r = await as(alice, () => db.query(`select public.accept_offer($1)`, [offerC]));
+check("OFFER: an expired offer cannot be accepted", !r.ok, r.ok ? "ACCEPTED STALE" : r.error);
+
+
 console.log("\nRLS ATTACK RESULTS\n" + "=".repeat(64));
 let failed = 0;
 for (const t of results) {
