@@ -39,10 +39,14 @@ import type {
   Message,
   Mountain,
   OperatorNotification,
+  Post,
+  PostComment,
+  PostMedia,
   Product,
   ProductDeparture,
   ProductKind,
   Placement,
+  PromoVideo,
   Trek,
 } from "./types";
 import type { Reading } from "./honesty";
@@ -217,6 +221,26 @@ export type WriteResult<T> =
   | { ok: true; value: T }
   | { ok: false; reason: string; conflict?: ContentVersion };
 
+/**
+ * What an operator states when creating a post (OP-01, via S2).
+ *
+ * No `authorKind`, no `authorId`, no `companyId`: a post from this portal is
+ * always the caller's own company's, and the scope comes from the session —
+ * the same shape rule as every other write here. No `removedAt` either:
+ * removal is Icefall's, and an input that could spell it would be a write path
+ * the contract forbids.
+ */
+export interface NewPostInput {
+  caption: string;
+  media: PostMedia | null;
+  /**
+   * Set = the post is a STORY (S2: optional expiry = a story). Validated
+   * against the app clock — an expiry already in the past is refused, with the
+   * reason shown.
+   */
+  expiresAt?: string | null;
+}
+
 /** What an operator may state when adding a lead of their own. */
 export interface NewLeadInput {
   customerName: string;
@@ -375,6 +399,68 @@ export interface OperatorBackend {
   getLeadNotes(session: Session, leadId: string): Promise<LeadNote[]>;
   addLeadNote(session: Session, leadId: string, body: string): Promise<WriteResult<LeadNote>>;
   getBookings(session: Session): Promise<Booking[]>;
+
+  /* ---- social (OP-01, via S2) ------------------------------------------ */
+  /*
+   * THE S2 TABLES ARE NOT LIVE. Every method in this block runs against the
+   * in-memory adapter today, in shapes that mirror the S2 contract
+   * (`icefall-sessions/10-BUILD-OUT-PLAN.md`) exactly, so the Supabase
+   * implementation is a repoint of these declarations and not a rewrite — the
+   * same route `leads.tags` took.
+   *
+   * OPTIONAL for the reason `getTreks` is optional and no other: a second
+   * implementation of this seam — `src/offline/backend.ts`, the flight demo —
+   * is owned and frozen by another session, and a required member would break
+   * it. A screen finding these absent says the social surface is UNAVAILABLE,
+   * it does not draw an empty feed. When the S2 tables land these become
+   * required.
+   *
+   * All session-scoped to the caller's OWN company. There is no companyId
+   * parameter anywhere, so a cross-company read cannot be expressed.
+   */
+
+  /**
+   * The company's own posts, newest first — stories, removed posts and all.
+   * A removed post is returned WITH its `removedReason`, because the operator
+   * is owed the reason; whether a story has expired is derived from the app
+   * clock by the caller, not filtered away here.
+   */
+  getPosts?(session: Session): Promise<Post[]>;
+  /**
+   * Publishes a post — public the moment it succeeds, no review step, because
+   * none exists (moderation is the CRM's queue, after the fact). The caption
+   * is operator-authored public text and runs the same `findContactDetailsIn`
+   * guard as every other such field; a story expiry in the past is refused.
+   * Every refusal reason is shown verbatim.
+   */
+  createPost?(session: Session, input: NewPostInput): Promise<WriteResult<Post>>;
+  /**
+   * Deletes the company's own post. A post REMOVED BY ICEFALL cannot be
+   * deleted over — the removal record survives, so the moderation trail cannot
+   * be tidied away by the company it concerns.
+   */
+  deletePost?(session: Session, postId: string): Promise<WriteResult<Post>>;
+  /** Climbers' comments under one of the company's own posts. Read-only here. */
+  getPostComments?(session: Session, postId: string): Promise<PostComment[]>;
+  /**
+   * How many people follow this company — COUNTED from `follows` rows, never
+   * stored as a total. A `Reading` so an implementation with no follow data
+   * can say so instead of shipping a zero that reads as "nobody".
+   */
+  getFollowerCount?(session: Session): Promise<Reading<number>>;
+  /**
+   * The promotional-video slot on the company's SOCIAL surface (OP-01) — not
+   * `Company.video`, which owner decision #15 removed and which stays removed.
+   * See the reconciliation note on `PromoVideoSlot` in `types.ts`.
+   */
+  getPromoVideo?(session: Session): Promise<PromoVideo>;
+  /**
+   * Sets or clears the slot. `input` is whatever the operator pasted — a watch
+   * URL, share link, embed URL or bare id — resolved through the existing
+   * `youtubeIdFrom` validation; anything it cannot resolve is refused with the
+   * reason. Null or empty clears the slot back to `{ source: "none" }`.
+   */
+  setPromoVideo?(session: Session, input: string | null): Promise<WriteResult<PromoVideo>>;
 
   /* ---- dashboard, analytics, notifications ----------------------------- */
   getDashboard(session: Session): Promise<DashboardSummary>;

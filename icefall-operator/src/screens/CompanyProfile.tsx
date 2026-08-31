@@ -23,6 +23,12 @@ import { OPERATOR_NOTICES } from "@/domain/honesty";
 import { formatDay } from "@/domain/dates";
 import type { Company } from "@/domain/types";
 import { COMPANY_SECTIONS, pendingFields } from "@/editor/sections";
+/*
+ * OP-01: the company's social surface lives here as the Posts tab — the
+ * owner's words are "company profile posts", and no operator mockup places it
+ * anywhere else. The surface itself is its own file; this screen only hosts it.
+ */
+import PostsSurface from "@/screens/Posts";
 import { useAsync, useOperator, useSession } from "@/state/OperatorContext";
 
 /** Only the free-text fields an operator edits here. */
@@ -74,7 +80,7 @@ export default function CompanyProfile() {
   const [message, setMessage] = useState<{ tone: "neutral" | "rejected" | "pending"; text: string } | null>(null);
   // The inline form is superseded by the in-layout editor at /company/edit.
   const editing = false;
-  const [tab, setTab] = useState<"overview" | "certifications" | "team" | "faq">("overview");
+  const [tab, setTab] = useState<"overview" | "posts" | "certifications" | "team" | "faq">("overview");
   const checklistRef = useRef<HTMLUListElement>(null);
 
   // Seed the editor from the LIVE record, then overlay any saved draft — so an
@@ -201,6 +207,7 @@ export default function CompanyProfile() {
             onChange={setTab}
             tabs={[
               { key: "overview" as const, label: "Overview" },
+              { key: "posts" as const, label: "Posts" },
               { key: "certifications" as const, label: "Certifications", count: company.certifications.length },
               { key: "team" as const, label: "Team", count: company.team.length },
               { key: "faq" as const, label: "FAQ", count: company.faq.length },
@@ -358,6 +365,8 @@ export default function CompanyProfile() {
           </Card>
         </div>
       )}
+
+      {!editing && tab === "posts" && <PostsSurface />}
 
       {!editing && tab === "certifications" && (
         <Card className="p-4">

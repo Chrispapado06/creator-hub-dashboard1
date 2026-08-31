@@ -524,6 +524,156 @@ export interface MediaAsset {
 }
 
 /* ========================================================================== */
+/* Social — the S2 surface (OP-01)                                            */
+/* ========================================================================== */
+
+/*
+ * THE S2 TABLES ARE NOT LIVE. These shapes mirror the S2 contract in
+ * `icefall-sessions/10-BUILD-OUT-PLAN.md` — `posts` (author = profile |
+ * company | guide; media; caption; optional expiry = a story),
+ * `post_comments`, `follows` — field for field, so that when the CRM session's
+ * migration lands the swap is a repoint of the adapter, not a rewrite. The
+ * same route `leads.tags` took: built against the in-memory backend in the
+ * contract's own shape, then re-pointed.
+ *
+ * The feed these rows feed is STRICTLY CHRONOLOGICAL. Nothing here carries a
+ * score, a rank or an engagement weight, and nothing may grow one — a ranking
+ * column would be an algorithmic claim the platform does not make.
+ */
+
+/**
+ * Who wrote a post. This portal only ever writes `"company"`, but the union
+ * carries all three values because the S2 `posts` table serves three apps —
+ * the phone app posts as a profile, the guide app as a guide — and a shape
+ * that could not represent the shared table would not survive the repoint.
+ */
+export type PostAuthorKind = "profile" | "company" | "guide";
+
+/**
+ * What a post shows, when it shows anything.
+ *
+ * NO MEDIA STORE IS CONNECTED, so a post cannot carry uploaded bytes — the
+ * same fact the logo precedent in `CompanyEditor` states on screen. What a
+ * seeded post MAY reference is the app's existing media idioms, and nothing
+ * else:
+ *
+ *   `asset` — a `MediaAsset` this company owns (the `logoMediaId` idiom),
+ *             resolved through `getMediaUrl` like every other asset.
+ *   `peak` / `trek` — the ALREADY-CREDITED photo libraries served by
+ *             icefall-web (`peakPhotoUrl` / `trekPhotoUrl` in
+ *             `src/components/ui.tsx`, licences tracked in that app). Stored
+ *             as the catalogue id, never a URL, so the origin stays in one
+ *             place and `ListingPhoto`'s fallback drawing still applies.
+ *
+ * A discriminated union rather than a bare string for the reason `PromoVideo`
+ * is one: "which library is this from" has to survive into the renderer, or
+ * somebody will treat an id as a URL.
+ */
+export type PostMedia =
+  | { source: "asset"; mediaId: string }
+  | { source: "peak"; mountainId: string }
+  | { source: "trek"; trekId: string };
+
+/**
+ * One row of the S2 `posts` table, as this portal sees it.
+ *
+ * A STORY IS A POST WITH AN EXPIRY, not a second type — `expiresAt` set is the
+ * whole difference, exactly as the contract writes it ("optional expiry = a
+ * story"). Whether a story is still showing is DERIVED from the app clock
+ * (`NOW` in `@/domain/dates`) at read time, never stored: nothing runs on a
+ * timer to flip a flag, the same reasoning as placement expiry.
+ *
+ * `removedAt` / `removedReason` are ICEFALL MODERATION and nothing else. There
+ * is no operator write path to either — the moderation queue is the CRM's
+ * (CR-17), and this portal neither approves posts nor pretends to. A post is
+ * public the moment it is created, and may later be removed by Icefall; those
+ * are the only states, and no "pending review" exists because nothing reviews
+ * one.
+ */
+export interface Post {
+  id: string;
+  authorKind: PostAuthorKind;
+  /** The company id when `authorKind` is `"company"`. */
+  authorId: string;
+  /**
+   * OPERATOR-AUTHORED PUBLIC TEXT, and guarded like every other such field:
+   * `createPost` runs `findContactDetailsIn` over it and refuses, verbatim.
+   */
+  caption: string;
+  media: PostMedia | null;
+  /** Set = this post is a story. Derived against `NOW`, never mutated. */
+  expiresAt: string | null;
+  createdAt: string;
+  /** Icefall's removal, when it happened. No operator write path. */
+  removedAt: string | null;
+  /** Non-null exactly when `removedAt` is — shown to the operator verbatim. */
+  removedReason: string | null;
+}
+
+/** A story is a post with an expiry. One definition, used everywhere. */
+export const isStory = (p: Post): boolean => p.expiresAt !== null;
+
+/**
+ * Where a story stands against the app clock. `null` for a plain post.
+ * Callers pass `NOW` from `@/domain/dates` — never `new Date()`.
+ */
+export function storyState(p: Post, nowIso: string): "active" | "expired" | null {
+  if (p.expiresAt === null) return null;
+  return Date.parse(p.expiresAt) > Date.parse(nowIso) ? "active" : "expired";
+}
+
+/**
+ * One row of S2 `post_comments`.
+ *
+ * `authorName` is a climber's display name — DEMO WORLD. Climbers are not rows
+ * this portal owns (they live on the phone app's side of the shared tables),
+ * so a comment carries the name to render and nothing an operator could act
+ * on. There is no operator write path to comments here at all: a company reads
+ * what climbers said under its posts, it does not author comments.
+ */
+export interface PostComment {
+  id: string;
+  postId: string;
+  authorName: string;
+  body: string;
+  createdAt: string;
+}
+
+/**
+ * One row of S2 `follows`: a climber following a company.
+ *
+ * `followerName` for the same demo-world reason as `PostComment.authorName` —
+ * the follower is a phone-app account, not a record this portal owns. The
+ * follower COUNT anywhere on screen is `getFollowerCount`, which is arithmetic
+ * over these rows — never a literal in a component, per the honesty doctrine.
+ */
+export interface Follow {
+  id: string;
+  followerName: string;
+  companyId: string;
+  createdAt: string;
+}
+
+/**
+ * THE COMPANY SOCIAL SURFACE'S PROMOTIONAL-VIDEO SLOT — and NOT a resurrection
+ * of `Company.video`.
+ *
+ * The reconciliation, recorded here so nobody reads this as decision 15
+ * reversed: owner decision #15 (2026-08-29) removed `video` from the canonical
+ * `Company` record, and it stays removed — see the note inside `Company`
+ * above. The owner's OP-01 wording (2026-08-31, "creating promotional psots or
+ * videos") is the LATER ruling and it is about THIS surface: the promotional
+ * film lives on the company's SOCIAL presence, in its own store, S2-shaped.
+ * The mountain-film request (06) stays open, unchanged, on the mountain
+ * surface. `PromoVideo` — the existing closed union above — finally gets this
+ * consumer back.
+ */
+export interface PromoVideoSlot {
+  companyId: string;
+  video: PromoVideo;
+}
+
+/* ========================================================================== */
 /* ContentVersion — the publication boundary                                  */
 /* ========================================================================== */
 

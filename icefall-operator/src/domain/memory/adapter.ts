@@ -22,8 +22,17 @@ import { formatDayShort, NOW } from "../dates";
 import type {
   Booking, Company, CompanyUser, Conversation, ConversationNote, ContentEntityType,
   ContentVersion, FunnelCounts, Lead, LeadNote, LeadStatus, Message, Mountain,
-  Product, ProductDeparture, Trek,
+  Post, PromoVideo, Product, ProductDeparture, Trek,
 } from "../types";
+/*
+ * The one import from outside the domain layer, and it is deliberate:
+ * `youtubeIdFrom` is THE definition of what this app accepts as a YouTube
+ * reference, written beside the field that collects it. A second, cleverer
+ * copy here would be a second answer to the same question — the exact drift
+ * `authz.ts`'s header warns about — so the backend consults the same function
+ * the form does.
+ */
+import { youtubeIdFrom } from "@/editor/VideoField";
 import * as seed from "./seed";
 
 /**
@@ -73,6 +82,11 @@ const db = {
   notifications: [...seed.NOTIFICATIONS],
   events: [...seed.EVENTS],
   media: [...seed.MEDIA_ASSETS],
+  // Social (OP-01, via S2) — in-memory stand-ins for tables that are not live.
+  posts: [...seed.POSTS],
+  postComments: [...seed.POST_COMMENTS],
+  follows: [...seed.FOLLOWS],
+  promoVideos: [...seed.PROMO_VIDEOS],
 };
 
 /** Restores the seed. Used between tests so one cannot leak into the next. */
@@ -96,6 +110,10 @@ export function resetStore(): void {
   db.notifications = seed.NOTIFICATIONS.map((n) => ({ ...n }));
   db.events = [...seed.EVENTS];
   db.media = [...seed.MEDIA_ASSETS];
+  db.posts = seed.POSTS.map((p) => ({ ...p }));
+  db.postComments = [...seed.POST_COMMENTS];
+  db.follows = [...seed.FOLLOWS];
+  db.promoVideos = seed.PROMO_VIDEOS.map((s) => ({ ...s }));
 }
 
 let idCounter = 0;
@@ -137,6 +155,24 @@ function myConversation(session: Session, id: string): Conversation | null {
 function myLead(session: Session, id: string): Lead | null {
   const l = db.leads.find((x) => x.id === id) ?? null;
   return l && ownsCompany(session, l.companyId) ? l : null;
+}
+
+/**
+ * The company's own posts. `mine()` cannot serve here because the S2 `posts`
+ * table has no `companyId` column — the company IS the author, so ownership is
+ * `authorKind === "company" && authorId === my company`, checked through the
+ * same `ownsCompany` predicate as everything else. A post authored by a
+ * profile or a guide is never an operator's, whatever its id happens to match.
+ */
+function myPosts(session: Session): Post[] {
+  return db.posts.filter(
+    (p) => p.authorKind === "company" && ownsCompany(session, p.authorId),
+  );
+}
+
+function myPost(session: Session, postId: string): Post | null {
+  const p = db.posts.find((x) => x.id === postId) ?? null;
+  return p && p.authorKind === "company" && ownsCompany(session, p.authorId) ? p : null;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -711,6 +747,166 @@ export const memoryBackend: OperatorBackend = {
 
   async getBookings(session) {
     return mine(session, db.bookings);
+  },
+
+  /* ---- social (OP-01, via S2) ------------------------------------------ */
+  /*
+   * THE S2 TABLES ARE NOT LIVE. These methods run against the in-memory rows
+   * above, in the contract's exact shapes, so the Supabase implementation is a
+   * repoint — the route `leads.tags` took. See the block comment on the
+   * interface in `../adapter.ts`.
+   */
+
+  /**
+   * Newest first — the feed is strictly chronological, and so is the
+   * company's own view of it. Removed posts and expired stories are RETURNED,
+   * not filtered: the operator is owed the removal reason, and story expiry is
+   * derived from the app clock by the screen, never resolved by dropping rows.
+   */
+  async getPosts(session) {
+    return myPosts(session).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+
+  async createPost(session, input) {
+    // Posting IS publishing company content — same permission as the profile.
+    if (!can(session, "editCompanyProfile")) return deny(DENY_ROLE);
+
+    const caption = input.caption.trim();
+    if (!caption) return deny("Write a caption first.");
+
+    /*
+     * A caption is OPERATOR-AUTHORED PUBLIC TEXT, and there is no reviewer
+     * between it and a climber's feed — a post is public the moment this
+     * method succeeds. So the contact-details rule is BLOCKING here, exactly
+     * as it is for a customer reply and for the same reason: advisory would
+     * mean not enforced.
+     */
+    const contact = findContactDetailsIn({ caption });
+    if (contact.caption) {
+      return deny(
+        `That caption contains ${contact.caption.map((f) => f.label).join(" and ")}. ${OPERATOR_NOTICES.NO_CONTACT_DETAILS}`,
+      );
+    }
+
+    /*
+     * A STORY IS A POST WITH AN EXPIRY. The expiry is checked against the app
+     * clock (`NOW`, the fixed constant — never `new Date()`): a story that is
+     * already over cannot be published, because publishing it would create a
+     * row every feed immediately hides, which is a write that lies.
+     */
+    if (input.expiresAt) {
+      const t = Date.parse(input.expiresAt);
+      if (Number.isNaN(t)) return deny("That story expiry is not a valid time.");
+      if (t <= Date.parse(NOW)) {
+        return deny("A story's expiry is already in the past. Pick a time after now, or post it without an expiry.");
+      }
+    }
+
+    // A media reference must be real, and must be the company's to use.
+    const media = input.media;
+    if (media) {
+      if (media.source === "asset") {
+        const asset = db.media.find((m) => m.id === media.mediaId);
+        if (!asset || !ownsCompany(session, asset.companyId)) return deny(DENY_OTHER_COMPANY);
+        if (asset.state !== "approved") {
+          return deny("That image has not been approved by Icefall yet, so it cannot appear in a public post.");
+        }
+      } else if (media.source === "peak") {
+        if (!db.mountains.some((m) => m.id === media.mountainId)) {
+          return deny("That mountain is not in Icefall's catalogue.");
+        }
+      } else if (!db.treks.some((t) => t.id === media.trekId)) {
+        return deny("That route is not in Icefall's catalogue.");
+      }
+    }
+
+    const post: Post = {
+      id: nextId("po"),
+      authorKind: "company",
+      // Scope from the session, never the caller — a post cannot be authored
+      // onto another company.
+      authorId: session.user.companyId,
+      caption,
+      media: input.media,
+      expiresAt: input.expiresAt ?? null,
+      createdAt: NOW,
+      // Public on creation; removable by Icefall later. No pending state,
+      // because nothing reviews one — moderation is the CRM's queue (CR-17).
+      removedAt: null,
+      removedReason: null,
+    };
+    db.posts = [...db.posts, post];
+    return ok(post);
+  },
+
+  async deletePost(session, postId) {
+    const p = myPost(session, postId);
+    if (!p) return deny(DENY_OTHER_COMPANY);
+    if (!can(session, "editCompanyProfile")) return deny(DENY_ROLE);
+    /*
+     * THE REMOVAL RECORD SURVIVES. A post Icefall removed is a moderation
+     * fact about this company, and letting the company delete the row would
+     * let it erase the trail. The refusal carries the standing reason.
+     */
+    if (p.removedAt !== null) {
+      return deny(
+        "Icefall removed this post, and the removal record stays. If you believe the decision is wrong, take it up with your Icefall contact.",
+      );
+    }
+    db.posts = db.posts.filter((x) => x.id !== p.id);
+    db.postComments = db.postComments.filter((c) => c.postId !== p.id);
+    return ok(p);
+  },
+
+  async getPostComments(session, postId) {
+    if (!myPost(session, postId)) return [];
+    return db.postComments
+      .filter((c) => c.postId === postId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  },
+
+  /**
+   * COUNTED from `follows` rows — real arithmetic over the seeded demo world,
+   * never a stored total and never a literal in a component. `measured`
+   * because counting rows we hold is a measurement; when no one follows, zero
+   * IS the honest figure, unlike the view counts nothing emits.
+   */
+  async getFollowerCount(session) {
+    return measured(mine(session, db.follows).length);
+  },
+
+  /**
+   * The SOCIAL surface's slot (OP-01) — not `Company.video`, which decision
+   * #15 removed and which stays removed. See `PromoVideoSlot` in `types.ts`.
+   */
+  async getPromoVideo(session): Promise<PromoVideo> {
+    const slot = db.promoVideos.find((s) => ownsCompany(session, s.companyId));
+    // "No video" is a state, not an error — the closed union's explicit none.
+    return slot?.video ?? { source: "none" };
+  },
+
+  async setPromoVideo(session, input) {
+    if (!can(session, "editCompanyProfile")) return deny(DENY_ROLE);
+
+    const cleared: PromoVideo = { source: "none" };
+    if (input === null || input.trim() === "") {
+      // Clearing is allowed, and is a choice the record can represent.
+      db.promoVideos = db.promoVideos.filter((s) => s.companyId !== session.user.companyId);
+      return ok(cleared);
+    }
+
+    // The same definition the form field uses — see the import note above.
+    const id = youtubeIdFrom(input);
+    if (!id) {
+      return deny("That is not a YouTube link or video id. Paste the watch link, the share link, or the id itself.");
+    }
+
+    const video: PromoVideo = { source: "youtube", youtubeId: id };
+    const existing = db.promoVideos.find((s) => s.companyId === session.user.companyId);
+    db.promoVideos = existing
+      ? db.promoVideos.map((s) => (s.companyId === session.user.companyId ? { ...s, video } : s))
+      : [...db.promoVideos, { companyId: session.user.companyId, video }];
+    return ok(video);
   },
 
   /* ---- dashboard and analytics ----------------------------------------- */

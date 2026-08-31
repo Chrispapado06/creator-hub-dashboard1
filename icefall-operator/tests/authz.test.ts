@@ -82,6 +82,23 @@ import type { CompanyTrek } from "../src/domain/types";
  */
 import { DEFAULT_REFERRAL_PCT, referralFee, totalsForAmount } from "../src/money/model";
 import type { QuoteLine } from "../src/money/model";
+/*
+ * Added for section 18 — the guard suite over OP-01, the company social
+ * surface built via S2 (posts with author kind / media / caption / optional
+ * expiry = a story; post_comments; follows; the promo-video slot). THE S2
+ * TABLES ARE NOT LIVE: these run against the same in-memory adapter the app
+ * uses, in the contract's exact shapes, so when the migration lands the file
+ * re-points and still passes. Nothing here tests a new feature for its own
+ * sake — every check guards a failure mode that would be SILENT on screen:
+ * a competitor's post in the wrong feed, a phone number in a public caption,
+ * a moderation trail tidied away, a story clock drifting off the app clock,
+ * a follower figure typed instead of counted, or decision 15 quietly undone.
+ */
+import { FOLLOWS, POSTS, POST_COMMENTS, PROMO_VIDEOS } from "../src/domain/memory/seed";
+import { isStory, storyState } from "../src/domain/types";
+import type { Company, MediaAsset } from "../src/domain/types";
+import { NOW } from "../src/domain/dates";
+import { findContactDetailsIn } from "../src/domain/authz";
 
 let passed = 0;
 const failures: string[] = [];
@@ -4504,6 +4521,399 @@ async function run() {
       flat(composerSrc).includes("Icefall does not keep a separate offer record"),
       "and the dialog does not imply a tracked document behind the message",
     );
+  });
+
+  /* ======================================================================== */
+  /* 18 — OP-01: the company social surface, via S2                           */
+  /* ======================================================================== */
+
+  /*
+   * The S2 tables are NOT live; the adapter's social methods hold the
+   * contract's shapes so the swap is a repoint. These checks therefore assert
+   * the RULES, not the storage: isolation, the caption guard, the surviving
+   * moderation record, the fixed clock, arithmetic follower counts, and the
+   * absence of every claim ICEFALL does not measure.
+   */
+
+  const postsScreenSrc = readFileSync(new URL("../src/screens/Posts.tsx", import.meta.url), "utf8");
+  const memoryAdapterSrc = readFileSync(new URL("../src/domain/memory/adapter.ts", import.meta.url), "utf8");
+  const domainTypesSrc = readFileSync(new URL("../src/domain/types.ts", import.meta.url), "utf8");
+
+  /* ---- 18.1 Cross-company isolation ------------------------------------- */
+
+  await check("RAVI'S FEED IS LANTERN'S ALONE — Coldharbour's post never appears in it", async () => {
+    resetStore();
+    const r = await signIn(RAVI);
+    const feed = await be.getPosts!(r);
+    assert(feed.length > 0, "Lantern has seeded posts to see");
+    for (const p of feed) {
+      eq(p.authorKind, "company", "this portal's feed holds company posts only");
+      eq(p.authorId, r.user.companyId, `post ${p.id} belongs to the signed-in company`);
+    }
+    eq(feed.some((p) => p.id === "po-c-denali"), false, "Coldharbour's Denali post is not in Lantern's feed");
+
+    /* And the same seam from the other side — Jo sees only Coldharbour's. */
+    const j = await signIn(JO);
+    const theirs = await be.getPosts!(j);
+    eq(theirs.length, 1, "Coldharbour has exactly its one seeded post");
+    eq(theirs[0].id, "po-c-denali", "and it is that post");
+    eq(theirs.some((p) => p.authorId === r.user.companyId), false, "none of Lantern's six leaked across");
+  });
+
+  await check("DIRECT-ID LOOKUPS REFUSE ACROSS COMPANIES — comments, deletes, the lot", async () => {
+    resetStore();
+    const r = await signIn(RAVI);
+
+    /* Reading a competitor's comment thread by guessed id yields nothing. */
+    const stolen = await be.getPostComments!(r, "po-c-denali");
+    eq(stolen.length, 0, "Coldharbour's comment thread is not readable by id from Lantern's session");
+    eq(POST_COMMENTS.some((c) => c.postId === "po-c-denali"), true, "…and that thread genuinely has a comment to leak");
+
+    /* Deleting a competitor's post by id is refused and the row survives. */
+    const del = await be.deletePost!(r, "po-c-denali");
+    eq(del.ok, false, "deleting another company's post is refused");
+    if (!del.ok) assert(del.reason.trim().length > 0, "with a reason the screen can show");
+    eq(__store.posts.some((p) => p.id === "po-c-denali"), true, "the row is exactly where it was");
+
+    /* The refusal is symmetric — Jo cannot touch Lantern's rows either. */
+    const j = await signIn(JO);
+    for (const id of ["po-l-turn", "po-l-removed", "po-l-story-live"]) {
+      const res = await be.deletePost!(j, id);
+      eq(res.ok, false, `Coldharbour deleting Lantern's ${id} is refused`);
+      eq(__store.posts.some((p) => p.id === id), true, `and ${id} survives the attempt`);
+    }
+    eq((await be.getPostComments!(j, "po-l-ama")).length, 0, "Lantern's comments are as closed to Jo");
+    resetStore();
+  });
+
+  await check("a post cannot borrow another company's media asset by id", async () => {
+    resetStore();
+    const r = await signIn(RAVI);
+    /* Give Coldharbour an approved asset so there is something to steal. */
+    const theirs: MediaAsset = {
+      id: "ma-coldharbour-denali-shot",
+      companyId: COLDHARBOUR,
+      productId: null,
+      kind: "image",
+      storagePath: `${COLDHARBOUR}/${COLDHARBOUR}/denali-shot.jpg`,
+      mimeType: "image/jpeg",
+      byteSize: 500_000,
+      widthPx: 1600,
+      heightPx: 1067,
+      altText: "Denali from base camp",
+      licence: "royalty-free",
+      credit: "Coldharbour Expeditions",
+      state: "approved",
+      decisionReason: null,
+      reviewedBy: "icefall",
+      reviewedAt: "2026-08-01T10:00:00.000Z",
+      createdAt: "2026-07-30T10:00:00.000Z",
+    };
+    __store.media = [...__store.media, theirs];
+
+    const before = __store.posts.length;
+    const res = await be.createPost!(r, {
+      caption: "A borrowed photograph.",
+      media: { source: "asset", mediaId: theirs.id },
+    });
+    eq(res.ok, false, "referencing a competitor's asset is refused");
+    eq(__store.posts.length, before, "and no post was stored");
+    resetStore();
+  });
+
+  await check("follower counts are scoped — neither company reads the other's rows", async () => {
+    resetStore();
+    const r = await signIn(RAVI);
+    const j = await signIn(JO);
+    const lantern = await be.getFollowerCount!(r);
+    const coldharbour = await be.getFollowerCount!(j);
+    assert(lantern.available && coldharbour.available, "counting rows we hold is a measurement");
+    if (lantern.available && coldharbour.available) {
+      eq(lantern.value, FOLLOWS.filter((f) => f.companyId === r.user.companyId).length, "Lantern's count is Lantern's rows");
+      eq(coldharbour.value, FOLLOWS.filter((f) => f.companyId === COLDHARBOUR).length, "Coldharbour's count is Coldharbour's rows");
+      eq(lantern.value + coldharbour.value, FOLLOWS.length, "together they partition the table — nobody counted twice");
+      assert(lantern.value !== FOLLOWS.length, "and neither company was handed the whole table's total");
+    }
+  });
+
+  await check("the promo-video slot is per company — Jo's slot is empty and Jo's writes stay Jo's", async () => {
+    resetStore();
+    const r = await signIn(RAVI);
+    const j = await signIn(JO);
+    const lanterns = await be.getPromoVideo!(r);
+    eq(lanterns.source, "youtube", "Lantern's seeded slot is its own");
+    const jos = await be.getPromoVideo!(j);
+    eq(jos.source, "none", "Coldharbour has no slot, and is not shown Lantern's");
+
+    /* A write from Coldharbour must not move Lantern's slot. */
+    const set = await be.setPromoVideo!(j, "AbCdEfGhIjK");
+    eq(set.ok, true, "Jo may set Coldharbour's own video");
+    const after = await be.getPromoVideo!(r);
+    assert(after.source === "youtube" && after.youtubeId === "LanternR21x", "Lantern's slot did not move");
+    resetStore();
+  });
+
+  /* ---- 18.2 The caption guard — operator-authored public text ------------ */
+
+  await check("A CAPTION WITH A PHONE NUMBER OR WHATSAPP LINK IS REFUSED, AND NOTHING IS STORED", async () => {
+    resetStore();
+    const r = await signIn(RAVI);
+    const before = __store.posts.length;
+
+    for (const smuggle of [
+      { what: "a phone number", caption: "Autumn spots open — call +977 9812 345 678 to hold yours." },
+      { what: "a WhatsApp link", caption: "Message us on wa.me to plan your climb." },
+      { what: "a WhatsApp mention", caption: "Fastest answers on WhatsApp, always." },
+      { what: "an email address", caption: "Write to bookings@lanternridge.example for the itinerary." },
+      { what: "a website link", caption: "Full dates at www.lanternridge.example — see you up there." },
+    ]) {
+      /* The same predicate every operator-authored field runs. */
+      assert(
+        Object.keys(findContactDetailsIn({ caption: smuggle.caption })).length > 0,
+        `the guard sees ${smuggle.what} in the caption`,
+      );
+      const res = await be.createPost!(r, { caption: smuggle.caption, media: null });
+      eq(res.ok, false, `a caption carrying ${smuggle.what} is refused`);
+      if (!res.ok) assert(res.reason.trim().length > 0, "with a reason shown verbatim, never swallowed");
+    }
+    eq(__store.posts.length, before, "NOTHING WAS STORED by any of those attempts");
+
+    /* A clean caption goes through — the guard blocks details, not posting. */
+    const okRes = await be.createPost!(r, { caption: "Rope teams confirmed for the autumn season.", media: null });
+    eq(okRes.ok, true, "a caption with no contact details publishes");
+    resetStore();
+  });
+
+  await check("a STORY runs the same guard — an expiry does not open a side door", async () => {
+    resetStore();
+    const r = await signIn(RAVI);
+    const before = __store.posts.length;
+    const res = await be.createPost!(r, {
+      caption: "Tonight only — reach us on t.me for a late place.",
+      media: null,
+      expiresAt: "2026-08-29T09:20:00.000Z", // a perfectly valid story window
+    });
+    eq(res.ok, false, "a story caption with a Telegram link is refused");
+    eq(__store.posts.length, before, "and no story row was stored");
+    resetStore();
+  });
+
+  await check("the video path carries no free text past the guard — only a YouTube id survives", async () => {
+    resetStore();
+    const r = await signIn(RAVI);
+    /* Whatever an operator types, the only thing stored is an 11-char id. */
+    for (const garbage of ["Call +44 7911 123456", "wa.me/lanternridge", "https://vimeo.com/998877", "not a link at all"]) {
+      const res = await be.setPromoVideo!(r, garbage);
+      eq(res.ok, false, `"${garbage}" is refused by the video slot`);
+      if (!res.ok) assert(res.reason.trim().length > 0, "with a reason to show");
+    }
+    const still = await be.getPromoVideo!(r);
+    assert(still.source === "youtube" && still.youtubeId === "LanternR21x", "the slot still holds the seeded id — no text got in");
+    resetStore();
+  });
+
+  /* ---- 18.3 A removal by Icefall survives the operator ------------------- */
+
+  await check("A POST REMOVED BY ICEFALL CANNOT BE DELETED OVER, AND ITS REASON SURVIVES", async () => {
+    resetStore();
+    const r = await signIn(RAVI);
+    const removed = (await be.getPosts!(r)).find((p) => p.removedAt !== null);
+    assert(removed, "the seed carries a removed post so this path is real");
+    assert(removed.removedReason && removed.removedReason.trim().length > 0, "removal always carries its reason");
+    const reasonBefore = removed.removedReason;
+
+    const res = await be.deletePost!(r, removed.id);
+    eq(res.ok, false, "the company admin's delete is refused");
+    if (!res.ok) assert(res.reason.trim().length > 0, "and the refusal says why, for the screen to show");
+
+    const survivor = __store.posts.find((p) => p.id === removed.id);
+    assert(survivor, "the moderation record was not tidied away");
+    eq(survivor.removedReason, reasonBefore, "and the reason is preserved word for word");
+
+    /* The refusal is about MODERATION, not deletion — an unremoved post goes. */
+    const own = await be.deletePost!(r, "po-l-turn");
+    eq(own.ok, true, "the same admin deletes their own unremoved post fine");
+    eq(__store.posts.some((p) => p.id === "po-l-turn"), false, "that row is gone");
+    eq(__store.postComments.some((c) => c.postId === "po-l-turn"), false, "with its comments");
+    eq(__store.posts.some((p) => p.id === removed.id), true, "while the removed one still stands");
+    resetStore();
+  });
+
+  await check("the operator has NO write path to removal — the input cannot spell it", () => {
+    /*
+     * `NewPostInput` is caption, media, expiresAt and nothing else. If a
+     * field ever grows that lets this portal set `removedAt`, `removedReason`
+     * or `authorId`, the moderation trail stops being Icefall's. Type-level:
+     * assigning such an input must not compile; shape-level: the stored post
+     * carries exactly the moderation defaults.
+     */
+    type Forbidden = "removedAt" | "removedReason" | "authorId" | "authorKind" | "companyId";
+    type LeakedKeys = Extract<keyof import("../src/domain/adapter").NewPostInput, Forbidden>;
+    const nothingLeaked: LeakedKeys extends never ? true : never = true;
+    void nothingLeaked;
+  });
+
+  /* ---- 18.4 Story expiry derives from the fixed app clock ---------------- */
+
+  await check("THE SEEDED STORIES READ CORRECTLY AGAINST NOW — active is active, lapsed is lapsed", () => {
+    const live = POSTS.find((p) => p.id === "po-l-story-live")!;
+    const lapsed = POSTS.find((p) => p.id === "po-l-story-old")!;
+    const plain = POSTS.find((p) => p.id === "po-l-turn")!;
+    assert(isStory(live) && isStory(lapsed), "both seeded stories are stories — an expiry is the whole difference");
+    eq(isStory(plain), false, "a post without an expiry is not one");
+    eq(storyState(live, NOW), "active", "the live story is unexpired at the app clock");
+    eq(storyState(lapsed, NOW), "expired", "the lapsed story is expired at the app clock");
+    eq(storyState(plain, NOW), null, "and a plain post has no story state at all");
+  });
+
+  await check("a story already over at the app clock is refused — a write that lies is not written", async () => {
+    resetStore();
+    const r = await signIn(RAVI);
+    const before = __store.posts.length;
+    for (const past of ["2026-08-25T10:00:00.000Z", NOW, "not-a-time"]) {
+      const res = await be.createPost!(r, { caption: "Departure tonight.", media: null, expiresAt: past });
+      eq(res.ok, false, `expiry "${past}" is refused`);
+      if (!res.ok) assert(res.reason.trim().length > 0, "with the reason shown");
+    }
+    eq(__store.posts.length, before, "no already-hidden story was stored");
+
+    /* And a future one is accepted, active against the same fixed clock. */
+    const res = await be.createPost!(r, { caption: "Departure tonight.", media: null, expiresAt: "2026-08-29T09:20:00.000Z" });
+    eq(res.ok, true, "a story with a future expiry publishes");
+    if (res.ok) {
+      eq(res.value.createdAt, NOW, "stamped by the app clock, not the machine's");
+      eq(storyState(res.value, NOW), "active", "and it reads active right now");
+    }
+    resetStore();
+  });
+
+  await check("NO STORY CODE CALLS new Date() BARE — the clock is the fixed NOW constant", () => {
+    /*
+     * If any of these three files reaches for the machine clock, story expiry
+     * drifts off the app clock the moment the demo runs on a different day —
+     * the exact bug deriving from `NOW` exists to prevent.
+     */
+    for (const [name, src] of [
+      ["Posts.tsx", postsScreenSrc],
+      ["memory/adapter.ts", memoryAdapterSrc],
+      ["domain/types.ts", domainTypesSrc],
+    ] as const) {
+      eq(/new Date\(\)/.test(codeOf(src)), false, `${name} never calls new Date() outside a comment`);
+    }
+    /* The screen takes its clock from the one place clocks come from. */
+    assert(/from "@\/domain\/dates"/.test(postsScreenSrc), "Posts.tsx imports the app clock from @/domain/dates");
+    /* And `storyState` demands a time — nobody can forget to pass one. */
+    assert(/storyState\s*\(\s*p\s*:\s*Post\s*,\s*nowIso\s*:\s*string\s*\)/.test(domainTypesSrc), "storyState takes the clock as an argument");
+  });
+
+  /* ---- 18.5 The follower count is arithmetic, not a literal --------------- */
+
+  await check("THE FOLLOWER COUNT IS COUNTED FROM ROWS — add a row, the number moves", async () => {
+    resetStore();
+    const r = await signIn(RAVI);
+    const first = await be.getFollowerCount!(r);
+    assert(first.available, "the count is a measurement");
+    const seeded = FOLLOWS.filter((f) => f.companyId === r.user.companyId).length;
+    if (first.available) eq(first.value, seeded, "and it equals the seeded follow rows, by arithmetic");
+
+    __store.follows = [
+      ...__store.follows,
+      { id: "f-l-new", followerName: "Anouk de Vries", companyId: r.user.companyId, createdAt: NOW },
+    ];
+    const second = await be.getFollowerCount!(r);
+    assert(second.available, "still a measurement");
+    if (second.available) eq(second.value, seeded + 1, "one more row, one more follower — no stored total to go stale");
+    resetStore();
+  });
+
+  await check("the Posts screen types no follower number and invents no figure", () => {
+    const code = codeOf(postsScreenSrc);
+    eq(/\d+\s*follower/i.test(code), false, "no hardcoded '<n> followers' anywhere in the screen source");
+    assert(code.includes("getFollowerCount"), "the figure on screen is the adapter's count");
+    /* A missing count folds to its reason, never to a default zero. */
+    eq(/getFollowerCount[\s\S]{0,400}?\?\?\s*0/.test(code), false, "no `?? 0` turns 'not measured' into 'nobody follows you'");
+  });
+
+  /* ---- 18.6 No reach, impressions or view counts -------------------------- */
+
+  await check("THE POSTS SCREEN CLAIMS NO REACH, IMPRESSIONS OR VIEW COUNTS — ICEFALL DOES NOT MEASURE THEM", () => {
+    eq(
+      /reach|impression|view count/i.test(codeOf(postsScreenSrc)),
+      false,
+      "the words are absent from the screen's code and copy — not even as dashes",
+    );
+  });
+
+  /* ---- 18.7 The promo video — OP-01's slot, not decision 15 undone --------- */
+
+  await check("setPromoVideo accepts every form youtubeIdFrom does, and stores the id alone", async () => {
+    resetStore();
+    const r = await signIn(RAVI);
+    /* A format-valid, invented id — pointing at real footage would attribute
+     * somebody's film to an invented company, the seed's own rule. */
+    const ID = "AbCdEfGhIjK";
+    for (const form of [
+      ID,
+      `https://www.youtube.com/watch?v=${ID}`,
+      `https://youtu.be/${ID}`,
+      `https://www.youtube-nocookie.com/embed/${ID}`,
+      `https://youtube.com/shorts/${ID}`,
+    ]) {
+      eq(youtubeIdFrom(form), ID, `youtubeIdFrom resolves ${form}`);
+      const res = await be.setPromoVideo!(r, form);
+      eq(res.ok, true, `and the slot accepts it`);
+      if (res.ok) assert(res.value.source === "youtube" && res.value.youtubeId === ID, "storing the id, never the URL");
+    }
+    /* Clearing is a choice the record can represent. */
+    const cleared = await be.setPromoVideo!(r, null);
+    eq(cleared.ok, true, "clearing works");
+    if (cleared.ok) eq(cleared.value.source, "none", "and yields the explicit none");
+    eq((await be.getPromoVideo!(r)).source, "none", "which is what a re-read then says");
+    resetStore();
+  });
+
+  await check("garbage never reaches the slot, and a non-admin never reaches the surface", async () => {
+    resetStore();
+    const r = await signIn(RAVI);
+    for (const garbage of ["", "   ", "tooShort", "https://youtu.be/short", "javascript:alert(1)"]) {
+      const res = await be.setPromoVideo!(r, garbage);
+      if (garbage.trim() === "") {
+        eq(res.ok, true, "an empty input is a clear, which is allowed");
+      } else {
+        eq(res.ok, false, `"${garbage}" is refused`);
+      }
+    }
+    /* Marta is Sales — publishing company content is the admin's permission. */
+    const m = await signIn(MARTA);
+    eq((await be.setPromoVideo!(m, "AbCdEfGhIjK")).ok, false, "Sales cannot set the company's film");
+    eq((await be.createPost!(m, { caption: "A fine morning.", media: null })).ok, false, "nor publish a post");
+    eq((await be.deletePost!(m, "po-l-turn")).ok, false, "nor delete one");
+    resetStore();
+  });
+
+  await check("THE CANONICAL COMPANY RECORD STILL HAS NO VIDEO FIELD — decision 15 stands", async () => {
+    /*
+     * The reconciliation, asserted: decision 15 (2026-08-29) removed
+     * `Company.video`; the owner's OP-01 wording (2026-08-31) is the LATER
+     * ruling and puts the promotional film on the SOCIAL surface, in its own
+     * S2-shaped store. If `video` ever reappears on `Company`, this fails at
+     * compile time AND at runtime — it would be decision 15 reversed.
+     */
+    type CompanyGrewVideo = "video" extends keyof Company ? true : false;
+    const stillRemoved: CompanyGrewVideo extends false ? "decision 15 stands" : never = "decision 15 stands";
+    void stillRemoved;
+
+    resetStore();
+    for (const row of __store.companies) {
+      eq("video" in (row as object), false, `company ${row.id} carries no video key at runtime either`);
+    }
+    /* The film lives in its own store, keyed by company — the S2 shape. */
+    eq(PROMO_VIDEOS.every((s) => typeof s.companyId === "string" && s.video.source !== undefined), true, "the slot is its own record, not a company column");
+
+    /* And the two clocks agree the surface exists: the backend declares it. */
+    const r = await signIn(RAVI);
+    const video = await be.getPromoVideo!(r);
+    assert(video.source === "youtube", "the seeded slot reads back from the social store");
   });
 
   const total = passed + failures.length;

@@ -41,14 +41,18 @@ import type {
   Conversation,
   ConversationNote,
   ContentVersion,
+  Follow,
   Lead,
   LeadNote,
   Message,
   MediaAsset,
   Mountain,
   OperatorNotification,
+  Post,
+  PostComment,
   Product,
   ProductDeparture,
+  PromoVideoSlot,
   Trek,
 } from "../types";
 
@@ -1348,4 +1352,202 @@ export const EVENTS: AnalyticsEvent[] = [
   { id: "e-10", occurredAt: "2026-08-28T08:20:00.000Z", eventType: "enquiry_started", source: "server", companyId: LANTERN, mountainId: "everest", productId: "p-everest-south-col", conversationId: "cvn-hanne", leadId: "l-hanne", sourcePage: "Everest — South Col" },
   { id: "e-11", occurredAt: "2026-08-28T08:50:00.000Z", eventType: "lead_qualified", source: "server", companyId: LANTERN, mountainId: "everest", productId: "p-everest-south-col", conversationId: "cvn-hanne", leadId: "l-hanne", sourcePage: null },
   { id: "e-12", occurredAt: "2026-08-28T08:55:00.000Z", eventType: "booking_recorded", source: "server", companyId: LANTERN, mountainId: "everest", productId: "p-everest-south-col", conversationId: "cvn-hanne", leadId: "l-hanne", sourcePage: null },
+];
+
+/* -------------------------------------------------------------------------- */
+/* Social (OP-01, via S2) — posts, comments, follows, the promo-video slot    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Rows in the exact shape of the S2 `posts` table, which IS NOT LIVE — this
+ * seed exists so the surface can be built and exercised before the migration
+ * lands, and the swap is a repoint.
+ *
+ * MEDIA HONESTY. No media store is connected, so no post here pretends to
+ * carry uploaded bytes. The two posts with photographs reference the
+ * ALREADY-CREDITED peak/trek libraries served by icefall-web (the
+ * `ListingPhoto` pattern, drawing its fallback when that server is down) —
+ * one credited library, no second copy, per the 2026-08-29 ruling.
+ *
+ * WHAT THE SIX ROWS MAKE VISIBLE, deliberately one of each:
+ *   - two plain posts with credited photos (peak + trek), one without;
+ *   - ONE ACTIVE STORY — `expiresAt` about 21 hours after `NOW`;
+ *   - ONE EXPIRED STORY — `expiresAt` before `NOW` — so both story renderings
+ *     exist on screen (expiry is derived from the app clock, never mutated);
+ *   - ONE POST REMOVED BY ICEFALL, reason attached, so the moderation state
+ *     renders and `deletePost`'s refusal to delete over it has a real row.
+ *
+ * The removed post's caption is an invented summit-success figure — the exact
+ * class of claim the honesty doctrine exists for, which is WHY Icefall's
+ * removal reason names it. The demo world moderating its own demo violation.
+ */
+export const POSTS: Post[] = [
+  {
+    // The ACTIVE story — expires ~21 h after NOW (2026-08-28T09:20Z).
+    id: "po-l-story-live",
+    authorKind: "company",
+    authorId: LANTERN,
+    caption:
+      "Summit morning on Kilimanjaro — our August group reached Uhuru Peak at sunrise. Everyone up, everyone down.",
+    media: { source: "peak", mountainId: "kilimanjaro" },
+    expiresAt: "2026-08-29T06:20:00.000Z",
+    createdAt: "2026-08-28T06:20:00.000Z",
+    removedAt: null,
+    removedReason: null,
+  },
+  {
+    // The EXPIRED story — created and lapsed before NOW.
+    id: "po-l-story-old",
+    authorKind: "company",
+    authorId: LANTERN,
+    caption: "Duffels packed for the Kilimanjaro resupply. The truck leaves Moshi tonight.",
+    media: null,
+    expiresAt: "2026-08-25T10:00:00.000Z",
+    createdAt: "2026-08-24T10:00:00.000Z",
+    removedAt: null,
+    removedReason: null,
+  },
+  {
+    id: "po-l-turn",
+    authorKind: "company",
+    authorId: LANTERN,
+    caption:
+      "The guide calls the turn. It is the first thing we tell every climber and the last thing we repeat at base camp. A summit is optional; coming home is not.",
+    media: null,
+    expiresAt: null,
+    createdAt: "2026-08-20T08:15:00.000Z",
+    removedAt: null,
+    removedReason: null,
+  },
+  {
+    /*
+     * REMOVED BY ICEFALL. The caption asserts a summit-success rate the
+     * company has never evidenced — an invented commercial figure, the thing
+     * the honesty doctrine forbids on real surfaces — and the moderation
+     * record says exactly that. The row survives with its reason: an operator
+     * cannot delete over it, so the trail cannot be tidied away.
+     */
+    id: "po-l-removed",
+    authorKind: "company",
+    authorId: LANTERN,
+    caption: "Nine in ten Lantern Ridge climbers stand on the summit. Join the statistic this autumn.",
+    media: null,
+    expiresAt: null,
+    createdAt: "2026-08-16T09:00:00.000Z",
+    removedAt: "2026-08-18T11:00:00.000Z",
+    removedReason:
+      "Removed by Icefall — the caption states a summit-success figure the company has not evidenced. Post again without the claim, or send Icefall the seasons behind it.",
+  },
+  {
+    // Credited trek photo — the everest-base-camp-trek slug from the catalogue.
+    id: "po-l-ebc",
+    authorKind: "company",
+    authorId: LANTERN,
+    caption:
+      "Everest Base Camp in October is the mountain at its clearest. Our trekking sirdar walks every group up Kala Patthar at dawn — the true high point of the route at 5,545 m, and the view the whole walk builds to.",
+    media: { source: "trek", trekId: "everest-base-camp-trek" },
+    expiresAt: null,
+    createdAt: "2026-08-14T10:30:00.000Z",
+    removedAt: null,
+    removedReason: null,
+  },
+  {
+    // Credited peak photo.
+    id: "po-l-ama",
+    authorKind: "company",
+    authorId: LANTERN,
+    caption:
+      "Autumn on Ama Dablam. Our southwest-ridge team has confirmed its Sherpa crew — the same climbers who fixed our lines last season. Two full rotations before any summit push, as always.",
+    media: { source: "peak", mountainId: "ama-dablam" },
+    expiresAt: null,
+    createdAt: "2026-08-07T09:00:00.000Z",
+    removedAt: null,
+    removedReason: null,
+  },
+
+  /* ---- Coldharbour's — must never appear in Lantern's portal. ------------- */
+  {
+    id: "po-c-denali",
+    authorKind: "company",
+    authorId: COLDHARBOUR,
+    caption:
+      "Denali West Buttress: our June season wrapped with strong weather windows and a full descent log. Next year's dates go to the waitlist first.",
+    media: { source: "peak", mountainId: "denali" },
+    expiresAt: null,
+    createdAt: "2026-08-10T18:00:00.000Z",
+    removedAt: null,
+    removedReason: null,
+  },
+];
+
+/**
+ * Climbers' comments — DEMO WORLD, names consistent with the seeded leads
+ * (the same people who enquired are the people commenting), plus a couple of
+ * followers who have not enquired, because most commenters never do. All
+ * `PersonAvatar`-compatible display names. No operator write path exists.
+ */
+export const POST_COMMENTS: PostComment[] = [
+  { id: "pc-1", postId: "po-l-ama", authorName: "Priya Raman", body: "Was on your 2024 rope — the crew is the reason I am coming back.", createdAt: "2026-08-07T12:40:00.000Z" },
+  { id: "pc-2", postId: "po-l-ama", authorName: "Benjamin Lee", body: "How cold does it get on the ridge in late October?", createdAt: "2026-08-08T09:05:00.000Z" },
+  { id: "pc-3", postId: "po-l-ebc", authorName: "Aoife Brennan", body: "Kala Patthar at dawn was the best hour of my year.", createdAt: "2026-08-14T15:20:00.000Z" },
+  { id: "pc-4", postId: "po-l-ebc", authorName: "Luis Miguel", body: "Do groups of four get their own sirdar?", createdAt: "2026-08-15T08:10:00.000Z" },
+  { id: "pc-5", postId: "po-l-turn", authorName: "Tomás Ferreira", body: "This is why I enquired with you and nobody else.", createdAt: "2026-08-20T19:45:00.000Z" },
+  { id: "pc-6", postId: "po-l-turn", authorName: "Grace Otieno", body: "Heard your sirdar say exactly this below the Khumbu Icefall. He meant it.", createdAt: "2026-08-21T07:30:00.000Z" },
+  // Coldharbour's — scoped away with its post.
+  { id: "pc-x", postId: "po-c-denali", authorName: "Ellis Warren", body: "What does the waitlist look like for early June?", createdAt: "2026-08-11T20:00:00.000Z" },
+];
+
+/**
+ * S2 `follows` — climbers following a company.
+ *
+ * THE COUNT IS THE ARITHMETIC. Lantern's follower figure anywhere on screen
+ * is `getFollowerCount` counting THESE rows — eighteen of them, spread over
+ * the months since the company joined, so the number is real addition over a
+ * believable history and never a literal typed into a component. Several
+ * followers are the seeded customers themselves (a climber who enquired
+ * plausibly follows); the rest never enquired, which is what a following
+ * mostly is. Coldharbour's three exist so isolation has something to leak.
+ */
+export const FOLLOWS: Follow[] = [
+  { id: "f-l-1", followerName: "Bruno Kessler", companyId: LANTERN, createdAt: "2026-03-12T10:00:00.000Z" },
+  { id: "f-l-2", followerName: "Keiko Tanaka", companyId: LANTERN, createdAt: "2026-03-28T17:25:00.000Z" },
+  { id: "f-l-3", followerName: "Jonas Weber", companyId: LANTERN, createdAt: "2026-04-06T08:40:00.000Z" },
+  { id: "f-l-4", followerName: "Charlotte Martin", companyId: LANTERN, createdAt: "2026-04-19T12:10:00.000Z" },
+  { id: "f-l-5", followerName: "Mikko Salonen", companyId: LANTERN, createdAt: "2026-05-02T21:05:00.000Z" },
+  { id: "f-l-6", followerName: "Ines Fontaine", companyId: LANTERN, createdAt: "2026-05-14T09:55:00.000Z" },
+  { id: "f-l-7", followerName: "Benjamin Lee", companyId: LANTERN, createdAt: "2026-05-30T16:30:00.000Z" },
+  { id: "f-l-8", followerName: "Grace Otieno", companyId: LANTERN, createdAt: "2026-06-08T11:15:00.000Z" },
+  { id: "f-l-9", followerName: "Daan Vermeer", companyId: LANTERN, createdAt: "2026-06-17T19:00:00.000Z" },
+  { id: "f-l-10", followerName: "Sophie Dubois", companyId: LANTERN, createdAt: "2026-06-29T07:45:00.000Z" },
+  { id: "f-l-11", followerName: "Alba Ruiz", companyId: LANTERN, createdAt: "2026-07-05T14:20:00.000Z" },
+  { id: "f-l-12", followerName: "Priya Raman", companyId: LANTERN, createdAt: "2026-07-13T10:35:00.000Z" },
+  { id: "f-l-13", followerName: "Nils Hagen", companyId: LANTERN, createdAt: "2026-07-22T18:50:00.000Z" },
+  { id: "f-l-14", followerName: "Aoife Brennan", companyId: LANTERN, createdAt: "2026-07-31T08:05:00.000Z" },
+  { id: "f-l-15", followerName: "Tomás Ferreira", companyId: LANTERN, createdAt: "2026-08-09T13:40:00.000Z" },
+  { id: "f-l-16", followerName: "Luis Miguel", companyId: LANTERN, createdAt: "2026-08-17T20:15:00.000Z" },
+  { id: "f-l-17", followerName: "Hanne Bakken", companyId: LANTERN, createdAt: "2026-08-24T09:30:00.000Z" },
+  { id: "f-l-18", followerName: "Milan Horak", companyId: LANTERN, createdAt: "2026-08-27T22:10:00.000Z" },
+  // ---- Coldharbour's --------------------------------------------------------
+  { id: "f-c-1", followerName: "Ellis Warren", companyId: COLDHARBOUR, createdAt: "2026-06-02T10:00:00.000Z" },
+  { id: "f-c-2", followerName: "Cody Brooks", companyId: COLDHARBOUR, createdAt: "2026-07-11T15:30:00.000Z" },
+  { id: "f-c-3", followerName: "June Park", companyId: COLDHARBOUR, createdAt: "2026-08-03T19:20:00.000Z" },
+];
+
+/**
+ * THE SOCIAL SURFACE'S PROMO-VIDEO SLOT — one per company, and NOT
+ * `Company.video`. Decision #15 removed the field from the canonical company
+ * record and it stays removed; the OP-01 wording (the later ruling, for this
+ * surface) puts the promotional film on the company's social presence
+ * instead. See the reconciliation note on `PromoVideoSlot` in `types.ts`.
+ *
+ * The id is FORMAT-VALID (eleven `[\w-]` characters, exactly what
+ * `youtubeIdFrom` yields) and authored for the invented company — pointing at
+ * a real production's id would attribute somebody's actual footage to a
+ * company that does not exist, the same rule that keeps real logos out of
+ * this seed. The click-gated player simply finds no video behind it, which is
+ * the honest outcome. Coldharbour has no slot, so the empty state renders
+ * beside it.
+ */
+export const PROMO_VIDEOS: PromoVideoSlot[] = [
+  { companyId: LANTERN, video: { source: "youtube", youtubeId: "LanternR21x" } },
 ];

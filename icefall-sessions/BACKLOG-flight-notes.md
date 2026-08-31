@@ -1282,8 +1282,41 @@ Free users will also get to see like a pop up add for a guide which wants to spe
 9 items — 7 buildable now, 2 waiting on design, 0 waiting on a decision. Plus `OP-10`,
 which is not a flight note but request 08 from the Company CRM session.
 
-### `OP-01` CompanyProfile — **BUILD**
+### `OP-01` CompanyProfile — **DONE** · session 04, 2026-08-31
 - **Function:** Expedition companies can create posts for social media, and get followed by people which includes adding stories and creating promotional psots or videos
+- **DONE** — `icefall-operator/src/screens/Posts.tsx` (the surface),
+  `src/screens/CompanyProfile.tsx` (hosts it as the **Posts** tab — the owner's
+  words are "company profile posts" and no operator mockup places it anywhere
+  else), on the domain layer in `src/domain/types.ts`, `src/domain/adapter.ts`,
+  `src/domain/memory/adapter.ts` + `memory/seed.ts`. Built via S2: the S2
+  tables are NOT live, so everything runs against the in-memory adapter in the
+  contract's exact shapes (`posts` with author kind / media / caption /
+  optional expiry = a story; `post_comments`; `follows`) — the swap is a
+  repoint, the route `leads.tags` took.
+  - **Posts + stories:** the company's own feed, strictly chronological,
+    newest first; composer with the contact-details guard on the caption
+    (refusals verbatim), a "share as a story" toggle (24 h expiry derived from
+    the app clock) that says what a story is, and the public-and-removable
+    sentence. An expired story stays visible to the company as history,
+    labelled no longer shown to climbers. A post removed by Icefall renders
+    its reason verbatim and cannot be deleted over. No pending-review state —
+    moderation is the CRM's queue (CR-17). Climbers' comments readable under
+    each post; deletes confirm in a dialog.
+  - **Followed by people:** follower count is `getFollowerCount` counting
+    seeded `follows` rows — never a literal — framed as climbers following
+    the company in the Icefall app. No reach, impressions or view counts
+    anywhere, not even as dashes.
+  - **Promotional videos — the decision-15 reconciliation:** decision 15
+    (2026-08-29) removed `Company.video` and it STAYS removed; the OP-01
+    wording is the LATER ruling and puts the promotional film on the SOCIAL
+    surface, in its own S2-shaped store (`getPromoVideo`/`setPromoVideo`),
+    reusing `VideoField`/`PromoPlayer` (click-gated youtube-nocookie). The
+    mountain-film request (06) stays open, unchanged. This is not decision 15
+    reversed.
+  - **Media honesty:** no media store is connected — a dropped photo
+    validates, previews and says plainly it is not saved and not attached;
+    seeded posts reference the credited peak/trek libraries via the
+    `ListingPhoto` pattern.
 
 ### `OP-02` Analytics — **DESIGN** · needs your design first
 - **Design:** REDESIGN NEEDED FROM:
@@ -1711,7 +1744,7 @@ half of the first.
   lead dialog overlay is still `bg-ink/30` and renders as a pale wash over the
   page in dark. One-word fix: `bg-ink/30` → `bg-scrim`. Left for OP-05's owner.
 
-### `OP-10` Product detail — the operator half of request 08 — **DONE** · session 06, 2026-08-31
+### `OP-10` Product detail — the operator half of request 08 — **DONE** · session 04, 2026-08-31
 - **Source:** not a flight note. Specified by the Company CRM session in
   `icefall-sessions/requests/08-operator-product-detail-from-03.md`, from the owner's
   Products mockup of 31 Aug. Recorded here so it is not re-derived from the drawing.
