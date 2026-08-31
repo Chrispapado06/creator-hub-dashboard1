@@ -188,7 +188,17 @@ export default function Home() {
 
         {SHOW_DEMO_DATA && (
           <Rise className="pt-3">
-            <Disclaimer>{DEMO_NOTICE}</Disclaimer>
+            <Disclaimer>
+              {DEMO_NOTICE}{" "}
+              {/* The sentence that says "this account is invented" is the one
+                  honest place to offer the door to a real one. Before this,
+                  sign-in from the sample state was findable only through the
+                  support line's small print — a dead end for the first real
+                  guide the owner sends here. */}
+              <Link to="/welcome" className="text-azure">
+                Sign in to see yours.
+              </Link>
+            </Disclaimer>
           </Rise>
         )}
 

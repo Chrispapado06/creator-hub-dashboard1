@@ -2,7 +2,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import {
-  BadgeCheck, BarChart3, Bell, Bookmark, Building2, Calculator, CheckSquare, Megaphone,
+  BadgeCheck, BarChart3, Bell, Bookmark, Building2, Calculator, CheckSquare, Flag, Megaphone,
   ChevronsLeft, ChevronsRight, FileSearch, HandCoins, LayoutDashboard, LifeBuoy,
   type LucideIcon, MessagesSquare, Mountain, Package, Receipt, Settings,
   ShieldCheck, TrendingUp, UserCog, Users, Wallet,
@@ -81,6 +81,7 @@ const GROUPS: { label: string; items: Item[] }[] = [
     items: [
       { to: "/admin/support", label: "Support", icon: LifeBuoy },
       { to: "/admin/verification", label: "Verification", icon: ShieldCheck },
+      { to: "/admin/moderation", label: "Moderation", icon: Flag },
       { to: "/admin/tasks", label: "Tasks & Alerts", icon: Bell },
     ],
   },

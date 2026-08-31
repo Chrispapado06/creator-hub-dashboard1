@@ -576,6 +576,21 @@ export interface PromotedPlacement {
   created_at: string;
 }
 
+/** A user's report about a person, a thread or a post. `post_id` stays after
+ * the post's deletion (set null on the target, the report survives) — the
+ * deletion may be exactly what the report achieved. */
+export interface ReportRow {
+  id: string;
+  reporter_id: string;
+  subject_id: string | null;
+  thread_id: string | null;
+  post_id: string | null;
+  reason: "spam" | "harassment" | "off_platform_payment" | "safety" | "impersonation" | "other";
+  detail: string | null;
+  created_at: string;
+  status: "open" | "reviewing" | "closed";
+}
+
 /** What the customer accepted AT BOOKING TIME, pinned verbatim. Immutable. */
 export interface BookingAgreement {
   id: string;

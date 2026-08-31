@@ -7,6 +7,7 @@ import {
   listCommissions,
   listCompanies,
   listCustomers,
+  listEnquiries,
   listLeads,
   listRevenue,
   countAccounts,
@@ -24,6 +25,7 @@ import type {
   Commission,
   Company,
   CustomerRecord,
+  Enquiry,
   Lead,
   RevenueRecord,
   RevenueStream,
@@ -224,6 +226,100 @@ function FunnelStage({
         </>
       )}
     </Card>
+  );
+}
+
+
+/** "3h 20m", "2d 4h" — a real elapsed duration, humanised. */
+function spell(ms: number): string {
+  const mins = Math.max(0, Math.round(ms / 60_000));
+  if (mins < 60) return `${mins}m`;
+  const h = Math.floor(mins / 60);
+  if (h < 24) return `${h}h ${mins % 60}m`;
+  return `${Math.floor(h / 24)}d ${h % 24}h`;
+}
+
+/**
+ * CR-02b — response times, MEASURED AT LAST.
+ *
+ * Four customer-facing screens once printed "Replies within {n} h", invented
+ * and uncaveated — the standing defect the enquiry contract forbids
+ * reproducing. The enquiries table now records created/seen/answered as
+ * timestamps, so the true version of that number finally exists: not a
+ * promise about the future, a measurement of the past, computed from every
+ * answered enquiry on record. The customer apps still promise nothing; this
+ * is the desk looking at itself.
+ */
+function ResponseTimes() {
+  const [enquiries, setEnquiries] = useState<Result<Enquiry[]>>(loading);
+  useEffect(() => {
+    void listEnquiries().then(setEnquiries);
+  }, []);
+
+  const stats = (() => {
+    if (enquiries.state !== "ok") return null;
+    const rows = enquiries.value;
+    const waits = rows
+      .filter((e) => e.answered_at !== null)
+      .map((e) => new Date(e.answered_at!).getTime() - new Date(e.created_at).getTime())
+      .sort((a, b) => a - b);
+    const at = (q: number) => waits[Math.min(waits.length - 1, Math.floor(q * waits.length))];
+    const open = rows.filter((e) => e.answered_at === null);
+    const oldest = open.length > 0
+      ? Math.max(...open.map((e) => Date.now() - new Date(e.created_at).getTime()))
+      : null;
+    return { answered: waits.length, median: waits.length ? at(0.5) : null, p90: waits.length ? at(0.9) : null, open: open.length, oldest };
+  })();
+
+  const reason =
+    enquiries.state === "unavailable" || enquiries.state === "error"
+      ? enquiries.reason
+      : "No enquiry has been answered yet — the first measurement exists when one is.";
+
+  return (
+    <div className="mt-6">
+      <SectionLabel>Response times — measured</SectionLabel>
+      <p className="mt-1 max-w-3xl text-[12.5px] leading-relaxed text-muted">
+        Elapsed time from an enquiry arriving to the desk recording its answer — computed from the
+        timestamps on every answered enquiry, nothing else. This is the measured truth behind the
+        "replies within&nbsp;n&nbsp;hours" claim the customer screens are forbidden to invent: the apps
+        still promise nothing, and this number describes only what has already happened.
+      </p>
+      <div className="mt-2.5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Stat
+          tone="sky"
+          label="Median time to answer"
+          value={stats?.median != null ? spell(stats.median) : null}
+          reason={reason}
+          hint="Half of all answered enquiries were answered faster than this."
+        />
+        <Stat
+          tone="lilac"
+          label="90th percentile"
+          value={stats?.p90 != null ? spell(stats.p90) : null}
+          reason={reason}
+          hint="All but the slowest tenth were answered within this."
+        />
+        <Stat
+          tone="mint"
+          label="Answered"
+          value={stats ? String(stats.answered) : null}
+          reason={enquiries.state !== "ok" ? reason : undefined}
+          hint="Enquiries with a recorded answer, all time."
+        />
+        <Stat
+          tone="butter"
+          label="Waiting now"
+          value={stats ? String(stats.open) : null}
+          reason={enquiries.state !== "ok" ? reason : undefined}
+          hint={
+            stats?.oldest != null
+              ? `The longest has waited ${spell(stats.oldest)}.`
+              : "Nobody is waiting."
+          }
+        />
+      </div>
+    </div>
   );
 }
 
@@ -517,6 +613,8 @@ export default function Analytics() {
             ` ${unlinkedBookings} booking${unlinkedBookings === 1 ? " is" : "s are"} recorded with no enquiry attached; ${unlinkedBookings === 1 ? "it does" : "they do"} not appear above because ${unlinkedBookings === 1 ? "it" : "they"} did not pass through this funnel.`}
         </p>
       </div>
+
+      <ResponseTimes />
 
       {/* ---------------------------------------------------------------- */}
       {/* Financial                                                         */}

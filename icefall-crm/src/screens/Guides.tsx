@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Avatar, Button, Card, PageHead, Pill, SectionLabel, Stat } from "@/components/ui";
 import { Resolve } from "@/components/states";
-import { listGuideCommissions, listGuideProfiles, setGuideListed } from "@/data/queries";
+import { createGuideProfileFor, listGuideCommissions, listGuideProfiles, listProfilesBasic, setGuideListed } from "@/data/queries";
 import { loading, type Result } from "@/data/result";
 import type { Commission, GuideRow } from "@/data/types";
 import { formatDay } from "@/lib/utils";
@@ -37,12 +37,15 @@ export default function Guides() {
     Result<{ guide_id: string | null; amount_cents: number; status: Commission["status"] }[]>
   >(loading);
   const [listing, setListing] = useState<{ id: string; reason: string } | null>(null);
+  const [people, setPeople] = useState<Result<{ id: string; display_name: string; role: string }[]>>(loading);
+  const [newGuide, setNewGuide] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     void listGuideProfiles().then(setGuides);
     void listGuideCommissions().then(setCommissions);
+    void listProfilesBasic().then(setPeople);
   }, []);
   useEffect(refresh, [refresh]);
 
@@ -52,6 +55,21 @@ export default function Guides() {
       .filter((c) => c.status !== "waived")
       .reduce((s, c) => s + c.amount_cents, 0);
   }, [commissions]);
+
+  /** Owner-ordered: staff can create a guide profile FOR a user (the owner
+   * wants one on their own account to walk the guide app's real cold start).
+   * The row is exactly a self-created one — unlisted, unchecked, empty —
+   * and the act is audited. */
+  const createFor = async () => {
+    if (!newGuide) return;
+    setBusy(true);
+    setErr(null);
+    const r = await createGuideProfileFor(newGuide);
+    setBusy(false);
+    if (r.state !== "ok") setErr(r.state === "error" ? r.reason : "No database is configured.");
+    else setNewGuide("");
+    refresh();
+  };
 
   const approve = async () => {
     if (!listing) return;
@@ -70,6 +88,31 @@ export default function Guides() {
         title="Guides"
         subtitle="Independent guides who set themselves up in the guide app. ICEFALL decides what the claim is worth: listing is a staff act with a reason, and credentials stay unverified until a person checks documents."
       />
+
+      <Card className="mb-4">
+        <p className="text-[12.5px] font-semibold text-ink">Create a guide profile for a user</p>
+        <p className="mt-0.5 max-w-3xl text-[12px] leading-relaxed text-faint">
+          The profile starts exactly as a self-created one would: unlisted, nothing checked, no
+          availability — the honest cold start every real guide sees. The act is audited.
+        </p>
+        <div className="mt-2.5 flex flex-wrap items-center gap-2">
+          <select
+            value={newGuide}
+            onChange={(e) => setNewGuide(e.target.value)}
+            className="h-10 min-w-[240px] rounded-tile border border-line bg-surface px-3 text-[12.5px] text-ink outline-none"
+          >
+            <option value="">Choose a person…</option>
+            {people.state === "ok" &&
+              people.value
+                .filter((p) => guides.state !== "ok" || !guides.value.some((g) => g.id === p.id))
+                .map((p) => <option key={p.id} value={p.id}>{p.display_name} ({p.role})</option>)}
+          </select>
+          <Button variant="secondary" disabled={busy || !newGuide} onClick={() => void createFor()}>
+            Create guide profile
+          </Button>
+        </div>
+        {err && <p className="mt-2 text-[12.5px] text-bad">{err}</p>}
+      </Card>
 
       <Resolve
         result={guides}
@@ -112,8 +155,8 @@ export default function Guides() {
                 <p className="mt-1 max-w-3xl text-[12.5px] leading-relaxed text-muted">
                   An unlisted profile is the application, and the mountains on it are the claims
                   you approve by listing. Listing needs a reason and is on the record; it never
-                  marks credentials verified — that stays pinned off until documents are checked
-                  by a person.
+                  marks credentials verified — the credential state stays DERIVED from checked
+                  documents and their expiry, nothing else.
                 </p>
                 {pending.length === 0 ? (
                   <Card className="mt-2.5">

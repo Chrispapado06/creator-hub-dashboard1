@@ -68,3 +68,23 @@ realtime on messages + receipts. With it, these CRM screens can stop saying
   CLAIMS staff cannot read without participation, which is stricter than the
   DB truth (admin bypass exists) — keep the restraint or read, but say which.
 - **CR-13 Guides → chats section** — thread list per guide now readable.
+
+## CR-02 proposal — the figures that become measurable when the six land (per the task's own "propose before building it all")
+
+Shipped now (CR-02b): Response times — measured. Median / p90 created→answered
+from enquiry timestamps, answered count, waiting-now with oldest wait. The
+measured truth behind the forbidden "replies within n hours" invention.
+
+Proposed next, each named by the question it answers, all countable from rows
+the queued migrations create — nothing here is a view count or a DAU, which
+remain unsourced:
+- **"Do providers reply, and how fast?"** — per-guide/per-company median first-reply
+  time within threads (S1 messages), the marketplace's real responsiveness figure.
+- **"Is the feed alive?"** — posts per day, comments per post, follows growth (S2),
+  counted not stored.
+- **"Does promotion do anything?"** — campaigns active now; and honestly NOTHING
+  else until something measurable (a booking or enquiry naming a promoted product
+  inside campaign dates) can be counted. No reach, no impressions.
+- **"Does hand-off work?"** — enquiries handed off, and desk-time before hand-off (S4).
+- **"Is trust growing?"** — identity checks recorded per week (grey), guide document
+  checks and their expiry horizon (gold).

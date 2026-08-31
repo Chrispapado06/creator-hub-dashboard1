@@ -32,6 +32,7 @@ import Support from "@/screens/Support";
 import TicketDetail from "@/screens/TicketDetail";
 import Verification from "@/screens/Verification";
 import Promotions from "@/screens/Promotions";
+import Moderation from "@/screens/Moderation";
 import Analytics from "@/screens/Analytics";
 import Tasks from "@/screens/Tasks";
 import ActivityLog from "@/screens/ActivityLog";
@@ -147,6 +148,7 @@ export default function App() {
         <Route path="/admin/support/:id" element={<TicketDetail />} />
         <Route path="/admin/verification" element={<Verification />} />
         <Route path="/admin/promotions" element={<Promotions />} />
+        <Route path="/admin/moderation" element={<Moderation />} />
         <Route path="/admin/tasks" element={<Tasks />} />
 
         <Route path="/admin/activity" element={<ActivityLog />} />

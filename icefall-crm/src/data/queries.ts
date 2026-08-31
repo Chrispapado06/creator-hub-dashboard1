@@ -192,7 +192,7 @@ export const decideContentVersion = (
 /* The commercial layer                                                        */
 /* -------------------------------------------------------------------------- */
 
-import type { Booking, BookingAgreement, Commission, CompanyInvitation, CompanyMember, Deal, Enquiry, GuideRow, IdentityCheck, IntakeRequest, Lead, PromotedPlacement, RevenueRecord, Task, TicketMessage } from "./types";
+import type { Booking, BookingAgreement, Commission, CompanyInvitation, CompanyMember, Deal, Enquiry, GuideRow, IdentityCheck, IntakeRequest, Lead, PromotedPlacement, ReportRow, RevenueRecord, Task, TicketMessage } from "./types";
 
 export const listLeads = () =>
   read<Lead[]>((db) => db.from("leads").select("*").order("created_at", { ascending: false }), () => demo.leads, () => offlineRead.leads());
@@ -637,7 +637,10 @@ export const listGuideProfiles = () =>
       .from("guide_profiles")
       // guide_credentials_state is a DB computed field — one derivation,
       // shared by every app, never a stored boolean that can go stale.
-      .select("*, state:guide_credentials_state, profiles(display_name)")
+      // The embed names its FK: guide_verification added a SECOND relationship
+      // to profiles (checked_by), so a bare profiles() embed is ambiguous
+      // (PGRST201) the moment that migration is live — which it is.
+      .select("*, state:guide_credentials_state, profiles!guide_profiles_id_fkey(display_name)")
       .order("created_at", { ascending: false })
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .then((r: any) => ({
@@ -727,6 +730,47 @@ export const listProfilesBasic = () =>
 
 export const recordIdentityCheck = (profileId: string, documentRef: string) =>
   call("record_identity_check", { p_profile_id: profileId, p_document_ref: documentRef });
+
+/** Staff create a guide profile FOR a user (owner-ordered: the owner wants one
+ * on their own account, to walk the guide app's real cold start). The row is
+ * EXACTLY what a self-created one would be — unlisted, nothing checked, no
+ * availability — because a pre-warmed profile would hide the surfaces that
+ * most need eyes. The insert rides the existing policy (self or admin); the
+ * audit event is written by hand since no definer function covers this act. */
+export const createGuideProfileFor = async (profileId: string): Promise<Result<null>> => {
+  if (!isConfigured || !supabase) return unavailable<null>(NOT_CONFIGURED);
+  const { data: auth } = await supabase.auth.getUser();
+  if (!auth.user) return failed<null>("Not signed in.");
+  const { error } = await supabase.from("guide_profiles").insert({ id: profileId });
+  if (error) return failed<null>(error.message);
+  const { error: auditErr } = await supabase.from("audit_events").insert({
+    actor_id: auth.user.id,
+    actor_role: "admin",
+    action: "guide_profile.created_by_staff",
+    entity_type: "guide_profile",
+    entity_id: profileId,
+    previous: null,
+    next: { cold_start: true },
+    company_id: null,
+  });
+  // The profile exists either way; a failed trace must be said, not swallowed.
+  return auditErr ? failed<null>(`Profile created, but the audit trace failed: ${auditErr.message}`) : ok(null);
+};
+
+/* ---- Moderation: the reports queue ---------------------------------------- */
+
+export const listReports = () =>
+  read<ReportRow[]>((db) =>
+    db.from("reports").select("*").order("created_at", { ascending: false }));
+
+export const setReportStatus = async (
+  id: string,
+  status: ReportRow["status"],
+): Promise<Result<null>> => {
+  if (!isConfigured || !supabase) return unavailable<null>(NOT_CONFIGURED);
+  const { error } = await supabase.from("reports").update({ status }).eq("id", id);
+  return error ? failed<null>(error.message) : ok(null);
+};
 
 /* ---- CR-17: promoted placements (S2) ------------------------------------- */
 

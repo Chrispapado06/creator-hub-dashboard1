@@ -7,9 +7,9 @@ import {
 } from "lucide-react";
 import { Avatar, Button, Card, Pill, SectionLabel } from "@/components/ui";
 import { Resolve } from "@/components/states";
-import { listCompanies, listDestinations, listPlacements, listProducts, listLeadDestinations } from "@/data/queries";
+import { listBookingsDetailed, listCompanies, listDestinations, listEnquiries, listPlacements, listProducts, listLeadDestinations, type BookingDetailed } from "@/data/queries";
 import { formatCents, formatCentsShort, loading, type Result } from "@/data/result";
-import type { Company, Mountain, PlacementView, Product } from "@/data/types";
+import type { Company, Enquiry, Mountain, PlacementView, Product } from "@/data/types";
 import { cn, daysUntil, formatDay } from "@/lib/utils";
 
 /**
@@ -652,7 +652,7 @@ function MountainPane({
         )}
       </Card>
 
-      <MountainPerformance />
+      <MountainPerformance destinationId={m.id} />
       <PlacementHistory placements={placements} companyName={companyName} />
     </div>
   );
@@ -762,40 +762,71 @@ function EmptySlot({ slot, onAdd }: { slot: number; onAdd: () => void }) {
 }
 
 /**
- * Mountain performance.
+ * Mountain performance — CR-06b, in its honest form.
  *
- * Every figure the design asks for here — views, clicks, enquiries — comes from
- * an analytics event stream that does not exist. Nothing in ICEFALL writes one,
- * and a row written by a browser would be self-reported anyway. So the section
- * keeps its place and says why it is empty rather than showing six zeros, which
- * would read as "nobody looked at this mountain" instead of "nobody counted".
+ * When this section was first built NOTHING here was measurable and it said
+ * so. The enquiries table changed half of that: enquiries, bookings, booking
+ * value and commission are now COUNTED from real rows naming this
+ * destination. Searches and views still have no source — nothing in ICEFALL
+ * records a search or a view anywhere, and a row written by a browser about
+ * itself would be self-reported — so those two keep the dash and the reason.
+ * The mockup's word "searches" gets its measured neighbour, stated as such,
+ * exactly like views everywhere else.
+ *
+ * Scope stated plainly: enquiries counted here are the ones naming this
+ * destination directly. A product enquiry names its product and company;
+ * products do not yet link a destination, so those cannot be attributed here
+ * and are not — an undercount said out loud beats a guess.
  */
-function MountainPerformance() {
-  const METRICS = [
-    { icon: <Eye size={15} strokeWidth={1.9} />, label: "Views" },
-    { icon: <MousePointerClick size={15} strokeWidth={1.9} />, label: "Clicks" },
-    { icon: <MessageSquare size={15} strokeWidth={1.9} />, label: "Enquiries" },
-    { icon: <CalendarClock size={15} strokeWidth={1.9} />, label: "Bookings" },
-    { icon: <TrendingUp size={15} strokeWidth={1.9} />, label: "Booking value" },
-    { icon: <Trophy size={15} strokeWidth={1.9} />, label: "ICEFALL commission" },
+function MountainPerformance({ destinationId }: { destinationId: string }) {
+  const [enquiries, setEnquiries] = useState<Result<Enquiry[]>>(loading);
+  const [bookings, setBookings] = useState<Result<BookingDetailed[]>>(loading);
+  useEffect(() => {
+    void listEnquiries().then(setEnquiries);
+    void listBookingsDetailed().then(setBookings);
+  }, []);
+
+  const measured = (() => {
+    if (enquiries.state !== "ok" || bookings.state !== "ok") return null;
+    const enq = enquiries.value.filter((e) => e.destination_id === destinationId).length;
+    const mine = bookings.value.filter((b) => b.destination_id === destinationId);
+    const value = mine.reduce((s2, b) => s2 + (b.value_cents ?? 0), 0);
+    const valueless = mine.filter((b) => b.value_cents === null).length;
+    const commission = mine.reduce(
+      (s2, b) => s2 + b.commissions.filter((c) => c.status !== "waived").reduce((x, c) => x + c.amount_cents, 0), 0);
+    return { enq, bookings: mine.length, value, valueless, commission };
+  })();
+
+  const eurShort = (cents: number) => `€${(cents / 100).toLocaleString("en-GB")}`;
+
+  const tiles: { icon: React.ReactNode; label: string; value: string | null; sub: string }[] = [
+    { icon: <Eye size={15} strokeWidth={1.9} />, label: "Searches", value: null, sub: "Not measured — nothing records a search." },
+    { icon: <MousePointerClick size={15} strokeWidth={1.9} />, label: "Views", value: null, sub: "Not measured — nothing records a view." },
+    { icon: <MessageSquare size={15} strokeWidth={1.9} />, label: "Enquiries", value: measured ? String(measured.enq) : null, sub: measured ? "naming this destination" : "reading…" },
+    { icon: <CalendarClock size={15} strokeWidth={1.9} />, label: "Bookings", value: measured ? String(measured.bookings) : null, sub: measured ? "recorded here" : "reading…" },
+    { icon: <TrendingUp size={15} strokeWidth={1.9} />, label: "Booking value", value: measured ? eurShort(measured.value) : null, sub: measured ? (measured.valueless > 0 ? `${measured.valueless} carry no value yet` : "sum of recorded values") : "reading…" },
+    { icon: <Trophy size={15} strokeWidth={1.9} />, label: "ICEFALL commission", value: measured ? eurShort(measured.commission) : null, sub: measured ? "stored rows, waived excluded" : "reading…" },
   ];
+
   return (
     <Card>
       <SectionLabel className="mb-3">Mountain performance</SectionLabel>
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-        {METRICS.map((m) => (
-          <div key={m.label}>
-            <span className="mb-1.5 flex items-center gap-1.5 text-faint">{m.icon}</span>
-            <p className="text-[18px] font-bold leading-none text-faint">—</p>
-            <p className="mt-1.5 text-[11.5px] text-faint">{m.label}</p>
+        {tiles.map((t) => (
+          <div key={t.label}>
+            <span className="mb-1.5 flex items-center gap-1.5 text-faint">{t.icon}</span>
+            <p className={t.value === null ? "text-[18px] font-bold leading-none text-faint" : "tnum text-[18px] font-bold leading-none text-ink"}>
+              {t.value ?? "—"}
+            </p>
+            <p className="mt-1.5 text-[11.5px] leading-snug text-faint">{t.label}</p>
+            <p className="text-[10.5px] leading-snug text-faint">{t.sub}</p>
           </div>
         ))}
       </div>
       <p className="mt-4 text-[12.5px] leading-relaxed text-muted">
-        <span className="font-semibold text-ink">No performance data yet.</span> ICEFALL does not
-        record a view, a click or an enquiry anywhere in the product, so these cannot be counted
-        rather than being counted as zero — and an operator deciding whether to renew a paid
-        position should not be shown a number nobody measured.
+        The four figures on the right are counted from real rows naming this destination. Searches and
+        views keep the dash because nothing in the product records either — an operator deciding
+        whether to renew a paid position should never be shown a number nobody measured.
       </p>
     </Card>
   );

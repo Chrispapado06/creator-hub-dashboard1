@@ -1947,8 +1947,46 @@ were the account's real state.
   screen's "cannot send" stays true; client wiring waits for the brain's GO,
   which will follow a live re-probe, not a file listing.
 
-- **`S5` Consume the queued push — PLANNED, waiting on the owner's push + brain's
-  probe.** Six migrations ride one push; three are mine to consume, in this
+- **`S5` Consume the queued push — PLANNED and APPROVED; owner sequencing ruling
+  2026-08-31: the push happens only after every page of the owner's review notes
+  is completed, so this holds longer than first expected. Review-note items that
+  name guide-app screens jump this queue when they arrive. Tree committed at
+  `cd31ad5`.**
+
+  **PRE-REGISTERED PREDICTIONS for the owner's first sign-in (written before
+  the event, 2026-08-31, so the live run is judged against a record, not a
+  memory). The CRM guide-profile action is live; when the owner clicks it and
+  signs into this app I expect, in order:**
+  1. `/welcome` accepts the credentials; a wrong password shows the friendly
+     mapped sentence, never a raw Supabase message.
+  2. The sample vanishes on the same tick everywhere — Home, Clients, Chat,
+     both stores, the tab-bar badge (the S3c gate, first real exercise).
+  3. Home greets with their real email, "Guide account", and the cold-start
+     credential sentence: "ICEFALL has not checked your documents yet" —
+     UNCHECKED shown honestly, not an error, not a spinner forever.
+  4. NO gold mark and NO grey mark anywhere — no server record earns either.
+  5. Clients/Chat/Analytics show the honest empty states ("not connected to
+     this account yet"), not zeros pretending to be measurements.
+  6. Sign-out returns the sample.
+  **Watch-fors (the two I'm least sure of):** the gate's brief loading gap on a
+  slow connection (fails closed — screen should be empty-not-sample, but I have
+  never seen it on real network latency), and the `guide_profiles` row read in
+  `guideAccess()` — if the CRM action writes a shape I didn't anticipate,
+  access may resolve "not-a-guide" and show the wrong (but honest) notice.
+
+  **PGRST201 standing check — run 2026-08-31, clean:** my client holds exactly
+  two PostgREST reads (`account.ts` select("id"); `credentials.ts` plain column
+  list + computed state), zero embeds of any table. Nothing for an ambiguous FK
+  to break until messaging/identity wiring lands; re-run the grep then and name
+  every FK in any profiles embed.
+
+    **Prep done while holding:** the owner said yes to a guide profile on their own
+  account (CRM builds the staff action; their sign-in is the session path's first
+  real exercise). Walking that moment end-to-end found one dead end: from the
+  sample state, sign-in was reachable only through the support line's small
+  print. The sample-data notice on Home — the sentence that already says "this
+  account is invented" — now carries "Sign in to see yours", verified rendering
+  with `/welcome` reachable, email and password fields present. Six migrations ride one push; three are mine to consume, in this
   order, each behind the brain's live verification:
   1. **`20260831180000` guide_availability** — displaces `availabilityStore.ts`
      entirely (not merged: the store was seeded from the sample, §6aj). A row
