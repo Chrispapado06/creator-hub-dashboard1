@@ -4,6 +4,7 @@ import { AlertTriangle, Banknote, FileText, Landmark, Wallet } from "lucide-reac
 import { Avatar, Card, PageHead, Pill, Stat, StatusChip, TableCard } from "@/components/ui";
 import { Resolve, Unavailable } from "@/components/states";
 import { listCompanies, listInvoices, listPayments } from "@/data/queries";
+import { BillingChase } from "@/components/BillingChase";
 import { formatCents, formatCentsShort, loading, type Result } from "@/data/result";
 import type { Company, Invoice, InvoiceStatus, Payment } from "@/data/types";
 import { daysUntil, formatDay } from "@/lib/utils";
@@ -271,6 +272,8 @@ export default function Billing() {
         title="Invoices & Payments"
         subtitle="What ICEFALL has billed its operator companies, and what has been received against it. Placement fees and referral fees are billed separately because they are collected differently."
       />
+
+      <BillingChase />
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Stat

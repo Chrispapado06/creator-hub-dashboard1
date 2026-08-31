@@ -7,6 +7,8 @@ import { TabBar } from "@/components/layout/TabBar";
 import { IcefallMark } from "@/components/ui/IcefallMark";
 import { Button } from "@/components/ui/primitives";
 import { useApp } from "@/state/AppState";
+import { OFFLINE } from "@/offline/offline";
+import { OfflineRouteGuard } from "@/offline/OfflineRouteGuard";
 
 import Splash from "@/screens/Splash";
 import Home from "@/screens/Home";
@@ -31,6 +33,15 @@ const CreateAccount = lazy(() =>
   import("@/screens/auth/Auth").then((m) => ({ default: m.CreateAccount })),
 );
 const SignUp = lazy(() => import("@/screens/auth/Auth").then((m) => ({ default: m.SignUp })));
+const ChooseHandle = lazy(() =>
+  import("@/screens/auth/Handle").then((m) => ({ default: m.ChooseHandle })),
+);
+const AuthCallback = lazy(() =>
+  import("@/screens/auth/Callback").then((m) => ({ default: m.AuthCallback })),
+);
+const NewPassword = lazy(() =>
+  import("@/screens/auth/NewPassword").then((m) => ({ default: m.NewPassword })),
+);
 const SignIn = lazy(() => import("@/screens/auth/Auth").then((m) => ({ default: m.SignIn })));
 const ForgotPassword = lazy(() =>
   import("@/screens/auth/Auth").then((m) => ({ default: m.ForgotPassword })),
@@ -175,14 +186,30 @@ function NotFound() {
 export default function App() {
   return (
     <PhoneShell>
+      {/* No-op unless the build is the offline demo. See @/offline/OfflineRouteGuard. */}
+      <OfflineRouteGuard />
       <Suspense fallback={<PageLoader />}>
         <Routes>
-          <Route path="/" element={<Splash />} />
+          {/* Offline the athlete is already on the device and already
+              onboarded, so the root URL opens the app rather than holding on
+              the splash for 2.6 s and then deciding the same thing. */}
+          <Route path="/" element={OFFLINE ? <Navigate to="/home" replace /> : <Splash />} />
           <Route path="/welcome" element={<Welcome />} />
           <Route path="/auth/create" element={<CreateAccount />} />
           <Route path="/auth/signup" element={<SignUp />} />
           <Route path="/auth/signin" element={<SignIn />} />
           <Route path="/auth/forgot" element={<ForgotPassword />} />
+          {/*
+            Both the email and the social paths converge here. A session whose
+            profile has no username is the same state however it was reached, so
+            one screen covers both rather than two flows drifting apart.
+          */}
+          <Route path="/auth/handle" element={<ChooseHandle />} />
+          {/* Where Google, Apple and Microsoft send the browser back to. */}
+          <Route path="/auth/callback" element={<AuthCallback />} />
+          {/* Where a password-reset link lands. A recovery link signs you in;
+              this is where you actually change the password. */}
+          <Route path="/auth/new-password" element={<NewPassword />} />
           {/* Full-bleed, outside AppShell: they reserve no space for the TabBar. */}
           <Route path="/trial" element={<TrialStart />} />
           <Route path="/subscribe" element={<Paywall />} />

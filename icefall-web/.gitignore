@@ -16,3 +16,4 @@ server/.data
 # Trail index — copied from icefall-app at build prep, not authored here.
 # 5.8 MB of OSM data; regenerate with the app scripts rather than committing twice.
 public/data/trails
+dist-offline/

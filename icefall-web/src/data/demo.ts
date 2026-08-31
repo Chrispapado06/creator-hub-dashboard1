@@ -1,5 +1,6 @@
 import { eur as toCents, type Cents } from "@/money/model";
 import { objectivePeak, PEAKS, shortPeakName } from "./peaks";
+import { OFFLINE } from "@/offline/offline";
 
 /**
  * Marketplace demo data.
@@ -443,9 +444,30 @@ function derivedExpeditions(): Expedition[] {
   });
 }
 
-export const EXPEDITIONS: Expedition[] = IS_DEMO
+const ALL_EXPEDITIONS: Expedition[] = IS_DEMO
   ? [...AUTHORED, ...derivedExpeditions()]
   : [];
+
+/**
+ * OFFLINE DEMO: listings against a real business are not shown.
+ *
+ * Two of the authored listings above name Elite Exped, which is a REAL company
+ * — see the note beside them, and the longer one at the top of `companies.ts`.
+ * Offline, a permanent banner labels every screen "sample data, not real", and
+ * putting an identifiable operator's name under that sentence asserts
+ * something about a business that ICEFALL has no standing to assert. The
+ * derived listings already exclude it for the same reason; offline the two
+ * authored ones go the same way, leaving a catalogue that is invented all the
+ * way through and a banner that is therefore simply true.
+ *
+ * Filtering the already-`IS_DEMO`-gated array leaves the production build
+ * exactly as it was: `[]`, with every string dropped.
+ */
+const REAL_BUSINESSES = new Set(["Elite Exped"]);
+
+export const EXPEDITIONS: Expedition[] = OFFLINE
+  ? ALL_EXPEDITIONS.filter((e) => !REAL_BUSINESSES.has(e.company))
+  : ALL_EXPEDITIONS;
 
 export const guideById = (id: string) => GUIDES.find((g) => g.id === id);
 export const expeditionById = (id: string) => EXPEDITIONS.find((e) => e.id === id);
@@ -455,7 +477,47 @@ export function verificationSentence(verifiedOn: string): string {
 }
 
 export function monogram(name: string): string {
-  const w = name.trim().split(/\s+/).filter(Boolean);
-  if (!w.length) return "··";
-  return (w.length === 1 ? w[0].slice(0, 2) : w[0][0] + w[1][0]).toUpperCase();
+  /*
+    DELIBERATELY IDENTICAL TO `icefall-app/src/components/domain/CompanyMark.tsx`.
+
+    The two apps had drifted and the same company rendered differently in each:
+    "Chamonix Alpine Guides" was CA on the web and CG on the phone, and
+    "Alaska & Yukon" came out as the literal "A&" here because `&` counted as a
+    word. Worse, "Chamonix Alpine Guides" and "Cordillera Ascents" BOTH gave CA,
+    so two companies shared an identity inside one app. A monogram is a mark; a
+    mark that cannot distinguish is not doing the job the fallback exists for.
+
+    ── WHY "USEABLE" RATHER THAN JUST FIRST-AND-LAST ─────────────────────────
+
+    A digit is not an initial. Taking the plain first and last words gave
+    "Everest Spring 2027" -> E2, and — the case that mattered — "14 Peaks
+    Expedition" -> 1E, which is one of the real, identifiable businesses named
+    in constitution decision 2. Preferring words that BEGIN with a letter fixes
+    the head, the tail and the doubled-initial case in one rule, which is why it
+    was ruled as one rule.
+
+    `8000ers Ltd` -> LT rather than 8L is the one arguable output, and it is
+    deliberate: keeping the digit would need a "digits allowed first, but only
+    sometimes" clause, and a rule with an exception is a rule two trees will
+    implement differently. That is the whole failure this convergence exists to
+    prevent.
+
+    RULED 2026-08-30 and applied to both trees in the same change. Do not
+    "improve" this in one app: once two implementations are deliberately
+    identical, a unilateral improvement to one is a regression.
+  */
+  const head = name.split("\u2014")[0] ?? name;
+  const words = head
+    .split(/\s+/)
+    .map((w) => w.replace(/[^A-Za-z0-9]/g, ""))
+    .filter(Boolean);
+
+  // Words that begin with a letter, falling back to all of them for a name
+  // that is entirely numeric — something is better than nothing.
+  const useable = words.filter((w) => /^[A-Za-z]/.test(w));
+  const pick = useable.length > 0 ? useable : words;
+
+  if (pick.length === 0) return "\u00b7\u00b7";
+  if (pick.length === 1) return pick[0].slice(0, 2).toUpperCase();
+  return (pick[0][0] + pick[pick.length - 1][0]).toUpperCase();
 }

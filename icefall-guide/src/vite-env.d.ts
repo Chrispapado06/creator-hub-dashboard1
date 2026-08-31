@@ -9,6 +9,15 @@ interface ImportMetaEnv {
    * for the deployment-protection precondition — it is not optional.
    */
   readonly VITE_SHOW_DEMO?: string;
+  /**
+   * "1" builds this app to run with no network at all — no Supabase client, no
+   * photographs fetched, no session checked, every screen read from
+   * `src/offline/fixtures.ts` under a permanent banner. See
+   * `src/offline/offline.ts`. Unset everywhere by default.
+   */
+  readonly VITE_ICEFALL_OFFLINE?: string;
+  /** Origin the peak and trek photographs are served from. See `components/Photo.tsx`. */
+  readonly VITE_ICEFALL_WEB_ORIGIN?: string;
 }
 
 interface ImportMeta {

@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "./types";
+import { OFFLINE } from "@/offline/offline";
 
 /**
  * The Supabase client, or null.
@@ -43,8 +44,21 @@ const url = import.meta.env.VITE_SUPABASE_URL;
 // to undefined and fails silently at request time rather than at startup.
 const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
+/**
+ * THE OFFLINE BUILD NEVER CONSTRUCTS A CLIENT, and this is the single most
+ * valuable line in the offline mode.
+ *
+ * `null` is already a supported state here, and all ~24 call sites are null-
+ * guarded and return something benign — so switching the client off switches
+ * off every backend read in the app at once, with no per-screen surgery. It
+ * also closes the worst offline failure: nothing in this codebase puts a
+ * timeout on supabase-js, so with credentials present and the network dead but
+ * not absent (plane wifi, a captive portal) `useMyProfile` would sit on
+ * `loading` forever and the support screen would hang on "Checking your
+ * account…". A client that does not exist cannot hang.
+ */
 export const supabase: SupabaseClient<Database> | null =
-  url && key
+  !OFFLINE && url && key
     ? createClient<Database>(url, key, {
         auth: {
           persistSession: true,

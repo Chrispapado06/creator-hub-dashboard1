@@ -2,6 +2,8 @@ import { haversine } from "@/tracking/filters";
 import { OVERPASS_TIMEOUT_MS, PEAKS_TIMEOUT_MS, withTimeout } from "@/lib/netTimeout";
 import { displayName } from "./peakNames";
 import { MOUNTAINS } from "@/data/mock/mountains";
+import { OFFLINE } from "@/offline/offline";
+import { offlineNearbyPeaks } from "@/offline/fixtures";
 
 /**
  * Peak discovery.
@@ -301,6 +303,19 @@ export async function nearbyLive(
   signal?: AbortSignal,
 ): Promise<NearbyLiveResult> {
   const { radiusM = 25_000, limit = 500, minElevationM = 0, areaId } = opts;
+
+  /*
+   * Offline, the same question is answered from the catalogue that ships with
+   * the app. `public/data/peaks.json` is a bundled, precached asset — reading
+   * it is the app reading its own files, not a request going anywhere — so the
+   * arithmetic below is exactly the live path's, minus Overpass. The `total` is
+   * still a real count of what was searched rather than a row cap read back.
+   */
+  if (OFFLINE) {
+    const catalogue = await loadPeakCatalogue();
+    return offlineNearbyPeaks(catalogue, lat, lon, radiusM, limit, minElevationM);
+  }
+
   // The area id belongs in the key: the same point searched as "this country"
   // and as "a circle here" are two different questions with two answers.
   const key = `${lat.toFixed(3)},${lon.toFixed(3)},${Math.round(radiusM)},${limit},${minElevationM},${areaId ?? ""}`;
@@ -561,6 +576,14 @@ export async function searchPeaksGlobal(query: string, signal?: AbortSignal): Pr
   const q = query.trim();
   // Two characters is a real mountain name — K2 was unfindable behind a 3-char gate.
   if (q.length < 2) return [];
+
+  /*
+   * Photon and Nominatim are the network half of peak search. Offline the
+   * bundled catalogue answers on its own — `searchPeaks` already searches it
+   * first and merges — so this half simply contributes nothing rather than
+   * spending twenty seconds discovering that it cannot.
+   */
+  if (OFFLINE) return [];
 
   try {
     const hits = await photonSearch(q, signal);

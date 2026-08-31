@@ -69,7 +69,12 @@ const SEEDS: Seed[] = [
       icon: "clear",
       visibilityKm: 30,
     },
-    insight: "Controlled aerobic run. Heart rate stayed in zone 2 for 78% of the session.",
+    /* Was: "Heart rate stayed in zone 2 for 78% of the session." Worse than a
+       zone label — it states a PERCENTAGE OF A SESSION SPENT IN A BAND, which
+       needs both a heart-rate stream and a measured threshold. ICEFALL has
+       neither. A precise figure is the most convincing form an unmeasured
+       number can take. */
+    insight: "Controlled aerobic run. Effort stayed even from start to finish.",
     outAndBack: false,
   },
   {

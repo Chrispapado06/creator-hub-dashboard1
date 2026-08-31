@@ -28,6 +28,8 @@
  * reports success is worse than one that admits it is not connected.
  */
 
+import { rateLimited } from "./_ratelimit.mjs";
+
 const EMAIL_MAX = 254;
 const NAME_MAX = 80;
 
@@ -80,27 +82,17 @@ export function validate(body) {
 /**
  * Per-IP, in memory, fixed window.
  *
- * Honest about what this is: a serverless function has many instances and this
- * map is per-instance, so it slows a naive flood and does not stop a determined
- * one. Real protection is the unique index on `email` plus whatever sits in
- * front of the deployment. It costs nothing and it is the correct behaviour
- * locally, where there is exactly one instance.
+ * The implementation moved to `_ratelimit.mjs` when the support intake needed
+ * the same thing — shared rather than copied, because a second limiter with
+ * subtly different constants is the drift this codebase keeps paying for. Its
+ * header carries the honest note about what a per-instance map can and cannot
+ * do. Behaviour here is unchanged: eight per minute, per IP.
+ *
+ * The `"waitlist"` bucket keeps this allowance separate from support's, so a
+ * visitor who has just written to support can still join the list.
  */
-const HITS = new Map();
 const WINDOW_MS = 60_000;
 const MAX_PER_WINDOW = 8;
-
-function rateLimited(ip, now) {
-  if (!ip) return false;
-  const hit = HITS.get(ip);
-  if (!hit || now - hit.start > WINDOW_MS) {
-    HITS.set(ip, { start: now, n: 1 });
-    if (HITS.size > 5000) HITS.clear(); // crude ceiling; this map is not a database
-    return false;
-  }
-  hit.n += 1;
-  return hit.n > MAX_PER_WINDOW;
-}
 
 /* -- stores ---------------------------------------------------------------- */
 
@@ -160,7 +152,7 @@ async function insertFile(entry, path) {
  * @returns {Promise<{status: number, body: object}>}
  */
 export async function handleWaitlist(body, { env = {}, ip = "" } = {}) {
-  if (rateLimited(ip, Date.now())) {
+  if (rateLimited("waitlist", ip, { windowMs: WINDOW_MS, max: MAX_PER_WINDOW })) {
     return { status: 429, body: { ok: false, error: "Too many attempts. Try again in a minute." } };
   }
 

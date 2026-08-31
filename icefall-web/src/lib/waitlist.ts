@@ -1,3 +1,6 @@
+import { OFFLINE } from "@/offline/offline";
+import { offlineJoinWaitlist } from "@/offline/fixtures";
+
 /**
  * The launch date — one constant, and everything on the page derives from it.
  *
@@ -62,6 +65,21 @@ export async function joinWaitlist(input: {
   const email = input.email.trim().toLowerCase();
   if (!email) return { ok: false, error: "Enter your email address." };
   if (!EMAIL_RE.test(email)) return { ok: false, error: "That doesn't look like an email address." };
+
+  /*
+   * OFFLINE DEMO. Below the validation, above the network, and nowhere else.
+   *
+   * The signup is the one thing on this page that must still work with no
+   * connection, and it is also the one that fails worst: with no API server the
+   * dev proxy answers `{ok:false}` with a 200, so the branch below shows
+   * "Something went wrong. Please try again." and the success card is never
+   * reached. Offline the write is accepted into memory instead — a repeat
+   * address still comes back `already: true`, so both success states are real
+   * rather than one canned one.
+   */
+  if (OFFLINE) {
+    return offlineJoinWaitlist({ email, name: input.name, source: input.source });
+  }
 
   let res: Response;
   try {

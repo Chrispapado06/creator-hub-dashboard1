@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { OFFLINE } from "@/offline/offline";
 
 /**
  * The database connection, or an honest absence of one.
@@ -15,8 +16,14 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined;
 
+/**
+ * OFFLINE BUILDS NEVER CONSTRUCT THE CLIENT. Not "construct it and don't use
+ * it": the client opens an auth session, refreshes tokens on a timer and
+ * retries failed requests, so merely existing puts requests on the wire. With
+ * the flag unset this reads exactly as it always did.
+ */
 export const supabase: SupabaseClient | null =
-  url && key ? createClient(url, key) : null;
+  OFFLINE ? null : url && key ? createClient(url, key) : null;
 
 export const isConfigured = supabase !== null;
 

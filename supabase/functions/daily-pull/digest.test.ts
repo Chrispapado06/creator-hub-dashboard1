@@ -81,46 +81,32 @@ describe("buildDigestInput", () => {
   });
 });
 
-// ── end-to-end with a fake fetch: model tries to cheat, code blocks it ────────
-describe("generateDailyDigest (mocked Anthropic)", () => {
-  const fakeFetch = (toolInput: unknown) =>
-    async () => ({
-      ok: true,
-      status: 200,
-      text: async () => "",
-      json: async () => ({ content: [{ type: "tool_use", name: "submit_digest", input: toolInput }] }),
-    });
-
-  it("parses the tool_use payload and re-enforces the hard rules", async () => {
+// ── rule-based generation still re-enforces the hard rules ───────────────────
+describe("generateDailyDigest (rule-based)", () => {
+  it("builds reads deterministically and never lets a confounded window carry a verdict", async () => {
     const experiments = [
       exp({ id: "e1", status: "confounded", confounded_reason: "overlapping change" }),
       exp({ id: "e2", status: "concluded", metrics: CONCLUDED_METRICS }),
     ];
-    // The "model" tries to declare a winner on the CONFOUNDED experiment.
-    const modelOutput = {
-      experiments: [
-        { experiment_id: "e1", status_line: "winner", read: "scale it", recommended_action: "scale", confound_warning: null },
-        { experiment_id: "e2", status_line: "+50%", read: "solid", recommended_action: "scale", confound_warning: null },
-      ],
-      prose_summary: "Two experiments today.",
-    };
-    const out = await generateDailyDigest(experiments, { apiKey: "sk-test", fetchImpl: fakeFetch(modelOutput) as any });
+    const out = await generateDailyDigest(experiments);
 
     const e1 = out.items.find((i) => i.experiment_id === "e1")!;
     const e2 = out.items.find((i) => i.experiment_id === "e2")!;
-    expect(e1.recommended_action).toBe("unreadable"); // blocked despite model saying "scale"
+    expect(e1.recommended_action).toBe("unreadable"); // confounded → never a verdict
     expect(e1.confound_warning).toBeTruthy();
-    expect(e2.recommended_action).toBe("scale"); // legitimate concluded verdict survives
-    expect(out.prose).toBe("Two experiments today.");
+    expect(e2.recommended_action).toBe("scale"); // +50% income & efficiency → scale
+    expect(out.model).toBe("rule-based"); // no LLM
+    expect(out.prose).toMatch(/2 experiments/);
   });
 
-  it("short-circuits with no experiments and never calls the API", async () => {
-    let called = false;
-    const out = await generateDailyDigest([], {
-      apiKey: "sk-test",
-      fetchImpl: (async () => { called = true; return { ok: true, status: 200, text: async () => "", json: async () => ({}) }; }) as any,
-    });
-    expect(called).toBe(false);
+  it("running window stays an early read (never scale/kill)", async () => {
+    const out = await generateDailyDigest([exp({ id: "r1", status: "running", metrics: CONCLUDED_METRICS })]);
+    expect(out.items[0].recommended_action).toBe("hold");
+    expect(out.items[0].confound_warning).toMatch(/still open|early/i);
+  });
+
+  it("returns an empty digest with no experiments", async () => {
+    const out = await generateDailyDigest([]);
     expect(out.items).toEqual([]);
     expect(out.prose).toMatch(/no running/i);
   });

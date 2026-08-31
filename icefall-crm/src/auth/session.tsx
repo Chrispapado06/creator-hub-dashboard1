@@ -2,6 +2,8 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import type { Session } from "@supabase/supabase-js";
 import { supabase, isConfigured } from "@/lib/supabase";
 import { SHOW_DEMO_DATA } from "@/lib/demoFlag";
+import { OFFLINE } from "@/offline/offline";
+import { OFFLINE_IDENTITY } from "@/offline/store";
 import type { StaffRole } from "@/data/types";
 
 /**
@@ -38,15 +40,25 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // when there is no backend to authenticate against, so there is nothing it
   // could grant access to. The moment a Supabase project is configured, the real
   // two-gate check below is the only path in.
+  //
+  // The OFFLINE branch is the same argument taken one step further: there is no
+  // client at all (see `lib/supabase.ts`), so there is nothing to authenticate
+  // against and nothing an identity here could grant. It is stated separately
+  // from the demo branch rather than leaning on it because `SHOW_DEMO_DATA` is
+  // false in a built bundle, and an offline build that fell through to
+  // `unconfigured` would be one card saying "no data" instead of a CRM.
   const [state, setState] = useState<State>(
-    isConfigured
-      ? { kind: "loading" }
-      : SHOW_DEMO_DATA
-        ? { kind: "staff", identity: { profileId: "s1", displayName: "Alex Christofis", role: "super_admin" } }
-        : { kind: "unconfigured" },
+    OFFLINE
+      ? { kind: "staff", identity: OFFLINE_IDENTITY }
+      : isConfigured
+        ? { kind: "loading" }
+        : SHOW_DEMO_DATA
+          ? { kind: "staff", identity: { profileId: "s1", displayName: "Alex Christofis", role: "super_admin" } }
+          : { kind: "unconfigured" },
   );
 
   useEffect(() => {
+    if (OFFLINE) return;
     // Captured once so TypeScript can see it is non-null inside the closures
     // below; `supabase` itself is `SupabaseClient | null` by design.
     const db = supabase;

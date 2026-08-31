@@ -384,6 +384,9 @@ verify_jwt = true
 [functions.public-page]
 verify_jwt = false
 
+[functions.translate]
+verify_jwt = true
+
 [edge_runtime]
 enabled = true
 # Supported request policies: `oneshot`, `per_worker`.

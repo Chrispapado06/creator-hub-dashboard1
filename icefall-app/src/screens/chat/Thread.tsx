@@ -14,6 +14,7 @@ import {
   Users,
 } from "lucide-react";
 import { Avatar, Button, Card, Disclaimer } from "@/components/ui/primitives";
+import { CompanyMark } from "@/components/domain/CompanyMark";
 import { Screen } from "@/components/layout/chrome";
 import {
   LOCKED_EXPLAINER,
@@ -86,10 +87,15 @@ export default function Thread() {
           <ChevronLeft size={20} strokeWidth={1.6} />
         </button>
 
+        {/* A COMPANY IS NOT A PERSON. This branch tested only for "group", so an
+            expedition company fell through to `Avatar` — the round, person
+            avatar, identical to the climber in the row above. */}
         {convo.kind === "group" ? (
           <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-hairline-strong bg-slate text-mist">
             <Users size={16} strokeWidth={1.6} />
           </span>
+        ) : convo.kind === "company" ? (
+          <CompanyMark name={convo.name} logoPath={convo.logo} size={36} />
         ) : (
           <Avatar name={convo.name} size={36} />
         )}
@@ -275,9 +281,27 @@ function LockedBody({ convo, onAction }: { convo: Conversation; onAction: () => 
   const company = convo.kind === "company";
   return (
     <div className="flex flex-1 flex-col items-center justify-center px-6 pb-10 text-center">
-      <span className="grid h-14 w-14 place-items-center rounded-full border border-hairline bg-graphite text-mist-dim">
-        <Lock size={22} strokeWidth={1.5} />
-      </span>
+      {/* THE LOCK IS THE STATE; THE MARK IS THE IDENTITY. For a company this is
+          the whole screen — its name is the headline — and its only glyph was a
+          padlock, which every locked conversation shares. The mark goes back in
+          and the padlock rides on it as a pip, so neither claim displaces the
+          other. A guide or a climber keeps the plain padlock: `CompanyMark` is
+          for companies, and a person is not one. */}
+      {company ? (
+        <span className="relative">
+          <CompanyMark name={convo.name} logoPath={convo.logo} size={56} />
+          <span
+            aria-hidden
+            className="absolute -bottom-1 -right-1 grid h-6 w-6 place-items-center rounded-full border border-hairline bg-graphite text-mist-dim"
+          >
+            <Lock size={12} strokeWidth={1.8} />
+          </span>
+        </span>
+      ) : (
+        <span className="grid h-14 w-14 place-items-center rounded-full border border-hairline bg-graphite text-mist-dim">
+          <Lock size={22} strokeWidth={1.5} />
+        </span>
+      )}
       <h2 className="mt-5 text-[16px] text-snow">
         {company ? `Message ${convo.name} after a qualified enquiry` : `Message ${first} after you book`}
       </h2>

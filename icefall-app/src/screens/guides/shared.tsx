@@ -3,12 +3,15 @@ import { Link } from "react-router-dom";
 import {
   ChevronRight,
   Footprints,
+  MapPin,
   Languages,
   Layers,
   Mountain,
   MountainSnow,
   Pickaxe,
   Pyramid,
+  ShieldCheck,
+  ShieldOff,
   ShieldQuestion,
   Snowflake,
   Star,
@@ -26,6 +29,7 @@ import {
   type GuideMatchFactor,
 } from "@/guides/matching";
 import { REVIEWS_NEED_BOOKINGS_NOTICE } from "@/guides/engagement";
+import { verificationSentence, verificationState } from "@/guides/verification";
 import {
   AVAILABILITY_LABELS,
   CREDENTIAL_CLAIM_NOTICE,
@@ -70,12 +74,34 @@ export function GuidePortrait({
   name,
   src,
   size = 56,
+  fill = false,
+  circle = false,
   className,
 }: {
   name: string;
   /** Demo guides only. Never a real person. */
   src?: string;
   size?: number;
+  /**
+   * Stretch to the parent instead of taking `size` square.
+   *
+   * Added for the mockup's guide card, where the portrait runs the full height
+   * of the card. A `fill` flag rather than a second component, because the
+   * interesting part of this file is the `failedSrc` handling below — keyed by
+   * URL, not a boolean, so a reordering list cannot blank the wrong guide — and
+   * duplicating that to change a shape is how the two copies drift.
+   */
+  fill?: boolean;
+  /**
+   * Round, for the request hero `phone-3.png` draws.
+   *
+   * A prop and not a `rounded-full` passed through `className`: the tile radius
+   * here is `rounded-tile`, a project token, and the class merger does not know
+   * it belongs to the radius group — so the override silently lost and the
+   * portrait stayed a square. A shape this component owns is decided by this
+   * component.
+   */
+  circle?: boolean;
   className?: string;
 }) {
   // Which src failed, NOT a boolean. React reuses a component instance when a
@@ -96,20 +122,27 @@ export function GuidePortrait({
     return (
       <span
         aria-hidden="true"
-        style={{ width: size, height: size }}
+        style={fill ? undefined : { width: size, height: size }}
         className={cn(
-          "block shrink-0 overflow-hidden rounded-tile border border-hairline bg-elevated/40",
+          "block shrink-0 overflow-hidden border border-hairline bg-elevated/40",
+          fill && "h-full w-full",
+          circle ? "rounded-full" : !fill && "rounded-tile",
           className,
         )}
       >
         {/* Not lazy: these are ~17 KB, they sit at the top of the list, and a
             portrait that fades in after the name has already rendered reads as
             a broken avatar. */}
+        {/* `object-top`, not the default centre. In the tall card the portrait
+            fills a narrow column, and centring cropped every face at the
+            forehead and chin — the standard portrait-crop failure. Anchoring to
+            the top keeps the head whole and loses the bottom of the frame,
+            which is what a portrait can afford to lose. */}
         <img
           src={src}
           alt=""
           decoding="async"
-          className="h-full w-full object-cover"
+          className="h-full w-full object-cover object-top"
           onError={() => setFailedSrc(src)}
         />
       </span>
@@ -119,9 +152,18 @@ export function GuidePortrait({
   return (
     <span
       aria-hidden="true"
-      style={{ width: size, height: size, fontSize: Math.round(size * 0.3) }}
+      style={
+        fill
+          ? { fontSize: Math.round(size * 0.3) }
+          : { width: size, height: size, fontSize: Math.round(size * 0.3) }
+      }
       className={cn(
-        "grid shrink-0 place-items-center rounded-tile border border-hairline bg-elevated/40 font-light tracking-[0.08em] text-mist",
+        "grid shrink-0 place-items-center border border-hairline bg-elevated/40 font-light tracking-[0.08em] text-mist",
+        fill && "h-full w-full",
+        // The initials branch takes the same shape as the photograph branch. A
+        // guide whose portrait is missing must not be the one guide who renders
+        // as a square in a row of circles.
+        circle ? "rounded-full" : !fill && "rounded-tile",
         className,
       )}
     >
@@ -1052,5 +1094,137 @@ export function GuideVsCompany({
         </div>
       </div>
     </Card>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* The guide card from the owner's mockup                                      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * `GuideCardTall` — built to the "Find a Guide" mockup, 2026-08-31.
+ *
+ * The layout is the owner's, copied: a full-height portrait down the left, the
+ * name large, the credential and the location under it, then three facts in a
+ * divided row — years, mountains guided, day rate — and a line across the foot
+ * of the card about the qualification.
+ *
+ * THE VERIFICATION SLOT, AND THE ARGUMENT THAT OUTLIVES THE SCHEMA.
+ *
+ * The mockup's foot reads **"Documents checked by ICEFALL on 31 May 2026"**
+ * behind a gold shield. Today no guide has been checked, so this renders
+ * *"Claimed by the guide. ICEFALL has not checked it."* — derived from the
+ * record by `guides/verification.ts`, never from a flag.
+ *
+ * ⚠️ READ THIS BEFORE SHORTENING ANYTHING HERE.
+ *
+ * An earlier version of this comment justified the wording by pointing at
+ * `guide_profiles.credentials_verified` being a `CHECK (= false)` — *ICEFALL
+ * cannot claim verification.* **That reason expired on 2026-08-31**, when the
+ * owner approved document checking; the column is being dropped and the state
+ * derived in the database instead.
+ *
+ * **The reason changed. The sentence does not.** It was never really "we cannot
+ * check". It is:
+ *
+ *     ICEFALL read the papers. The issuing association did not confirm them.
+ *
+ * That distinction survives verification existing — it *is* the exposure. So
+ * when a real check lands this becomes *"Documents checked by ICEFALL on
+ * [date]. We have not contacted the issuing association."* and **never**
+ * "Verified guide". Dropping the second clause is the edit that looks like
+ * tidying and is actually the whole liability.
+ *
+ * The slot keeps its position, weight and shield throughout; only the sentence
+ * inside it changes, and only because the record changed.
+ *
+ * The stats are all real fields on `Guide`. None is invented for the layout.
+ */
+export function GuideCardTall({
+  guide,
+  to,
+  className,
+}: {
+  guide: Guide;
+  to: string;
+  className?: string;
+}) {
+  const credential = primaryCredential(guide);
+  const mountainsGuided = guide.mountains.length;
+  // Recomputed on every render against the current clock, so an expiry that
+  // passes while the app is open takes effect without a refresh.
+  const verified = verificationState(guide.verification);
+
+  return (
+    <Link
+      to={to}
+      className={cn(
+        "flex overflow-hidden rounded-card border border-hairline bg-graphite transition-colors hover:border-hairline-strong",
+        className,
+      )}
+    >
+      {/* The portrait runs the full height of the card, as drawn. `self-stretch`
+          rather than a fixed height so a longer name cannot crop it. */}
+      <div className="w-[104px] shrink-0 self-stretch">
+        <GuidePortrait name={guide.name} src={guide.portrait} size={104} fill />
+      </div>
+
+      <div className="min-w-0 flex-1 p-3.5">
+        <h3 className="truncate text-[17px] font-light leading-tight text-snow">{guide.name}</h3>
+
+        {credential ? (
+          <p className="mt-1.5 flex min-w-0 items-center gap-1.5 text-[12px] text-alert">
+            <ShieldCheck size={13} strokeWidth={1.8} className="shrink-0" />
+            <span className="truncate">{credential.label}</span>
+          </p>
+        ) : (
+          <p className="mt-1.5 text-[12px] text-mist-dim">No qualification listed</p>
+        )}
+
+        <p className="mt-1.5 flex items-center gap-1.5 text-[12px] text-mist">
+          <MapPin size={12} strokeWidth={1.7} className="shrink-0 text-mist-dim" />
+          <span className="truncate">{guide.basedIn}</span>
+        </p>
+
+        <div className="mt-3 grid grid-cols-3 gap-2 border-t border-hairline pt-3 text-center">
+          <Fact value={String(guide.yearsGuiding)} label="Years exp." />
+          <Fact value={String(mountainsGuided)} label="Mountains guided" divided />
+          <Fact value={`€${guide.dailyRateEur}`} label="Day rate" divided />
+        </div>
+
+        {/* The mockup's verification slot — DERIVED, never a cached flag.
+            `guide.verification` is absent for every guide today, so this reads
+            "Claimed by the guide. ICEFALL has not checked it." The moment a
+            real record exists it becomes the dated sentence, and an expired
+            certificate stops the claim on its own without anybody clearing a
+            field. See `guides/verification.ts` for why it fails closed. */}
+        <p
+          className={cn(
+            "mt-3 flex items-start gap-1.5 border-t border-hairline pt-3 text-[11px] leading-relaxed",
+            verified.kind === "checked" ? "text-alert" : "text-mist-dim",
+          )}
+        >
+          {verified.kind === "checked" ? (
+            <ShieldCheck size={12} strokeWidth={1.8} className="mt-[2px] shrink-0" />
+          ) : (
+            <ShieldOff size={12} strokeWidth={1.7} className="mt-[2px] shrink-0" />
+          )}
+          <span>{credential ? verificationSentence(verified) : "ICEFALL checks no qualifications."}</span>
+        </p>
+      </div>
+    </Link>
+  );
+}
+
+function Fact({ value, label, divided }: { value: string; label: string; divided?: boolean }) {
+  return (
+    <div className={cn(divided && "border-l border-hairline")}>
+      <p className="tnum text-[15px] font-light leading-none text-snow">{value}</p>
+      {/* Two words wrap rather than truncate — "Mountains guided" must not
+          become "Mountains gui…" in a third of a card. */}
+      <p className="mt-1.5 text-[9.5px] uppercase leading-tight tracking-[0.08em] text-mist-dim">
+        {label}
+      </p>
+    </div>
   );
 }

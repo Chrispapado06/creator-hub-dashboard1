@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   Avatar,
+  Button,
   Card,
   PageHead,
   Pill,
@@ -11,9 +12,9 @@ import {
 } from "@/components/ui";
 import { Resolve, Unavailable } from "@/components/states";
 import { DESK_LABEL, useStaff } from "@/auth/session";
-import { listStaff } from "@/data/queries";
+import { listStaff, setSupportScopes } from "@/data/queries";
 import { loading, type Result } from "@/data/result";
-import type { StaffRecord, StaffRole } from "@/data/types";
+import type { RequesterKind, StaffRecord, StaffRole } from "@/data/types";
 import { formatDay } from "@/lib/utils";
 
 /**
@@ -87,6 +88,87 @@ const accessState = (active: boolean): "ok" | "neutral" => (active ? "ok" : "neu
 /** The mockup's table metrics: roomy gutters, a tall row, a quiet header. */
 const TH = "px-5 py-3.5 text-[12px] font-semibold text-faint";
 const TD = "px-5 py-3.5";
+
+/**
+ * CR-14: who this person handles on the support desk. The chips are visible to
+ * every staff member (the desk should be legible); CHANGING them is a super
+ * admin's act through the audited `set_support_scopes` — same authority that
+ * appoints staff at all. Empty = unscoped: their desk opens on everything.
+ */
+function ScopeCell({ staff, canEdit }: { staff: StaffRecord; canEdit: boolean }) {
+  const [editing, setEditing] = useState(false);
+  const [scopes, setScopes] = useState<RequesterKind[]>(staff.support_scopes);
+  const [saved, setSaved] = useState<RequesterKind[]>(staff.support_scopes);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const KINDS: { id: RequesterKind; label: string }[] = [
+    { id: "athlete", label: "App users" },
+    { id: "guide", label: "Guides" },
+    { id: "company", label: "Companies" },
+    { id: "visitor", label: "Visitors" },
+  ];
+
+  const save = async () => {
+    setBusy(true);
+    setErr(null);
+    const r = await setSupportScopes(staff.profile_id, scopes);
+    setBusy(false);
+    if (r.state === "ok") {
+      setSaved(scopes);
+      setEditing(false);
+    } else setErr(r.state === "error" ? r.reason : "No database is configured.");
+  };
+
+  if (!editing) {
+    return (
+      <span className="flex flex-wrap items-center gap-1">
+        {saved.length === 0 ? (
+          <span className="text-[12px] text-faint">Everyone</span>
+        ) : (
+          saved.map((k) => (
+            <Pill key={k} tone="neutral">{KINDS.find((x) => x.id === k)?.label ?? k}</Pill>
+          ))
+        )}
+        {canEdit && (
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="ml-1 text-[11.5px] font-medium text-muted hover:text-ink"
+          >
+            Change
+          </button>
+        )}
+      </span>
+    );
+  }
+  return (
+    <span className="flex flex-wrap items-center gap-1.5">
+      {KINDS.map((k) => (
+        <button
+          key={k.id}
+          type="button"
+          onClick={() =>
+            setScopes((cur) => (cur.includes(k.id) ? cur.filter((x) => x !== k.id) : [...cur, k.id]))
+          }
+          className={
+            scopes.includes(k.id)
+              ? "rounded-pill bg-accent-soft px-2 py-[3px] text-[11.5px] font-medium text-accent-ink ring-1 ring-accent/40"
+              : "rounded-pill bg-raised px-2 py-[3px] text-[11.5px] font-medium text-muted ring-1 ring-line"
+          }
+        >
+          {k.label}
+        </button>
+      ))}
+      <Button size="sm" variant="secondary" disabled={busy} onClick={() => void save()}>
+        Save
+      </Button>
+      <Button size="sm" variant="ghost" onClick={() => { setScopes(saved); setEditing(false); }}>
+        Cancel
+      </Button>
+      {err && <span className="text-[11.5px] text-bad">{err}</span>}
+    </span>
+  );
+}
 
 export default function Team() {
   const me = useStaff();
@@ -224,6 +306,7 @@ export default function Team() {
                                 <th className={TH}>Department</th>
                                 <th className={TH}>Email</th>
                                 <th className={TH}>Status</th>
+                                <th className={TH}>Handles support for</th>
                                 <th className={TH}>Joined</th>
                               </tr>
                             </thead>
@@ -261,6 +344,9 @@ export default function Team() {
                                         state={accessState(s.active)}
                                         label={s.active ? "Access active" : "Access revoked"}
                                       />
+                                    </td>
+                                    <td className={TD}>
+                                      <ScopeCell staff={s} canEdit={me?.role === "super_admin"} />
                                     </td>
                                     <td className={`tnum whitespace-nowrap ${TD} text-muted`}>
                                       {formatDay(s.joined_on) ?? (

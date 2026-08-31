@@ -253,15 +253,22 @@ These are settled. Do not re-litigate them; do implement them in your scope.
    **Session 03 owns the money model**; Session 01 owns the screens that render
    it.
 
-3b. **THE GUIDE MODEL IS A 10% COMMISSION DEDUCTED FROM THE GUIDE'S FEE.**
-    Settled 2026-08-28, replacing decision 3. The owner confirmed it against a
-    worked example, which is the only unambiguous way to state a fee:
-
+3b. **THE GUIDE MODEL IS A 15% COMMISSION DEDUCTED FROM THE GUIDE'S FEE.**
+    Settled 2026-08-28 at 10%, **RAISED TO 15% BY THE OWNER 2026-08-31**. The rate
+    is confirmed against a worked example, which is the only unambiguous way to
+    state a fee:
     > A guide charges €1,000 for a day.
-    > **The climber pays €1,000. The guide receives €900. ICEFALL keeps €100.**
+    > **The climber pays €1,000. The guide receives €850. ICEFALL keeps €150.**
 
     So: the advertised price IS what the climber pays — **no fee is added at
-    checkout** — and ICEFALL's 10% comes out of the guide's earnings.
+    checkout** — and ICEFALL's 15% comes out of the guide's earnings.
+
+    The 10% history below is kept deliberately: it records what reversed and why,
+    and a decision log that overwrites its own past cannot be audited. **Only the
+    rate changed** — the deducted-not-added structure, and the rule that commission
+    falls on the guide's fee and never on passed-through costs, are unchanged.
+    `GUIDE_COMMISSION_PCT` in `icefall-shared/money.ts` is the only definition;
+    `npm run sync` propagates it. A second literal anywhere is a defect.
 
     This reverses decision 3, which had chosen the 5%-added-on-top model. The
     owner has moved to the deducted model, at 10% rather than the 12% the code
@@ -1432,6 +1439,993 @@ have been corrected here rather than left standing, which is §6i applied to our
 own reports.
 
 ---
+
+## 6p. A BRIEF GOES STALE MID-FLIGHT — write the ruling into the FILE
+
+Session 04, 2026-08-29. `icefall-operator/src/screens/Leads.tsx`.
+
+1. A subagent was briefed to add an origin filter to the inbox screen.
+2. **Mid-run**, the owner sent a screenshot of that exact control: "also remove
+   ts not neededd in messages". It was removed.
+3. The subagent finished, found its brief unsatisfied, restored the filter — and
+   flagged the conflict in its report rather than overwriting silently, which is
+   the only reason it was caught.
+
+**This was not two contradictory briefs. It was one brief that went stale
+in flight.** The agent was correct against the instructions it held; those
+instructions were simply older than the owner's message. **A long-running agent
+cannot see owner input that arrives after it launches**, and no amount of care in
+writing the brief fixes that, because the brief was right when it was written.
+
+So the mitigation is not better reconciliation — it is **durability**:
+
+> An owner decision that contradicts a live brief must be written INTO THE FILE
+> at the point of change, not only into the next brief.
+
+Session 04's second removal left a named comment at the site — *"NO ORIGIN FILTER
+ON THIS SCREEN — OWNER DECISION, 2026-08-29"* — so the next agent reads the ruling
+where it works, rather than re-deriving it from a brief that has aged.
+
+A comment at the call site survives an agent that never opens the handbook. Routing
+every such decision through the brain instead makes the brain a bottleneck **and**
+still reconciles after the fact, once the wrong code is already written.
+
+Corollary for whoever is co-ordinating: when you send a brief, assume it may be
+executing while the owner changes their mind. Anything in it that is a *ruling*
+rather than a *task* belongs in the code as well as the message.
+
+---
+
+## 6q. THE PRECISION OF THE OUTPUT IS NOT EVIDENCE ABOUT THE QUALITY OF THE INPUT
+
+Session 04's line, from the Featured Slot pricing work, and it generalises past it.
+
+The pricing framework publishes **613 prices to the euro** across 153 listings.
+They regenerate exactly from one formula — verified, zero mismatches. Everything
+about the output says *derived from data*.
+
+Every input is judgement. §4 weights **operator competition** as the strongest
+signal in the Visibility Index; §13 says the Indices must be corrected against
+observed behaviour and calls them "a first position to be corrected, not
+findings". **Neither quantity is measured anywhere in the ICEFALL family** —
+nothing emits a listing-view event, so per-listing traffic exists only as demo
+figures behind a flag in the operator portal.
+
+The framework says this about itself. The risk is that a rate card does not: a
+table of exact figures reads as measurement, and the caveat lives in a document
+nobody opens while quoting a customer.
+
+**So a surface that renders a derived number must carry the provenance of its
+inputs, not just the arithmetic.** Showing the working — `250 x 0.42 x 1.00 x
+2.25` — makes the calculation auditable and says nothing about whether `0.42` was
+earned. Both are needed.
+
+---
+
+## 6r. A GUARD WRITTEN AGAINST A FIXTURE STOPS GUARDING WHEN THE SOURCE CHANGES
+
+2026-08-30. `RealBusiness.tsx` exists so a page structurally cannot render a real
+operator without its disclosure. It gates on one field:
+
+    if (!company?.realBusiness) return null;
+
+`icefall-shared/companies.ts` carries that field. **`public.companies` did not.**
+So a company read from the DATABASE arrives with `realBusiness === undefined`,
+which is falsy, and the guard returns null and renders nothing.
+
+It does not fail loudly. **It fails by going quiet, on exactly the listing where
+quiet is the harm** — a real business beside invented ratings with no notice.
+And it was about to matter, because every app is mid-switch from fixtures to
+this table. Found only because a real operator's name reached the live database
+by accident.
+
+Distinct from §6l. There, a predicate's *inputs became true* while its meaning
+stayed false. Here the input's **shape changed** — the field stopped existing —
+and a falsy default read as a confident "no". Ask of every guard: *what does it
+do when its input is absent rather than false?*
+
+The column is `not null default false`. `null` would mean "we do not know",
+which for this question resolves to the same silent non-disclosure. **The safe
+default is the one whose mistake is cheap**: a fictional company wearing an
+unnecessary banner, never a real one missing its own.
+
+---
+
+## 6s. WHERE YOU PUT AN AUDIT DECIDES WHETHER IT IS COMPLETE
+
+Same day. A company was created and deleted in the live database and **nothing
+could say by whom** — `audit_events` was empty. `movePlacement` and
+`cancelPlacement` route through functions that write the event in the same
+statement; `createCompany` wrote the table directly. The entity the CRM exists
+for was the one thing it did not record.
+
+Three shapes were considered. Session 03's argument decided it:
+
+| shape | what it misses |
+|---|---|
+| definer function pair | anything not calling it — and it is only complete if direct grants are revoked, which would break `approve_content_version` and still miss a service-role script |
+| direct write + explicit `record_audit_event` | whatever the next author forgets |
+| **trigger on the table** | **nothing — staff, definer functions, service role, and code not yet written** |
+
+**The argument that settled it was about people, not principle:** the author of
+the comment praising same-statement audits added unaudited company writes *the
+same afternoon*. A shape that is "usually complete" degrades to whoever is
+tired. A trigger cannot be forgotten because nobody has to remember it.
+
+Two details worth copying: a **no-op write emits no event** (re-saving a form
+must not claim a disclosure changed when it did not — a log full of non-events
+is how people stop reading one), and the actor is recorded as **null for a direct
+database connection**, which is what makes "was this a person or a script?"
+answerable at all.
+
+### An audit log's references must OUTLIVE their referents
+
+`audit_events.company_id` carried `on delete set null`. Deleting a company
+therefore **UPDATED that company's audit rows** — a rewrite of recorded history,
+which the append-only guard then refused, so the delete failed. The guard was
+correct and the foreign key was wrong. It was dropped; the column and index stay.
+
+A dangling id in an audit trail is not an integrity violation. It is the trail
+doing its job after the entity is gone.
+
+### And do not defeat your own guard to tidy up
+
+The append-only trigger then refused the brain's attempt to delete six probe rows
+left by testing it. **They were left in the production log.** An audit log that
+can be cleaned is not an audit log, and removing evidence of a test is exactly
+the move the guard exists to prevent. They are honest rows: a test, by a direct
+connection, correctly attributed.
+
+---
+
+## 6t. A COPIED PATTERN CARRIES AN INVISIBLE PRECONDITION FROM THE TABLE IT WAS BORN ON
+
+2026-08-30, the brain, fixing the guide-listing hole.
+
+To stop a guide listing themselves, `listed` was pinned in the UPDATE policy's
+WITH CHECK by re-reading the stored value:
+
+    listed is not distinct from
+      (select g.listed from public.guide_profiles g where g.id = (select auth.uid()))
+
+That reads `guide_profiles` from inside a policy **on** `guide_profiles`, so
+evaluating it re-enters the policy: *infinite recursion detected*.
+
+The shape was copied from `profiles_update_self`, which pins `role` and
+`username` exactly this way and works fine. **It works there because that
+table's SELECT policy is `using (true)`** — a fact about the neighbour, not about
+the technique. Copy it one table sideways and the precondition silently does not
+travel.
+
+This is not §6f. There, a fan-out's source cannot tell you who is not listening.
+Here, a pattern is correct in its birthplace and carries an unstated dependency
+on its surroundings. **"Copy the working policy" is exactly the advice a careful
+person follows**, which is what makes it dangerous.
+
+### AND IT FAILED CLOSED, WHICH LOOKED LIKE SUCCESS
+
+The recursion broke **every** update to `guide_profiles` — a guide could not edit
+their own headline, bio or day rate. But the probe was testing whether a climber
+could *list themselves*, and a recursion error reads as a refusal. **A passing
+security test and a totally broken table were indistinguishable from outside.**
+
+The fail-open/fail-closed distinction (§6n) inverted: failing closed is safer and
+it hides. Only testing the **permitted** case found it — asking not "is the
+forbidden thing refused?" but "does the allowed thing still work?"
+
+§6e's rule pointed at a security fix: for every branch, ask what proves the OTHER
+one runs.
+
+**The fix was a trigger**, which is Session 03's §6s argument unchanged — a
+trigger cannot recurse through RLS, fires for every path, and cannot be forgotten
+by the next person writing a policy. The policy decides WHO may write; the
+trigger decides WHAT may change.
+
+---
+
+## 6u. ONCE TWO TREES ARE DELIBERATELY IDENTICAL, A UNILATERAL IMPROVEMENT IS A REGRESSION
+
+Session 02, 2026-08-30, converging the company monogram.
+
+`icefall-web` and `icefall-app` each grew their own initials algorithm. Diffed
+across eleven real names, **five of eight disagreed**:
+
+| name | web | app |
+|---|---|---|
+| Chamonix Alpine Guides | CA | CG |
+| Alaska & Yukon | A& | AY |
+| Nima Chhiring Lama | NC | NL |
+| Everest Spring 2027 | ES | E2 |
+| Seven Summit Treks | SS | ST |
+
+And worse than disagreement: on the web, **"Chamonix Alpine Guides" and
+"Cordillera Ascents" both rendered `CA`** — two different companies sharing one
+identity inside a single app.
+
+The web took the first two words; the phone takes first-and-last, strips
+punctuation and cuts at an em-dash. Session 02 converged onto the phone's version
+rather than inventing a third.
+
+### The rule that falls out
+
+> Once two trees are deliberately identical, a **unilateral improvement to one is
+> a regression.** Convergence has to be maintained by the rule that created it.
+
+The live case: first-plus-last turns a trailing number into an initial, so
+"Everest Spring 2027" gives `E2`. Preferring the last word that *begins with a
+letter* gives `ES` and is plainly better — **and applying it in one tree alone
+re-opens the divergence just closed.** It lands in both trees in one change or
+not at all.
+
+This is the mirror of §6k. There, a consumer receives the canonical thing and
+ignores it. Here, two consumers agree and one of them then improves. Both end in
+drift; the second is worse because it is done carefully, by somebody who checked.
+
+**Where a shared asset genuinely cannot be shared** — separate npm trees, no
+common package — the convergence is a convention, and a convention with no
+mechanism needs the reason written at BOTH sites. `demo.ts` carries it.
+
+---
+
+
+## 6v. A PROBE MUST SEND WHAT THE CLIENT SENDS
+
+**2026-08-30. The brain session reported that ICEFALL's public support form was
+broken in production, generalised it into a five-session indictment, and sent it
+to two sessions inside a minute. It was wrong. Session 01 challenged it and was
+right.**
+
+The probe was `POST /rest/v1/support_intake` with `Prefer: return=representation`
+and it returned `42501 permission denied`. The conclusion drawn was that
+`grant insert ... to anon` was missing from the database despite being present in
+the migration file — that a migration had been applied, then edited, and never
+re-applied.
+
+**Every part of that was false, and one header caused it.** `return=representation`
+asks PostgREST to hand the inserted row back, which requires SELECT. `anon`
+deliberately has no SELECT — that is the table's entire security design, a
+write-only drop box. The refusal was of the *read-back*, not the insert.
+
+**The error named the right privilege and was read as naming the wrong one.** Its
+hint said `GRANT SELECT ON public.support_intake TO anon` — it was describing the
+privilege the probe had accidentally demanded, and it was read as confirming a
+missing INSERT grant. The correct answer was in the response body, inverted.
+
+**The generalisable rule is not "read errors carefully"** — the error *was* read,
+and its hint pointed at SELECT. It is that **a diagnostic which does not match the
+caller is testing a different system and reporting on this one.** The probe
+differed from the real endpoint in exactly one header, and that header was the one
+the table's security turns on.
+
+**The codebase already contained the answer.** Session 02 had written, above the
+line that sets `return=minimal`, and before any of this happened:
+
+> PostgREST returns the inserted row by default, which requires a SELECT policy
+> that deliberately does not exist — so without it the insert succeeds and then
+> fails on the read back, and a visitor is told their message did not send when it did.
+
+The bug, described in advance, in the file. Neither session went to the code,
+because the response body looked like an answer in itself.
+
+**TEST A GRANT WITHOUT WRITING A ROW.** Send a body that violates a CHECK
+constraint. `23514` proves the privilege check already passed; `42501` proves it
+did not. This is the documented way to verify `support_intake`, because the table
+has no delete policy and every other method leaves a permanent row behind.
+
+**On speed.** A wrong diagnosis corrected within the hour costs almost nothing.
+What made this one dangerous was that it arrived **pre-generalised** — a
+five-session theory rather than "one probe returned 42501, can anyone reproduce".
+The finding and the theory travelled together, and the theory is what got relayed
+onward. Send the observation first; the pattern can follow once someone else has
+reproduced it.
+
+## 6w. SHIP THE FIXTURE, NOT THE RULE — AND THE FIXTURE MUST SAY WHICH COLUMN IS WHICH
+
+Two trees had to implement one monogram algorithm identically. Prose describing
+the rule was not enough: "first and last" is ambiguous about whether it applies to
+the filtered word list or the original, and that is precisely where two careful
+implementations diverge without either being wrong.
+
+**What closed it was shipping the expected outputs alongside the rule.** Both
+sessions implemented from three numbered steps, then checked against sixteen
+name→mark pairs. The two agreeing is what proved they had read the ambiguous
+clause the same way — a check they each had to run anyway, surfacing a
+disagreement no amount of prose would have.
+
+**But the fixture had the same defect it existed to cure.** It was sent as
+`Everest Spring 2027 ES` with no statement of which column was the name. One
+session read name-first, the other mark-first; they converged **by both guessing
+right**, not because the fixture told them. It is now checked in as
+`readonly (readonly [string, string])[]` with the order enforced by the type.
+
+**A fixture whose purpose is to remove ambiguity between two trees must not itself
+be readable two ways.**
+
+## 6x. A SELF-REPORTED GAP IS ONLY USEFUL IF SOMEBODY WITH THE ACCESS ACTS ON IT
+
+Five sessions each reported honestly that they could not verify the support wire
+end to end, because their checkouts had no credentials. Every one of those reports
+was accurate and correctly refused to fold the gap into "done".
+
+**The hole still survived all five, because every session was flagging it to the
+other sessions rather than to the one party who could close it.** An honest gap
+report is not a resolution; it is a request addressed to whoever holds the missing
+access. **The session that can execute the path owns proving it** — and if nobody
+can, that belongs in front of the owner, not in a status report.
+
+Corollary from the same incident: when a session declines to re-probe because the
+probe itself would leave junk in a live queue, that is good judgement, not
+avoidance. Prefer a non-destructive check (§6v) over a write.
+
+## 6y. A STALE AFFORDANCE IS A STALE SENTENCE IN A MEDIUM GREP CANNOT READ
+
+A copy sweep for sentences made false by a shipped feature found none — eight
+candidate strings, all eight correctly kept, because they described push
+notifications, payments and messaging, none of which the new feature provided.
+**A blanket find-and-replace would have deleted four correct guarantees.** Report a
+negative finding with its reasoning; "nothing to change" and "I checked eight
+things and all eight are still true" are different results.
+
+**The one real defect was not prose at all**: a mail icon labelled "Email ICEFALL"
+with no link behind it. Honest while there was no way to reach anyone; absurd the
+moment a working contact form appeared directly above it.
+
+**The sweep must include controls that promise a capability, not only prose that
+describes one. An icon with no destination is a sentence with no verb.**
+
+
+## 6z. AN ITEM IS CLOSED BY EDITING THE RECORD, NOT BY REMEMBERING IT
+
+The owner captured 53 change requests offline on 30–31 Aug 2026. They live in
+`icefall-sessions/BACKLOG-flight-notes.md`, and that file is the record.
+
+**No session may consider one of those items done without moving its status to
+`DONE` in the same change that does the work.** Not afterwards, not in a summary
+message, not in a commit body — in the file. A session's memory does not survive
+its own context, five sessions cannot see each other's transcripts, and the owner
+cannot audit a claim that exists only in chat. An item ticked nowhere is an item
+that will be rediscovered, re-scoped and re-argued by whoever comes next.
+
+Three specific failures this exists to stop:
+
+- **Silent narrowing.** A note that says "all settings pages need to work" is not
+  closed by making three of them work. Split it into items rather than shrinking it.
+- **Blocked masquerading as done.** `DESIGN` and `DECISION` items are not yours to
+  unblock. Do not build a redesign the owner has not designed, and do not answer a
+  decision on their behalf because waiting is inconvenient.
+- **Deleting instead of moving.** Items are never removed from the file. A request
+  the owner withdrew is `DONE` with the reason; a request nobody can find is a
+  request the owner will assume was quietly dropped.
+
+**The status assignments in that file were made by keyword on a first pass.** They
+are a starting point and are wrong in places — correct them rather than treating
+them as a ruling. §6q applies: the precision of the categorisation is not evidence
+about the quality of the judgement behind it.
+
+
+
+## 6aa. A WORKED EXAMPLE IN A DOCUMENT GOES STALE, AND NOBODY GREPS DOCUMENTATION
+
+**2026-08-31. The owner raised guide commission from 10% to 15%. One constant moved
+in one file and `npm run sync` carried it to six apps correctly. Within the hour,
+at least seven written artefacts were false** — and every one of them was written by
+someone who understood the model perfectly at the time.
+
+Session 05 found four of theirs: a code comment asserting "the owner settled 10%" as
+current, a worked example reading `ICEFALL 10% −€68.40`, **their own backlog line**
+recording a verification that was true when written, and — worst — **their request
+to another session, quoting "€180, not €204" as the example that session was most
+likely to copy**.
+
+The brain session found three of its own, including **constitution decision 3b
+itself, which still declared "THE GUIDE MODEL IS A 10% COMMISSION"** — the rulebook
+every session reads before acting.
+
+**The rule: when a constant changes, the code is the easy part.** Grep the prose
+too — comments, decision records, backlog entries, requests filed to other sessions,
+handbooks, anything with a number in it. A stale figure in a document is more
+dangerous than one in code, because code that disagrees with a constant usually
+fails to compile or fails a test, and **a document that disagrees with a constant
+just gets believed.**
+
+Two corollaries:
+
+- **When an ACCESS RULE moves, look for the sentence that explains it** (Session
+  01, the messaging gate). `isLocked()` breaks loudly the first time the new policy
+  refuses to match it — but *"You can message a guide once you have booked them"*,
+  rendered under the padlock, survives the code fix untouched: no typecheck fires,
+  no policy fires, it just keeps being believed. **The copy is a second
+  implementation of the same fact, and it is the copy that fails silently.** Both
+  halves change in one commit — and neither changes before the capability is real.
+
+- **A request filed to another session is the highest-risk place for a worked
+  example.** Its entire purpose is to be copied by someone who was not there. Write
+  the RULE beside the number — "commission is on the fee, never the total" survives
+  a rate change; "€180" does not.
+- **Amend decision records, do not overwrite them.** 3b now reads "settled at 10%,
+  raised to 15%" and keeps the reversal history. A log that erases its own past
+  cannot be audited, and the next person cannot tell a change from a mistake.
+
+- **NOT EVERY STALE FIGURE SHOULD BE UPDATED — some are load-bearing history, and
+  "correcting" them destroys the evidence.** Session 05's test, and it is the right
+  one: **is the number describing what IS TRUE, or what HAPPENED?** The first must
+  move. The second must be dated and left alone. A handbook section recounting the
+  2026-08-28 reversal keeps its €900/€100 worked example, with a superseding note
+  above it; a handover list stating the current model must be changed outright.
+  **Both fail the same grep**, which is exactly why a sweep needs a person reading
+  each hit rather than a substitution across the tree.
+
+- **The figures that survived the change were the interpolated ones.** Every stale
+  hit in this sweep was prose holding a literal; every place that quoted the rate to
+  a *user* — `GUIDE_FEE_DISCLOSURE`, `GuideDashboard.tsx:840` — built the sentence
+  from the constant and self-corrected with no edit. That is §6aa's remedy stated as
+  an observation: **the durable ones never held a number in the first place.**
+  Prefer interpolation over transcription wherever a document is generated, and where
+  prose must quote a live string, say that it interpolates.
+
+- **Beware the reverse error too.** Handbook prose quoting an interpolated sentence
+  verbatim *looks* like a hardcoded claim being shown to a user right now. Session 05
+  checked two such alarms — `GuideDashboard.tsx:840` and a JSX comment at
+  `BookingConfirm.tsx:367` — before relaying either. §6b: verify the alarming claim
+  before passing it on.
+
+## 6ab. A TEST INPUT CAN ENCODE THE CONDITION UNDER TEST, NOT JUST A VALUE
+
+From the same change. Twelve test expectations had 10% baked into them and the suite
+failed loudly — which is the suite working. **One of them needed a new INPUT, not a
+new expected number, and that one was nearly missed.**
+
+    // FLOOR, NOT ROUND. 3,335 cents at 10% is 333.5; the half-cent goes to the
+    // guide. `Math.round` would have sent it to ICEFALL half the time.
+
+`3335` was not an arbitrary amount. It was chosen because 10% of it is **exactly**
+333.5 — a true half-cent, which is the condition the test exists to exercise. At 15%
+it is 500.25, an ordinary fraction. Updating only the expected number would have left
+a **passing** test that no longer tested anything, and a green suite asserting that
+rounding still favours the guide when nothing had checked it. Changed to `3330`
+(= 499.5) so the input still produces the condition.
+
+**A test whose input no longer produces the condition under test is worse than a
+failing one, because it is indistinguishable from a working one.** This sits beside
+§6e's "ask which branches a green suite never enters" — here the branch is entered
+and proves nothing.
+
+**So when a constant changes, do not only ask "which expectations move?" Ask "which
+inputs were chosen BECAUSE of the old value?"** Those are usually the ones with a
+comment above them explaining why that number.
+
+
+
+## 6ac. A NEGATIVE RESULT NEEDS A POSITIVE CONTROL
+
+**2026-08-31, Session 01, caught before it was published.** Probing whether an
+enquiry RPC existed, they called the candidate functions with an empty body `{}`
+and got **404**. They were about to report "no enquiry RPC exists" — until they ran
+the same probe against `open_support_ticket`, **which they knew existed, and also
+got 404.**
+
+PostgREST resolves an RPC by its **argument signature**. An empty body matches no
+overload, so 404 means *"no function with that signature"*, not *"no such
+function"*. The evidence that would have proved the enquiry system absent would
+equally have proved the support system absent — and the support system demonstrably
+works.
+
+**The rule: before reporting that something is missing, run the identical probe
+against something you KNOW is present.** If the control also comes back negative,
+the probe is broken, not the thing. This costs one extra call and is the difference
+between a finding and a false alarm sent to three sessions.
+
+**This is §6v's sibling and the pairing is the point.** §6v is about a probe that
+sends something the real client does not (`Prefer: return=representation`). This is
+about a probe that sends *less* than any real caller would. **Both answer a
+different question from the one asked, and both return a confident, specific,
+wrong answer** — which is far more dangerous than an error. Two sessions hit this
+shape in one day, from opposite directions.
+
+**THIRD COSTUME, same day — the environment can be the thing you are measuring.**
+Session 01 timed an intro animation and got *"still mounted after 2.85s"* against a
+1.9s timer. Not a bug: `document.visibilityState` is **`hidden`** in the preview
+pane, and a control 500 ms timer **measured 984 ms** — background-tab throttling at
+roughly half speed. The element had correctly faded to `opacity: 0`; `AnimatePresence`
+simply had not run its unmount callback yet.
+
+**In a hidden preview pane, a timing-dependent assertion measures the throttle, not
+the code.** This also explains why screenshots across this project come back blank or
+mid-animation: entrance animations lag behind the wait. **Check `visibilityState` and
+measure a known timer before concluding an animation is broken** — the positive
+control again, applied to the clock instead of the query.
+
+Three instances in one day, from three directions: a probe sending *more* than the
+client (§6v), a probe sending *less* (§6ac), and a probe run in an environment that
+distorts what it measures. **The common shape is a confident, specific, wrong answer
+— which is more dangerous than an error, because an error stops you.**
+
+**A FOURTH, and it resolved a standoff between two uncertain probes.** Session 03
+reported `PGRST200` — "no relationship in the schema cache" — and hardened seven
+reads around it. The brain session probed the same pair and got `PGRST201`,
+*ambiguous*, which is the opposite cause. **Neither defended their sentence; a third,
+isolating probe was run**, testing each relationship hint separately and reading the
+codes rather than the prose:
+
+    customer:profiles!bookings_customer_id_fkey  -> 42501  (RLS refusal — hint VALID)
+    guide:profiles!bookings_guide_id_fkey        -> PGRST200 (no such relationship)
+
+**`bookings.guide_id` references `guide_profiles`, not `profiles`.** The hint asked
+for a `bookings↔profiles` relationship through a constraint that relates
+`bookings↔guide_profiles`, so PGRST200 was a *correct* refusal. Both error codes
+were right about different questions. No cache was ever stale.
+
+**The root error is the one to carry: a check that "verified against `pg_constraint`"
+listed constraint NAMES and never read their TARGET TABLES.** Seeing
+`bookings_guide_id_fkey` in a list, and inferring from the name that it points at
+`profiles`, is §6q pointed at oneself — **a constraint's name is not evidence of what
+it constrains**, and a naming convention is a habit, not a schema.
+
+**And note what the near-miss would have taught.** Reloading the schema cache would
+have "fixed" nothing, changed nothing, and — because the ambiguous query would then
+have been rewritten anyway — appeared to work. **A coincidental fix installs a false
+cause**, and the next ambiguous embed would have been diagnosed as the cache going
+stale again. The cheapest moment to kill a wrong explanation is before it succeeds.
+
+**A REFUSAL, READ CAREFULLY, IS A READING INSTRUMENT (Session 01, the enquiry
+wiring).** The phone app has no select on `destinations`, so it could not check a
+slug the ordinary way. Two probes, each deliberately missing `sender_email` so the
+visitor policy HAD to refuse both and nothing could be written:
+
+    destination_id = "mont-blanc"             -> 401 / 42501   (RLS refusal)
+    destination_id = "zzz-nonexistent-probe"  -> 400 / P0001   ("no such mountain or trek")
+
+The nonsense slug dies on the object check BEFORE RLS; the real one gets past it and
+dies on the missing email. **Which error fires is the proof the row exists.** A
+question was answered without read access and without a write — two failing calls
+where one succeeding call would have answered destructively. When you cannot read
+and must not write, arrange two refusals whose difference carries the answer.
+
+Corollary, from the same batch: **404 and 401 distinguish absent from unreadable.**
+Session 01's table probes were sound precisely because the contrast carried the
+information — `enquiries` 404 (absent) against `support_tickets` 401 (present,
+ungranted). A probe that can only return one kind of failure cannot tell you which
+failure you have.
+
+
+
+## 6ad. THE DOCTRINE CROSSED INTO THE OWNER'S OWN DRAWINGS
+
+**2026-08-31.** The owner used AI to generate mockups for the sixteen screens
+awaiting design. **Three of the first three came back carrying honesty artefacts
+the owner drew themselves, unprompted by any session:**
+
+- A **Dashboard** tile where Active Users would sit, reading *"NOT BEING MEASURED
+  YET / We're working on it."*
+- A **Products** tile reading *"Not measured. We do not currently track views. This
+  metric is not available"*, plus a footer banner: *"ICEFALL does not currently
+  record view counts, impressions or click-through data. We are focused on revenue,
+  bookings and enquiries — the metrics that matter."*
+- A **Bookings** agreement tab heading a cancellation policy *"(AGREED AT TIME OF
+  BOOKING)"*, with a "What Was Disclosed" list including *emergency evacuation not
+  included*.
+
+**Record this because of what it settles.** The honesty doctrine was argued for by
+sessions, in file headers, against the grain of what a demo usually looks like. It
+was defensible but never confirmed as what the owner actually wanted. It is now:
+they reproduce it without being asked, in their own words, on their own screens —
+and their phrasing is better than ours.
+
+**Two operating rules follow.**
+
+**Never paraphrase an owner-drawn honesty artefact.** Do not soften it, do not
+"improve" the wording, do not fold it into a house pattern. It is the clearest
+statement of intent in the project and it survives verbatim.
+
+**REVISED 2026-08-31, SAME DAY, BY THE OWNER: "similar isnt enough can you not
+make them 1:1."** The rule below survives only for PRODUCT DECISIONS hidden in the
+frame (deleted screens, tenancy boundaries, removed controls) — those still get
+escalated, never inferred. But for everything else, **1:1 means the frame too**:
+accent colours, sidebar styling, split-view structure, tile weight, spacing. Matching
+the drawing's content in our own house style is what "similar" means, and the owner
+rejected it in those words. The demo face copies the drawing wholesale; production
+keeps the real nav and real screens. The standard: build and mockup side by side at
+the same width — if structure alone tells you which is which, it is not done.
+
+**Treat a mockup's CHROME as unreliable ONLY where it embodies a product decision, while its CONTENT is signal.** The same
+three drawings also deleted eleven built screens from the CRM navigation, put an
+operator's name above ICEFALL's internal commission figures, and removed the phone
+app's START control. **The generating AI knows nothing of tenancy boundaries, built
+screens or product decisions** — it draws a plausible frame around the middle of the
+screen it was asked for. The middle is the owner speaking. The edges are not.
+
+
+
+## 6ae. A PRECISE FIGURE IS THE MOST CONVINCING FORM AN UNMEASURED NUMBER CAN TAKE
+
+**2026-08-31.** Sweeping for one heart-rate claim, Session 01 found three. The third
+was different in kind, not degree:
+
+    tracking/training.ts:71    "Zone 2 throughout"
+    data/mock/training.ts:37   "Zone 2 throughout"            <- the fixture twin
+    data/mock/activities.ts:72 "Heart rate stayed in zone 2 for 78% of the session."
+
+**"Zone 2" is a category. "78% of the session" is a measurement** — it requires a
+heart-rate stream *and* a measured threshold to divide it against. ICEFALL has
+neither; there is no HR pairing in the app at all. **And 78% is far harder to
+disbelieve than "Zone 2",** because precision reads as provenance. A reader
+discounts a vague claim and trusts a specific one, so **the more exact an invented
+figure is, the more damage it does.** This is §6q pointed at the reader instead of
+the author.
+
+**When sweeping for a fabricated claim, rank by precision, not by how alarming the
+words are.** The dressed-up percentage buried in a fixture outranks the obvious
+phrase in a live module.
+
+**Two method points from the same sweep, both worth keeping.**
+
+**A defect with a fixture twin is the shape that survives its own fix.** Correcting
+`tracking/training.ts` alone would have left the demo build still saying it, and the
+demo build is what gets reviewed and screenshotted. Fix the pair or neither.
+
+**The sweep's job is to find claims, not strings.** Session 01 deliberately did NOT
+change `routes/relevance.ts:94` (`id: "zone2"`, label "Long aerobic day") or
+`coach/liveCues.ts` (`"fat-burn"` as a focus id) — both render honest text, and
+`sessionIntent.ts:57` goes further by naming the "fat-burning zone" misconception and
+refusing it. **A grep flags all of them; only some reach a person.** Renaming
+internal ids risks persisted data for no user-visible gain.
+
+
+
+## 6af. A LENIENT PARSER RETURNING A PLAUSIBLE VALUE IS THE HAZARD — NOT ONE THAT THROWS
+
+**2026-08-31. Session 01 reproduced the original lapsed-certificate bug inside the
+function they had just written to prevent it**, and only found it because they tested
+the *historical string from the incident* rather than a generic "bad input".
+
+The guard was `new Date(iso)` checked with `Number.isFinite(d.getTime())`, under a
+comment stating it failed closed. Verified against the live runtime:
+
+    "31 Dec 2028"           PASSES  ->  2028-12-30   <- A DAY EARLY
+    "12/31/2028"            PASSES  ->  2028-12-30   <- a day early
+    "2026-02-31"            PASSES  ->  2026-03-03   <- a different month
+    "31/12/2028"            rejected
+    "not a date"            rejected
+
+**`"31 Dec 2028"` resolving to the 30th is the original incident's exact mechanism**,
+which until now was described as "parsed a day early" without an explanation. It was
+never a crash. It was a lenient parser confidently returning the wrong day, inside a
+check that decided whether lapsed insurance was displayed as valid.
+
+**`Number.isFinite(getTime())` is validation theatre: it rejects only the inputs that
+were never dangerous.** Garbage throws and gets handled. A plausible-looking date
+sails through and is trusted, which is the whole problem.
+
+**The remedy has two halves and neither is sufficient alone:**
+
+1. **Check the ISO shape with a regex BEFORE constructing the Date.** Rejects
+   `"31 Dec 2028"` and `"12/31/2028"` — ambiguous formats that mean different days in
+   different locales.
+2. **Round-trip the calendar day.** `2026-02-31` matches any sane ISO pattern and
+   silently becomes 3 March. Only a value that comes back as the day you asked for is
+   the day you asked for.
+
+**And the strictness belongs at the WRITE path, not only at display.** If a system
+stores what a person typed rather than a normalised value, every downstream guard is
+patching a hole it did not make. A date that cannot be parsed strictly should be
+refused at entry.
+
+**The generalisation past dates:** any parser that accepts a wide range of inputs and
+returns a single confident answer — dates, numbers with units, durations, currency,
+version strings — fails this way. **Ask not "does it reject bad input?" but "what does
+it silently do with input that is nearly right?"** That is where the trusted wrong
+answer comes from, and it is the same family as §6ae: a precise-looking result is the
+most convincing form of a wrong one.
+
+
+
+## 6ag. FAIL-CLOSED BY LUCK IS NOT FAIL-CLOSED BY DESIGN
+
+**2026-08-31.** `guide_profiles.credentials_verified` was dropped and replaced by a
+derived state. The claim made for it was that consumers would "break loudly". Half
+true, and the half that matters is the quiet one:
+
+- An explicit `select=credentials_verified` errors. Loud.
+- A `select=*` simply returns no such field. The property reads `undefined`,
+  `undefined` is falsy, and the guide renders as **not verified**. Safe — and
+  **silent**.
+
+**That outcome was safe because of the field's polarity, not because anything
+checked.** `verified` absent → falsy → "not verified" → correct. Invert the name and
+the same mechanics invert the meaning: a dropped `hidden`, `suppressed`, `disabled`,
+`locked` or `requires_review` reads `undefined` → falsy → **not hidden, not
+suppressed, not locked** — and the thing that was being withheld is now shown, with
+no error anywhere.
+
+**So when a field is removed or renamed, do not ask "will it break?" Ask "what does
+absent MEAN for this particular name?"** A negative flag and a positive flag fail in
+opposite directions through identical code.
+
+Two practical consequences:
+
+- **Remove the type declaration in the same change** — and use the type as the
+  sweep tool: in a codebase with `noUnusedLocals` off, deleting fields from the
+  type FIRST makes tsc enumerate every reader; cut what the error list names, and
+  the delete is provably complete (Session 01, PH-22). Make the type refuse, read
+  the list.** Leaving
+  `credentials_verified: boolean` in a TypeScript type after the column is gone means
+  new code compiles cleanly against a field that can only ever be `undefined`. The
+  compiler stops being a guard precisely where you most needed one.
+- **Where a legacy field must survive** — client-side fixtures still feed it, say —
+  comment it as legacy at the declaration, naming what replaced it. A field that
+  exists in the type and not in the database is a trap with a two-line fix.
+
+**The strongest form of the remedy: enforce the polarity at the SOURCE** (the
+identity migration). `identity_verified` is a computed field ending in
+`coalesce(…, false)`, so absent-record = unverified AT THE DATABASE — no consumer
+can mint the mark from a missing row even by being careless. When a flag's safe
+polarity matters, build it into the one place every reader must pass through,
+instead of trusting every reader to remember §6ag.
+
+This is the sibling of §6af: there, a lenient parser returned a plausible *value*;
+here, a missing field returns a plausible *default*. **Both produce a confident wrong
+answer with nothing raised**, and both were caught only by asking what the quiet path
+does rather than whether the loud path works.
+
+**Session 01 unified the pair in six words: A BOOLEAN IS JUST A CACHED PARSE OF A
+DATE.** `credentials_verified = true` was a date comparison somebody performed once
+and stored. `parseInstant` was a date comparison performed live on a string that had
+already lost its meaning. **The danger in both is a value that stays plausible after
+it stops being true** — and the remedy in both is the same: derive it, once, as close
+to the source of truth as you can get, and never keep the answer.
+
+**A corollary for sweeps, from the same batch.** Fixing a stale justification is not
+copy-paste. `Expeditions.tsx` cited the guide constraint as a *parallel* for not
+showing a company tick; after the migration the parallel breaks, but the conclusion
+still holds **on an entirely different reason** — ICEFALL vets no company and has no
+reviews. Session 01 rewrote the reason rather than the sentence, and added a warning
+against reading "verification exists now" as licence to ungate the company tick.
+**When an argument goes stale, check whether the conclusion survives on other grounds
+before you either repair it or delete it.** Two claims resting on one fact should be
+decoupled, not updated together.
+
+
+
+## 6ah. A GUARD THAT READS AN ALREADY-DEFAULTED VALUE IS NOT A GUARD
+
+**2026-08-31, second instance in one day of the same shape.** `coach/context.ts:146`
+carried a comment naming the danger precisely — *"bodyMassKg falls back to 72 in
+AppState, so it cannot be told apart from a real answer there"* — directly above:
+
+    bodyMassKg: typeof bodyMassKg === "number" ? bodyMassKg : null,
+
+which reads the **already-defaulted** context value. Always a number; the `null`
+branch is dead; the check performs nothing. Result: the AI coach is told
+"Body mass: 72 kg" **as a fact about an athlete who never gave one**, and plans
+nutrition and training load against an invented body. Verified against the running
+app: no `bodyMassKg` key has ever been written — every calorie figure in this build
+is computed on the fabricated default.
+
+The first instance was `parseInstant` (§6af): a comment stating fail-closed above a
+check that failed open. **Both were invisible to the type system, because a
+defaulted value carries the honest type.** `?? 72` launders `undefined` into a
+plausible number one layer below the guard, and the guard then checks the launder's
+output.
+
+**The rule: a check on a value must run where the value can still be absent.**
+Downstream of a `??`, an `||`, a default parameter or a schema default, absence no
+longer exists to be checked for. Either hoist the guard above the default, or read
+the raw source. And when writing a comment that names a hazard, put the code that
+handles it in the same commit — both instances were comments describing a defence
+that was never built, which is worse than no comment because the next reader
+believes the defence exists (§6aa's costume for logic).
+
+Sibling of §6ag: there, absence leaked through as a falsy default at a DROPPED
+field; here, absence is erased by a default before the check. In both, the quiet
+path manufactures a confident value out of nothing.
+
+
+
+## 6ai. TWO COLOUR VOCABULARIES, TWO CHANNELS — SURFACES SPEAK LAYERS, MARKS SPEAK CLAIMS
+
+**2026-08-31.** D4 (owner): GOLD badge = ICEFALL-checked credentials, small GREY =
+identity verified, BLUE = paid member. §6.10 (design doctrine): gold accents the
+COMMERCIAL layer, blue the athlete's OWN domain — "a climber should tell from the
+colour alone that they have crossed from the thing they own into the thing somebody
+is selling."
+
+Session 05 (guide app) caught the collision the moment D4 landed: **their azure tick
+meaning "ICEFALL read your documents" became a claim about a SUBSCRIPTION overnight,
+with no edit anywhere** — a ruling changed what an existing mark means underneath it.
+§6aa in a colour instead of a number. They also flagged, correctly, that D4 read
+against §6.10 looks like the two golds/blues swapped meanings family-wide.
+
+**THE RECONCILIATION — both rulings survive, because they govern different channels:**
+
+- **§6.10 governs SURFACE ACCENTS**: section styling, backgrounds, CTAs, the chrome
+  that tells you which territory a screen belongs to. Unchanged.
+- **D4 governs PERSON-STATUS MARKS**: badges attached to a person or company,
+  each carrying one claim. Owner's vocabulary, newer, and theirs.
+
+A colour may serve in both channels without contradiction because a reader never
+mistakes a screen's accent for a badge on a name. What is FORBIDDEN is within-channel
+drift: no fourth badge colour without a ruling, no gold surface accent styled to look
+like a badge, and **no mark whose meaning depends on which app you are in.**
+
+Three rules Session 05 set that now bind every tree:
+
+- **A mark must be interrogable** — gold links to the verification detail; a bare
+  tick is a claim with nothing behind it.
+- **Two marks need two sources** — identity and credentials verified by different
+  records, or they are one mark wearing two colours.
+- **Do not render a mark nothing in your tree can earn** (their app ships no blue:
+  no membership concept exists there — §6c). Record the vocabulary for whoever adds
+  the feature.
+
+And their token move is the pattern: `--ice-credential` holding the family's gilt
+VALUE — one gold in ICEFALL — but named for the CLAIM, because importing a token
+named `gilt` imports the old meaning with it. **When a ruling changes what a colour
+means, rename the binding at the point of use; keep the value.**
+
+
+
+## 6aj. WHEN A NEW CAPABILITY LANDS, THE HAZARD IS WHAT SILENTLY KEEPS DOING THE OLD THING
+
+**2026-08-31, Session 05, on landing real sign-in in the guide app.** The auth
+mechanism worked first try. The defect was everything AROUND it: Home and Profile
+kept reading `ME` — the invented sample guide — regardless of session, so a real
+person signing in was greeted by **somebody else's name and somebody else's
+bookings**. And the gold credentials mark had grown a second source: Verification
+read the server's derived state, while Home derived the same claim from the seed —
+so a guide ICEFALL had never checked would have seen gold on their own home screen.
+
+**Nothing was edited to cause either.** Screens written when no session existed
+carried on doing what they had always done, and sign-in arriving is what made them
+wrong. This is the general form of a whole day of §6 entries: a sentence goes stale
+(§6aa), a colour changes meaning (§6ai's origin), a data source keeps serving the
+sample. **A new capability's diff shows what it changes; nothing shows what now
+NEEDS to change and did not.**
+
+**So landing a capability requires a displacement audit: list what the app read
+before the capability existed, and ask of each source, "who reads this NOW?"**
+
+**The audit found twelve more readers in the same tree a day later, and three of
+them survive any screen-by-screen sweep** (Session 05's `sampleGate` follow-up —
+one gate, fail-closed, because twelve per-screen conditions is the disease that
+produced five commission models):
+
+- **A localStorage store seeded from the sample.** Saved data looks like the user's
+  own work — the one thing that should survive — but it was seeded from the
+  invented fixture, so ungated it quietly re-supplies what the gate just removed.
+- **A `useState` initialiser** — a snapshot of revocable data: correct when
+  written, frozen the moment the source is withdrawn. §6aj in React shape.
+- **A count.** The tab bar's unread badge promised six messages after every screen
+  was clean. **A badge is a reader too.**
+- **A DISABLED CONTROL is a reader too** (Session 05, decision 19). A greyed compose
+  button reads as "not built yet" — but the capability was not unbuilt, it was RULED
+  OUT, and the obvious way to finish a disabled control is to wire it up, hit the
+  RLS denial, and request the grant that breaks the rule. When a ruling lands, ask
+  which greyed affordances now promise something the platform has decided against.
+  Remove them with the reason written where the control was, so nobody restores it
+  as a kindness — and record which disabled controls are merely unbuilt (those may
+  legitimately return) versus forbidden. The two look identical on screen.
+
+And fail closed while the session is UNKNOWN: "we don't yet know whose app this
+is" is not honestly answered with six invented clients.
+
+**The count failure also arrives from the opposite direction** (Session 01, the
+Home unread badge): a badge derived from a properly-gated list looks finished — but
+the REAL side mapped every thread `unread: 0`, hardcoded, because nothing tracked
+read state yet. Both halves zero, so the figure was right for months **without ever
+being exercised**: the day read-tracking lands, it under-reports real messages
+while a DEV build still counts invented ones. **A figure that is correct only
+because every input is currently zero has not been verified — it has been
+unexercised.** And the merge beside it — `[...real, ...invented]` — is correct
+today only because one array is empty: displacement written as concatenation is not
+a bug yet, which is precisely why it will not look like one to whoever reads it
+next. Log these BEFORE the capability lands (their `PH-28`), so the audit is ready
+rather than remembered.
+Session 05's fixes are the pattern:
+
+- **A real session DISPLACES the sample entirely — never merges.** A screen mixing a
+  real account with invented figures is one where no individual number can be
+  trusted, and the demo banner cannot say which half it covers.
+- **One claim, one source** (§6ai's rule): the credential mark renders only from the
+  server's derived state once a session exists.
+- **An UNREADABLE state never earns a mark — a claim made by a timeout is still a
+  claim.**
+
+
+
+## 6ak. A CITATION IS ONLY AS GOOD AS ITS REPRODUCTION
+
+**2026-08-31, the calorie fix.** The fixed per-activity MET was replaced with the
+ACSM metabolic equations, applied per position sample (averaging pace first
+flattens the hills back out and hands back the constant the change was meant to
+remove). Measured against the owner's complaint: one hour at 10 km/h, 72 kg — old
+code, 720 kcal flat OR climbing; new, 758 flat and 1,066 on a 10% grade. The
+figure now moves with effort, which is what "inaccurate" meant.
+
+**The rule, from Session 01:** citing a published basis is worth nothing unless the
+implementation reproduces it. An equation with one coefficient transcribed into the
+wrong slot still looks authoritative — **worse than the constant it replaced,
+because now it carries a citation.** So the repo holds seven published compendium
+values as a fixture, and the model must reproduce all seven (±1.2 MET). The old
+`metEstimate` was never checkable against anything; this is. **When adopting a
+published formula, commit reference values FROM THE PUBLICATION beside it, and test
+reproduction, not plausibility.**
+
+Satellites of the same rule, all shipped as tested behaviour rather than comment
+assertions (§6ah):
+- **Do not borrow an equation's authority outside its fitted domain** — cycling
+  does not use running equations; indoor keeps a fixed MET because a treadmill has
+  no GPS to integrate, and that is the best honest figure, not a null pretending
+  the session did not happen.
+- **Gaps are not costed.** Sample intervals over 30 s are skipped: costing a
+  backgrounded span at the pace of the sample that ended it invents the energy of
+  everything in between — the classic way an activity returns from a tunnel with a
+  personal best attached.
+- **Standing still returns null, never zero** — and descent never costs nothing or
+  less; spikes are clamped.
+
+
+
+## 6al. VERIFICATION EVIDENCE EXPIRES WHEN REACHABILITY CHANGES
+
+**2026-08-31, the web auth gate.** Session 02's earlier bundle check proved four
+gated strings at "0 files" in a production build — true, because Rollup dropped the
+whole `/app` chunk behind `import.meta.env.DEV`. Moving the gate from DEV to a real
+session made ~30 screens reachable in production for the first time, **and the old
+evidence did not transfer: it described a build in which the code did not exist.**
+
+Re-running the check found a live violation the gate had been hiding: `Coach.tsx`
+rendered its credits chip unconditionally and swapped only the number — so the
+first real signed-in climber would have read **"Coach credits · — available"**, a
+metered balance nothing in the codebase defines, in the bare-dash form the doctrine
+bans by name. Harmless for months, wrong the day the gate moved, no edit in between.
+
+**The rule: a verification result is a fact about the build it ran against, not
+about the code.** When a gate moves, a flag unties, a route mounts, or a chunk
+starts shipping, every check that depended on unreachability is void and must be
+re-run. Corollary of §6r (a guard written against a fixture stops guarding when the
+source changes) and sibling of §6aj (the hazard is what silently keeps doing the
+old thing) — here, what kept doing the old thing was the EVIDENCE.
+
+Practice that followed: screens written under "this only runs in dev with demo data
+present" get a dedicated audit against a production build with the arrays empty,
+scheduled as its own job — never assumed covered by the feature work that moved the
+gate. And a gate whose safety rests on a coupling ("IS_DEMO is DEV") carries a
+tripwire comment naming the coupling and the grep that detects its break.
+
+
+
+## 6am. A MODEL'S FAILURE MODE IS GENEROSITY — HAND IT A CLOSED WORLD
+
+**2026-08-31, the coach's trek suggestions (PH-14b).** The naive build is a prompt
+line: "suggest treks near the athlete's objective." A model so instructed will
+produce real-sounding treks ICEFALL does not hold — **it fails by being helpful,
+not by being wrong on purpose** — and every invented itinerary carries the app's
+authority.
+
+The shipped architecture inverts it: **retrieval first, instruction second.** Code
+searches the real records and hands the model the shortlist as data with a
+closed-world rule — *these are the ONLY treks you may suggest or name.* The
+scripted (offline) coach answers from the SAME retrieval, so the two coaches
+cannot suggest different worlds.
+
+Satellites:
+- **The basis word is chosen by CODE, not the model.** "Linked to Mont Blanc
+  itself" vs "in the same country as Aconcagua" — the honesty of "near" is decided
+  where it can be tested.
+- **No third band.** Mountain-linked, then same-country — a "nearby" that has
+  drifted to a continent is not near, and padding dilutes the bands that mean
+  something. An empty result says so: the catalogue holds no Greek trek, and the
+  coach says exactly that rather than stretching.
+- **Judgement is explicitly left open** — "whether one suits where your training
+  is right now is a conversation, not a list." Retrieval bounds the nouns; it must
+  not fake the verdict.
+
+And the confession that belongs beside it: ten minutes after recording §6aa's
+lesson, its author wrote the trek-question regex twice — caught only on re-read,
+now one exported pattern. **Knowing the shape does not stop the hand; only the
+re-read does.** The constitution prevents nothing by being read once; it works by
+being the thing you check your own diff against.
+
 
 ## 6f. A SYNC SCRIPT'S CORRECTNESS IS NOT OBSERVABLE FROM THE FILE IT COPIES FROM
 

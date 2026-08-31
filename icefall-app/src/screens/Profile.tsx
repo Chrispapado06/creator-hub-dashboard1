@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
+import { countryName, useMyProfile } from "@/auth/useMyProfile";
 import { Link } from "react-router-dom";
 import { Card, Divider, SectionLabel, Stat, sharePage } from "@/components/ui/primitives";
 import { BadgeHex } from "@/components/domain/BadgeHex";
@@ -40,7 +41,7 @@ import { encodeProfile, profileLink, type SharedProfile } from "@/profile/shareL
 import { cn } from "@/lib/utils";
 import { fmtDate, fmtDistance, fmtElevation, fmtHours } from "@/lib/format";
 import { useApp } from "@/state/AppState";
-import { useAthleteTotals, useLifetimePoints, useRecordedActivities } from "@/tracking/feed";
+import { useAthleteTotals, useRecordedActivities } from "@/tracking/feed";
 import { ACHIEVEMENT_CATALOGUE } from "@/tracking/records";
 import { loadMeta } from "@/tracking/store";
 
@@ -52,13 +53,13 @@ const BANNER_H = 250;
 const SAFE_TOP = "var(--screen-safe-top, env(safe-area-inset-top, 0px))";
 
 /**
- * ICEFALL has no accounts and no server, so nobody can follow anybody. Those two
+ * Accounts exist, but no follow graph does, so nobody can follow anybody. Those two
  * figures are therefore unknown rather than zero — a zero would claim a real
  * count of nought. The one social number that IS real is the cards this athlete
  * has saved, which the strip prints under CONNECTIONS.
  */
 const NO_SOCIAL_GRAPH =
-  "ICEFALL has no accounts, so nobody can follow you and there is nobody to follow. Cards you have saved are counted under Connections.";
+  "Accounts exist now, but following does not — no climber can follow another yet, so this is an empty feature rather than an empty result. Cards you have saved are counted under Connections.";
 
 /** One figure in the six-across strip. An unknown value is an em dash, never 0. */
 function ProfileFigure({
@@ -178,7 +179,7 @@ function PassportRow({
  *
  * FOUR THINGS ON THE MOCKUP DO NOT EXIST AS DATA, AND NONE IS INVENTED HERE:
  *
- *   · FOLLOWERS and FOLLOWING. ICEFALL has no accounts and no server, so no
+ *   · FOLLOWERS and FOLLOWING. Accounts exist, but following is not built, so no
  *     count exists — both print an em dash with the reason on them. The only
  *     real social figure is the cards this athlete saved, under CONNECTIONS.
  *   · The verified tick renders only when the server-granted `verified` badge
@@ -198,7 +199,6 @@ export default function Profile() {
   const [cvOpen, setCvOpen] = useState(false);
   const { people } = useFollowing();
   const stats = useAthleteTotals();
-  const points = useLifetimePoints();
   const recorded = useRecordedActivities();
   const myPosts = useOwnPosts();
   const myLogs = useSummitLogs();
@@ -234,8 +234,23 @@ export default function Profile() {
 
   const objective = goals.find((g) => g.status === "active");
   const highestM = user.summits.reduce((m, s) => Math.max(m, s.elevationM ?? 0), 0);
-  const handle =
-    settings.username || (user.name ?? "athlete").toLowerCase().replace(/[^a-z0-9]/g, "");
+  /*
+   * THE HANDLE COMES FROM THE SERVER, and there is no longer a fallback that
+   * invents one.
+   *
+   * This used to read `settings.username || slug(user.name)` — so somebody who
+   * had never chosen a handle was shown `@alexhoffman` anyway. That handle was
+   * not unique, was not reachable, and was not theirs: another climber typing it
+   * would find nobody or find somebody else. Deriving an identifier from a
+   * display name is the same class of invention as a made-up statistic.
+   *
+   * Now: the real handle, or nothing at all with a prompt to choose one. The
+   * local `settings.username` is still honoured while offline, because it is
+   * what this device last saw — but it never manufactures one from a name.
+   */
+  const my = useMyProfile();
+  const serverHandle = my.status === "ready" ? my.profile.username : null;
+  const handle = serverHandle ?? settings.username ?? null;
   const earnedBadges = BADGES.filter(
     (b) => badgeState(b, settings, currentTier).kind === "earned",
   );
@@ -246,12 +261,18 @@ export default function Profile() {
         `earned`) and the live subscription tier. Neither is ever assumed. -- */
   const verified = badgeState(badgeById("verified"), settings, currentTier).kind === "earned";
   const tierLabel = currentTier === "free" ? null : currentTier;
-  const location = settings.region || user.homeBase || undefined;
+  const serverLocation =
+    my.status === "ready"
+      ? [my.profile.locationLabel, countryName(my.profile.countryCode)]
+          .filter(Boolean)
+          .join(", ") || null
+      : null;
+  const location = serverLocation || settings.region || user.homeBase || undefined;
 
   const shared: SharedProfile = {
     v: 1,
     name: user.name,
-    handle,
+    handle: handle ?? "",
     bio: settings.bio || undefined,
     region: settings.region || user.homeBase || undefined,
     objective: objective
@@ -432,7 +453,7 @@ export default function Profile() {
             {/* Direct path to editing your own profile — it existed only three
                 taps deep inside Settings before this. */}
             <Link
-              to="/settings/profile"
+              to="/settings/profile?from=/profile"
               aria-label="Edit profile"
               className="absolute bottom-0 right-0 grid h-8 w-8 place-items-center rounded-full border-2 border-obsidian bg-elevated text-snow transition-colors hover:bg-slate"
             >
@@ -452,7 +473,20 @@ export default function Profile() {
               </span>
             )}
           </div>
-          <p className="mt-0.5 text-[14px] text-mist">@{handle}</p>
+          {handle ? (
+            <p className="mt-0.5 text-[14px] text-mist">@{handle}</p>
+          ) : (
+            /*
+              No handle, and none invented. Says what is missing and how to fix
+              it rather than showing a plausible-looking name nobody can reach.
+            */
+            <Link
+              to="/auth/handle"
+              className="mt-0.5 inline-block text-[13px] text-azure transition-colors hover:text-azure-bright"
+            >
+              Choose a username
+            </Link>
+          )}
           {location && (
             <p className="mt-1.5 flex items-center gap-1.5 text-[13px] text-mist">
               <MapPin size={12.5} strokeWidth={1.7} className="shrink-0 text-mist-dim" />
@@ -734,10 +768,6 @@ export default function Profile() {
         {tab === "stats" && (
           <StatsTab
             stats={stats}
-            points={points}
-            level={user.level}
-            xp={user.xp}
-            xpToNext={user.xpToNext}
             achievements={achievements}
           />
         )}
@@ -756,7 +786,7 @@ export default function Profile() {
               { to: "/goals", title: "Goals", detail: `${goals.filter((g) => g.status === "active").length} active` },
               { to: "/daily", title: "Daily & Health", detail: "Steps, energy, recovery" },
               { to: "/gear", title: "Gear", detail: "Locker & catalogue" },
-              { to: "/activity/history", title: "Activity history", detail: `${recorded.length} sessions` },
+              { to: "/activity", title: "Activity history", detail: `${recorded.length} sessions` },
               { to: "/settings", title: "Settings", detail: "Account, privacy, units" },
             ].map((row, i) => (
               <Link
@@ -805,6 +835,25 @@ function ActivityTab({ recorded }: { recorded: ReturnType<typeof useRecordedActi
   }
   return (
     <>
+      {/* PH-02 — "Activity history can not be found anywhere only after you
+          finish a workout." The screen existed at `/activity`; both links to it
+          pointed at `/activity/history`, which is not a route, so every route
+          in was broken. This tab is the private list the owner asked for, and
+          it now says how many it is showing rather than silently stopping at
+          eight, with a way through to all of them. */}
+      {recorded.length > 8 && (
+        <Rise className="pt-4">
+          <Link
+            to="/activity"
+            className="flex items-center justify-between rounded-card border border-hairline bg-graphite px-4 py-3 text-[12.5px] text-mist transition-colors hover:border-azure/45 hover:text-snow"
+          >
+            <span>
+              Showing your 8 most recent of {recorded.length}
+            </span>
+            <span className="text-azure">All activity</span>
+          </Link>
+        </Rise>
+      )}
       {recorded.slice(0, 8).map((r) => (
         <Rise key={r.id} className="pt-3">
           <Link
@@ -883,23 +932,13 @@ function SummitsTab({ summits }: { summits: { name: string; date?: string; eleva
   );
 }
 
-/** Level and XP live here now — real progression, just not what the page leads with. */
 function StatsTab({
   stats,
-  points,
-  level,
-  xp,
-  xpToNext,
   achievements,
 }: {
   stats: ReturnType<typeof useAthleteTotals>;
-  points: number;
-  level: number;
-  xp: number;
-  xpToNext: number;
   achievements: { id: string; name: string; locked: boolean }[];
 }) {
-  const xpPct = Math.min(100, (xp / xpToNext) * 100);
   return (
     <>
       <Rise className="pt-5">
@@ -921,45 +960,13 @@ function StatsTab({
         </p>
       </Rise>
 
-      {/* `xpToNext === 0` means no progression model is running — see the note
-          in `state/AppState.tsx`. The bar is not drawn empty and the level is
-          not printed as 1, because both would still be presenting a system that
-          does not exist. Points are shown either way: those are awarded per
-          recorded activity and are the one earned figure on this screen. */}
-      <Rise className="pt-6">
-        {xpToNext > 0 ? (
-          <>
-            <div className="flex items-baseline justify-between">
-              <SectionLabel>Level {level}</SectionLabel>
-              <span className="tnum text-[11.5px] text-mist-dim">
-                {xp.toLocaleString("en-GB")} XP
-                {points > 0 && ` · ${points.toLocaleString("en-GB")} pts`}
-              </span>
-            </div>
-            <div className="mt-2.5 h-[3px] overflow-hidden rounded-full bg-white/[0.06]">
-              <div className="h-full rounded-full bg-azure" style={{ width: `${xpPct}%` }} />
-            </div>
-            <p className="tnum mt-2 text-[10.5px] text-mist-dim">
-              {(xpToNext - xp).toLocaleString("en-GB")} XP to level {level + 1}
-            </p>
-          </>
-        ) : (
-          <>
-            <div className="flex items-baseline justify-between">
-              <SectionLabel>Points</SectionLabel>
-              <span className="tnum text-[11.5px] text-mist-dim">
-                {points.toLocaleString("en-GB")} pts
-              </span>
-            </div>
-            {/* Copy stays about the product. Why the level went is an argument
-                for `state/AppState.tsx`, not for the athlete's Profile. */}
-            <p className="mt-2 text-[11px] leading-relaxed text-mist-dim">
-              Awarded for what you record. ICEFALL has no levels and no XP — a level would be a
-              claim about you, and there is no system behind one to earn.
-            </p>
-          </>
-        )}
-      </Rise>
+      {/* PH-01 / D5 / PH-22 — NO PROGRESSION BLOCK, IN ANY BUILD.
+          The owner, asked what should replace points here, said "Nothing, no
+          points." The Level/XP strip that used to survive here for DEV is gone
+          with it: after points were removed, the fixture's Level 24 was the
+          only progression figure left anywhere, rendering a claim nobody
+          earned in every screenshot and review. The model no longer carries
+          the fields — see the User type. */}
 
       <Rise className="pt-6">
         <div className="flex items-baseline justify-between">
@@ -1048,7 +1055,7 @@ function PhotosTab() {
   return (
     <Rise className="pt-5">
       <p className="text-[12.5px] leading-relaxed text-mist-dim">
-        No photographs yet. ICEFALL has no accounts and nothing is uploaded anywhere — when photo
+        No photographs yet. Nothing is uploaded anywhere yet — when photo
         support ships, pictures you attach to a session will collect here.
       </p>
       <Divider className="mt-4" />

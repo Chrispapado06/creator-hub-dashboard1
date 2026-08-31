@@ -602,7 +602,7 @@ async function scan(accounts, state, whales, now) {
     // they're waiting OR already being handled — better pulse on who chatters
     // are talking to. Lean card: name · previous topic · recent script · this
     // month's milestone (payday / birthday / anniversary / new job). No topic-
-    // suggestion or coach noise. Runs off `chats` (not just unanswered threads)
+    // suggestion noise. Runs off `chats` (not just unanswered threads)
     // and BEFORE the no-threads early-return, so replied-to whales still count.
     // Deduped once per whale per shift.
     const whaleSet = new Set(whales?.byAccount?.[acct.accountId] || []);

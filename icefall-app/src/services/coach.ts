@@ -1,10 +1,17 @@
 import type { CoachMessage } from "@/types";
 import { systemPromptFor, type CoachContext } from "@/coach/context";
 import {
+  TREK_QUESTION,
+  isTrekQuestion,
+  scriptedTrekReply,
+  trekContextBlock,
+} from "@/coach/trekSuggestions";
+import {
   DEFAULT_COACH_MODEL, HISTORY_TURNS, MAX_REPLY_TOKENS, approxTokens, costOf,
   estimateExchangeMicros, type TokenUsage,
 } from "@/coach/budget";
 import { fmtCountdown, fmtDistance, fmtElevation } from "@/lib/format";
+import { OFFLINE } from "@/offline/offline";
 
 /**
  * ICEFALL Coach.
@@ -61,6 +68,13 @@ interface Rule {
 }
 
 const RULES: Rule[] = [
+  /* PH-14b. First on purpose: a trek question must reach the retrieval, not be
+     swallowed by a broader match below. The reply reads the same records the
+     model path is handed, so the two coaches cannot suggest different worlds. */
+  {
+    match: TREK_QUESTION,
+    reply: (c) => scriptedTrekReply(c.objective?.name),
+  },
   {
     match: /what should i train|train today|session today|workout today/i,
     reply: (c) => {
@@ -203,8 +217,18 @@ export async function askCoach(
   const base = { id: `coach-${Date.now()}`, at: new Date().toISOString() };
   const recent = history.slice(-HISTORY_TURNS);
 
-  if (ENDPOINT) {
-    const system = systemPromptFor(ctx);
+  // `ENDPOINT` is unset in this build, so the scripted coach already answers
+  // everything — but an offline build must not depend on that staying true.
+  if (ENDPOINT && !OFFLINE) {
+    /* PH-14b. The trek shortlist is RETRIEVED and handed to the model as data
+       with a closed-world rule. Without it, a model told to "suggest treks
+       near their objective" will produce real-sounding treks ICEFALL does not
+       hold — its failure mode here is generosity, not rudeness. Appended only
+       when the question asks, because the block is tokens the athlete pays
+       for on every other question. */
+    const system = isTrekQuestion(question)
+      ? `${systemPromptFor(ctx)}\n\n${trekContextBlock(ctx.objective?.name)}`
+      : systemPromptFor(ctx);
     const estimate = estimateExchangeMicros(
       approxTokens(system),
       recent.reduce((n, m) => n + approxTokens(m.body), 0),

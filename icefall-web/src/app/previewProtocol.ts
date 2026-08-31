@@ -173,9 +173,42 @@ function int(v: unknown, min: number, max: number): number | undefined {
 function url(v: unknown): string | undefined {
   const s = str(v, 2048);
   if (!s) return undefined;
-  if (s.startsWith("//")) return undefined;
-  if (s.startsWith("/")) return s;
-  return /^https:\/\//i.test(s) ? s : undefined;
+
+  /*
+    A BACKSLASH GOT PAST THE OLD GUARD, and the fix is to stop pattern-matching.
+
+    This used to read: reject anything starting `//`, allow anything starting
+    `/`, otherwise require `https:`. `/\evil.com/x.gif` starts with a single
+    slash, so it was allowed through as an app-relative path — and browsers
+    treat `\` as `/` when resolving a URL, so it loads `http://evil.com/x.gif`.
+    Verified before fixing.
+
+    The lesson is the shape rather than the character: a URL guard written as
+    string prefixes is guessing at what a browser will do with the string. The
+    browser's own parser is the only thing that knows, so ask it, and judge the
+    RESULT rather than the input.
+  */
+  if (s.includes("\\")) return undefined;
+
+  const base = typeof window !== "undefined" ? window.location.origin : "https://icefall.app";
+  let parsed: URL;
+  try {
+    parsed = new URL(s, base);
+  } catch {
+    return undefined;
+  }
+
+  // Absolute https, from anywhere. Not http — mixed content, and not a scheme
+  // that can execute: `javascript:` and `data:` both fail this and the next
+  // test, because their origin is "null" and their protocol is neither.
+  if (parsed.protocol === "https:") return parsed.href;
+
+  // Otherwise it must resolve to this very page's origin — which is what
+  // "app-relative" actually means. Returning the parsed path rather than the
+  // input normalises the trick away instead of merely refusing one spelling.
+  if (parsed.origin === base) return parsed.pathname + parsed.search;
+
+  return undefined;
 }
 
 function list<T>(v: unknown, each: (item: unknown) => T | undefined): T[] | undefined {

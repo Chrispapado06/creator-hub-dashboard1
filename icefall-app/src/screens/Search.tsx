@@ -5,9 +5,12 @@ import {
   Salad, Search as SearchIcon, Settings as SettingsIcon, ShoppingBag, Target, Users,
 } from "lucide-react";
 import { Rise, Stagger } from "@/components/layout/chrome";
-import { SectionLabel } from "@/components/ui/primitives";
 import { fmtDistance, fmtElevation } from "@/lib/format";
 import { loadPeakCatalogue, type Peak } from "@/services/peaks";
+import { allGuides, credentialStatus } from "@/guides/types";
+import { DEMO_OPERATORS, allOperators } from "@/services/operators";
+import { DISCOVERABLE_ATHLETES, matchesAthlete } from "@/network/directory";
+import { Badge, SectionLabel } from "@/components/ui/primitives";
 import { useActivityFeed } from "@/tracking/feed";
 import { useApp } from "@/state/AppState";
 import { cn } from "@/lib/utils";
@@ -117,12 +120,55 @@ export default function Search() {
     return [...starts.sort(by), ...contains.sort(by)].slice(0, 8);
   }, [query, peaks]);
 
+  /* ---- Guides, companies, people — PH-21 -------------------------------
+     All three read the SAME gated sources their own screens read —
+     `allGuides()`, `allOperators()`, `DISCOVERABLE_ATHLETES` — never the raw
+     fixture arrays. A search surface is a new reader of every list it indexes
+     (§6aj): pulling from the ungated arrays would resurrect entities the
+     definitions have already removed from this build. Reading through the
+     gate means production search inherits production truth with no logic
+     here at all. */
+
+  const guideHits = useMemo(() => {
+    if (query.length < 2) return [];
+    return allGuides()
+      .filter((g) =>
+        `${g.name} ${g.basedIn} ${g.credentials[0]?.label ?? ""}`.toLowerCase().includes(query),
+      )
+      .slice(0, 5);
+  }, [query]);
+
+  const companyHits = useMemo(() => {
+    if (query.length < 2) return [];
+    return allOperators()
+      .filter((o) =>
+        `${o.name} ${o.certification} ${o.regions.join(" ")}`.toLowerCase().includes(query),
+      )
+      .slice(0, 5);
+  }, [query]);
+
+  /*
+   * People match on NAME and BIO only, never their objective — the same rule
+   * as social search, for the same reason: typing a mountain and getting a
+   * list of who will be on it in March is a different product, and one the
+   * athlete never opted into. `DISCOVERABLE_ATHLETES` is empty until a backend
+   * returns real people, so this finds nobody today; the empty state says so
+   * in words rather than letting silence read as "no such person exists".
+   */
+  const peopleHits = useMemo(() => {
+    if (query.length < 2) return [];
+    return DISCOVERABLE_ATHLETES.filter((a) => matchesAthlete(a, query)).slice(0, 5);
+  }, [query]);
+
   const empty =
     query.length > 0 &&
     places.length === 0 &&
     objectives.length === 0 &&
     activities.length === 0 &&
-    peakHits.length === 0;
+    peakHits.length === 0 &&
+    guideHits.length === 0 &&
+    companyHits.length === 0 &&
+    peopleHits.length === 0;
 
   return (
     <div className="no-scrollbar relative h-full overflow-y-auto bg-obsidian">
@@ -146,7 +192,7 @@ export default function Search() {
               ref={inputRef}
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Search mountains, sessions, anything"
+              placeholder="Search mountains, guides, companies, anything"
               aria-label="Search ICEFALL"
               className="h-11 w-full bg-transparent text-[14px] text-snow outline-none placeholder:text-mist-dim"
             />
@@ -247,11 +293,92 @@ export default function Search() {
           </Rise>
         )}
 
+        {guideHits.length > 0 && (
+          <Rise className="pt-6">
+            <SectionLabel>Guides</SectionLabel>
+            <div className="mt-3 divide-y divide-hairline border-y border-hairline">
+              {guideHits.map((g) => (
+                <Row
+                  key={g.id}
+                  to={`/explore/guides/${encodeURIComponent(g.id)}`}
+                  icon={Users}
+                  title={g.name}
+                  /* The credential's status word travels WITH the credential —
+                     "IFMGA / UIAGM mountain guide · Claimed" — never the label
+                     alone. The request-hero truncation bug is the standing
+                     lesson: a qualification stripped of its qualifier reads as
+                     a fact ICEFALL established. */
+                  detail={
+                    g.credentials[0]
+                      ? `${g.credentials[0].label} · ${credentialStatus(g.credentials[0])} · ${g.basedIn}`
+                      : g.basedIn
+                  }
+                  badge={g.demo === true ? <Badge tone="azure">Demo</Badge> : undefined}
+                />
+              ))}
+            </div>
+          </Rise>
+        )}
+
+        {companyHits.length > 0 && (
+          <Rise className="pt-6">
+            <SectionLabel>Expedition companies</SectionLabel>
+            <div className="mt-3 divide-y divide-hairline border-y border-hairline">
+              {companyHits.map((o) => (
+                <Row
+                  key={o.id}
+                  to={`/operator/${encodeURIComponent(o.id)}`}
+                  icon={Compass}
+                  title={o.name}
+                  /* Certification and regions only. `responseHours` exists on
+                     this record and is the standing invented-response-time
+                     defect — it does not get a new surface here. */
+                  detail={`${o.certification} · ${o.regions.slice(0, 3).join(", ")}`}
+                  badge={
+                    DEMO_OPERATORS.some((d) => d.id === o.id) ? (
+                      <Badge tone="azure">Demo</Badge>
+                    ) : (
+                      <Badge tone="neutral">Sample</Badge>
+                    )
+                  }
+                />
+              ))}
+            </div>
+          </Rise>
+        )}
+
+        {peopleHits.length > 0 && (
+          <Rise className="pt-6">
+            <SectionLabel>People</SectionLabel>
+            <div className="mt-3 divide-y divide-hairline border-y border-hairline">
+              {peopleHits.map((a) => (
+                <Row
+                  key={a.id}
+                  to={`/explore/people`}
+                  icon={Users}
+                  title={a.displayName}
+                  /* The bio, never the objective. The row must not leak where
+                     somebody will be and when — the same line the matcher
+                     already holds. */
+                  detail={a.bio ?? "ICEFALL athlete"}
+                />
+              ))}
+            </div>
+          </Rise>
+        )}
+
         {empty && (
           <Rise className="pt-16">
             <p className="text-center text-[13px] text-mist">Nothing matches "{q}".</p>
             <p className="mt-1.5 text-center text-[11.5px] text-mist-dim">
-              Try a mountain name, or a word like "kit", "recovery" or "settings".
+              Try a mountain name, a guide, a company, or a word like "kit" or "settings".
+            </p>
+            {/* Said here because silence lies: a name search that renders
+                nothing reads as "no such person", when the truth is that no
+                climber directory exists yet for anyone to be found in. */}
+            <p className="mx-auto mt-4 max-w-[300px] text-center text-[11px] leading-relaxed text-mist-dim">
+              People cannot be found yet — there is no climber directory until accounts connect,
+              so nobody is searchable, not just this name.
             </p>
           </Rise>
         )}
@@ -265,11 +392,16 @@ function Row({
   icon: Icon,
   title,
   detail,
+  badge,
 }: {
   to: string;
   icon: typeof Compass;
   title: string;
   detail: string;
+  /** A disclosure chip — Demo, Sample. Rendered beside the title, never after
+      the detail, so truncation can only ever eat the geography, not the
+      disclosure. */
+  badge?: React.ReactNode;
 }) {
   return (
     <Link to={to} className={cn("flex items-center gap-3.5 py-3")}>
@@ -277,7 +409,10 @@ function Row({
         <Icon size={16} strokeWidth={1.6} />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[13.5px] text-snow">{title}</span>
+        <span className="flex items-center gap-2">
+          <span className="truncate text-[13.5px] text-snow">{title}</span>
+          {badge}
+        </span>
         <span className="mt-0.5 block truncate tnum text-[11.5px] text-mist-dim">{detail}</span>
       </span>
       <ChevronRight size={16} className="shrink-0 text-mist-dim" />

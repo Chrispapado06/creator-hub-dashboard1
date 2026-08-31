@@ -26,6 +26,7 @@ import type {
   Booking,
   Company,
   CompanyMountain,
+  CompanyTrek,
   CompanyUser,
   Conversation,
   ConversationNote,
@@ -42,6 +43,7 @@ import type {
   ProductDeparture,
   ProductKind,
   Placement,
+  Trek,
 } from "./types";
 import type { Reading } from "./honesty";
 
@@ -240,6 +242,21 @@ export interface OperatorBackend {
     companyUserId: string,
     status: CompanyUser["status"],
   ): Promise<WriteResult<CompanyUser>>;
+  /**
+   * Records a person on the company's team list with status `invited`.
+   *
+   * IT DOES NOT DELIVER ANYTHING, AND THE NAME IS THE ONLY PART THAT SOUNDS
+   * LIKE IT DOES. There is no mail sender configured in the ICEFALL Supabase
+   * project and this app has no authentication, so there is nothing to send and
+   * nowhere for a recipient to land. Any implementation of this interface that
+   * starts actually mailing people must first satisfy the three security
+   * properties written at the call site in `src/screens/Team.tsx` — the
+   * invitation carries the identity, it is single-use/expiring/address-bound,
+   * and the invitee cannot change the address on it.
+   *
+   * `companyId` is NOT part of `input` on purpose: an invite is always scoped
+   * to the caller's own company, never aimed at another one.
+   */
   inviteTeamMember(
     session: Session,
     input: { displayName: string; email: string; role: CompanyUser["role"] },
@@ -252,6 +269,33 @@ export interface OperatorBackend {
   getPlacements(session: Session): Promise<Placement[]>;
   getMountains(): Promise<Mountain[]>;
 
+  /* ---- treks ----------------------------------------------------------- */
+  /**
+   * THE TREK SURFACE — the same two reads as the mountain one, for the other
+   * noun. `getTreks` is Icefall's catalogue of routes; `getTrekAccess` is which
+   * of them this company has been granted.
+   *
+   * THERE IS NO WRITE HERE, AND THAT IS NOT AN OVERSIGHT. It matches the
+   * mountain surface exactly: `getAccess`, `getPlacements` and `getMountains`
+   * are three reads and there is no `requestMountainAccess` either. An operator
+   * cannot grant themselves a route, and this portal cannot yet deliver the
+   * request to Icefall — so `Treks.tsx` says that in words rather than printing
+   * "Request sent" over a method that does not exist. The write path is asked
+   * for in `icefall-sessions/requests/09-company-treks-migration.md`.
+   *
+   * WHY THESE TWO ARE OPTIONAL WHERE THE MOUNTAIN PAIR IS NOT. A second
+   * implementation of this seam — `src/offline/backend.ts`, the flight demo —
+   * is owned and frozen by another session this phase, and a required member
+   * would break it. Optional is therefore not a softening of the contract but
+   * an honest statement of it: an implementation may not have a trek catalogue,
+   * and the screen must tell the operator the catalogue is UNAVAILABLE rather
+   * than draw an empty list, which would say Icefall has no treks. When the
+   * trek tables land these become required, like the mountain pair.
+   */
+  getTreks?(): Promise<Trek[]>;
+  /** The authorization boundary for routes. Scoped by session, like every read. */
+  getTrekAccess?(session: Session): Promise<CompanyTrek[]>;
+
   /* ---- products -------------------------------------------------------- */
   getProducts(session: Session): Promise<Product[]>;
   getProduct(session: Session, productId: string): Promise<Product | null>;
@@ -263,11 +307,27 @@ export interface OperatorBackend {
    * Availability is a fact about the operator's own logistics and going stale
    * hurts the climber who enquires on a sold-out trip. Price and dates are not
    * in this method's type and are staff-only in the schema.
+   *
+   * THE PATCH TYPE IS THE ENFORCEMENT. Its keys are exactly
+   * `DEPARTURE_DIRECT_FIELDS` in `types.ts` — the columns `authenticated` holds
+   * an UPDATE grant on — so a date or a price cannot be smuggled through this
+   * method by a caller that meant well. `spotsTotal` is here because the
+   * constitution put it in that list: how many places a company runs is its own
+   * logistics, the same kind of fact as how many are left.
+   *
+   * RETURNS THE STORED ROW, and callers must render THAT rather than what they
+   * sent. An implementation that ignores part of the patch then shows as the
+   * field failing to move, which is the truth, instead of the screen agreeing
+   * with itself about a write that did not happen.
    */
   setDepartureAvailability(
     session: Session,
     departureId: string,
-    patch: { availability?: ProductDeparture["availability"]; spotsLeft?: number | null },
+    patch: {
+      availability?: ProductDeparture["availability"];
+      spotsTotal?: number | null;
+      spotsLeft?: number | null;
+    },
   ): Promise<WriteResult<ProductDeparture>>;
 
   /* ---- the publication boundary ---------------------------------------- */
@@ -319,6 +379,20 @@ export interface OperatorBackend {
   /* ---- dashboard, analytics, notifications ----------------------------- */
   getDashboard(session: Session): Promise<DashboardSummary>;
   getTrend(session: Session, days: number): Promise<TrendPoint[]>;
+  /**
+   * A URL for a stored asset, or null when there is nothing to draw.
+   *
+   * Session-scoped like everything else here: an operator can resolve their own
+   * company's assets and no one else's. The in-memory implementation returns a
+   * path served by this app; the Supabase one will return a signed URL from the
+   * private bucket. The CALLER never learns which, so no screen grows a
+   * dependency on how storage works today.
+   *
+   * Returns null rather than a placeholder image path — a missing asset must
+   * reach the UI as an absence it can fall back from, not as a picture of
+   * nothing.
+   */
+  getMediaUrl(session: Session, mediaId: string | null): Promise<string | null>;
   getProductPerformance(session: Session): Promise<ProductPerformance[]>;
   /** Measured-only breakdowns: speed, drop-off, channel quality, mountains. */
   getInsights(session: Session, window: "week" | "month"): Promise<OperatorInsights>;

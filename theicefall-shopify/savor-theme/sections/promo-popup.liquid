@@ -1,0 +1,350 @@
+
+
+<script
+  src="{{ 'dialog.js' | asset_url }}"
+  type="module"
+></script>
+
+{%- form 'customer', id: 'PromoPopupForm', class: 'promo-popup-form-wrapper' -%}
+  <input
+    type="hidden"
+    name="contact[tags]"
+    value="promo_popup_10"
+  >
+
+  <dialog-component
+    id="promo-popup-dialog"
+    class="promo-popup"
+  >
+    <dialog
+      ref="dialog"
+      class="promo-popup__content dialog-modal color-custom-popover"
+      scroll-lock
+      aria-labelledby="promo-popup-heading"
+    >
+      <button
+        ref="closeButton"
+        type="button"
+        on:click="/closeDialog"
+        class="button button-unstyled close-button promo-popup__close"
+        aria-label="{{ 'accessibility.close_dialog' | t }}"
+      >
+        {{- 'icon-close.svg' | inline_asset_content -}}
+      </button>
+
+      {%- if form.posted_successfully? -%}
+        <div class="promo-popup__panel promo-popup__panel--success">
+          <h2
+            id="promo-popup-heading"
+            class="h3"
+          >
+            {{ section.settings.success_heading | default: "Welcome to Basecamp" }}
+          </h2>
+          <p class="promo-popup__body">
+            {{ section.settings.success_body | default: "Your code is below. Gear up." }}
+          </p>
+          <button
+            type="button"
+            class="promo-popup__code"
+            data-code="{{ section.settings.discount_code | default: 'WELCOME10' }}"
+            aria-label="Copy discount code"
+          >
+            <span class="promo-popup__code-text">{{ section.settings.discount_code | default: 'WELCOME10' }}</span>
+            <span class="promo-popup__code-hint">Tap to copy</span>
+          </button>
+          <a
+            href="/?discount={{ section.settings.discount_code | default: 'WELCOME10' }}"
+            class="button promo-popup__continue"
+          >
+            {{ section.settings.continue_label | default: 'Continue shopping' }}
+          </a>
+        </div>
+      {%- else -%}
+        <div class="promo-popup__panel">
+          <h2
+            id="promo-popup-heading"
+            class="h3"
+          >
+            {{ section.settings.heading | default: 'Take 10% Off Your First Ascent' }}
+          </h2>
+          <p class="promo-popup__body">
+            {{ section.settings.body | default: 'Join the expedition list for early access to new drops, restocks, and gear notes from the mountain. Your code is waiting.' }}
+          </p>
+
+          {%- if form.errors -%}
+            <div class="promo-popup__message promo-popup__message--error">
+              {{ form.errors.translated_fields.email | capitalize }}
+              {{ form.errors.messages.email }}
+            </div>
+          {%- endif -%}
+
+          <div class="promo-popup__input-group">
+            <label
+              for="PromoPopupEmail"
+              class="visually-hidden"
+            >
+              {{ 'blocks.email_signup.label' | t }}
+            </label>
+            <input
+              id="PromoPopupEmail"
+              class="promo-popup__input paragraph"
+              type="email"
+              name="contact[email]"
+              autocorrect="off"
+              autocapitalize="off"
+              autocomplete="email"
+              placeholder="{{ 'blocks.email_signup.placeholder' | t }}"
+              required
+            >
+            <button
+              type="submit"
+              class="button promo-popup__submit"
+            >
+              {{ section.settings.submit_label | default: 'Get my code' }}
+            </button>
+          </div>
+          <p class="promo-popup__disclaimer">
+            {{ section.settings.disclaimer | default: 'By signing up you agree to receive marketing emails from theicefall. Unsubscribe anytime.' }}
+          </p>
+        </div>
+      {%- endif -%}
+    </dialog>
+  </dialog-component>
+{%- endform -%}
+
+<script>
+  (function () {
+    var STORAGE_KEY = 'theicefallPromoPopupDismissed';
+    var posted = {{ form.posted_successfully? | default: false | json }};
+    var delaySeconds = {{ section.settings.delay_seconds | default: 6 }};
+
+    function getPopup() {
+      return document.getElementById('promo-popup-dialog');
+    }
+
+    function openPopup() {
+      var popup = getPopup();
+      if (popup && typeof popup.showDialog === 'function') {
+        popup.showDialog();
+      }
+    }
+
+    customElements.whenDefined('dialog-component').then(function () {
+      if (posted) {
+        window.localStorage.setItem(STORAGE_KEY, '1');
+        openPopup();
+        return;
+      }
+      if (window.localStorage.getItem(STORAGE_KEY)) return;
+      window.setTimeout(openPopup, delaySeconds * 1000);
+    });
+
+    document.addEventListener('click', function (event) {
+      var popup = getPopup();
+      if (!popup) return;
+
+      var closeButton = event.target.closest('#promo-popup-dialog [ref="closeButton"], #promo-popup-dialog .promo-popup__continue');
+      if (closeButton) {
+        window.localStorage.setItem(STORAGE_KEY, '1');
+      }
+
+      var codeButton = event.target.closest('#promo-popup-dialog .promo-popup__code');
+      if (codeButton) {
+        var code = codeButton.getAttribute('data-code');
+        var hint = codeButton.querySelector('.promo-popup__code-hint');
+        navigator.clipboard.writeText(code).then(function () {
+          if (hint) {
+            var original = hint.textContent;
+            hint.textContent = 'Copied!';
+            window.setTimeout(function () {
+              hint.textContent = original;
+            }, 2000);
+          }
+        });
+      }
+    });
+  })();
+</script>
+
+{% stylesheet %}
+  .promo-popup__content {
+    box-shadow: var(--shadow-popover);
+    border: var(--style-border-popover);
+    border-radius: var(--style-border-radius-popover);
+    background-color: var(--color-background);
+    padding: var(--padding-4xl) var(--padding-xl) var(--padding-xl);
+    max-width: 480px;
+    width: 92vw;
+    text-align: center;
+
+    @media screen and (min-width: 750px) {
+      padding: var(--padding-5xl);
+    }
+  }
+
+  .promo-popup__content[open] {
+    animation: modalSlideInTop var(--animation-speed) var(--animation-easing) forwards;
+  }
+
+  .promo-popup__content.dialog-closing {
+    animation: modalSlideOutTop var(--animation-speed) var(--animation-easing) forwards;
+  }
+
+  .promo-popup__close {
+    top: var(--margin-2xs);
+    right: var(--margin-2xs);
+    opacity: 0.8;
+    animation: none;
+  }
+
+  .promo-popup__panel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--gap-sm);
+  }
+
+
+  .promo-popup__body {
+    color: rgb(var(--color-foreground-rgb) / var(--opacity-70));
+  }
+
+  .promo-popup__input-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-xs);
+    width: 100%;
+    margin-block-start: var(--margin-sm);
+  }
+
+  .promo-popup__input {
+    width: 100%;
+    padding: var(--padding-lg) var(--padding-xl);
+    border: var(--style-border-width-inputs) solid var(--color-input-border);
+    border-radius: var(--style-border-radius-inputs);
+    background-color: var(--color-input-background);
+    color: var(--color-input-text);
+  }
+
+  .promo-popup__submit {
+    width: 100%;
+  }
+
+  .promo-popup__disclaimer {
+    font-size: 0.75rem;
+    opacity: 0.6;
+    margin-block-start: var(--margin-xs);
+  }
+
+  .promo-popup__message--error {
+    color: rgb(var(--color-foreground-rgb));
+    background: rgb(180 40 40 / 0.1);
+    border-radius: var(--style-border-radius-inputs);
+    padding: var(--padding-sm);
+    width: 100%;
+  }
+
+  .promo-popup__code {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+    font: inherit;
+    cursor: pointer;
+    border: 2px dashed {{ settings.color_palette.color1 }};
+    background: transparent;
+    padding: var(--padding-lg) var(--padding-xl);
+    border-radius: var(--style-border-radius-inputs);
+    margin-block: var(--margin-sm);
+  }
+
+  .promo-popup__code-text {
+    font-size: 1.75rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: {{ settings.color_palette.color1 }};
+  }
+
+  .promo-popup__code-hint {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    opacity: 0.6;
+  }
+
+  .promo-popup__continue {
+    width: 100%;
+  }
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Promo popup",
+  "tag": "div",
+  "settings": [
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Heading",
+      "default": "Take 10% Off Your First Ascent"
+    },
+    {
+      "type": "textarea",
+      "id": "body",
+      "label": "Body text",
+      "default": "Join the expedition list for early access to new drops, restocks, and gear notes from the mountain. Your code is waiting."
+    },
+    {
+      "type": "text",
+      "id": "submit_label",
+      "label": "Submit button label",
+      "default": "Get my code"
+    },
+    {
+      "type": "textarea",
+      "id": "disclaimer",
+      "label": "Disclaimer text",
+      "default": "By signing up you agree to receive marketing emails from theicefall. Unsubscribe anytime."
+    },
+    {
+      "type": "text",
+      "id": "success_heading",
+      "label": "Success heading",
+      "default": "Welcome to Basecamp"
+    },
+    {
+      "type": "textarea",
+      "id": "success_body",
+      "label": "Success body text",
+      "default": "Your code is below. Gear up."
+    },
+    {
+      "type": "text",
+      "id": "discount_code",
+      "label": "Discount code to display",
+      "default": "WELCOME10"
+    },
+    {
+      "type": "text",
+      "id": "continue_label",
+      "label": "Continue button label",
+      "default": "Continue shopping"
+    },
+    {
+      "type": "range",
+      "id": "delay_seconds",
+      "label": "Delay before showing (seconds)",
+      "min": 0,
+      "max": 30,
+      "step": 1,
+      "default": 6
+    }
+  ],
+  "presets": [
+    {
+      "name": "Promo popup"
+    }
+  ]
+}
+{% endschema %}

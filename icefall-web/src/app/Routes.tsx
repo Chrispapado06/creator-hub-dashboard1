@@ -9,6 +9,7 @@ import Coach from "./Coach";
 import Profile from "./Profile";
 import Saved from "./Saved";
 import Bookings from "./Bookings";
+import Enquiries from "./Enquiries";
 import Messages from "./Messages";
 import GuidesPage from "./GuidesPage";
 import GuideProfile from "./GuideProfile";
@@ -53,6 +54,8 @@ export default function AppRoutes() {
         <Route path="profile" element={<Profile />} />
         <Route path="saved" element={<Saved />} />
         <Route path="bookings" element={<Bookings />} />
+        {/* What you asked, and its real state — see the note in Enquiries.tsx. */}
+        <Route path="enquiries" element={<Enquiries />} />
         <Route path="messages" element={<Messages />} />
         <Route path="guides" element={<GuidesPage />} />
         <Route path="guides/:id" element={<GuideProfile />} />

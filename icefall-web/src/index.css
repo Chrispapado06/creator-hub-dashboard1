@@ -49,6 +49,14 @@
    */
   --ice-azure-cta: oklch(0.625 0.178 256);
 
+  /* The credential gold — the mark for "ICEFALL checked this guide's
+     credentials" and for NOTHING else. This is the family's `--ice-gilt`
+     value (phone app index.css:74), under the guide app's claim-named alias
+     `--ice-credential`, so all three trees draw one gold from one ruling.
+     It is a MARKS-channel colour, not an accent: buttons and chrome stay
+     azure here (and gold in the CRM), and neither may borrow this. */
+  --ice-credential: oklch(0.7938 0.1274 84.5); /* #E5B455 */
+
   /*
    * Gilt — the ONE sanctioned exception to the single-accent rule.
    *
@@ -100,6 +108,7 @@
   --color-azure-bright: var(--ice-azure-bright);
   --color-azure-deep: var(--ice-azure-deep);
   --color-azure-glow: var(--ice-azure-glow);
+  --color-credential: var(--ice-credential);
   --color-azure-cta: var(--ice-azure-cta);
 
   --color-gilt: var(--ice-gilt);

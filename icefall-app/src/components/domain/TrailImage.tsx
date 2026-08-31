@@ -4,6 +4,7 @@ import {
   SATELLITE_CREDIT, photoCaption, satelliteTiles, verifiedPhoto, type TrailPhoto,
 } from "@/services/trailImagery";
 import { cn } from "@/lib/utils";
+import { OFFLINE } from "@/offline/offline";
 
 /**
  * The image on a trail card or hero.
@@ -62,6 +63,9 @@ export function TrailImage({
     if (!onCaption) return;
     if (photo && photoReady) onCaption(photoCaption(name, photo));
     else if (tilesReady >= 2) onCaption(SATELLITE_CREDIT);
+    // Offline the satellite layer will never arrive, so the caption must not
+    // sit on "loading" forever pretending that it might.
+    else if (OFFLINE) onCaption("Contours drawn on the device — imagery needs a connection");
     else onCaption("Contours — imagery loading");
   }, [photo, photoReady, tilesReady, name, onCaption]);
 

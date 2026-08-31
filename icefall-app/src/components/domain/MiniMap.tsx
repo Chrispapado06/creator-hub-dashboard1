@@ -1,4 +1,6 @@
+import { CloudOff } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { OFFLINE } from "@/offline/offline";
 
 /**
  * The little map thumbnail in the corner of a result card.
@@ -41,6 +43,35 @@ export function MiniMap({
 }) {
   if (lat === undefined || lon === undefined) return null;
   const { x, y } = tileFor(lat, lon, zoom);
+
+  /*
+   * OFFLINE: the tile is a streamed raster, so there is nothing to show. This
+   * thumbnail had no `onError` and no fallback, which offline left an empty
+   * tinted box with a blue dot in it on five screens — indistinguishable from a
+   * bug. It now says what is true, quietly, at thumbnail size.
+   */
+  if (OFFLINE) {
+    return (
+      <span
+        className={cn(
+          "relative grid place-items-center overflow-hidden rounded-[10px] border border-hairline-strong bg-slate",
+          className,
+        )}
+        role="img"
+        aria-label="Map needs a connection"
+      >
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-0 opacity-[0.12]"
+          style={{
+            backgroundImage:
+              "repeating-linear-gradient(115deg, transparent 0 7px, currentColor 7px 8px)",
+          }}
+        />
+        <CloudOff size={13} strokeWidth={1.6} className="relative text-mist-dim" />
+      </span>
+    );
+  }
 
   return (
     <span
@@ -93,6 +124,24 @@ export function MapBackdrop({
   const { x, y } = tileFor(lat, lon, zoom);
   const cols = [-1, 0, 1];
   const rows = [-1, 0];
+
+  /*
+   * OFFLINE: this is a 16%-opacity wash behind a search header, not a map
+   * anybody reads. Six broken <img> elements would be worse than nothing, so
+   * offline it is an ambient gradient and no request at all.
+   */
+  if (OFFLINE) {
+    return (
+      <span
+        aria-hidden
+        className={cn("pointer-events-none absolute inset-0 block overflow-hidden", className)}
+        style={{
+          background:
+            "radial-gradient(120% 90% at 50% 0%, oklch(0.30 0.03 250 / 45%) 0%, transparent 70%)",
+        }}
+      />
+    );
+  }
 
   return (
     <span className={cn("pointer-events-none absolute inset-0 block overflow-hidden", className)}>

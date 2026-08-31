@@ -1,4 +1,5 @@
 import { EXPEDITIONS, IS_DEMO, type Expedition } from "./demo";
+import { OFFLINE } from "@/offline/offline";
 
 /**
  * Expedition company profiles.
@@ -115,7 +116,7 @@ export interface Company {
 export const companySlug = (name: string): string =>
   name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
-export const COMPANIES: Company[] = IS_DEMO
+const ALL_COMPANIES: Company[] = IS_DEMO
   ? [
       {
         id: companySlug("Solukhumbu Expeditions"),
@@ -331,6 +332,30 @@ export const COMPANIES: Company[] = IS_DEMO
       },
     ]
   : [];
+
+/**
+ * OFFLINE DEMO: the real business is not on the list.
+ *
+ * `elite-exped` names a company that exists. Every commercial figure attached
+ * to it above is an ICEFALL placeholder, which is why the listing carries
+ * `realBusiness: true` and says so above everything else on its own page.
+ *
+ * Offline, a permanent banner labels the WHOLE SITE "sample data, not real".
+ * Applying that sentence to an identifiable operator is a different and worse
+ * claim than the one that page already makes carefully about itself — so
+ * offline the record is not shown at all rather than shown under a heavier
+ * label. The three companies that remain are invented, so the banner is simply
+ * true of them.
+ *
+ * The filter runs on the already-`IS_DEMO`-gated array, so a production build
+ * still folds the whole thing to `[]` and drops every string in it — the
+ * protection described at the top of this file is untouched.
+ */
+const isInvented = (c: Company): boolean => c.realBusiness !== true;
+
+export const COMPANIES: Company[] = OFFLINE
+  ? ALL_COMPANIES.filter(isInvented)
+  : ALL_COMPANIES;
 
 export const companyById = (id: string): Company | undefined =>
   COMPANIES.find((c) => c.id === id);

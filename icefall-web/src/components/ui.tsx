@@ -104,6 +104,13 @@ export function VerifiedTick({ verifiedOn, size = 15 }: { verifiedOn: string; si
    * it is the difference between "we checked this operator" and "we did not",
    * on a page where the reader may be choosing who to hire on glaciated ground.
    * It is never decorative and it is never a default.
+   *
+   * SCOPE, per the owner's D4 ruling (2026-08-31): this azure tick now renders
+   * for COMPANY and TRIP document checks only. A guide's credential mark is the
+   * GOLD `GuideCredentialMark` in `components/marks.tsx` — a different claim,
+   * a different mark, no borrowing. A company's own mark is a FOURTH claim the
+   * owner has not yet assigned; until they do, this tick stays as it is and
+   * nothing new is minted for companies.
    */
   if (!verifiedOn) return null;
 

@@ -6,8 +6,8 @@
 //   • GENERAL KYC per model (10 each) — light-to-warm openers tied to her storyline.
 //     Categories: "emma", "marissa", "maylee", "meg".
 //
-// The coach (coach.mjs) sees all entries with category visible — Claude
-// naturally filters to the model when given the WHALE CARD context.
+// The monitor surfaces these entries (category visible) in the whale-ping
+// rotation, filtered to the model from the WHALE CARD context.
 //
 // Usage:
 //   WHALE_SUPABASE_URL=... WHALE_SUPABASE_SERVICE_ROLE_KEY=... \
@@ -22,8 +22,8 @@ const DRY = process.argv.includes("--dry");
 if (!URL || !KEY) { console.error("Need WHALE_SUPABASE_URL + WHALE_SUPABASE_SERVICE_ROLE_KEY"); process.exit(1); }
 
 // Each entry: { name, category, text }
-// `text` = ASK + step-by-step response messages (so the coach can suggest
-// actual lines, not just the topic).
+// `text` = ASK + step-by-step response messages (so the whale-ping rotation can
+// surface actual lines, not just the topic).
 const ENTRIES = [
   // ── WHITE KNIGHT KYC (universal) ─────────────────────────────────────────
   { name: "WK1 — Trust broken / belittled", category: "white_knight",

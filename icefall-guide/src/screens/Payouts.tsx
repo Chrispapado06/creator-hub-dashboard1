@@ -1,11 +1,12 @@
 import { AlertTriangle, Banknote } from "lucide-react";
 import { Rise, Screen, ScreenHeader, Stagger } from "@/components/layout/chrome";
-import { Badge, Button, Card, Disclaimer, SectionLabel } from "@/components/ui/primitives";
+import { Badge, Button, Card, Disclaimer, SectionLabel, StatusPill } from "@/components/ui/primitives";
 import { Notice } from "@/components/guide";
+import { SupportEntry } from "@/components/Support";
 import { Figure, StatTile } from "@/components/Figure";
 import { GUIDE_NOTICES, bookingValueReading, excludedNote, fold } from "@/domain/honesty";
 import { bookingBreakdown, earningsSplit, stagedBookings } from "@/domain/season";
-import { DEMO_NOTICE, PAYOUT_COUNTRY, fmtDate } from "@/data/demo";
+import { DEMO_NOTICE, fmtDate } from "@/data/demo";
 import { SHOW_DEMO_DATA } from "@/lib/demoFlag";
 import {
   GUIDE_COMMISSION_PCT,
@@ -31,7 +32,10 @@ import {
  * the only one nobody had looked for, because it lived in a different app under
  * a different name. It was wrong in three separate ways at once:
  *
- *   · THE RATE. The owner settled 10% against a worked example on 2026-08-28.
+ *   · THE RATE. It was 12% here against a settled 10%; the owner has since moved
+ *     the rate to 15% (2026-08-31). The point is not which number is current —
+ *     it is that this file no longer holds one. It reads the constant, so the
+ *     10 → 15 change moved this screen with no edit at all.
  *   · THE ROUNDING. The shared model FLOORS, deliberately, so the fraction goes
  *     to the guide; `Math.round` sends half of them to ICEFALL instead. A cent
  *     at a time on the one screen a self-employed person checks their income on.
@@ -48,7 +52,10 @@ import {
  * makes so the two screens cannot show this person two different incomes.
  */
 export default function Payouts() {
-  const eligibility = payoutEligibility(PAYOUT_COUNTRY);
+  /* The country the guide's bank account is in, which decides whether the
+     payment provider can pay them at all. */
+  const payoutCountry = "France";
+  const eligibility = payoutEligibility(payoutCountry);
   const rows = stagedBookings();
   const totals = earningsSplit(rows);
   const held = rows.filter((r) => r.payout === "held");
@@ -74,7 +81,7 @@ export default function Payouts() {
               <div className="flex gap-2.5">
                 <AlertTriangle size={15} strokeWidth={1.8} className="mt-px shrink-0 text-danger" />
                 <div>
-                  <p className="text-snow">We cannot pay out to {PAYOUT_COUNTRY}</p>
+                  <p className="text-snow">We cannot pay out to {payoutCountry}</p>
                   <p className="mt-1.5">{eligibility.reason}</p>
                   <ul className="mt-2.5 space-y-1.5">
                     {eligibility.options.map((o) => (
@@ -148,6 +155,23 @@ export default function Payouts() {
           <SectionLabel>Every booking</SectionLabel>
           <div className="mt-3 space-y-2.5">
             {rows.map((r) => {
+              /**
+               * A CANCELLED TRIP OWES THE GUIDE NOTHING, AND MUST NOT SHOW A
+               * FIGURE. This screen was rendering the full breakdown for one —
+               * "You receive €351" against a trip that is not happening —
+               * because `payoutStatusFor` maps a cancelled booking to "held",
+               * and the row believed it.
+               *
+               * The totals above were never wrong: `earningsSplit` drops
+               * cancelled bookings. Only the row lied, which is the more
+               * dangerous half — a guide reads the row they are looking at, not
+               * the sum three cards up.
+               *
+               * The card stays rather than disappearing. A booking that vanishes
+               * from Payouts is one a guide goes looking for; one that says
+               * plainly there is nothing due answers the question instead.
+               */
+              const cancelled = r.state === "cancelled";
               const breakdown = bookingBreakdown(r);
               const paid = bookingValueReading(r.paid);
               /**
@@ -162,16 +186,26 @@ export default function Payouts() {
                 <Card key={r.id}>
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="text-[13.5px] text-snow">{r.peak}</p>
+                      <p className="text-[13.5px] text-snow">{r.title}</p>
                       <p className="mt-0.5 text-[11.5px] text-mist-dim">
-                        {r.client} · {r.partySize} {r.partySize === 1 ? "climber" : "climbers"}
+                        {r.clients.map((c) => c.name).join(", ") || "No clients recorded"} ·{" "}
+                        {r.clients.length} {r.clients.length === 1 ? "climber" : "climbers"}
                       </p>
                     </div>
-                    <PayoutBadge status={r.payout} />
+                    {cancelled ? (
+                      <StatusPill state="cancelled" />
+                    ) : (
+                      <PayoutBadge status={r.payout} />
+                    )}
                   </div>
 
                   <div className="mt-3 border-t border-hairline pt-3 text-[12.5px]">
-                    {fold(
+                    {cancelled ? (
+                      <p className="text-[12px] leading-relaxed text-mist-dim">
+                        Cancelled — nothing is due on this booking, and it is not counted in the
+                        totals above.
+                      </p>
+                    ) : fold(
                       breakdown,
                       (t) => (
                         <>
@@ -181,14 +215,15 @@ export default function Payouts() {
 
                               Booking value   €780
                               Huts and lifts  −€96
-                              ICEFALL 10%     −€68.40
+                              ICEFALL         −€68.40
                               Yours           €711.60
 
                             — and 780 − 96 − 68.40 is €615.60, not €711.60. The
                             hut fee is NOT taken out of what ICEFALL sends the
                             guide; it is money the guide collects and hands to
                             the hut, and it appeared there only to explain why
-                            the commission was smaller than 10% of the total.
+                            the commission was smaller than the headline rate
+                            applied to the whole total.
                             "A row in a column that sums to a total reads as an
                             addition whatever it is called" (§6g) — and a
                             negative row reads as a subtraction, so a guide
@@ -227,13 +262,14 @@ export default function Payouts() {
 
                   {/* What the client has actually handed over, kept separate from
                       the breakdown above. A deposit is not a smaller booking. */}
-                  {showPaid && (
+                  {!cancelled && showPaid && (
                     <div className="mt-3 flex items-baseline justify-between gap-3 border-t border-hairline pt-3 text-[11.5px]">
                       <span className="text-mist-dim">Client has paid</span>
                       <Figure reading={paid} format={formatEur} size="md" />
                     </div>
                   )}
 
+                  {!cancelled && (
                   <p className="tnum mt-3 text-[11px] text-mist-dim">
                     {r.payout === "sent"
                       ? `Paid out after ${fmtDate(r.departureIso)}`
@@ -241,6 +277,7 @@ export default function Payouts() {
                         ? "Released — on its way to your account"
                         : `Releases ${fmtDate(r.departureIso)}`}
                   </p>
+                  )}
                 </Card>
               );
             })}
@@ -264,7 +301,11 @@ export default function Payouts() {
           </Rise>
         )}
 
-        <Rise className="pt-6 pb-2">
+        <Rise className="pt-6">
+          <SupportEntry topic="payouts" />
+        </Rise>
+
+        <Rise className="pt-5 pb-2">
           <Button variant="secondary" className="w-full" disabled>
             <Banknote size={15} strokeWidth={1.8} />
             Set up payouts

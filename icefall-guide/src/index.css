@@ -57,6 +57,30 @@
   --ice-alert: oklch(0.7471 0.127 77.8); /* #D9A244  caution     */
   --ice-danger: oklch(0.5871 0.1472 32.9); /* #C4553F  severe      */
 
+  /*
+   * GOLD — AND IN THIS APP IT MEANS A CREDENTIAL, NOT COMMERCE.
+   *
+   * Owner ruling 2026-08-31: three claims, three marks, no borrowing.
+   *   GOLD  ICEFALL has read this guide's documents
+   *   GREY  the person's identity has been verified
+   *   BLUE  a paid member
+   *
+   * THE VALUES ARE THE FAMILY'S EXISTING `--ice-gilt`, copied rather than
+   * invented, so there is one gold in ICEFALL and not two. The NAME is
+   * deliberately `credential` and not `gilt`, because in the athlete app gilt
+   * means "somebody is selling you this" (§6.10) and here it means the opposite
+   * — a claim ICEFALL is making about a person. Same pigment, different job; a
+   * token called `gilt` in this tree would import the wrong meaning with it.
+   *
+   * NOTE THE COLLISION, WHICH IS NOT MINE TO SETTLE: §6.10 makes blue the
+   * athlete's OWN domain and gold the commercial one. The new ruling puts gold
+   * on a credential and blue on the paid tier — the two meanings inverted.
+   * Inside this app there is no conflict, because gilt was never used here.
+   * Family-wide there is, and it is raised with the brain.
+   */
+  --ice-credential: oklch(0.7938 0.1274 84.5); /* #E5B455 */
+  --ice-credential-deep: oklch(0.6312 0.1113 75.3); /* #A97B33 */
+
   /* The glow under an active tab */
   --ice-azure-glow: oklch(0.6868 0.1674 255.4 / 38%);
 
@@ -93,6 +117,9 @@
   --color-azure-bright: var(--ice-azure-bright);
   --color-azure-deep: var(--ice-azure-deep);
   --color-azure-glow: var(--ice-azure-glow);
+
+  --color-credential: var(--ice-credential);
+  --color-credential-deep: var(--ice-credential-deep);
 
   --color-summit: var(--ice-summit);
   --color-alert: var(--ice-alert);

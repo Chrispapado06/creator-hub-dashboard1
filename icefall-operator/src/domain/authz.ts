@@ -28,6 +28,7 @@
 import type {
   CompanyMountain,
   CompanyRole,
+  CompanyTrek,
   CompanyUser,
   ContentVersion,
   ContentVersionState,
@@ -115,6 +116,53 @@ export function manageableMountainIds(
 }
 
 /* ========================================================================== */
+/* Rule 2b — and only the trek routes ICEFALL assigned                        */
+/* ========================================================================== */
+
+/**
+ * The same rule as `canManageMountain`, for the other noun, and DELIBERATELY A
+ * SEPARATE PREDICATE rather than a clever generalisation of it.
+ *
+ * A route and a peak are granted on different commercial conversations and can
+ * be suspended independently; one predicate over a merged access list would
+ * make those two lifecycles share a fate. The two functions being near-identical
+ * is the point — they mirror two database functions that are also near-identical,
+ * `company_may_edit_trek(company_id, trek_id)` beside
+ * `company_may_edit_mountain(company_id, mountain_id)`.
+ *
+ * REQUIRES `status === "active"`, for the reason the mountain one does: a
+ * suspended or ended grant keeps the company's history readable and stops every
+ * new edit against that route.
+ *
+ * THE SQL SIDE OF THIS DOES NOT EXIST YET. `company_treks` is proposed in
+ * `icefall-sessions/requests/09-company-treks-migration.md` and has not been
+ * applied to the live database. Until it is, this predicate is enforced only by
+ * the in-memory backend and by the UI it keeps honest — which is why nothing in
+ * this app offers a trek WRITE for it to guard.
+ */
+export function canManageTrek(
+  session: Session | null,
+  access: readonly CompanyTrek[],
+  trekId: string,
+): boolean {
+  if (!isActive(session)) return false;
+  return access.some(
+    (a) => a.companyId === session!.user.companyId && a.trekId === trekId && a.status === "active",
+  );
+}
+
+/** Routes this operator may currently work. */
+export function manageableTrekIds(
+  session: Session | null,
+  access: readonly CompanyTrek[],
+): string[] {
+  if (!isActive(session)) return [];
+  return access
+    .filter((a) => a.companyId === session!.user.companyId && a.status === "active")
+    .map((a) => a.trekId);
+}
+
+/* ========================================================================== */
 /* Rule 3 — placement is not the operator's to move                           */
 /* ========================================================================== */
 
@@ -137,6 +185,76 @@ export function canEditPlacement(): false {
 }
 
 /* ========================================================================== */
+/* Rule 3b — the owner account, which is DERIVED and not a third role         */
+/* ========================================================================== */
+
+/**
+ * THE OWNER ACCOUNT — "Super Admin" in the owner's words.
+ *
+ * `CompanyRole` still has exactly two values and this file did not add a third.
+ * The reasoning in `types.ts` has not changed: a third value would have to be
+ * written by the invite path, stored by a schema that has no room for it, and
+ * understood by every screen that switches on the role — three places to
+ * disagree, for a distinction the data already carries.
+ *
+ * Because it does carry it. `company_users.invited_by` is null on exactly one
+ * account per company: the one ICEFALL created when the company was taken on.
+ * Everybody else was invited by somebody. So the founding account is not a new
+ * fact to be stored — it is a fact already recorded, read here instead of
+ * duplicated.
+ *
+ * WHAT THIS IS NOT. There is no `is_owner()` in the database to mirror, so this
+ * predicate has no server-side twin, and the header's rule about not inventing
+ * a second definition applies with full force: use it to LABEL, to EXPLAIN, and
+ * to gate a permission the backend does not yet implement at all. Do not use it
+ * to guard an existing write — `setTeamMemberStatus` is enforced as
+ * `manageStaff` in the schema, and a client that pretended otherwise would be
+ * describing a rule nobody enforces. `icefall-sessions/requests/11-operator-super-admin-and-grants.md`
+ * asks the schema owner for the stored tier that would fix that.
+ */
+export function isOwnerAccount(user: CompanyUser): boolean {
+  return user.role === "admin" && user.invitedBy === null;
+}
+
+/** The signed-in operator is their company's founding account. */
+export function isCompanyOwner(session: Session | null): boolean {
+  return isActive(session) && isOwnerAccount(session!.user);
+}
+
+/**
+ * Permissions the owner account may hand to another member.
+ *
+ * A closed list, deliberately: this is not the enterprise permission builder
+ * the spec rules out. It is the short set of things the owner said the top
+ * account should be able to pass on, and it grows one entry at a time, by hand.
+ */
+export const GRANTABLE_PERMISSIONS = ["createOffers"] as const;
+
+export type GrantablePermission = (typeof GRANTABLE_PERMISSIONS)[number];
+
+/**
+ * What has actually been granted to a member — TODAY, ALWAYS NOTHING.
+ *
+ * A grant has to be stored somewhere to survive a page reload, and there is
+ * nowhere: `company_users` has no grants column, and `OperatorBackend` exposes
+ * no method that writes one. Rather than build a grant screen that forgets
+ * every grant the moment it is made, this returns the empty set and the Team
+ * screen says plainly that handing the permission on is not available yet.
+ *
+ * This is the ONE function that changes when the column lands. It takes the
+ * user rather than the session so a screen can state the position for every
+ * member of the team, not only the person reading it.
+ */
+export function grantedPermissions(user: CompanyUser): readonly GrantablePermission[] {
+  void user;
+  return [];
+}
+
+export function hasGrant(session: Session | null, permission: GrantablePermission): boolean {
+  return isActive(session) && grantedPermissions(session!.user).includes(permission);
+}
+
+/* ========================================================================== */
 /* The two roles (spec §3)                                                    */
 /* ========================================================================== */
 
@@ -152,6 +270,23 @@ export const PERMISSIONS = {
   uploadMedia: (s: Session | null) => isCompanyAdmin(s),
   submitForApproval: (s: Session | null) => isCompanyAdmin(s),
   manageStaff: (s: Session | null) => isCompanyAdmin(s),
+
+  /**
+   * Create a custom offer for one customer — a price this company will honour,
+   * quoted outside the published range.
+   *
+   * OWNER ACCOUNT ONLY, plus anyone the owner has been given the offer to.
+   * Deliberately NOT `isCompanyAdmin`: every other line in this block already
+   * meant "Company Admin", and quietly adding a commitment-to-a-customer power
+   * to that word would change what every existing admin may do without anyone
+   * deciding it. The owner asked for the top account to hold this and to be
+   * able to pass it on; that is what this says, and no more.
+   *
+   * Nothing calls it yet — the offer builder is OP-05's, not this session's.
+   * It is here so that when it is built there is one answer to who may use it,
+   * in the file that already holds every other answer.
+   */
+  createOffers: (s: Session | null) => isCompanyOwner(s) || hasGrant(s, "createOffers"),
 
   /* Both roles. Sales exists to do these. */
   viewInbox: (s: Session | null) => isActive(s),

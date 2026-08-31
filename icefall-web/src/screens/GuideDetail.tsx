@@ -1,7 +1,8 @@
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { Check, Globe, Languages, Lock, MapPin, Mountain, ShieldCheck } from "lucide-react";
 import { Container } from "@/components/Shell";
-import { Badge, Button, Card, GuidePhoto, Label, Rating, VerifiedTick } from "@/components/ui";
+import { Badge, Button, Card, GuidePhoto, Label, Rating } from "@/components/ui";
+import { GuideCredentialMark } from "@/components/marks";
 import { guideById, verificationSentence } from "@/data/demo";
 import { useAuth } from "@/lib/auth";
 import { formatEur, FLEXIBLE_POLICY, GUIDE_FEE_DISCLOSURE } from "@/money/model";
@@ -44,7 +45,7 @@ export default function GuideDetail() {
         <div className="min-w-0">
           <h1 className="flex items-center gap-2 text-[26px] font-light text-snow">
             {guide.name}
-            <VerifiedTick verifiedOn={guide.verifiedOn} size={18} />
+            <GuideCredentialMark verifiedOn={guide.verifiedOn} size={18} />
           </h1>
           <p className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-mist">
             <span className="flex items-center gap-1.5">

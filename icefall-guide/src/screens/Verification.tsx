@@ -1,9 +1,19 @@
+import { useEffect, useState } from "react";
 import { AlertTriangle, Check, FileText, Upload } from "lucide-react";
 import { Rise, Screen, ScreenHeader, Stagger } from "@/components/layout/chrome";
 import { Badge, Button, Card, Disclaimer, SectionLabel } from "@/components/ui/primitives";
 import { Notice } from "@/components/guide";
-import { APPLICATION, DEMO_NOTICE, fmtDate } from "@/data/demo";
+import { SupportEntry } from "@/components/Support";
+import { visibleApplication, DEMO_NOTICE, fmtDate } from "@/data/demo";
 import { SHOW_DEMO_DATA } from "@/lib/demoFlag";
+import { CredentialMark } from "@/components/StatusBadge";
+import { onAuthChange } from "@/auth/account";
+import {
+  credentialsSentence,
+  expiryLine,
+  readCredentials,
+  type CredentialsReading,
+} from "@/domain/credentials";
 import { daysUntil, hasExpired, parseDay } from "@/lib/day";
 import { GUIDE_NOTICES } from "@/domain/honesty";
 import {
@@ -27,6 +37,26 @@ import { cn } from "@/lib/utils";
  * the association), and it shows the expiry that will end the claim.
  */
 export default function Verification() {
+  const APPLICATION = visibleApplication();
+  /**
+   * THE SERVER RECORD IS THE TRUTH, and the local application below it is the
+   * sample. Both are shown because they answer different questions — "what has
+   * ICEFALL actually recorded about me" and "what did I send them" — but the
+   * order matters: the recorded check is first, and the demo section carries the
+   * sample-data notice so the two can never be read as one contradicting itself.
+   */
+  const [creds, setCreds] = useState<CredentialsReading | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const read = () => void readCredentials().then((r) => alive && setCreds(r));
+    read();
+    const off = onAuthChange(read);
+    return () => {
+      alive = false;
+      off();
+    };
+  }, []);
+
   const status = effectiveStatus(APPLICATION);
   const copy = STATUS_COPY[status];
   const soon = expiringSoon(APPLICATION);
@@ -45,6 +75,59 @@ export default function Verification() {
             <Disclaimer>{DEMO_NOTICE}</Disclaimer>
           </Rise>
         )}
+
+        {/* ---- What ICEFALL has recorded, server-derived -------------------- */}
+        <Rise className="pt-5">
+          <Card>
+            <SectionLabel>What ICEFALL has recorded</SectionLabel>
+            {creds === null ? (
+              <p className="mt-2.5 text-[12.5px] text-mist-dim">Reading your check…</p>
+            ) : creds.status === "unavailable" ? (
+              <p className="mt-2.5 text-[12.5px] leading-relaxed text-mist-dim">{creds.reason}</p>
+            ) : (
+              <>
+                <div className="mt-2.5 flex flex-wrap items-center gap-2.5">
+                  {creds.record.state === "checked" && <CredentialMark />}
+                  <Badge
+                    tone={
+                      creds.record.state === "checked"
+                        ? "summit"
+                        : creds.record.state === "expired"
+                          ? "danger"
+                          : "neutral"
+                    }
+                  >
+                    {creds.record.state === "checked"
+                      ? "Documents checked"
+                      : creds.record.state === "expired"
+                        ? "Check lapsed"
+                        : "Not checked yet"}
+                  </Badge>
+                </div>
+
+                <p className="mt-3 text-[12.5px] leading-relaxed text-snow">
+                  {credentialsSentence(creds.record)}
+                </p>
+
+                {expiryLine(creds.record) && (
+                  <p className="tnum mt-2 text-[11.5px] text-mist-dim">
+                    {expiryLine(creds.record)}
+                  </p>
+                )}
+
+                {/* The state is decided in Postgres against `current_date`, so an
+                    expiry here needs no client date arithmetic — the class of bug
+                    that has cost this app four separate fixes. */}
+                {creds.record.state === "expired" && (
+                  <p className="mt-2.5 text-[11.5px] leading-relaxed text-danger">
+                    Your listing is hidden while this stands. Send a current document and ICEFALL
+                    will read it again.
+                  </p>
+                )}
+              </>
+            )}
+          </Card>
+        </Rise>
 
         {/* ---- Status ------------------------------------------------------ */}
         <Rise className="pt-5">
@@ -243,10 +326,7 @@ export default function Verification() {
         </Rise>
 
         <Rise className="pt-4">
-          <Disclaimer>
-            Uploading is disabled — there is no document storage connected, so a file picker here
-            would take your documents nowhere. Nothing you have already sent us is affected.
-          </Disclaimer>
+          <SupportEntry topic="verification" />
         </Rise>
 
         {/* ---- What the check is -------------------------------------------- */}

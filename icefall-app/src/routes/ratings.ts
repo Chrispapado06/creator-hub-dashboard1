@@ -1,7 +1,7 @@
 /**
  * Star ratings and "N people" counts.
  *
- * ⚠️ THESE NUMBERS ARE INVENTED. ICEFALL has no accounts, so nobody has rated
+ * ⚠️ THESE NUMBERS ARE INVENTED. Nobody can rate a route, so nobody has rated
  * anything. They exist because the layout was designed against a reference that
  * has them and the product owner asked for them to be shown; they are not a
  * measurement of anything.
@@ -26,7 +26,7 @@
 export const SHOW_DEMO_RATINGS = true;
 
 export const RATING_NOTICE =
-  "Ratings and follower counts are placeholder figures for this layout — ICEFALL has no accounts yet, so nobody has rated anything. They are not a measure of how safe, how hard or how well-conditioned a line is.";
+  "Ratings and follower counts are placeholder figures for this layout — nobody can rate a route yet, so nobody has rated anything. They are not a measure of how safe, how hard or how well-conditioned a line is.";
 
 export interface Rating {
   /** 4.3–4.9, one decimal. */

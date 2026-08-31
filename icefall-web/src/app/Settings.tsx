@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useState, type ReactNode, useEffect} from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowRight, Bell, Check, Copy, Crown, Database, Lock, Shield, Trash2, User,
@@ -7,6 +7,7 @@ import { Badge, Button } from "@/components/ui";
 import { DEMO_NOTICE, EXPEDITIONS, GUIDES, IS_DEMO, monogram } from "@/data/demo";
 import { formatEur, type Cents } from "@/money/model";
 import { useAuth } from "@/lib/auth";
+import { updateDisplayName } from "@/auth/account";
 import { cn } from "@/lib/utils";
 
 /**
@@ -148,29 +149,37 @@ export default function Settings() {
 /* Profile                                                                    */
 /* -------------------------------------------------------------------------- */
 
-/** One @, a dot in the domain, no whitespace — the same permissive shape the waitlist uses. */
-const EMAIL_RE = /^[^\s@<>,;"]+@[^\s@<>,;".]+\.[^\s@<>,;".]{2,}$/;
 
 function ProfilePane() {
-  const { session, signUp } = useAuth();
+  const { session, openAuth } = useAuth();
   const [name, setName] = useState(session?.name ?? "");
-  const [email, setEmail] = useState(session?.email ?? "");
-  const [justSaved, setJustSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+
+  // The session arrives asynchronously; seed the field once it does rather than
+  // leaving a returning climber staring at an empty name box.
+  useEffect(() => {
+    if (session) setName(session.name);
+  }, [session]);
 
   const cleanName = name.trim();
-  const cleanEmail = email.trim();
-  const emailOk = EMAIL_RE.test(cleanEmail);
-  const changed = cleanName !== (session?.name ?? "") || cleanEmail !== (session?.email ?? "");
-  const canSave = cleanName.length > 0 && emailOk && changed;
+  const changed = cleanName !== (session?.name ?? "");
+  const canSave = Boolean(session) && cleanName.length > 0 && changed && !busy;
 
-  // Status is a label, never a sentence: saved / invalid / dirty / clean.
-  const saveStatus = justSaved
-    ? "Saved to this browser"
-    : cleanEmail.length > 0 && !emailOk
-      ? "Check the email"
-      : changed
-        ? "Unsaved changes"
-        : "Nothing to save";
+  /*
+    THIS PANE USED TO CALL `signUp(name, email)` TO "Create local session".
+
+    That made sense when a session was a name and an email in localStorage. With
+    real accounts it is meaningless — you do not create an account by editing a
+    settings field, and re-running sign-up for a signed-in person is not a save.
+
+    The name is now a real change to the account, and **the email is read-only
+    on purpose**: moving an account to a new address requires that address to
+    prove it is reachable first, or an account can be moved to one its owner does
+    not control. That flow does not exist, so this says so instead of showing a
+    field that silently does nothing.
+  */
+  const saveStatus = status ?? (changed ? "Unsaved changes" : "Nothing to save");
 
   return (
     <Pane title="Profile" className="xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -189,9 +198,10 @@ function ProfilePane() {
           <Field label="Name">
             <input
               value={name}
+              disabled={!session || busy}
               onChange={(e) => {
                 setName(e.target.value);
-                setJustSaved(false);
+                setStatus(null);
               }}
               placeholder="Your name"
               autoComplete="name"
@@ -200,16 +210,18 @@ function ProfilePane() {
           </Field>
           <Field label="Email">
             <input
-              value={email}
-              onChange={(e) => {
-                setEmail(e.target.value);
-                setJustSaved(false);
-              }}
-              placeholder="you@example.com"
+              value={session?.email ?? ""}
+              readOnly
+              placeholder="Not signed in"
               autoComplete="email"
               inputMode="email"
-              className={inputClass}
+              aria-describedby="email-locked"
+              className={cn(inputClass, "cursor-not-allowed opacity-70")}
             />
+            <p id="email-locked" className="mt-1.5 text-[11px] leading-relaxed text-mist-dim">
+              Changing this needs the new address to confirm itself first, which
+              ICEFALL cannot send yet.
+            </p>
           </Field>
         </div>
 
@@ -227,16 +239,25 @@ function ProfilePane() {
         </div>
 
         <div className="mt-5 flex flex-wrap items-center gap-4 border-t border-hairline pt-5">
-          <Button
-            size="sm"
-            disabled={!canSave}
-            onClick={() => {
-              signUp(cleanName, cleanEmail);
-              setJustSaved(true);
-            }}
-          >
-            {session ? "Save" : "Create local session"}
-          </Button>
+          {session ? (
+            <Button
+              size="sm"
+              disabled={!canSave}
+              onClick={async () => {
+                setBusy(true);
+                setStatus(null);
+                const r = await updateDisplayName(cleanName);
+                setStatus(r.ok ? "Saved" : r.message);
+                setBusy(false);
+              }}
+            >
+              {busy ? "Saving" : "Save"}
+            </Button>
+          ) : (
+            <Button size="sm" onClick={() => openAuth("in")}>
+              Sign in
+            </Button>
+          )}
           <span className="text-[11.5px] text-mist-dim">{saveStatus}</span>
         </div>
       </Card>
@@ -246,7 +267,12 @@ function ProfilePane() {
         <dl className="mt-4 divide-y divide-hairline">
           <Held label="Name" value={session?.name ?? "—"} />
           <Held label="Email" value={session?.email ?? "—"} />
-          <Held label="Password" value="None" />
+          {/*
+            Was "None", which was true when no password was ever kept. There is
+            a real account now: the password is held by the account server,
+            hashed, and never by ICEFALL or this browser.
+          */}
+          <Held label="Password" value={session ? "Held by the account server" : "—"} />
           <Held label="Photo" value="None" />
           <Held label="Location history" value="None" />
           <Held label="Everything else" value="Nothing" />

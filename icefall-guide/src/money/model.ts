@@ -257,11 +257,21 @@ export function totalsFor(quote: Quote, commissionPct: number = GUIDE_COMMISSION
 /**
  * ICEFALL's cut of a guide's fee, as a percentage, TAKEN OUT rather than added.
  *
- * SETTLED BY THE PRODUCT OWNER, 2026-08-28, as a worked example — which is the
- * only unambiguous way to state a fee:
+ * SETTLED BY THE PRODUCT OWNER, 2026-08-28 at 10%, RAISED TO 15% BY THE OWNER
+ * 2026-08-31. Stated as a worked example, which is the only unambiguous way to
+ * state a fee:
  *
  *     A guide charges €1,000 for a day.
- *     The climber pays €1,000. The guide receives €900. ICEFALL keeps €100.
+ *     The climber pays €1,000. The guide receives €850. ICEFALL keeps €150.
+ *
+ * THE RATE IS DEFINED HERE AND NOWHERE ELSE. `icefall-shared` is the source and
+ * `npm run sync` copies this file into all six apps as `src/money/model.ts`. A
+ * second literal anywhere is how this model reached four different numbers once
+ * already — see the reversal note below.
+ *
+ * RAISING IT CHANGES WHAT EXISTING GUIDES ARE TOLD THEY RECEIVE. Every surface
+ * that quotes a payout reads this constant, so they all moved together; none of
+ * them was told 10% and left saying it.
  *
  * So the advertised price IS what the climber pays. Nothing is added at
  * checkout, and there is no service fee anywhere in this model.
@@ -277,7 +287,7 @@ export function totalsFor(quote: Quote, commissionPct: number = GUIDE_COMMISSION
  * The arithmetic lives in `totalsFor` below, which has always modelled the
  * deducted arrangement and is now the only model.
  */
-export const GUIDE_COMMISSION_PCT = 10;
+export const GUIDE_COMMISSION_PCT = 15;
 
 /**
  * What the client is told they are paying, in this model.

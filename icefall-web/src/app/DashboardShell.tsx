@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
-  Bell, Bookmark, CalendarCheck, ChevronDown, Compass, Crown, Flag, Footprints, Home,
+  Bell, Bookmark, CalendarCheck, ChevronDown, Compass, Crown, Flag, Footprints, Home, Send,
   MessageCircle, MessageSquare, Moon, Mountain as MountainIcon, Search,
   Settings as SettingsIcon, User, Users,
 } from "lucide-react";
@@ -60,6 +60,7 @@ const PRIMARY = [
 const QUICK = [
   { to: "/app/saved", label: "Saved expeditions", icon: Bookmark },
   { to: "/app/bookings", label: "Bookings", icon: CalendarCheck },
+  { to: "/app/enquiries", label: "My enquiries", icon: Send },
   { to: "/app/messages", label: "Messages", icon: MessageSquare },
   { to: "/app/settings", label: "Settings", icon: SettingsIcon },
 ];

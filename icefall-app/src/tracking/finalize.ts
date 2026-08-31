@@ -1,4 +1,3 @@
-import { scoreActivity } from "./points";
 import {
   detectAchievements,
   detectRecords,
@@ -20,12 +19,9 @@ import type { RecordedActivity } from "./types";
 
 export interface FinalizedActivity {
   activity: RecordedActivity;
-  pointsTotal: number;
-  breakdown: { label: string; points: number; note?: string }[];
   notes: string[];
   records: DetectedRecord[];
   achievements: DetectedAchievement[];
-  lifetimePoints: number;
 }
 
 export function finalizeActivity(raw: RecordedActivity): FinalizedActivity {
@@ -37,10 +33,12 @@ export function finalizeActivity(raw: RecordedActivity): FinalizedActivity {
    *
    * The simulator emits a plausible ~2.2 m/s track with real distance and real
    * ascent, so left alone it sets personal bests, permanently unlocks
-   * achievements and adds lifetime points. Those are claims about what the
-   * athlete has done, and an athlete choosing a mountain deserves them to be
-   * true. The session is still recorded and still scored for display — it is
-   * only barred from the permanent record.
+   * achievements. Those are claims about what the athlete has done, and an
+   * athlete choosing a mountain deserves them to be true. The session is still
+   * recorded — it is only barred from the permanent record.
+   *
+   * THIS GUARD STAYS. It gated points as well as records and achievements;
+   * points are gone (PH-01) and the guard is not.
    */
   const simulated = raw.simulated === true;
 
@@ -52,26 +50,17 @@ export function finalizeActivity(raw: RecordedActivity): FinalizedActivity {
   const achievements = simulated ? [] : detectAchievements(raw, meta.earnedAchievements);
   const insight = buildInsight(raw);
 
-  const scored = scoreActivity(raw, {
-    activeDaysThisWeek: activeDaysThisWeek(realHistory),
-    firstOfKind: achievements.length > 0,
-  });
-
   const activity: RecordedActivity = {
     ...raw,
     insight: insight ?? undefined,
-    points_awarded: simulated ? 0 : scored.total,
-    pointsBreakdown: scored.breakdown,
     records: records.map((r) => r.id),
     achievements: achievements.map((a) => a.id),
   };
 
   saveActivity(activity);
 
-  const lifetimePoints = simulated ? meta.totalPoints : meta.totalPoints + scored.total;
   if (!simulated) {
     saveMeta({
-      totalPoints: lifetimePoints,
       earnedAchievements: [...meta.earnedAchievements, ...achievements.map((a) => a.id)],
     });
   }
@@ -81,13 +70,10 @@ export function finalizeActivity(raw: RecordedActivity): FinalizedActivity {
 
   return {
     activity,
-    pointsTotal: simulated ? 0 : scored.total,
-    breakdown: simulated ? [] : scored.breakdown,
     notes: simulated
-      ? ["Simulated session — not scored, and not added to your records or totals."]
-      : scored.notes,
+      ? ["Simulated session — not added to your records or totals."]
+      : [],
     records,
     achievements,
-    lifetimePoints,
   };
 }

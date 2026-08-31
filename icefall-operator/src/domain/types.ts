@@ -240,6 +240,132 @@ export interface PlacementStatusRow {
 }
 
 /* ========================================================================== */
+/* Treks — the second catalogue, with its own authorization boundary          */
+/* ========================================================================== */
+
+/**
+ * THE TREK SCALE IS NOT THE EXPEDITION SCALE, and must never be merged with it.
+ * The mildest expedition in the catalogue is a 4,000 m alpine ascent; the
+ * mildest thing here is a valley walk. Reusing "Extreme" for the Snowman Trek
+ * and for K2 would flatten the distinction a walker most needs.
+ *
+ * DIFFICULTY COMES FROM THIS RECORD (owner, OP-04: "difficulty should be
+ * already there since doesnt change"). It is a property of the route, not a
+ * sentence the seller composes.
+ */
+export type TrekDifficulty = "Easy" | "Moderate" | "Strenuous" | "Very strenuous";
+
+/** What kind of route it is. The web catalogue's own vocabulary, unchanged. */
+export type TrekStyle =
+  | "Base camp"
+  | "Circuit"
+  | "Traverse"
+  | "Valley"
+  | "High pass"
+  | "Pilgrimage"
+  | "Coastal"
+  | "Long distance";
+
+/**
+ * THE TREK CATALOGUE ROW, mirrored from `icefall-web/src/data/trekTypes.ts`.
+ *
+ * A trek is not a variety of expedition and it is not a mountain. It is a ROUTE
+ * — to, around or between peaks — and 207 of the web catalogue's 252 routes are
+ * on no mountain at all. That is why it needs its own catalogue rather than
+ * being expressed as a mountain assignment: the Camino Frances and the West
+ * Highland Way have no summit to be granted access to.
+ *
+ * THE FIELDS ARE THE WEB RECORD'S FIELDS AND NOTHING MORE. Two of that record's
+ * columns are deliberately absent here rather than carried across empty:
+ *
+ *   `priceFromEur` is null on all 252 routes, because a starting price is an
+ *   operator's commercial claim and no operator has quoted one. A column whose
+ *   only possible value is null is a column that invites somebody to fill it in.
+ *
+ *   `operatorIds` is likewise empty on all 252. `operatorsForTrek()` in the web
+ *   app answers "who runs this route" from a hand-written region map over three
+ *   INVENTED companies — demo scaffolding, not a relation. Copying an empty
+ *   relation into a second app would make it look like a fact that had simply
+ *   not been filled in yet. `CompanyTrek` below is the real relation, and it is
+ *   a grant Icefall makes, not a region a company happens to work in.
+ *
+ * `region` is the region's display name from the web app's `TREK_REGIONS`,
+ * denormalised for the same reason `Mountain.region` is: a raw slug is not a
+ * thing to show a person, and this portal has no regions table to join to.
+ */
+export interface Trek {
+  /** The slug, and the id in every relation — exactly as `mountains.id` is. */
+  id: string;
+  name: string;
+  regionId: string;
+  /** The region's display name. See the note above. */
+  region: string;
+  country: string;
+  /**
+   * Peaks in the mountain catalogue this route touches, by id. OFTEN EMPTY, and
+   * an empty list is a fact about the route, not a gap to be filled.
+   */
+  mountainIds: string[];
+  /** Typical days on the route, as a range. Null where it varies too widely. */
+  durationDays: [number, number] | null;
+  difficulty: TrekDifficulty | null;
+  season: string | null;
+  style: TrekStyle;
+  summary: string;
+  /**
+   * THE HIGHEST POINT ON THE ROUTE, AND NEVER A PARENT PEAK'S SUMMIT.
+   *
+   * The single most dangerous substitution in this codebase. An Everest Base
+   * Camp trek tops out at 5,364 m and the Kala Patthar variant at 5,545 m,
+   * where the mountain the route is named after stands at 8,849 m — an
+   * overstatement of about 3,485 m in the one number a person uses to judge
+   * whether they can survive the trip.
+   *
+   * Where no true per-route figure is published this is NULL and every screen
+   * says there is none. It is never defaulted, never inferred, never borrowed
+   * from the peak beside it. `tests/authz.test.ts` scans this app's source for
+   * exactly that substitution.
+   */
+  maxAltitudeM: number | null;
+}
+
+/** `company_treks.status` — what an operator may EDIT. Mirrors the mountain one. */
+export type TrekAccessStatus = "active" | "suspended" | "ended";
+
+/**
+ * THE AUTHORIZATION BOUNDARY FOR TREKS, and nothing else.
+ *
+ * A one-for-one mirror of `CompanyMountain`, carrying PERMISSION AND NOTHING
+ * ELSE — no spots, no itinerary, no pitch, no position, no price, no term. It
+ * answers one question: may this company list trips on this route?
+ *
+ * The reason is the reason `CompanyMountain` gives, unchanged. The moment a
+ * grant row grows a content field, an operator's writing lives in a record that
+ * nothing publishes and nobody reviews, and two lifecycles that must be able to
+ * move independently — the grant, and the thing being sold — are welded into
+ * one row. What the company authors stays on `Product`, which has a publication
+ * boundary; what Icefall grants stays here, which has none because it needs
+ * none.
+ *
+ * DELIBERATELY A SEPARATE TABLE FROM `company_mountains` rather than a shared
+ * `company_destinations` with a kind column: a route and a peak are granted,
+ * suspended and ended on different commercial conversations, and one row cannot
+ * hold two lifecycles honestly.
+ *
+ * In the database `authenticated` will get SELECT here and no write of any kind,
+ * the same grant shape as `company_mountains` — proposed in
+ * `icefall-sessions/requests/09-company-treks-migration.md`, not yet applied.
+ */
+export interface CompanyTrek {
+  readonly id: string;
+  readonly companyId: string;
+  /** Text — the trek's slug. */
+  readonly trekId: string;
+  readonly status: TrekAccessStatus;
+  readonly assignedAt: string;
+}
+
+/* ========================================================================== */
 /* Products                                                                   */
 /* ========================================================================== */
 
@@ -275,9 +401,9 @@ export interface Product {
    * The highest point the trip actually reaches, when that is not the summit.
    *
    * An Everest Base Camp trek tops out at 5,364 m. Without this the page reads
-   * the mountain's altitude and tells a climber they are going to 8,849 m — a
-   * nine-hundred-per-cent overstatement of the number that decides whether they
-   * can do it.
+   * the mountain's altitude and tells a climber they are going to 8,849 m: an
+   * overstatement of about 3,485 m, roughly 65% higher than the trip actually
+   * goes, in the one number that decides whether they can do it.
    */
   maxAltitudeM: number | null;
   priceFromCents: Cents | null;
@@ -355,8 +481,16 @@ export type PromoVideo =
   | { source: "youtube"; youtubeId: string }
   | { source: "upload"; mediaId: string };
 
-/** `media_assets.kind`. `document` covers certifications and insurance papers. */
-export type MediaKind = "image" | "video" | "document";
+/**
+ * `media_assets.kind`. `document` covers certifications and insurance papers.
+ *
+ * `logo` IS SEPARATE FROM `image` ON PURPOSE. A listing photograph and a company
+ * mark are different objects with different rules — a real logo is usually square
+ * and often 512 px, which the photograph's 1200×800 floor would reject outright.
+ * Folding the two together meant either refusing real logos or lowering the floor
+ * for photographs. See `MEDIA_RULES` in `src/domain/media.ts`.
+ */
+export type MediaKind = "image" | "logo" | "video" | "document";
 
 /** `media_assets.state`. Three, not the five publication chips. */
 export type MediaState = "pending" | "approved" | "rejected";

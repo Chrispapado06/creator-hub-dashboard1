@@ -15,18 +15,40 @@
  * error — it silently never matches, and a guide who really was checked is never
  * verified. Name the table wherever either word appears.
  *
- * `guide_profiles.credentials_verified` is NOT the target. It carries
- * `CHECK (credentials_verified = false)` and is pinned false on purpose; this
- * app's approved state maps onto `guide_certifications` plus
- * `verification_documents`, never onto that column.
+ * `guide_profiles.credentials_verified` NO LONGER EXISTS. It was a boolean
+ * pinned false by a CHECK — the database's way of saying "ICEFALL cannot check
+ * this, so the claim is unstorable". Migration `20260831120000_guide_verification`
+ * replaced it with a real record: who checked, when, against which document, and
+ * when that document expires. The state is DERIVED —
+ * `guide_credentials_state(guide_profiles)` returns
+ * `unchecked | checked | expired`, and a lapsed document revokes the claim on
+ * its own against `current_date`.
+ *
+ * **Read the computed field, never a boolean.** A stale
+ * `credentials_verified: boolean` in a type would make `select=*` yield
+ * `undefined` — falsy, so it fails closed, but silently, which is the worse half.
+ *
+ * This app's approved state still maps onto `guide_certifications` plus
+ * `verification_documents`; the derived field is what the guide's own status
+ * screen should read.
  * ────────────────────────────────────────────────────────────────────────────
  *
  * READ THIS BEFORE CHANGING ANY LABEL IN THIS FILE.
  *
- * Until now ICEFALL verified nothing and said so: every credential rendered as
- * CLAIMED, and the database refuses to store a true `credentials_verified`. This
- * app introduces a real review — a person at ICEFALL opens a document and makes
- * a decision — so "verified" starts to mean something. Exactly one thing:
+ * ICEFALL used to verify nothing and said so: every credential rendered as
+ * CLAIMED, because the database refused to store a true `credentials_verified`.
+ * That is no longer why the sentence below is careful — and the change of reason
+ * is exactly the §6aa hazard, because the SENTENCE did not need to change while
+ * everything under it did.
+ *
+ * A person at ICEFALL now opens a document and makes a decision, and it is
+ * recorded with their name and the document's expiry. So the caution is no
+ * longer *"we cannot check"*. It is *"we read the papers; the issuing federation
+ * did not confirm them."* Weaker claim, same words, entirely different reason —
+ * and it must not be compressed into "Verified guide", nor carry a federation
+ * roundel (owner ruling, 2026-08-31).
+ *
+ * "Verified" therefore still means exactly one thing:
  *
  *     A MEMBER OF ICEFALL STAFF LOOKED AT A DOCUMENT THIS GUIDE UPLOADED
  *     AND JUDGED IT GENUINE, ON A GIVEN DATE.
@@ -288,6 +310,22 @@ export function expiringSoon(app: GuideApplication, now = new Date()): UploadedD
     // the lapse path, which states what happened, not in a countdown.
     return on !== null && on >= today && on <= horizon;
   });
+}
+
+/**
+ * Whether ICEFALL has confirmed the person is who the licence names.
+ *
+ * A SEPARATE CLAIM FROM THE CREDENTIALS, and it needs its own source or the two
+ * marks are one mark wearing two colours. This is true only when an identity
+ * document was actually supplied AND the application is approved — an approval
+ * granted without one confirms a qualification, not a person.
+ *
+ * `identity` is the one credential spec that does not expire, so unlike the
+ * others it cannot lapse; it is either established or it is not.
+ */
+export function identityVerified(app: GuideApplication, now = new Date()): boolean {
+  if (effectiveStatus(app, now) !== "approved") return false;
+  return app.documents.some((d) => d.kind === "identity");
 }
 
 /** Only an approved, unlapsed guide is visible to athletes. */

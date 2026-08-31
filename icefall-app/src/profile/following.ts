@@ -70,4 +70,4 @@ export function useFollowing() {
 }
 
 export const FOLLOW_NOTICE =
-  "Saved to this device. ICEFALL has no accounts yet, so nobody is notified and nothing is subscribed to — the card is simply kept so you can find them again.";
+  "Saved to this device. Following is not built yet, so nobody is notified and nothing is subscribed to — the card is simply kept so you can find them again.";

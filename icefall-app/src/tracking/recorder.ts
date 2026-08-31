@@ -1,5 +1,6 @@
 import { GpsFilter, Rolling, gpsQualityFor, haversine } from "./filters";
 import { activityById } from "./activities";
+import { energyModelFor, kcalFor, metFor } from "./energy";
 import type {
   ActivityTypeId,
   Capabilities,
@@ -25,6 +26,16 @@ const SPLIT_DISTANCE_M = 1000;
 const AUTO_PAUSE_SPEED_MPS = 0.4;
 const AUTO_PAUSE_AFTER_MS = 8_000;
 const SIGNAL_LOST_AFTER_MS = 12_000;
+/**
+ * The longest gap between position samples that may be costed as effort.
+ *
+ * A backgrounded app or a lost fix can leave minutes between samples. Costing
+ * that whole span at the pace of the sample that ENDED it would invent the
+ * energy of everything in between — the classic way an activity comes back from
+ * a tunnel with a personal best attached.
+ */
+const MAX_ENERGY_INTERVAL_S = 30;
+
 const VERTICAL_WINDOW_MS = 30 * 60_000;
 
 export interface RecorderOptions {
@@ -92,6 +103,10 @@ export class ActivityRecorder {
   private minAltitudeM: number | null = null;
 
   private points: TrackPointLive[] = [];
+  /** Kilocalories accumulated interval by interval. See `accrueEnergy`. */
+  private kcalAccum = 0;
+  /** When energy was last banked, so an interval is never counted twice. */
+  private lastEnergyAt: number | null = null;
   private splits: LiveSplit[] = [];
   private splitAnchor = { distanceM: 0, t: 0, gain: 0, hrSum: 0, hrCount: 0 };
 
@@ -300,6 +315,8 @@ export class ActivityRecorder {
       derivedSpeed: derived,
     });
 
+    this.accrueEnergy(sample.t, derived);
+
     this.maybeCloseSplit(sample.t);
     this.emit();
   }
@@ -396,11 +413,61 @@ export class ActivityRecorder {
     return ((b.altitudeSmoothed - a.altitudeSmoothed) / run) * 100;
   }
 
+  /**
+   * Kilocalories, integrated over the activity rather than assumed from it.
+   *
+   * For running and walking families this is `kcalAccum` — the sum of many
+   * short intervals, each costed at the MET its own pace and gradient imply.
+   * That is what makes the figure move with effort, which is the complaint that
+   * prompted it: a fixed MET returned the same number for a flat jog and a hill
+   * sprint of equal length.
+   *
+   * Everything else keeps the fixed MET, because the ACSM equations describe
+   * running and walking and applying them to a bike would borrow a published
+   * equation's authority for a number it was never fitted to.
+   *
+   * The fallback also catches indoor work — a treadmill run has no GPS, so
+   * nothing accumulates, and its fixed MET is the best honest figure available
+   * rather than a null pretending the session did not happen.
+   */
   private get calories(): number | null {
     if (this.movingMs <= 0) return null;
+
+    if (this.kcalAccum > 0) return this.kcalAccum;
+
     const met = activityById(this.activityTypeId).metEstimate;
     const hours = this.movingMs / 3_600_000;
     return met * this.opts.bodyMassKg * hours;
+  }
+
+  /**
+   * Bank the energy cost of the interval that just elapsed.
+   *
+   * Called per position sample, so the MET is recomputed against the pace and
+   * gradient of that moment instead of an average that would flatten the hills
+   * back out again.
+   */
+  private accrueEnergy(t: number, speedMps: number | null): void {
+    const model = energyModelFor(activityById(this.activityTypeId).family);
+    const previous = this.lastEnergyAt;
+    this.lastEnergyAt = t;
+
+    if (model === "none" || previous === null) return;
+    if (this.status !== "recording" || this.autoPaused) return;
+    if (speedMps === null) return;
+
+    const seconds = (t - previous) / 1000;
+    // A gap is not effort. A backgrounded app or a lost fix can leave minutes
+    // between samples, and costing that whole span at the pace of the sample
+    // that ended it would invent the energy of everything in between.
+    if (seconds <= 0 || seconds > MAX_ENERGY_INTERVAL_S) return;
+
+    // `grade` is a percentage; the equations take a fraction.
+    const grade = this.grade;
+    const met = metFor(model, speedMps, grade === null ? null : grade / 100);
+    if (met === null) return;
+
+    this.kcalAccum += kcalFor(met, this.opts.bodyMassKg, seconds);
   }
 
   private accrue() {

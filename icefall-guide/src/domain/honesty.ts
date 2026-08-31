@@ -148,7 +148,7 @@ export const GUIDE_NOTICES = {
    * has no lead to point at, because `public.leads` is company-scoped. So the
    * honest answer is not "0%" and not "no denominator" — it is that ICEFALL
    * cannot tell which of these bookings it is responsible for. Which is exactly
-   * the question a guide paying 10% is asking.
+   * the question a guide paying ICEFALL's commission is asking.
    */
   CONVERSION_NOT_ATTRIBUTED:
     "None of your bookings is linked to an enquiry, so there is no way to say how many ICEFALL brought you.",

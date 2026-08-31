@@ -64,28 +64,28 @@ const C = {
 } as const;
 
 export const companies: Company[] = off([
-  { id: C.northwind, slug: "northwind-ascents", name: "Northwind Ascents", legal_name: "Northwind Ascents Pvt Ltd", logo_path: null,
+  { id: C.northwind, slug: "northwind-ascents", name: "Northwind Ascents", legal_name: "Northwind Ascents Pvt Ltd", logo_path: null, real_business: false,
     description: "High-altitude expeditions in the Khumbu and Annapurna regions.", countries: ["Nepal"], regions: ["Himalaya & Asia"],
     status: "active", verification_status: "verified", documents_checked_at: at(-64), documents_checked_by: "s1", created_at: at(-540), updated_at: at(-9) },
-  { id: C.serac, slug: "serac-and-stone", name: "Serac & Stone Expeditions", legal_name: "Serac & Stone SA", logo_path: null,
+  { id: C.serac, slug: "serac-and-stone", name: "Serac & Stone Expeditions", legal_name: "Serac & Stone SA", logo_path: null, real_business: false,
     description: "Andean and Alaskan programmes with a long acclimatisation profile.", countries: ["Argentina", "United States"], regions: ["Americas"],
     status: "active", verification_status: "verified", documents_checked_at: at(-121), documents_checked_by: "s1", created_at: at(-480), updated_at: at(-14) },
-  { id: C.cairn, slug: "cairn-and-compass", name: "Cairn & Compass Trekking", legal_name: "Cairn & Compass SARL", logo_path: null,
+  { id: C.cairn, slug: "cairn-and-compass", name: "Cairn & Compass Trekking", legal_name: "Cairn & Compass SARL", logo_path: null, real_business: false,
     description: "Alpine trekking and hut-to-hut traverses.", countries: ["France", "Switzerland"], regions: ["Europe"],
     status: "active", verification_status: "pending", documents_checked_at: null, documents_checked_by: null, created_at: at(-300), updated_at: at(-3) },
-  { id: C.hollow, slug: "hollow-ridge", name: "Hollow Ridge Mountaineering", legal_name: null, logo_path: null,
+  { id: C.hollow, slug: "hollow-ridge", name: "Hollow Ridge Mountaineering", legal_name: null, logo_path: null, real_business: false,
     description: "Dolomites and Western Alps, small groups only.", countries: ["Italy"], regions: ["Europe"],
     status: "onboarding", verification_status: "unverified", documents_checked_at: null, documents_checked_by: null, created_at: at(-41), updated_at: at(-2) },
-  { id: C.lantern, slug: "lantern-pass", name: "Lantern Pass Expeditions", legal_name: "Lantern Pass Trekking Pvt Ltd", logo_path: null,
+  { id: C.lantern, slug: "lantern-pass", name: "Lantern Pass Expeditions", legal_name: "Lantern Pass Trekking Pvt Ltd", logo_path: null, real_business: false,
     description: "Everest, Manaslu and Ama Dablam expeditions.", countries: ["Nepal"], regions: ["Himalaya & Asia"],
     status: "active", verification_status: "verified", documents_checked_at: at(-200), documents_checked_by: "s3", created_at: at(-620), updated_at: at(-21) },
-  { id: C.vantage, slug: "vantage-north", name: "Vantage North Alpine", legal_name: "Vantage North AS", logo_path: null,
+  { id: C.vantage, slug: "vantage-north", name: "Vantage North Alpine", legal_name: "Vantage North AS", logo_path: null, real_business: false,
     description: "Ski mountaineering and winter ascents in Scandinavia.", countries: ["Norway"], regions: ["Europe"],
     status: "active", verification_status: "unverified", documents_checked_at: null, documents_checked_by: null, created_at: at(-190), updated_at: at(-30) },
-  { id: C.coldharbour, slug: "cold-harbour-guides", name: "Cold Harbour Guides", legal_name: null, logo_path: null,
+  { id: C.coldharbour, slug: "cold-harbour-guides", name: "Cold Harbour Guides", legal_name: null, logo_path: null, real_business: false,
     description: "Scottish winter and Alpine introductory courses.", countries: ["United Kingdom"], regions: ["Europe"],
     status: "suspended", verification_status: "suspended", documents_checked_at: null, documents_checked_by: null, created_at: at(-410), updated_at: at(-52) },
-  { id: C.meridian, slug: "meridian-col", name: "Meridian Col Expeditions", legal_name: "Meridian Col SpA", logo_path: null,
+  { id: C.meridian, slug: "meridian-col", name: "Meridian Col Expeditions", legal_name: "Meridian Col SpA", logo_path: null, real_business: false,
     description: "Aconcagua and Patagonian objectives.", countries: ["Chile", "Argentina"], regions: ["Americas"],
     status: "active", verification_status: "verified", documents_checked_at: at(-88), documents_checked_by: "s1", created_at: at(-350), updated_at: at(-6) },
 ]);
@@ -278,6 +278,7 @@ const booking = (
   id, kind: "expedition", lead_id, company_id, product_id, destination_id, customer_id,
   value_cents: value === null ? null : eur(value),
   value_status: value === null ? "pending" : "reported",
+  thread_id: null, guide_id: null, pass_through_cents: null, pass_through_state: "unknown",
   currency: "EUR", status, attribution_status: attribution,
   booked_at: at(-daysAgo), starts_on: day(240 - daysAgo), completed_at: status === "completed" ? at(-2) : null,
 });
@@ -395,7 +396,7 @@ const task = (
   priority: Task["priority"], dueIn: number, desk: Task["desk"],
 ): Task => ({
   id, kind, title, detail, entity_type: "placement", entity_id: null,
-  company_id: null, desk, priority, status: "open", due_on: day(dueIn),
+  company_id: null, desk, priority, status: "open" as const, assigned_to: null, due_on: day(dueIn),
 });
 
 export const tasks: Task[] = off([
@@ -439,15 +440,15 @@ export const auditEvents: AuditEvent[] = off([
 
 export const tickets: Ticket[] = off([
   { id: "tk1", reference: "T-10048", subject: "Asked to pay by bank transfer outside ICEFALL", type: "safety", priority: "critical", status: "investigating",
-    customer_id: "u1", company_id: C.vantage, lead_id: null, booking_id: null, assigned_to: "s5", created_at: at(-1), updated_at: at(0) },
+    customer_id: "u1", company_id: C.vantage, lead_id: null, booking_id: null, assigned_to: "s5", requester_kind: "athlete" as const, origin_app: "phone_app" as const, origin_screen: null, requester_email: null, requester_name: null, snippet: null, created_at: at(-1), updated_at: at(0) },
   { id: "tk2", reference: "T-10047", subject: "Departure date moved without notice", type: "booking", priority: "high", status: "open",
-    customer_id: "u4", company_id: C.serac, lead_id: "l7", booking_id: "b4", assigned_to: "s5", created_at: at(-2), updated_at: at(-1) },
-  { id: "tk3", reference: "T-10046", subject: "Referral fee disputed", type: "payment", priority: "high", status: "waiting",
-    customer_id: null, company_id: C.meridian, lead_id: "l15", booking_id: "b5", assigned_to: "s4", created_at: at(-4), updated_at: at(-2) },
+    customer_id: "u4", company_id: C.serac, lead_id: "l7", booking_id: "b4", assigned_to: "s5", requester_kind: "athlete" as const, origin_app: "web" as const, origin_screen: null, requester_email: null, requester_name: null, snippet: null, created_at: at(-2), updated_at: at(-1) },
+  { id: "tk3", reference: "T-10046", subject: "Referral fee disputed", type: "payment", priority: "high", status: "waiting_on_company",
+    customer_id: null, company_id: C.meridian, lead_id: "l15", booking_id: "b5", assigned_to: "s4", requester_kind: "company" as const, origin_app: "operator_portal" as const, origin_screen: null, requester_email: null, requester_name: null, snippet: null, created_at: at(-4), updated_at: at(-2) },
   { id: "tk4", reference: "T-10045", subject: "Trek description contains a phone number", type: "content", priority: "medium", status: "resolved",
-    customer_id: null, company_id: C.vantage, lead_id: null, booking_id: null, assigned_to: "s3", created_at: at(-6), updated_at: at(-3) },
+    customer_id: null, company_id: C.vantage, lead_id: null, booking_id: null, assigned_to: "s3", requester_kind: "staff" as const, origin_app: "crm" as const, origin_screen: null, requester_email: null, requester_name: null, snippet: null, created_at: at(-6), updated_at: at(-3) },
   { id: "tk5", reference: "T-10044", subject: "Cannot upload insurance certificate", type: "technical", priority: "low", status: "open",
-    customer_id: null, company_id: C.cairn, lead_id: null, booking_id: null, assigned_to: null, created_at: at(-8), updated_at: at(-8) },
+    customer_id: null, company_id: C.cairn, lead_id: null, booking_id: null, assigned_to: null, requester_kind: "company" as const, origin_app: "operator_portal" as const, origin_screen: null, requester_email: null, requester_name: null, snippet: null, created_at: at(-8), updated_at: at(-8) },
 ]);
 
 export const documents: VerificationDocument[] = off([
@@ -462,12 +463,12 @@ export const documents: VerificationDocument[] = off([
 ]);
 
 export const staff: StaffRecord[] = off([
-  { profile_id: "s1", name: "Alex Christofis", email: "alex@icefall.example", staff_role: "super_admin", department: "Management", active: true, joined_on: day(-700) },
-  { profile_id: "s2", name: "Sarah Johnson", email: "sarah@icefall.example", staff_role: "sales", department: "Sales", active: true, joined_on: day(-420) },
-  { profile_id: "s3", name: "Daniel Kim", email: "daniel@icefall.example", staff_role: "operations", department: "Operations", active: true, joined_on: day(-380) },
-  { profile_id: "s4", name: "Mark Nguyen", email: "mark@icefall.example", staff_role: "finance", department: "Finance", active: true, joined_on: day(-250) },
-  { profile_id: "s5", name: "Lucia Ferrer", email: "lucia@icefall.example", staff_role: "support", department: "Support", active: true, joined_on: day(-140) },
-  { profile_id: "s6", name: "Tom Ellis", email: "tom@icefall.example", staff_role: "sales", department: "Sales", active: false, joined_on: day(-560) },
+  { profile_id: "s1", name: "Alex Christofis", email: "alex@icefall.example", staff_role: "super_admin", department: "Management", active: true, support_scopes: [], joined_on: day(-700) },
+  { profile_id: "s2", name: "Sarah Johnson", email: "sarah@icefall.example", staff_role: "sales", department: "Sales", active: true, support_scopes: [], joined_on: day(-420) },
+  { profile_id: "s3", name: "Daniel Kim", email: "daniel@icefall.example", staff_role: "operations", department: "Operations", active: true, support_scopes: [], joined_on: day(-380) },
+  { profile_id: "s4", name: "Mark Nguyen", email: "mark@icefall.example", staff_role: "finance", department: "Finance", active: true, support_scopes: [], joined_on: day(-250) },
+  { profile_id: "s5", name: "Lucia Ferrer", email: "lucia@icefall.example", staff_role: "support", department: "Support", active: true, support_scopes: [], joined_on: day(-140) },
+  { profile_id: "s6", name: "Tom Ellis", email: "tom@icefall.example", staff_role: "sales", department: "Sales", active: false, support_scopes: [], joined_on: day(-560) },
 ]);
 
 export const guides: GuideRecord[] = off([

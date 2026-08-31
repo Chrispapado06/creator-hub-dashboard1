@@ -4,7 +4,8 @@ import {
   BarChart3, Calendar, Check, ChevronDown, ChevronRight, Heart, Mountain as MountainIcon,
   MessageSquare, Search, Star, Users,
 } from "lucide-react";
-import { GuidePhoto, VerifiedTick } from "@/components/ui";
+import { GuidePhoto } from "@/components/ui";
+import { GuideCredentialMark } from "@/components/marks";
 import { DEMO_NOTICE, GUIDES, IS_DEMO, type Guide } from "@/data/demo";
 import { PEAKS, type Peak } from "@/data/peaks";
 import { peakFallback, peakImage } from "./peakPlate";
@@ -414,7 +415,7 @@ function GuideCard({
           <span className="min-w-0 flex-1">
             <span className="flex items-center gap-1.5">
               <span className="truncate text-[15px] text-snow">{g.name}</span>
-              <VerifiedTick verifiedOn={g.verifiedOn} size={13} />
+              <GuideCredentialMark verifiedOn={g.verifiedOn} size={13} />
             </span>
             <span className="mt-0.5 block truncate text-[11.5px] text-mist">{g.credential}</span>
           </span>

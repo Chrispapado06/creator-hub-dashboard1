@@ -78,8 +78,11 @@ function TasksPage() {
     setStandalone((st ?? []) as StandaloneTask[]);
     if (!silent) setLoading(false);
   };
-  // On open: materialise any recurring tasks due today (idempotent), then load.
-  useEffect(() => { (async () => { await generateDueRecurringTasks(); load(); })(); }, []);
+  // Generation is cron-only now (the morning card at 04:40 UTC and the 08:00
+  // digest both call generate_due_recurring_tasks). Materialising on page open
+  // as well would advance a rule's next_run mid-day, after the card that was
+  // supposed to carry it had already been rendered.
+  useEffect(() => { load(); }, []);
   const refresh = () => load(true);
 
   const memberName = (id: string | null) => members.find((m) => m.id === id)?.name ?? "—";

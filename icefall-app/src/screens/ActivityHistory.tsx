@@ -1,9 +1,9 @@
-import { Plus, Trophy } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Badge, Button, Card, SectionLabel, Metric } from "@/components/ui/primitives";
 import { Rise, Screen, ScreenHeader, SegmentedTabs, Stagger } from "@/components/layout/chrome";
-import { ActivityCalendar, ActivityPerformance } from "@/components/domain/ActivityCalendar";
+import { ActivityCalendar } from "@/components/domain/ActivityCalendar";
 import { ActivityCard } from "@/components/domain/cards";
 import { IcefallMark } from "@/components/ui/IcefallMark";
 import { cn } from "@/lib/utils";
@@ -11,18 +11,17 @@ import { MODE_LABELS, fmtDistance, fmtElevation, fmtHours } from "@/lib/format";
 import {
   summarise,
   useActivityFeed,
-  useAllTimeRecords,
-  useLifetimePoints,
   useRecordedActivities,
   weeklyBuckets,
 } from "@/tracking/feed";
 import type { Activity, SportMode } from "@/types";
 
+/* PH-02 — Performance and Routes removed at the owner's request. History and
+   Calendar are two ways of reading the same recorded sessions; the other two
+   were analyses layered on top of them. */
 const VIEWS = [
   { value: "activities", label: "History" },
   { value: "calendar", label: "Calendar" },
-  { value: "performance", label: "Performance" },
-  { value: "journey", label: "Routes" },
 ] as const;
 
 const FILTERS = [
@@ -36,14 +35,11 @@ const FILTERS = [
 ] as const;
 
 export default function ActivityHistory() {
-  const [view, setView] = useState<"activities" | "calendar" | "performance" | "journey">(
-    "activities",
-  );
+  const [view, setView] = useState<"activities" | "calendar">("activities");
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["value"]>("all");
 
   const feed = useActivityFeed();
   const recorded = useRecordedActivities();
-  const lifetimePoints = useLifetimePoints();
 
   const list = useMemo(
     () => (filter === "all" ? feed : feed.filter((a) => a.mode === (filter as SportMode))),
@@ -56,7 +52,7 @@ export default function ActivityHistory() {
       <div className="px-5">
         <ScreenHeader
           title="Activity"
-          subtitle={`${feed.filter((a) => !a.simulated).length} recorded · ${lifetimePoints.toLocaleString("en-GB")} points`}
+          subtitle={`${feed.filter((a) => !a.simulated).length} recorded`}
           action={
             <Button asChild size="icon" variant="secondary" aria-label="Start an activity">
               <Link to="/activity/select">
@@ -112,8 +108,6 @@ export default function ActivityHistory() {
       )}
 
       {view === "calendar" && <ActivityCalendar recorded={recorded} />}
-      {view === "performance" && <ActivityPerformance recorded={recorded} />}
-      {view === "journey" && <Journey feed={feed} lifetimePoints={lifetimePoints} />}
     </Screen>
   );
 }
@@ -226,123 +220,6 @@ function Stats({ feed, recordedCount }: { feed: Activity[]; recordedCount: numbe
 
 /* -------------------------------------------------------------------------- */
 /* Journey — every route you have travelled, in one frame                     */
-/* -------------------------------------------------------------------------- */
-
-function Journey({ feed, lifetimePoints }: { feed: Activity[]; lifetimePoints: number }) {
-  const recorded = useRecordedActivities();
-
-  const year = new Date().getFullYear();
-  // Simulated sessions are dropped before the year card, not after: the totals
-  // beneath it, the highest point, the longest activity and the overlaid routes
-  // all read as a year of real climbing, and one indoor simulator run drawn
-  // among them would be claiming a day nobody spent outside.
-  const thisYear = useMemo(
-    () =>
-      feed.filter((a) => !a.simulated && new Date(a.startedAt).getFullYear() === year),
-    [feed, year],
-  );
-  const totals = useMemo(() => summarise(thisYear), [thisYear]);
-
-  const highest = useMemo(() => {
-    let best = 0;
-    for (const a of thisYear) best = Math.max(best, ...a.track.map((p) => p.ele));
-    return best;
-  }, [thisYear]);
-
-  const longest = useMemo(
-    () => thisYear.reduce((b, a) => (a.distanceKm > (b?.distanceKm ?? 0) ? a : b), thisYear[0]),
-    [thisYear],
-  );
-
-  // All-time bests across every recording. This previously showed only the
-  // records set by the *latest* activity, mislabelled as personal records.
-  const bestRecords = useAllTimeRecords();
-
-  return (
-    <Stagger className="px-5 pt-5">
-      <Rise>
-        <Card inset={false} className="overflow-hidden">
-          {/* All routes overlaid — the shape of a year outdoors. */}
-          <div className="relative aspect-square bg-obsidian">
-            <svg viewBox="0 0 320 320" className="h-full w-full">
-              {thisYear.slice(0, 40).map((a, i) => (
-                <path
-                  key={a.id}
-                  d={a.track
-                    .map(
-                      (p, j) =>
-                        `${j === 0 ? "M" : "L"}${(26 + p.x * 268).toFixed(1)} ${(26 + p.y * 268).toFixed(1)}`,
-                    )
-                    .join(" ")}
-                  fill="none"
-                  stroke="var(--ice-azure)"
-                  strokeOpacity={0.16 + (i % 5) * 0.05}
-                  strokeWidth="1.4"
-                  strokeLinejoin="round"
-                  strokeLinecap="round"
-                />
-              ))}
-            </svg>
-            <div className="absolute inset-x-0 bottom-0 scrim-bottom p-4">
-              <p className="section-label">My {year}</p>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-y-5 p-4">
-            <Metric size="sm" value={fmtDistance(totals.distanceKm, 0)} unit="km" label="Distance" />
-            <Metric size="sm" value={fmtElevation(totals.elevationM)} unit="m" label="Vertical" />
-            <Metric size="sm" value={String(totals.count)} label="Activities" />
-            <Metric size="sm" value={fmtHours(totals.hours)} label="Time outdoors" />
-          </div>
-        </Card>
-      </Rise>
-
-      <Rise className="pt-6">
-        <SectionLabel>Your year so far</SectionLabel>
-        <Card className="mt-3" inset={false}>
-          <div className="px-4">
-            <Line label="Highest point" value={highest ? `${fmtElevation(highest)} m` : "—"} />
-            <Line
-              label="Longest activity"
-              value={longest ? `${fmtDistance(longest.distanceKm)} km` : "—"}
-            />
-            <Line label="ICEFALL points" value={lifetimePoints.toLocaleString("en-GB")} />
-          </div>
-        </Card>
-      </Rise>
-
-      {bestRecords.length > 0 && (
-        <Rise className="pt-6">
-          <SectionLabel>Personal records</SectionLabel>
-          <div className="mt-3 space-y-2.5">
-            {bestRecords.map((r) => (
-              <Card key={r.id} className="border-summit/20 bg-summit/[0.04]">
-                <div className="flex items-center gap-3">
-                  <Trophy size={15} strokeWidth={1.5} className="shrink-0 text-summit" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[13px] text-snow">{r.label}</p>
-                    <p className="tnum text-[11px] text-mist-dim">{r.value}</p>
-                  </div>
-                </div>
-              </Card>
-            ))}
-          </div>
-        </Rise>
-      )}
-
-      <Rise className="pt-6">
-        <Card className="border-azure/20 bg-azure/[0.04]">
-          <div className="flex items-center gap-3">
-            <IcefallMark className="h-4 shrink-0 text-azure" />
-            <p className="text-[12px] leading-relaxed text-snow/85">
-              Your annual recap is assembled at the end of the season, from everything recorded
-              here.
-            </p>
-          </div>
-        </Card>
-      </Rise>
-    </Stagger>
-  );
-}
 
 function Line({ label, value }: { label: string; value: string }) {
   return (

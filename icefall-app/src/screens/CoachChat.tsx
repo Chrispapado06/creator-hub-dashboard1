@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Disclaimer } from "@/components/ui/primitives";
 import { IcefallMark } from "@/components/ui/IcefallMark";
 import { cn } from "@/lib/utils";
-import { SUGGESTED_PROMPTS, askCoach, openingMessage } from "@/services/coach";
+import { SUGGESTED_PROMPTS, askCoach } from "@/services/coach";
 import { useCoachContext } from "@/coach/context";
 import { creditsLeft, isExhausted, remainingMicros } from "@/coach/budget";
 import { useApp } from "@/state/AppState";
@@ -34,10 +34,42 @@ export default function CoachChat() {
   const ctx = useCoachContext();
   const session = ctx.today.session;
 
-  const [messages, setMessages] = useState<CoachMessage[]>(() => [openingMessage(ctx)]);
+  /**
+   * PH-14a — THE CHAT OPENS EMPTY, AND THE GREETING IS AN INTRO RATHER THAN A
+   * MESSAGE.
+   *
+   * It used to start with `openingMessage(ctx)` already in the transcript, so
+   * the screen opened on a coach bubble reading *"Good to see you, X. Based on
+   * your activity, sleep and progress toward Mont Blanc, here is what I would
+   * prioritise today."* Two things wrong with that, and the owner named the
+   * first: it looks like a message that has already been sent, when nothing has
+   * been. The second is worse — **it announces an analysis it then does not
+   * deliver.** No priority follows it. It claims to have read your sleep and
+   * your progress and produces nothing, which is a promise the screen breaks in
+   * its own first sentence.
+   *
+   * So: no seeded turn. The greeting became the intro overlay below, which
+   * fades and leaves, and the composer opens on a clean thread the way a new
+   * chat should.
+   */
+  const [messages, setMessages] = useState<CoachMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [thinking, setThinking] = useState(false);
+  const [intro, setIntro] = useState(true);
   const endRef = useRef<HTMLDivElement>(null);
+
+  // The intro is a greeting, not a gate: it never blocks the composer, and a
+  // reduced-motion preference skips it rather than slowing the screen down.
+  useEffect(() => {
+    const reduce =
+      typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) {
+      setIntro(false);
+      return;
+    }
+    const t = setTimeout(() => setIntro(false), 1900);
+    return () => clearTimeout(t);
+  }, []);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -66,9 +98,48 @@ export default function CoachChat() {
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="relative flex h-full flex-col">
+      {/* The greeting, as an intro that leaves. Positioned over the thread
+          rather than inside it, so it can never be mistaken for a turn in the
+          conversation or scrolled back to. `pointer-events-none` so it cannot
+          swallow a tap on the composer while it fades. */}
+      <AnimatePresence>
+        {intro && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0, transition: { duration: 0.55 } }}
+            className="pointer-events-none absolute inset-0 z-10 grid place-items-center bg-obsidian px-8 text-center"
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+            >
+              <IcefallMark className="mx-auto h-5 text-azure" />
+              <p className="mt-5 text-[22px] font-light leading-tight text-snow">
+                Hello, {ctx.athlete.firstName}.
+              </p>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="no-scrollbar flex-1 overflow-y-auto px-5 pb-4 pt-5">
         <div className="space-y-4">
+          {/* An empty thread says what this is, without pretending a turn has
+              happened. It makes no claim about what it has read. */}
+          {messages.length === 0 && !thinking && (
+            <motion.p
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: intro ? 1.9 : 0, duration: 0.5 }}
+              className="pt-2 text-[12.5px] leading-relaxed text-mist-dim"
+            >
+              Ask about today's session, your objective, or anything you are unsure of.
+            </motion.p>
+          )}
+
           {messages.map((m) => (
             <Bubble key={m.id} message={m} />
           ))}

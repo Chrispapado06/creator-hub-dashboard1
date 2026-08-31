@@ -1,5 +1,5 @@
 import { ChevronRight, type LucideIcon } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { Rise, Screen, ScreenHeader, Stagger } from "@/components/layout/chrome";
 import { SectionLabel } from "@/components/ui/primitives";
 import { cn } from "@/lib/utils";
@@ -15,6 +15,24 @@ import { cn } from "@/lib/utils";
  * what the row does in plain words rather than naming the setting again.
  */
 
+/**
+ * BACK GOES WHERE YOU CAME FROM — PH-17.
+ *
+ * Every settings sub-page defaulted its back arrow to `/settings`, which is
+ * right when you arrived through the settings list and wrong whenever you did
+ * not. The owner hit it on the profile: tapping the pencil on your own avatar
+ * opens Edit profile, and backing out dropped you in Settings — a screen you
+ * had never opened — with no way back to the profile except the tab bar.
+ *
+ * Fixed here rather than at the one call site, because the bug is the DEFAULT
+ * and not the screen: any page linking into settings from elsewhere has always
+ * had it. A caller passes `?from=/profile` and the arrow returns there.
+ *
+ * Only same-origin paths are honoured — `from` must start with a single `/`.
+ * `//evil.example` is protocol-relative and would leave the app, so the second
+ * character is checked too. It comes off the query string, which is
+ * user-editable by definition.
+ */
 export function SettingsPage({
   title,
   subtitle,
@@ -26,10 +44,14 @@ export function SettingsPage({
   back?: string;
   children: React.ReactNode;
 }) {
+  const [params] = useSearchParams();
+  const from = params.get("from");
+  const origin = from && from.startsWith("/") && !from.startsWith("//") ? from : null;
+
   return (
     <Screen padded={false}>
       <div className="px-5">
-        <ScreenHeader title={title} subtitle={subtitle} back={back} />
+        <ScreenHeader title={title} subtitle={subtitle} back={origin ?? back} />
       </div>
       <Stagger className="px-5 pb-6">{children}</Stagger>
     </Screen>
@@ -240,4 +262,4 @@ export function StatusPill({ status }: { status: Status }) {
  * in an account centre, because the athlete believes the setting took.
  */
 export const NOT_BUILT =
-  "ICEFALL has no accounts or server yet, so this is stored on this device only and nothing is sent anywhere.";
+  "This is stored on this device only and nothing is sent anywhere — your account exists on the server, but this setting does not sync yet.";

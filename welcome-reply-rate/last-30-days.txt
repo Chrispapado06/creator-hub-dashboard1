@@ -1,0 +1,25 @@
+
+WELCOME MESSAGE REPLY RATE — last 30 days (2026-07-23 → 2026-08-22)
+
+Model        New fans  Got welcome  Replied  No reply   Reply rate  Median reply
+───────────  ────────  ───────────  ───────  ────────  ───────────  ────────────
+Rose 🌹          1587         1479      555       863  37.5%–41.6%            3m
+Ella             1444         1347      489       804  36.3%–40.3%            3m
+Lilly🌼          2080         1990      471      1472  23.7%–26.0%            3m
+Juliee            738          707      222       465  31.4%–34.2%            2m
+June 💕           861          742      307       432  41.4%–41.8%            3m
+Blue VIP 🦋      4605         4517      441      4007   9.8%–11.3%            5m
+Emma Sonne       2358         2292      290      1948  12.7%–15.0%            3m
+Marissa 💖       4088         3997      674      3225  16.9%–19.3%            4m
+───────────  ────────  ───────────  ───────  ────────  ───────────  ────────────
+ALL MODELS      17761        17071     3449     13216        20.2%              
+
+Notes:
+  • 546 fan(s) messaged before any welcome went out — excluded from the denominator.
+  • 29 fan(s) never received a welcome message at all — excluded.
+  • 2 chat(s) could not be read after retries — excluded, and NOT counted as non-replies.
+  • 406 fan(s) replied at some point but not within the first 20 messages, so it can't be tied to the welcome — shown as the upper end of the range.
+
+20548 API calls · 20459 credits used · 72 throttled + retried · 13 network retries
+
+CSV → welcome-reply-rate/last-30-days.csv

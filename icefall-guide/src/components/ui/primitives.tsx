@@ -1,6 +1,8 @@
 import { cva, type VariantProps } from "class-variance-authority";
 import { Slot } from "@radix-ui/react-slot";
-import { forwardRef } from "react";
+import { forwardRef, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
+import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
 
 /* -------------------------------------------------------------------------- */
@@ -238,3 +240,181 @@ export function Disclaimer({
 export const Divider = ({ className }: { className?: string }) => (
   <div className={cn("h-px w-full bg-hairline", className)} />
 );
+
+/* -------------------------------------------------------------------------- */
+/* Mockup furniture — added 2026-08-30 to build the owner's design             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The status pill on a booking or client row.
+ *
+ * Tone names are spelled out at every call site rather than interpolated — see
+ * the argument in `components/guide.tsx`. `bg-${tone}` compiles to nothing.
+ */
+export function StatusPill({
+  state,
+  className,
+}: {
+  state: "confirmed" | "pending" | "upcoming" | "inquiry" | "complete" | "archived" | "cancelled";
+  className?: string;
+}) {
+  const map = {
+    confirmed: ["Confirmed", "border-summit/40 bg-summit/10 text-summit"],
+    complete: ["Complete", "border-summit/40 bg-summit/10 text-summit"],
+    pending: ["Pending", "border-alert/40 bg-alert/10 text-alert"],
+    upcoming: ["Upcoming", "border-azure/40 bg-azure/10 text-azure"],
+    inquiry: ["Inquiry", "border-azure/40 bg-azure/10 text-azure"],
+    archived: ["Archived", "border-hairline-strong bg-white/[0.03] text-mist-dim"],
+    cancelled: ["Cancelled", "border-danger/40 bg-danger/10 text-danger"],
+  } as const;
+  const [label, cls] = map[state];
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center rounded-[6px] border px-2 py-[3px] text-[9.5px] font-semibold uppercase tracking-[0.1em]",
+        cls,
+        className,
+      )}
+    >
+      {label}
+    </span>
+  );
+}
+
+/**
+ * The delta chip under an analytics figure. Never rendered when null.
+ *
+ * ZERO IS NOT AN INCREASE. It rendered as a green ▲0%, which reads at a glance
+ * as good news about a figure that did not move — the arrow and the colour are
+ * doing the talking, and both were saying something the number does not. No
+ * change is drawn flat and grey.
+ */
+export function Delta({ value, suffix = "%" }: { value: number | null; suffix?: string }) {
+  if (value === null) return null;
+  const flat = value === 0;
+  const up = value > 0;
+  return (
+    <span
+      className={cn(
+        "tnum inline-flex items-center gap-0.5 text-[11.5px] font-medium",
+        flat ? "text-mist-dim" : up ? "text-summit" : "text-danger",
+      )}
+    >
+      <span aria-hidden>{flat ? "–" : up ? "▲" : "▼"}</span>
+      {flat ? `no change` : `${Math.abs(value)}${suffix}`}
+    </span>
+  );
+}
+
+/** The underline tab strip the mockup uses on Analytics, Clients and Chat. */
+export function Tabs<T extends string>({
+  tabs,
+  value,
+  onChange,
+  className,
+}: {
+  tabs: readonly { value: T; label: string }[];
+  value: T;
+  onChange: (v: T) => void;
+  className?: string;
+}) {
+  return (
+    <div className={cn("flex gap-6 border-b border-hairline", className)} role="tablist">
+      {tabs.map((t) => {
+        const active = t.value === value;
+        return (
+          <button
+            key={t.value}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange(t.value)}
+            className={cn(
+              "relative -mb-px pb-2.5 text-[13px] transition-colors",
+              active ? "text-snow" : "text-mist-dim hover:text-mist",
+            )}
+          >
+            {t.label}
+            {active && <span className="absolute inset-x-0 bottom-0 h-[2px] rounded-pill bg-azure" />}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * The floating action button.
+ *
+ * TWO SEPARATE DEFECTS BEHIND THE OWNER'S "the + button is glitched" (GU-04),
+ * and both are fixed here rather than one of them.
+ *
+ * 1. IT RENDERS AS ONE ELEMENT — a `<button>` or an `<a>`, never one inside the
+ *    other. Every navigating call site used to put a `<Link>` inside it,
+ *    producing `<button><a>…</a></button>`: two interactive elements nested,
+ *    which is invalid HTML. Browsers disagree about which owns the click, so the
+ *    control worked sometimes and did nothing others. Navigation is now a PROP,
+ *    so a call site cannot reintroduce the nesting without going out of its way.
+ *
+ * 2. IT IS PINNED TO THE PHONE FRAME, NOT TO THE LIST. `absolute bottom-4`
+ *    inside `Screen` anchors to the SCROLL CONTENT, so the button sat at the
+ *    bottom of a long list and the guide had to scroll to the end of their
+ *    mountains to reach "add one". It is now portalled into the shell's own
+ *    relative frame — `[data-phone-shell]` — so it stays put, and it clears the
+ *    tab bar rather than sitting on top of it.
+ *
+ * The portal is deliberate rather than a wrapper `<div>`: `Screen` is the
+ * scroller and anything positioned inside it inherits the scroller as its
+ * container, whatever the call site does.
+ */
+export function Fab({
+  label,
+  to,
+  onClick,
+  disabled,
+  children,
+}: {
+  label: string;
+  /** Navigate on tap. Renders an anchor; mutually exclusive with `onClick`. */
+  to?: string;
+  onClick?: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
+}) {
+  const [host, setHost] = useState<Element | null>(null);
+  useEffect(() => setHost(document.querySelector("[data-phone-shell]")), []);
+
+  const cls = cn(
+    "absolute right-4 z-30 grid h-[52px] w-[52px] place-items-center rounded-full",
+    "bg-azure text-obsidian shadow-[0_10px_30px_-8px_rgba(0,0,0,0.8)]",
+    "transition-all hover:bg-azure-bright active:scale-95",
+    disabled && "pointer-events-none opacity-40",
+  );
+  /* Clears the tab bar and the home indicator rather than sitting over them. */
+  const style = { bottom: "calc(var(--tabbar-h) + 1rem + env(safe-area-inset-bottom, 0px))" };
+
+  /* A disabled link is not a thing in HTML, so a disabled Fab is always a
+     button — otherwise "disabled" would be styling with nothing behind it. */
+  const node =
+    to && !disabled ? (
+      <Link to={to} aria-label={label} title={label} className={cls} style={style}>
+        {children}
+      </Link>
+    ) : (
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        aria-label={label}
+        title={disabled ? `${label} is not connected yet.` : label}
+        className={cls}
+        style={style}
+      >
+        {children}
+      </button>
+    );
+
+  /* Before the host is found on first paint, render nothing rather than render
+     it in the wrong place and move it — a control that jumps is its own glitch. */
+  return host ? createPortal(node, host) : null;
+}

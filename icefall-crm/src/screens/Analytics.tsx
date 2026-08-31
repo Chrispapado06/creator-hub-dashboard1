@@ -9,6 +9,7 @@ import {
   listCustomers,
   listLeads,
   listRevenue,
+  countAccounts,
 } from "@/data/queries";
 import {
   formatCents,
@@ -234,7 +235,9 @@ export default function Analytics() {
   const [commissions, setCommissions] = useState<Result<Commission[]>>(loading);
   const [companies, setCompanies] = useState<Result<Company[]>>(loading);
 
+  const [accounts, setAccounts] = useState<Result<number>>(loading);
   useEffect(() => {
+    void countAccounts().then(setAccounts);
     void listCustomers().then(setCustomers);
     void listLeads().then(setLeads);
     void listBookings().then(setBookings);
@@ -313,6 +316,54 @@ export default function Analytics() {
         title="Analytics"
         subtitle="Audience, marketplace, funnel and financial performance. Most of what an analytics page normally shows has no source in ICEFALL yet, so each group states which part of itself is missing and why rather than drawing it as zero."
       />
+
+      {/* ---------------------------------------------------------------- */}
+      {/* The numbers, on top — CR-02's layout ruling. Each is a count or   */}
+      {/* sum of real rows already computed for the sections beneath; the   */}
+      {/* tile carries a reason instead of a zero when the source is empty. */}
+      {/* ---------------------------------------------------------------- */}
+      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+        <Stat
+          label="Signups"
+          value={accounts.state === "ok" ? String(accounts.value) : null}
+          reason={accounts.state === "ok" ? undefined : "Accounts could not be counted."}
+          hint="Registered accounts, counted live."
+          tone="sky"
+        />
+        <Stat
+          label="Enquiries"
+          value={enquiries !== null ? String(enquiries) : null}
+          reason={absence(leads)}
+          hint="Leads recorded, all time."
+          tone="mint"
+        />
+        <Stat
+          label="Bookings"
+          value={bookingRows !== null ? String(bookingRows.length) : null}
+          reason={absence(bookings)}
+          hint="Recorded bookings, all streams."
+          tone="butter"
+        />
+        <Stat
+          label="Reported GMV"
+          value={gmv.value}
+          reason={gmv.reason}
+          hint="Bookings that carry a stated value."
+          tone="lilac"
+        />
+        <Stat
+          label="Recognised revenue"
+          value={recognised.value}
+          reason={recognised.reason}
+          hint="ICEFALL's own, all streams."
+        />
+        <Stat
+          label="Companies"
+          value={companies.state === "ok" ? String(companies.value.length) : null}
+          reason="Companies could not be counted."
+          hint="On the books, any status."
+        />
+      </div>
 
       {/* ---------------------------------------------------------------- */}
       {/* Audience                                                          */}

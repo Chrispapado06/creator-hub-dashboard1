@@ -23,11 +23,45 @@ import { fileURLToPath } from "node:url";
 import { searchDuffelFlights } from "./duffel.mjs";
 import { searchLiteApiStays } from "./liteapi.mjs";
 import { handleWaitlist, waitlistConfigured } from "../api/_waitlist.mjs";
+import { handleSupport, supportConfigured } from "../api/_support.mjs";
+import { handleEnquiry, enquiryConfigured } from "../api/_enquiry.mjs";
 
 /* -- minimal .env loader (no dependency) ----------------------------------- */
-function loadEnv() {
+
+/**
+ * Read one env file, without overriding anything already in the environment.
+ *
+ * Called twice, and the ORDER IS THE PRECEDENCE: `server/.env` first, then the
+ * app's `.env.local`. Whatever is already set wins, so a real deployment's
+ * environment always beats both files.
+ *
+ * ── WHY THE SERVER READS A VITE FILE, AND WHY THAT MOVES NO SECRET ──────────
+ *
+ * `.env.local` holds `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`.
+ * The `VITE_` prefix means precisely "safe to ship to the browser" — Vite
+ * inlines these into the client bundle, so every visitor already has them.
+ * Reading them here exposes nothing new; it only stops the server being the one
+ * process on the machine that cannot see them.
+ *
+ * ── THE BUG THIS FIXES, WHICH WAS NOT A CODE BUG ────────────────────────────
+ *
+ * `supabaseConfig()` in `_support.mjs` and `_enquiry.mjs` has always accepted
+ * the `VITE_`-prefixed names as fallbacks — the code anticipated this. Only the
+ * loading was missing, so `npm run dev:all` reported `support: not_connected`
+ * and `enquiry: not_connected` while the credentials sat in the tree.
+ *
+ * That gap is very likely why five sessions each reported the support feature
+ * "verified either side of the wire": from the standard dev setup the wire was
+ * unreachable by construction, every insert took the not-configured branch and
+ * returned cleanly, and "not configured" is the absence of a test result rather
+ * than a passing one.
+ *
+ * SECRETS STILL BELONG IN `server/.env` — Duffel and LiteAPI keys are not
+ * publishable and must never move into a `VITE_` file.
+ */
+function loadEnvFile(url) {
   try {
-    const raw = readFileSync(new URL("./.env", import.meta.url), "utf8");
+    const raw = readFileSync(url, "utf8");
     for (const line of raw.split("\n")) {
       const t = line.trim();
       if (!t || t.startsWith("#")) continue;
@@ -41,8 +75,13 @@ function loadEnv() {
       if (!(key in process.env)) process.env[key] = val;
     }
   } catch {
-    /* no .env file — rely on the ambient environment */
+    /* file absent — that is normal; rely on the next source */
   }
+}
+
+function loadEnv() {
+  loadEnvFile(new URL("./.env", import.meta.url));
+  loadEnvFile(new URL("../.env.local", import.meta.url));
 }
 loadEnv();
 
@@ -118,6 +157,8 @@ const server = createServer(async (req, res) => {
       flights: flightsLive() ? "live" : "not_connected",
       stays: staysLive() ? "live" : "not_connected",
       waitlist: waitlistConfigured(waitlistEnv) ? "live" : "not_connected",
+      support: supportConfigured(process.env) ? "live" : "not_connected",
+      enquiry: enquiryConfigured(process.env) ? "live" : "not_connected",
       providers: { flights: "duffel", stays: "liteapi" },
     });
   }
@@ -127,6 +168,31 @@ const server = createServer(async (req, res) => {
     const body = await readBody(req);
     const ip = (req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket.remoteAddress || "";
     const { status, body: payload } = await handleWaitlist(body, { env: waitlistEnv, ip });
+    return send(res, status, payload);
+  }
+
+  /*
+    Anonymous support intake. Identical code to the Vercel function — see
+    api/_support.mjs. A visitor on the public site has no account and cannot get
+    one, so this does NOT go through `open_support_ticket`; it writes to
+    `support_intake`, which is insert-only with no select policy.
+  */
+  if (url.pathname === "/api/support" && req.method === "POST") {
+    const body = await readBody(req);
+    const ip = (req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket.remoteAddress || "";
+    const { status, body: payload } = await handleSupport(body, { env: process.env, ip });
+    return send(res, status, payload);
+  }
+
+  /*
+    A commercial enquiry from a visitor with no account. Identical code to the
+    Vercel function — see api/_enquiry.mjs. Anon insert into `enquiries`, not
+    `open_enquiry`, which is granted to `authenticated` only.
+  */
+  if (url.pathname === "/api/enquiry" && req.method === "POST") {
+    const body = await readBody(req);
+    const ip = (req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket.remoteAddress || "";
+    const { status, body: payload } = await handleEnquiry(body, { env: process.env, ip });
     return send(res, status, payload);
   }
 

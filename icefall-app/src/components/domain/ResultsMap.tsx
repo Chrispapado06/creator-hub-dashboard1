@@ -3,6 +3,8 @@ import { LngLatBounds, Map as MapLibreMap, Marker, type GeoJSONSource } from "ma
 import { MAP_ATTRIBUTION, icefallMapStyle } from "@/components/map/icefallStyle";
 import type { LatLon } from "@/services/trails";
 import { cn } from "@/lib/utils";
+import { OFFLINE } from "@/offline/offline";
+import { MapUnavailable } from "@/offline/MapUnavailable";
 
 /**
  * The search results, on a map.
@@ -44,6 +46,14 @@ export function ResultsMap({
   segments?: LatLon[][];
   className?: string;
 }) {
+  /*
+   * OFFLINE: no tiles, so no map. Returned before the hooks below, which is
+   * safe here and only here — `OFFLINE` is a build-time constant, so every
+   * render of every instance takes the same branch and the hook order never
+   * changes. Nothing is faked in its place: see @/offline/MapUnavailable.
+   */
+  if (OFFLINE) return <MapUnavailable className={cn("h-full w-full", className)} />;
+
   const host = useRef<HTMLDivElement | null>(null);
   const map = useRef<MapLibreMap | null>(null);
   const markers = useRef<Map<string, Marker>>(new Map());

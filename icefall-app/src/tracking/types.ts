@@ -298,9 +298,10 @@ export interface RecordedActivity {
   splits: LiveSplit[];
   capabilities: Capabilities;
 
-  /** Populated after scoring. */
-  points_awarded?: number;
-  pointsBreakdown?: { label: string; points: number; note?: string }[];
+  /* PH-01 — `points_awarded` and `pointsBreakdown` are gone with the points
+     system. NOTE `points` above is the GPS TRACK and is untouched. Records
+     already on a device still carry the old fields; `loadActivities` strips
+     them on read — see `store.ts`. */
   records?: string[];
   achievements?: string[];
   insight?: string;

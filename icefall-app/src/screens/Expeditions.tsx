@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 
 import { Badge, Button, Card, Disclaimer, SectionLabel } from "@/components/ui/primitives";
+import { CompanyMark } from "@/components/domain/CompanyMark";
 import { Rise, Screen, ScreenHeader, Stagger } from "@/components/layout/chrome";
 import { HeroImage } from "@/components/domain/cards";
 import { useMountainImage } from "@/components/domain/MountainImage";
@@ -222,13 +223,7 @@ function objectivesIn(o: Operator): Mountain[] {
 }
 
 /** Monogram from the range the listing is named for. Never a fabricated logo. */
-function monogram(name: string): string {
-  const head = name.split("—")[0] ?? name;
-  const words = head.split(/[^A-Za-z]+/).filter(Boolean);
-  if (words.length === 0) return "··";
-  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
-  return (words[0][0] + words[words.length - 1][0]).toUpperCase();
-}
+/* `monogram` moved to `components/domain/CompanyMark` — one algorithm, five screens. */
 
 /* -------------------------------------------------------------------------- */
 /* The objective an enquiry is about                                          */
@@ -706,28 +701,7 @@ function MountainTile({
  * must not change the shape of the card.
  */
 function OperatorMark({ operator, size }: { operator: Operator; size: number }) {
-  const [failed, setFailed] = useState(false);
-  const showLogo = Boolean(operator.logo) && !failed;
-
-  return (
-    <div
-      style={{ width: size, height: size }}
-      className="grid shrink-0 place-items-center overflow-hidden rounded-tile border border-hairline bg-elevated"
-    >
-      {showLogo ? (
-        <img
-          src={operator.logo}
-          alt=""
-          aria-hidden
-          loading="lazy"
-          onError={() => setFailed(true)}
-          className="h-full w-full object-contain p-1.5"
-        />
-      ) : (
-        <span className="text-[14px] tracking-[0.06em] text-mist">{monogram(operator.name)}</span>
-      )}
-    </div>
-  );
+  return <CompanyMark name={operator.name} logoPath={operator.logo} size={size} />;
 }
 
 /**
@@ -735,10 +709,17 @@ function OperatorMark({ operator, size }: { operator: Operator; size: number }) 
  *
  * THE RATING AND THE TICK ARE GATED, and that is not a detail. The mockup gives
  * every card a verified tick and "4.9 (128 reviews)" against companies that
- * really exist. ICEFALL has no reviews to average and vets nobody —
- * `guide_profiles.credentials_verified` is a `CHECK (= false)` in the schema for
- * the same reason. So both render only for entries carrying `demo: true`, which
- * `SHOW_DEMO_DATA` resolves to false in any ordinary production build.
+ * really exist. ICEFALL has no reviews to average and **vets no company**. So
+ * both render only for entries carrying `demo: true`, which `SHOW_DEMO_DATA`
+ * resolves to false in any ordinary production build.
+ *
+ * ⚠️ THIS ARGUMENT USED TO CITE `guide_profiles.credentials_verified` being a
+ * `CHECK (= false)`, and that citation is now WRONG — the owner approved guide
+ * document checking on 2026-08-31 and the column is being dropped entirely.
+ * **The conclusion is unchanged and the reason is different.** What ICEFALL now
+ * does is read a GUIDE's certificate and record that it did. It still does not
+ * vet a COMPANY, still has no reviews, and a tick here would still be a claim
+ * nobody made. Do not read "verification exists now" as licence to ungate this.
  *
  * The layout is block-level rather than inline. `truncate` does nothing on an
  * inline element — `overflow` does not apply to one — so the first version of
@@ -1148,12 +1129,10 @@ function CompanyRow({
   return (
     <Card>
       <div className="flex items-start gap-3.5">
-        <span
-          className="grid h-11 w-11 shrink-0 place-items-center rounded-tile border border-hairline bg-elevated/40 text-[13px] font-light tracking-[0.08em] text-mist"
-          aria-hidden="true"
-        >
-          {monogram(operator.name)}
-        </span>
+        {/* The same component as the directory card. This was a hand-rolled
+            monogram, so a company could appear with one set of initials here
+            and another two screens away. */}
+        <CompanyMark name={operator.name} logoPath={operator.logo} size={44} />
         <div className="min-w-0 flex-1">
           <p className="text-[14px] leading-snug text-snow">{operator.name}</p>
           <p className="mt-1 text-[12px] leading-relaxed text-mist">{operator.certification}</p>

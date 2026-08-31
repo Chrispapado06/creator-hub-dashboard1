@@ -23,6 +23,7 @@
  */
 
 import { PHOTOS_TIMEOUT_MS, withTimeout } from "@/lib/netTimeout";
+import { OFFLINE } from "@/offline/offline";
 
 export interface PeakPhoto {
   src: string;
@@ -383,6 +384,16 @@ function cacheKeyFor(query: PeakPhotoQuery): string | null {
  * the user which they were looking at.
  */
 export function resolvePeakFacts(query: PeakPhotoQuery): Promise<Entry> {
+  /*
+   * Wikipedia and Commons are the only source of these, and there is no
+   * honest offline substitute: a photograph of the wrong mountain is worse
+   * than no photograph, and this module already refuses "close enough". So
+   * offline it refuses everything, and every caller falls back to the bundled
+   * terrain plate it already falls back to — the ten curated mountains keep
+   * their own shipped photographs, which is most of what an offline demo sees.
+   */
+  if (OFFLINE) return Promise.resolve(null);
+
   const tagged = parseWikipediaTag(query.wikipedia);
   const lang = tagged?.lang ?? "en";
   const title = tagged?.title ?? query.name.trim();
@@ -540,6 +551,8 @@ const galleryCache = new Map<string, Promise<PeakPhoto[]>>();
  * category exists the lead image stands alone rather than being padded out.
  */
 export function resolvePeakGallery(query: PeakPhotoQuery): Promise<PeakPhoto[]> {
+  if (OFFLINE) return Promise.resolve([]);
+
   const tagged = parseWikipediaTag(query.wikipedia);
   const category = (tagged?.title ?? query.name).trim();
   if (!category) return Promise.resolve([]);

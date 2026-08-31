@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { Rise, Screen, Stagger } from "@/components/layout/chrome";
 import { Avatar, Card, Disclaimer } from "@/components/ui/primitives";
+import { CompanyMark } from "@/components/domain/CompanyMark";
 import { fmtDay, isLocked, lastMessage, type Conversation } from "./data";
 import { useConversations } from "./useConversations";
 import { BACKEND_NOT_CONNECTED } from "@/backend/client";
@@ -354,39 +355,49 @@ function GuideStrip({ guides }: { guides: Conversation[] }) {
  * The tile beside a row.
  *
  * A company gets its mark, a group its peak photograph, anyone else their
- * initials. Company logos are gitignored and vercelignored, so `onError` is not
- * an edge case — it is what every deployment does.
+ * initials. Company logos are gitignored and vercelignored, so the fallback is
+ * not an edge case — it is what every deployment does.
+ *
+ * A COMPANY IS NOT A PERSON, AND USED TO BE DRAWN AS ONE. When a company's logo
+ * was absent — which is every deployment — this fell through to `Avatar`, the
+ * person component: a circle of initials, the same treatment as a climber in
+ * the list above it. So an expedition company and a human being were visually
+ * the same kind of thing in a message list, which is the one place the
+ * difference matters most: you tell a company what you want, and you tell a
+ * person where you are. `CompanyMark` keeps the squared-off company idiom
+ * whether or not there is an image.
  */
 function Mark({ conversation: c }: { conversation: Conversation }) {
   const [failed, setFailed] = useState(false);
-  const src = c.kind === "company" ? c.logo : c.kind === "group" ? c.photo : undefined;
 
-  if (src !== undefined && !failed) {
-    return (
-      <span
-        className={cn(
-          "grid h-11 w-11 shrink-0 place-items-center overflow-hidden border border-hairline bg-elevated",
-          c.kind === "group" ? "rounded-full" : "rounded-tile",
-        )}
-      >
-        <img
-          src={src}
-          alt=""
-          aria-hidden
-          loading="lazy"
-          onError={() => setFailed(true)}
-          className={cn("h-full w-full", c.kind === "group" ? "object-cover" : "object-contain p-1")}
-        />
-      </span>
-    );
+  if (c.kind === "company") {
+    return <CompanyMark name={c.name} logoPath={c.logo} size={44} />;
   }
 
   if (c.kind === "group") {
+    // A group's photograph is of a MOUNTAIN, not of the people in it — so it is
+    // cover-cropped in a circle, and falls back to the group glyph rather than
+    // to initials of a group name nobody chose.
+    if (c.photo !== undefined && !failed) {
+      return (
+        <span className="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-full border border-hairline bg-elevated">
+          <img
+            src={c.photo}
+            alt=""
+            aria-hidden
+            loading="lazy"
+            onError={() => setFailed(true)}
+            className="h-full w-full object-cover"
+          />
+        </span>
+      );
+    }
     return (
       <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-hairline-strong bg-slate text-mist">
         <Users size={17} strokeWidth={1.6} />
       </span>
     );
   }
+
   return <Avatar name={c.name} size={44} />;
 }

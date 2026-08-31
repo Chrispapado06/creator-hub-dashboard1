@@ -176,7 +176,7 @@ export default function RouteDetail() {
       <div className="relative -mt-7 rounded-t-[26px] border-t border-hairline-strong bg-obsidian px-5 pt-5">
         <Stagger>
           {/* Provenance row — the reference puts the person who walked the route
-              here. ICEFALL has no accounts, so the slot carries what is actually
+              here. Nobody can post a report yet, so the slot carries what is actually
               true of the line: the mountain it climbs. Same shape, no fiction. */}
           <Rise>
             <div className="flex items-center gap-3">

@@ -38,6 +38,11 @@ await db.exec(`
   end $$;
   create or replace function auth.uid() returns uuid language sql stable as $$
     select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid; $$;
+  -- Supabase grants these to every API role; without them an INVOKER function
+  -- or trigger that calls auth.uid() fails here but not in production (and
+  -- probes pass for the wrong reason — the SS1 harness lesson).
+  grant usage on schema auth to anon, authenticated;
+  grant execute on function auth.uid() to anon, authenticated;
   create publication supabase_realtime;
 `);
 await db.exec(SQL);
@@ -799,8 +804,8 @@ check("the film is proposable through a content version", r.ok, r.ok ? "accepted
 /* ========================================================================== */
 
 await db.query(
-  `insert into public.destinations (id, name, kind, region, country, max_altitude_m, duration_days_min, duration_days_max)
-   values ('tour-du-mont-blanc','Tour du Mont Blanc','trek','Alps','France / Italy / Switzerland', 2665, 10, 11)`);
+  `insert into public.destinations (id, name, kind, region, country, max_altitude_m, max_altitude_of, duration_days_min, duration_days_max)
+   values ('tour-du-mont-blanc','Tour du Mont Blanc','trek','Alps','France / Italy / Switzerland', 2665, 'Grand Col Ferret', 10, 11)`);
 
 // A SUMMIT ELEVATION BELONGS TO A MOUNTAIN. A trek has a high point, which is a
 // different claim — "5,364 m" beside a trek name reads as a summit reached.
@@ -1108,6 +1113,636 @@ const nxt = r.ok ? r.value.rows[0].next_scheduled_change : null;
 check("THE HEAD ANNOUNCES A CHANGE NOBODY WILL WRITE", r.ok && nxt !== null,
   nxt ? String(nxt).slice(0, 10) : "NOT ANNOUNCED");
 
+
+/* ========================================================================== */
+/* REAL-BUSINESS DISCLOSURE FLAG — the column the fixture guard was missing   */
+/* ========================================================================== */
+
+// A company created without mentioning the flag is INVENTED by default. The
+// unsafe default would silently cost a real company its disclosure banner.
+r = await asCommitted(boss, () => db.query(
+  `insert into public.companies (slug, name) values ('flag-check-co', 'Flag Check Co') returning real_business`));
+check("a new company defaults to real_business = false",
+  r.ok && r.value.rows[0].real_business === false,
+  r.ok ? String(r.value.rows[0].real_business) : r.error);
+
+// There is no third state: NULL would read as "we do not know", which the
+// guard renders identically to "invented" — silence on the one listing where
+// silence is the harm.
+r = await as(boss, () => db.query(
+  `update public.companies set real_business = null where slug = 'flag-check-co'`));
+check("the flag cannot be NULL — no silent third state", !r.ok, r.ok ? "NULLED" : r.error);
+
+// Staff may set it deliberately; an operator cannot touch the row at all (the
+// existing update policy), so no draft or portal path can clear a disclosure.
+r = await asCommitted(boss, () => db.query(
+  `update public.companies set real_business = true where slug = 'flag-check-co' returning real_business`));
+check("staff can mark a company as a real business",
+  r.ok && r.value.rows[0].real_business === true, r.ok ? "marked" : r.error);
+r = await as(opN, () => db.query(
+  `update public.companies set real_business = false where slug = 'flag-check-co'`));
+const flagStill = (await db.query(
+  `select real_business from public.companies where slug = 'flag-check-co'`)).rows[0];
+check("an operator cannot clear a real company's disclosure",
+  flagStill.real_business === true, String(flagStill.real_business));
+
+
+/* ========================================================================== */
+/* COMPANY AUDIT TRIGGER — today's question, never unanswerable again         */
+/* ========================================================================== */
+
+// The exact scenario from 30 Aug: a company appears in the database. Who?
+r = await asCommitted(boss, () => db.query(
+  `insert into public.companies (slug, name) values ('mystery-co', 'Mystery Co') returning id`));
+check("staff create a company", r.ok, r.ok ? "created" : r.error);
+const mysteryId = r.ok ? r.value.rows[0].id : null;
+
+let trail = (await db.query(
+  `select actor_id, action, next from public.audit_events
+   where action = 'company.created' and entity_id = $1`, [String(mysteryId)])).rows;
+check("CREATION LEAVES A TRACE NAMING THE ACTOR",
+  trail.length === 1 && trail[0].actor_id === boss,
+  trail.length ? `actor ${trail[0].actor_id === boss ? "named" : "WRONG"}` : "NO TRACE");
+
+// An update records only what changed — not the whole record restated.
+await asCommitted(boss, () => db.query(
+  `update public.companies set name = 'Mystery Company Ltd' where id = $1`, [mysteryId]));
+trail = (await db.query(
+  `select previous, next from public.audit_events
+   where action = 'company.updated' and entity_id = $1`, [String(mysteryId)])).rows;
+check("an update records exactly the changed fields",
+  trail.length === 1
+    && Object.keys(trail[0].next).join(",") === "name"
+    && trail[0].previous.name === "Mystery Co",
+  trail.length ? Object.keys(trail[0].next).join(",") : "NO TRACE");
+
+// A write that changes nothing is not an event.
+await asCommitted(boss, () => db.query(
+  `update public.companies set name = name where id = $1`, [mysteryId]));
+const noop = (await db.query(
+  `select count(*)::int c from public.audit_events
+   where action = 'company.updated' and entity_id = $1`, [String(mysteryId)])).rows[0].c;
+check("a no-op write leaves no event", noop === 1, `${noop} events`);
+
+// The deliberate act: flipping the disclosure flag demands a reason.
+r = await as(boss, () => db.query(
+  `select public.set_company_real_business($1, true, '')`, [mysteryId]));
+check("flipping the disclosure without a reason is refused", !r.ok, r.ok ? "FLIPPED" : r.error);
+
+r = await asCommitted(boss, () => db.query(
+  `select public.set_company_real_business($1, true, 'Verified as a real operator against their companies-house record')`,
+  [mysteryId]));
+check("with a reason, the flag is raised", r.ok, r.ok ? "raised" : r.error);
+const semantic = (await db.query(
+  `select reason from public.audit_events
+   where action = 'company.real_business_set' and entity_id = $1`, [String(mysteryId)])).rows;
+check("...and WHY is a recorded sentence, not an inference",
+  semantic.length === 1 && semantic[0].reason.includes("companies-house"),
+  semantic.length ? "reason recorded" : "NO SEMANTIC EVENT");
+
+r = await as(opN, () => db.query(
+  `select public.set_company_real_business($1, false, 'operator says so')`, [mysteryId]));
+check("an operator cannot work the disclosure switch", !r.ok, r.ok ? "CLEARED" : r.error);
+
+// Deletion: the trail must survive the thing it records.
+r = await asCommitted(boss, () => db.query(
+  `delete from public.companies where id = $1`, [mysteryId]));
+check("a super admin deletes the company", r.ok, r.ok ? "deleted" : r.error);
+trail = (await db.query(
+  `select actor_id, previous from public.audit_events
+   where action = 'company.deleted' and entity_id = $1`, [String(mysteryId)])).rows;
+check("THE DELETION TRAIL SURVIVES THE DELETION",
+  trail.length === 1 && trail[0].actor_id === boss && trail[0].previous.name === "Mystery Company Ltd",
+  trail.length ? "named, with the record it removed" : "NO TRACE");
+const createdRow = (await db.query(
+  `select count(*)::int c from public.audit_events where entity_id = $1`, [String(mysteryId)])).rows[0].c;
+check("...and the earlier events survived the cascade too", createdRow >= 4, `${createdRow} events`);
+
+
+// Support scopes (CR-14): known kinds only, and only a super admin sets them.
+r = await asCommitted(boss, () => db.query(
+  `select public.set_support_scopes($1, array['guide','athlete'])`, [support]));
+check("a super admin scopes a support person", r.ok, r.ok ? "scoped" : r.error);
+r = await as(boss, () => db.query(
+  `select public.set_support_scopes($1, array['aliens'])`, [support]));
+check("an unknown requester kind is refused", !r.ok, r.ok ? "ACCEPTED" : r.error);
+r = await as(support, () => db.query(
+  `select public.set_support_scopes($1, '{}')`, [support]));
+check("staff cannot rescope themselves", !r.ok, r.ok ? "RESCOPED" : r.error);
+r = await as(support, () => db.query(
+  `update public.staff_members set support_scopes = '{}' where profile_id = $1 returning 1`, [support]));
+const kept = (await db.query(`select support_scopes from public.staff_members where profile_id=$1`, [support])).rows[0];
+check("...nor by writing the table directly", kept.support_scopes.length === 2,
+  JSON.stringify(kept.support_scopes));
+const scopeAudit = (await db.query(
+  `select count(*)::int c from public.audit_events where action = 'staff.support_scopes_set'`)).rows[0].c;
+check("scoping someone is on the record", scopeAudit === 1, `${scopeAudit}`);
+
+/* ========================================================================== */
+/* ENQUIRIES — the inbound queue's guarantees                                 */
+/* ========================================================================== */
+
+// A signed-in climber enquires about a live product; the function resolves the
+// object and stamps who they are.
+r = await asCommitted(athlete, () => db.query(
+  `select public.open_enquiry('Do you run this trip in October as well?', $1, null, null, 'phone_app', '/expeditions/x') as res`,
+  [liveProduct]));
+check("a climber opens an enquiry about a trip", r.ok, r.ok ? "opened" : r.error);
+const enqId = r.ok ? r.value.rows[0].res.id : null;
+
+let enq = (await db.query(`select * from public.enquiries where id = $1`, [enqId])).rows[0];
+check("...the sender kind is stamped, the company resolved from the product",
+  enq.sender_kind === "athlete" && enq.company_id !== null && enq.object_label.length > 0,
+  `${enq.sender_kind} / ${enq.object_label}`);
+
+// A signed-in client cannot write the table directly — the missing INSERT
+// grant is the enforcement, not a courtesy.
+r = await as(athlete, () => db.query(
+  `insert into public.enquiries (sender_id, sender_kind, company_id, object_label, body)
+   values ($1, 'company', $2, 'Fake', 'I claim to be an operator!!')`, [athlete, northwind]));
+check("a signed-in client cannot insert directly (or claim a kind)", !r.ok, r.ok ? "INSERTED" : r.error);
+
+// No object → support's queue, not this one.
+r = await as(athlete, () => db.query(
+  `select public.open_enquiry('Hello, I just have a general question about stuff.')`));
+check("an enquiry with no object is refused toward support", !r.ok, r.ok ? "OPENED" : r.error);
+
+// The anonymous path: insert-only, forced into the visitor shape.
+r = await as(null, () => db.query(
+  `insert into public.enquiries (sender_kind, sender_email, destination_id, object_label, body)
+   values ('visitor', 'someone@example.com', 'everest', 'Mount Everest', 'What permits do I need for Everest?')`));
+check("an anonymous visitor can write (and gets nothing back — no select, no returning)", r.ok, r.ok ? "written" : r.error);
+r = await as(null, () => db.query(
+  `insert into public.enquiries (sender_kind, sender_email, destination_id, object_label, body)
+   values ('athlete', 'x@example.com', 'everest', 'Mount Everest', 'I claim to be signed in somehow')`));
+check("...but cannot claim any other kind", !r.ok, r.ok ? "CLAIMED" : r.error);
+r = await as(null, () => db.query(`select body from public.enquiries`));
+check("...and cannot read back what anyone wrote", !r.ok, r.ok ? `LEAKED ${rows(r)}` : r.error);
+
+// The sender sees their own enquiry and its REAL state; not other people's.
+r = await as(athlete, () => db.query(`select id, seen_at, answered_at, answer from public.enquiries`));
+check("a sender sees exactly their own enquiries", r.ok && rows(r) === 1, r.ok ? `${rows(r)}` : r.error);
+
+// The desk works it: seen, then answered — and the words are immutable.
+r = await asCommitted(boss, () => db.query(
+  `update public.enquiries set seen_at = now(), seen_by = $1 where id = $2`, [boss, enqId]));
+check("staff mark it seen", r.ok, r.ok ? "seen" : r.error);
+r = await as(boss, () => db.query(
+  `update public.enquiries set body = 'reworded politely' where id = $1`, [enqId]));
+check("NOBODY EDITS THE CUSTOMER'S WORDS — staff included", !r.ok, r.ok ? "EDITED" : r.error);
+r = await as(boss, () => db.query(
+  `update public.enquiries set answered_at = now(), answered_by = $1 where id = $2`, [boss, enqId]));
+check("a half-set answer (no text) is refused", !r.ok, r.ok ? "HALF-SET" : r.error);
+r = await asCommitted(boss, () => db.query(
+  `update public.enquiries set answered_at = now(), answered_by = $1,
+   answer = 'October departures run until the 20th — details attached to the trip page.' where id = $2`,
+  [boss, enqId]));
+check("staff answer it", r.ok, r.ok ? "answered" : r.error);
+
+// The reply ARRIVES: the sender reads the answer off their own row.
+r = await as(athlete, () => db.query(`select answer from public.enquiries where id = $1`, [enqId]));
+check("THE SENDER SEES THE ANSWER — the reply genuinely arrives",
+  r.ok && r.value.rows[0].answer.includes("October"), r.ok ? "arrived" : r.error);
+
+r = await as(boss, () => db.query(
+  `update public.enquiries set answer = 'actually never mind' where id = $1`, [enqId]));
+check("an answer does not change silently afterwards", !r.ok, r.ok ? "CHANGED" : r.error);
+
+// SESSION 02'S HOLE, CLOSED ON THE PATH THAT HAD IT: the anonymous insert —
+// the only path the public web can use — cannot choose what its enquiry is
+// "about". The label is overwritten from the record by the table's trigger.
+r = await asCommitted(boss, async () => {
+  await db.exec(`set local role anon`);
+  await db.query(
+    `insert into public.enquiries (sender_kind, sender_email, destination_id, object_label, body)
+     values ('visitor', 'liar@example.com', 'everest', 'FREE HELICOPTER RIDES CLICK HERE', 'A perfectly ordinary question about permits.')`);
+  await db.exec(`set local role postgres`);
+  return db.query(`select object_label from public.enquiries where sender_email = 'liar@example.com'`);
+});
+check("AN ANON CLIENT CANNOT CHOOSE ITS LABEL — the table overwrites it",
+  r.ok && r.value.rows[0]?.object_label === "Everest",
+  r.ok ? r.value.rows[0]?.object_label : r.error);
+
+r = await as(null, () => db.query(
+  `insert into public.enquiries (sender_kind, sender_email, destination_id, object_label, body)
+   values ('visitor', 'x@example.com', 'no-such-mountain', 'Anything', 'A question about a place that is not real.')`));
+check("...and cannot enquire about a place that does not exist", !r.ok, r.ok ? "INSERTED" : r.error);
+
+// A product enquiry's company is the PRODUCT's company, whatever was claimed.
+r = await asCommitted(boss, async () => {
+  await db.exec(`set local role anon`);
+  await db.query(
+    `insert into public.enquiries (sender_kind, sender_email, product_id, company_id, body)
+     values ('visitor', 'mismatch@example.com', $1, $2, 'Interested in this trip, what are the dates?')`,
+    [liveProduct, serac]);
+  await db.exec(`set local role postgres`);
+  return db.query(
+    `select company_id, object_label from public.enquiries where sender_email = 'mismatch@example.com'`);
+});
+check("...and a mismatched company claim is corrected to the product's owner",
+  r.ok && r.value.rows[0]?.company_id === northwind,
+  r.ok ? `label ${r.value.rows[0]?.object_label}` : r.error);
+
+// Retention: only a super admin deletes, and the deletion leaves a trace.
+r = await as(support, () => db.query(`delete from public.enquiries where id = $1 returning 1`, [enqId]));
+const stillThere = (await db.query(`select count(*)::int c from public.enquiries where id=$1`, [enqId])).rows[0].c;
+check("ordinary staff cannot delete an enquiry", stillThere === 1, `${stillThere} rows`);
+r = await asCommitted(boss, () => db.query(`delete from public.enquiries where id = $1`, [enqId]));
+check("a super admin can", r.ok, r.ok ? "deleted" : r.error);
+const trace = (await db.query(
+  `select actor_id from public.audit_events where action = 'enquiry.deleted' and entity_id = $1`,
+  [String(enqId)])).rows;
+check("...and the deletion is on the record, actor named",
+  trace.length === 1 && trace[0].actor_id === boss, trace.length ? "traced" : "NO TRACE");
+
+
+/* ========================================================================== */
+/* GUIDE VERIFICATION — the pin lifted, the replacement harder                */
+/* ========================================================================== */
+
+// A guide claims their own trade (self-serve, the policy was written for it).
+const guideUser = await mkUser("aguide@x.io", "athlete", "Gia Guide");
+r = await asCommitted(guideUser, () => db.query(
+  `insert into public.guide_profiles (id, based_in, mountains) values ($1, 'Chamonix', array['mont-blanc'])`,
+  [guideUser]));
+check("a guide creates their own profile", r.ok, r.ok ? "created" : r.error);
+
+let st = (await db.query(
+  `select public.guide_credentials_state(g) s from public.guide_profiles g where id = $1`, [guideUser])).rows[0];
+check("...and starts unchecked — the claim is derived, not stored", st.s === "unchecked", st.s);
+
+r = await as(guideUser, () => db.query(
+  `update public.guide_profiles set credentials_checked_by = $1, credentials_checked_at = now(),
+   credentials_document_ref = 'my own say-so', credentials_no_expiry = true where id = $1`, [guideUser]));
+check("A GUIDE CANNOT NAME THEMSELVES CHECKED", !r.ok, r.ok ? "SELF-CHECKED" : r.error);
+
+r = await as(boss, () => db.query(
+  `update public.guide_profiles set credentials_checked_by = $1 where id = $2`, [boss, guideUser]));
+check("...nor can an admin write the columns directly", !r.ok, r.ok ? "WRITTEN" : r.error);
+
+r = await as(support, () => db.query(
+  `select public.record_guide_document_check($1, 'IFMGA carnet 12345', '2027-06-30')`, [guideUser]));
+check("the support desk cannot record a check — operations only", !r.ok, r.ok ? "RECORDED" : r.error);
+
+r = await as(ops, () => db.query(
+  `select public.record_guide_document_check($1, 'IFMGA carnet 12345')`, [guideUser]));
+check("a check must state the expiry or explicitly that none exists", !r.ok, r.ok ? "RECORDED" : r.error);
+
+r = await asCommitted(ops, () => db.query(
+  `select public.record_guide_document_check($1, 'IFMGA carnet 12345', '2027-06-30')`, [guideUser]));
+check("operations record the check, document named, expiry from the paper", r.ok, r.ok ? "recorded" : r.error);
+st = (await db.query(
+  `select public.guide_credentials_state(g) s, credentials_checked_by cb from public.guide_profiles g where id = $1`,
+  [guideUser])).rows[0];
+check("...state derives to checked, with the checker NAMED", st.s === "checked" && st.cb === ops, st.s);
+const gTrail = (await db.query(
+  `select count(*)::int c from public.audit_events where action = 'guide.documents_checked' and entity_id = $1`,
+  [String(guideUser)])).rows[0].c;
+check("...and the act is on the record", gTrail === 1, `${gTrail}`);
+
+// EXPIRY REVOKES THE CLAIM AUTOMATICALLY — no boolean to forget to clear.
+await asCommitted(ops, () => db.query(
+  `select public.record_guide_document_check($1, 'Old insurance policy', '2026-01-01')`, [guideUser]));
+st = (await db.query(
+  `select public.guide_credentials_state(g) s from public.guide_profiles g where id = $1`, [guideUser])).rows[0];
+check("A LAPSED DOCUMENT DERIVES TO EXPIRED, AUTOMATICALLY", st.s === "expired", st.s);
+
+r = await as(ops, () => db.query(`select public.revoke_guide_document_check($1, '')`, [guideUser]));
+check("revoking a check requires a reason", !r.ok, r.ok ? "REVOKED" : r.error);
+r = await asCommitted(ops, () => db.query(
+  `select public.revoke_guide_document_check($1, 'Document was for a different person')`, [guideUser]));
+st = (await db.query(
+  `select public.guide_credentials_state(g) s from public.guide_profiles g where id = $1`, [guideUser])).rows[0];
+check("a revoked check returns the guide to unchecked, audited", r.ok && st.s === "unchecked", st.s);
+
+/* ========================================================================== */
+/* BOOKING AGREEMENTS — what the customer saw, pinned forever                 */
+/* ========================================================================== */
+
+const agBooking = (await db.query(
+  `insert into public.bookings (kind, company_id, customer_id, destination_id, status, value_status)
+   values ('expedition', $1, $2, 'everest', 'confirmed', 'pending') returning id`,
+  [northwind, athlete])).rows[0].id;
+
+r = await as(boss, () => db.query(
+  `select public.record_booking_agreement($1, 'v1', 'Full terms text as displayed to the customer on booking.', 'More than 60 days: full refund minus pass-through costs.')`,
+  [agBooking]));
+check("STAFF CANNOT RECORD AN ACCEPTANCE FOR A CUSTOMER", !r.ok, r.ok ? "FABRICATED" : r.error);
+
+r = await asCommitted(athlete, () => db.query(
+  `select public.record_booking_agreement($1, 'v1',
+     'Full terms text as displayed to the customer on booking.',
+     'More than 60 days before start date: 100% refund minus pass-through costs.',
+     '["Trip difficulty: Very Hard", "Max altitude: 6,962m", "Emergency evacuation not included"]'::jsonb,
+     'phone_app')`, [agBooking]));
+check("the customer records their own acceptance, text pinned", r.ok, r.ok ? "recorded" : r.error);
+
+r = await as(athlete, () => db.query(
+  `select public.record_booking_agreement($1, 'v2', 'Different terms text entirely, longer than twenty.', 'A different policy.')`,
+  [agBooking]));
+check("one agreement per booking — a second is refused", !r.ok, r.ok ? "DOUBLED" : r.error);
+
+r = await as(boss, () => db.query(
+  `update public.booking_agreements set terms_text = 'softer wording' where booking_id = $1`, [agBooking]));
+check("IMMUTABLE INCLUDING TO STAFF — what they saw does not change", !r.ok, r.ok ? "EDITED" : r.error);
+
+r = await as(boss, () => db.query(`delete from public.bookings where id = $1`, [agBooking]));
+const bStill = (await db.query(`select count(*)::int c from public.bookings where id = $1`, [agBooking])).rows[0].c;
+check("the agreement record BLOCKS deleting its booking", bStill === 1, `${bStill} rows`);
+
+r = await as(athlete, () => db.query(
+  `select terms_text, disclosures from public.booking_agreements where booking_id = $1`, [agBooking]));
+check("the customer can always read what they agreed to",
+  r.ok && rows(r) === 1 && r.value.rows[0].disclosures.length === 3, r.ok ? "readable" : r.error);
+const other = await mkUser("other@x.io", "athlete", "Other Person");
+r = await as(other, () => db.query(`select id from public.booking_agreements`));
+check("...and nobody else's customer can", r.ok && rows(r) === 0, r.ok ? `${rows(r)} LEAKED` : r.error);
+
+r = await as(support, () => db.query(`delete from public.booking_agreements where booking_id = $1 returning 1`, [agBooking]));
+const agStill = (await db.query(`select count(*)::int c from public.booking_agreements where booking_id = $1`, [agBooking])).rows[0].c;
+check("ordinary staff cannot delete an agreement", agStill === 1, `${agStill} rows`);
+
+
+
+/* -- S4: enquiry delivery to operators --------------------------------------
+   Nothing flows automatically: an operator sees an enquiry about their company
+   only after a named staff member stamps the hand-off — and even then through
+   a view that withholds the customer's contact details. */
+
+// A fresh enquiry for this block — earlier retention probes deleted the
+// original one, and a probe against a vanished row passes for nothing.
+r = await asCommitted(athlete, () => db.query(
+  `select public.open_enquiry('Is the north route open in January?', $1, null, null, 'phone_app', '/expeditions/x') as res`,
+  [liveProduct]));
+const s4enq = r.ok ? r.value.rows[0].res.id : null;
+await asCommitted(boss, () => db.query(
+  `update public.enquiries set answered_at = now(), answered_by = $1,
+   answer = 'The north route opens mid-February; January is closed.' where id = $2`, [boss, s4enq]));
+
+// Before any hand-off: the operator sees nothing, anywhere.
+r = await as(opN, () => db.query(`select id from public.operator_enquiries`));
+check("S4: operator sees nothing before a hand-off", r.ok && rows(r) === 0,
+  r.ok ? `${rows(r)}` : r.error);
+r = await as(opN, () => db.query(`select id from public.enquiries`));
+check("S4: operator reads NOTHING off the base table", r.ok && rows(r) === 0,
+  r.ok ? `${rows(r)} LEAKED` : r.error);
+
+// An operator cannot stamp their own hand-off.
+r = await as(opN, () => db.query(
+  `update public.enquiries set handed_off_at = now(), handed_off_by = $1 where id = $2 returning 1`,
+  [opN, s4enq]));
+check("S4: an operator cannot hand off to themselves", !r.ok || rows(r) === 0,
+  r.ok ? (rows(r) === 0 ? "0 rows — the policy never shows them the row" : "STAMPED") : r.error);
+
+// Staff cannot stamp it in someone else's name.
+r = await as(boss, () => db.query(
+  `update public.enquiries set handed_off_at = now(), handed_off_by = $1 where id = $2`, [ops, s4enq]));
+check("S4: a hand-off is stamped in the actor's own name", !r.ok, r.ok ? "MISATTRIBUTED" : r.error);
+
+// An enquiry naming no company has nobody to hand off to.
+const noCompanyEnq = (await db.query(
+  `select id from public.enquiries where company_id is null limit 1`)).rows[0].id;
+r = await as(boss, () => db.query(
+  `update public.enquiries set handed_off_at = now(), handed_off_by = $1 where id = $2`, [boss, noCompanyEnq]));
+check("S4: a company-less enquiry cannot be handed off", !r.ok, r.ok ? "HANDED OFF TO NOBODY" : r.error);
+
+// The real thing.
+r = await asCommitted(boss, () => db.query(
+  `update public.enquiries set handed_off_at = now(), handed_off_by = $1 where id = $2 returning company_id`,
+  [boss, s4enq]));
+check("S4: staff hand the enquiry off", r.ok && rows(r) === 1, r.ok ? "stamped" : r.error);
+
+r = await as(opN, () => db.query(
+  `select id, object_label, body, answer from public.operator_enquiries`));
+check("S4: THE COMPANY NOW SEES IT — words, object and ICEFALL's answer",
+  r.ok && rows(r) === 1 && r.value.rows[0].id === s4enq && r.value.rows[0].answer !== null,
+  r.ok ? `${rows(r)} row(s)` : r.error);
+
+r = await as(opNsales, () => db.query(`select id from public.operator_enquiries`));
+check("S4: any active member of the company sees it, not only admins",
+  r.ok && rows(r) === 1, r.ok ? `${rows(r)}` : r.error);
+
+r = await as(opS, () => db.query(`select id from public.operator_enquiries`));
+check("S4: another company's operator sees NOTHING", r.ok && rows(r) === 0,
+  r.ok ? `${rows(r)} LEAKED` : r.error);
+
+// The view's column list is the privacy boundary.
+r = await as(opN, () => db.query(`select sender_email from public.operator_enquiries`));
+check("S4: the customer's email is not even a column the operator can name", !r.ok,
+  r.ok ? "EXPOSED" : r.error);
+r = await as(opN, () => db.query(`select origin_screen from public.operator_enquiries`));
+check("S4: desk triage data (origin_screen) stays at the desk", !r.ok,
+  r.ok ? "EXPOSED" : r.error);
+
+// Once stamped, stamped.
+r = await as(boss, () => db.query(
+  `update public.enquiries set handed_off_at = now() + interval '1 day' where id = $1`, [s4enq]));
+check("S4: a hand-off is not re-dated", !r.ok, r.ok ? "RE-DATED" : r.error);
+
+// The disclosure leaves a trace.
+const hoAudit = (await db.query(
+  `select count(*)::int c from public.audit_events where action = 'enquiry.handed_off' and entity_id = $1`,
+  [s4enq])).rows[0].c;
+check("S4: the hand-off is audited", hoAudit === 1, `${hoAudit} event(s)`);
+
+// Anonymous key: no path to the view at all.
+r = await as(null, () => db.query(`select id from public.operator_enquiries`));
+check("S4: anon cannot read the operator view", !r.ok || rows(r) === 0,
+  r.ok ? `${rows(r)} LEAKED` : r.error);
+
+
+/* -- Identity verification: the grey mark's evidence ------------------------ */
+
+r = await as(athlete, () => db.query(`select public.record_identity_check($1, 'passport, CY, ending 483')`, [athlete]));
+check("GREY: a user cannot verify their own identity", !r.ok, r.ok ? "SELF-VERIFIED" : r.error);
+
+r = await as(sales, () => db.query(`select public.record_identity_check($1, 'passport, CY, ending 483')`, [athlete]));
+check("GREY: the sales desk cannot either — operations only", !r.ok, r.ok ? "RECORDED" : r.error);
+
+r = await as(boss, () => db.query(
+  `insert into public.identity_checks (profile_id, checked_by, document_ref) values ($1,$2,'direct write')`, [athlete, boss]));
+check("GREY: even staff cannot write the table directly", !r.ok, r.ok ? "WROTE" : r.error);
+
+r = await asCommitted(ops, () => db.query(`select public.record_identity_check($1, 'passport, CY, ending 483')`, [athlete]));
+check("GREY: operations records the check", r.ok, r.ok ? "recorded" : r.error);
+
+r = await as(athlete, () => db.query(
+  `select public.identity_verified(p) as v from public.profiles p where p.id = $1`, [athlete]));
+check("GREY: the mark derives TRUE from the record", r.ok && r.value.rows[0].v === true,
+  r.ok ? String(r.value.rows[0].v) : r.error);
+
+r = await as(athlete, () => db.query(`select document_ref from public.identity_checks where profile_id = $1`, [athlete]));
+check("GREY: the person sees their own evidence row", r.ok && rows(r) === 1, r.ok ? `${rows(r)}` : r.error);
+r = await as(opN, () => db.query(`select document_ref from public.identity_checks`));
+check("GREY: nobody else sees the evidence", r.ok && rows(r) === 0, r.ok ? `${rows(r)} LEAKED` : r.error);
+
+r = await as(ops, () => db.query(`select public.revoke_identity_check($1, '')`, [athlete]));
+check("GREY: a revocation without a reason is refused", !r.ok, r.ok ? "REVOKED" : r.error);
+r = await asCommitted(ops, () => db.query(`select public.revoke_identity_check($1, 'document reported stolen')`, [athlete]));
+check("GREY: revocation with a reason works", r.ok, r.ok ? "revoked" : r.error);
+r = await as(athlete, () => db.query(
+  `select public.identity_verified(p) as v from public.profiles p where p.id = $1`, [athlete]));
+check("GREY: the mark derives FALSE after revocation — no stored boolean survives", r.ok && r.value.rows[0].v === false,
+  r.ok ? String(r.value.rows[0].v) : r.error);
+const idAudit = (await db.query(
+  `select count(*)::int c from public.audit_events where action in ('identity.checked','identity.revoked') and entity_id = $1`,
+  [athlete])).rows[0].c;
+check("GREY: check and revocation are both audited", idAudit === 2, `${idAudit} event(s)`);
+
+/* -- Trek catalogue rules (request 09 landed as columns, not new tables) --- */
+
+r = await as(boss, () => db.query(
+  `insert into public.destinations (id, name, kind, region, country, max_altitude_m)
+   values ('nameless-trek','Nameless','trek','Alps','France', 3000)`));
+check("TREK: an altitude with no named point is refused", !r.ok, r.ok ? "ACCEPTED BARE" : r.error);
+
+e = null;
+try {
+  await db.query(
+    `insert into public.destinations (id, name, kind, region, country, max_altitude_m, max_altitude_of, style)
+     values ('named-trek','Named Trek','trek','Alps','France', 3000, 'Col des Fours', 'Circuit')`);
+  await db.query(`delete from public.destinations where id = 'named-trek'`);
+} catch (err) { e = err.message.split("\n")[0]; }
+check("TREK: a named altitude and a drawn style are accepted", e === null, e ?? "accepted");
+
+e = null;
+try {
+  await db.query(`update public.destinations set style = 'Circuit' where id = 'everest'`);
+} catch (err) { e = err.message.split("\n")[0]; }
+check("TREK: a mountain cannot carry a trek style", e !== null, e ?? "ACCEPTED");
+
+// The proposed company_treks predicate, on the tables that already exist:
+// grant the trek to Serac, the predicate answers, suspension switches it off.
+await db.query(`insert into public.company_destinations (company_id, destination_id) values ($1,'tour-du-mont-blanc')`, [serac]);
+r = await as(opS, () => db.query(`select public.company_may_edit_destination($1,'tour-du-mont-blanc') as v`, [serac]));
+check("TREK: an active grant + membership lets the company edit its trek",
+  r.ok && r.value.rows[0].v === true, r.ok ? String(r.value.rows[0].v) : r.error);
+await db.query(`update public.company_destinations set status='suspended' where company_id=$1 and destination_id='tour-du-mont-blanc'`, [serac]);
+r = await as(opS, () => db.query(`select public.company_may_edit_destination($1,'tour-du-mont-blanc') as v`, [serac]));
+check("TREK: suspension switches the predicate off — active-only is load-bearing",
+  r.ok && r.value.rows[0].v === false, r.ok ? String(r.value.rows[0].v) : r.error);
+
+/* -- S2 social: posts, comments, follows, promotions ----------------------- */
+
+// A guide account for the author_kind='guide' arm.
+const guidey = await mkUser("guide@social.test", "guide", "Gia Guide");
+await db.query(`insert into public.guide_profiles (id, listed) values ($1, true)`, [guidey]);
+
+r = await asCommitted(athlete, () => db.query(
+  `insert into public.posts (author_id, body) values ($1, 'Summited Denali — photos soon.') returning id`, [athlete]));
+check("SOCIAL: a person posts as themselves", r.ok, r.ok ? "posted" : r.error);
+const athletePost = r.ok ? r.value.rows[0].id : null;
+
+r = await as(athlete, () => db.query(
+  `insert into public.posts (author_id, author_kind, company_id, body) values ($1,'company',$2,'We speak for Northwind!')`,
+  [athlete, northwind]));
+check("SOCIAL: a non-member cannot speak for a company", !r.ok, r.ok ? "SPOKE" : r.error);
+
+r = await as(athlete, () => db.query(
+  `insert into public.posts (author_id, author_kind, body) values ($1,'guide','Trust me, I guide.')`, [athlete]));
+check("SOCIAL: you cannot post as a guide without being one", !r.ok, r.ok ? "POSTED" : r.error);
+
+r = await asCommitted(guidey, () => db.query(
+  `insert into public.posts (author_id, author_kind, body) values ($1,'guide','Conditions on the north face are early-season.') returning id`,
+  [guidey]));
+check("SOCIAL: a real guide posts as a guide", r.ok, r.ok ? "posted" : r.error);
+
+r = await asCommitted(opN, () => db.query(
+  `insert into public.posts (author_id, author_kind, company_id, body) values ($1,'company',$2,'Northwind: two Everest places left.') returning id`,
+  [opN, northwind]));
+check("SOCIAL: a member speaks for their company", r.ok, r.ok ? "posted" : r.error);
+const companyPost = r.ok ? r.value.rows[0].id : null;
+
+r = await as(opN, () => db.query(
+  `insert into public.posts (author_id, body) values ($1, 'forged') returning id`, [athlete]));
+check("SOCIAL: nobody posts in another's name", !r.ok, r.ok ? "FORGED" : r.error);
+
+r = await as(athlete, () => db.query(
+  `update public.posts set body = 'edited later' where id = $1 returning 1`, [athletePost]));
+check("SOCIAL: published words cannot be edited, even by their author", !r.ok,
+  r.ok ? "EDITED" : r.error);
+
+// A story that has already ended: seeded past-dated (superuser), then probed.
+const story = (await db.query(
+  `insert into public.posts (author_id, body, created_at, expires_at)
+   values ($1, 'gone in a day', now() - interval '2 days', now() - interval '1 day') returning id`,
+  [guidey])).rows[0].id;
+r = await as(athlete, () => db.query(`select id from public.posts where id = $1`, [story]));
+check("SOCIAL: an expired story is invisible to others", r.ok && rows(r) === 0,
+  r.ok ? `${rows(r)} LEAKED` : r.error);
+r = await as(guidey, () => db.query(`select id from public.posts where id = $1`, [story]));
+check("SOCIAL: ...but its author still sees their own history", r.ok && rows(r) === 1,
+  r.ok ? `${rows(r)}` : r.error);
+r = await as(athlete, () => db.query(
+  `insert into public.post_comments (post_id, author_id, body) values ($1,$2,'too late')`, [story, athlete]));
+check("SOCIAL: nobody comments on an ended story", !r.ok, r.ok ? "COMMENTED" : r.error);
+
+r = await as(opS, () => db.query(
+  `insert into public.post_comments (post_id, author_id, body) values ($1,$2,'Which route?') returning id`,
+  [athletePost, opS]));
+check("SOCIAL: a visible post takes comments", r.ok, r.ok ? "commented" : r.error);
+
+// Blocks end the interaction: athlete blocks Sol, Sol can no longer comment/follow.
+await db.query(`insert into public.blocks (blocker_id, blocked_id) values ($1,$2)`, [athlete, opS]);
+r = await as(opS, () => db.query(
+  `insert into public.post_comments (post_id, author_id, body) values ($1,$2,'still here')`, [athletePost, opS]));
+check("SOCIAL: a blocked person cannot comment at you", !r.ok, r.ok ? "COMMENTED PAST A BLOCK" : r.error);
+r = await as(opS, () => db.query(
+  `insert into public.follows (follower_id, followed_profile_id) values ($1,$2)`, [opS, athlete]));
+check("SOCIAL: ...or follow you", !r.ok, r.ok ? "FOLLOWED" : r.error);
+
+r = await asCommitted(opNsales, () => db.query(
+  `insert into public.follows (follower_id, followed_profile_id) values ($1,$2)`, [opNsales, guidey]));
+check("SOCIAL: following a guide works (a guide is a person)", r.ok, r.ok ? "followed" : r.error);
+r = await as(opNsales, () => db.query(
+  `insert into public.follows (follower_id, followed_profile_id) values ($1,$2)`, [opNsales, guidey]));
+check("SOCIAL: the same follow cannot exist twice", !r.ok, r.ok ? "DUPLICATED" : r.error);
+r = await as(athlete, () => db.query(
+  `insert into public.follows (follower_id, followed_profile_id, followed_company_id) values ($1,$2,$3)`,
+  [athlete, guidey, northwind]));
+check("SOCIAL: a follow has exactly one target", !r.ok, r.ok ? "TWO TARGETS" : r.error);
+r = await as(guidey, () => db.query(`select follower_id from public.follows where followed_profile_id = $1`, [guidey]));
+check("SOCIAL: you can see who follows you", r.ok && rows(r) === 1, r.ok ? `${rows(r)}` : r.error);
+
+/* -- Promotions: the labelled thing ---------------------------------------- */
+
+r = await as(opNsales, () => db.query(
+  `insert into public.promoted_placements (company_id, post_id, starts_on, ends_on, created_by)
+   values ($1,$2,current_date,current_date+13,$3)`, [northwind, companyPost, opNsales]));
+check("PROMO: a sales member cannot create campaigns — admin or desk", !r.ok, r.ok ? "CREATED" : r.error);
+r = await as(opS, () => db.query(
+  `insert into public.promoted_placements (company_id, post_id, starts_on, ends_on, created_by)
+   values ($1,$2,current_date,current_date+13,$3)`, [northwind, companyPost, opS]));
+check("PROMO: another company cannot promote your posts", !r.ok, r.ok ? "CREATED" : r.error);
+
+r = await asCommitted(opN, () => db.query(
+  `insert into public.promoted_placements (company_id, post_id, declared_goals, starts_on, ends_on, created_by)
+   values ($1,$2,array['everest'],current_date,current_date+13,$3) returning id`,
+  [northwind, companyPost, opN]));
+check("PROMO: the company admin drafts a campaign", r.ok, r.ok ? "drafted" : r.error);
+const promo = r.ok ? r.value.rows[0].id : null;
+
+r = await as(athlete, () => db.query(`select id from public.promoted_placements`));
+check("PROMO: a draft is invisible to the feed", r.ok && rows(r) === 0, r.ok ? `${rows(r)} LEAKED` : r.error);
+
+await asCommitted(opN, () => db.query(
+  `update public.promoted_placements set status='active' where id = $1`, [promo]));
+r = await as(athlete, () => db.query(`select id, status from public.promoted_placements`));
+check("PROMO: an ACTIVE campaign inside its dates reaches the feed — labelled by the table it came from",
+  r.ok && rows(r) === 1, r.ok ? `${rows(r)}` : r.error);
+
+r = await as(athlete, () => db.query(
+  `update public.promoted_placements set declared_goals = array['everyone'] where id = $1 returning 1`, [promo]));
+check("PROMO: a reader cannot edit a campaign", !r.ok || rows(r) === 0, r.ok ? `${rows(r)} EDITED` : r.error);
+
+// Deleting a post is real and leaves the moderation trace.
+r = await asCommitted(athlete, () => db.query(
+  `delete from public.posts where id = $1 returning 1`, [athletePost]));
+check("SOCIAL: an author deletes their own words", r.ok && rows(r) === 1, r.ok ? "deleted" : r.error);
+const postAudit = (await db.query(
+  `select count(*)::int c from public.audit_events where action = 'post.deleted' and entity_id = $1`,
+  [athletePost])).rows[0].c;
+check("SOCIAL: the deletion is audited", postAudit === 1, `${postAudit} event(s)`);
 
 console.log("\nCRM ATTACK RESULTS\n" + "=".repeat(76));
 let failed = 0;

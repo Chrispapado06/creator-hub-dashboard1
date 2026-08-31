@@ -1,375 +1,519 @@
-import { useEffect, useState } from "react";
-import { Avatar, PageHead, Pill, Stat, StatusChip, TableCard } from "@/components/ui";
-import { Resolve, Unavailable } from "@/components/states";
-import { listBookings, listCommissions } from "@/data/queries";
-import { formatCents, formatCentsShort, loading, type Result } from "@/data/result";
-import type { Booking, Commission } from "@/data/types";
-import { cn, formatMoment } from "@/lib/utils";
+import { useEffect, useMemo, useState } from "react";
+import { Building2, CalendarDays, ChevronDown, Download, SlidersHorizontal, TrendingUp, User } from "lucide-react";
+import { Button, Card, PageHead, Pill, SectionLabel, TableCard } from "@/components/ui";
+import { Resolve } from "@/components/states";
+import { listBookingsDetailed, type BookingDetailed } from "@/data/queries";
+import { loading, type Result } from "@/data/result";
+import { cn, formatDay } from "@/lib/utils";
+import { Bars, Donut, DONUT_COLORS, LineChart } from "@/components/charts";
+import { GUIDE_COMMISSION_PCT } from "@/money/model";
+import { COMMISSIONS_MOCKUP } from "@/demo/mockupScreens";
+import { ListTabs, LogoDot, Thumb, ViewAllLink, type SourceTab } from "@/components/drawn";
 
 /**
- * What ICEFALL has earned on marketplace transactions, and on what terms.
+ * Commissions — ONE screen, the owner's drawn layout, two data sources.
  *
- * THE RATE ON A ROW IS THE RATE THAT WAS STORED WHEN THE BOOKING CONVERTED.
- * `rate_bps` is copied onto the commission at computation and never looked up
- * again, and this screen reads it from there rather than from any current
- * setting. The failure being designed out is a ledger that restates itself: if
- * this page multiplied today's rate by an old basis, renegotiating a fee next
- * month would quietly change what last month earned, and an invoice already sent
- * would stop matching the screen it was raised from.
+ * The owner ruled (31 Aug) that the mockups are the production design, not a
+ * demo costume ("all this time i was telling you to build things on the acc
+ * apps") — so the drawn layout renders unconditionally and only the FIGURES
+ * switch: SHOW_DEMO_DATA on → the drawing's sample numbers, so the design can
+ * be judged populated; flag off → every figure derives from stored commission
+ * rows, rate_bps frozen at conversion, honest states inside the same layout.
+ * The old parallel implementation went with the fork — two implementations of
+ * one screen is drift with a countdown (§6u).
  *
- * NO TOTAL ACROSS STATUSES. Money already paid, money invoiced and waiting,
- * money in dispute and money deliberately waived behave differently and are
- * chased by different people. One figure spanning all four would be read as
- * earnings, so the tiles are per status and there is no grand total.
+ * THE MOCKUP'S OWN COPY IS THE MODEL'S COPY. The owner drew: "Guide
+ * Commissions — deducted from the amount the climber pays. No extra is added"
+ * and "Expedition Placement Commissions — rate and basis VARY BY AGREEMENT."
+ * Both sentences are TRUE in this codebase by design; the guide percentage
+ * prints from the live constant, never retyped.
  *
- * NOTHING IS CONVERTED BETWEEN CURRENCIES. ICEFALL stores no exchange rate, so a
- * set of commissions recorded in more than one currency is reported as a count
- * and a reason instead of a sum.
- *
- * A commission carrying neither a rate nor a fixed fee is shown as exactly that.
- * It is a broken record rather than a free booking, and it should look like one.
+ * Honesty inside the drawn frame, live mode: WAIVED money is excluded from
+ * the total and the tile says so; "Due Date" reads "not invoiced yet" for an
+ * accrued commission instead of inventing a date; deltas render only on
+ * sample figures — a real delta needs a prior-period snapshot and ICEFALL
+ * keeps none.
  */
 
-/** The tones the tiles may take. Plain is not a colour, it is the absence of one. */
-type Tone = "plain" | "butter" | "sky" | "lilac" | "mint";
+const eur = (cents: number) => `€${(cents / 100).toLocaleString("en-GB")}`;
+const eur2 = (cents: number) =>
+  `€${(cents / 100).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-/** 750 bps = 7.5%. Stored as an integer; only the render divides. */
-function formatBps(bps: number): string {
-  const decimals = bps % 100 === 0 ? 0 : bps % 10 === 0 ? 1 : 2;
-  return `${(bps / 100).toFixed(decimals)}%`;
+interface Row {
+  booking: BookingDetailed;
+  kind: "referral" | "guide";
+  rate_bps: number | null;
+  amount_cents: number;
+  status: "accrued" | "invoiced" | "paid" | "disputed" | "waived";
 }
 
-/**
- * `formatCentsShort` has no symbol outside EUR/GBP/USD and falls back to `$`,
- * which would print a dollar sign over a Swiss franc. A wrong currency symbol is
- * a lie about money, so anything else is rendered in full instead of shortened.
- */
-const SHORTENABLE = ["EUR", "GBP", "USD"];
-const tileAmount = (cents: number, currency: string): string | null =>
-  SHORTENABLE.includes(currency) ? formatCentsShort(cents, currency) : formatCents(cents, currency);
+const RANGES = [
+  { id: "30", label: "Last 30 days", days: 30 },
+  { id: "90", label: "Last 90 days", days: 90 },
+  { id: "all", label: "All time", days: null },
+] as const;
 
-/** Null when the rows disagree, which is the signal not to add them up. */
-function soleCurrency(rows: Commission[]): string | null {
-  const first = rows[0].currency;
-  return rows.every((r) => r.currency === first) ? first : null;
+/** Everything the drawn layout needs, from either source. */
+interface Slots {
+  tiles: { label: string; value: string; sub: string; delta: string | null }[];
+  charts: { labels: string[]; guide: number[]; referral: number[] } | null;
+  donut: { guide: number; referral: number; centre: string; guideLine: string; referralLine: string };
+  companies: { name: string; total: string; paid: string; unpaid: string }[];
+  products: { name: string; company: string; total: string; slug: string | null }[];
+  mountains: { name: string; total: string; slug: string | null }[];
+  largest: { name: string; sub: string; source: string; amount: string; slug: string | null }[];
+  unpaid: { name: string; company: string; source: string; date: string; due: string; amount: string; commission: string; status: string; slug: string | null }[];
+  summary: [string, string, string, string, string][];
 }
-
-const countOf = (rows: Commission[]) => `${rows.length} commission${rows.length === 1 ? "" : "s"}`;
-
-// Waived stays neutral on purpose: red is for cancelled and rejected, and waiving
-// a fee is a decision somebody made, not something that went wrong. The three
-// tones are unchanged from the pill this chip replaced — a status is not more or
-// less urgent because it is now drawn with a glyph.
-const statusState = (s: Commission["status"]): "ok" | "pending" | "neutral" =>
-  s === "paid" ? "ok" : s === "disputed" ? "pending" : "neutral";
-
-const kindLabel = (k: Commission["kind"]) =>
-  k === "referral" ? "Referral fee" : "Guide commission";
-
-/**
- * The pastels run in the mockup's order across the states that hold money.
- * `waived` stays plain: it is the one state whose figure is money nobody will
- * ever collect, and it should not sit in the row of colours the eye reads as
- * earnings.
- */
-const STATUSES: {
-  id: Commission["status"];
-  label: string;
-  empty: string;
-  note: string;
-  tone: Tone;
-}[] = [
-  {
-    id: "accrued",
-    label: "Accrued",
-    empty: "No commission is accrued.",
-    note: "Computed, not yet invoiced.",
-    tone: "butter",
-  },
-  {
-    id: "invoiced",
-    label: "Invoiced",
-    empty: "Nothing has been invoiced.",
-    note: "Invoiced and awaiting payment.",
-    tone: "sky",
-  },
-  { id: "paid", label: "Paid", empty: "Nothing has been paid.", note: "Settled.", tone: "lilac" },
-  {
-    id: "disputed",
-    label: "Disputed",
-    empty: "Nothing is in dispute.",
-    note: "Collection is paused on these.",
-    tone: "mint",
-  },
-  {
-    id: "waived",
-    label: "Waived",
-    empty: "Nothing has been waived.",
-    note: "Deliberately not collected.",
-    tone: "plain",
-  },
-];
 
 export default function Commissions() {
-  const [commissions, setCommissions] = useState<Result<Commission[]>>(loading);
-  const [bookings, setBookings] = useState<Result<Booking[]>>(loading);
+  const M = COMMISSIONS_MOCKUP;
+  const [result, setResult] = useState<Result<BookingDetailed[]>>(loading);
+  const [range, setRange] = useState<(typeof RANGES)[number]["id"]>("all");
+  // One source filter shared by the three tabbed lists. Live mode filters;
+  // sample mode's pills are visual — the drawing's figures are fixed.
+  const [topTab, setTopTab] = useState<SourceTab>("all");
 
   useEffect(() => {
-    void listCommissions().then(setCommissions);
-    void listBookings().then(setBookings);
+    void listBookingsDetailed().then(setResult);
   }, []);
 
-  const reason =
-    commissions.state === "loading"
-      ? "Still loading."
-      : commissions.state === "unavailable" || commissions.state === "error"
-        ? commissions.reason
-        : "Not recorded";
+  const rows: Row[] | null = useMemo(() => {
+    if (result.state !== "ok") return null;
+    const days = RANGES.find((r) => r.id === range)!.days;
+    const cutoff = days === null ? null : Date.now() - days * 86_400_000;
+    const out: Row[] = [];
+    for (const b of result.value)
+      for (const c of b.commissions) {
+        if (cutoff !== null && new Date(b.booked_at).getTime() < cutoff) continue;
+        out.push({ booking: b, ...c });
+      }
+    return out;
+  }, [result, range]);
 
-  const rowsOf = (match: (c: Commission) => boolean): Commission[] | null =>
-    commissions.state === "ok" ? commissions.value.filter(match) : null;
+  const agg = useMemo(() => {
+    if (!rows) return null;
+    const live = rows.filter((r) => r.status !== "waived");
+    const sum = (xs: Row[]) => xs.reduce((s, r) => s + r.amount_cents, 0);
+    const bySource = (k: Row["kind"]) => live.filter((r) => r.kind === k);
+    return {
+      live,
+      waived: rows.filter((r) => r.status === "waived"),
+      total: sum(live),
+      paid: sum(live.filter((r) => r.status === "paid")),
+      unpaid: sum(live.filter((r) => r.status === "accrued" || r.status === "invoiced")),
+      disputed: sum(live.filter((r) => r.status === "disputed")),
+      guide: sum(bySource("guide")),
+      referral: sum(bySource("referral")),
+    };
+  }, [rows]);
 
-  // `tone` is passed on every branch, including the ones with no figure: `Stat`
-  // drops the colour itself when the value is null, which is the whole reason
-  // the colour is worth anything — a butter tile always has a number on it.
-  const tile = (
-    key: string,
-    label: string,
-    rows: Commission[] | null,
-    empty: string,
-    note: string,
-    tone: Tone = "plain",
-  ) => {
-    if (rows === null)
-      return <Stat key={key} label={label} value={null} reason={reason} tone={tone} />;
-    // Nothing in this state is not "€0 owed" — the second would read as a figure.
-    if (rows.length === 0)
-      return <Stat key={key} label={label} value={null} reason={empty} tone={tone} />;
-    const currency = soleCurrency(rows);
-    if (currency === null) {
-      return (
-        <Stat
-          key={key}
-          label={label}
-          value={null}
-          tone={tone}
-          reason={`${countOf(rows)}, recorded in more than one currency. ICEFALL holds no exchange rate, so they are not added together.`}
-        />
-      );
+  /** Group live rows by a booking-derived key, remember a photo id and the
+   * company, total them, descending. */
+  const topBy = (key: (b: BookingDetailed) => string | null) => {
+    if (!agg) return [];
+    const m = new Map<string, { total: number; paid: number; unpaid: number; slug: string | null; company: string }>();
+    for (const r of agg.live) {
+      if (topTab !== "all" && r.kind !== topTab) continue;
+      const k = key(r.booking);
+      if (!k) continue;
+      const e = m.get(k) ?? { total: 0, paid: 0, unpaid: 0, slug: r.booking.destination_id, company: r.booking.company_name ?? "" };
+      e.total += r.amount_cents;
+      if (r.status === "paid") e.paid += r.amount_cents;
+      else if (r.status !== "disputed") e.unpaid += r.amount_cents;
+      m.set(k, e);
     }
-    const sum = rows.reduce((n, c) => n + c.amount_cents, 0);
-    return (
-      <Stat
-        key={key}
-        label={label}
-        value={tileAmount(sum, currency)}
-        hint={`${countOf(rows)}. ${note}`}
-        tone={tone}
-      />
-    );
+    return [...m.entries()].sort((a, b) => b[1].total - a[1].total).slice(0, 8);
   };
 
-  // A commission names its booking by id; without the booking list that id cannot
-  // be turned into anything a person recognises. Said once, above the table,
-  // rather than repeated as a shrug in every row.
-  const bookingNote =
-    bookings.state === "unavailable" || bookings.state === "error"
-      ? `The booking behind each commission cannot be named: ${bookings.reason}`
-      : null;
+  const chartData = useMemo(() => {
+    if (!agg || agg.live.length === 0) return null;
+    const byDay = new Map<string, { guide: number; referral: number }>();
+    for (const r of agg.live) {
+      const d = r.booking.booked_at.slice(0, 10);
+      const e = byDay.get(d) ?? { guide: 0, referral: 0 };
+      e[r.kind] += r.amount_cents / 100;
+      byDay.set(d, e);
+    }
+    const keys = [...byDay.keys()].sort();
+    return {
+      labels: keys.map((k) => formatDay(k) ?? k),
+      guide: keys.map((k) => byDay.get(k)!.guide),
+      referral: keys.map((k) => byDay.get(k)!.referral),
+    };
+  }, [agg]);
 
-  const index =
-    bookings.state === "ok" ? new Map(bookings.value.map((b) => [b.id, b] as const)) : null;
+  const exportCsv = () => {
+    if (!rows) return;
+    const out = [
+      ["booking", "company", "source", "booked", "amount_eur", "commission_eur", "rate_bps", "status"],
+      ...rows.map((r) => [
+        r.booking.product_name ?? r.booking.destination_name ?? r.booking.id.slice(0, 8),
+        r.booking.company_name ?? "", r.kind, r.booking.booked_at.slice(0, 10),
+        r.booking.value_cents !== null ? (r.booking.value_cents / 100).toFixed(2) : "",
+        (r.amount_cents / 100).toFixed(2), String(r.rate_bps ?? ""), r.status,
+      ]),
+    ];
+    const csv = out.map((r) => r.map((c) => `"${String(c).replaceAll('"', '""')}"`).join(",")).join("\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    a.download = "icefall-commissions.csv";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  const pctOf = (part: number, whole: number) => (whole > 0 ? `${((part / whole) * 100).toFixed(1)}% of total` : "—");
+
+  /** The drawing's sample figures, shaped for the layout. */
+  const sampleSlots = (): Slots => ({
+    tiles: M!.tiles,
+    charts: { labels: M!.chartLabels, guide: M!.guideSeries, referral: M!.referralSeries },
+    donut: {
+      guide: M!.donut.guide, referral: M!.donut.referral, centre: M!.donut.centre,
+      guideLine: "€14,850.00 (47.5%)", referralLine: "€16,440.00 (52.5%)",
+    },
+    companies: M!.topCompanies,
+    products: M!.topProducts,
+    mountains: M!.topMountains,
+    largest: M!.largest,
+    unpaid: M!.unpaid,
+    summary: M!.summary,
+  });
+
+  /** Live figures shaped for the drawn layout. */
+  const liveSlots = (): Slots => {
+    const a = agg!;
+    const name = (b: BookingDetailed) => b.product_name ?? b.destination_name ?? b.id.slice(0, 8);
+    const unpaidPer = (k: Row["kind"]) =>
+      a.live.filter((r) => r.kind === k && (r.status === "accrued" || r.status === "invoiced")).reduce((s, r) => s + r.amount_cents, 0);
+    const paidPer = (k: Row["kind"]) =>
+      a.live.filter((r) => r.kind === k && r.status === "paid").reduce((s, r) => s + r.amount_cents, 0);
+    return {
+      tiles: [
+        {
+          label: "Total Commission (all sources)", value: eur2(a.total),
+          sub: a.waived.length > 0 ? `excludes ${eur(a.waived.reduce((s, r) => s + r.amount_cents, 0))} waived` : "waived excluded, none exists",
+          delta: null,
+        },
+        { label: "Paid", value: eur2(a.paid), sub: pctOf(a.paid, a.total), delta: null },
+        { label: "Unpaid / Pending", value: eur2(a.unpaid), sub: pctOf(a.unpaid, a.total), delta: null },
+        { label: `Guide Commissions (${GUIDE_COMMISSION_PCT}% of fee)`, value: eur2(a.guide), sub: pctOf(a.guide, a.total), delta: null },
+        { label: "Expedition Placements (referral)", value: eur2(a.referral), sub: pctOf(a.referral, a.total), delta: null },
+      ],
+      charts: chartData,
+      donut: {
+        guide: a.guide, referral: a.referral, centre: eur(a.total),
+        guideLine: `${eur2(a.guide)} (${a.total > 0 ? ((a.guide / a.total) * 100).toFixed(1) : "0"}%)`,
+        referralLine: `${eur2(a.referral)} (${a.total > 0 ? ((a.referral / a.total) * 100).toFixed(1) : "0"}%)`,
+      },
+      companies: topBy((b) => b.company_name).map(([n, v]) => ({ name: n, total: eur(v.total), paid: eur(v.paid), unpaid: eur(v.unpaid) })),
+      products: topBy((b) => b.product_name).map(([n, v]) => ({ name: n, company: v.company, total: eur(v.total), slug: v.slug })),
+      mountains: topBy((b) => b.destination_name).map(([n, v]) => ({ name: n, total: eur(v.total), slug: v.slug })),
+      largest: [...a.live].sort((x, y) => y.amount_cents - x.amount_cents).slice(0, 8).map((r) => ({
+        name: name(r.booking), sub: r.booking.company_name ?? "", source: r.kind === "guide" ? "Guide" : "Placement",
+        amount: eur2(r.amount_cents), slug: r.booking.destination_id,
+      })),
+      unpaid: a.live.filter((r) => r.status !== "paid").map((r) => ({
+        name: name(r.booking), company: r.booking.company_name ?? "",
+        source: r.kind === "guide" ? "Guide" : "Placement",
+        date: formatDay(r.booking.booked_at) ?? r.booking.booked_at.slice(0, 10),
+        // An accrued commission HAS no due date — it has no invoice yet.
+        due: r.status === "invoiced" ? "with its invoice" : "not invoiced yet",
+        amount: r.booking.value_cents !== null ? eur2(r.booking.value_cents) : "—",
+        commission: eur2(r.amount_cents), status: r.status.toUpperCase(), slug: r.booking.destination_id,
+      })),
+      summary: [
+        [`Guide Commissions (${GUIDE_COMMISSION_PCT}%)`, eur(a.guide), eur(paidPer("guide")), eur(unpaidPer("guide")), a.total > 0 ? `${((a.guide / a.total) * 100).toFixed(1)}%` : "—"],
+        ["Expedition Placements", eur(a.referral), eur(paidPer("referral")), eur(unpaidPer("referral")), a.total > 0 ? `${((a.referral / a.total) * 100).toFixed(1)}%` : "—"],
+        ["Total", eur(a.total), eur(a.paid), eur(a.unpaid), "100%"],
+      ],
+    };
+  };
+
+  const orange = "text-[oklch(0.62_0.14_60)]";
+
+  /** THE drawn layout — written once, fed by either source. */
+  const render = (S: Slots, sample: boolean) => (
+    <>
+      {/* ── One row: five tiles + the two-sources explainer, far right ── */}
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[repeat(5,minmax(0,1fr))_minmax(280px,1.8fr)]">
+        {S.tiles.map((t, i) => (
+          <Card key={t.label} className="py-4">
+            <p className="text-[10.5px] font-semibold uppercase tracking-[0.05em] text-faint">{t.label}</p>
+            <p className={cn("tnum mt-1.5 text-[19px] font-extrabold leading-tight", i === 2 || i === 4 ? orange : "text-ink")}>{t.value}</p>
+            <p className={cn("mt-1 flex items-center gap-1 text-[11px]", i === 3 ? "text-accent-ink" : i === 4 ? orange : "text-faint")}>
+              {t.delta && <span className="flex items-center gap-0.5 font-medium text-ok"><TrendingUp size={11} strokeWidth={2.25} aria-hidden />{t.delta}</span>}
+              {t.sub}
+            </p>
+          </Card>
+        ))}
+        <Card className="py-4">
+          <SectionLabel>Two distinct sources</SectionLabel>
+          <div className="mt-2.5 space-y-3">
+            <div className="flex gap-2.5">
+              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-accent-soft text-accent"><User size={13} strokeWidth={2.25} /></span>
+              <div>
+                <p className="text-[12px] font-semibold text-accent-ink">Guide Commissions ({GUIDE_COMMISSION_PCT}% of Guide Fee)</p>
+                <p className="mt-0.5 text-[11.5px] leading-relaxed text-muted">
+                  {GUIDE_COMMISSION_PCT}% of the guide's fee. Deducted from the amount the climber pays. No extra is added.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2.5">
+              <span className={cn("grid h-7 w-7 shrink-0 place-items-center rounded-full bg-butter", orange)}><Building2 size={13} strokeWidth={2.25} /></span>
+              <div>
+                <p className={cn("text-[12px] font-semibold", orange)}>Expedition Placement Commissions</p>
+                <p className="mt-0.5 text-[11.5px] leading-relaxed text-muted">
+                  Referral commission on expedition or trek placements. Rate and basis vary by agreement.
+                </p>
+                <p className="mt-1 text-[11.5px] font-medium text-accent-ink">View rate details →</p>
+              </div>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      {/* ── Charts ──────────────────────────────────────────────────────── */}
+      <div className="mt-4 grid gap-4 xl:grid-cols-[1.4fr_1fr_1.3fr]">
+        <Card>
+          <SectionLabel>Commission over time (by source)</SectionLabel>
+          <div className="mt-2 flex gap-4 text-[11.5px] text-muted">
+            <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-accent" aria-hidden />Guide Commissions ({GUIDE_COMMISSION_PCT}%)</span>
+            <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-[oklch(0.71_0.16_55)]" aria-hidden />Expedition Placements</span>
+          </div>
+          {S.charts ? (
+            <LineChart series={[S.charts.guide, S.charts.referral]} labels={S.charts.labels} />
+          ) : (
+            <p className="mt-3 text-[12px] leading-relaxed text-faint">
+              The chart draws itself from the first commission in this range — none exists yet.
+            </p>
+          )}
+        </Card>
+        <Card>
+          <SectionLabel>Commission by source</SectionLabel>
+          <div className="mt-3 flex items-center gap-4">
+            <Donut segments={[{ value: S.donut.guide }, { value: S.donut.referral }]} centre={S.donut.centre} />
+            <div className="space-y-2 text-[12.5px]">
+              <p><span className="mr-1.5 inline-block h-2 w-2 rounded-full" style={{ background: DONUT_COLORS[0] }} aria-hidden />Guide Commissions ({GUIDE_COMMISSION_PCT}%)<span className="tnum block text-muted">{S.donut.guideLine}</span></p>
+              <p><span className="mr-1.5 inline-block h-2 w-2 rounded-full" style={{ background: DONUT_COLORS[1] }} aria-hidden />Expedition Placements<span className="tnum block text-muted">{S.donut.referralLine}</span></p>
+            </div>
+          </div>
+        </Card>
+        <Card>
+          <SectionLabel>Commission by day</SectionLabel>
+          <div className="mt-2 flex gap-4 text-[11.5px] text-muted">
+            <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-accent" aria-hidden />Guide Commissions ({GUIDE_COMMISSION_PCT}%)</span>
+            <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-[oklch(0.71_0.16_55)]" aria-hidden />Expedition Placements</span>
+          </div>
+          {S.charts ? (
+            <Bars series={[S.charts.guide, S.charts.referral]} labels={S.charts.labels} />
+          ) : (
+            <p className="mt-3 text-[12px] leading-relaxed text-faint">Nothing to bucket by day yet.</p>
+          )}
+        </Card>
+      </div>
+
+      {/* ── Four top lists, tabs inside each card, photos on every row ── */}
+      <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <Card>
+          <SectionLabel>Top companies by commission</SectionLabel>
+          <ListTabs value={sample ? undefined : topTab} onChange={sample ? undefined : setTopTab} />
+          {S.companies.length === 0 ? (
+            <p className="mt-1 text-[12px] text-faint">Nothing in this source yet.</p>
+          ) : (
+            <div className="grid grid-cols-[minmax(0,2fr)_auto_auto_auto] items-center gap-x-1.5 gap-y-0 text-[11px]">
+              <span className="pb-1.5 text-[10px] font-medium uppercase tracking-[0.05em] text-faint">Company</span>
+              <span className="pb-1.5 text-right text-[10px] font-medium uppercase tracking-[0.05em] text-faint">Total</span>
+              <span className="pb-1.5 text-right text-[10px] font-medium uppercase tracking-[0.05em] text-faint">Paid</span>
+              <span className="pb-1.5 text-right text-[10px] font-medium uppercase tracking-[0.05em] text-faint">Unpaid</span>
+              {S.companies.map((c) => (
+                <div key={c.name} className="col-span-4 grid grid-cols-subgrid items-center border-t border-line-soft py-1.5">
+                  <span className="flex min-w-0 items-center gap-2"><LogoDot name={c.name} /><span className="truncate font-medium text-ink">{c.name}</span></span>
+                  <span className="tnum text-right text-[10px] text-ink">{c.total}</span>
+                  <span className="tnum text-right text-[10px] text-muted">{c.paid}</span>
+                  <span className="tnum text-right text-[10px] text-muted">{c.unpaid}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <ViewAllLink>View all companies</ViewAllLink>
+        </Card>
+        <Card>
+          <SectionLabel>Top products by commission</SectionLabel>
+          <ListTabs value={sample ? undefined : topTab} onChange={sample ? undefined : setTopTab} />
+          {S.products.length === 0 ? (
+            <p className="mt-1 text-[12px] text-faint">Nothing in this source yet.</p>
+          ) : (
+            <div className="grid grid-cols-[minmax(0,1.6fr)_minmax(0,0.9fr)_auto] items-center gap-x-1.5 text-[11px]">
+              <span className="pb-1.5 text-[10px] font-medium uppercase tracking-[0.05em] text-faint">Product</span>
+              <span className="pb-1.5 text-[10px] font-medium uppercase tracking-[0.05em] text-faint">Company</span>
+              <span className="pb-1.5 text-right text-[10px] font-medium uppercase tracking-[0.05em] text-faint">Commission</span>
+              {S.products.map((p) => (
+                <div key={p.name} className="col-span-3 grid grid-cols-subgrid items-center border-t border-line-soft py-1.5">
+                  <span className="flex min-w-0 items-center gap-2"><Thumb slug={p.slug} /><span className="truncate font-medium text-ink">{p.name}</span></span>
+                  <span className="truncate text-[10.5px] text-muted">{p.company}</span>
+                  <span className="tnum text-right text-[10.5px] text-ink">{p.total}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <ViewAllLink>View all products</ViewAllLink>
+        </Card>
+        <Card>
+          <SectionLabel>Top mountains / treks</SectionLabel>
+          <ListTabs value={sample ? undefined : topTab} onChange={sample ? undefined : setTopTab} />
+          {S.mountains.length === 0 ? (
+            <p className="mt-1 text-[12px] text-faint">Nothing in this source yet.</p>
+          ) : (
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-1.5 text-[11px]">
+              <span className="pb-1.5 text-[10px] font-medium uppercase tracking-[0.05em] text-faint">Mountain / Trek</span>
+              <span className="pb-1.5 text-right text-[10px] font-medium uppercase tracking-[0.05em] text-faint">Total Commission</span>
+              {S.mountains.map((m) => (
+                <div key={m.name} className="col-span-2 grid grid-cols-subgrid items-center border-t border-line-soft py-1.5">
+                  <span className="flex min-w-0 items-center gap-2"><Thumb slug={m.slug} /><span className="truncate font-medium text-ink">{m.name}</span></span>
+                  <span className="tnum text-right text-ink">{m.total}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <ViewAllLink>View all mountains / treks</ViewAllLink>
+        </Card>
+        <Card>
+          <SectionLabel>Largest individual commissions</SectionLabel>
+          {S.largest.length === 0 ? (
+            <p className="mt-2 text-[12px] text-faint">No commission rows yet.</p>
+          ) : (
+            <div className="mt-2 grid grid-cols-[minmax(0,2fr)_auto_auto] items-center gap-x-1.5 text-[11px]">
+              <span className="pb-1.5 text-[10px] font-medium uppercase tracking-[0.05em] text-faint">Booking / Placement</span>
+              <span className="pb-1.5 text-[10px] font-medium uppercase tracking-[0.05em] text-faint">Source</span>
+              <span className="pb-1.5 text-right text-[10px] font-medium uppercase tracking-[0.05em] text-faint">Commission</span>
+              {S.largest.map((l, i) => (
+                <div key={l.name + i} className="col-span-3 grid grid-cols-subgrid items-center border-t border-line-soft py-1.5">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <Thumb slug={l.slug} />
+                    <span className="min-w-0"><span className="block truncate font-medium text-ink">{l.name}</span><span className="block truncate text-[10.5px] text-faint">{l.sub}</span></span>
+                  </span>
+                  <span className="text-[10.5px] text-muted">{l.source}</span>
+                  <span className="tnum text-right text-[10.5px] font-semibold text-ink">{l.amount}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <ViewAllLink>View all</ViewAllLink>
+        </Card>
+      </div>
+
+      {/* ── Unpaid table + summary ──────────────────────────────────────── */}
+      <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+        <TableCard>
+          <div className="px-4 pb-1 pt-4"><SectionLabel>Unpaid / Pending Commissions</SectionLabel></div>
+          {S.unpaid.length === 0 ? (
+            <p className="px-4 pb-4 text-[12.5px] text-faint">Nothing outstanding.</p>
+          ) : (
+            <table className="w-full text-[12.5px]">
+              <thead>
+                <tr className="text-left text-[11px] uppercase tracking-[0.06em] text-faint">
+                  <th className="px-4 py-2 font-medium">Booking / Placement</th>
+                  <th className="px-3 py-2 font-medium">Company</th>
+                  <th className="px-3 py-2 font-medium">Source</th>
+                  <th className="px-3 py-2 font-medium">Date</th>
+                  <th className="px-3 py-2 font-medium">Due Date</th>
+                  <th className="px-3 py-2 text-right font-medium">Amount</th>
+                  <th className="px-3 py-2 text-right font-medium">Commission ({GUIDE_COMMISSION_PCT}%)</th>
+                  <th className="px-3 py-2 font-medium">Status</th>
+                  <th className="px-3 py-2 font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {S.unpaid.map((u, i) => (
+                  <tr key={u.name + i} className="border-t border-line-soft">
+                    <td className="px-4 py-2.5 font-medium text-ink">
+                      <span className="flex items-center gap-2.5"><Thumb slug={u.slug} className="h-8 w-8" />{u.name}</span>
+                    </td>
+                    <td className="px-3 py-2.5 text-muted">{u.company}</td>
+                    <td className="px-3 py-2.5 text-muted">{u.source}</td>
+                    <td className="tnum whitespace-nowrap px-3 py-2.5 text-muted">{u.date}</td>
+                    <td className="tnum whitespace-nowrap px-3 py-2.5 text-muted">{u.due}</td>
+                    <td className="tnum px-3 py-2.5 text-right text-ink">{u.amount}</td>
+                    <td className="tnum px-3 py-2.5 text-right font-semibold text-ink">{u.commission}</td>
+                    <td className="px-3 py-2.5"><Pill tone={u.status === "OVERDUE" || u.status === "DISPUTED" ? "red" : "amber"}>{u.status}</Pill></td>
+                    <td className="px-3 py-2.5 text-[12px] font-medium text-accent-ink">View</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <p className="px-4 py-2.5 text-[12px] font-medium text-accent-ink">View all unpaid →</p>
+        </TableCard>
+        <Card>
+          <SectionLabel>Commission summary by source</SectionLabel>
+          <table className="mt-2 w-full text-[12.5px]">
+            <thead>
+              <tr className="text-left text-[11px] uppercase tracking-[0.06em] text-faint">
+                <th className="py-2 font-medium">Source</th>
+                <th className="py-2 text-right font-medium">Total Commission</th>
+                <th className="py-2 text-right font-medium">Paid</th>
+                <th className="py-2 text-right font-medium">Unpaid</th>
+                <th className="py-2 text-right font-medium">% of Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {S.summary.map(([src, total, paid, unpaid, pct], i) => (
+                <tr key={src} className={cn("border-t", i === S.summary.length - 1 ? "border-line font-bold" : "border-line-soft")}>
+                  <td className="py-2.5 font-medium text-ink">{src}</td>
+                  <td className="tnum py-2.5 text-right text-ink">{total}</td>
+                  <td className="tnum py-2.5 text-right text-muted">{paid}</td>
+                  <td className="tnum py-2.5 text-right text-muted">{unpaid}</td>
+                  <td className="tnum py-2.5 text-right text-muted">{pct}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="mt-2.5 text-[11px] leading-relaxed text-faint">
+            Guide commissions are {GUIDE_COMMISSION_PCT}% of the guide fee (deducted from customer payment).
+            Placement commissions are per agreement.
+          </p>
+        </Card>
+      </div>
+    </>
+  );
 
   return (
     <>
       <PageHead
         title="Commissions"
-        subtitle="Every fee ICEFALL has computed on a booking made through the marketplace — a referral fee on an expedition the customer paid the company for directly, or a commission on a guide booking."
-      />
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        {STATUSES.map((s) =>
-          tile(
-            s.id,
-            s.label,
-            rowsOf((c) => c.status === s.id),
-            s.empty,
-            s.note,
-            s.tone,
-          ),
-        )}
-      </div>
-
-      {/* The split by kind is the same money seen a second way, so it is left
-          uncoloured — two pastel rows would read as two sets of earnings. */}
-      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-        {tile(
-          "referral",
-          "Referral fees",
-          rowsOf((c) => c.kind === "referral"),
-          "No referral fee has been computed.",
-          "Claimed against money that never touched ICEFALL.",
-        )}
-        {tile(
-          "guide",
-          "Guide commissions",
-          rowsOf((c) => c.kind === "guide"),
-          "No guide commission has been computed.",
-          "Taken from a guide booking.",
-        )}
-      </div>
-
-      <div className="mt-8">
-        <h2 className="text-[17px] font-bold tracking-[-0.02em] text-ink">Computed commissions</h2>
-        <p className="mt-2 max-w-3xl text-[13px] leading-relaxed text-muted">
-          Each row carries the rate agreed at the time of conversion, not the rate configured today
-          — changing a rate later changes what the next conversion earns and never moves a figure
-          already computed.
-        </p>
-        {bookingNote && (
-          <p className="mt-1.5 max-w-3xl text-[13px] leading-relaxed text-faint">{bookingNote}</p>
-        )}
-
-        <div className="mt-4">
-          <Resolve
-            result={commissions}
-            what="commissions"
-            isEmpty={(v) => v.length === 0}
-            empty="No commission has been computed. One is written when a booking converts and the rate in force at that moment is applied to the booking's value."
-          >
-            {(rows) => (
-              <TableCard>
-                <table className="w-full min-w-[980px] text-[13px]">
-                  <thead>
-                    <tr className="border-b border-line text-left">
-                      <th className="px-5 py-3.5 text-[12px] font-semibold text-faint">Booking</th>
-                      <th className="px-5 py-3.5 text-[12px] font-semibold text-faint">Kind</th>
-                      <th className="px-5 py-3.5 text-[12px] font-semibold text-faint">Basis</th>
-                      <th className="px-5 py-3.5 text-[12px] font-semibold text-faint">Rate</th>
-                      <th className="px-5 py-3.5 text-[12px] font-semibold text-faint">Amount</th>
-                      <th className="px-5 py-3.5 text-[12px] font-semibold text-faint">Status</th>
-                      <th className="px-5 py-3.5 text-[12px] font-semibold text-faint">Computed</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((c) => {
-                      const booking = index?.get(c.booking_id) ?? null;
-                      const bookedAt = booking ? formatMoment(booking.booked_at) : null;
-                      // The stored basis stands. If the booking has since been
-                      // restated, that is shown beside it rather than replacing
-                      // it — the commission was computed on the older figure.
-                      const restated =
-                        booking &&
-                        booking.value_status === "reported" &&
-                        booking.value_cents !== null &&
-                        booking.value_cents !== c.basis_cents
-                          ? formatCents(booking.value_cents, booking.currency)
-                          : null;
-
-                      return (
-                        <tr
-                          key={c.id}
-                          className={cn(
-                            "border-b border-line-soft last:border-0 hover:bg-raised",
-                            c.status === "disputed" && "bg-[oklch(0.978_0.028_84)]",
-                          )}
-                        >
-                          <td className="px-5 py-3.5">
-                            <div className="flex items-center gap-3">
-                              {/* An avatar with no initials in it is the honest
-                                  drawing of a booking that cannot be named — the
-                                  row keeps its shape and says why beside it. */}
-                              <Avatar
-                                name={(booking?.destination_id ?? "").replace(/-/g, " ")}
-                                size={34}
-                              />
-                              <div className="min-w-0">
-                                {index === null ? (
-                                  <span className="text-faint">Unavailable</span>
-                                ) : booking === null ? (
-                                  <span className="text-faint">Not in the booking list</span>
-                                ) : (
-                                  <>
-                                    <span className="font-medium text-ink">
-                                      {booking.destination_id ?? (
-                                        <span className="font-normal text-faint">
-                                          Mountain not recorded
-                                        </span>
-                                      )}
-                                    </span>
-                                    <p className="tnum mt-0.5 text-[11.5px] text-faint">
-                                      {bookedAt
-                                        ? `Booked ${bookedAt}`
-                                        : "Booked at an unrecorded time"}
-                                    </p>
-                                  </>
-                                )}
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-5 py-3.5">
-                            <Pill>{kindLabel(c.kind)}</Pill>
-                          </td>
-                          <td className="tnum px-5 py-3.5 text-muted">
-                            {formatCents(c.basis_cents, c.currency)}
-                            {restated && (
-                              <p className="mt-0.5 text-[11.5px] text-faint">
-                                Booking now reports {restated}
-                              </p>
-                            )}
-                          </td>
-                          <td className="tnum px-5 py-3.5">
-                            {c.rate_bps !== null ? (
-                              <span className="font-medium text-muted">
-                                {formatBps(c.rate_bps)}
-                              </span>
-                            ) : c.fixed_fee_cents !== null ? (
-                              <span className="font-medium text-muted">
-                                {formatCents(c.fixed_fee_cents, c.currency)}
-                                <span className="font-normal text-faint"> fixed</span>
-                              </span>
-                            ) : (
-                              <span className="text-faint">No rate stored</span>
-                            )}
-                          </td>
-                          <td className="tnum px-5 py-3.5 text-[14.5px] font-bold tracking-[-0.02em] text-ink">
-                            {formatCents(c.amount_cents, c.currency)}
-                          </td>
-                          <td className="px-5 py-3.5">
-                            <StatusChip state={statusState(c.status)} label={c.status} />
-                            {c.status === "disputed" && (
-                              <p className="mt-1 text-[11.5px] leading-snug text-warn">
-                                Collection paused
-                              </p>
-                            )}
-                          </td>
-                          <td className="tnum whitespace-nowrap px-5 py-3.5 text-muted">
-                            {formatMoment(c.computed_at) ?? (
-                              <span className="text-faint">Not recorded</span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </TableCard>
+        subtitle="Track and analyse all ICEFALL commission earnings."
+        actions={
+          <div className="flex items-center gap-2">
+            {M ? (
+              <span className="flex items-center gap-2 rounded-tile border border-line bg-surface px-3 py-2 text-[12.5px] font-medium text-ink">
+                {M.range} <CalendarDays size={13} strokeWidth={2} className="text-faint" aria-hidden />
+              </span>
+            ) : (
+              <label className="flex items-center gap-1.5 rounded-tile border border-line bg-surface px-3 py-2 text-[12.5px] font-medium text-ink">
+                <select value={range} onChange={(e) => setRange(e.target.value as typeof range)} className="appearance-none bg-transparent pr-1 outline-none">
+                  {RANGES.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+                </select>
+                <ChevronDown size={14} strokeWidth={2} className="text-faint" aria-hidden />
+              </label>
             )}
-          </Resolve>
-        </div>
-      </div>
-
-      <div className="mt-6">
-        <Unavailable
-          reason={
-            "There is no ageing on this screen. How overdue an invoiced commission is depends on its " +
-            "invoice's due date, and the invoices table is not in the database yet — a count of days since " +
-            "the commission was computed would look like the same thing and would not be. Nothing is " +
-            "forecast from bookings either: a commission needs a basis, and a booking whose value has not " +
-            "been reported has none, so the fee it will eventually carry is unknown rather than estimated."
-          }
-        />
-      </div>
+            <Button variant="secondary"><SlidersHorizontal size={13} strokeWidth={2} /> Filters</Button>
+            <Button variant="secondary" onClick={exportCsv}><Download size={14} strokeWidth={2} /> Export</Button>
+          </div>
+        }
+      />
+      {M ? (
+        render(sampleSlots(), true)
+      ) : (
+        <Resolve
+          result={result}
+          what="commissions"
+          isEmpty={(v) => v.every((b) => b.commissions.length === 0)}
+          empty="No commissions recorded. One is computed when a booking converts, and it carries that day's rate forever."
+        >
+          {() => (agg ? render(liveSlots(), false) : null)}
+        </Resolve>
+      )}
     </>
   );
 }

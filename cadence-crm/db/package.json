@@ -1,0 +1,8 @@
+{
+  "name": "cadence-crm-db",
+  "private": true,
+  "type": "module",
+  "description": "Cadence CRM database — schema, RLS policies and multi-tenant isolation tests. Runs on PGlite (real Postgres, no Docker).",
+  "scripts": { "test": "node tests/tenancy.test.mjs" },
+  "devDependencies": { "@electric-sql/pglite": "^0.5.5" }
+}

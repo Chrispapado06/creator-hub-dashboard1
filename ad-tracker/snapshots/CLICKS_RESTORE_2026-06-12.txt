@@ -1,0 +1,44 @@
+UNCVRD live-sheet snapshot (mentor's click edits)
+captured for sheet 1CZswouM..., week 2026-06-12 to 2026-06-18
+
+PLATFORM | day | clicks | fans
+WEEKTOTAL | Meta | 0 | 0
+WEEKTOTAL | OnlyFinder | 1061 | 254
+WEEKTOTAL | OnlyGuider | 383 | 110
+WEEKTOTAL | OnlySeeker | 78 | 29
+WEEKTOTAL | TOTAL | 1678 | 421
+DAY | Fri, Jun 12 | TOTAL | 154 | 40
+DAY | Fri, Jun 12 | Meta | 0 | 0
+DAY | Fri, Jun 12 | OnlyFinder | 120 | 31
+DAY | Fri, Jun 12 | OnlyGuider | 34 | 9
+DAY | Fri, Jun 12 | OnlySeeker | 0 | 0
+DAY | Sat, Jun 13 | TOTAL | 145 | 34
+DAY | Sat, Jun 13 | Meta | 0 | 0
+DAY | Sat, Jun 13 | OnlyFinder | 118 | 27
+DAY | Sat, Jun 13 | OnlyGuider | 27 | 7
+DAY | Sat, Jun 13 | OnlySeeker | 0 | 0
+DAY | Sun, Jun 14 | TOTAL | 224 | 59
+DAY | Sun, Jun 14 | Meta | 0 | 0
+DAY | Sun, Jun 14 | OnlyFinder | 175 | 41
+DAY | Sun, Jun 14 | OnlyGuider | 38 | 17
+DAY | Sun, Jun 14 | OnlySeeker | 11 | 1
+DAY | Mon, Jun 15 | TOTAL | 231 | 69
+DAY | Mon, Jun 15 | Meta | 0 | 0
+DAY | Mon, Jun 15 | OnlyFinder | 167 | 47
+DAY | Mon, Jun 15 | OnlyGuider | 44 | 13
+DAY | Mon, Jun 15 | OnlySeeker | 20 | 9
+DAY | Tue, Jun 16 | TOTAL | 285 | 82
+DAY | Tue, Jun 16 | Meta | 0 | 0
+DAY | Tue, Jun 16 | OnlyFinder | 133 | 39
+DAY | Tue, Jun 16 | OnlyGuider | 83 | 28
+DAY | Tue, Jun 16 | OnlySeeker | 22 | 9
+DAY | Wed, Jun 17 | TOTAL | 436 | 91
+DAY | Wed, Jun 17 | Meta | 0 | 0
+DAY | Wed, Jun 17 | OnlyFinder | 224 | 42
+DAY | Wed, Jun 17 | OnlyGuider | 111 | 25
+DAY | Wed, Jun 17 | OnlySeeker | 13 | 6
+DAY | Thu, Jun 18 | TOTAL | 203 | 46
+DAY | Thu, Jun 18 | Meta | 0 | 0
+DAY | Thu, Jun 18 | OnlyFinder | 124 | 27
+DAY | Thu, Jun 18 | OnlyGuider | 46 | 11
+DAY | Thu, Jun 18 | OnlySeeker | 12 | 4

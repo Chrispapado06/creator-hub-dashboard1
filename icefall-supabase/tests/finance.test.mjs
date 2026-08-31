@@ -28,6 +28,11 @@ await db.exec(`
   end $$;
   create or replace function auth.uid() returns uuid language sql stable as $$
     select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid; $$;
+  -- Supabase grants these to every API role; without them an INVOKER function
+  -- or trigger that calls auth.uid() fails here but not in production (and
+  -- probes pass for the wrong reason — the SS1 harness lesson).
+  grant usage on schema auth to anon, authenticated;
+  grant execute on function auth.uid() to anon, authenticated;
   create publication supabase_realtime;
 `);
 await db.exec(SQL);

@@ -1,255 +1,202 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
-import { ArrowLeft, ArrowRight, ShieldCheck, Upload } from "lucide-react";
-import { Badge, Button, Card, Disclaimer, SectionLabel } from "@/components/ui/primitives";
+import { useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { ShieldCheck } from "lucide-react";
+import { Button, Card, Disclaimer } from "@/components/ui/primitives";
 import { IcefallLockup } from "@/components/ui/IcefallMark";
 import { Field, Notice, inputClass } from "@/components/guide";
+import { guideAccess, signInWithEmail, signOut, type GuideAccess } from "@/auth/account";
 import { CREDENTIAL_SPECS } from "@/data/model";
-import { cn } from "@/lib/utils";
+import { OFFLINE } from "@/offline/offline";
 
 /**
- * Joining ICEFALL as a guide.
+ * SIGNING IN — one ICEFALL account, whichever app you open.
  *
- * Sign-in is ordinary. Signing UP is not, and deliberately so: this is where
- * someone asks to be listed as qualified to take strangers into terrain that
- * kills people. The flow asks for documents up front rather than letting an
- * account exist first and "get verified later" — an unverified guide who can
- * already talk to clients is the failure mode worth designing out.
+ * The owner ruled on 2026-08-30 that a guide uses the SAME account as the
+ * athlete app. Both are browser apps only because neither is in a store yet;
+ * one person, one login. The database already worked this way — nothing asks
+ * which app you are in, it looks you up.
  *
- * NOTHING HERE SUBMITS. No account server, no storage: fields validate and the
- * value is discarded. Every step says so rather than showing a success state it
- * cannot deliver.
+ * ───────────────────────────────────────────────────────────────────────────
+ * THIS SCREEN NO LONGER OFFERS TO CREATE AN ACCOUNT, AND THAT IS A SAFETY RULE.
+ *
+ * It used to: a four-step flow collecting a name, a rate and documents. It never
+ * submitted anything, and it could not have — registration ALWAYS creates an
+ * athlete and cannot create anything else. `profiles_insert_self` carries
+ * `with check (id = auth.uid() and role = 'athlete')`, and `handle_new_user`
+ * passes the literal.
+ *
+ * That invariant is not an obstacle to route around. A person self-declaring as
+ * a qualified mountain guide — to strangers who will then follow them onto a
+ * glacier — is exactly what it exists to prevent. A guide becomes one because a
+ * member of ICEFALL staff read their documents and created their
+ * `guide_profiles` row.
+ *
+ * So: sign in only. Somebody whose account is not a guide account is told
+ * plainly, and is NOT offered a way to become one, because this app has no
+ * honest way to give them that.
+ * ───────────────────────────────────────────────────────────────────────────
  */
-
-type Step = 0 | 1 | 2 | 3;
-const STEPS = ["Account", "Work", "Documents", "Next"];
-
 export default function Auth() {
-  const [mode, setMode] = useState<"in" | "up">("up");
-  const [step, setStep] = useState<Step>(0);
+  const navigate = useNavigate();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  /**
+   * Offline the app is ALREADY signed in as the demo guide, and that is known
+   * before the first paint. Initialising here rather than waiting for the effect
+   * is what stops a sign-in form appearing for one frame in a build that has
+   * nothing to sign in to. Unset, this is `null` exactly as it always was.
+   */
+  const [access, setAccess] = useState<GuideAccess | null>(OFFLINE ? "guide" : null);
+
+  useEffect(() => {
+    void guideAccess().then(setAccess);
+  }, []);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    const r = await signInWithEmail(email, password);
+    if (!r.ok) {
+      setBusy(false);
+      setError(r.message);
+      return;
+    }
+    const a = await guideAccess();
+    setAccess(a);
+    setBusy(false);
+    if (a === "guide") navigate("/");
+  };
 
   return (
     <div className="no-scrollbar flex-1 overflow-y-auto px-5 pb-10">
       <div className="pb-7 pt-10 text-center">
         <IcefallLockup className="items-center" />
         <p className="section-label mt-3 text-azure">Guide</p>
-        <h1 className="display mt-6 text-[26px] text-snow">
-          {mode === "in" ? "Welcome back." : "Guide with ICEFALL."}
-        </h1>
+        <h1 className="display mt-6 text-[26px] text-snow">Welcome back.</h1>
         <p className="mx-auto mt-3 max-w-[300px] text-[12.5px] leading-relaxed text-mist">
-          {mode === "in"
-            ? "Your dates, your clients and your qualifications."
-            : "We read every guide's documents before their listing goes live. It takes a few days."}
+          Your dates, your clients and your qualifications.
         </p>
       </div>
 
-      {mode === "in" ? (
+      {/* ---- Signed in, but not as a guide ---------------------------------- */}
+      {access === "not-a-guide" ? (
         <Card>
-          <div className="space-y-4">
-            <Field label="Email">
-              <input type="email" autoComplete="email" className={inputClass} placeholder="you@example.com" />
-            </Field>
-            <Field label="Password">
-              <input type="password" autoComplete="current-password" className={inputClass} placeholder="••••••••" />
-            </Field>
-          </div>
-
-          <Button size="lg" className="mt-5 w-full" disabled>
-            Sign in
-          </Button>
-
-          <Disclaimer className="mt-4">
-            There is no account server connected yet, so this cannot sign you in. Nothing you type
-            is stored or sent.
-          </Disclaimer>
-
-          <p className="mt-5 text-center text-[12.5px] text-mist">
-            New to ICEFALL?{" "}
-            <button onClick={() => setMode("up")} className="text-azure">
-              Apply to guide
-            </button>
+          <p className="text-[13.5px] text-snow">This is a guide's app</p>
+          <p className="mt-2 text-[12.5px] leading-relaxed text-mist">
+            You are signed in, and your ICEFALL account is not a guide account. Nothing is wrong
+            with it — every ICEFALL account starts as a climber's, and it becomes a guide's when a
+            member of our staff has read your qualifications and set it up.
           </p>
+          <p className="mt-2.5 text-[12.5px] leading-relaxed text-mist-dim">
+            If you have already sent your documents in, they are with us; this app opens on its own
+            once your account is a guide's.
+          </p>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="mt-4"
+            onClick={() => void signOut().then(() => setAccess("signed-out"))}
+          >
+            Sign out
+          </Button>
+        </Card>
+      ) : access === "guide" ? (
+        <Card>
+          <p className="text-[13.5px] text-snow">You are signed in.</p>
+          <Button size="sm" className="mt-3" asChild>
+            <Link to="/">Open the app</Link>
+          </Button>
         </Card>
       ) : (
-        <>
-          <ol className="flex items-center gap-1.5">
-            {STEPS.map((s, i) => (
-              <li key={s} className="flex flex-1 flex-col gap-1.5">
-                <span
-                  className={cn(
-                    "h-[2px] rounded-pill transition-colors",
-                    i < step ? "bg-azure" : i === step ? "bg-azure/55" : "bg-elevated",
-                  )}
+        <form onSubmit={submit}>
+          <Card>
+            <div className="space-y-4">
+              <Field label="Email">
+                <input
+                  type="email"
+                  autoComplete="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className={inputClass}
+                  placeholder="you@example.com"
                 />
-                <span
-                  className={cn(
-                    "text-[9px] uppercase tracking-[0.12em]",
-                    i <= step ? "text-mist" : "text-mist-dim",
-                  )}
-                >
-                  {s}
-                </span>
-              </li>
-            ))}
-          </ol>
-
-          <Card className="mt-4">
-            {step === 0 && <AccountStep />}
-            {step === 1 && <WorkStep />}
-            {step === 2 && <DocumentsStep />}
-            {step === 3 && <NextStep />}
-
-            <div className="mt-6 flex items-center justify-between gap-3 border-t border-hairline pt-4">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setStep((s) => Math.max(0, s - 1) as Step)}
-                disabled={step === 0}
-              >
-                <ArrowLeft size={14} strokeWidth={1.8} />
-                Back
-              </Button>
-
-              {step < 3 ? (
-                <Button size="sm" onClick={() => setStep((s) => Math.min(3, s + 1) as Step)}>
-                  Continue
-                  <ArrowRight size={14} strokeWidth={1.8} />
-                </Button>
-              ) : (
-                <Button size="sm" disabled>
-                  Submit application
-                </Button>
-              )}
+              </Field>
+              <Field label="Password">
+                <input
+                  type="password"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className={inputClass}
+                  placeholder="••••••••"
+                />
+              </Field>
             </div>
-          </Card>
 
-          <p className="mt-5 text-center text-[12.5px] text-mist">
-            Already applied?{" "}
-            <button onClick={() => setMode("in")} className="text-azure">
-              Sign in
-            </button>
-          </p>
+            {error && (
+              <p className="mt-3 text-[12px] leading-relaxed text-danger">{error}</p>
+            )}
+
+            <Button
+              type="submit"
+              size="lg"
+              className="mt-5 w-full"
+              disabled={busy || !email.trim() || !password}
+            >
+              {busy ? "Signing in…" : "Sign in"}
+            </Button>
+
+            {access === "offline" && (
+              <Disclaimer className="mt-4">
+                ICEFALL is not connected on this device, so signing in is not possible here.
+              </Disclaimer>
+            )}
+          </Card>
+        </form>
+      )}
+
+      {/* ---- How somebody becomes a guide, since they cannot do it here ----- */}
+      {access !== "guide" && (
+        <>
+          <Notice tone="neutral" className="mt-6">
+            <div className="flex gap-2.5">
+              <ShieldCheck size={15} strokeWidth={1.8} className="mt-px shrink-0 text-azure" />
+              <div>
+                <p className="text-snow">Not a guide with ICEFALL yet?</p>
+                <p className="mt-1.5">
+                  You cannot sign yourself up as one here, and that is deliberate — a client picks a
+                  guide and then follows them onto a glacier. A member of ICEFALL staff reads every
+                  guide's documents before their account becomes one.
+                </p>
+              </div>
+            </div>
+          </Notice>
+
+          <div className="mt-4">
+            <p className="section-label">What we ask for</p>
+            <ul className="mt-2.5 space-y-1.5">
+              {CREDENTIAL_SPECS.filter((s) => s.required).map((s) => (
+                <li key={s.kind} className="flex gap-2 text-[12px] leading-relaxed text-mist">
+                  <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-azure" />
+                  {s.label}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-3 text-[11.5px] leading-relaxed text-mist-dim">
+              We read them. We do not contact your association, and your badge says exactly that.
+            </p>
+          </div>
         </>
       )}
 
-      <p className="mt-6 text-center">
+      <p className="mt-7 text-center">
         <Link to="/" className="text-[12px] text-mist-dim underline underline-offset-4">
           Skip — look around the app
         </Link>
       </p>
-    </div>
-  );
-}
-
-function AccountStep() {
-  return (
-    <div className="space-y-4">
-      <Field label="Name, as printed on your licence" hint="We check this matches your photo ID.">
-        <input className={inputClass} placeholder="Your full name" autoComplete="name" />
-      </Field>
-      <Field label="Email">
-        <input type="email" className={inputClass} placeholder="you@example.com" autoComplete="email" />
-      </Field>
-      <Field label="Password" hint="At least 10 characters. Nothing is stored — there is no account server yet.">
-        <input type="password" className={inputClass} placeholder="••••••••" autoComplete="new-password" />
-      </Field>
-    </div>
-  );
-}
-
-function WorkStep() {
-  return (
-    <div className="space-y-4">
-      <Field label="Where you work from" hint="A town or valley — not your home address.">
-        <input className={inputClass} placeholder="Town or valley" />
-      </Field>
-      <Field label="What you guide" hint="One line. The first thing an athlete reads.">
-        <input className={inputClass} placeholder="The routes and ground you guide" />
-      </Field>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Years guiding">
-          <input type="number" min={0} className={inputClass} placeholder="Years" />
-        </Field>
-        <Field label="Day rate (EUR)">
-          <input type="number" min={0} className={inputClass} placeholder="Rate" />
-        </Field>
-      </div>
-      <Notice tone="neutral">
-        Your rate stays yours. ICEFALL does not set your price and does not rank guides by what they
-        pay us — there is no way to buy a higher position.
-      </Notice>
-    </div>
-  );
-}
-
-function DocumentsStep() {
-  return (
-    <div>
-      <Notice tone="azure" className="mb-4">
-        <div className="flex gap-2.5">
-          <ShieldCheck size={15} strokeWidth={1.8} className="mt-px shrink-0 text-azure" />
-          <div>
-            <p className="text-snow">Why we ask for these</p>
-            <p className="mt-1.5">
-              A client picks a guide and then follows them onto a glacier. We read every document
-              before your listing goes live. We do not contact your association — your badge will say
-              exactly that, and nothing more.
-            </p>
-          </div>
-        </div>
-      </Notice>
-
-      <ul className="space-y-2.5">
-        {CREDENTIAL_SPECS.map((spec) => (
-          <li key={spec.kind} className="rounded-tile border border-hairline bg-obsidian/40 p-3.5">
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="text-[13px] text-snow">{spec.label}</p>
-              {!spec.required && <Badge>If applicable</Badge>}
-            </div>
-            <p className="mt-1.5 text-[11.5px] leading-relaxed text-mist-dim">{spec.detail}</p>
-            <Button variant="secondary" size="sm" className="mt-3" disabled>
-              <Upload size={13} strokeWidth={1.8} />
-              Choose file
-            </Button>
-          </li>
-        ))}
-      </ul>
-
-      <Disclaimer className="mt-4">
-        Uploading is disabled — there is no storage connected, so a file picker here would take your
-        documents nowhere.
-      </Disclaimer>
-    </div>
-  );
-}
-
-function NextStep() {
-  return (
-    <div>
-      <SectionLabel>What happens next</SectionLabel>
-      <ol className="mt-3.5 space-y-3.5">
-        {[
-          ["You submit", "Your application joins the queue. You can sign in and see where it is at any time."],
-          ["We read it", "A person at ICEFALL opens each document and decides. Usually a few working days."],
-          ["We come back", "Approved, or a specific reason and what to send. A refusal always says why — your income depends on it."],
-          ["You go live", "Athletes can find you. Your badge states what we checked and on what date."],
-        ].map(([title, body], i) => (
-          <li key={title} className="flex gap-3">
-            <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full border border-hairline text-[10.5px] text-mist">
-              {i + 1}
-            </span>
-            <div>
-              <p className="text-[13px] text-snow">{title}</p>
-              <p className="mt-1 text-[12px] leading-relaxed text-mist">{body}</p>
-            </div>
-          </li>
-        ))}
-      </ol>
-
-      <Notice tone="alert" className="mt-5">
-        Submitting is disabled — there is no review queue connected yet. When there is, this button
-        is the point at which your documents leave your device.
-      </Notice>
     </div>
   );
 }

@@ -2,13 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Activity as ActivityIcon, ArrowUpRight, Backpack, Bell, Check, ChevronRight, Clock, CloudSun,
-  Droplets, Eye, Flame, MessageCircle, Plus, Route, Search, TrendingUp, Users, Wind,
+  Droplets, Eye, Flame, MessageCircle, Play, Route, Search, TrendingUp, Wind,
 } from "lucide-react";
-import { Card, SectionLabel } from "@/components/ui/primitives";
+import { Button, Card, SectionLabel } from "@/components/ui/primitives";
 import { MiniBars } from "@/components/ui/charts";
 import { ScoreRing } from "@/components/coach/CoachUI";
 import { Rise, Screen, Stagger } from "@/components/layout/chrome";
-import { ActivityCard } from "@/components/domain/cards";
 import { MountainThumb } from "@/components/domain/MountainImage";
 import { IcefallMark } from "@/components/ui/IcefallMark";
 import {
@@ -23,10 +22,8 @@ import { useApp } from "@/state/AppState";
 import { usePrimaryGoalWithProgress, useTraining } from "@/tracking/training";
 import { useConversations } from "@/screens/chat/useConversations";
 import { useCoachIntel } from "@/coach/hooks";
-import { CATEGORY_ORDER, completion, generateChecklist, isResolved } from "@/services/checklist";
 import { getMountainConditions, type MountainConditions } from "@/services/conditions";
 import { parseDay } from "@/network/groups";
-import { NETWORK_NOT_CONNECTED_NOTICE } from "@/network/types";
 import type { Score } from "@/coach/types";
 import { cn } from "@/lib/utils";
 
@@ -65,7 +62,7 @@ const SAFE_TOP = "var(--screen-safe-top, env(safe-area-inset-top, 0px))";
  *     partner is a hazard rather than a placeholder.
  */
 export default function Home() {
-  const { user, checklistStatuses, groupSessions, networkOptIn, locationOptIn, toggleSession } =
+  const { user, toggleSession } =
     useApp();
   const goal = usePrimaryGoalWithProgress();
   const weekly = useWeeklyProgress();
@@ -93,6 +90,41 @@ export default function Home() {
     [plan, today],
   );
 
+  /*
+   * The seven circles under "This week".
+   *
+   * Built from `todayWeek` — the week that actually contains today — and read
+   * through the same `completedByDate` / `satisfiedByActivity` pair the tick on
+   * the session card writes. Deriving it any other way is how a strip starts
+   * disagreeing with the control directly above it.
+   *
+   * Rest days count as neither done nor outstanding: the denominator is
+   * PRESCRIBED sessions, so an athlete who rests when told to is not marked
+   * down for it.
+   */
+  const weekDays = useMemo(() => {
+    if (!todayWeek) return [];
+    const todayKey = today?.date ?? null;
+    return todayWeek.days.map((d, i) => {
+      // `parseDay` is the strict parser and returns null on anything it cannot
+      // read as a real calendar date. The array position is the honest
+      // fallback: a week is seven days from its start, so index IS the weekday
+      // when the string is unreadable. Never `new Date(iso)` here — that is UTC
+      // midnight, which is the previous day west of Greenwich.
+      const parsed = parseDay(d.date);
+      return {
+      date: d.date,
+      label: DAY_INITIALS[parsed ? (parsed.getDay() + 6) % 7 : i % 7],
+      rest: d.focus === "rest",
+      done: completedByDate.get(d.date) === true || satisfiedByActivity.has(d.date) || d.completed,
+      isToday: d.date === todayKey,
+      };
+    });
+  }, [todayWeek, today, completedByDate, satisfiedByActivity]);
+
+  const weekPrescribed = weekDays.filter((d) => !d.rest).length;
+  const weekDone = weekDays.filter((d) => !d.rest && d.done).length;
+
   const goalMountain = goal?.mountainId ? sync.mountainById(goal.mountainId) : undefined;
   const elevationM = goal?.elevationM ?? goalMountain?.elevationM ?? null;
   const lat = goal?.lat ?? goalMountain?.coords.lat;
@@ -102,17 +134,9 @@ export default function Home() {
   const activeType = active ? activityById(active.activityTypeId) : null;
   const ActiveIcon = active ? ACTIVITY_ICON[active.activityTypeId] : null;
 
-  /* ---- Equipment checklist, derived from the objective ------------------- */
-  const checklist = useMemo(() => {
-    if (!goal || elevationM === null) return null;
-    const list = generateChecklist({ name: goal.name, elevationM, lat, lon });
-    const statuses = checklistStatuses[goal.id] ?? {};
-    const result = completion(list.items, statuses);
-    const next = CATEGORY_ORDER.flatMap((c) =>
-      list.items.filter((i) => i.category === c && !isResolved(statuses[i.id])),
-    )[0];
-    return { result, next };
-  }, [goal, elevationM, lat, lon, checklistStatuses]);
+  /* PH-06 — the equipment checklist memo went with the checklist block.
+     The list itself lives on `/mountain/:id/checklist`, which Home still links
+     to from Mountain intelligence. */
 
   const readinessKnown =
     typeof intel.readiness.score.value === "number" &&
@@ -267,23 +291,15 @@ export default function Home() {
                   </p>
                 </Link>
 
-                {/* Four figures, all derivable. "Group 4 of 6" is absent by
-                    design: with no backend a party can never have a second
-                    member to count. */}
-                <div className="mt-4 grid grid-cols-4 gap-2 border-t border-hairline pt-4">
-                  <Stat
-                    value={countdownValue(goal.targetDate)}
-                    label={countdownLabel(goal.targetDate)}
-                  />
-                  <Stat
-                    value={
-                      checklist && checklist.result.applicable > 0
-                        ? `${checklist.result.resolved}/${checklist.result.applicable}`
-                        : "—"
-                    }
-                    label="Kit items"
-                  />
-                  <Stat value={`${goal.preparation}%`} label="Training" />
+                {/* PH-06 — TWO figures, and the countdown is in DAYS.
+                    Kit items and Training came out at the owner's request. The
+                    countdown was "8 months", which is the shape of a number you
+                    plan around rather than train against; days is the unit that
+                    changes every morning. Both remaining figures are still
+                    derivable, and readiness still renders an em dash rather
+                    than a zero when it cannot be computed. */}
+                <div className="mt-4 grid grid-cols-2 gap-2 border-t border-hairline pt-4">
+                  <Stat value={daysToGoValue(goal.targetDate)} label={daysToGoLabel(goal.targetDate)} />
                   <Stat
                     value={
                       readinessKnown
@@ -341,6 +357,23 @@ export default function Home() {
           </Rise>
         )}
 
+        {/* ---- Conditions at your destination -------------------------------
+            PH-06: moved to sit DIRECTLY under the current objective. The
+            forecast is the objective's forecast — it was three sections down,
+            under the plan and the week, so the mountain and its weather were
+            never on screen together. */}
+        {goal && elevationM !== null && lat !== undefined && lon !== undefined && (
+          <Rise className="pt-7">
+            <ConditionsPanel
+              name={goal.name}
+              elevationM={elevationM}
+              lat={lat}
+              lon={lon}
+              goalId={goal.id}
+            />
+          </Rise>
+        )}
+
         {/* ---- Today's plan ------------------------------------------------ */}
         <Rise className="pt-8">
           <SectionLabel
@@ -361,11 +394,20 @@ export default function Home() {
               /* The tick is a control, not a status dot, so it cannot live
                  inside the link to the session — an anchor may not contain a
                  button. Two siblings, one row. */
-              <div className="flex items-center gap-4">
+              <div>
                 <Link to="/coach/training" className="min-w-0 flex-1">
                   <p className="section-label text-azure">{FOCUS_LABELS[today.focus]}</p>
                   <h3 className="mt-2 truncate text-[19px] font-light text-snow">{today.title}</h3>
+                  {/* `phone-5.png` leads with the duration in azure beside a
+                      clock, at the size of a headline figure. It is the number
+                      an athlete plans their evening around. */}
                   <div className="tnum mt-2.5 flex flex-wrap items-center gap-x-3.5 gap-y-1 text-[12px] text-mist">
+                    {today.durationMin ? (
+                      <span className="flex items-center gap-1.5 text-[14px] text-azure">
+                        <Clock size={14} strokeWidth={1.8} aria-hidden="true" />
+                        {today.durationMin} min
+                      </span>
+                    ) : null}
                     {/* Difficulty, not a heart-rate zone: ICEFALL has never
                         measured a threshold, so it prints none. */}
                     <Meta icon={Flame} text={`Difficulty ${today.difficulty}/5`} />
@@ -376,35 +418,49 @@ export default function Home() {
                       <Meta icon={TrendingUp} text={`${fmtElevation(today.elevationM)} m`} />
                     ) : null}
                   </div>
+
+                  {/* The sentence under the rule in the drawing. */}
+                  {today.detail ? (
+                    <p className="mt-3 border-t border-hairline pt-3 text-[13px] leading-relaxed text-mist">
+                      {today.detail}
+                    </p>
+                  ) : null}
                 </Link>
-                <button
-                  type="button"
-                  disabled={!todayWeek}
-                  aria-pressed={doneToday}
-                  aria-label={
-                    doneToday ? "Mark today's session not done" : "Mark today's session done"
-                  }
-                  onClick={() => {
-                    if (!todayWeek) return;
-                    // The fallback must match the value `useTraining` derived,
-                    // or the first tap toggles away from the wrong baseline and
-                    // appears to do nothing.
-                    toggleSession(
-                      todayWeek.index,
-                      today.date,
-                      satisfiedByActivity.has(today.date) || today.completed,
-                    );
-                  }}
-                  className={cn(
-                    "grid h-11 w-11 shrink-0 place-items-center rounded-full border transition-colors",
-                    doneToday
-                      ? "border-summit/55 bg-summit/15 text-summit"
-                      : "border-azure/45 text-azure hover:bg-azure/10",
-                    !todayWeek && "opacity-40",
-                  )}
-                >
-                  <Check size={18} strokeWidth={2} />
-                </button>
+                {/* The drawing's two controls, side by side under the rule:
+                    a filled Start Session and an outlined Mark as Done. They
+                    replace a single round tick sitting to the right of the
+                    title — which said nothing about what it did, and offered no
+                    way to begin the session it described. */}
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  <Button asChild size="lg">
+                    <Link to="/activity/select">
+                      <Play size={15} strokeWidth={2} />
+                      Start session
+                    </Link>
+                  </Button>
+
+                  <Button
+                    variant="secondary"
+                    size="lg"
+                    disabled={!todayWeek}
+                    aria-pressed={doneToday}
+                    onClick={() => {
+                      if (!todayWeek) return;
+                      // The fallback must match the value `useTraining` derived,
+                      // or the first tap toggles away from the wrong baseline and
+                      // appears to do nothing.
+                      toggleSession(
+                        todayWeek.index,
+                        today.date,
+                        satisfiedByActivity.has(today.date) || today.completed,
+                      );
+                    }}
+                    className={cn(doneToday && "border-summit/55 text-summit")}
+                  >
+                    <Check size={15} strokeWidth={2} />
+                    {doneToday ? "Done" : "Mark as done"}
+                  </Button>
+                </div>
               </div>
             ) : (
               <p className="text-[13px] text-mist">
@@ -412,6 +468,69 @@ export default function Home() {
               </p>
             )}
           </Card>
+
+          {/* ---- Session plan ---------------------------------------------
+              The vertical timeline `phone-5.png` draws. It renders on every
+              build, not behind a flag — the layout is the production design.
+
+              What ICEFALL actually prescribes is a session and a LENGTH. It
+              does not hold a per-athlete segment breakdown, so the minutes on
+              each row are that length divided by a standard structure, and the
+              card says so in one line rather than presenting the split as a
+              coached prescription.
+
+              The drawing's own text reads "Steady pace in Zone 2" and "Bring
+              HR down gradually". Neither ships. ICEFALL has measured nobody's
+              heart and holds no threshold to divide one against, so there is no
+              zone to name — effort stays in words until a device pairs. -- */}
+          {today && today.durationMin ? (
+            <div className="mt-2.5">
+              <Card>
+                <SectionLabel>Session plan</SectionLabel>
+                <ol className="mt-3.5">
+                  {sessionSegments(today.durationMin, today.detail).map((seg, i, all) => (
+                    <li key={seg.name} className="flex gap-3.5">
+                      {/* The rail: a dot per row, joined by a line that stops
+                          at the last one rather than trailing into nothing. */}
+                      <div className="flex w-3 shrink-0 flex-col items-center">
+                        <span
+                          className={cn(
+                            "mt-1.5 h-3 w-3 shrink-0 rounded-full border",
+                            i === 0 ? "border-azure bg-azure" : "border-mist-dim",
+                          )}
+                        />
+                        {i < all.length - 1 && <span className="w-px flex-1 bg-hairline" />}
+                      </div>
+
+                      <div
+                        className={cn(
+                          "flex min-w-0 flex-1 gap-4 pb-4",
+                          i < all.length - 1 && "border-b border-hairline",
+                          i > 0 && "pt-0.5",
+                        )}
+                      >
+                        <div className="w-[88px] shrink-0">
+                          <p className="text-[14.5px] text-snow">{seg.name}</p>
+                          {/* An em dash where there are no minutes, as the
+                              drawing does on its own last row — never a zero. */}
+                          <p className="tnum mt-0.5 text-[12.5px] text-mist">
+                            {seg.minutes === null ? "—" : `${seg.minutes} min`}
+                          </p>
+                        </div>
+                        <p className="min-w-0 flex-1 text-[13px] leading-relaxed text-mist">
+                          {seg.note}
+                        </p>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+
+                <p className="mt-1 text-[11px] leading-relaxed text-mist-dim">
+                  {SEGMENTS_ARE_A_STANDARD_SHAPE}
+                </p>
+              </Card>
+            </div>
+          ) : null}
 
           <div className="mt-2.5 grid grid-cols-2 gap-2.5">
             <TileLink
@@ -443,6 +562,62 @@ export default function Home() {
             This week
           </SectionLabel>
           <Card className="mt-3">
+            {/* ---- The day strip `phone-5.png` draws --------------------------
+                Seven circles Mon–Sun: a tick where the session is done, a ring
+                on today, an empty circle ahead. Real data throughout —
+                `completedByDate` is the same map the tick on the session card
+                writes to, so the strip cannot disagree with it.
+
+                The count reads "3 of 7 completed" in the drawing. It counts
+                PRESCRIBED sessions, not days: a week with two rest days has
+                five, and calling it "of 7" would mark an athlete down for
+                resting when they were told to. ------------------------------ */}
+            {weekDays.length > 0 && (
+              <div className="mb-5">
+                <div className="mb-3 flex items-baseline justify-between gap-3">
+                  <p className="section-label">Sessions</p>
+                  <p className="tnum text-[12px] text-mist">
+                    {weekDone} of {weekPrescribed} completed
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-7 gap-1">
+                  {weekDays.map((d) => (
+                    <div key={d.date} className="flex flex-col items-center gap-2">
+                      <span
+                        className={cn(
+                          "text-[11px]",
+                          d.isToday ? "text-snow" : "text-mist-dim",
+                        )}
+                      >
+                        {d.label}
+                      </span>
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          "grid h-7 w-7 place-items-center rounded-full border",
+                          d.done
+                            ? "border-azure bg-azure/15 text-azure"
+                            : d.isToday
+                              ? "border-2 border-azure"
+                              : "border-hairline-strong",
+                        )}
+                      >
+                        {d.done && <Check size={13} strokeWidth={2.4} />}
+                      </span>
+                      {/* Said for a screen reader, since the ring alone carries
+                          "today" and a tick alone carries "done". */}
+                      <span className="sr-only">
+                        {d.label}
+                        {d.isToday ? ", today" : ""}
+                        {d.rest ? ", rest day" : d.done ? ", completed" : ", not completed"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-4 gap-2">
               <Figure icon={ActivityIcon} value={String(weekly.activities)} label="Activities" />
               <Figure icon={Clock} value={fmtHours(weekly.timeHours)} label="Duration" />
@@ -453,106 +628,13 @@ export default function Home() {
           </Card>
         </Rise>
 
-        {/* ---- Conditions at your destination ------------------------------- */}
-        {goal && elevationM !== null && lat !== undefined && lon !== undefined && (
-          <Rise className="pt-7">
-            <ConditionsPanel
-              name={goal.name}
-              elevationM={elevationM}
-              lat={lat}
-              lon={lon}
-              goalId={goal.id}
-            />
-          </Rise>
-        )}
-
-        {/* ---- Recent activity ---------------------------------------------- */}
-        <Rise className="pt-7">
-          <SectionLabel
-            action={
-              <Link to="/activity" className="section-label transition-colors hover:text-azure">
-                See all
-              </Link>
-            }
-          >
-            Recent activity
-          </SectionLabel>
-          {recent.length > 0 ? (
-            <div className="mt-3 space-y-2.5">
-              {recent.map((a) => (
-                <ActivityCard key={a.id} activity={a} />
-              ))}
-            </div>
-          ) : (
-            <Card className="mt-3">
-              <p className="text-[13px] text-mist">Nothing recorded yet.</p>
-              <Link
-                to="/activity/select"
-                className="mt-2.5 inline-flex items-center gap-1 text-[12.5px] text-azure"
-              >
-                Record your first activity <ChevronRight size={14} strokeWidth={1.8} />
-              </Link>
-            </Card>
-          )}
-        </Rise>
-
-        {/* ---- Expedition checklist ----------------------------------------- */}
-        {goal && (
-          <Rise className="pt-7">
-            <SectionLabel>Expedition checklist</SectionLabel>
-            <Card className="mt-3">
-              {checklist && checklist.result.applicable > 0 ? (
-                <Link to={`/mountain/${goal.id}/checklist`} className="block">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <p className="tnum text-[26px] font-light leading-none text-snow">
-                        {checklist.result.resolved}
-                        <span className="text-[15px] text-mist">
-                          {" / "}
-                          {checklist.result.applicable}
-                        </span>
-                      </p>
-                      {/* "Items", not "tasks" — these are equipment and
-                          documents derived from the peak. */}
-                      <p className="section-label mt-1.5">Items accounted for</p>
-                    </div>
-                    <span className="grid h-14 w-14 shrink-0 place-items-center rounded-tile border border-hairline bg-elevated/50 text-mist">
-                      <Backpack size={24} strokeWidth={1.1} />
-                    </span>
-                  </div>
-                  <div className="mt-3 h-1 overflow-hidden rounded-full bg-white/[0.07]">
-                    <div
-                      className="h-full rounded-full bg-azure"
-                      style={{ width: `${checklist.result.overall}%` }}
-                    />
-                  </div>
-                  {checklist.next ? (
-                    <div className="mt-3.5 flex items-center gap-3 border-t border-hairline pt-3">
-                      <span className="h-4 w-4 shrink-0 rounded-[5px] border border-hairline-strong" />
-                      <div className="min-w-0 flex-1">
-                        <p className="section-label">Next</p>
-                        <p className="mt-0.5 truncate text-[13px] text-snow">
-                          {checklist.next.label}
-                        </p>
-                      </div>
-                      <ChevronRight size={16} className="shrink-0 text-mist-dim" />
-                    </div>
-                  ) : (
-                    <p className="mt-3.5 border-t border-hairline pt-3 text-[12px] leading-relaxed text-mist">
-                      All {checklist.result.applicable} applicable items are accounted for — held,
-                      borrowed or hired.
-                    </p>
-                  )}
-                </Link>
-              ) : (
-                <p className="text-[12.5px] leading-relaxed text-mist">
-                  A kit list is derived from the mountain's altitude and terrain. This objective has
-                  no elevation held, so ICEFALL will not guess at one.
-                </p>
-              )}
-            </Card>
-          </Rise>
-        )}
+        {/* PH-06 — REMOVED FROM HOME at the owner's request: Recent activity,
+            Expedition checklist, Upcoming, People nearby, and the "Start an
+            activity" card. Each still exists on its own screen; Home stops
+            being a directory of the app and keeps the objective, the plan, the
+            week, the weather and readiness. The Start control is on the tab bar
+            already, which is why the card was redundant rather than merely
+            surplus. */}
 
         {/* ---- Training readiness ------------------------------------------- */}
         <Rise className="pt-7">
@@ -587,51 +669,6 @@ export default function Home() {
               <ScoreRing score={intel.readiness.score} size={78} className="shrink-0" />
             </div>
           </Card>
-        </Rise>
-
-        {/* ---- Upcoming — only sessions the athlete actually planned -------- */}
-        <Rise className="pt-7">
-          <SectionLabel
-            action={
-              <Link to="/explore/groups" className="section-label transition-colors hover:text-azure">
-                Groups
-              </Link>
-            }
-          >
-            Upcoming
-          </SectionLabel>
-          <UpcomingList sessions={groupSessions} />
-        </Rise>
-
-        {/* ---- People nearby — gated, and honestly empty -------------------- */}
-        <Rise className="pt-7">
-          <SectionLabel
-            action={
-              <Link to="/explore/people" className="section-label transition-colors hover:text-azure">
-                Network
-              </Link>
-            }
-          >
-            People nearby
-          </SectionLabel>
-          {/* No avatars, and no placeholder faces: the athlete directory is
-              deliberately empty until there is a backend, and an invented
-              climbing partner is a hazard rather than a placeholder. A slim
-              row, so an honest absence does not sit in a big empty box. */}
-          <Link
-            to="/explore/people"
-            className="mt-3 flex items-center gap-3.5 border-y border-hairline py-3.5"
-          >
-            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-dashed border-hairline-strong text-mist-dim">
-              <Users size={17} strokeWidth={1.5} />
-            </span>
-            <p className="min-w-0 flex-1 text-[11.5px] leading-relaxed text-mist">
-              {!networkOptIn || !locationOptIn
-                ? "The Expedition Network and area sharing are both off. Nothing about you is shared, and nobody is listed."
-                : NETWORK_NOT_CONNECTED_NOTICE}
-            </p>
-            <ChevronRight size={16} className="shrink-0 text-mist-dim" />
-          </Link>
         </Rise>
 
         {/* ---- Gear for the objective --------------------------------------- */}
@@ -698,21 +735,6 @@ export default function Home() {
           </Rise>
         )}
 
-        {/* ---- Start -------------------------------------------------------- */}
-        <Rise className="pt-7">
-          <Link
-            to="/activity/select"
-            className="flex items-center justify-between rounded-card border border-azure/30 bg-azure/[0.06] px-5 py-4 transition-colors hover:bg-azure/[0.1]"
-          >
-            <div>
-              <p className="section-label text-azure/80">Ready</p>
-              <p className="mt-1.5 text-[15px] text-snow">Start an activity</p>
-            </div>
-            <span className="grid h-10 w-10 place-items-center rounded-full bg-azure text-obsidian">
-              <Plus size={18} strokeWidth={2} />
-            </span>
-          </Link>
-        </Rise>
       </Stagger>
     </Screen>
   );
@@ -723,21 +745,41 @@ export default function Home() {
 /* -------------------------------------------------------------------------- */
 
 /**
- * `fmtCountdown` returns one string ("73 days to go"); the card wants the
- * figure and its unit on separate lines. Split rather than reformat, so both
- * come from the one function that already handles the timezone edge cases.
+ * DAYS TO THE OBJECTIVE — PH-06.
+ *
+ * `fmtCountdown` rolls up to months past 30 days and to years past 24 months,
+ * which is right for a list of goals and wrong here: the owner asked for days,
+ * because "8 months" is a number you plan around and a day count is one you
+ * train against. It changes every morning, which is the point.
+ *
+ * NOT a change to `fmtCountdown` itself — that is shared by nine other
+ * surfaces (Goals, Coach, People, Conditions, MountainPage, cards) where the
+ * rolled-up form is the right one. Local to the hero, deliberately.
+ *
+ * `parseDay` is not used because `targetDate` is a full ISO instant rather than
+ * a bare `YYYY-MM-DD`, so the UTC-midnight trap does not apply; the ceiling is
+ * taken against the same clock `fmtCountdown` uses so the two never disagree
+ * about which day it is.
  */
-function countdownValue(iso: string): string {
-  const s = fmtCountdown(iso);
-  const m = /^(\d[\d,]*)\s+(.*?)\s+to go$/.exec(s);
-  return m ? m[1] : s;
+function daysToGo(iso: string, now = new Date()): number | null {
+  const target = new Date(iso).getTime();
+  if (!Number.isFinite(target)) return null;
+  return Math.ceil((target - now.getTime()) / 86_400_000);
 }
-function countdownLabel(iso: string): string {
-  const s = fmtCountdown(iso);
-  const m = /^(\d[\d,]*)\s+(.*?)\s+to go$/.exec(s);
-  // Just the unit — "months to go" does not fit a quarter-width cell, and a
-  // truncated "months to …" is worse than the word alone under the figure.
-  return m ? m[2] : "";
+
+function daysToGoValue(iso: string): string {
+  const d = daysToGo(iso);
+  if (d === null) return "—";
+  if (d < 0) return "—";
+  return d.toLocaleString("en-GB");
+}
+
+function daysToGoLabel(iso: string): string {
+  const d = daysToGo(iso);
+  if (d === null) return "";
+  if (d < 0) return "Date passed";
+  if (d === 0) return "Today";
+  return d === 1 ? "day to go" : "days to go";
 }
 
 /**
@@ -941,69 +983,6 @@ function IntelRow({
  * The ICEFALL events fixture is deliberately not used here: it is invented, and
  * it ships without the disclaimer that travels with it on its own screen.
  */
-function UpcomingList({
-  sessions,
-}: {
-  sessions: {
-    id: string;
-    groupId: string;
-    title: string;
-    dayKey: string;
-    time?: string;
-    place?: string;
-  }[];
-}) {
-  const upcoming = useMemo(() => {
-    const start = new Date();
-    start.setHours(0, 0, 0, 0);
-    return sessions
-      .map((s) => ({ s, date: parseDay(s.dayKey) }))
-      .filter((x): x is { s: (typeof sessions)[number]; date: Date } => x.date !== null)
-      .filter((x) => x.date.getTime() >= start.getTime())
-      .sort((a, b) => a.date.getTime() - b.date.getTime())
-      .slice(0, 3);
-  }, [sessions]);
-
-  if (upcoming.length === 0) {
-    return (
-      <Card className="mt-3">
-        <p className="text-[13px] text-mist">Nothing planned.</p>
-        <Link
-          to="/explore/groups"
-          className="mt-2.5 inline-flex items-center gap-1 text-[12.5px] text-azure"
-        >
-          Plan a session with a group <ChevronRight size={14} strokeWidth={1.8} />
-        </Link>
-      </Card>
-    );
-  }
-
-  return (
-    <div className="mt-3 space-y-2.5">
-      {upcoming.map(({ s, date }) => (
-        <Link key={s.id} to={`/explore/groups/${s.groupId}`} className="block">
-          <Card className="flex items-center gap-3.5">
-            <div className="w-9 shrink-0 text-center">
-              <p className="section-label text-[8px] text-azure/85">
-                {date.toLocaleDateString("en-GB", { month: "short" }).toUpperCase()}
-              </p>
-              <p className="tnum mt-0.5 text-[18px] font-light leading-none text-snow">
-                {date.getDate()}
-              </p>
-            </div>
-            <div className="min-w-0 flex-1 border-l border-hairline pl-3.5">
-              <p className="truncate text-[13.5px] text-snow">{s.title}</p>
-              <p className="mt-0.5 truncate text-[11.5px] text-mist-dim">
-                {[s.place, s.time].filter(Boolean).join(" · ") || "Time not set"}
-              </p>
-            </div>
-            <ChevronRight size={16} className="shrink-0 text-mist-dim" />
-          </Card>
-        </Link>
-      ))}
-    </div>
-  );
-}
 
 /**
  * Live conditions for the objective.
@@ -1144,4 +1123,64 @@ function Micro({
       <p className="section-label mt-0.5 truncate text-[8px]">{label}</p>
     </div>
   );
+}
+
+/**
+ * Why the split is stated rather than implied.
+ *
+ * ICEFALL prescribes a session and a length. It does not hold a per-athlete
+ * segment breakdown, and dividing the length by a conventional shape is not the
+ * same as a coach deciding how this athlete should spend the hour. The line is
+ * rendered verbatim under the timeline so nobody reads the minutes as
+ * individually prescribed.
+ */
+/** Mon-first, matching the strip's column order and `todayIndex` above. */
+const DAY_INITIALS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
+
+const SEGMENTS_ARE_A_STANDARD_SHAPE =
+  "ICEFALL prescribes the session and its length. The split across warm-up, main set and finish is the standard shape of a session, not a breakdown chosen for you.";
+
+interface SessionSegment {
+  name: string;
+  /** `null` where there is no duration to give. Never a zero. */
+  minutes: number | null;
+  note: string;
+}
+
+/**
+ * The timeline rows for a session of `durationMin`.
+ *
+ * A 15 / 70 / 15 split, rounded to whole minutes, with the remainder pushed
+ * into the main set so the three always sum back to the prescribed length —
+ * a timeline whose parts do not add up to its own total is worse than no
+ * timeline.
+ */
+function sessionSegments(durationMin: number, detail?: string): SessionSegment[] {
+  const warm = Math.max(5, Math.round((durationMin * 0.15) / 5) * 5);
+  const finish = Math.max(5, Math.round((durationMin * 0.15) / 5) * 5);
+  const main = durationMin - warm - finish;
+
+  // A session too short to divide is left whole rather than split into
+  // fragments that misrepresent it.
+  if (main < 10) {
+    return [
+      { name: "The session", minutes: durationMin, note: detail ?? "Complete as prescribed." },
+    ];
+  }
+
+  return [
+    {
+      name: "Warm up",
+      minutes: warm,
+      note: "Easy pace. Posture and relaxed breathing before the effort starts.",
+    },
+    {
+      name: "Main set",
+      minutes: main,
+      // No zone. ICEFALL has measured no heart and holds no threshold.
+      note: detail ?? "Hold an even effort you could sustain for longer than this.",
+    },
+    { name: "Finish", minutes: finish, note: "Easy cool down. Let the effort come off gradually." },
+    { name: "Focus", minutes: null, note: "Stay calm and consistent. Discipline over intensity." },
+  ];
 }

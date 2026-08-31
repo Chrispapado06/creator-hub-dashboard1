@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { Clock, MapPin } from "lucide-react";
 import { Badge, GuidePhoto, Rating, VerifiedTick } from "@/components/ui";
+import { GuideCredentialMark } from "@/components/marks";
 import { formatEur } from "@/money/model";
 import type { Expedition, Guide } from "@/data/demo";
 import { peakFallback, peakImage } from "@/app/peakPlate";
@@ -49,7 +50,7 @@ export function GuideCard({ guide }: { guide: Guide }) {
             <div className="min-w-0">
               <p className="flex items-center gap-1.5 text-[15px] text-snow">
                 <span className="truncate">{guide.name}</span>
-                <VerifiedTick verifiedOn={guide.verifiedOn} size={14} />
+                <GuideCredentialMark verifiedOn={guide.verifiedOn} size={14} />
               </p>
               <p className="mt-0.5 flex items-center gap-1.5 text-[12px] text-mist-dim">
                 <MapPin size={11} strokeWidth={1.7} />

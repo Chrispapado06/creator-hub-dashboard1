@@ -112,4 +112,4 @@ export function useSummitLogs(): SummitLog[] {
 
 /** Said wherever logs render, until a backend exists. */
 export const LOG_LOCAL_NOTICE =
-  "Your logs live on this device. ICEFALL has no accounts yet, so nothing is published anywhere — when accounts arrive, logs like these become the community feed.";
+  "Your logs live on this device. Publishing is not built yet, so nothing is shared anywhere — when it is, logs like these become the community feed.";

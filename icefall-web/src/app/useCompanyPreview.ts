@@ -37,7 +37,15 @@ import {
  * `previewProtocol.ts`. The payload is untrusted even from the right origin,
  * and `applyCompanyDraft` is what makes it safe.
  */
-const ALLOWED_ORIGINS = ["http://localhost:5196", "http://127.0.0.1:5196"];
+const ALLOWED_ORIGINS = [
+  // The operator portal — its editor SUBMITS drafts for approval.
+  "http://localhost:5196", "http://127.0.0.1:5196",
+  // The staff CRM (added 30 Aug 2026 for its page editor). Same frozen
+  // protocol, opposite side of the approval boundary: the CRM is the approver
+  // and writes the record. The allowlist below treats both identically —
+  // untrusted payload regardless of a trusted origin.
+  "http://localhost:5197", "http://127.0.0.1:5197",
+];
 
 /** Which tab a section lives on. `null` means it is always mounted. */
 const SECTION_TAB: Record<SectionId, string | null> = {

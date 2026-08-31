@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import {
   Award, Bell, Building2, Copy, Download, ExternalLink, Flag, LifeBuoy, LogOut, MapPin,
@@ -11,7 +11,10 @@ import {
   ActionRow, ChoiceRow, Group, InfoRow, LinkRow, NOT_BUILT, SettingsPage, StatusPill,
   ToggleRow,
 } from "@/components/settings/kit";
-import { VISIBILITY_OPTIONS, memberId, useSettings, type Visibility } from "@/settings/store";
+import {
+  POST_VISIBILITY_OPTIONS, VISIBILITY_OPTIONS, memberId, useSettings,
+  type PostVisibility, type Visibility,
+} from "@/settings/store";
 import { LOCATION_NOTICE, SAFETY_REMINDER, approxDistanceLabel } from "@/network/privacy";
 import { useApp, usePrimaryGoal } from "@/state/AppState";
 import { planFor } from "@/growth/tiers";
@@ -21,6 +24,10 @@ import { readAvatar } from "@/lib/image";
 import { PROFILE_BANNERS, bannerFor, bannerIndex } from "@/profile/banners";
 import { BADGES, badgeState } from "@/badges/model";
 import { BadgeHex } from "@/components/domain/BadgeHex";
+import { supabase } from "@/backend/client";
+import { sendPasswordReset } from "@/auth/account";
+import SupportRequest from "./SupportRequest";
+import { SUPPORT_ABUSE_IS_SEPARATE, SUPPORT_NO_RESPONSE_TIME } from "@/support/tickets";
 
 /**
  * Every settings sub-screen, in one file.
@@ -57,6 +64,7 @@ export default function SettingsSection() {
     case "referrals": return <Referrals />;
     case "notifications": return <Notifications />;
     case "support": return <Support />;
+    case "contact": return <SupportRequest />;
     case "legal": return <Legal />;
     case "about": return <About />;
     case "manage": return <ManageAccount />;
@@ -521,23 +529,91 @@ function PassportSettings() {
 /* Account                                                                    */
 /* ========================================================================== */
 
+/**
+ * PH-19a — the Account page reads the LIVE SESSION.
+ *
+ * Every row here was hard-coded "Not set", and the page said in terms *"No
+ * account is attached to this device"* and *"there is nothing to sign in to"*.
+ * Real auth shipped on 2026-08-30, so a signed-in climber opened Account and
+ * was told they had no account — the same stale-apology failure as the support
+ * copy that said support did not exist, on the same morning it started working.
+ *
+ * SIGNED OUT IS STILL A REAL STATE and still says so. The difference is that it
+ * is now read rather than assumed, so the page cannot be wrong in either
+ * direction.
+ */
 function Account() {
   const { user } = useApp();
   const [copied, setCopied] = useState(false);
   const id = memberId(user.name ?? "");
 
+  const [session, setSession] = useState<
+    { state: "loading" } | { state: "none" } | { state: "in"; email: string; providers: string[] }
+  >({ state: "loading" });
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      if (!supabase) {
+        if (alive) setSession({ state: "none" });
+        return;
+      }
+      const { data } = await supabase.auth.getSession();
+      if (!alive) return;
+      const u = data.session?.user;
+      if (!u) {
+        setSession({ state: "none" });
+        return;
+      }
+      // `providers` is what the account was actually created with. Reading it
+      // rather than listing Apple and Google as permanently "Not connected".
+      const raw = (u.app_metadata as { providers?: unknown } | undefined)?.providers;
+      const providers = Array.isArray(raw) ? raw.filter((x): x is string => typeof x === "string") : [];
+      setSession({ state: "in", email: u.email ?? "", providers });
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const signedIn = session.state === "in";
+
   return (
     <SettingsPage title="Account" subtitle="How you sign in, and who ICEFALL thinks you are.">
       <Group label="Sign-in">
-        <InfoRow title="Email" detail="No account is attached to this device." value="Not set" tone="mist" />
+        <InfoRow
+          title="Email"
+          detail={
+            session.state === "loading"
+              ? "Checking…"
+              : signedIn
+                ? "The address this account signs in with."
+                : "No account is attached to this device."
+          }
+          value={session.state === "loading" ? "—" : signedIn ? (session.email || "Set") : "Not set"}
+          tone={signedIn ? undefined : "mist"}
+        />
         <InfoRow title="Phone" detail="Optional, and only ever used for sign-in." value="Not set" tone="mist" />
-        <InfoRow title="Password" detail="Set when you create an account." value="Not set" tone="mist" />
+        <InfoRow
+          title="Password"
+          detail={signedIn ? "Change it from Security." : "Set when you create an account."}
+          value={signedIn ? "Set" : "Not set"}
+          tone={signedIn ? undefined : "mist"}
+        />
       </Group>
 
-      <Group label="Connected accounts">
-        <InfoRow title="Apple" value="Not connected" tone="mist" />
-        <InfoRow title="Google" value="Not connected" tone="mist" />
-      </Group>
+      {/* Only the providers this account actually carries. An unconnected
+          provider is not listed as a row that says "Not connected" forever —
+          that reads as a broken integration rather than a choice not taken. */}
+      {signedIn && session.providers.filter((p) => p !== "email").length > 0 && (
+        <Group label="Connected accounts">
+          {session.providers
+            .filter((p) => p !== "email")
+            .map((p) => (
+              <InfoRow key={p} title={p[0]!.toUpperCase() + p.slice(1)} value="Connected" tone="azure" />
+            ))}
+        </Group>
+      )}
 
       <Group label="Member">
         <ActionRow
@@ -553,28 +629,87 @@ function Account() {
       </Group>
 
       <Rise className="pt-4">
+        {/* This said "there is nothing to sign in to" in the same sentence as
+            "your account is on ICEFALL's server" — it contradicted itself, and
+            the second half stopped being true when auth shipped. */}
         <Disclaimer>
-          ICEFALL has no accounts yet. Everything you have recorded lives on this device, which is
-          also why there is nothing to sign in to and nothing to recover if the device is lost.
+          {signedIn
+            ? "Your account is on ICEFALL's server. Your training is stored on this device only, so it does not move with the account — signing in on a new phone gives you your handle back, not your recorded activities."
+            : "There is no account on this device. Your training is stored here and nowhere else, so nothing is recoverable if the device is lost."}
         </Disclaimer>
       </Rise>
     </SettingsPage>
   );
 }
 
+/**
+ * PH-19b — Security does the one thing it can actually do.
+ *
+ * Every row was `Unavailable` under a blanket `NOT_BUILT`, written when there
+ * were no accounts. **Changing a password is real now**: `sendPasswordReset`
+ * goes through Supabase and emails a link. So it is a control rather than a
+ * label — and the rows that are still genuinely unavailable keep saying so,
+ * because passkeys and 2FA are not built and pretending otherwise here would be
+ * the more expensive lie on a security page.
+ *
+ * "Active sessions: 1" is DELETED rather than corrected. It counted nothing —
+ * it was the literal number 1 — and on a security screen a fabricated session
+ * count is the worst possible figure to invent: someone checking whether they
+ * have been broken into would be reassured by a constant.
+ */
 function Security() {
+  const [sent, setSent] = useState<null | "sending" | "sent" | "signed-out" | "failed">(null);
+  const [email, setEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      const { data } = (await supabase?.auth.getSession()) ?? { data: { session: null } };
+      if (alive) setEmail(data.session?.user.email ?? null);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  async function resetPassword() {
+    if (!email) {
+      setSent("signed-out");
+      return;
+    }
+    setSent("sending");
+    const outcome = await sendPasswordReset(email);
+    setSent(outcome.ok ? "sent" : "failed");
+  }
+
   return (
     <SettingsPage title="Security" subtitle="Passwords, second factors and signed-in devices.">
       <Group label="Sign-in">
-        <InfoRow title="Change password" detail="Available once you have an account." value="Unavailable" tone="mist" />
-        <InfoRow title="Passkeys" detail="Sign in with Face ID or a security key." value="Unavailable" tone="mist" />
-        <InfoRow title="Two-factor authentication" detail="A second step when signing in somewhere new." value="Unavailable" tone="mist" />
-      </Group>
-      <Group label="Devices">
-        <InfoRow title="Active sessions" detail="This device only. Nothing is signed in anywhere else." value="1" />
+        <ActionRow
+          title="Change password"
+          detail={
+            email
+              ? `We email a reset link to ${email}.`
+              : "Sign in first — a reset link needs an address to go to."
+          }
+          value={
+            sent === "sending" ? "Sending…" : sent === "sent" ? "Link sent" : sent === "failed" ? "Failed" : undefined
+          }
+          tone={sent === "sent" ? "azure" : undefined}
+          onClick={() => void resetPassword()}
+          disabled={sent === "sending"}
+        />
+        <InfoRow title="Passkeys" detail="Sign in with Face ID or a security key." value="Not built" tone="mist" />
+        <InfoRow title="Two-factor authentication" detail="A second step when signing in somewhere new." value="Not built" tone="mist" />
       </Group>
       <Rise className="pt-4">
-        <Disclaimer>{NOT_BUILT}</Disclaimer>
+        <Disclaimer>
+          {sent === "sent"
+            ? "A reset link is on its way. It arrives from ICEFALL's sign-in provider and expires — if it does not appear, ask again rather than waiting."
+            : sent === "signed-out"
+              ? "There is no account on this device, so there is no password to change."
+              : "Passkeys and two-factor sign-in are not built. ICEFALL does not list how many devices are signed in, because it does not track them — a count it cannot measure is worth less than nothing on a security page."}
+        </Disclaimer>
       </Rise>
     </SettingsPage>
   );
@@ -612,6 +747,15 @@ function Privacy() {
           value={settings.summitVisibility}
           onChange={(v: Visibility) => patch({ summitVisibility: v })}
         />
+        {/* PH-19c — posts. Its own option set, because a post always has an
+            author and so "private" is not one of its answers. */}
+        <ChoiceRow
+          title="Posts"
+          detail="Who a post you write is for."
+          options={POST_VISIBILITY_OPTIONS}
+          value={settings.postVisibility}
+          onChange={(v: PostVisibility) => patch({ postVisibility: v })}
+        />
       </Group>
 
       <Group label="Being found">
@@ -648,7 +792,22 @@ function Privacy() {
         />
       </Group>
 
+      {/* PH-19c — THE SETTING IS STORED; IT IS NOT YET ENFORCED, AND THAT IS
+          SAID RATHER THAN LEFT TO BE ASSUMED. ICEFALL has no server behind
+          posts, so nothing anybody writes reaches another account at all — a
+          control promising "only my friends can see this" would be describing a
+          restriction on an audience that does not exist. Same shape as the
+          notification preferences, which are stored against the day there is a
+          server to honour them. */}
       <Rise className="pt-4">
+        <Disclaimer>
+          Visibility choices are saved on this device and will be applied when posts can reach other
+          people. Nothing you write is sent anywhere today, so no post has an audience to restrict
+          yet — these settle what happens when one exists, rather than describing what happens now.
+        </Disclaimer>
+      </Rise>
+
+      <Rise className="pt-3">
         <Disclaimer>{LOCATION_NOTICE}</Disclaimer>
       </Rise>
     </SettingsPage>
@@ -906,7 +1065,7 @@ function DataActivity() {
             setDone(true);
           }}
         />
-        <LinkRow to="/activity/history" title="Activity history" detail="Every session you have recorded." />
+        <LinkRow to="/activity" title="Activity history" detail="Every session you have recorded. Only you can see it." />
       </Group>
 
       <Group label="Permissions">
@@ -1147,25 +1306,59 @@ function Notifications() {
 /* Support, legal, about                                                      */
 /* ========================================================================== */
 
+/**
+ * Help & support.
+ *
+ * THREE `mailto:` LINKS CAME OUT OF HERE, AND THE DISCLAIMER THAT EXCUSED THEM.
+ *
+ * The rows opened the device's mail app at `support@icefall.app` (twice) and
+ * `safety@icefall.app` (once). Neither address has a mailbox behind it. The
+ * screen said so — *"There is no support desk behind the addresses yet"* —
+ * which made it honest and useless in the same breath: a climber with a real
+ * problem still composed a message, still pressed send, and it still went
+ * nowhere. Worse than a missing button, because the failure was invisible on
+ * both sides. Nobody could even count the people who tried.
+ *
+ * Every row now opens the real form, which writes a row and hands back a
+ * reference. The type is pre-selected from the row they tapped, because the
+ * distinction between "a person is at risk" and "a button is broken" is worth
+ * keeping even though both reach the same desk — ICEFALL has one desk, and a
+ * second destination would be a second empty mailbox.
+ *
+ * REPORTING A POST OR A PERSON IS NOT HERE. That is moderation
+ * (`src/social/comments.ts`), it is done from the post itself, and it needs
+ * different powers and a different speed than a support queue.
+ */
 function Support() {
   return (
     <SettingsPage title="Help & support" subtitle="Get help or report something.">
       <Group label="Safety first">
-        <ActionRow
+        <LinkRow
           icon={Flag}
           title="Report a safety issue"
           detail="Someone or something putting a person at risk."
-          onClick={() => window.open("mailto:safety@icefall.app?subject=Safety%20issue", "_blank")}
+          to="/settings/contact?type=safety"
         />
       </Group>
       <Group label="Help">
-        <ActionRow icon={LifeBuoy} title="Contact support" detail="A question about your account or the app." onClick={() => window.open("mailto:support@icefall.app", "_blank")} />
-        <ActionRow icon={Flag} title="Report a bug" detail="Something is broken or wrong." onClick={() => window.open("mailto:support@icefall.app?subject=Bug", "_blank")} />
+        <LinkRow
+          icon={LifeBuoy}
+          title="Contact support"
+          detail="A question about your account or the app."
+          to="/settings/contact?type=account"
+        />
+        <LinkRow
+          icon={Flag}
+          title="Report a bug"
+          detail="Something is broken or wrong."
+          to="/settings/contact?type=technical"
+        />
       </Group>
       <Rise className="pt-4">
-        <Disclaimer>
-          These open your mail app. There is no support desk behind the addresses yet.
-        </Disclaimer>
+        <Disclaimer>{SUPPORT_NO_RESPONSE_TIME}</Disclaimer>
+      </Rise>
+      <Rise className="pt-3">
+        <Disclaimer>{SUPPORT_ABUSE_IS_SEPARATE}</Disclaimer>
       </Rise>
     </SettingsPage>
   );

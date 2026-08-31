@@ -1,3 +1,4 @@
+import type { GuideVerificationRecord } from "./verification";
 /**
  * The guide marketplace model.
  *
@@ -47,6 +48,8 @@
 /* -------------------------------------------------------------------------- */
 
 import { SHOW_DEMO_DATA } from "@/lib/demoFlag";
+import { OFFLINE } from "@/offline/offline";
+import { OFFLINE_GUIDES } from "@/offline/fixtures";
 
 export type Speciality =
   | "mountaineering"
@@ -140,6 +143,16 @@ export const CREDENTIAL_CLAIM_NOTICE =
 /* -------------------------------------------------------------------------- */
 
 export interface Guide {
+  /**
+   * ICEFALL's own document check, or absent.
+   *
+   * ABSENT FOR EVERY GUIDE TODAY, and the display derives from it rather than
+   * from a flag — see `guides/verification.ts`. Owner ruling 2026-08-31: what
+   * ICEFALL records is that it READ the certificate, never that an association
+   * confirmed it. Session 03 is building the audited write path; nothing in
+   * this app may set this field.
+   */
+  verification?: GuideVerificationRecord | null;
   id: string;
   name: string;
   headline: string;
@@ -217,7 +230,13 @@ export const NO_GUIDES_NOTICE =
  * which may only be deployed behind Vercel Deployment Protection. Read the
  * conditions in `@/lib/demoFlag` before setting it.
  */
-export const SHOW_DEMO_GUIDES = SHOW_DEMO_DATA;
+/*
+ * An OFFLINE build is a demo build by definition — it carries a permanent
+ * "sample data, not real" banner on every screen — so the demo notice and the
+ * DEMO badge belong on these cards there too. This reads the offline flag; it
+ * does not decide it. See `@/offline/offline`.
+ */
+export const SHOW_DEMO_GUIDES = SHOW_DEMO_DATA || OFFLINE;
 
 export const GUIDE_DEMO_NOTICE =
   "Demonstration data. These guides do not exist: the names were invented for this build, and the qualifications, ascent counts, day rates, availability, ratings and review counts were all made up to show how the marketplace works. Nothing here has been verified, none of them can be contacted, and none of it ships — a production build shows no guides at all.";
@@ -533,6 +552,15 @@ export const DEMO_GUIDES: Guide[] = buildDemoGuides();
  * it. In production this returns `[]` — see `NO_GUIDES_NOTICE`.
  */
 export function allGuides(): Guide[] {
+  /*
+   * The offline build brings its own invented guides. It cannot use
+   * `DEMO_GUIDES`: that array is deliberately compiled out of any built bundle
+   * by the inline env guard above, so an offline BUILD would show an empty
+   * marketplace. The offline set lives in `@/offline/fixtures`, is invented in
+   * exactly the same way, and carries the same `demo: true` badge and the same
+   * disclaimer. Real listings still come first the day there are any.
+   */
+  if (OFFLINE) return [...OFFLINE_GUIDES, ...GUIDES];
   return SHOW_DEMO_GUIDES ? [...DEMO_GUIDES, ...GUIDES] : [...GUIDES];
 }
 

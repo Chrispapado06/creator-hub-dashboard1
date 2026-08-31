@@ -1,5 +1,7 @@
 import { IcefallLockup } from "@/components/ui/IcefallMark";
 import { OfflineIndicator } from "@/components/layout/OfflineIndicator";
+import { OFFLINE } from "@/offline/offline";
+import { OfflineBanner } from "@/offline/OfflineBanner";
 
 /**
  * On a phone the app is full-bleed. On a desktop it sits in a 430 × 884 frame
@@ -38,7 +40,21 @@ export function PhoneShell({ children }: { children: React.ReactNode }) {
         {/* Shows on every screen, including the live tracker — the one place
             you need to know that recording survives a lost signal. */}
         <OfflineIndicator />
-        {children}
+        {/*
+          The offline banner takes the top edge of the frame on every screen.
+          It is in normal flow — a flex child, not an overlay — so it displaces
+          content rather than sitting on top of a screen's own header, and the
+          unchanged branch below renders `children` exactly as before so an
+          ordinary build's DOM is untouched.
+        */}
+        {OFFLINE ? (
+          <>
+            <OfflineBanner />
+            <div className="relative flex min-h-0 flex-1 flex-col">{children}</div>
+          </>
+        ) : (
+          children
+        )}
       </div>
     </div>
   );

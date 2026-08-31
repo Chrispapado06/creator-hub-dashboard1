@@ -1,12 +1,15 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangle, Clock } from "lucide-react";
-import { Avatar, PageHead, Pill, SectionLabel, Stat, StatusChip, TableCard } from "@/components/ui";
+import { Avatar, Button, Card, PageHead, Pill, SectionLabel, Stat, StatusChip, TableCard } from "@/components/ui";
 import { Resolve } from "@/components/states";
-import { listCompanies, listDocuments } from "@/data/queries";
+import {
+  listCompanies, listDocuments, listIdentityChecks, listProfilesBasic,
+  recordIdentityCheck, revokeIdentityCheck,
+} from "@/data/queries";
 import { loading, type Result } from "@/data/result";
-import type { Company, VerificationDocument } from "@/data/types";
-import { daysUntil, formatDay } from "@/lib/utils";
+import type { Company, IdentityCheck, VerificationDocument } from "@/data/types";
+import { daysUntil, formatDay, formatMoment } from "@/lib/utils";
 
 /**
  * The documents companies and guides have sent ICEFALL, and what ICEFALL did
@@ -28,9 +31,13 @@ import { daysUntil, formatDay } from "@/lib/utils";
  * none rather than quietly dropping them.
  *
  * A GUIDE'S DOCUMENTS CAN BE CHECKED WHILE THE GUIDE IS NOT VERIFIED. Those are
- * different claims and the schema keeps them apart: `credentials_verified` is
- * constrained to false for every guide because ICEFALL verifies no guide
- * credential at all yet. This screen must never let the first read as the second.
+ * different claims and the schema keeps them apart — since 20260831120000 by a
+ * DERIVED state (`guide_credentials_state`: unchecked/checked/expired, expiry
+ * revoking the claim automatically) written only through the audited
+ * operations-desk function. The distinction OUTLIVES the old pin: "checked"
+ * means ICEFALL read the papers on a named date; it never means the issuing
+ * federation confirmed anything, and this screen must never let the first read
+ * as the second.
  *
  * Nothing here writes. There is no audited function for deciding a document, so
  * the page flags and counts; a person acts, somewhere else.
@@ -217,6 +224,194 @@ function DocumentSection({
   );
 }
 
+/**
+ * The GREY mark — identity — managed as its own fact, never merged with gold.
+ *
+ * OWNER RULING (the three marks): GOLD is credentials checked by ICEFALL
+ * (guides only, the flow above), GREY is identity verified ("this person is
+ * who they say", nothing more), BLUE is paid membership (a billing fact,
+ * elsewhere). Three different claims, three different marks, and none may
+ * borrow another's colour — on a platform where a badge may read as
+ * "qualified to lead me up a mountain", paid membership and safety-relevant
+ * verification cannot share a symbol.
+ *
+ * The mark is DERIVED from the record (identity_verified()), never stored;
+ * identity has NO EXPIRY, deliberately — established-or-not, unlike a
+ * credential that lapses with its insurance. Recording and revoking go
+ * through the audited operations-desk functions; the table itself refuses
+ * direct writes, staff included.
+ */
+function IdentitySection() {
+  const [checks, setChecks] = useState<Result<IdentityCheck[]>>(loading);
+  const [people, setPeople] = useState<Result<{ id: string; display_name: string; role: string }[]>>(loading);
+  const [who, setWho] = useState("");
+  const [docRef, setDocRef] = useState("");
+  const [revoking, setRevoking] = useState<string | null>(null);
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const refresh = useCallback(() => {
+    void listIdentityChecks().then(setChecks);
+    void listProfilesBasic().then(setPeople);
+  }, []);
+  useEffect(refresh, [refresh]);
+
+  const nameOf = useMemo(() => {
+    const m = new Map<string, string>();
+    if (people.state === "ok") for (const p of people.value) m.set(p.id, p.display_name);
+    return (id: string | null) => (id ? (m.get(id) ?? id.slice(0, 8)) : "not recorded");
+  }, [people]);
+
+  const act = async (fn: () => Promise<Result<null>>) => {
+    setBusy(true);
+    setErr(null);
+    const r = await fn();
+    setBusy(false);
+    if (r.state !== "ok") setErr(r.state === "error" ? r.reason : "No database is configured.");
+    else {
+      setWho(""); setDocRef(""); setRevoking(null); setReason("");
+    }
+    refresh();
+  };
+
+  return (
+    <div className="mt-6">
+      <SectionLabel>Identity checks — the grey mark</SectionLabel>
+      <p className="mt-1.5 max-w-3xl text-[12.5px] leading-relaxed text-muted">
+        A separate claim from everything above: ICEFALL confirmed the person is who they say — nothing
+        about qualifications, nothing about membership. The mark is derived from this record and dies
+        with its revocation; it never expires, because identity is established or it is not. Recorded by
+        the operations desk, in their own name, against a stated document reference.
+      </p>
+      {err && <p className="mt-2 text-[12.5px] text-bad">{err}</p>}
+
+      <div className="mt-2.5">
+        {checks.state === "loading" ? (
+          <Card><p className="text-[12.5px] text-faint">Reading identity checks…</p></Card>
+        ) : checks.state !== "ok" ? (
+          <Card>
+            <p className="text-[12.5px] leading-relaxed text-bad">
+              Identity checks could not be read: {"reason" in checks ? checks.reason : ""}
+            </p>
+            <p className="mt-1 text-[12px] text-faint">
+              If this says the table does not exist, the identity migration has not been pushed yet.
+            </p>
+          </Card>
+        ) : checks.value.length === 0 ? (
+          <Card>
+            <p className="text-[12.5px] text-faint">
+              No identity has been checked yet. The first record appears here the moment the operations
+              desk verifies one — and only then does anyone's grey mark exist.
+            </p>
+          </Card>
+        ) : (
+          <TableCard>
+            <table className="w-full text-[13px]">
+              <thead>
+                <tr className="border-b border-line-soft text-left">
+                  <th className={HEAD}>Person</th>
+                  <th className={HEAD}>Document reference</th>
+                  <th className={HEAD}>Checked by</th>
+                  <th className={HEAD}>On</th>
+                  <th className={HEAD}>Mark</th>
+                  <th className={HEAD}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {checks.value.map((c) => (
+                  <tr key={c.profile_id} className="border-b border-line-soft last:border-0">
+                    <td className="px-5 py-3.5">
+                      <span className="flex items-center gap-3"><Avatar name={nameOf(c.profile_id)} size={34} />
+                        <span className="font-medium text-ink">{nameOf(c.profile_id)}</span></span>
+                    </td>
+                    <td className="px-5 py-3.5 text-muted">{c.document_ref}</td>
+                    <td className="px-5 py-3.5 text-muted">{nameOf(c.checked_by)}</td>
+                    <td className="tnum whitespace-nowrap px-5 py-3.5 text-muted">{formatMoment(c.checked_at)}</td>
+                    <td className="px-5 py-3.5">
+                      {c.revoked_at === null ? (
+                        // Grey, deliberately: this mark never borrows gold.
+                        <Pill tone="neutral">identity established</Pill>
+                      ) : (
+                        <span>
+                          <Pill tone="red">revoked</Pill>
+                          <span className="mt-0.5 block text-[11.5px] text-faint">{c.revoke_reason}</span>
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3.5 text-right">
+                      {c.revoked_at === null && (
+                        revoking === c.profile_id ? (
+                          <span className="flex items-center justify-end gap-2">
+                            <input
+                              value={reason}
+                              onChange={(e) => setReason(e.target.value)}
+                              placeholder="Why — required, audited"
+                              className="h-8 w-52 rounded-tile border border-line bg-surface px-2.5 text-[12px] outline-none focus:border-accent"
+                            />
+                            <Button size="sm" variant="secondary" disabled={busy || reason.trim().length < 3}
+                              onClick={() => void act(() => revokeIdentityCheck(c.profile_id, reason))}>
+                              Confirm
+                            </Button>
+                            <Button size="sm" variant="secondary" disabled={busy} onClick={() => { setRevoking(null); setReason(""); }}>
+                              Cancel
+                            </Button>
+                          </span>
+                        ) : (
+                          <Button size="sm" variant="secondary" disabled={busy} onClick={() => setRevoking(c.profile_id)}>
+                            Revoke
+                          </Button>
+                        )
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableCard>
+        )}
+      </div>
+
+      {/* Recording — the operations desk's own act, in their own name. The
+          database refuses anyone else, so this form failing for a non-ops
+          reader is the system working, and the error says so in its words. */}
+      <Card className="mt-3">
+        <p className="text-[12.5px] font-semibold text-ink">Record an identity check</p>
+        <p className="mt-0.5 text-[12px] leading-relaxed text-faint">
+          State what was seen as a reference ("passport, CY, ending 483") — never store the document
+          itself. Re-checking a revoked or already-checked person replaces the record and clears any
+          revocation; the audit trail keeps the history.
+        </p>
+        <div className="mt-2.5 flex flex-wrap items-center gap-2">
+          <select
+            value={who}
+            onChange={(e) => setWho(e.target.value)}
+            className="h-10 min-w-[220px] rounded-tile border border-line bg-surface px-3 text-[12.5px] text-ink outline-none"
+          >
+            <option value="">Choose a person…</option>
+            {people.state === "ok" && people.value.map((p) => (
+              <option key={p.id} value={p.id}>{p.display_name} ({p.role})</option>
+            ))}
+          </select>
+          <input
+            value={docRef}
+            onChange={(e) => setDocRef(e.target.value)}
+            placeholder="Document reference"
+            className="h-10 min-w-[260px] flex-1 rounded-tile border border-line bg-surface px-3 text-[12.5px] text-ink outline-none placeholder:text-faint focus:border-accent"
+          />
+          <Button
+            variant="secondary"
+            disabled={busy || who === "" || docRef.trim().length < 3}
+            onClick={() => void act(() => recordIdentityCheck(who, docRef))}
+          >
+            Record check
+          </Button>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 export default function Verification() {
   const [documents, setDocuments] = useState<Result<VerificationDocument[]>>(loading);
   const [companies, setCompanies] = useState<Result<Company[]>>(loading);
@@ -336,10 +531,12 @@ export default function Verification() {
       <div className="mt-6">
         <SectionLabel>Guide documents checked by ICEFALL</SectionLabel>
         <p className="mt-1.5 max-w-3xl text-[12.5px] leading-relaxed text-muted">
-          ICEFALL verifies no guide credential. The database constrains that flag to false for every guide, so a
-          guide's documents can be checked here while the guide remains unverified — a checked carnet means a
-          member of staff read it, not that the awarding association confirmed it holds good. The two statements
-          are kept apart on purpose, and neither this page nor the guide record may collapse them into one.
+          A checked carnet means a member of staff read it on a named date — not that the awarding
+          association confirmed it holds good; ICEFALL has no channel to any association. Since
+          20260831120000 the guide's credential state is DERIVED from the check record and its expiry
+          (unchecked / checked / expired) — a stored "verified" that could outlive its evidence no longer
+          exists anywhere. The two statements stay apart on purpose, and neither this page nor the guide
+          record may collapse them into one.
         </p>
         <div className="mt-2.5">
           <DocumentSection
@@ -351,6 +548,8 @@ export default function Verification() {
           />
         </div>
       </div>
+
+      <IdentitySection />
     </>
   );
 }

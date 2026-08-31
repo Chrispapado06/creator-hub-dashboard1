@@ -1,0 +1,698 @@
+{%- liquid
+  assign accent = block.settings.accent_color.rgb | default: '168 131 74'
+  assign overlay = block.settings.overlay_opacity | divided_by: 100.0
+  assign bid = block.id
+-%}
+
+<div
+  id="tif-countdown-{{ bid }}"
+  class="tif-countdown{% if block.settings.background_image != blank %} tif-countdown--image{% endif %}"
+  data-target="{{ block.settings.target_date }}"
+  data-redirect="{% if block.settings.redirect_on_zero %}true{% else %}false{% endif %}"
+  style="--tif-accent: {{ accent }}; --tif-overlay: {{ overlay }};"
+  {{ block.shopify_attributes }}
+>
+  {%- if block.settings.background_image != blank -%}
+    <div
+      class="tif-countdown__bg"
+      style="background-image: url({{ block.settings.background_image | image_url: width: 2600 }});"
+    ></div>
+    <div class="tif-countdown__scrim"></div>
+  {%- elsif block.settings.show_mountains -%}
+    <svg class="tif-mtn" viewBox="0 0 1440 500" preserveAspectRatio="xMidYMax slice" aria-hidden="true" focusable="false">
+      <defs>
+        <linearGradient id="tif-g-back-{{ bid }}" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#ffffff"></stop>
+          <stop offset="1" stop-color="#dbe4ec"></stop>
+        </linearGradient>
+        <linearGradient id="tif-g-mid-{{ bid }}" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#ffffff"></stop>
+          <stop offset="1" stop-color="#bccbd6"></stop>
+        </linearGradient>
+        <linearGradient id="tif-g-front-{{ bid }}" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#ffffff"></stop>
+          <stop offset="0.5" stop-color="#d6e2ea"></stop>
+          <stop offset="1" stop-color="#9cb0bd"></stop>
+        </linearGradient>
+      </defs>
+      <path fill="url(#tif-g-back-{{ bid }})" stroke="#ffffff" stroke-width="2" stroke-linejoin="round"
+        d="M0,300 L160,150 L300,240 L440,120 L600,250 L760,160 L920,258 L1080,140 L1240,240 L1440,180 L1440,500 L0,500 Z"></path>
+      <path fill="url(#tif-g-mid-{{ bid }})" stroke="#ffffff" stroke-width="2.5" stroke-linejoin="round"
+        d="M0,360 L200,240 L360,330 L520,220 L700,342 L880,250 L1060,350 L1240,240 L1440,332 L1440,500 L0,500 Z"></path>
+      <path fill="url(#tif-g-front-{{ bid }})" stroke="#ffffff" stroke-width="3" stroke-linejoin="round"
+        d="M0,442 L240,320 L470,432 L680,300 L900,424 L1140,318 L1360,432 L1440,382 L1440,500 L0,500 Z"></path>
+    </svg>
+    <div class="tif-haze" aria-hidden="true"></div>
+  {%- endif -%}
+
+  {%- if block.settings.show_snow -%}
+    <canvas class="tif-snow" data-snow aria-hidden="true"></canvas>
+  {%- endif -%}
+
+  <div class="tif-countdown__inner">
+    {%- if block.settings.eyebrow != blank -%}
+      <p class="tif-countdown__eyebrow">{{ block.settings.eyebrow }}</p>
+    {%- endif -%}
+
+    <span class="tif-countdown__rule" aria-hidden="true"></span>
+
+    {%- if block.settings.heading != blank -%}
+      <h1 class="tif-countdown__heading">{{ block.settings.heading }}</h1>
+    {%- endif -%}
+
+    {%- if block.settings.subheading != blank -%}
+      <div class="tif-countdown__sub">{{ block.settings.subheading }}</div>
+    {%- endif -%}
+
+    <div class="tif-countdown__timer" data-timer role="timer" aria-label="Time until launch">
+      <div class="tif-unit">
+        <span class="tif-num" data-days>00</span>
+        <span class="tif-lbl">Days</span>
+      </div>
+      <div class="tif-unit">
+        <span class="tif-num" data-hours>00</span>
+        <span class="tif-lbl">Hours</span>
+      </div>
+      <div class="tif-unit">
+        <span class="tif-num" data-mins>00</span>
+        <span class="tif-lbl">Minutes</span>
+      </div>
+      <div class="tif-unit">
+        <span class="tif-num" data-secs>00</span>
+        <span class="tif-lbl">Seconds</span>
+      </div>
+    </div>
+
+    <div class="tif-countdown__live" data-live hidden>
+      {%- if block.settings.expired_heading != blank -%}
+        <p class="tif-countdown__live-text">{{ block.settings.expired_heading }}</p>
+      {%- endif -%}
+      <a class="tif-countdown__btn" href="{{ routes.root_url }}">
+        {{ block.settings.expired_button }}
+      </a>
+    </div>
+
+    {%- if block.settings.show_notify -%}
+      <div class="tif-countdown__notify" data-notify>
+        {%- if block.settings.notify_heading != blank -%}
+          <p class="tif-countdown__notify-heading">{{ block.settings.notify_heading }}</p>
+        {%- endif -%}
+        {%- form 'customer', class: 'tif-notify-form' -%}
+          <input type="hidden" name="contact[tags]" value="coming-soon, launch-notify">
+          {%- if form.posted_successfully? -%}
+            <p class="tif-countdown__notify-success">{{ block.settings.notify_success }}</p>
+          {%- else -%}
+            <div class="tif-notify-group">
+              <label class="visually-hidden" for="tif-email-{{ bid }}">Email</label>
+              <input
+                id="tif-email-{{ bid }}"
+                class="tif-notify-input"
+                type="email"
+                name="contact[email]"
+                value="{{ form.email }}"
+                placeholder="{{ block.settings.notify_placeholder }}"
+                autocomplete="email"
+                autocorrect="off"
+                autocapitalize="off"
+                required
+              >
+              <button type="submit" class="tif-notify-btn">{{ block.settings.notify_button }}</button>
+            </div>
+            {%- if form.errors -%}
+              <p class="tif-countdown__notify-error">{{ form.errors | default_errors }}</p>
+            {%- endif -%}
+          {%- endif -%}
+        {%- endform -%}
+      </div>
+    {%- endif -%}
+
+    {%- if block.settings.show_password_link -%}
+      <button type="button" class="tif-countdown__pw" on:click="#password-form/showDialog">
+        {{ block.settings.password_link_text }}
+      </button>
+    {%- endif -%}
+  </div>
+</div>
+
+<script>
+  (function () {
+    var root = document.getElementById('tif-countdown-{{ bid }}');
+    if (!root) return;
+    if (root.__tifTimer) clearInterval(root.__tifTimer);
+
+    /* ---------------- Countdown ---------------- */
+    var target = new Date((root.getAttribute('data-target') || '').trim()).getTime();
+    var doRedirect = root.getAttribute('data-redirect') === 'true';
+    var designMode = !!(window.Shopify && window.Shopify.designMode);
+
+    var timerEl = root.querySelector('[data-timer]');
+    var liveEl = root.querySelector('[data-live]');
+    var dEl = root.querySelector('[data-days]');
+    var hEl = root.querySelector('[data-hours]');
+    var mEl = root.querySelector('[data-mins]');
+    var sEl = root.querySelector('[data-secs]');
+
+    function pad(n) { return (n < 10 ? '0' : '') + n; }
+
+    function expired() {
+      if (root.__tifTimer) clearInterval(root.__tifTimer);
+      if (timerEl) timerEl.hidden = true;
+      if (liveEl) liveEl.hidden = false;
+      // Auto-redirect into the store once the timer ends. Guarded so that if the
+      // storefront is still password-protected (redirect lands back here) we don't loop.
+      if (doRedirect && !designMode) {
+        var already;
+        try { already = sessionStorage.getItem('tif_live_redirect'); } catch (e) {}
+        if (!already) {
+          try { sessionStorage.setItem('tif_live_redirect', '1'); } catch (e) {}
+          setTimeout(function () { window.location.href = '{{ routes.root_url }}'; }, 1500);
+        }
+      }
+    }
+
+    function tick() {
+      if (isNaN(target)) { if (timerEl) timerEl.hidden = true; return; }
+      var diff = target - Date.now();
+      if (diff <= 0) { expired(); return; }
+      var s = Math.floor(diff / 1000);
+      var days = Math.floor(s / 86400); s -= days * 86400;
+      var hrs = Math.floor(s / 3600); s -= hrs * 3600;
+      var mins = Math.floor(s / 60); s -= mins * 60;
+      if (dEl) dEl.textContent = pad(days);
+      if (hEl) hEl.textContent = pad(hrs);
+      if (mEl) mEl.textContent = pad(mins);
+      if (sEl) sEl.textContent = pad(s);
+    }
+
+    tick();
+    root.__tifTimer = setInterval(tick, 1000);
+
+    /* ---------------- Wind-blown snow ---------------- */
+    var canvas = root.querySelector('[data-snow]');
+    if (canvas && canvas.getContext) {
+      var reduced = false;
+      try { reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
+      var ctx = canvas.getContext('2d');
+      var dpr = Math.min(window.devicePixelRatio || 1, 2);
+      var w = 0, h = 0, flakes = [], wind = 0, windTarget = 0, frameNo = 0, raf = null;
+
+      function makeFlake(spread) {
+        return {
+          x: Math.random() * w,
+          y: spread ? Math.random() * h : -8,
+          r: 0.8 + Math.random() * 2.6,
+          vy: 0.35 + Math.random() * 1.1,
+          sway: Math.random() * 6.283,
+          swaySpeed: 0.004 + Math.random() * 0.012,
+          swayAmp: 0.25 + Math.random() * 0.85,
+          o: 0.4 + Math.random() * 0.5
+        };
+      }
+
+      function resize() {
+        w = canvas.clientWidth; h = canvas.clientHeight;
+        if (!w || !h) return;
+        canvas.width = Math.round(w * dpr);
+        canvas.height = Math.round(h * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        var count = Math.max(45, Math.min(120, Math.round(w / 13)));
+        flakes = [];
+        for (var i = 0; i < count; i++) flakes.push(makeFlake(true));
+      }
+
+      function paint() {
+        ctx.clearRect(0, 0, w, h);
+        ctx.save();
+        ctx.shadowColor = 'rgba(74,100,126,0.5)';
+        ctx.shadowBlur = 2.5;
+        ctx.fillStyle = '#ffffff';
+        for (var i = 0; i < flakes.length; i++) {
+          var f = flakes[i];
+          ctx.globalAlpha = f.o;
+          ctx.beginPath();
+          ctx.arc(f.x, f.y, f.r, 0, 6.283);
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+
+      function frame() {
+        frameNo++;
+        if (frameNo % 110 === 0) windTarget = (Math.random() * 2 - 1) * 0.95; // new gust
+        wind += (windTarget - wind) * 0.01;
+        for (var i = 0; i < flakes.length; i++) {
+          var f = flakes[i];
+          f.sway += f.swaySpeed;
+          f.x += wind * (f.r * 0.6) + Math.sin(f.sway) * f.swayAmp;
+          f.y += f.vy;
+          if (f.y - f.r > h) { f.y = -f.r; f.x = Math.random() * w; }
+          if (f.x > w + 20) f.x = -20; else if (f.x < -20) f.x = w + 20;
+        }
+        paint();
+        raf = requestAnimationFrame(frame);
+      }
+
+      resize();
+      var rt;
+      window.addEventListener('resize', function () {
+        clearTimeout(rt); rt = setTimeout(resize, 150);
+      });
+
+      if (reduced) {
+        paint(); // static field, no motion
+      } else {
+        raf = requestAnimationFrame(frame);
+      }
+    }
+  })();
+</script>
+
+{% stylesheet %}
+  .tif-countdown {
+    position: relative;
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 100dvh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    overflow: hidden;
+    padding: clamp(2.5rem, 6vw, 4.5rem) 1.25rem;
+    color: #1a232c;
+    background: linear-gradient(180deg, #f3f8fb 0%, #e6eef4 46%, #d4e0e8 100%);
+  }
+
+  .tif-mtn {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    width: 100%;
+    height: min(62%, 560px);
+    z-index: 0;
+  }
+
+  .tif-haze {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    background: linear-gradient(180deg, transparent 58%, rgb(243 248 251 / 0.78) 100%);
+  }
+
+  .tif-snow {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 2;
+    pointer-events: none;
+  }
+
+  /* Optional background photo (overrides the snowy mountains) */
+  .tif-countdown__bg {
+    position: absolute;
+    inset: 0;
+    background-size: cover;
+    background-position: center;
+    z-index: 0;
+  }
+
+  .tif-countdown__scrim {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    background: linear-gradient(180deg, rgb(255 255 255 / 0.35) 0%, rgb(255 255 255 / var(--tif-overlay)) 60%, rgb(243 248 251 / 0.92) 100%);
+  }
+
+  .tif-countdown__inner {
+    position: relative;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: clamp(1rem, 2.4vw, 1.5rem);
+    max-width: 780px;
+  }
+
+  .tif-countdown__eyebrow {
+    margin: 0;
+    font-family: var(--font-body--family, 'Inter', sans-serif);
+    font-weight: 600;
+    font-size: clamp(0.72rem, 1.6vw, 0.85rem);
+    letter-spacing: 0.38em;
+    text-transform: uppercase;
+    color: rgb(var(--tif-accent));
+    padding-left: 0.38em;
+  }
+
+  .tif-countdown__rule {
+    display: block;
+    width: 44px;
+    height: 2px;
+    background: rgb(var(--tif-accent));
+    opacity: 0.9;
+  }
+
+  .tif-countdown__heading {
+    margin: 0;
+    font-family: var(--font-heading--family, 'Barlow Condensed', sans-serif);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    line-height: 0.95;
+    font-size: clamp(2.6rem, 8vw, 5.5rem);
+    color: #17222c;
+  }
+
+  .tif-countdown__sub {
+    margin: 0;
+    max-width: 46ch;
+    font-family: var(--font-body--family, 'Inter', sans-serif);
+    font-size: clamp(0.98rem, 2.2vw, 1.16rem);
+    line-height: 1.55;
+    color: rgb(38 52 63 / 0.82);
+  }
+
+  .tif-countdown__sub p { margin: 0; }
+
+  /* Keep the HTML `hidden` attribute authoritative over the display rules below. */
+  .tif-countdown__timer[hidden],
+  .tif-countdown__live[hidden] { display: none; }
+
+  .tif-countdown__timer {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: clamp(0.9rem, 4vw, 2.75rem);
+    margin-top: clamp(0.75rem, 2vw, 1.5rem);
+  }
+
+  .tif-unit {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: clamp(3.4rem, 12vw, 5.5rem);
+  }
+
+  .tif-num {
+    font-family: var(--font-heading--family, 'Barlow Condensed', sans-serif);
+    font-weight: 600;
+    font-size: clamp(2.4rem, 9vw, 5rem);
+    line-height: 1;
+    color: #17222c;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
+    padding-bottom: clamp(0.4rem, 1.2vw, 0.7rem);
+    border-bottom: 1px solid rgb(var(--tif-accent) / 0.55);
+  }
+
+  .tif-lbl {
+    margin-top: 0.7rem;
+    font-family: var(--font-body--family, 'Inter', sans-serif);
+    font-size: clamp(0.6rem, 1.4vw, 0.72rem);
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: rgb(38 52 63 / 0.6);
+  }
+
+  .tif-countdown__live {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.5rem;
+    margin-top: 0.5rem;
+  }
+
+  .tif-countdown__live-text {
+    margin: 0;
+    font-family: var(--font-heading--family, 'Barlow Condensed', sans-serif);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    font-size: clamp(2.2rem, 7vw, 4rem);
+    color: #17222c;
+  }
+
+  .tif-countdown__btn,
+  .tif-notify-btn {
+    display: inline-block;
+    background: rgb(var(--tif-accent));
+    color: #1c1406;
+    font-family: var(--font-body--family, 'Inter', sans-serif);
+    font-weight: 600;
+    font-size: 0.86rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    text-decoration: none;
+    padding: 0.95rem 2rem;
+    border: 1px solid rgb(var(--tif-accent));
+    cursor: pointer;
+    transition: background-color 0.2s ease, color 0.2s ease, opacity 0.2s ease;
+  }
+
+  .tif-countdown__btn:hover,
+  .tif-notify-btn:hover {
+    background: transparent;
+    color: rgb(var(--tif-accent));
+  }
+
+  .tif-countdown__notify {
+    margin-top: clamp(1rem, 3vw, 2rem);
+    width: 100%;
+    max-width: 460px;
+  }
+
+  .tif-countdown__notify-heading {
+    margin: 0 0 0.85rem;
+    font-family: var(--font-body--family, 'Inter', sans-serif);
+    font-size: 0.78rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: rgb(38 52 63 / 0.66);
+  }
+
+  .tif-notify-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    justify-content: center;
+  }
+
+  .tif-notify-input {
+    flex: 1 1 220px;
+    min-width: 0;
+    background: #ffffff;
+    border: 1px solid #c4d0d8;
+    color: #17222c;
+    font-family: var(--font-body--family, 'Inter', sans-serif);
+    font-size: 0.95rem;
+    padding: 0.9rem 1rem;
+    outline: none;
+    transition: border-color 0.2s ease;
+  }
+
+  .tif-notify-input::placeholder { color: #93a1ab; }
+  .tif-notify-input:focus { border-color: rgb(var(--tif-accent)); }
+
+  .tif-notify-btn { flex: 0 0 auto; }
+
+  .tif-countdown__notify-success {
+    margin: 0;
+    font-family: var(--font-body--family, 'Inter', sans-serif);
+    font-size: 1rem;
+    color: rgb(var(--tif-accent));
+  }
+
+  .tif-countdown__notify-error {
+    margin: 0.6rem 0 0;
+    font-family: var(--font-body--family, 'Inter', sans-serif);
+    font-size: 0.85rem;
+    color: #b4534f;
+  }
+
+  .tif-countdown__pw {
+    margin-top: clamp(0.75rem, 2vw, 1.25rem);
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: var(--font-body--family, 'Inter', sans-serif);
+    font-size: 0.72rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: rgb(38 52 63 / 0.55);
+    text-decoration: underline;
+    text-underline-offset: 4px;
+    transition: color 0.2s ease;
+  }
+
+  .tif-countdown__pw:hover { color: rgb(var(--tif-accent)); }
+
+  @media screen and (max-width: 480px) {
+    .tif-countdown__timer { gap: 0.75rem 1.4rem; }
+    .tif-unit { min-width: 3.2rem; }
+    .tif-mtn { height: min(48%, 360px); }
+  }
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Countdown",
+  "tag": null,
+  "settings": [
+    {
+      "type": "header",
+      "content": "Countdown"
+    },
+    {
+      "type": "text",
+      "id": "target_date",
+      "label": "Launch date & time",
+      "default": "2026-09-02T00:00:00+03:00",
+      "info": "ISO format with timezone offset. Cyprus is +03:00 in summer (EEST). Example: 2026-09-02T00:00:00+03:00 = midnight, Sep 2, 2026 Cyprus time."
+    },
+    {
+      "type": "checkbox",
+      "id": "redirect_on_zero",
+      "label": "Redirect into store when timer ends",
+      "default": true,
+      "info": "Only lets visitors in once you turn OFF password protection in Online Store → Preferences. Until then they stay on this page."
+    },
+    {
+      "type": "header",
+      "content": "Content"
+    },
+    {
+      "type": "text",
+      "id": "eyebrow",
+      "label": "Eyebrow / wordmark",
+      "default": "THEICEFALL"
+    },
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Heading",
+      "default": "The Ascent Begins"
+    },
+    {
+      "type": "richtext",
+      "id": "subheading",
+      "label": "Subheading",
+      "default": "<p>A new collection is coming. Sign up below to be first to the summit.</p>"
+    },
+    {
+      "type": "header",
+      "content": "When the timer ends"
+    },
+    {
+      "type": "text",
+      "id": "expired_heading",
+      "label": "Launch heading",
+      "default": "We’re Live"
+    },
+    {
+      "type": "text",
+      "id": "expired_button",
+      "label": "Button label",
+      "default": "Enter Site"
+    },
+    {
+      "type": "header",
+      "content": "Email capture"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_notify",
+      "label": "Show “notify me” email signup",
+      "default": true
+    },
+    {
+      "type": "text",
+      "id": "notify_heading",
+      "label": "Email heading",
+      "default": "Be first to the summit"
+    },
+    {
+      "type": "text",
+      "id": "notify_placeholder",
+      "label": "Input placeholder",
+      "default": "Enter your email"
+    },
+    {
+      "type": "text",
+      "id": "notify_button",
+      "label": "Button label",
+      "default": "Notify Me"
+    },
+    {
+      "type": "text",
+      "id": "notify_success",
+      "label": "Success message",
+      "default": "You’re on the list. See you at the summit."
+    },
+    {
+      "type": "header",
+      "content": "Store password link"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_password_link",
+      "label": "Show “enter with password” link",
+      "default": true,
+      "info": "Opens the store-password dialog so you or early-access visitors can preview the store."
+    },
+    {
+      "type": "text",
+      "id": "password_link_text",
+      "label": "Link text",
+      "default": "Enter with password"
+    },
+    {
+      "type": "header",
+      "content": "Scene"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_mountains",
+      "label": "Show snow-capped mountains",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "show_snow",
+      "label": "Show falling snow",
+      "default": true,
+      "info": "Wind-blown snow animation. Automatically pauses for visitors who prefer reduced motion."
+    },
+    {
+      "type": "color",
+      "id": "accent_color",
+      "label": "Accent color",
+      "default": "#a8834a"
+    },
+    {
+      "type": "image_picker",
+      "id": "background_image",
+      "label": "Background image",
+      "info": "Optional. Overrides the illustrated mountains with your own photo. Leave empty for the snowy scene."
+    },
+    {
+      "type": "range",
+      "id": "overlay_opacity",
+      "label": "Image brightness overlay",
+      "min": 0,
+      "max": 100,
+      "step": 5,
+      "unit": "%",
+      "default": 45,
+      "visible_if": "{{ block.settings.background_image != blank }}"
+    }
+  ],
+  "presets": [
+    {
+      "name": "Countdown",
+      "category": "Basic"
+    }
+  ]
+}
+{% endschema %}

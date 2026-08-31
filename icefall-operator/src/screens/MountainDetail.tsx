@@ -143,32 +143,44 @@ export default function MountainDetail() {
         <div>
           {tab === "info" ? (
             <Card className="p-4">
-              <h2 className="text-[13.5px] font-semibold text-ink">Mountain information</h2>
+              <h2 className="text-[13.5px] font-semibold text-ink">Your content on this mountain</h2>
+              {/*
+               * THIS PANEL USED TO LIE, and it is worth recording how.
+               *
+               * It listed three rows — Overview, Route & season, Permits &
+               * regulations — each wearing a PUBLISHED chip, above an "Edit
+               * mountain info" button with no handler. None of that content
+               * exists: `CompanyMountain` carries permission and nothing else,
+               * by design. So the screen told an operator that climbers were
+               * reading three pieces of writing they had never written, and
+               * offered a button that did nothing when they went to change it.
+               *
+               * The same defect decision 14 caught in the company film row: a
+               * section invented to fill a layout, wearing a status that made
+               * the invention look measured. Replaced with what is true.
+               */}
               <p className="mt-1 text-[12.5px] leading-relaxed text-muted">
-                Information about how your company operates on this mountain. Icefall reviews changes before
-                climbers see them.
+                Icefall does not yet store anything you write about a specific mountain. What a climber
+                sees on this peak is drawn from your company profile and from each trip you publish here.
               </p>
-              <dl className="mt-4 space-y-3">
-                {[
-                  ["Overview", "Your company's summary for this mountain"],
-                  ["Route & season", "Which routes you run and when"],
-                  ["Permits & regulations", "What you handle on the climber's behalf"],
-                ].map(([label, detail]) => (
-                  <div key={label} className="flex items-start justify-between gap-4 border-b border-line-soft pb-3">
-                    <div>
-                      <dt className="text-[12.5px] font-medium text-ink">{label}</dt>
-                      <dd className="mt-0.5 text-[11.5px] text-muted">{detail}</dd>
-                    </div>
-                    <StatusChip status="live" />
-                  </div>
-                ))}
-              </dl>
+              <div className="mt-3.5">
+                <Notice tone="neutral">
+                  A pitch for this mountain, and a promotional film for it, are with Icefall as a request.
+                  Until they exist there is nothing to write here — and nothing has been published on your
+                  behalf.
+                </Notice>
+              </div>
               <div className="mt-4">
                 {editable && can(session, "editProducts") ? (
-                  <Button variant="primary">Edit mountain info</Button>
+                  <Link
+                    to={`/operator/mountains/${mountain.id}/edit`}
+                    className="inline-flex items-center gap-1.5 rounded-tile bg-azure px-3 py-1.5 text-[13px] font-medium text-canvas transition-colors hover:bg-azure-ink"
+                  >
+                    See how you appear on this mountain
+                  </Link>
                 ) : (
                   <LockedNotice>
-                    Editing is paused for this mountain, so its content cannot be changed.
+                    Icefall has paused this mountain for your company, so nothing here can be changed.
                   </LockedNotice>
                 )}
               </div>
@@ -186,11 +198,17 @@ export default function MountainDetail() {
                   </p>
                 </div>
                 {editable && can(session, "editProducts") && (
-                  <Link to="/operator/products/new">
-                    <Button variant="primary">
-                      <Plus size={13} aria-hidden /> Add
-                    </Button>
-                  </Link>
+                  <div className="flex items-center gap-2">
+                    {/* Where the block a climber actually sees is explained. */}
+                    <Link to={`/operator/mountains/${id}/edit`}>
+                      <Button>How you appear</Button>
+                    </Link>
+                    <Link to="/operator/products/new">
+                      <Button variant="primary">
+                        <Plus size={13} aria-hidden /> Add
+                      </Button>
+                    </Link>
+                  </div>
                 )}
               </div>
               {shown.length === 0 ? (

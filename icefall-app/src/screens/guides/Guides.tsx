@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { Link } from "react-router-dom";
-import {
+import { ChevronDown,
   CalendarDays,
   ChevronRight,
   Minus,
@@ -30,7 +30,13 @@ import {
   allGuides,
   type Speciality,
 } from "@/guides/types";
-import { DemoGuidesNotice, GuideRow, GuideVsCompany, SpecialityGrid } from "./shared";
+import { AvailabilityCalendar } from "./AvailabilityCalendar";
+import {
+  GuideCardTall,
+  GuideRow,
+  GuideVsCompany,
+  SpecialityGrid,
+} from "./shared";
 import {
   EXPERIENCE_IDS,
   MAX_GROUP_SIZE,
@@ -196,8 +202,28 @@ export default function Guides() {
           </Rise>
         ) : (
           <>
+            {/* THE OWNER'S FRAME, 2026-08-31. Two separate selector cards with
+                the label above the value and a chevron-down, not one card of
+                label-left rows; the date calendar inline and always visible
+                under a "Select your dates" heading, not behind a sheet; the
+                count line reading "N guides available" with "Clear filters"
+                beside it; and More filters as a full-width outlined control at
+                the FOOT of the list rather than a button above it.
+                Structure copied, not approximated — "similar" was rejected. */}
             <Rise className="pt-5">
-              <SelectorCard filters={filters} onOpen={setSheet} />
+              <SelectorTile
+                icon={MountainIcon}
+                label="Mountain / Region"
+                value={filters.mountain || "Any mountain"}
+                onClick={() => setSheet("mountain")}
+              />
+              <SelectorTile
+                className="mt-2.5"
+                icon={CalendarDays}
+                label="Dates"
+                value={datesLabel(filters)}
+                onClick={() => setSheet("dates")}
+              />
               {objective ? (
                 <ObjectiveLine objective={objective} />
               ) : (
@@ -205,44 +231,36 @@ export default function Guides() {
               )}
             </Rise>
 
-            <Rise className="pt-3.5">
-              <button
-                type="button"
-                onClick={() => setSheet("filters")}
-                className={cn(
-                  "flex min-h-[46px] w-full items-center justify-center gap-2.5 rounded-tile border text-[13px] transition-colors",
-                  filterCount > 0
-                    ? "border-azure/45 text-snow"
-                    : "border-hairline-strong text-snow hover:border-azure/50",
-                )}
-              >
-                <SlidersHorizontal size={14} strokeWidth={1.7} aria-hidden="true" />
-                Filters
-                {filterCount > 0 && (
-                  <span className="tnum rounded-full border border-azure/40 bg-azure/10 px-1.5 py-[1px] text-[10px] text-azure">
-                    {filterCount}
-                  </span>
-                )}
-              </button>
-
-              {filterCount > 0 && <FilterSummary filters={filters} onChange={setFilters} />}
+            <Rise className="pt-5">
+              <p className="text-[13.5px] text-snow">Select your dates</p>
+              <AvailabilityCalendar
+                className="mt-3"
+                /* The directory view has no single guide, and the owner's
+                   mockup still draws dots here. One stable key for the whole
+                   search, so the pattern does not move as results change. */
+                seed="directory"
+                from={filters.fromIso ? parseDayKey(filters.fromIso) : new Date()}
+                to={filters.toIso ? parseDayKey(filters.toIso) : new Date()}
+                onPick={(d: Date) => {
+                  const key = toDayKey(d);
+                  setFilters((f) => {
+                    if (!f.fromIso || key < f.fromIso || f.toIso) {
+                      return { ...f, fromIso: key, toIso: "" };
+                    }
+                    return { ...f, toIso: key };
+                  });
+                }}
+              />
             </Rise>
-
-            {SHOW_DEMO_GUIDES && (
-              <Rise className="pt-5">
-                <DemoGuidesNotice />
-              </Rise>
-            )}
 
             {/* ---- The list --------------------------------------------------- */}
             <Rise className="pt-6">
               <div className="flex items-baseline justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="section-label">Best matches for you</p>
-                  <p className="mt-2 text-[11px] leading-relaxed text-mist-dim">
-                    {objective
-                      ? "Based on your objective and preferences"
-                      : "Based on your preferences alone — no objective is set"}
+                  {/* The drawing's count line. It reports what is rendered —
+                      never an inflated total, per this screen's own rule. */}
+                  <p className="text-[13.5px] text-snow">
+                    {results.length} {results.length === 1 ? "guide" : "guides"} available
                   </p>
                 </div>
                 {filterCount > 0 && (
@@ -250,9 +268,9 @@ export default function Guides() {
                     type="button"
                     onClick={() => setFilters(defaultGuideFilters())}
                     aria-label="Clear every filter and see the whole directory"
-                    className="shrink-0 text-[12px] text-azure transition-colors hover:text-azure-bright"
+                    className="shrink-0 text-[12.5px] text-azure transition-colors hover:text-azure-bright"
                   >
-                    See all
+                    Clear filters
                   </button>
                 )}
               </div>
@@ -261,14 +279,15 @@ export default function Guides() {
               </p>
             </Rise>
 
+            {/* The owner's "Find a Guide" mockup, 2026-08-31: portrait down the
+                left, name, credential, location, then years / mountains guided
+                / day rate in a divided row. The compact `GuideRow` is kept for
+                the secondary "other mountains" list below, which the mockup
+                does not draw. */}
             {results.length > 0 ? (
               results.map((entry) => (
                 <Rise key={entry.guide.id} className="pt-3">
-                  <GuideRow
-                    guide={entry.guide}
-                    match={entry.match}
-                    to={profileHref(entry, objective)}
-                  />
+                  <GuideCardTall guide={entry.guide} to={profileHref(entry, objective)} />
                 </Rise>
               ))
             ) : (
@@ -303,6 +322,31 @@ export default function Guides() {
                 ))}
               </>
             )}
+
+            {/* The drawing puts this at the FOOT of the list as a full-width
+                outlined control, not above it as a compact chip. Somebody
+                narrows a search after reading what came back, not before. */}
+            <Rise className="pt-5">
+              <button
+                type="button"
+                onClick={() => setSheet("filters")}
+                className={cn(
+                  "flex min-h-[52px] w-full items-center justify-center gap-2.5 rounded-card border text-[14px] transition-colors",
+                  filterCount > 0
+                    ? "border-azure/55 text-azure"
+                    : "border-azure/45 text-azure hover:border-azure/70",
+                )}
+              >
+                <SlidersHorizontal size={16} strokeWidth={1.7} aria-hidden="true" />
+                More filters
+                {filterCount > 0 && (
+                  <span className="tnum rounded-full border border-azure/40 bg-azure/10 px-1.5 py-[1px] text-[10px]">
+                    {filterCount}
+                  </span>
+                )}
+              </button>
+              {filterCount > 0 && <FilterSummary filters={filters} onChange={setFilters} />}
+            </Rise>
 
             <Rise className="pt-6">
               <Disclaimer>{ORDERING_NOTE}</Disclaimer>
@@ -442,6 +486,54 @@ function datesLabel(filters: GuideFilters): string {
 function groupLabel(size: number | null): string {
   if (size === null) return "Not said";
   return `${size} ${size === 1 ? "climber" : "climbers"}`;
+}
+
+/**
+ * One selector, drawn as the owner drew it: the glyph on the left, the field
+ * name small above the value, and a chevron-down on the right. Two of these,
+ * separated — not three rows sharing one card with the label on the left, which
+ * is the app's older idiom and reads as a settings list rather than a search.
+ */
+function SelectorTile({
+  icon: Icon,
+  label,
+  value,
+  onClick,
+  className,
+}: {
+  icon: typeof MountainIcon;
+  label: string;
+  value: string;
+  onClick: () => void;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex min-h-[62px] w-full items-center gap-3.5 rounded-card border border-hairline bg-graphite px-4 py-3 text-left transition-colors hover:border-hairline-strong",
+        className,
+      )}
+    >
+      <Icon size={19} strokeWidth={1.5} className="shrink-0 text-mist" aria-hidden="true" />
+      <span className="min-w-0 flex-1">
+        <span className="block text-[11px] text-mist-dim">{label}</span>
+        <span className="mt-0.5 block truncate text-[14.5px] text-snow">{value}</span>
+      </span>
+      <ChevronDown size={17} strokeWidth={1.7} className="shrink-0 text-mist-dim" aria-hidden="true" />
+    </button>
+  );
+}
+
+/** Local `YYYY-MM-DD` ⇄ `Date`. Never `new Date(iso)` — UTC midnight lands a day early. */
+function parseDayKey(key: string): Date {
+  const [y, m, d] = key.split("-").map(Number);
+  return new Date(y ?? 1970, (m ?? 1) - 1, d ?? 1);
+}
+
+function toDayKey(d: Date): string {
+  return `${d.getFullYear()}-${`${d.getMonth() + 1}`.padStart(2, "0")}-${`${d.getDate()}`.padStart(2, "0")}`;
 }
 
 function SelectorCard({

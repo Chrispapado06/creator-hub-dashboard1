@@ -6,6 +6,7 @@ import {
   Download,
 } from "lucide-react";
 import { Card, Disclaimer, HeroCircleButton, IconAction, Stat, sharePage } from "@/components/ui/primitives";
+import { CompanyMark } from "@/components/domain/CompanyMark";
 import { Sheet, SheetRow } from "@/components/ui/Sheet";
 import { Rise, Stagger } from "@/components/layout/chrome";
 import { MapBackdrop, MiniMap } from "@/components/domain/MiniMap";
@@ -974,15 +975,10 @@ function GuidedBy({ peakName, elevationM, country }: {
             }).toString()}`}
             className="flex items-center gap-3.5 rounded-card border border-hairline bg-graphite p-3.5 transition-colors hover:border-hairline-strong"
           >
-            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-tile border border-hairline bg-elevated text-[12px] tracking-[0.06em] text-mist">
-              {o.name
-                .replace(/[^A-Za-z0-9 ]/g, " ")
-                .split(/\s+/)
-                .filter(Boolean)
-                .slice(0, 2)
-                .map((w) => w[0]!.toUpperCase())
-                .join("")}
-            </span>
+            {/* Was a fourth monogram algorithm, written inline in the JSX — so
+                a company reached from a trail showed different initials than
+                the same company reached from the directory. */}
+            <CompanyMark name={o.name} logoPath={o.logo} size={44} />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[13.5px] text-snow">{o.name}</span>
               <span className="mt-0.5 block truncate text-[11.5px] text-mist-dim">

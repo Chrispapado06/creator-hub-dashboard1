@@ -2,7 +2,8 @@ import { useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { BedDouble, Compass, PlaneTakeoff, ShieldCheck } from "lucide-react";
 import { Container } from "@/components/Shell";
-import { Badge, Button, Card, GuidePhoto, Rating, VerifiedTick } from "@/components/ui";
+import { Badge, Button, Card, GuidePhoto, Rating } from "@/components/ui";
+import { GuideCredentialMark } from "@/components/marks";
 import { TripSearch } from "@/components/TripSearch";
 import { originByCode, stopsLabel, type Itinerary } from "@/lib/flights";
 import {
@@ -185,7 +186,7 @@ function ResultRow({
             <div className="min-w-0">
               <p className="flex items-center gap-1.5 text-[16px] text-snow">
                 <span className="truncate">{guide.name}</span>
-                <VerifiedTick verifiedOn={guide.verifiedOn} size={14} />
+                <GuideCredentialMark verifiedOn={guide.verifiedOn} size={14} />
               </p>
               <p className="mt-0.5 truncate text-[12px] text-mist-dim">{guide.credential}</p>
             </div>

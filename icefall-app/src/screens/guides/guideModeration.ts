@@ -79,8 +79,18 @@ export const REPORT_NOT_SENT_NOTICE =
 export const BLOCK_NOTE =
   "Blocking removes this guide from your directory on this device. They are not told, and blocking reports nothing to anybody. It is reversible from this page at any time — a blocked guide is counted at the foot of the directory so they cannot be lost.";
 
+/**
+ * AMENDED once the support desk became real.
+ *
+ * This said "ICEFALL support is not connected in this build. There is no inbox
+ * behind this button yet, so nothing you write here would reach a person." That
+ * was true of the `mailto:` it was written against and is false now: a request
+ * is stored and returns a reference. What has NOT changed is the second half —
+ * a support desk is not a party to an arrangement between a climber and a
+ * guide, and cannot settle one.
+ */
 export const SUPPORT_NOTE =
-  "ICEFALL support is not connected in this build. There is no inbox behind this button yet, so nothing you write here would reach a person. Anything already agreed with a guide should be settled with them directly, through ICEFALL, in writing.";
+  "A support request is stored and comes back with a reference. No reply time is promised — nobody has been answered yet. Anything already agreed with a guide is still between you and them: support can look at what ICEFALL did, not at what was agreed off the platform.";
 
 /* -------------------------------------------------------------------------- */
 /* Store                                                                       */

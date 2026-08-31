@@ -56,7 +56,18 @@ export const COMPANY_SECTIONS: readonly SectionDef[] = [
   {
     key: "hero",
     label: "Hero",
-    fields: ["name", "tagline", "city", "country", "foundedYear", "bannerMediaId"],
+    /*
+     * `logoMediaId` IS IN THIS LIST BECAUSE THE PROFILE ALREADY COUNTED IT.
+     *
+     * `CompanyProfile`'s completeness checklist has always scored
+     * `logoMediaId` under "Media & photos", so the profile told an operator a
+     * logo counted towards being publishable while no screen anywhere let them
+     * supply one. That is a checklist row that cannot be satisfied — the worst
+     * kind, because it reads as the operator's omission. The field belongs to
+     * the hero (the logo sits above the company name), so it is declared here
+     * and the hero inspector now carries the drop for it.
+     */
+    fields: ["name", "tagline", "city", "country", "foundedYear", "bannerMediaId", "logoMediaId"],
     surfaces: ["web", "app"],
   },
   {

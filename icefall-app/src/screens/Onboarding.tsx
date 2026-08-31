@@ -27,6 +27,7 @@ import { assessPeak } from "@/services/peakAssessment";
 import { PEAK_ATTRIBUTION, searchPeaks, type Peak } from "@/services/peaks";
 import { buildPlanForGoal } from "@/tracking/training";
 import { useApp, type OnboardingAnswers } from "@/state/AppState";
+import { syncOnboarding } from "@/auth/account";
 import type { Discipline, ExperienceLevel, Goal } from "@/types";
 import type { Equipment } from "@/coach/exercises";
 import { SESSION_INTENTS, type IntentId } from "@/coach/sessionIntent";
@@ -689,6 +690,10 @@ export default function Onboarding() {
     });
 
     completeOnboarding(answers);
+
+    // Tell the server they are done, so signing in on another device does not
+    // ask all twelve questions again. Not awaited — see `syncOnboarding`.
+    void syncOnboarding({ ...answers });
   }, [
     addGoal,
     altitudeId,

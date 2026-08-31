@@ -168,13 +168,13 @@ export default function Community() {
               {/* THREE DIFFERENT EMPTINESSES, AND THEY ARE NOT THE SAME
                   STATEMENT. "No posts match this filter" implies there are
                   posts — that somewhere behind the filter is a feed. In a
-                  production build there is not: ICEFALL has no accounts, so
+                  production build there is not: nobody can post yet, so
                   nobody has posted anything, and saying so is the honest answer
                   rather than one that reads as a filter that came back empty.
                   Same rule as the people directory further down this screen. */}
               <p className="mt-1.5 text-[11.5px] leading-relaxed text-mist-dim">
                 {feedEmpty
-                  ? "ICEFALL has no accounts yet, so nobody has posted anything. This is an empty network rather than a filter that came back with nothing — when people can post, what they write appears here."
+                  ? "Nobody has posted anything, because posting is not built yet. This is an empty feature rather than a filter that came back with nothing — when people can post, what they write appears here."
                   : filter === "my-mountains" && !goal
                     ? "Set an objective and this fills with what other people are doing on it."
                     : "No posts match this filter."}
@@ -274,7 +274,7 @@ function SearchResults({
         <Rise className="pt-2.5">
           <Card>
             <p className="text-[12.5px] leading-relaxed text-mist">
-              There is nobody to find yet. ICEFALL has no accounts and no server, so no climber can
+              There is nobody to find yet. Accounts exist, but no climber directory does, so none can
               be looked up by name — this is an empty network rather than a search that came back
               short.
             </p>

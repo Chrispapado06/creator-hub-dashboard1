@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { OFFLINE } from "@/offline/offline";
+import { offlineHealth } from "@/offline/fixtures";
 import { searchFlights, type Airport, type Itinerary } from "@/lib/flights";
 import { lodgesForObjective, type Lodge } from "@/lib/trip";
 
@@ -28,6 +30,19 @@ interface Health {
 let healthCache: Promise<Health | null> | null = null;
 
 export function getHealth(): Promise<Health | null> {
+  /*
+   * OFFLINE DEMO — the one gate that keeps this whole file off the network.
+   *
+   * `resolveFlights` and `resolveStays` only ever call `fetch` inside
+   * `if (health?.flights === "live")`, so answering "no provider connected"
+   * here — which is the literal truth offline, and already what an absent API
+   * server produces — means neither search endpoint is ever contacted. Both
+   * then fall through to `searchFlights()` and `lodgesForObjective()`, which
+   * are local, deterministic and already labelled demo, so `/plan` stays fully
+   * priced with nothing leaving the page.
+   */
+  if (OFFLINE) return offlineHealth();
+
   if (!healthCache) {
     healthCache = fetch("/api/health", { signal: AbortSignal.timeout?.(2500) })
       .then((r) => (r.ok ? r.json() : null))

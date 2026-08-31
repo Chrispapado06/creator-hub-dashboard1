@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Avatar, PageHead, Pill, Stat, StatusChip, TableCard } from "@/components/ui";
+import { Avatar, PageHead, Pill, SectionLabel, Stat, StatusChip, TableCard } from "@/components/ui";
+import { EnquiryQueue } from "@/components/EnquiryQueue";
 import { Resolve } from "@/components/states";
 import { listLeads } from "@/data/queries";
 import { formatRatio, loading, type Ratio, type Result } from "@/data/result";
@@ -55,8 +56,12 @@ export default function Leads() {
     <>
       <PageHead
         title="Leads"
-        subtitle="Every customer enquiry made through ICEFALL, with its attribution to a company, mountain and product preserved."
+        subtitle="Who is waiting on us right now — every enquiry from every app, longest wait first — and beneath it, the lead records with their attribution preserved."
       />
+
+      <EnquiryQueue />
+
+      <SectionLabel>Lead records</SectionLabel>
       <Resolve
         result={result}
         what="leads"

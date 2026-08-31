@@ -6,6 +6,8 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { MAP_ATTRIBUTION, TERRAIN_SOURCE, icefallMapStyle, styleFor, type MapStyleId } from "./icefallStyle";
 import { RouteMap } from "@/components/ui/RouteMap";
 import { cn } from "@/lib/utils";
+import { OFFLINE } from "@/offline/offline";
+import { MapUnavailable } from "@/offline/MapUnavailable";
 import type { TrackPoint } from "@/types";
 
 /**
@@ -69,6 +71,14 @@ export function TerrainMap({
   fallbackTrack = [],
   fallbackSeed = "icefall",
 }: TerrainMapProps) {
+  /*
+   * OFFLINE: no tiles, so no map. Returned before the hooks below, which is
+   * safe here and only here — `OFFLINE` is a build-time constant, so every
+   * render of every instance takes the same branch and the hook order never
+   * changes. Nothing is faked in its place: see @/offline/MapUnavailable.
+   */
+  if (OFFLINE) return <MapUnavailable className={cn("h-full w-full", className)} />;
+
   const holder = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const startMarker = useRef<Marker | null>(null);

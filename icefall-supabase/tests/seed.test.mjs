@@ -33,6 +33,11 @@ await db.exec(`
   end $$;
   create or replace function auth.uid() returns uuid language sql stable as $$
     select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid; $$;
+  -- Supabase grants these to every API role; without them an INVOKER function
+  -- or trigger that calls auth.uid() fails here but not in production (and
+  -- probes pass for the wrong reason — the SS1 harness lesson).
+  grant usage on schema auth to anon, authenticated;
+  grant execute on function auth.uid() to anon, authenticated;
   create publication supabase_realtime;
 `);
 await db.exec(SQL);
@@ -157,6 +162,50 @@ if (!seedError) {
   const nullSpots = await all(
     `select id from public.product_departures where spots_left is null and availability='unknown'`);
   check("'not stated' spots stay NULL rather than 0", nullSpots.length >= 1, `${nullSpots.length}`);
+}
+
+
+/* ---- fill_commercial.sql — the company-keyed fill, standalone ---------- */
+
+// Needs a staff admin for payments.recorded_by; give it one, the way the live
+// database has the owner.
+const staffU = await db.query(`insert into auth.users (email) values ('seed-admin@x.io') returning id`);
+await db.query(`update public.profiles set role='admin', display_name='Seed Admin' where id=$1`, [staffU.rows[0].id]);
+await db.query(`insert into public.staff_members (profile_id, staff_role, active) values ($1,'super_admin',true)
+                on conflict (profile_id) do update set active=true`, [staffU.rows[0].id]);
+
+const FILL = join(HERE, "..", "seed", "fill_commercial.sql");
+let fillError = null;
+try {
+  await db.exec(readFileSync(FILL, "utf8"));
+  await db.exec(readFileSync(FILL, "utf8")); // idempotence: twice must equal once
+} catch (e) {
+  fillError = e.message.split("\n")[0];
+}
+check("fill_commercial applies cleanly, twice", fillError === null, fillError ?? "applied twice");
+
+if (!fillError) {
+  const count = async (t) => Number((await db.query(`select count(*)::int c from public.${t}`)).rows[0].c);
+  const counts = {
+    deals: await count("deals"),
+    tasks: await count("tasks"),
+    revenue_records: await count("revenue_records"),
+    invoices: await count("invoices"),
+    invoice_lines: await count("invoice_lines"),
+    payments: await count("payments"),
+    support_tickets: await count("support_tickets"),
+    verification_documents: await count("verification_documents"),
+  };
+  check("every commercial table is populated",
+    Object.values(counts).every((c) => c > 0),
+    Object.entries(counts).map(([k, v]) => `${k}:${v}`).join(" "));
+  check("idempotent: exactly 14 deals after two runs", counts.deals === 14, `${counts.deals}`);
+  const stages = Number((await db.query(
+    `select count(distinct stage)::int c from public.deals`)).rows[0].c);
+  check("every pipeline stage is represented", stages === 10, `${stages} stages`);
+  const wonNoProb = (await db.query(
+    `select count(*)::int c from public.deals where estimated_value_cents is null`)).rows[0].c;
+  check("a deal without a value exists (the honest-absence card)", wonNoProb >= 1, `${wonNoProb}`);
 }
 
 console.log("\nSEED RESULTS\n" + "=".repeat(76));

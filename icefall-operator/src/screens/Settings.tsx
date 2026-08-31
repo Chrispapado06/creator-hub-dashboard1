@@ -23,16 +23,25 @@
  *   mockup's type-the-company-name confirmation and then STOPS: closing an
  *   operator account is done by Icefall, because leads, bookings and customer
  *   conversations are a commercial record.
+ *
+ * APPEARANCE (OP-09) lives in the Account pane rather than reviving the
+ * mockup's Preferences entry. A whole sub-nav section holding one switch reads
+ * as a section with the rest of its switches missing, and the mockup's other
+ * Preferences rows are exactly the dead switches the paragraph above refuses to
+ * draw. It is the one control on this screen that takes effect immediately and
+ * survives a reload, so it is the one that does not need a Notice explaining
+ * that nothing happened.
  */
 
 import { useState } from "react";
-import { Bell, Building2, CreditCard, UserRound, Users } from "lucide-react";
+import { Bell, Building2, CreditCard, Monitor, Moon, Sun, UserRound, Users } from "lucide-react";
 import {
   Button, Card, Field, LockedNotice, Notice, PageHeader, inputClass,
 } from "@/components/ui";
 import { OPERATOR_NOTICES } from "@/domain/honesty";
 import { formatDay } from "@/domain/dates";
 import { useOperator, useSession } from "@/state/OperatorContext";
+import { useTheme, type ThemeChoice } from "@/state/theme";
 
 type Section = "account" | "company" | "notifications" | "team" | "billing";
 
@@ -308,6 +317,8 @@ function AccountPane() {
         </Card>
       </div>
 
+      <AppearanceCard />
+
       <Card className="p-5">
         <div className="lbl text-rejected">Danger zone</div>
         <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
@@ -328,12 +339,95 @@ function AccountPane() {
   );
 }
 
+/* ---- Appearance (OP-09) ------------------------------------------------ */
+
+const THEME_OPTIONS: { key: ThemeChoice; label: string; icon: typeof Sun }[] = [
+  { key: "light", label: "Light", icon: Sun },
+  { key: "dark", label: "Dark", icon: Moon },
+  { key: "system", label: "System", icon: Monitor },
+];
+
+/**
+ * A segmented control, and the only writing setting on this screen that works.
+ *
+ * It is a `radiogroup` rather than three buttons: the three are mutually
+ * exclusive and a screen reader should say "Light, 1 of 3" instead of reading
+ * out three unrelated controls, one of which happens to look pressed.
+ *
+ * The line under it states the resolved theme when the choice is System, so
+ * "System" never leaves the operator guessing which one they are looking at.
+ */
+function AppearanceCard() {
+  const { choice, resolved, setChoice } = useTheme();
+
+  return (
+    <Card className="p-5">
+      <h2 className="text-[14px] font-semibold text-ink">Appearance</h2>
+      <p className="mt-1 text-[12.5px] text-muted">
+        How this portal looks on this device. It is remembered in this browser and applies to you only —
+        nobody else at your company is affected.
+      </p>
+
+      <div className="mt-4">
+        <div className="lbl mb-1.5" id="theme-label">
+          Theme
+        </div>
+        <div
+          role="radiogroup"
+          aria-labelledby="theme-label"
+          className="hairline inline-flex gap-0.5 rounded-tile bg-canvas p-0.5"
+        >
+          {THEME_OPTIONS.map((option) => {
+            const Icon = option.icon;
+            const active = choice === option.key;
+            return (
+              <button
+                key={option.key}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                onClick={() => setChoice(option.key)}
+                className={`flex items-center gap-1.5 rounded-tile px-3 py-1.5 text-[12.5px] font-medium transition-colors ${
+                  active ? "bg-azure text-canvas" : "text-muted hover:bg-raised hover:text-ink"
+                }`}
+              >
+                <Icon size={14} className="shrink-0" aria-hidden />
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <p className="mt-3 text-[11.5px] leading-snug text-muted">
+        {choice === "system"
+          ? `Following this device — currently ${resolved}. It changes with your system setting while the portal is open.`
+          : "Choose System to follow your device's light and dark setting instead."}
+      </p>
+
+      {/*
+        Stated rather than left as a surprise. The preview panes reproduce the
+        athlete app and the Icefall website, which are dark products; they do
+        not follow this setting because what a climber sees does not change
+        when an operator changes their own portal's colours.
+      */}
+      <p className="mt-2 border-t border-line-soft pt-3 text-[11.5px] leading-snug text-muted">
+        Previews of your listing stay dark in both themes — they show the app and website as a climber sees
+        them, not as you have set this portal.
+      </p>
+    </Card>
+  );
+}
+
 /**
  * The mockup's confirmation: type the company name, then confirm. What confirm
  * does is tell the truth — closing an operator account is performed by Icefall,
  * because leads, bookings and customer conversations have to be preserved as a
  * commercial record, and a self-service delete button is how that record gets
  * destroyed by accident. No destructive local action exists behind this dialog.
+ *
+ * The overlay is `bg-scrim`, not `bg-ink/30`: `ink` is near-white in the dark
+ * theme, so a scrim mixed from the text colour inverts into a white veil there.
  */
 function DeleteConfirmDialog({ companyName, onClose }: { companyName: string; onClose: () => void }) {
   const [typed, setTyped] = useState("");
@@ -342,7 +436,7 @@ function DeleteConfirmDialog({ companyName, onClose }: { companyName: string; on
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4"
       role="dialog"
       aria-modal="true"
       aria-label="Delete account"

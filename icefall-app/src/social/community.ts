@@ -25,6 +25,8 @@
  */
 
 import { SHOW_DEMO_DATA } from "@/lib/demoFlag";
+import { OFFLINE } from "@/offline/offline";
+import { OFFLINE_COMMUNITY_POSTS } from "@/offline/fixtures";
 import type { PostKind } from "./types";
 
 /**
@@ -42,10 +44,15 @@ import type { PostKind } from "./types";
  * guarded function so the names leave the bundle rather than merely leaving the
  * screen — see the long argument in `guides/types.ts`.
  */
-export const SHOW_DEMO_COMMUNITY = SHOW_DEMO_DATA;
+/*
+ * An OFFLINE build is a demo build by definition — it says so on every screen,
+ * permanently — so the demo disclaimer belongs on the feed there too. This
+ * reads the offline flag; it does not decide it. See `@/offline/offline`.
+ */
+export const SHOW_DEMO_COMMUNITY = SHOW_DEMO_DATA || OFFLINE;
 
 export const COMMUNITY_DEMO_NOTICE =
-  "Placeholder posts, shown to review this layout. ICEFALL has no accounts yet, so nobody has posted anything — these people, times and figures were written by ICEFALL and none of it happened.";
+  "Placeholder posts, shown to review this layout. Posting is not built, so nobody has posted anything — these people, times and figures were written by ICEFALL and none of it happened.";
 
 export const COMMUNITY_HOUSE_RULE =
   "Built for mountain athletes. Be respectful. Report anything that doesn't belong.";
@@ -208,7 +215,11 @@ function buildDemoPosts(): CommunityPost[] {
 
 export const DEMO_POSTS: CommunityPost[] = buildDemoPosts();
 
-export const communityPosts = (): CommunityPost[] => (SHOW_DEMO_COMMUNITY ? DEMO_POSTS : []);
+export const communityPosts = (): CommunityPost[] =>
+  // The offline build brings its own posts. `DEMO_POSTS` is compiled away in
+  // any built bundle (see the guard above), so without this the feed would be
+  // empty in exactly the build that most needs something in it.
+  OFFLINE ? OFFLINE_COMMUNITY_POSTS : SHOW_DEMO_COMMUNITY ? DEMO_POSTS : [];
 
 /** "2h ago", "1d ago" — resolved at render, never stored. */
 export function agoLabel(hoursAgo: number): string {

@@ -34,7 +34,7 @@ function weekTemplate(block: string, load: number): DayTemplate[] {
     {
       focus: "endurance",
       title: "Endurance Run",
-      detail: "Zone 2 throughout",
+      detail: "Steady and conversational throughout",
       difficulty: 2,
       distanceKm: s(12),
       elevationM: s(420),

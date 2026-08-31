@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import maplibregl, { type Map as MlMap, type Marker } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { SATELLITE_CREDIT, TILE_URL, tileFor } from "./mapTiles";
+import { OFFLINE } from "@/offline/offline";
+import { MapPlaceholder } from "@/offline/MapPlaceholder";
 
 export interface MapPin {
   id: string;
@@ -38,6 +40,15 @@ export function RouteMap({
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
+    /*
+     * OFFLINE DEMO. Nothing here can work without a connection — the basemap is
+     * raster tiles streamed from Esri, and the static <img> fallback below is
+     * the same tiles by another route. Building the map anyway would leave a
+     * slate rectangle with a zoom control on it, which reads as a broken page
+     * rather than an absent network, so the component renders a placeholder
+     * that says which of the two it is (see the early return further down).
+     */
+    if (OFFLINE) return;
     if (host.current === null || map.current !== null) return;
 
     /*
@@ -118,6 +129,20 @@ export function RouteMap({
     if (m === null || pin === undefined) return;
     m.flyTo({ center: [pin.lon, pin.lat], zoom: 8.5, duration: 900 });
   }, [selectedId, pins]);
+
+  if (OFFLINE) {
+    const pin = pins.find((p) => p.id === selectedId) ?? pins[0];
+    return (
+      <MapPlaceholder
+        className={className}
+        caption={
+          pin === undefined
+            ? "The route list beside it is stored on this device and works as normal."
+            : `${pin.name} is in the list beside this, with everything known about it.`
+        }
+      />
+    );
+  }
 
   if (failed) {
     const pin = pins.find((p) => p.id === selectedId) ?? pins[0];

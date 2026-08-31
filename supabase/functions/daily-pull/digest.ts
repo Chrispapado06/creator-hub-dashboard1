@@ -1,18 +1,16 @@
 // OnlyFinder daily digest — brief Section 7.
 //
 // After the daily pull + experiment updates, summarize each creator's running and
-// just-concluded experiments with claude-haiku-4-5 via the Anthropic Messages API.
-// The model returns, per experiment: a one-line status, an early/final read, a
-// recommended action (hold/scale/kill/unreadable), and a confound warning — plus a
-// short prose summary. We store both.
+// just-concluded keyword experiments. This is a RULE-BASED summary: it reads each
+// experiment's status + movement metrics and produces a status line, a read, and a
+// recommended action deterministically — no LLM, no external calls, no API key.
 //
-// PURE + dependency-free (no imports, no runtime globals beyond `fetch`, which is
-// injectable) so the daily-pull Edge Function (Deno) imports it and vitest tests it.
+// PURE + dependency-free (no imports, no runtime globals) so the daily-pull Edge
+// Function (Deno) imports it and vitest tests it.
 //
-// DEFENSE IN DEPTH: the three hard rules live in the system prompt AND are RE-ENFORCED
-// in code by sanitizeDigest(). A system prompt is advisory — the model can ignore it.
-// The sanitizer cannot be ignored: a confounded/unfinished window can NEVER carry a
-// verdict no matter what the model returns.
+// The three hard rules (Section 7) are enforced in code by sanitizeItem(): a
+// confounded or unfinished window can NEVER carry a verdict, regardless of the
+// raw per-experiment read.
 
 export type ExperimentStatus = "running" | "confounded" | "concluded" | "insufficient_data";
 export type RecommendedAction = "hold" | "scale" | "kill" | "unreadable";
@@ -54,51 +52,10 @@ export type DigestItem = {
 
 export type DigestResult = { items: DigestItem[]; prose: string; model: string };
 
-export class DigestError extends Error {}
-
-// ── System prompt — the three hard rules (Section 7) ─────────────────────────
-export const SYSTEM_PROMPT = `You are the analyst for an OnlyFinder keyword EXPERIMENT tracker. Each item is one experiment: a single keyword change for one creator, with before/after windows and the MOVEMENT in DIRECT (non-tracked) fans, income, and fans-per-dollar of OnlyFinder spend.
-
-HARD RULES — these override everything else:
-1. NEVER invent or imply per-keyword attribution. You do not know which fan came from which keyword. Speak only about MOVEMENT within the windows, never about a specific keyword causing a specific fan or sale.
-2. NEVER declare a winner, recommend scale/kill, or give a confident "final read" on a CONFOUNDED or UNFINISHED window. If status is "confounded" or "insufficient_data", recommended_action MUST be "unreadable". If status is "running", the experiment is still observing — recommend "hold" at most (never "scale"/"kill") and frame the read as EARLY and tentative. Only a "concluded", non-confounded experiment may receive "scale" or "kill".
-3. Reason in 5–7 day windows. Treat short-window noise with caution; do not over-read day-to-day wiggles.
-
-For each experiment return: a one-line status, an early/final read, a recommended action (hold / scale / kill / unreadable), and a confound warning (string, or null if none). Then write a short prose summary of the day across all experiments. Call the submit_digest tool exactly once.`;
-
-// ── Tool schema (forced structured output) ───────────────────────────────────
-export const DIGEST_TOOL = {
-  name: "submit_digest",
-  description: "Return the structured daily experiment digest.",
-  input_schema: {
-    type: "object",
-    additionalProperties: false,
-    properties: {
-      experiments: {
-        type: "array",
-        items: {
-          type: "object",
-          additionalProperties: false,
-          properties: {
-            experiment_id: { type: "string" },
-            status_line: { type: "string", description: "One short line on where this experiment stands." },
-            read: { type: "string", description: "Early read if running; final read if concluded." },
-            recommended_action: { type: "string", enum: ["hold", "scale", "kill", "unreadable"] },
-            confound_warning: { type: ["string", "null"], description: "Warning if confounded/unfinished; else null." },
-          },
-          required: ["experiment_id", "status_line", "read", "recommended_action", "confound_warning"],
-        },
-      },
-      prose_summary: { type: "string", description: "A short paragraph summarizing the day across all experiments." },
-    },
-    required: ["experiments", "prose_summary"],
-  },
-} as const;
-
-// ── Build the compact input the model sees ───────────────────────────────────
+// ── Build the compact per-experiment view ────────────────────────────────────
 export function buildDigestInput(experiments: DigestExperiment[]): unknown {
   return {
-    note: "Each item is one keyword-change experiment. status drives what you may say (see the hard rules).",
+    note: "Each item is one keyword-change experiment. status drives what may be said (see the hard rules).",
     experiments: experiments.map((e) => ({
       experiment_id: e.id,
       creator: e.creator_name,
@@ -114,15 +71,15 @@ export function buildDigestInput(experiments: DigestExperiment[]): unknown {
   };
 }
 
-// ── The code-enforced guardrail (hard rules, regardless of model output) ─────
+// ── The code-enforced guardrail (hard rules, regardless of the raw read) ─────
 const ACTIONS = new Set<RecommendedAction>(["hold", "scale", "kill", "unreadable"]);
 
-export function sanitizeItem(modelItem: Partial<DigestItem>, exp: DigestExperiment): DigestItem {
+export function sanitizeItem(rawItem: Partial<DigestItem>, exp: DigestExperiment): DigestItem {
   let action: RecommendedAction =
-    modelItem.recommended_action && ACTIONS.has(modelItem.recommended_action)
-      ? modelItem.recommended_action
+    rawItem.recommended_action && ACTIONS.has(rawItem.recommended_action)
+      ? rawItem.recommended_action
       : "unreadable";
-  let warning: string | null = modelItem.confound_warning ?? null;
+  let warning: string | null = rawItem.confound_warning ?? null;
 
   // Rule 2, enforced in code — confounded/unfinished windows never carry a verdict.
   if (exp.status === "confounded") {
@@ -139,8 +96,8 @@ export function sanitizeItem(modelItem: Partial<DigestItem>, exp: DigestExperime
 
   return {
     experiment_id: exp.id,
-    status_line: String(modelItem.status_line ?? "").slice(0, 280),
-    read: String(modelItem.read ?? "").slice(0, 600),
+    status_line: String(rawItem.status_line ?? "").slice(0, 280),
+    read: String(rawItem.read ?? "").slice(0, 600),
     recommended_action: action,
     confound_warning: warning,
   };
@@ -153,63 +110,98 @@ export function sanitizeDigest(rawItems: Partial<DigestItem>[], experiments: Dig
     .map((it) => sanitizeItem(it, byId.get(it.experiment_id as string) as DigestExperiment));
 }
 
-// ── The Anthropic call ───────────────────────────────────────────────────────
-type FetchLike = (url: string, init: { method: string; headers: Record<string, string>; body: string }) => Promise<{
-  ok: boolean;
-  status: number;
-  text(): Promise<string>;
-  json(): Promise<any>;
-}>;
+// ── Rule-based per-experiment read (no LLM) ──────────────────────────────────
+function fmtPct(n: number | null): string {
+  if (n === null || typeof n !== "number" || !isFinite(n)) return "n/a";
+  const r = Math.round(n);
+  return (r > 0 ? "+" : "") + r + "%";
+}
 
 /**
- * Generate the digest. `apiKey` is read from a server-side env var by the caller
- * (Deno: `Deno.env.get("ANTHROPIC_API_KEY")`) and passed in — never hard-coded,
- * never client-side. `fetchImpl` is injectable so tests run without a network.
+ * Base recommended action from movement. Only meaningful for a concluded,
+ * non-confounded window; sanitizeItem() forces unreadable/hold for the rest.
+ * Scale needs a real income gain without losing spend-efficiency; kill needs a
+ * clear income drop or a big efficiency drop. Everything else holds.
+ */
+function baseAction(e: DigestExperiment): RecommendedAction {
+  const m = e.metrics;
+  if (e.status !== "concluded" || !m) return "hold";
+  const income = m.income_lift_pct;
+  const eff = m.fans_per_dollar_lift_pct;
+  if (income !== null && income >= 10 && (eff === null || eff >= 0)) return "scale";
+  if ((income !== null && income <= -10) || (eff !== null && eff <= -25)) return "kill";
+  return "hold";
+}
+
+/** Deterministic per-experiment read; the guardrail in sanitizeItem() finalizes it. */
+function templateItem(e: DigestExperiment): Partial<DigestItem> {
+  const m = e.metrics;
+  let status_line: string;
+  let read: string;
+  switch (e.status) {
+    case "concluded":
+      status_line = `${e.creator_name}: experiment concluded (${e.observation_start}…${e.observation_end}).`;
+      read = m
+        ? `Movement vs baseline — fans/day ${fmtPct(m.fans_lift_pct)}, income/day ${fmtPct(m.income_lift_pct)}, fans per $ ${fmtPct(m.fans_per_dollar_lift_pct)}.`
+        : `Concluded, but no movement metrics were recorded for the window.`;
+      break;
+    case "running":
+      status_line = `${e.creator_name}: experiment running (observing through ${e.observation_end}).`;
+      read = `Observation window still open — early read only, no verdict yet.`;
+      break;
+    case "confounded":
+      status_line = `${e.creator_name}: window confounded.`;
+      read = e.confounded_reason
+        ? `Not readable — ${e.confounded_reason}`
+        : `Not readable — another keyword change overlaps this window.`;
+      break;
+    default: // insufficient_data
+      status_line = `${e.creator_name}: not enough data in the window yet.`;
+      read = `Not enough data in the window to produce a verdict.`;
+      break;
+  }
+  return { status_line, read, recommended_action: baseAction(e), confound_warning: null };
+}
+
+/** One-paragraph roll-up of the day across all experiments. */
+function buildProse(experiments: DigestExperiment[], items: DigestItem[]): string {
+  const n = experiments.length;
+  const count = (s: ExperimentStatus) => experiments.filter((e) => e.status === s).length;
+  const running = count("running");
+  const concluded = count("concluded");
+  const confounded = count("confounded");
+  const insufficient = count("insufficient_data");
+  const scale = items.filter((i) => i.recommended_action === "scale").length;
+  const kill = items.filter((i) => i.recommended_action === "kill").length;
+
+  const parts: string[] = [
+    `${n} experiment${n === 1 ? "" : "s"} tracked today: ${running} running, ${concluded} concluded, ${confounded} confounded, ${insufficient} awaiting data.`,
+  ];
+  if (scale || kill) {
+    const recs: string[] = [];
+    if (scale) recs.push(`${scale} to scale`);
+    if (kill) recs.push(`${kill} to kill`);
+    parts.push(`From concluded windows: ${recs.join(", ")}.`);
+  } else if (concluded) {
+    parts.push(`No concluded window is a clear scale or kill — hold and keep observing.`);
+  }
+  return parts.join(" ");
+}
+
+/**
+ * Generate the daily digest — rule-based, no network, no API key. Kept async and
+ * tolerant of extra opts so existing callers (which `await` it and may pass a
+ * model/key) keep working unchanged.
  */
 export async function generateDailyDigest(
   experiments: DigestExperiment[],
-  opts: { apiKey: string; fetchImpl?: FetchLike; model?: string },
+  _opts?: { model?: string; [k: string]: unknown },
 ): Promise<DigestResult> {
-  const model = opts.model ?? "claude-haiku-4-5";
-  const doFetch = (opts.fetchImpl ?? (fetch as unknown as FetchLike));
-
+  const model = "rule-based";
   if (experiments.length === 0) {
     return { items: [], prose: "No running or recently concluded experiments today.", model };
   }
-  if (!opts.apiKey) throw new DigestError("ANTHROPIC_API_KEY not set");
-
-  const body = {
-    model,
-    max_tokens: 4096,
-    system: SYSTEM_PROMPT,
-    tools: [DIGEST_TOOL],
-    tool_choice: { type: "tool", name: "submit_digest" },
-    messages: [{ role: "user", content: JSON.stringify(buildDigestInput(experiments), null, 2) }],
-  };
-
-  const res = await doFetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": opts.apiKey,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const t = await res.text().catch(() => "");
-    throw new DigestError(`anthropic ${res.status}: ${t.slice(0, 300)}`);
-  }
-
-  const json = await res.json();
-  const toolBlock = (json?.content ?? []).find(
-    (b: any) => b && b.type === "tool_use" && b.name === "submit_digest",
-  );
-  if (!toolBlock) throw new DigestError("model returned no submit_digest tool_use block");
-
-  const raw = (toolBlock.input ?? {}) as { experiments?: Partial<DigestItem>[]; prose_summary?: string };
-  const items = sanitizeDigest(raw.experiments ?? [], experiments); // <-- hard rules re-enforced here
-  const prose = String(raw.prose_summary ?? "").slice(0, 4000);
+  const items = experiments.map((e) => sanitizeItem(templateItem(e), e));
+  const prose = buildProse(experiments, items);
   return { items, prose, model };
 }

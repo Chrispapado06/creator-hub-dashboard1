@@ -9,6 +9,15 @@ interface ImportMetaEnv {
    * development convenience, not a deployment setting.
    */
   readonly VITE_ICEFALL_WEB_ORIGIN?: string;
+
+  /**
+   * `"1"` runs the portal entirely from the fixtures in `src/offline/`.
+   *
+   * Unset — the default — and nothing offline exists at runtime. See
+   * `src/offline/offline.ts`; this declaration is the only reason the flag can
+   * be read at all under `noUncheckedIndexedAccess`-strict typing.
+   */
+  readonly VITE_ICEFALL_OFFLINE?: string;
 }
 
 interface ImportMeta {

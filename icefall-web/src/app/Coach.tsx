@@ -346,14 +346,30 @@ export default function Coach() {
           ))}
         </nav>
 
-        <span className="mb-3 inline-flex items-center gap-2 rounded-pill border border-hairline-strong px-3 py-1.5 text-[11.5px] text-mist">
-          <Sparkles size={13} strokeWidth={1.7} className="text-azure" />
-          Coach credits
-          <span className="text-mist-dim">·</span>
-          {/* A credit balance is a user statistic. No account, no number. */}
-          <span className="tnum text-snow">{IS_DEMO ? "8" : "—"}</span>
-          available
-        </span>
+        {/*
+          THE WHOLE CHIP IS GATED, not just the number.
+
+          This used to render the label unconditionally and swap only the figure
+          for an em-dash. That was invisible while `/app` was DEV-only — the
+          chunk never shipped — and became a live claim the moment the gate
+          became a real session: a signed-in climber on a production build would
+          read "Coach credits · — available", which asserts a metered balance
+          ICEFALL does not have and does not count. The doctrine forbids the
+          bare dash for exactly this reason: it reads as "zero remaining"
+          rather than "no such thing".
+
+          Nothing in this codebase defines what a Coach credit is. Until
+          something does, the honest rendering is no chip at all.
+        */}
+        {IS_DEMO && (
+          <span className="mb-3 inline-flex items-center gap-2 rounded-pill border border-hairline-strong px-3 py-1.5 text-[11.5px] text-mist">
+            <Sparkles size={13} strokeWidth={1.7} className="text-azure" />
+            Coach credits
+            <span className="text-mist-dim">·</span>
+            <span className="tnum text-snow">8</span>
+            available
+          </span>
+        )}
       </div>
 
       <div className="mt-6 flex flex-col gap-6 xl:flex-row">

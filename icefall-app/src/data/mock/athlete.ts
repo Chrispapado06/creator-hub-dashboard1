@@ -4,9 +4,6 @@ import { daysAgo, isoDate, yearsAgo } from "./clock";
 export const USER: User = {
   name: "Alex Morin",
   avatar: "",
-  level: 24,
-  xp: 12540,
-  xpToNext: 14000,
   experience: "experienced",
   disciplines: ["hiking", "mountaineering", "trail-running", "climbing"],
   homeBase: "Chamonix, France",

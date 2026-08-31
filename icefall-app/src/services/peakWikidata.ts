@@ -1,4 +1,5 @@
 import { PHOTOS_TIMEOUT_MS, withTimeout } from "@/lib/netTimeout";
+import { OFFLINE } from "@/offline/offline";
 import { isLatin } from "./peakNames";
 import type { Peak } from "./peaks";
 
@@ -191,6 +192,11 @@ async function fetchFiles(
  * keeps its honest blank.
  */
 export async function enrichPeaks(peaks: Peak[], signal?: AbortSignal): Promise<Peak[]> {
+  // This function only ever ADDS facts, so with no Wikidata to ask it has
+  // nothing to add and hands the peaks straight back — the honest blank the
+  // rest of this module is built around.
+  if (OFFLINE) return peaks;
+
   const wanted = [
     ...new Set(
       peaks

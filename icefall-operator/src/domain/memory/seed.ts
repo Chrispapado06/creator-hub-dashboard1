@@ -35,6 +35,7 @@ import type {
   Booking,
   Company,
   CompanyMountain,
+  CompanyTrek,
   Placement,
   CompanyUser,
   Conversation,
@@ -43,14 +44,19 @@ import type {
   Lead,
   LeadNote,
   Message,
+  MediaAsset,
   Mountain,
   OperatorNotification,
   Product,
   ProductDeparture,
+  Trek,
 } from "../types";
 
 export const LANTERN = "co-lantern";
 export const COLDHARBOUR = "co-coldharbour";
+
+/** Lantern Ridge's own mark. Coldharbour has none — see the note on it. */
+export const LANTERN_LOGO = "md-lantern-logo";
 
 /* -------------------------------------------------------------------------- */
 /* Mountains — real geography, keyed by the consumer app's image names        */
@@ -75,7 +81,9 @@ export const COMPANIES: Company[] = [
     name: "Lantern Ridge Expeditions",
     slug: "lantern-ridge-expeditions",
     status: "active",
-    logoMediaId: null,
+    // Lantern Ridge has given Icefall a mark. See MEDIA_ASSETS below for what
+    // that record does and does not contain.
+    logoMediaId: LANTERN_LOGO,
     tagline: "Khumbu specialists, twenty-one seasons",
     description:
       "A high-altitude operator working the Khumbu, Kilimanjaro and the Alps, with guides and support staff who return to the same mountains season after season.",
@@ -123,6 +131,16 @@ export const COMPANIES: Company[] = [
     name: "Coldharbour Alpine",
     slug: "coldharbour-alpine",
     status: "active",
+    /**
+     * NULL, DELIBERATELY, AND IT STAYS NULL.
+     *
+     * Coldharbour has supplied no mark, so every surface that draws a logo has
+     * to fall through to its initials right here on screen — not only in a
+     * test. That fallback is the COMMON case: most companies have not given
+     * Icefall artwork, and a real business's logo is its trademark and does not
+     * ship here at all. Filling this in "so the demo looks finished" would
+     * fabricate an identity and hide the path that matters most.
+     */
     logoMediaId: null,
     tagline: "Alaska and the Alps",
     description: "A small guiding company running Denali and the Western Alps.",
@@ -139,6 +157,75 @@ export const COMPANIES: Company[] = [
     documentsCheckedAt: "2026-05-14T00:00:00.000Z",
     createdAt: "2026-05-14T10:00:00.000Z",
     updatedAt: "2026-08-01T10:00:00.000Z",
+  },
+];
+
+/* -------------------------------------------------------------------------- */
+/* Media assets                                                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Media assets are RECORDS, not files — the same thing `bannerMediaId` has
+ * always been in this seed.
+ *
+ * WHAT WAS NOT DONE HERE, AND WHY. No image was invented and dropped into
+ * `public/`. Icefall's media store is not connected, so there is nothing to
+ * serve bytes from, and painting a mark into the repo so the demo "looks
+ * finished" would be fabricating a company's identity — which is the one thing
+ * the logo rules exist to prevent. What this row is, is the row: an approved
+ * `media_assets` record with a real storage path in the shape
+ * `storagePathFor()` builds (company id FIRST, because the storage policy
+ * matches on it), a real mime type, a real size and real square dimensions that
+ * pass `MEDIA_RULES.logo`.
+ *
+ * WHAT IT MAKES VISIBLE. Lantern Ridge now satisfies the profile's
+ * "Media & photos" row and its hero inspector shows a logo on record with a
+ * working Remove. Coldharbour Alpine has none, so the initials fallback is
+ * exercised on screen beside it. Any surface asked to draw Lantern's mark still
+ * has no bytes and still falls back to initials — correctly, and without
+ * pretending otherwise.
+ */
+export const MEDIA_ASSETS: MediaAsset[] = [
+  {
+    id: LANTERN_LOGO,
+    companyId: LANTERN,
+    // Null: the mark belongs to the company, not to one trip.
+    productId: null,
+    kind: "logo",
+    storagePath: `${LANTERN}/${LANTERN}/lantern-ridge-mark.png`,
+    /*
+     * A REAL FILE, and deliberately a PNG rather than an SVG.
+     *
+     * `MEDIA_RULES.logo` refuses SVG from an operator, so seeding one would put
+     * a record in the app that the app's own upload form would reject — the
+     * demo would be modelling something an operator cannot actually do. The
+     * mark ships at public/img/companies/ and is 512x512, which is what an
+     * ordinary operator export looks like.
+     *
+     * The mark itself is authored for an INVENTED company. Lantern Ridge's
+     * name, team and certifications are all authored here, so a mark is no more
+     * a fabrication than the name. Coldharbour Alpine is left without one on
+     * purpose, so the initials fallback is visible on screen beside it, and no
+     * mark is ever drawn for a REAL business.
+     */
+    mimeType: "image/png",
+    byteSize: 2_868,
+    // Square, and above the 256 floor `MEDIA_RULES.logo` sets.
+    widthPx: 512,
+    heightPx: 512,
+    altText: "Lantern Ridge Expeditions",
+    /**
+     * A company's own mark, supplied by the company. The licence says exactly
+     * that and the credit is the company itself — neither is invented, and
+     * `media_approved_is_attributed` refuses an approval without both.
+     */
+    licence: "Supplied by the company for use on Icefall",
+    credit: "Lantern Ridge Expeditions",
+    state: "approved",
+    decisionReason: null,
+    reviewedBy: "u-icefall-review",
+    reviewedAt: "2026-03-04T09:20:00.000Z",
+    createdAt: "2026-03-03T16:05:00.000Z",
   },
 ];
 
@@ -210,6 +297,338 @@ export const COMPANY_MOUNTAINS: CompanyMountain[] = [
   { id: "cm-lantern-kilimanjaro", companyId: LANTERN, mountainId: "kilimanjaro", status: "active", assignedAt: "2026-07-14T11:00:00.000Z" },
   { id: "cm-lantern-mont-blanc", companyId: LANTERN, mountainId: "mont-blanc", status: "active", assignedAt: "2026-08-03T11:00:00.000Z" },
   { id: "cm-coldharbour-denali", companyId: COLDHARBOUR, mountainId: "denali", status: "active", assignedAt: "2026-04-20T11:00:00.000Z" },
+];
+
+/* -------------------------------------------------------------------------- */
+/* Treks — a slice of the real catalogue, copied field for field               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * NINETEEN REAL ROUTES, taken verbatim from `icefall-web/src/data/trekRecords.ts`
+ * — which is generated from sourced files and validated there. Names, regions,
+ * countries, seasons, durations, difficulties and the per-route high points are
+ * the web catalogue's own values, unchanged. Nothing here was composed.
+ *
+ * It is a SLICE, not the catalogue. The real thing is 252 routes across 22
+ * regions and belongs in a `treks` table migrated from that file, which is the
+ * ask in `icefall-sessions/requests/09-company-treks-migration.md`. Two
+ * hand-maintained trek lists would drift within a week; this one exists only so
+ * the request flow can be built and exercised before the table lands.
+ *
+ * THE HIGH POINTS ARE THE ROUTES' OWN. Everest Base Camp reads 5,545 m — Kala
+ * Patthar, which most itineraries include — where Everest itself is 8,849 m.
+ * The Tour du Mont Blanc reads 2,665 m against Mont Blanc's 4,805 m. Not one
+ * figure in this array is a mountain's summit, and the Tour of the Bernina
+ * class of route, where no per-route figure is published, would read null.
+ */
+export const TREKS: Trek[] = [
+  {
+    id: "everest-base-camp-trek",
+    name: "Everest Base Camp Trek",
+    regionId: "khumbu",
+    region: "Everest & the Khumbu",
+    country: "Nepal",
+    mountainIds: ["everest"],
+    durationDays: [12, 14],
+    difficulty: "Strenuous",
+    season: "March – May, October – November",
+    style: "Base camp",
+    summary:
+      "The standard walk in from Lukla through Namche Bazaar and Tengboche to the tents below the Khumbu Icefall, with most itineraries adding the dawn climb of Kala Patthar. The difficulty is altitude and consecutive walking days rather than terrain.",
+    maxAltitudeM: 5545,
+  },
+  {
+    id: "everest-three-passes-trek",
+    name: "Everest Three Passes Trek",
+    regionId: "khumbu",
+    region: "Everest & the Khumbu",
+    country: "Nepal",
+    mountainIds: ["everest"],
+    durationDays: [18, 21],
+    difficulty: "Very strenuous",
+    season: "March – May, October – November",
+    style: "High pass",
+    summary:
+      "A circuit of the upper Khumbu linking the Kongma La, the Cho La and the Renjo La, usually taking in Everest Base Camp and the Gokyo lakes on the way round. Several days involve long crossings above 5,300 m and the Cho La has a short glacier section.",
+    maxAltitudeM: 5545,
+  },
+  {
+    id: "gokyo-lakes-trek",
+    name: "Gokyo Lakes Trek",
+    regionId: "khumbu",
+    region: "Everest & the Khumbu",
+    country: "Nepal",
+    mountainIds: [],
+    durationDays: [12, 14],
+    difficulty: "Strenuous",
+    season: "March – May, October – November",
+    style: "Valley",
+    summary:
+      "An out-and-back up the Dudh Koshi's western branch from Namche through Dole and Machhermo to the string of glacial lakes at Gokyo, with the ascent of Gokyo Ri as the high point. Quieter than the base camp trail and shorter.",
+    maxAltitudeM: 5357,
+  },
+  {
+    id: "ama-dablam-base-camp-trek",
+    name: "Ama Dablam Base Camp Trek",
+    regionId: "khumbu",
+    region: "Everest & the Khumbu",
+    country: "Nepal",
+    mountainIds: ["ama-dablam"],
+    durationDays: [8, 11],
+    difficulty: "Moderate",
+    season: "March – May, September – November",
+    style: "Base camp",
+    summary:
+      "The Everest trail as far as Pangboche, then a side branch up the meadows to Ama Dablam's base camp. Shorter and lower than the base camp treks further up the valley, and off the main trail for its final two days.",
+    maxAltitudeM: 4570,
+  },
+  {
+    id: "langtang-valley-trek",
+    name: "Langtang Valley Trek",
+    regionId: "langtang",
+    region: "Langtang",
+    country: "Nepal",
+    mountainIds: [],
+    durationDays: [7, 9],
+    difficulty: "Moderate",
+    season: "March – May, September – November",
+    style: "Valley",
+    summary:
+      "A there-and-back walk up the Langtang valley from Syabrubesi through Lama Hotel and the rebuilt Langtang village to Kyanjin Gompa, with an acclimatisation day for the Kyanjin Ri viewpoint.",
+    maxAltitudeM: 4773,
+  },
+  {
+    id: "annapurna-circuit-trek",
+    name: "Annapurna Circuit Trek",
+    regionId: "annapurna",
+    region: "Annapurna",
+    country: "Nepal",
+    mountainIds: [],
+    durationDays: [12, 20],
+    difficulty: "Strenuous",
+    season: "March – May, October – November",
+    style: "Circuit",
+    summary:
+      "A circuit of the Annapurna massif, up the Marsyangdi valley to Manang, over the Thorong La and down the Kali Gandaki past Muktinath and Jomsom. Roads now run far up both sides, so the route is several days shorter than it once was.",
+    maxAltitudeM: 5416,
+  },
+  {
+    id: "snowman-trek",
+    name: "Snowman Trek",
+    regionId: "bhutan",
+    region: "Bhutan",
+    country: "Bhutan",
+    mountainIds: [],
+    durationDays: [25, 30],
+    difficulty: "Very strenuous",
+    season: "Mid-June – mid-October",
+    style: "Long distance",
+    summary:
+      "A traverse of northern Bhutan from the Laya region through Lunana to Sephu or Bumthang, about 347 km over eleven passes, several of them above 5,000 m. Remote and weather-dependent; parties regularly turn back when snow closes a pass.",
+    maxAltitudeM: 5320,
+  },
+  {
+    id: "kilimanjaro-machame-route",
+    name: "Kilimanjaro Machame Route",
+    regionId: "east-africa",
+    region: "East Africa",
+    country: "Tanzania",
+    mountainIds: ["kilimanjaro"],
+    durationDays: [6, 7],
+    difficulty: "Strenuous",
+    season: "January – March, June – October",
+    style: "Traverse",
+    summary:
+      "The busiest of the southern approaches, climbing from Machame Gate past the Shira plateau and the Lava Tower, then along the southern circuit to Barafu. Descent is by the Mweka trail, so the walk crosses the mountain rather than returning the way it came.",
+    maxAltitudeM: 5895,
+  },
+  {
+    id: "kilimanjaro-lemosho-route",
+    name: "Kilimanjaro Lemosho Route",
+    regionId: "east-africa",
+    region: "East Africa",
+    country: "Tanzania",
+    mountainIds: ["kilimanjaro"],
+    durationDays: [7, 8],
+    difficulty: "Strenuous",
+    season: "January – March, June – October",
+    style: "Traverse",
+    summary:
+      "A western approach that begins in forest at Londorossi and crosses the Shira plateau before joining the southern circuit to Barafu. The extra days low down give more time to acclimatise than the shorter southern routes.",
+    maxAltitudeM: 5895,
+  },
+  {
+    id: "mount-meru-trek",
+    name: "Mount Meru Trek",
+    regionId: "east-africa",
+    region: "East Africa",
+    country: "Tanzania",
+    mountainIds: [],
+    durationDays: [3, 4],
+    difficulty: "Strenuous",
+    season: "January – February, June – October",
+    style: "Traverse",
+    summary:
+      "The Momella route through Arusha National Park to Socialist Peak, walked with an armed ranger because the lower forest holds buffalo and elephant. Often used as acclimatisation before Kilimanjaro.",
+    maxAltitudeM: 4562,
+  },
+  {
+    id: "tour-du-mont-blanc",
+    name: "Tour du Mont Blanc",
+    regionId: "alps",
+    region: "The Alps",
+    country: "France / Italy / Switzerland",
+    mountainIds: ["mont-blanc"],
+    durationDays: [10, 11],
+    difficulty: "Strenuous",
+    season: "Mid-June – mid-September",
+    style: "Circuit",
+    summary:
+      "A circuit of about 165 km around the Mont Blanc massif through France, Italy and Switzerland, usually walked anti-clockwise from Les Houches and staying in refuges and valley villages. The high point is the Col des Fours.",
+    maxAltitudeM: 2665,
+  },
+  {
+    id: "walkers-haute-route",
+    name: "Walker's Haute Route",
+    regionId: "alps",
+    region: "The Alps",
+    country: "France / Switzerland",
+    mountainIds: ["mont-blanc"],
+    durationDays: [13, 14],
+    difficulty: "Very strenuous",
+    season: "July – mid-September",
+    style: "Traverse",
+    summary:
+      "The walking route from Chamonix to Zermatt, roughly 220 km over eleven or more cols, with the Col de Prafleuri as its highest point. It needs no rope or crampons, but the terrain is rocky, remote and sustained.",
+    maxAltitudeM: 2987,
+  },
+  {
+    id: "inca-trail-to-machu-picchu",
+    name: "Inca Trail to Machu Picchu",
+    regionId: "cusco",
+    region: "Cusco & Machu Picchu",
+    country: "Peru",
+    mountainIds: [],
+    durationDays: [4, 4],
+    difficulty: "Strenuous",
+    season: "April – October (trail closed all February)",
+    style: "High pass",
+    summary:
+      "The permitted route from Km 82 up the Cusichaca valley and over three passes, entering Machu Picchu through the Sun Gate on the final morning. Roughly 43 km; permits are capped daily and sell out months ahead.",
+    maxAltitudeM: 4215,
+  },
+  {
+    id: "torres-del-paine-w-trek",
+    name: "Torres del Paine W Trek",
+    regionId: "patagonia",
+    region: "Patagonia",
+    country: "Chile",
+    mountainIds: [],
+    durationDays: [4, 5],
+    difficulty: "Moderate",
+    season: "October – April",
+    style: "Traverse",
+    summary:
+      "A four- or five-day walk along the south side of the Paine massif, taking in the Torres base viewpoint, the French Valley and Grey Glacier. Nights are in refugios or serviced campsites, all of which must be booked before entry.",
+    maxAltitudeM: 870,
+  },
+  {
+    id: "laugavegur-trail",
+    name: "Laugavegur Trail",
+    regionId: "iceland",
+    region: "Iceland",
+    country: "Iceland",
+    mountainIds: [],
+    durationDays: [3, 4],
+    difficulty: "Moderate",
+    season: "Late June – mid-September",
+    style: "Traverse",
+    summary:
+      "A 55 km hut-to-hut route across the southern highlands from the hot springs at Landmannalaugar to the birch woods of Thorsmork, by way of the rhyolite hills at Hrafntinnusker and the black sands of Emstrur. Several rivers are unbridged.",
+    maxAltitudeM: 1050,
+  },
+  {
+    id: "west-highland-way",
+    name: "West Highland Way",
+    regionId: "uk-ireland",
+    region: "Britain & Ireland",
+    country: "United Kingdom",
+    mountainIds: [],
+    durationDays: [7, 8],
+    difficulty: "Moderate",
+    season: "April – October",
+    style: "Long distance",
+    summary:
+      "Scotland's first long-distance route, 154 km from Milngavie on the edge of Glasgow to Fort William, along Loch Lomond and across Rannoch Moor. The highest point is the Devil's Staircase above Kinlochleven.",
+    maxAltitudeM: 550,
+  },
+  {
+    id: "camino-franc-s",
+    name: "Camino Francés",
+    regionId: "iberia",
+    region: "Iberia & the Pyrenees",
+    country: "France / Spain",
+    mountainIds: [],
+    durationDays: [30, 35],
+    difficulty: "Moderate",
+    season: "April – October",
+    style: "Pilgrimage",
+    summary:
+      "The best-known road to Santiago, about 780 km from Saint-Jean-Pied-de-Port over the Pyrenees and across northern Spain through Pamplona, Burgos and Leon. Walking rather than mountaineering, but walking every day for a month.",
+    maxAltitudeM: 1505,
+  },
+  {
+    id: "chilkoot-trail",
+    name: "Chilkoot Trail",
+    regionId: "north-america",
+    region: "North America",
+    country: "United States",
+    mountainIds: [],
+    durationDays: [3, 5],
+    difficulty: "Strenuous",
+    season: "July – early September",
+    style: "High pass",
+    summary:
+      "53 km from Dyea in Alaska over the Chilkoot Pass into British Columbia, the route stampeders carried a tonne of goods over in the winter of 1897. The Scales and the pass itself are a boulder scramble, and the artefacts along the way are protected.",
+    maxAltitudeM: 1067,
+  },
+  {
+    id: "wonderland-trail",
+    name: "Wonderland Trail",
+    regionId: "north-america",
+    region: "North America",
+    country: "United States",
+    mountainIds: [],
+    durationDays: [10, 14],
+    difficulty: "Strenuous",
+    season: "Late July – September",
+    style: "Circuit",
+    summary:
+      "A 150 km circuit right round Mount Rainier, repeatedly dropping into forested valleys and climbing back to the alpine, which is where most of its considerable ascent comes from. Snow lies on Panhandle Gap into early July in many years.",
+    maxAltitudeM: 2060,
+  },
+];
+
+/**
+ * WHO MAY LIST TRIPS ON WHICH ROUTE. Authorization only — no spots, no
+ * itinerary, no price, no position. Exactly `COMPANY_MOUNTAINS` above, for the
+ * other noun.
+ *
+ * Lantern Ridge holds three routes actively and one that has been SUSPENDED, so
+ * the screen has a real example of a grant that exists and does not permit
+ * editing — the distinction `canManageTrek` turns on. Coldharbour holds a
+ * different route entirely, in a region Lantern does not work, so cross-company
+ * isolation is visible on screen rather than only in a test.
+ *
+ * A route with no row here — the Snowman Trek, the Camino, anything — is simply
+ * not this company's to manage, and appears in the request list instead.
+ */
+export const COMPANY_TREKS: CompanyTrek[] = [
+  { id: "ct-lantern-ebc", companyId: LANTERN, trekId: "everest-base-camp-trek", status: "active", assignedAt: "2026-03-05T11:00:00.000Z" },
+  { id: "ct-lantern-gokyo", companyId: LANTERN, trekId: "gokyo-lakes-trek", status: "active", assignedAt: "2026-06-18T11:00:00.000Z" },
+  { id: "ct-lantern-machame", companyId: LANTERN, trekId: "kilimanjaro-machame-route", status: "active", assignedAt: "2026-07-14T11:00:00.000Z" },
+  { id: "ct-lantern-three-passes", companyId: LANTERN, trekId: "everest-three-passes-trek", status: "suspended", assignedAt: "2026-04-02T11:00:00.000Z" },
+  { id: "ct-coldharbour-chilkoot", companyId: COLDHARBOUR, trekId: "chilkoot-trail", status: "active", assignedAt: "2026-04-20T11:00:00.000Z" },
 ];
 
 /**

@@ -1,0 +1,1 @@
+# No third-party dependencies — app.py runs on the Python 3 standard library.

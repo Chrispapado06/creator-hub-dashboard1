@@ -1,7 +1,6 @@
 import { BarChart3, Play, Share2 } from "lucide-react";
 import { Link, Navigate, useParams } from "react-router-dom";
 import { Badge, Button, Card, Divider, SectionLabel, Metric } from "@/components/ui/primitives";
-import { ElevationProfile } from "@/components/ui/charts";
 import { RouteMap } from "@/components/ui/RouteMap";
 import { TerrainMap } from "@/components/map/TerrainMap";
 import { Rise, Screen, ScreenHeader, Stagger } from "@/components/layout/chrome";
@@ -18,10 +17,8 @@ import {
   fmtTime,
 } from "@/lib/format";
 import { useActivityById } from "@/tracking/feed";
-import { SessionPanels } from "@/components/domain/SessionSummary";
 import { useRecordedActivities } from "@/tracking/feed";
-import { useSettings } from "@/settings/store";
-import { useApp } from "@/state/AppState";
+import { DEFAULT_BODY_MASS_KG, useApp } from "@/state/AppState";
 import { cn } from "@/lib/utils";
 import { activityById as trackedType } from "@/tracking/activities";
 
@@ -29,15 +26,11 @@ import { activityById as trackedType } from "@/tracking/activities";
 export default function ActivitySummary() {
   const { id } = useParams<{ id: string }>();
   const { activity, recorded } = useActivityById(id);
-  const { settings } = useSettings();
-  const allRecorded = useRecordedActivities();
-  const { goals } = useApp();
-  const goal = goals.find((g) => g.status === "active");
+  const { goals, bodyMassKgSet } = useApp();
   const analytics = useUpgradeCopy("analytics"); // before any early return — it's a hook
 
   if (!activity) return <Navigate to="/activity" replace />;
 
-  const maxSplit = Math.max(...activity.splits.map((s) => s.durationSec), 1);
 
   return (
     <Screen padded={false}>
@@ -69,19 +62,10 @@ export default function ActivitySummary() {
           </p>
         </Rise>
 
-        {/* Points earned — only recorded activities are scored. */}
-        {recorded?.points_awarded != null && (
-          <Rise className="pt-5">
-            <Card className="border-azure/20 bg-azure/[0.04]">
-              <div className="flex items-baseline justify-between">
-                <p className="section-label text-azure/80">ICEFALL points</p>
-                <p className="tnum text-[22px] font-light text-azure">
-                  +{recorded.points_awarded.toLocaleString("en-GB")}
-                </p>
-              </div>
-            </Card>
-          </Rise>
-        )}
+        {/* PH-01 — the "ICEFALL points" card is gone. D5, answered by the
+            owner on 2026-08-31: "Nothing, no points." Nothing replaces it; the
+            screen stops claiming progression rather than substituting another
+            figure. */}
 
         {/* Headline metrics */}
         <Rise className="pt-5">
@@ -111,30 +95,40 @@ export default function ActivitySummary() {
                 unit="kcal"
                 label={
                   recorded?.caloriesForKg
-                    ? `Energy · est. for ${recorded.caloriesForKg} kg`
+                    ? bodyMassKgSet === null
+                      // The stored `caloriesForKg` is whatever the recorder was
+                      // handed, and the recorder is handed the DEFAULTED mass —
+                      // so a figure computed for a body nobody described reads
+                      // identically to one computed for a real weight. Said
+                      // plainly rather than dressed as a measurement.
+                      ? `Energy · est. for an assumed ${recorded.caloriesForKg} kg`
+                      : `Energy · est. for ${recorded.caloriesForKg} kg`
                     : "Energy · estimate"
                 }
               />
             </div>
+
+            {/* The caveat is a route to the fix, not just a warning. It drops
+                the moment a real weight exists — a caveat that outlives its
+                cause teaches people to ignore caveats. */}
+            {activity.calories !== undefined && bodyMassKgSet === null && (
+              <p className="mt-4 border-t border-hairline pt-3.5 text-[11.5px] leading-relaxed text-mist-dim">
+                Energy is estimated against an assumed {DEFAULT_BODY_MASS_KG} kg because you have
+                not set a weight.{" "}
+                <Link to="/settings" className="text-azure underline underline-offset-2">
+                  Set your weight
+                </Link>{" "}
+                and it will be calculated for you.
+              </p>
+            )}
           </Card>
         </Rise>
 
-        {/* ---- The signature panels ---------------------------------------
-            Your best today · why it mattered · your journey · milestones ·
-            personal bests · what's next. Built to the mockup, and each one
-            allowed to be absent when the data does not support it. */}
-        {/* Always rendered: the panels decide for themselves what the data
-            supports, rather than the whole set vanishing without a track. */}
-        {true && (
-          <Rise className="pt-6">
-            <SessionPanels
-              activity={recorded ?? undefined}
-              all={allRecorded}
-              goal={goal}
-              packKg={settings.packWeightKg}
-            />
-          </Rise>
-        )}
+        {/* PH-01 — THE SIX PANELS ARE GONE. "Your best today", "why it
+            mattered", "your journey", milestones, personal bests and "what's
+            next" were all removed at the owner's request: *"Lot of unnecessary
+            details and info that are not needed"*. `SessionSummary.tsx` was
+            their only home and is deleted with them. */}
 
         {/* Route */}
         <Rise className="pt-6">
@@ -161,14 +155,6 @@ export default function ActivitySummary() {
           </div>
         </Rise>
 
-        {/* Elevation */}
-        <Rise className="pt-6">
-          <SectionLabel>Elevation profile</SectionLabel>
-          <Card className="mt-3">
-            <ElevationProfile track={activity.track} height={100} />
-          </Card>
-        </Rise>
-
         {/* Conditions — only when something actually recorded them. */}
         {activity.conditions && (
           <Rise className="pt-6">
@@ -184,34 +170,9 @@ export default function ActivitySummary() {
           </Rise>
         )}
 
-        {/* Splits */}
-        <Rise className="pt-6">
-          <SectionLabel>Splits</SectionLabel>
-          <Card className="mt-3" inset={false}>
-            <div className="px-4 py-1">
-              {activity.splits.map((s) => (
-                <div
-                  key={s.km}
-                  className="flex items-center gap-3 border-b border-hairline py-2.5 last:border-0"
-                >
-                  <span className="tnum w-6 shrink-0 text-[12px] text-mist-dim">{s.km}</span>
-                  <div className="h-1 flex-1 overflow-hidden rounded-full bg-white/[0.06]">
-                    <div
-                      className="h-full rounded-full bg-azure/70"
-                      style={{ width: `${(s.durationSec / maxSplit) * 100}%` }}
-                    />
-                  </div>
-                  <span className="tnum w-12 shrink-0 text-right text-[12px] text-snow">
-                    {fmtDuration(s.durationSec)}
-                  </span>
-                  <span className="tnum w-12 shrink-0 text-right text-[11px] text-mist-dim">
-                    +{s.elevationGainM}m
-                  </span>
-                </div>
-              ))}
-            </div>
-          </Card>
-        </Rise>
+        {/* PH-01 — the splits table and the elevation profile came out here
+            too. The route map and the conditions stay: those are what the
+            activity WAS, rather than an analysis of it. */}
 
         {/* Coach */}
         {activity.insight && (

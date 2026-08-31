@@ -46,8 +46,15 @@ const sectionFields = (key: string): readonly (keyof Company)[] =>
  * record every render, never stored, never invented.
  */
 const CHECKLIST_ROWS: { label: string; fields: readonly (keyof Company)[]; need: "all" | "any" }[] = [
-  // The banner belongs to "Media & photos" below, so it does not also fail this row.
-  { label: "Basic information", fields: sectionFields("hero").filter((f) => f !== "bannerMediaId"), need: "all" },
+  // The banner and the logo belong to "Media & photos" below, so they do not
+  // also fail this row. Both are hero fields — the logo is what sits above the
+  // company name — but "Basic information" is need:"all", and scoring an image
+  // twice would make written details unfinishable until artwork arrived.
+  {
+    label: "Basic information",
+    fields: sectionFields("hero").filter((f) => f !== "bannerMediaId" && f !== "logoMediaId"),
+    need: "all",
+  },
   { label: "About your company", fields: sectionFields("about"), need: "all" },
   { label: "Media & photos", fields: ["bannerMediaId", "logoMediaId"], need: "any" },
   { label: "Certifications", fields: sectionFields("credentials"), need: "all" },

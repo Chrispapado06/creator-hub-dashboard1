@@ -125,16 +125,38 @@ export function TagRow({ tags, max = 3 }: { tags: readonly string[]; max?: numbe
   );
 }
 
-const SUGGESTED_TAGS = [
+/**
+ * THE READY-MADE TAGS (OP-05).
+ *
+ * The owner's own words: "tags should be ready so cold lead, waste of time,
+ * interested, inquired etc". These four are theirs verbatim; the rest are the
+ * ordinary sales shorthand that was already here and still earns its place.
+ *
+ * NOTE WHAT THESE ARE NOT. They are not stages. `LEAD_PIPELINE` already carries
+ * new → contacted → qualified → quoted → booked → lost, and a lead is in exactly
+ * one of those. A tag is the operator's own judgement laid ON TOP of that — a
+ * lead can be Quoted AND a waste of time, and the two facts do not contradict.
+ * Collapsing them into one axis would lose whichever the pipeline did not use.
+ */
+export const PRESET_TAGS = [
+  "Enquired",
+  "Interested",
+  "Cold lead",
+  "Waste of time",
   "Deposit paid",
   "Repeat client",
   "Awaiting quote reply",
   "Needs dates",
-  "Group of 4",
+  "Group booking",
   "First-timer",
   "Referral",
   "Phone enquiry",
-];
+] as const;
+
+/** The owner's four, offered first because they are the ones asked for. */
+export const PRIMARY_TAGS: readonly string[] = PRESET_TAGS.slice(0, 4);
+
+const SUGGESTED_TAGS: readonly string[] = PRESET_TAGS;
 
 /**
  * Add and remove a lead's tags.
@@ -304,7 +326,7 @@ export function AddLeadDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4"
       role="dialog"
       aria-modal="true"
       aria-label="Add a lead"

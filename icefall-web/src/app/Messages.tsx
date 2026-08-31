@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { Building2, Info, MessageSquare, Save, Trash2, Users } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Button, GuidePhoto, VerifiedTick } from "@/components/ui";
+import { GuideCredentialMark } from "@/components/marks";
 import { DEMO_NOTICE, IS_DEMO, expeditionById, guideById } from "@/data/demo";
 import { formatEur } from "@/money/model";
 import { cn } from "@/lib/utils";
@@ -594,7 +595,14 @@ function Inbox() {
                   its tooltip — the only thing that makes a tick honest — would
                   be clipped by the overflow.
                 */}
-                {active.verifiedOn && <VerifiedTick verifiedOn={active.verifiedOn} />}
+                {/* A guide's mark is the gold credential; a company keeps the plain tick
+                    until the owner assigns the fourth mark — see components/marks.tsx. */}
+                {active.verifiedOn && active.kind === "guide" && (
+                  <GuideCredentialMark verifiedOn={active.verifiedOn} />
+                )}
+                {active.verifiedOn && active.kind !== "guide" && (
+                  <VerifiedTick verifiedOn={active.verifiedOn} />
+                )}
               </div>
               <p className="mt-0.5 truncate text-[12px] text-mist">{active.context}</p>
             </div>

@@ -1,0 +1,21 @@
+{
+  "type": "aside",
+  "name": "Promo popup",
+  "sections": {
+    "promo_popup_main": {
+      "type": "promo-popup",
+      "settings": {
+        "heading": "Take 10% Off Your First Ascent",
+        "body": "Join the expedition list for early access to new drops, restocks, and gear notes from the mountain. Your code is waiting.",
+        "submit_label": "Get My Code",
+        "disclaimer": "By signing up you agree to receive marketing emails from theicefall. Unsubscribe anytime.",
+        "success_heading": "Welcome to Basecamp",
+        "success_body": "Your code is below. Gear up.",
+        "discount_code": "WELCOME10",
+        "continue_label": "Continue shopping",
+        "delay_seconds": 12
+      }
+    }
+  },
+  "order": ["promo_popup_main"]
+}

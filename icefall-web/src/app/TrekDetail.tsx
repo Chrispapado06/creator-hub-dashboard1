@@ -2,10 +2,11 @@ import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   CalendarDays, Check, ChevronRight, Clock, Gauge, Info, MapPin,
-  MessageSquare, MountainSnow, ShieldCheck, Users,
+  MountainSnow, ShieldCheck, Users,
 } from "lucide-react";
 import { GuidePhoto } from "@/components/ui";
 import { DEMO_NOTICE, GUIDES, IS_DEMO, monogram } from "@/data/demo";
+import { EnquiryForm } from "@/components/EnquiryForm";
 import { PEAKS } from "@/data/peaks";
 import { trekAltitude, trekDuration, trekRegion } from "@/data/trekTypes";
 import { operatorsForTrek, trekById, treksInRegion } from "@/data/treks";
@@ -393,13 +394,19 @@ export default function TrekDetail() {
               Trek prices depend on the operator, the group size and the season. No operator has
               published one to ICEFALL.
             </p>
-            <Link
-              to="/app/messages"
-              className="mt-4 flex h-11 items-center justify-center gap-2 rounded-tile bg-azure-cta text-[13px] font-medium text-obsidian transition-opacity hover:opacity-90"
-            >
-              <MessageSquare size={14} strokeWidth={1.9} />
-              Enquire about this trek
-            </Link>
+            {/*
+              A trek is a real `destinations` row — its id is the same slug the
+              catalogue uses — so an enquiry about one can name a real object and
+              land in the CRM queue. Until the migration is pushed this renders
+              the link it always did; see `ENQUIRY_LIVE`.
+            */}
+            <EnquiryForm
+              object={{ kind: "destination", id: trek.id, label: trek.name }}
+              heading="Enquire"
+              intro="Ask ICEFALL about walking this route. No operator has listed it yet, so the answer comes from us."
+              originScreen={`/app/trek/${trek.id}`}
+              fallbackLabel="Enquire about this trek"
+            />
             <button
               type="button"
               onClick={() => setTab("Operators")}

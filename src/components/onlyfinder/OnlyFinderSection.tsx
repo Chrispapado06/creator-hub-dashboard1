@@ -328,7 +328,7 @@ function DigestView() {
   useEffect(() => { getLatestDigest().then(setDigest); }, []);
 
   if (digest === undefined) return <div className="h-32 animate-pulse rounded-xl border border-border bg-card/60" />;
-  if (!digest) return <Empty title="No digest yet" hint="The daily pull generates this each morning (claude-haiku-4-5)." />;
+  if (!digest) return <Empty title="No digest yet" hint="The daily pull generates this each morning." />;
 
   return (
     <div className="space-y-4">

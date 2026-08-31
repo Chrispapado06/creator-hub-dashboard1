@@ -24,6 +24,8 @@
 
 import type { Unavailable } from "@/coach/types";
 import { CONDITIONS_TIMEOUT_MS, withTimeout } from "@/lib/netTimeout";
+import { OFFLINE } from "@/offline/offline";
+import { offlineConditions } from "@/offline/fixtures";
 
 const ENDPOINT = "https://api.open-meteo.com/v1/forecast";
 
@@ -164,6 +166,22 @@ export async function getMountainConditions(args: {
   signal?: AbortSignal;
 }): Promise<MountainConditions> {
   const { peakName, elevationM, lat, lon, includeBands = false, signal } = args;
+
+  /*
+   * Offline there is no forecast to fetch, and a panel reading "the forecast
+   * could not be loaded" on every screen for two hours is honest but dead. The
+   * offline build says on every screen that its figures are invented, so it
+   * shows an invented forecast rather than a permanent error — and it does it
+   * without touching the network, which is the point.
+   */
+  if (OFFLINE) {
+    return offlineConditions({
+      peakName,
+      elevationM,
+      bands: bandsFor(elevationM),
+      includeBands,
+    });
+  }
 
   const absent = (): CurrentConditions => ({
     temperatureC: { value: null, reason: "no-data" },

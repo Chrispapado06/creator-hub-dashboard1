@@ -3,6 +3,7 @@ import { peakImage } from "./peakPlate";
 import { Link } from "react-router-dom";
 import { Bookmark, CalendarDays, MapPin, Mountain, RotateCcw, X } from "lucide-react";
 import { Badge, Button, GuidePhoto, Rating, VerifiedTick } from "@/components/ui";
+import { GuideCredentialMark } from "@/components/marks";
 import { DEMO_NOTICE, EXPEDITIONS, GUIDES, IS_DEMO } from "@/data/demo";
 import { formatEur } from "@/money/model";
 import { cn } from "@/lib/utils";
@@ -327,7 +328,7 @@ function GuideCard({ guide: g, onRemove }: { guide: SavedGuide; onRemove: () => 
         <div className="min-w-0 flex-1">
           <span className="flex items-center gap-1.5">
             <span className="truncate text-[14.5px] text-snow">{g.name}</span>
-            <VerifiedTick verifiedOn={g.verifiedOn} size={14} />
+            <GuideCredentialMark verifiedOn={g.verifiedOn} size={14} />
           </span>
           <p className="mt-0.5 truncate text-[11.5px] text-mist-dim">{g.credential}</p>
           <p className="mt-1 flex items-center gap-1.5 text-[11.5px] text-mist">

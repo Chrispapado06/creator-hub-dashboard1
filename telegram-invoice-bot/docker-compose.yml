@@ -1,0 +1,15 @@
+services:
+  bot:
+    build: .
+    container_name: invoice-reminder-bot
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Keep the container OS clock in the same zone as the reminder logic.
+      - TZ=${TZ:-Europe/Nicosia}
+    volumes:
+      # Mount the whole src dir (not just the single file) so that: the bot's
+      # atomic rename-writes and the .bak backup land on the host, and host-side
+      # hand-edits to creators.json — including editors that save via rename —
+      # propagate into the container. The bot re-reads the file on every run.
+      - ./src:/app/src

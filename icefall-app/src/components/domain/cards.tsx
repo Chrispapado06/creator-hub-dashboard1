@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
+import { MODE_ICON } from "@/components/tracker/activityIcons";
 import { MountainBackdrop } from "@/components/domain/MountainImage";
 import { Badge, Card } from "@/components/ui/primitives";
 import { ProgressRing } from "@/components/ui/charts";
@@ -152,7 +153,17 @@ export function ActivityCard({ activity }: { activity: Activity }) {
     <Link to={`/activity/${activity.id}`} className="block">
       <Card className="transition-colors duration-200 hover:border-hairline-strong">
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
+          {/* PH-02 — the discipline, as a mark as well as a word. A list of
+              rows that differed only by a small uppercase label read as one
+              undifferentiated block; the icon is what makes a hike and a ride
+              distinguishable at a glance while scrolling. */}
+          <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-tile border border-hairline bg-elevated/40 text-mist">
+            {(() => {
+              const Icon = MODE_ICON[activity.mode];
+              return <Icon size={16} strokeWidth={1.6} />;
+            })()}
+          </span>
+          <div className="min-w-0 flex-1">
             <p className="section-label">{MODE_LABELS[activity.mode]}</p>
             <h3 className="mt-1.5 truncate text-[15px] font-normal text-snow">{activity.title}</h3>
             <p className="mt-0.5 truncate text-[12px] text-mist-dim">

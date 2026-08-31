@@ -126,7 +126,19 @@ function ViewsNote() {
     <p className="mb-3 text-[11.5px] leading-snug text-muted">
       Icefall is not counting listing views yet. The view figures below are demo
       numbers for this local build — not a measurement, and not something to make
-      a commercial decision on.
+      a commercial decision on.{" "}
+      {/*
+       * Constitution §6q: a derived figure must carry the PROVENANCE of its
+       * inputs, not only its arithmetic. "Per 100 views" is a real numerator
+       * over an invented denominator, and the "Seen, rarely asked about" flag
+       * is a recommendation to ACT computed entirely from invented traffic.
+       * Naming the arithmetic without naming the input reads as analysis.
+       */}
+      <span className="text-faint">
+        Anything worked out from them — the “per 100 views” column and the
+        “seen, rarely asked about” flag — is invented for the same reason, however
+        real the enquiry counts beside it are.
+      </span>
     </p>
   );
 }
@@ -332,7 +344,8 @@ function RankTable({
         Conversion is bookings ÷ enquiries. A dash means there were no enquiries to convert — not a 0% rate.
         {showViews && (
           <>
-            {" "}Per 100 views is enquiries ÷ views × 100.
+            {" "}Per 100 views is enquiries ÷ views × 100 — a measured enquiry count over a
+            view count Icefall does not yet record.
             {flagged.size > 0 &&
               " A listing is marked “Seen, rarely asked about” when it draws at least the median views in this table and turns fewer than half the median share of them into enquiries."}
           </>

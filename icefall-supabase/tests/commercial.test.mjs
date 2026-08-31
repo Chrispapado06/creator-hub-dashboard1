@@ -29,6 +29,11 @@ await db.exec(`
   end $$;
   create or replace function auth.uid() returns uuid language sql stable as $$
     select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid; $$;
+  -- Supabase grants these to every API role; without them an INVOKER function
+  -- or trigger that calls auth.uid() fails here but not in production (and
+  -- probes pass for the wrong reason — the SS1 harness lesson).
+  grant usage on schema auth to anon, authenticated;
+  grant execute on function auth.uid() to anon, authenticated;
   create publication supabase_realtime;
 `);
 await db.exec(SQL);
@@ -639,6 +644,69 @@ for (const t of results) {
   console.log(`${t.pass ? " PASS" : " FAIL"}  ${t.name.padEnd(58)} ${t.detail ?? ""}`);
 }
 console.log("=".repeat(80));
+
+/* ========================================================================== */
+/* OPERATOR-CREATED LEADS — request 04's guarantees, enforced by the database */
+/* ========================================================================== */
+
+// The smuggle test, the strong way round: origin='icefall' from an operator is
+// REFUSED, not coerced — a database that silently rewrites teaches clients it
+// accepted them.
+r = await as(opN, () => db.query(
+  `insert into public.leads (company_id, origin, source_page) values ($1, 'icefall', 'Phone')`,
+  [northwind]));
+check("an operator cannot file their own enquiry as ICEFALL's", !r.ok, r.ok ? "SMUGGLED" : r.error);
+
+r = await as(opN, () => db.query(
+  `insert into public.leads (company_id, origin, customer_id, source_page) values ($1, 'company', $2, 'Phone')`,
+  [northwind, customer]));
+check("...nor attach an ICEFALL user to their own-origin lead", !r.ok, r.ok ? "ATTACHED" : r.error);
+
+r = await asCommitted(opN, () => db.query(
+  `insert into public.leads (company_id, origin, source_page, tags)
+   values ($1, 'company', 'Walk-in', array['Deposit',' deposit ','VIP  client'])
+   returning id, tags, customer_id`, [northwind]));
+check("an operator records their own walk-in", r.ok, r.ok ? "recorded" : r.error);
+const opLead = r.ok ? r.value.rows[0] : null;
+check("...tags are de-duplicated case-insensitively, first casing kept, whitespace collapsed",
+  opLead && JSON.stringify(opLead.tags) === JSON.stringify(["Deposit", "VIP client"]),
+  opLead ? JSON.stringify(opLead.tags) : "?");
+check("...and no customer is attached", opLead && opLead.customer_id === null,
+  opLead ? String(opLead.customer_id) : "?");
+
+r = await as(opN, () => db.query(
+  `update public.leads set origin = 'icefall' where id = $1`, [opLead.id]));
+const still = (await db.query(`select origin from public.leads where id=$1`, [opLead.id])).rows[0];
+check("an operator cannot later promote it into ICEFALL's numbers",
+  still.origin === "company", still.origin);
+
+r = await as(opN, () => db.query(`delete from public.leads where id = $1`, [opLead.id]));
+const survives = (await db.query(`select count(*)::int c from public.leads where id=$1`, [opLead.id])).rows[0].c;
+check("an operator cannot delete a lead — even their own", survives === 1, `${survives} rows`);
+
+r = await as(opN, () => db.query(
+  `insert into public.leads (company_id, origin, source_page, tags)
+   values ($1, 'company', 'x', array['1','2','3','4','5','6','7','8','9'])`, [northwind]));
+check("a ninth tag is refused, not trimmed", !r.ok, r.ok ? "ACCEPTED" : r.error);
+
+r = await as(opN, () => db.query(
+  `insert into public.leads (company_id, origin, source_page, tags)
+   values ($1, 'company', 'x', array['this tag is far too long to be allowed'])`, [northwind]));
+check("a 25+ character tag is refused with the tag named", !r.ok, r.ok ? "ACCEPTED" : r.error);
+
+r = await as(ops, () => db.query(
+  `insert into public.leads (company_id, origin, source_page) values ($1, 'icefall', '/mountains/everest')`,
+  [northwind]));
+check("an ICEFALL lead without a customer is a broken record and refused", !r.ok,
+  r.ok ? "INSERTED" : r.error);
+
+r = await as(opS, () => db.query(
+  `update public.leads set tags = array['poached'] where id = $1`, [opLead.id]));
+const untagged = (await db.query(`select tags from public.leads where id=$1`, [opLead.id])).rows[0];
+check("another company cannot touch the lead",
+  JSON.stringify(untagged.tags) === JSON.stringify(["Deposit", "VIP client"]),
+  JSON.stringify(untagged.tags));
+
 console.log(`${results.length - failed}/${results.length} passed`);
 await db.close();
 process.exit(failed ? 1 : 0);

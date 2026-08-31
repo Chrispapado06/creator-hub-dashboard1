@@ -29,6 +29,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { AppCompanyPreview, type PreviewData } from "@/editor/CompanyPreview";
 import { LivePreview } from "@/editor/LivePreview";
+import { OFFLINE } from "@/offline/offline";
 import { MediaDrop, type StagedFile } from "@/editor/MediaDrop";
 import {
   SECTION_STATE_COLOUR, SECTION_STATE_LABEL, pendingFields, sectionState, sectionsFor,
@@ -48,6 +49,16 @@ interface Draft {
   foundedYear: string;
   description: string;
   about: string;
+  /**
+   * The company's own mark, by media id — NEVER a URL and never a file.
+   *
+   * It is an id and not a staged file because that is the only part of a logo
+   * change this app can honestly make today: ICEFALL's media store is not
+   * connected, so a newly dropped file can be previewed but cannot become an
+   * asset. REMOVING a logo is a real, submittable change, and this field is what
+   * carries it.
+   */
+  logoMediaId: string | null;
 }
 
 export default function CompanyEditor() {
@@ -62,15 +73,21 @@ export default function CompanyEditor() {
   const rejected = versions.find((v) => v.state === "rejected");
   const savedDraft = versions.find((v) => v.state === "draft" || v.state === "changes_requested");
 
-  const [surface, setSurface] = useState<Surface>("web");
+  /*
+   * Offline the Web pane cannot show the real page, so the editor opens on the
+   * App surface — the one that is drawn here and works with no connection.
+   * Both surfaces remain selectable; only the starting point moves.
+   */
+  const [surface, setSurface] = useState<Surface>(OFFLINE ? "app" : "web");
   const [viewing, setViewing] = useState<"draft" | "live">("draft");
   const [selected, setSelected] = useState("hero");
   const [banner, setBanner] = useState<StagedFile | null>(null);
+  const [logo, setLogo] = useState<StagedFile | null>(null);
   const [message, setMessage] = useState<{ tone: "neutral" | "rejected" | "pending"; text: string } | null>(null);
 
   const [draft, setDraft] = useState<Draft>({
     name: "", tagline: "", city: "", country: "", foundedYear: "",
-    description: "", about: "",
+    description: "", about: "", logoMediaId: null,
   });
 
   // Seed from the LIVE record, then overlay any saved draft, so an operator
@@ -86,6 +103,10 @@ export default function CompanyEditor() {
       foundedYear: String(o.foundedYear ?? company.foundedYear ?? ""),
       description: o.description ?? company.description ?? "",
       about: o.about ?? company.about ?? "",
+      // `??` would be wrong here: a saved draft that REMOVED the logo carries an
+      // explicit null, and `??` would read that as "absent" and quietly restore
+      // the live logo the operator had just cleared.
+      logoMediaId: "logoMediaId" in o ? (o.logoMediaId ?? null) : company.logoMediaId,
     });
   }, [company, savedDraft]);
 
@@ -108,6 +129,13 @@ export default function CompanyEditor() {
   if (draft.country !== (company.country ?? "")) changed.country = draft.country;
   const year = draft.foundedYear.trim() === "" ? null : Number(draft.foundedYear);
   if (year !== company.foundedYear && !Number.isNaN(year)) changed.foundedYear = year;
+  /*
+   * THIS LIST IS AN ALLOWLIST AND ITS SHAPE IS THE POINT. Every line names one
+   * field explicitly — no spread, no computed key, no loop over the draft — so
+   * a field the operator may not set cannot reach the payload by construction,
+   * only by somebody writing a line for it here. Keep the style.
+   */
+  if (draft.logoMediaId !== company.logoMediaId) changed.logoMediaId = draft.logoMediaId;
 
   const editedSet = new Set(Object.keys(changed));
   const changedCount = editedSet.size;
@@ -450,6 +478,20 @@ export default function CompanyEditor() {
                   onClear={() => setBanner(null)}
                   disabled={!canEdit}
                 />
+                <LogoField
+                  companyName={company.name}
+                  recordedId={draft.logoMediaId}
+                  liveId={company.logoMediaId}
+                  staged={logo}
+                  onStage={setLogo}
+                  onClearStaged={() => setLogo(null)}
+                  onRemove={() => {
+                    setLogo(null);
+                    setDraft({ ...draft, logoMediaId: null });
+                  }}
+                  onRestore={() => setDraft({ ...draft, logoMediaId: company.logoMediaId })}
+                  disabled={!canEdit}
+                />
               </>
             )}
 
@@ -532,6 +574,102 @@ export default function CompanyEditor() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The company's own mark — the field that closes a checklist row an operator
+ * could not previously satisfy.
+ *
+ * THE FALLBACK IS THE COMMON CASE AND IT IS THE HONEST ONE. Most companies have
+ * not given ICEFALL a logo, and one of the companies in the ICEFALL family is a
+ * REAL BUSINESS whose mark is its trademark and does not ship here at all. So
+ * nothing on any surface invents, generates or substitutes a mark: with no logo
+ * the page draws the company's initials, and this panel says exactly that rather
+ * than implying artwork is missing from a slot. An operator putting THEIR OWN
+ * logo into THEIR OWN account is the one legitimate way a mark gets here.
+ *
+ * WHAT THIS CAN AND CANNOT DO TODAY. Removing a logo is a real change and goes
+ * through approval like any other. Adding one cannot complete: the media store
+ * is not connected, so a dropped file is validated and previewed from the
+ * operator's own machine and the panel says it is not saved — it does not
+ * pretend an upload happened, and it does not mint an id for a file that does
+ * not exist on any server.
+ */
+function LogoField({
+  companyName,
+  recordedId,
+  liveId,
+  staged,
+  onStage,
+  onClearStaged,
+  onRemove,
+  onRestore,
+  disabled,
+}: {
+  companyName: string;
+  recordedId: string | null;
+  liveId: string | null;
+  staged: StagedFile | null;
+  onStage: (f: StagedFile) => void;
+  onClearStaged: () => void;
+  onRemove: () => void;
+  onRestore: () => void;
+  disabled?: boolean;
+}) {
+  const initials = companyName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase() ?? "")
+    .join("");
+
+  return (
+    <div className="flex flex-col gap-2">
+      {recordedId ? (
+        <>
+          <div className="lbl">Company logo</div>
+          <div className="flex items-center justify-between gap-2 rounded-tile border border-line bg-raised px-2.5 py-2">
+            <div className="min-w-0">
+              <div className="text-[12.5px] text-ink">A logo is on record</div>
+              <div className="truncate text-[10.5px] text-faint">{recordedId}</div>
+            </div>
+            <button
+              onClick={onRemove}
+              disabled={disabled}
+              className="shrink-0 text-[11px] font-medium text-azure-ink hover:underline disabled:opacity-40"
+            >
+              Remove
+            </button>
+          </div>
+          <p className="text-[10.5px] leading-snug text-faint">
+            Icefall's media store is not connected yet, so the file itself cannot be shown here. Removing it is
+            a real change and goes to Icefall with the rest of this section.
+          </p>
+        </>
+      ) : (
+        <>
+          <MediaDrop
+            kind="logo"
+            label="Company logo"
+            hint={`Your logo appears above your company name on every one of your trips, on the web and in the app. Leave it empty and climbers see ${initials || "your initials"} — your initials, not a placeholder and not a generic icon.`}
+            staged={staged}
+            onStage={onStage}
+            onClear={onClearStaged}
+            disabled={disabled}
+          />
+          {liveId && (
+            <button
+              onClick={onRestore}
+              disabled={disabled}
+              className="self-start text-[11px] font-medium text-azure-ink hover:underline disabled:opacity-40"
+            >
+              Undo removal — keep the logo Icefall already has
+            </button>
+          )}
+        </>
+      )}
     </div>
   );
 }

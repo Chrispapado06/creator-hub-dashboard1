@@ -2,6 +2,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { Slot } from "@radix-ui/react-slot";
 import { forwardRef } from "react";
 import { cn } from "@/lib/utils";
+import { initialsFor } from "@/lib/monogram";
 
 /* -------------------------------------------------------------------------- */
 /* Button                                                                      */
@@ -172,12 +173,22 @@ export function Avatar({
   size?: number;
   className?: string;
 }) {
-  const initials = name
-    .split(" ")
-    .slice(0, 2)
-    .map((p) => p[0])
-    .join("")
-    .toUpperCase();
+  /**
+   * THE SAME FUNCTION COMPANIES USE, and converging it was not cosmetic.
+   *
+   * This took the first two words, so "Nima Chhiring Lama" read `NC` — a middle
+   * name, with the family name dropped. Sherpa names routinely run three parts
+   * (Kami Rita Sherpa, Ang Dorje Sherpa), so on a Himalayan mountaineering
+   * platform that is the common case rather than an edge one: the old rule
+   * rendered Western two-part names correctly and misrendered Nepali guides
+   * specifically. `initialsFor` gives `NL` and `KS`.
+   *
+   * Converged INSIDE this component on purpose. `Avatar` draws every real
+   * person across the app, so changing the algorithm here is a far narrower
+   * move than rewriting its call sites. The hue below is untouched — an
+   * athlete keeps the same tint they have always had.
+   */
+  const initials = initialsFor(name);
 
   // Stable hue per name so an athlete keeps the same tint everywhere.
   let h = 0;

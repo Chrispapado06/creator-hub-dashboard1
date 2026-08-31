@@ -396,9 +396,12 @@ export interface AthleteStats {
 export interface User {
   name: string;
   avatar: string;
-  level: number;
-  xp: number;
-  xpToNext: number;
+  /* `level` / `xp` / `xpToNext` are GONE, not zeroed — see PH-22. There is no
+     XP engine in this app: nothing awards it, nothing spends it, and the curve
+     those numbers implied was never designed. After points were removed (D5)
+     the DEV fixture's Level 24 was the only progression figure left in any
+     build, which is a claim about what the athlete has done with nothing
+     behind it. The type no longer has room for the claim. */
   experience: ExperienceLevel;
   disciplines: Discipline[];
   homeBase: string;

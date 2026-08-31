@@ -5,7 +5,8 @@ import {
   ShieldCheck, Users,
 } from "lucide-react";
 import { Container } from "@/components/Shell";
-import { Button, Card, GuidePhoto, Label, VerifiedTick } from "@/components/ui";
+import { Button, Card, GuidePhoto, Label } from "@/components/ui";
+import { GuideCredentialMark } from "@/components/marks";
 import { AppleMark, GoogleMark } from "@/components/PayMarks";
 import { DateRangeField, formatRange, inclusiveDays, type DateRange } from "@/components/DatePicker";
 import {
@@ -355,7 +356,7 @@ export default function BookingConfirm() {
                 <div className="min-w-0">
                   <p className="flex items-center gap-1.5 text-[14px] text-snow">
                     <span className="truncate">{guide.name}</span>
-                    <VerifiedTick verifiedOn={guide.verifiedOn} size={13} />
+                    <GuideCredentialMark verifiedOn={guide.verifiedOn} size={13} />
                   </p>
                   <p className="truncate text-[11.5px] text-mist-dim">{formatRange(range)} · {party} climbers</p>
                 </div>
@@ -364,11 +365,20 @@ export default function BookingConfirm() {
               <dl className="mt-4 space-y-2 text-[13px]">
                 {/*
                   There is no "ICEFALL service fee" row here any more, and it
-                  was deleted rather than renamed. ICEFALL's 10% comes OUT of
-                  the guiding figure on the line above; nothing is added to this
-                  climber's bill. A row in a column that sums to a total is read
-                  as an addition whatever it is called, so renaming it would
-                  have kept the false statement and only changed its wording.
+                  was deleted rather than renamed. ICEFALL's commission comes
+                  OUT of the guiding figure on the line above — see
+                  `GUIDE_COMMISSION_PCT` in `money/model.ts` — and nothing is
+                  added to this climber's bill. A row in a column that sums to a
+                  total is read as an addition whatever it is called, so renaming
+                  it would have kept the false statement and only changed its
+                  wording.
+
+                  THE RATE IS DELIBERATELY NOT WRITTEN HERE. This comment said
+                  "ICEFALL's 10%" and was true when written; the rate moved to
+                  15% on 2026-08-31 and the sentence quietly became false. A
+                  number restated in prose is a second copy of a fact that lives
+                  somewhere else, and it drifts exactly the way the four
+                  commission models did. Name the constant, not its value.
                 */}
                 <Line label={`Guiding — ${days} ${days === 1 ? "day" : "days"}`} value={formatEur(cost!.guidingCents)} />
                 {selectedFlight && (

@@ -721,10 +721,10 @@ function ReportPanel({ name }: { name: string }) {
     <div className="mt-4 rounded-tile border border-hairline bg-obsidian p-4">
       <p className="text-[14px] text-snow">Reporting is not connected</p>
       <p className="mt-2 text-[11px] leading-relaxed text-mist">
-        ICEFALL has no server, so a report about {name} has nowhere to go: nothing would be
-        transmitted and nobody would read it. Rather than take one and let it look filed, ICEFALL
-        does not take it at all. There is no support address in this build to send you to either,
-        and printing one that reaches nobody would be worse than saying so.
+        ICEFALL has no server behind the Expedition Network, so a report about {name} has nowhere
+        to go: nothing would be transmitted and nobody would read it. Rather than take one and let
+        it look filed, ICEFALL does not take it at all. Support exists and is a different desk —
+        it can answer a question about ICEFALL, and it cannot act on a person.
       </p>
 
       <p className="section-label mt-4">What works today</p>

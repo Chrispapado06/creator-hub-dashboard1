@@ -1,4 +1,6 @@
 import { PEAKS_TIMEOUT_MS, withTimeout } from "@/lib/netTimeout";
+import { OFFLINE } from "@/offline/offline";
+import { OFFLINE_HOME_PLACE, offlineSearchPlaces } from "@/offline/fixtures";
 
 /**
  * WHERE YOU ARE — anywhere on earth.
@@ -203,6 +205,11 @@ export async function searchPlaces(query: string, signal?: AbortSignal): Promise
   const q = query.trim();
   if (q.length < 2) return [];
 
+  // Photon is the geocoder and there is no offline substitute for "every place
+  // on earth". The offline build searches the same short list the empty box
+  // offers, so typing still finds something instead of finding nothing.
+  if (OFFLINE) return offlineSearchPlaces(q);
+
   const url = `${PHOTON}?q=${encodeURIComponent(q)}&limit=20&lang=en&osm_tag=place`;
   try {
     const res = await fetch(url, { signal: withTimeout(PEAKS_TIMEOUT_MS, signal) });
@@ -251,6 +258,15 @@ export type LocateError = "denied" | "unavailable" | "insecure";
  * reverse lookup degrades to "Current location" instead of failing the search.
  */
 export async function locateMe(): Promise<Place> {
+  /*
+   * GPS is a satellite fix rather than a request, so this would in principle
+   * work offline — but naming the fix needs the reverse geocoder, and a browser
+   * on a desk answers this in twelve seconds or not at all. The offline demo
+   * opens on the sample athlete's own valley instead of hanging on a permission
+   * prompt that leads nowhere.
+   */
+  if (OFFLINE) return OFFLINE_HOME_PLACE;
+
   if (!("geolocation" in navigator)) throw "unavailable" as LocateError;
   // Geolocation is gated on a secure context; over plain http on a LAN address
   // the callback simply never fires, which looks like a hang.

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { Send } from "lucide-react";
 import { Button, Disclaimer, SectionLabel } from "@/components/ui/primitives";
@@ -6,6 +6,7 @@ import { Rise, Screen, ScreenHeader, Stagger } from "@/components/layout/chrome"
 import { useApp } from "@/state/AppState";
 import { useGoalsWithProgress } from "@/tracking/training";
 import { draftEnquiry, operatorById } from "@/services/operators";
+import { enquiryGate, sendEnquiry, type EnquiryGate } from "@/enquiries/send";
 
 /**
  * Enquiries to expedition operators.
@@ -17,8 +18,31 @@ import { draftEnquiry, operatorById } from "@/services/operators";
  * an athlete must never be left believing an operator has their dates.
  */
 
+/**
+ * Still TRUE, and still shown — on the paths where nothing is transmitted.
+ *
+ * Enquiries now reach ICEFALL's desk for a signed-in athlete enquiring about a
+ * mountain the database knows. That did NOT make this sentence false
+ * everywhere: signed out, or about a peak that does not resolve, the message
+ * really does stay on the device. The contract's removal rule is *amend only
+ * the sentence that became false* — so it comes down per path, decided by
+ * `enquiryGate`, and not with a delete key.
+ */
 const NOT_SENT =
   "Held on this device. ICEFALL has no operator network connected yet, so this message has not been transmitted and no reply will arrive. Contact the operator directly to book anything.";
+
+/**
+ * What a real send actually does, in the family's locked wording.
+ *
+ * Three facts are load-bearing and none may be compressed away: WHO has it
+ * (ICEFALL), who does NOT (the operator — this matters most here, because the
+ * flow looks exactly like messaging a company), and WHERE the answer arrives.
+ *
+ * No response time, ever. Nothing measures one.
+ */
+function reachesIcefallDesk(email: string): string {
+  return `This goes to ICEFALL's desk, not to the operator. ICEFALL answers it, and the reply will go to ${email}. Nothing here books or holds anything.`;
+}
 
 /**
  * Only the compose flow survives here.
@@ -51,10 +75,34 @@ export function ComposeEnquiry() {
     }),
   );
 
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+  const [gate, setGate] = useState<EnquiryGate>({ state: "checking" });
+
+  // Resolved before the screen makes any claim about what Send does. Runs on
+  // the peak name because the gate is per-enquiry, not per-session: an unknown
+  // peak stops this message even for a signed-in athlete.
+  useEffect(() => {
+    let alive = true;
+    void enquiryGate(peakName).then((g) => {
+      if (alive) setGate(g);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [peakName]);
+
   if (!operator || !peakName) return <Navigate to="/messages" replace />;
 
-  function send() {
-    if (!operator || !body.trim()) return;
+  async function send() {
+    if (!operator || !body.trim() || busy) return;
+    setBusy(true);
+    setFailure(null);
+
+    // The thread is written locally either way: it is the athlete's own copy of
+    // what they wrote, and losing it because a network call failed would be the
+    // worst of both worlds. What the REAL send decides is what the app is then
+    // allowed to say about it.
     const id = startEnquiry(
       {
         operatorId: operator.id,
@@ -65,6 +113,24 @@ export function ComposeEnquiry() {
       },
       body.trim(),
     );
+
+    if (gate.state === "ready") {
+      const result = await sendEnquiry({
+        body: body.trim(),
+        peakName,
+        originScreen: "inbox_new",
+      });
+
+      if (!result.ok) {
+        // NOT navigated away, and nothing claims to have been sent. The draft
+        // is already saved above, so nothing is lost — but the screen must not
+        // move on as though this had worked.
+        setFailure(result.reason);
+        setBusy(false);
+        return;
+      }
+    }
+
     navigate(`/inbox/${id}`, { replace: true });
   }
 
@@ -74,7 +140,13 @@ export function ComposeEnquiry() {
 
       <Stagger>
         <Rise className="pt-4">
-          <Disclaimer>{NOT_SENT}</Disclaimer>
+          {/* One of two sentences, chosen by what this enquiry can actually do
+              — never both, and never the wrong one while the gate resolves. */}
+          {gate.state === "ready" ? (
+            <Disclaimer>{reachesIcefallDesk(gate.email)}</Disclaimer>
+          ) : gate.state === "local-only" ? (
+            <Disclaimer>{NOT_SENT}</Disclaimer>
+          ) : null}
         </Rise>
 
         <Rise className="pt-5">
@@ -92,10 +164,33 @@ export function ComposeEnquiry() {
         </Rise>
 
         <Rise className="pt-5">
-          <Button className="w-full" onClick={send} disabled={!body.trim()}>
+          <Button
+            className="w-full"
+            onClick={() => void send()}
+            disabled={!body.trim() || busy || gate.state === "checking"}
+          >
             <Send size={15} strokeWidth={1.8} />
-            Save to enquiries
+            {/* The control is named for what it DOES on this path. It read
+                "Save to enquiries" when nothing was ever sent, which was
+                honest; it would be a lie in the other direction now. */}
+            {busy
+              ? "Sending…"
+              : gate.state === "ready"
+                ? "Send to ICEFALL"
+                : "Save to enquiries"}
           </Button>
+
+          {failure && (
+            <p className="mt-3 text-[12px] leading-relaxed text-alert">
+              {failure === "unreachable"
+                ? "This could not be sent — there is no connection. Nothing has been transmitted. Your message is saved here; try again when you have signal."
+                : failure === "signed-out"
+                  ? "This could not be sent because you are signed out. Your message is saved on this device."
+                  : failure === "unknown-object"
+                    ? "This could not be sent: ICEFALL does not hold this peak as a destination, and an enquiry has to name one. Your message is saved on this device."
+                    : "This could not be sent, and nothing was stored at ICEFALL's end. Your message is saved on this device."}
+            </p>
+          )}
         </Rise>
       </Stagger>
     </Screen>

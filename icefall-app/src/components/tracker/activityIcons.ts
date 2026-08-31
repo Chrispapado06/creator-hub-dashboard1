@@ -20,6 +20,7 @@ import {
   Wind,
 } from "lucide-react";
 import type { ActivityFamily, ActivityTypeId } from "@/tracking/types";
+import type { SportMode } from "@/types";
 
 /**
  * One icon per activity type, not per family.
@@ -29,6 +30,24 @@ import type { ActivityFamily, ActivityTypeId } from "@/tracking/types";
  * trail. Icons live here rather than in `tracking/activities.ts` so the data
  * layer stays free of React.
  */
+/**
+ * PH-02 — one icon per SPORT MODE, for the history list.
+ *
+ * `ACTIVITY_ICON` below is keyed by the specific activity TYPE a recording was
+ * made with (four running variants, each distinct). A history row only knows
+ * the coarser `SportMode`, so it needs its own map rather than a lookup that
+ * cannot be satisfied. The owner asked for "an icon or image if activity is
+ * running, hiking etc" — this is that, at the granularity the row actually has.
+ */
+export const MODE_ICON: Record<SportMode, typeof Mountain> = {
+  hiking: Footprints,
+  running: Route,
+  climbing: Target,
+  mountaineering: MountainSnow,
+  cycling: Bike,
+  "ski-touring": Snowflake,
+};
+
 export const ACTIVITY_ICON: Record<ActivityTypeId, typeof Mountain> = {
   // Running
   "outdoor-run": Route,

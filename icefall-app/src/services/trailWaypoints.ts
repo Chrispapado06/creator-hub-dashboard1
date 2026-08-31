@@ -1,4 +1,5 @@
 import { OVERPASS_TIMEOUT_MS, withTimeout } from "@/lib/netTimeout";
+import { OFFLINE } from "@/offline/offline";
 import type { LatLon } from "./trails";
 
 /**
@@ -60,6 +61,11 @@ const cache = new Map<number, Promise<TrailWaypoint[]>>();
 export function trailWaypoints(osmId: number): Promise<TrailWaypoint[]> {
   const hit = cache.get(osmId);
   if (hit) return hit;
+
+  // Huts, springs and viewpoints come from Overpass and nowhere else. Offline
+  // there are none to list, and an invented water source on a trail page is
+  // exactly the class of thing this app must never print.
+  if (OFFLINE) return Promise.resolve([]);
 
   /*
    * DELIBERATELY NOT GIVEN A CALLER'S SIGNAL.

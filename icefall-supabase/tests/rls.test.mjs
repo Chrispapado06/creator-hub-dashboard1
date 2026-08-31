@@ -24,6 +24,10 @@ await db.exec(`
   end $$;
   create or replace function auth.uid() returns uuid language sql stable as $$
     select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid; $$;
+  -- Supabase grants these to every API role; without them an INVOKER function
+  -- that calls auth.uid() fails here but not in production.
+  grant usage on schema auth to anon, authenticated;
+  grant execute on function auth.uid() to anon, authenticated;
   create publication supabase_realtime;
 `);
 await db.exec(SQL);
@@ -39,6 +43,9 @@ const alice = await mk("alice@x.io", "athlete", "Alice");   // in the thread
 const bob = await mk("bob@x.io", "athlete", "Bob");         // NOT in the thread
 const guide = await mk("guide@x.io", "guide", "Guide G");
 const admin = await mk("admin@x.io", "admin", "Staff");
+
+// The guide holds a real (listed) guide profile — availability hangs off it.
+await db.query(`insert into public.guide_profiles (id, listed) values ($1, true)`, [guide]);
 
 const th = await db.query(
   `insert into public.threads (peak_name, created_by) values ('Mont Blanc', $1) returning id`, [alice]);
@@ -125,8 +132,10 @@ r = await as(admin, () => db.query(`select body from public.messages`));
 check("Admin can read for support", r.ok && r.value.rows.length === 1,
   r.ok ? `${r.value.rows.length} row(s)` : r.error);
 
-// 10. unlisted providers stay hidden
-await db.query(`insert into public.guide_profiles (id, listed) values ($1, false)`, [guide]);
+// 10. unlisted providers stay hidden (the profile is seeded above, listed —
+// unlist it for this probe; the availability block re-lists it explicitly)
+// (superuser seed rides the sanctioned-change GUC the pin trigger honours)
+await db.exec(`select set_config('icefall.listing_change','sanctioned',true); update public.guide_profiles set listed = false where id = '${guide}'`);
 r = await as(bob, () => db.query(`select * from public.guide_profiles`));
 check("Unlisted guide profile hidden from others", r.ok && r.value.rows.length === 0,
   r.ok ? `${r.value.rows.length} row(s)` : r.error);
@@ -237,6 +246,148 @@ check("the same address cannot be added twice", !r.ok, r.ok ? "DUPLICATED" : r.e
 r = await as(null, () => db.query(
   `insert into public.waitlist (email, source) values ('not-an-email','hero')`));
 check("a malformed address is rejected", !r.ok, r.ok ? "ACCEPTED" : r.error);
+
+
+/* -- S1 messaging: the two locks, the send path, receipts -------------------
+   HOLE 1 probe first — it is the one that reads private mail if it regresses. */
+
+// Bob creates his own thread so he owns a participant row he can try to move.
+const bobTh = await db.query(
+  `insert into public.threads (peak_name, created_by) values ('Bob peak', $1) returning id`, [bob]);
+const bobThread = bobTh.rows[0].id;
+await db.query(`insert into public.thread_participants (thread_id, profile_id) values ($1,$2)`,
+  [bobThread, bob]);
+
+r = await as(bob, () => db.query(
+  `update public.thread_participants set thread_id = $1 where profile_id = $2 and thread_id = $3 returning thread_id`,
+  [threadId, bob, bobThread]));
+check("HOLE 1: membership row cannot be MOVED into a private thread", !r.ok,
+  r.ok ? "MOVED — Bob is now inside Alice's thread" : r.error);
+
+r = await as(alice, () => db.query(
+  `update public.threads set peak_name = 'Everest', group_size = 12 where id = $1 returning peak_name`, [threadId]));
+check("HOLE 2: a participant cannot rewrite the objective", !r.ok, r.ok ? "REWRITTEN" : r.error);
+
+r = await as(admin, () => db.query(
+  `update public.threads set from_date = '2026-09-01' where id = $1 returning id`, [threadId]));
+check("staff cannot rewrite the objective either", !r.ok, r.ok ? "REWRITTEN by staff" : r.error);
+
+r = await as(alice, () => db.query(
+  `update public.threads set status = 'closed' where id = $1 returning status`, [threadId]));
+check("a participant can still close the thread", r.ok && r.value.rows[0]?.status === "closed",
+  r.ok ? "closed" : r.error);
+
+r = await as(alice, () => db.query(
+  `update public.threads set title = 'My renamed enquiry' where id = $1 returning id`, [threadId]));
+check("an enquiry thread cannot be retitled", !r.ok, r.ok ? "RETITLED" : r.error);
+
+// Read receipts: forward only.
+r = await as(alice, () => db.query(
+  `update public.thread_participants set last_read_at = now() - interval '10 years'
+    where thread_id = $1 and profile_id = $2 returning 1`, [threadId, alice]));
+check("a read receipt cannot move backwards", !r.ok, r.ok ? "REWOUND" : r.error);
+
+r = await as(alice, () => db.query(`select public.mark_thread_read($1) as at`, [threadId]));
+check("mark_thread_read stamps the caller's receipt", r.ok && r.value.rows[0].at !== null,
+  r.ok ? String(r.value.rows[0].at) : r.error);
+
+r = await as(bob, () => db.query(`select public.mark_thread_read($1) as at`, [threadId]));
+check("an outsider's mark_thread_read stamps nothing", r.ok && r.value.rows[0].at === null,
+  r.ok ? String(r.value.rows[0].at) : r.error);
+
+// The send path: policy conjuncts hold THROUGH the function (invoker).
+r = await as(bob, () => db.query(
+  `select public.send_message($1, 'let me in') `, [threadId]));
+check("send_message: an outsider cannot send", !r.ok, r.ok ? "SENT" : r.error);
+
+r = await as(alice, () => db.query(
+  `select (public.send_message($1, 'hello from the send path')).id`, [threadId]));
+check("send_message: a participant can send", r.ok, r.ok ? "sent" : r.error);
+
+// Decision 19 through the function: the guide may not OPEN a fresh thread.
+const gTh = await db.query(
+  `insert into public.threads (peak_name, created_by) values ('Cold call', $1) returning id`, [guide]);
+const guideThread = gTh.rows[0].id;
+await db.query(`insert into public.thread_participants (thread_id, profile_id) values ($1,$2),($1,$3)`,
+  [guideThread, guide, bob]);
+r = await as(guide, () => db.query(
+  `select public.send_message($1, 'buy my expedition')`, [guideThread]));
+check("send_message: a guide cannot send the FIRST message", !r.ok, r.ok ? "COLD-CALLED" : r.error);
+
+// Idempotent resend: same client_id twice inside one transaction -> one row.
+r = await as(alice, async () => {
+  const cid = (await db.query(`select gen_random_uuid() as id`)).rows[0].id;
+  const first = await db.query(`select (public.send_message($1, 'offline msg', $2)).id`, [threadId, cid]);
+  const second = await db.query(`select (public.send_message($1, 'offline msg', $2)).id`, [threadId, cid]);
+  const count = await db.query(`select count(*)::int c from public.messages where client_id = $1`, [cid]);
+  return { same: first.rows[0].id === second.rows[0].id, c: count.rows[0].c };
+});
+check("send_message: a retried client_id inserts once", r.ok && r.value.same && r.value.c === 1,
+  r.ok ? `count=${r.value.c}, same id=${r.value.same}` : r.error);
+
+// Sending stamps the sender's own receipt in the same call.
+r = await as(alice, async () => {
+  await db.query(`select public.send_message($1, 'stamping my own receipt')`, [threadId]);
+  const rec = await db.query(
+    `select last_read_at is not null as stamped from public.thread_participants
+      where thread_id = $1 and profile_id = $2`, [threadId, alice]);
+  return rec.rows[0].stamped;
+});
+check("send_message: sending stamps the sender's receipt", r.ok && r.value === true,
+  r.ok ? "stamped" : r.error);
+
+// The immutable-record posture, re-probed through this migration's surface.
+r = await as(alice, () => db.query(`update public.messages set body = 'softer wording' returning 1`));
+check("messages still cannot be edited by anyone", !r.ok || r.value.rows.length === 0,
+  r.ok ? `${r.value.rows.length} EDITED` : r.error);
+
+r = await as(admin, () => db.query(`delete from public.messages returning 1`));
+check("messages still cannot be deleted, staff included", !r.ok || r.value.rows.length === 0,
+  r.ok ? `${r.value.rows.length} DELETED` : r.error);
+
+
+/* -- Guide availability: a row means the guide SPOKE ------------------------ */
+
+r = await as(guide, () => db.query(
+  `insert into public.guide_availability (guide_profile_id, day, state) values ($1, current_date + 30, 'available') returning day`,
+  [guide]));
+check("availability: a guide marks their own day", r.ok && r.value.rows.length === 1,
+  r.ok ? "marked" : r.error);
+
+r = await as(alice, () => db.query(
+  `insert into public.guide_availability (guide_profile_id, day, state) values ($1, current_date + 31, 'unavailable')`,
+  [guide]));
+check("availability: nobody speaks for the guide", !r.ok, r.ok ? "SPOKE FOR THEM" : r.error);
+
+r = await as(guide, () => db.query(
+  `insert into public.guide_availability (guide_profile_id, day, state) values ($1, current_date + 32, 'busy')`,
+  [guide]));
+check("availability: 'busy'/'booked' is not a state — booked derives from bookings", !r.ok,
+  r.ok ? "ACCEPTED" : r.error);
+
+// Seeded as the guide would have written it, so reads can be probed after rollback.
+await db.exec(`select set_config('icefall.listing_change','sanctioned',true); update public.guide_profiles set listed = true where id = '${guide}'`);
+await db.query(
+  `insert into public.guide_availability (guide_profile_id, day, state, note)
+   values ($1, current_date + 40, 'available', 'valley day, short notice ok')`, [guide]);
+
+r = await as(alice, () => db.query(`select day, state from public.guide_availability`));
+check("availability: a listed guide's calendar is readable", r.ok && r.value.rows.length === 1,
+  r.ok ? `${r.value.rows.length} row(s)` : r.error);
+
+await db.exec(`select set_config('icefall.listing_change','sanctioned',true); update public.guide_profiles set listed = false where id = '${guide}'`);
+r = await as(alice, () => db.query(`select day from public.guide_availability`));
+check("availability: unlisting hides the calendar with the profile", r.ok && r.value.rows.length === 0,
+  r.ok ? `${r.value.rows.length} LEAKED` : r.error);
+r = await as(guide, () => db.query(`select day from public.guide_availability`));
+check("availability: ...but the guide keeps their own words", r.ok && r.value.rows.length === 1,
+  r.ok ? `${r.value.rows.length}` : r.error);
+await db.exec(`select set_config('icefall.listing_change','sanctioned',true); update public.guide_profiles set listed = true where id = '${guide}'`);
+
+r = await as(guide, () => db.query(
+  `delete from public.guide_availability where guide_profile_id = $1 and day = current_date + 40 returning 1`, [guide]));
+check("availability: clearing a day is a DELETE — back to 'not said'", r.ok && r.value.rows.length === 1,
+  r.ok ? "cleared" : r.error);
 
 
 console.log("\nRLS ATTACK RESULTS\n" + "=".repeat(64));

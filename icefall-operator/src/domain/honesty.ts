@@ -68,6 +68,17 @@ export const OPERATOR_NOTICES = {
   /** Nothing booked yet — which is not the same as booking in zero days. */
   NO_BOOKINGS_YET: "Nothing booked in this period yet.",
   /**
+   * There ARE bookings, they are simply not confirmed. Distinct from
+   * NO_BOOKINGS_YET, which sat beside a "Booked: 1" column and contradicted it.
+   */
+  bookingsNotConfirmed: (n: number): string =>
+    n === 1
+      ? "One booking here is not confirmed yet, so there is no revenue to report."
+      : `${n} bookings here are not confirmed yet, so there is no revenue to report.`,
+  /** Confirmed, but nobody told us what it was worth. */
+  BOOKING_VALUE_NOT_REPORTED:
+    "Booked, but no value has been reported — so there is no revenue figure, not a zero.",
+  /**
    * Nothing in the Icefall family emits a listing-view event today. Verified
    * 2026-08-28: no analytics event layer exists in any consumer surface.
    *

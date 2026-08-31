@@ -5,13 +5,14 @@ import {
   MessageSquare, Play, Send, Shield, ShieldCheck, Sprout, Star, TrendingUp, Users,
 } from "lucide-react";
 import { Badge, GuidePhoto, VerifiedTick } from "@/components/ui";
-import { IS_DEMO, monogram } from "@/data/demo";
+import { IS_DEMO } from "@/data/demo";
 import { companyById, companySlug, tripsFor, type Company, type Review } from "@/data/companies";
 import { formatEur, STANDARD_POLICY } from "@/money/model";
 import { cn } from "@/lib/utils";
 import { operatorsForTrek, treksForOperator } from "@/data/treks";
 import { TrekCard } from "./TrekCard";
 import { demoNoticeFor, RealBusinessBanner } from "@/components/RealBusiness";
+import { CompanyMark } from "@/components/CompanyMark";
 import { peakFallback, peakImage } from "./peakPlate";
 import { useCompanyPreview, type CompanyPreview } from "./useCompanyPreview";
 
@@ -180,19 +181,7 @@ function Profile({ company: c, preview }: { company: Company; preview: CompanyPr
             when the operator actually carries a verification date.
           */}
           <div className="relative shrink-0">
-            {c.logo ? (
-              <img
-                src={c.logo}
-                alt={`${c.name} logo`}
-                width={132}
-                height={132}
-                className="block h-[132px] w-[132px] rounded-card border border-hairline-strong object-contain"
-              />
-            ) : (
-              <div className="grid h-[132px] w-[132px] place-items-center rounded-card border border-hairline-strong bg-obsidian/80 px-3 text-center text-[15px] leading-tight tracking-[0.08em] text-mist backdrop-blur">
-                {monogram(c.name)}
-              </div>
-            )}
+            <CompanyMark name={c.name} logo={c.logo} size={132} variant="card" />
             {verified && (
               <span
                 title={`Verified by ICEFALL on ${c.verifiedOn}`}

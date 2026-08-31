@@ -3,10 +3,12 @@
 /**
  * ICEFALL Business — the internal CRM.
  *
- * DESIGN LANGUAGE TAKEN FROM THE OWNER'S SECOND MOCKUP (2026-08-28), which
- * supersedes the first: a light shell rather than a dark one, generous rounding,
- * cards separated by soft shadow instead of hairline borders, pastel tiles for
- * the figures that matter, and black for the one primary action on a screen.
+ * DESIGN LANGUAGE FROM THE OWNER'S 31 AUG 2026 MOCKUP SET (the four screen
+ * PNGs in icefall-sessions/mockups/), which supersedes the 28 Aug grey-canvas
+ * mockup: white canvas, white cards held apart by hairline rings, generous
+ * rounding, GOLD (#C79049) for the primary action and the active nav item.
+ * The owner made these drawings the production design in words ("all this
+ * time i was telling you to build things on the acc apps").
  *
  * IT IS STILL NOT THE ATHLETE APP'S SKIN. The product is near-black, cinematic
  * and photographic; this is light, soft and administrative. The contrast is the
@@ -61,18 +63,22 @@
   --radius-chip: 11px;
   --radius-pill: 999px;
 
-  --shadow-soft: 0 1px 2px oklch(0 0 0 / 4%), 0 8px 24px oklch(0 0 0 / 5%);
-  --shadow-lift: 0 1px 2px oklch(0 0 0 / 5%), 0 14px 34px oklch(0 0 0 / 7%);
+  /* Hairline ring + a whisper of depth — the drawings' card separation. */
+  --shadow-soft: 0 0 0 1px #ECEEF1, 0 1px 2px oklch(0 0 0 / 3%);
+  --shadow-lift: 0 0 0 1px #ECEEF1, 0 8px 24px oklch(0 0 0 / 5%);
 }
 
 :root {
-  --crm-canvas: oklch(0.962 0.0015 260);
-  --crm-surface: oklch(1 0 0);
-  --crm-raised: oklch(0.978 0.0015 260);
-  /* The grey the right-hand column sits on in the mockup. */
-  --crm-panel: oklch(0.948 0.002 260);
-  --crm-line: oklch(0.918 0.003 260);
-  --crm-line-soft: oklch(0.952 0.002 260);
+  /* WHITE canvas, sampled from the owner's 31 Aug PNGs (#FEFEFE page,
+     #FFFFFF cards): their ruling made the drawings the production design,
+     superseding the grey-canvas language of the 28 Aug mockup. Cards are held
+     apart by the hairline ring in the shadow tokens below, not by a grey. */
+  --crm-canvas: #FEFEFE;
+  --crm-surface: #FFFFFF;
+  --crm-raised: #F7F8FA;
+  --crm-panel: #F4F6F8;
+  --crm-line: #E7EAEE;
+  --crm-line-soft: #EFF1F4;
 
   --crm-ink: oklch(0.215 0.006 264);
   --crm-muted: oklch(0.565 0.008 264);

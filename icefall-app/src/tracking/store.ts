@@ -12,11 +12,10 @@ const KEY = "icefall.activities.v1";
 const META_KEY = "icefall.athlete.v1";
 
 export interface AthleteMeta {
-  totalPoints: number;
   earnedAchievements: string[];
 }
 
-const EMPTY_META: AthleteMeta = { totalPoints: 0, earnedAchievements: [] };
+const EMPTY_META: AthleteMeta = { earnedAchievements: [] };
 
 /** Long tracks are trimmed before storage so a session can't blow the quota. */
 const MAX_POINTS_STORED = 900;
@@ -29,13 +28,38 @@ function thin<T>(arr: T[], max: number): T[] {
   return out;
 }
 
+/**
+ * PH-01 — REMOVED FROM THE SYSTEM, NOT JUST FROM THE CODE.
+ *
+ * The owner asked for points to be removed from the system. Deleting the
+ * engine, the fields and the screens does not touch a record already sitting in
+ * `icefall.activities.v1` on somebody's phone: this function parsed stored JSON
+ * straight into the type with no normalisation, so `points_awarded` and
+ * `pointsBreakdown` would have survived every code change and come back out in
+ * the data export (`settings/Sections.tsx` walks every `icefall.*` key
+ * wholesale, so no search for "points" would ever have shown it).
+ *
+ * They are stripped here, on the one read path every caller goes through. The
+ * write path then persists the cleaned record, so the fields disappear from the
+ * device the first time anything saves — no migration step, no version flag,
+ * and nothing to run.
+ *
+ * `points` — the GPS track — is deliberately untouched.
+ */
+type LegacyPointsFields = { points_awarded?: unknown; pointsBreakdown?: unknown };
+
 export function loadActivities(): RecordedActivity[] {
   if (typeof localStorage === "undefined") return [];
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as RecordedActivity[];
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((a) => {
+      const { points_awarded: _p, pointsBreakdown: _b, ...rest } =
+        a as RecordedActivity & LegacyPointsFields;
+      return rest as RecordedActivity;
+    });
   } catch {
     return [];
   }
@@ -72,7 +96,14 @@ export function loadMeta(): AthleteMeta {
   if (typeof localStorage === "undefined") return EMPTY_META;
   try {
     const raw = localStorage.getItem(META_KEY);
-    return raw ? { ...EMPTY_META, ...(JSON.parse(raw) as Partial<AthleteMeta>) } : EMPTY_META;
+    if (!raw) return EMPTY_META;
+    // Same reason as `loadActivities`: an existing device's `icefall.athlete.v1`
+    // still holds the lifetime `totalPoints`. Spreading it in would carry the
+    // field straight back into memory and into the data export.
+    const { totalPoints: _t, ...stored } = JSON.parse(raw) as Partial<AthleteMeta> & {
+      totalPoints?: unknown;
+    };
+    return { ...EMPTY_META, ...stored };
   } catch {
     return EMPTY_META;
   }

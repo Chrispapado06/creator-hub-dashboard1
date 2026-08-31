@@ -9,6 +9,32 @@ export default defineConfig({
     react(),
     tailwindcss(),
     /**
+     * OFFLINE BUILD ONLY — remove the Google Fonts links from index.html.
+     *
+     * `src/offline/offline.ts` closes every network path inside the app, but
+     * `index.html` asks for Inter Tight and Instrument Serif before a line of
+     * app code runs, and nothing in JavaScript can call that request back. So
+     * an offline build strips the tags at build time and the app renders in the
+     * fallback stacks that `src/index.css` already declares — which is what it
+     * would have fallen back to anyway when the request failed, minus the
+     * request. Self-hosting the two woff2 files is the real fix.
+     *
+     * Reads the environment variable directly because a Vite plugin runs in
+     * Node, before `import.meta.env` exists. It is the same variable and the
+     * same build; nothing here decides offline mode for the app itself. With
+     * the variable unset this returns the HTML untouched.
+     */
+    {
+      name: "icefall-offline-strip-webfonts",
+      transformIndexHtml(html: string) {
+        if (process.env.VITE_ICEFALL_OFFLINE !== "1") return html;
+        return html.replace(
+          /\s*<link\b[^>]*fonts\.(?:googleapis|gstatic)\.com[^>]*>/g,
+          "",
+        );
+      },
+    },
+    /**
      * Offline support — the app has to open on a mountain with no signal.
      *
      * Workbox generates the precache manifest from the REAL build output, which

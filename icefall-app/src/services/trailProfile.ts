@@ -1,5 +1,6 @@
 import { OVERPASS_TIMEOUT_MS, withTimeout } from "@/lib/netTimeout";
 import { haversine } from "@/tracking/filters";
+import { OFFLINE } from "@/offline/offline";
 import type { LatLon } from "./trails";
 
 /**
@@ -69,6 +70,10 @@ const wayCache = new Map<number, Promise<TrailWay[]>>();
 export function trailWays(osmId: number): Promise<TrailWay[]> {
   const hit = wayCache.get(osmId);
   if (hit) return hit;
+
+  // Overpass only. Offline the surface/difficulty breakdown is simply absent,
+  // which the trail page already renders as "not surveyed" rather than as zero.
+  if (OFFLINE) return Promise.resolve([]);
 
   /*
    * DELIBERATELY NOT GIVEN A CALLER'S SIGNAL — see `trailGeometry` in
@@ -321,6 +326,11 @@ export function elevationOf(
   const key = String(osmId);
   const hit = elevationCache.get(key);
   if (hit) return hit;
+
+  // Open-Meteo's elevation API is the only source of the profile. Null is this
+  // function's own documented answer for "cannot answer" — a profile that is
+  // secretly zeros is worse than no profile — so offline it returns null.
+  if (OFFLINE) return Promise.resolve(null);
 
   const promise = (async () => {
     const walked = ways.filter((w) => w.lengthM > 0);

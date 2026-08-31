@@ -1,0 +1,149 @@
+[
+  {
+    "name": "Apple / Kitty",
+    "frequency": { "type": "per_withdrawal" },
+    "method": "Payout request → calculator → divide by 2",
+    "notes": "Weekly, on every withdrawal. Check payout requests and split by 2.",
+    "status": "active"
+  },
+  {
+    "name": "Ashley",
+    "frequency": { "type": "per_withdrawal" },
+    "method": "Payout request → divide by 2",
+    "notes": "Not on a weekly cadence — check whether a payout request applies, then divide by 2.",
+    "status": "active"
+  },
+  {
+    "name": "Bella Leah",
+    "frequency": { "type": "weekly", "day_of_week": "Monday" },
+    "method": "Match invoice to her own payout request",
+    "notes": "She submits her own payout requests — match the invoice to it. Double-check she isn't withdrawing on top of it. (Invoice day assumed Monday — edit if wrong.)",
+    "status": "active"
+  },
+  {
+    "name": "Blue Bear & Julie",
+    "frequency": { "type": "weekly", "day_of_week": "Monday" },
+    "method": "(Earnings − subscriptions) × 0.28",
+    "notes": "28% of tips & messages. James's models — combine both accounts into one invoice. Stats period Mon–Sun.",
+    "status": "active"
+  },
+  {
+    "name": "Charlotte",
+    "frequency": { "type": "biweekly", "days_of_month": [1, 16] },
+    "method": "(Earnings − subscriptions) × 0.20",
+    "notes": "Also add the inflow fee (from account details) on top of one invoice.",
+    "status": "active"
+  },
+  {
+    "name": "Emily",
+    "frequency": { "type": "biweekly", "days_of_month": [1, 16] },
+    "method": "(Earnings − subscriptions) × 0.20",
+    "notes": "Same manager as Charlotte — combine with Charlotte. Same terms.",
+    "status": "active"
+  },
+  {
+    "name": "Chloe May",
+    "frequency": { "type": "manual_review" },
+    "method": "25% of tips and messages",
+    "notes": "Low priority — not currently earning. Revisit when active.",
+    "status": "manual_review"
+  },
+  {
+    "name": "Dakota",
+    "frequency": { "type": "weekly", "day_of_week": "Monday" },
+    "method": "30% of the whole account",
+    "notes": "New model — invoice fast in the first week to confirm payment goes through. Weekly for now, moving to bi-weekly later. (Invoice day assumed Monday — edit if wrong.)",
+    "status": "active"
+  },
+  {
+    "name": "Danielle",
+    "frequency": { "type": "manual_review" },
+    "method": "TBD",
+    "notes": "Need team context on sign date / terms before invoicing.",
+    "status": "manual_review"
+  },
+  {
+    "name": "Elizabeth",
+    "frequency": { "type": "monthly", "day_of_month": "last" },
+    "method": "20% + inflow fee",
+    "notes": "Invoice at end of month.",
+    "status": "active"
+  },
+  {
+    "name": "Ella",
+    "frequency": { "type": "salary" },
+    "method": "Salary",
+    "notes": "On salary — excluded from invoice reminders.",
+    "status": "salary"
+  },
+  {
+    "name": "Emma",
+    "frequency": { "type": "monthly", "day_of_month": 16 },
+    "method": "Tiered: first $30k @ 30%, $30–50k @ 40%, over $50k @ 50%",
+    "notes": "Calculate on the period from the 16th only.",
+    "status": "active"
+  },
+  {
+    "name": "Johnny",
+    "frequency": { "type": "monthly", "day_of_month": 17 },
+    "method": "Base amount + 50% of anything over",
+    "notes": "Both of his accounts.",
+    "status": "active"
+  },
+  {
+    "name": "June",
+    "frequency": { "type": "monthly", "day_of_month": "last" },
+    "method": "Crypto",
+    "notes": "Paid in crypto. (Invoice day assumed end of month — set the real day.)",
+    "status": "active"
+  },
+  {
+    "name": "Macy",
+    "frequency": { "type": "manual_review" },
+    "method": "50%",
+    "notes": "Not yet started — begin invoicing from her sign date. Move to a weekly/bi-weekly schedule once started.",
+    "status": "manual_review"
+  },
+  {
+    "name": "Marissa",
+    "frequency": { "type": "weekly", "day_of_week": "Monday" },
+    "method": "Payout request → divide by 2",
+    "notes": "Free page + Fansly, same method. (Invoice day assumed Monday — edit if wrong.)",
+    "status": "active"
+  },
+  {
+    "name": "Maylee",
+    "frequency": { "type": "weekly", "day_of_week": "Monday" },
+    "method": "Payout request → divide by 2",
+    "notes": "Same as Marissa. (Invoice day assumed Monday — edit if wrong.)",
+    "status": "active"
+  },
+  {
+    "name": "Melinda",
+    "frequency": { "type": "monthly", "day_of_month": "last" },
+    "method": "20% + inflow fee",
+    "notes": "Same terms/manager as Elizabeth. Invoice at end of month.",
+    "status": "active"
+  },
+  {
+    "name": "Nicole",
+    "frequency": { "type": "salary" },
+    "method": "Salary",
+    "notes": "On salary — excluded from invoice reminders.",
+    "status": "salary"
+  },
+  {
+    "name": "Sandra",
+    "frequency": { "type": "monthly", "day_of_month": "last" },
+    "method": "Salary or invoice",
+    "notes": "Confirm whether she's on salary or invoiced. (Invoice day assumed end of month — set the real day, or change frequency.type to \"salary\" to exclude.)",
+    "status": "active"
+  },
+  {
+    "name": "Sophie",
+    "frequency": { "type": "manual_review" },
+    "method": "20% of tips and messages + inflow fee",
+    "notes": "Back-owed — owes June + July. Needs sorting before regular invoicing.",
+    "status": "manual_review"
+  }
+]

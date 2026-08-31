@@ -1,825 +1,650 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { ChevronRight } from "lucide-react";
-import { Avatar, Card, PageHead, Pill, SectionLabel, Stat } from "@/components/ui";
-import { Resolve, Unavailable } from "@/components/states";
+import { Activity, BookMarked, Building2, CalendarDays, ChevronDown, Compass, SlidersHorizontal, TrendingUp, Users as UsersIcon } from "lucide-react";
+import { Card, PageHead, Pill, SectionLabel } from "@/components/ui";
 import {
-  listAuditEvents,
-  listBookings,
-  listCompanies,
-  listCustomers,
-  listDocuments,
-  listGuides,
-  listInvoices,
-  listLeads,
-  listPendingApprovals,
-  listPlacements,
+  dashboardCounts,
+  listCountryCodes,
+  listEnquiries,
   listRevenue,
+  recentBookings,
 } from "@/data/queries";
-import { formatCents, formatCentsShort, formatRatio, loading, type Result } from "@/data/result";
-import type {
-  AuditEvent,
-  Booking,
-  Company,
-  ContentVersion,
-  CustomerRecord,
-  GuideRecord,
-  Invoice,
-  Lead,
-  PlacementView,
-  RevenueRecord,
-  RevenueStream,
-  VerificationDocument,
-} from "@/data/types";
-import { daysUntil, formatDay, formatMoment } from "@/lib/utils";
+import { loading, type Result } from "@/data/result";
+import type { Enquiry, RevenueRecord } from "@/data/types";
+import { cn } from "@/lib/utils";
+import { useStaff } from "@/auth/session";
+import { Donut, DONUT_COLORS, LineChart } from "@/components/charts";
+import { DASHBOARD_MOCKUP } from "@/demo/mockupScreens";
+import { WorldDots } from "@/components/drawn";
 
 /**
- * The executive dashboard — the screen most likely to be believed without
- * checking, and therefore the one that has to be most careful.
+ * Dashboard — ONE screen in the owner's drawn layout (their 31 Aug ruling
+ * made the mockups the production design), two data sources: SHOW_DEMO_DATA
+ * fills the drawing's sample figures; flag off, every tile reads the live
+ * database and honest states render inside the same layout.
  *
- * A dashboard is read as fact. Whatever it prints becomes what the business
- * "knows", so every figure here is either something ICEFALL actually counted or
- * a sentence saying why it did not. Three absences are load-bearing:
+ * WHAT THE MOCKUP ITSELF RULED: the owner hand-drew an Active Users tile
+ * reading "Not being measured yet / We're working on it" — the honesty
+ * doctrine in their own handwriting. It renders VERBATIM in both modes.
+ * Live-mode stances:
  *
- * ACTIVE USERS. Nothing records a sign-in, a session or a page view, so there is
- * no last-seen date to count from. The tile keeps its position and says so,
- * because a metric that quietly disappears is one the reader assumes is healthy.
+ *   - DELTAS on sample figures only. "+12.4% vs prior week" needs a prior
+ *     snapshot and ICEFALL keeps none, so live figures render without
+ *     comparison claims. A delta is a second claim, not decoration.
+ *   - SUBSCRIPTIONS: named in the live breakdown as honestly absent — no
+ *     subscription product exists, so there is nothing to measure. Absence,
+ *     not zero. (The sample donut carries the drawn Subscriptions segment.)
+ *   - NO #BK-#### references live: the schema has none and a display format
+ *     is not a reason for a migration. Real identifiers, shortened.
+ *   - The COUNTRY MAP: the sample face draws the stylised dot-map (the
+ *     drawing has one); live keeps the honest no-map gap beside the real
+ *     ranked list until a licensed asset lands — stylised geography must not
+ *     colour real figures.
  *
- * VIEWS. The funnel the mockup draws starts at Views; this one starts at
- * Enquiries. Nothing writes an analytics event, and a row written by a browser
- * would be self-reported anyway — so the first step is named as unmeasured and
- * the first conversion percentage cannot exist: a rate with no denominator is
- * unavailable, not 0%.
- *
- * DELTAS. Not one "+16.4%" appears. A change needs a previous period, and the
- * only history ICEFALL holds is the revenue ledger's own recognition dates. The
- * month-by-month line below is drawn from those; everything else is all-time,
- * which is why there is no date-range control in the header either.
- *
- * Money is never added across currencies. ICEFALL holds no exchange rate, so a
- * mixed-currency ledger produces a stated refusal rather than an invented total.
+ * ALL TIMES UTC, as the mockup's footer demands — formatted with an explicit
+ * UTC formatter, not the viewer's clock, so the footer line is true.
  */
 
-const STREAMS: { id: RevenueStream; label: string; colour: string }[] = [
-  { id: "placement", label: "Mountain placements", colour: "var(--crm-accent)" },
-  { id: "referral", label: "Referral fees", colour: "var(--crm-stage-proposal)" },
-  { id: "guide_commission", label: "Guide commissions", colour: "var(--crm-stage-onboarding)" },
-  { id: "subscription", label: "Consumer subscriptions", colour: "var(--crm-stage-renewal)" },
-];
+const RANGES = [
+  { id: "7", label: "Last 7 days", days: 7 },
+  { id: "30", label: "Last 30 days", days: 30 },
+  { id: "90", label: "Last 90 days", days: 90 },
+  { id: "all", label: "All time", days: null },
+] as const;
+type RangeId = (typeof RANGES)[number]["id"];
 
-/** Why a figure is absent, taken from the read that failed rather than guessed. */
-const reasonFor = (r: Result<unknown>): string =>
-  r.state === "loading" ? "Still loading." : r.state === "ok" ? "Not recorded" : r.reason;
+const utc = new Intl.DateTimeFormat("en-GB", {
+  day: "numeric", month: "short", timeZone: "UTC",
+});
+const utcTime = new Intl.DateTimeFormat("en-GB", {
+  hour: "2-digit", minute: "2-digit", timeZone: "UTC",
+});
+const eur = (cents: number) => `€${(cents / 100).toLocaleString("en-GB")}`;
 
-const countOf = <T,>(r: Result<T[]>, of: (v: T) => boolean = () => true): number | null =>
-  r.state === "ok" ? r.value.filter(of).length : null;
-
-const text = (n: number | null): string | null => (n === null ? null : n.toLocaleString("en-GB"));
-
-/**
- * `formatCentsShort` has no symbol fallback — anything that is not EUR or GBP
- * renders as "$", which would mislabel a Nepali or Chilean figure. For those the
- * exact formatter is correct, because it prints the currency code instead.
- */
-const money = (cents: number, currency: string): string | null =>
-  currency === "EUR" || currency === "GBP" || currency === "USD"
-    ? formatCentsShort(cents, currency)
-    : formatCents(cents, currency);
-
-interface MonthPoint {
-  key: string;
-  label: string;
-  cents: number;
-}
-
-/**
- * A month label built from the parts of the date string.
- *
- * `new Date("2026-08")` walks into the same UTC-midnight trap `formatDay` exists
- * to avoid, and west of Greenwich it would file July's revenue under June. A
- * month bucket is not a calendar day so `formatDay` cannot label it, but the
- * parsing rule is identical: split, then build a local date.
- */
-function monthLabel(ym: string): string {
-  const [y, m] = ym.split("-").map(Number);
-  if (!y || !m) return ym;
-  return new Date(y, m - 1, 1).toLocaleDateString("en-GB", { month: "short" });
-}
-
-function byMonth(records: RevenueRecord[]): MonthPoint[] {
-  const buckets = new Map<string, number>();
-  for (const r of records) {
-    const key = r.recognised_on.slice(0, 7);
-    buckets.set(key, (buckets.get(key) ?? 0) + r.amount_cents);
+/** ISO-3166 alpha-2 → display name, from the browser's own registry. */
+const countryName = (code: string) => {
+  try {
+    return new Intl.DisplayNames(["en"], { type: "region" }).of(code) ?? code;
+  } catch {
+    return code;
   }
-  return [...buckets.entries()]
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([key, cents]) => ({ key, label: monthLabel(key), cents }));
+};
+
+/* ── Tiles ─────────────────────────────────────────────────────────────── */
+
+function Kpi({
+  icon, iconCls, label, value, caption, reason, delta,
+}: {
+  icon: React.ReactNode; iconCls: string; label: string;
+  value: string | null; caption: string; reason?: string; delta?: string;
+}) {
+  return (
+    <Card className="flex items-start gap-3.5">
+      <span className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-[12px]", iconCls)}>{icon}</span>
+      <span className="min-w-0">
+        <span className="block text-[12.5px] font-medium text-muted">{label}</span>
+        {value === null ? (
+          <span className="mt-1 block text-[12px] leading-snug text-faint">{reason}</span>
+        ) : (
+          <>
+            <span className="tnum block text-[24px] font-extrabold leading-tight text-ink">{value}</span>
+            <span className="block text-[11.5px] text-faint">{caption}</span>
+            {delta && (
+              <span className="mt-0.5 flex items-center gap-1 text-[11px] font-medium text-ok">
+                <TrendingUp size={11} strokeWidth={2.25} aria-hidden />{delta}
+              </span>
+            )}
+          </>
+        )}
+      </span>
+    </Card>
+  );
 }
 
-/** "3d ago". A stamp in the future is printed absolutely — it is not "ago". */
-function relativeTime(iso: string): string | null {
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return null;
-  const secs = Math.round((Date.now() - then) / 1000);
-  if (secs < 0) return formatMoment(iso);
-  if (secs < 90) return "just now";
-  const mins = Math.round(secs / 60);
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.round(hours / 24);
-  if (days < 30) return `${days}d ago`;
-  return formatMoment(iso);
-}
+const STREAM_LABEL: Record<RevenueRecord["stream"], string> = {
+  placement: "Expedition placements",
+  referral: "Referral fees",
+  guide_commission: "Guide commissions",
+  subscription: "Subscriptions",
+  other: "Other",
+};
 
 export default function Dashboard() {
-  const [customers, setCustomers] = useState<Result<CustomerRecord[]>>(loading);
-  const [companies, setCompanies] = useState<Result<Company[]>>(loading);
-  const [guides, setGuides] = useState<Result<GuideRecord[]>>(loading);
-  const [leads, setLeads] = useState<Result<Lead[]>>(loading);
-  const [bookings, setBookings] = useState<Result<Booking[]>>(loading);
+  const me = useStaff();
+  /**
+   * DEMO FACE (owner: "just copy the damn mockups"): with SHOW_DEMO_DATA the
+   * screen renders the drawing, number for number, under the global
+   * DemoBanner. Flag off → the honest live reads below, untouched.
+   */
+  const M = DASHBOARD_MOCKUP;
+  const [range, setRange] = useState<RangeId>("30");
+  const [counts, setCounts] = useState<Result<{ users: number; guides: number; companies: number; bookings: number }>>(loading);
+  const [countries, setCountries] = useState<Result<{ country_code: string | null }[]>>(loading);
   const [revenue, setRevenue] = useState<Result<RevenueRecord[]>>(loading);
-  const [approvals, setApprovals] = useState<Result<ContentVersion[]>>(loading);
-  const [placements, setPlacements] = useState<Result<PlacementView[]>>(loading);
-  const [invoices, setInvoices] = useState<Result<Invoice[]>>(loading);
-  const [documents, setDocuments] = useState<Result<VerificationDocument[]>>(loading);
-  const [events, setEvents] = useState<Result<AuditEvent[]>>(loading);
+  const [bookings, setBookings] = useState<Result<{ id: string; destination: string | null; company: string | null; value_cents: number | null; booked_at: string }[]>>(loading);
+  const [enquiries, setEnquiries] = useState<Result<Enquiry[]>>(loading);
+  const [asOf, setAsOf] = useState<Date | null>(null);
 
   useEffect(() => {
-    void listCustomers().then(setCustomers);
-    void listCompanies().then(setCompanies);
-    void listGuides().then(setGuides);
-    void listLeads().then(setLeads);
-    void listBookings().then(setBookings);
+    void dashboardCounts().then(setCounts);
+    void listCountryCodes().then(setCountries);
     void listRevenue().then(setRevenue);
-    void listPendingApprovals().then(setApprovals);
-    void listPlacements().then(setPlacements);
-    void listInvoices().then(setInvoices);
-    void listDocuments().then(setDocuments);
-    void listAuditEvents(6).then(setEvents);
+    void recentBookings(5).then(setBookings);
+    void listEnquiries().then(setEnquiries);
+    setAsOf(new Date());
   }, []);
 
-  /* ---------------------------------------------------------------------- */
-  /* The funnel. Three of its four steps are countable.                      */
-  /* ---------------------------------------------------------------------- */
+  const days = RANGES.find((r) => r.id === range)!.days;
+  const cutoff = days === null ? null : new Date(Date.now() - days * 86_400_000);
 
-  // Every stage is counted over ONE population — the enquiries — and read from
-  // the timestamp each stage writes rather than from the current status. Two
-  // consequences, both deliberate. A lead that booked and was later disputed
-  // still passed through both stages, so arrival is what is counted. And the
-  // last step counts enquiries that booked, not bookings: a booking that never
-  // came through an enquiry did not pass through this funnel, and counting it
-  // here would make the final stage stop dividing into the one above it.
-  // Analytics counts the same four stages the same way; two screens naming one
-  // funnel and printing two different figures is the failure being avoided.
-  const enquiries = countOf(leads);
-  const qualified = countOf(leads, (l) => l.qualified_at !== null);
-  const booked = countOf(leads, (l) => l.booked_at !== null);
+  const revRows = useMemo(() => {
+    if (revenue.state !== "ok") return null;
+    return revenue.value.filter((r) => cutoff === null || new Date(r.recognised_on) >= cutoff);
+  }, [revenue, cutoff]);
 
-  const share = (n: number | null): number | null =>
-    n === null || enquiries === null || enquiries <= 0 ? null : Math.min(100, (n / enquiries) * 100);
+  const revTotal = revRows ? revRows.reduce((s, r) => s + r.amount_cents, 0) : 0;
 
-  const qualifiedRate =
-    enquiries === null || qualified === null
-      ? null
-      : formatRatio({ numerator: qualified, denominator: enquiries });
-
-  const bookedRate =
-    qualified === null || booked === null
-      ? null
-      : formatRatio({ numerator: booked, denominator: qualified });
-
-  // Bookings that never came through an enquiry are outside the funnel entirely.
-  // The count is stated so that "bookings" on this card is not read as every
-  // booking ICEFALL holds.
-  const unattributed = countOf(bookings, (b) => b.lead_id === null);
-
-  /* ---------------------------------------------------------------------- */
-  /* Gross booking value — reported bookings only, and it says what it left. */
-  /* ---------------------------------------------------------------------- */
-
-  const gmv = (() => {
-    if (bookings.state !== "ok") return { value: null as string | null, note: reasonFor(bookings) };
-    const reported = bookings.value.filter((b) => b.value_status === "reported");
-    const excluded = bookings.value.length - reported.length;
-    if (reported.length === 0) {
-      return {
-        value: null,
-        note:
-          bookings.value.length === 0
-            ? "No booking has been recorded yet."
-            : `None of the ${bookings.value.length} recorded bookings carries a reported value. The database stores an unknown as NULL rather than as zero, so there is nothing to total.`,
-      };
-    }
-    const currencies = new Set(reported.map((b) => b.currency));
-    if (currencies.size > 1) {
-      return {
-        value: null,
-        note: `Reported bookings are held in ${currencies.size} currencies and ICEFALL holds no exchange rate, so they are not added together.`,
-      };
-    }
-    const currency = [...currencies][0];
-    // `?? 0` is safe only because `value_status === "reported"` is the one state
-    // the database guarantees a figure for.
-    const total = reported.reduce((n, b) => n + (b.value_cents ?? 0), 0);
+  const chart = useMemo(() => {
+    if (!revRows || revRows.length === 0) return null;
+    const byDay = new Map<string, number>();
+    for (const r of revRows) byDay.set(r.recognised_on, (byDay.get(r.recognised_on) ?? 0) + r.amount_cents);
+    const dayKeys = [...byDay.keys()].sort();
     return {
-      value: money(total, currency),
-      note:
-        excluded > 0
-          ? `Excludes ${excluded} booking${excluded === 1 ? "" : "s"} whose value has not been reported.`
-          : "Every recorded booking has a reported value.",
+      points: dayKeys.map((d) => byDay.get(d)! / 100),
+      labels: dayKeys.map((d) => utc.format(new Date(d))),
     };
-  })();
+  }, [revRows]);
 
-  const activeCompanies = countOf(companies, (c) => c.status === "active");
-  const listedGuides = countOf(guides, (g) => g.listed);
+  const breakdown = useMemo(() => {
+    if (!revRows) return null;
+    const byStream = new Map<RevenueRecord["stream"], number>();
+    for (const r of revRows) byStream.set(r.stream, (byStream.get(r.stream) ?? 0) + r.amount_cents);
+    return [...byStream.entries()].sort((a, b) => b[1] - a[1]);
+  }, [revRows]);
+
+  const countryStats = useMemo(() => {
+    if (countries.state !== "ok") return null;
+    const byCode = new Map<string, number>();
+    let unstated = 0;
+    for (const row of countries.value) {
+      if (row.country_code) byCode.set(row.country_code, (byCode.get(row.country_code) ?? 0) + 1);
+      else unstated++;
+    }
+    const stated = [...byCode.entries()].sort((a, b) => b[1] - a[1]);
+    const total = stated.reduce((s, [, n]) => s + n, 0);
+    return { stated, total, unstated };
+  }, [countries]);
+
+  const waiting = enquiries.state === "ok"
+    ? enquiries.value.filter((e) => e.answered_at === null).sort((a, b) => a.created_at.localeCompare(b.created_at))
+    : null;
+
+  const waitedLabel = (iso: string) => {
+    const mins = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60_000));
+    return mins < 60 ? `${mins}m` : mins < 1440 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${Math.floor(mins / 1440)}d`;
+  };
 
   return (
     <>
       <PageHead
         title="Dashboard"
-        subtitle="What ICEFALL can currently measure about the marketplace, all-time. Every figure it cannot measure keeps its place here and says why, because a tile that disappears is one you stop asking about."
+        subtitle={M
+          ? "Welcome back, Christos. Here's what's happening with ICEFALL today."
+          : `Welcome back${me ? `, ${me.displayName.split(" ")[0]}` : ""}. Here's what's happening with ICEFALL today.`}
+        actions={
+          <div className="flex items-center gap-2">
+            {M ? (
+              <span className="flex items-center gap-2 rounded-tile border border-line bg-surface px-3 py-2 text-[12.5px] font-medium text-ink">
+                <CalendarDays size={13} strokeWidth={2} className="text-faint" aria-hidden /> May 24 – May 30, 2026
+                <ChevronDown size={13} strokeWidth={2} className="text-faint" aria-hidden />
+              </span>
+            ) : (
+              <label className="flex items-center gap-1.5 rounded-tile border border-line bg-surface px-3 py-2 text-[12.5px] font-medium text-ink">
+                <select value={range} onChange={(e) => setRange(e.target.value as RangeId)} className="appearance-none bg-transparent pr-1 outline-none">
+                  {RANGES.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+                </select>
+                <ChevronDown size={14} strokeWidth={2} className="text-faint" aria-hidden />
+              </label>
+            )}
+            {M && (
+              <span className="flex items-center gap-1.5 rounded-tile border border-line bg-surface px-3 py-2 text-[12.5px] font-medium text-ink">
+                <SlidersHorizontal size={13} strokeWidth={2} className="text-faint" aria-hidden /> Filters
+              </span>
+            )}
+          </div>
+        }
       />
 
-      {/* ------------------------------------------------------------------ */}
-      {/* Four tiles. One of them is a permanent statement of absence.        */}
-      {/* ------------------------------------------------------------------ */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat tone="butter"
-          label="Total users"
-          value={text(countOf(customers))}
-          reason={reasonFor(customers)}
-          hint="Registered accounts. How many of them are using ICEFALL is a different question."
+      {/* ── KPI tiles ───────────────────────────────────────────────────── */}
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        {M ? (
+          <>
+            {[
+              { icon: <UsersIcon size={19} strokeWidth={2} />, cls: "bg-accent-soft text-accent" },
+              { icon: <Compass size={19} strokeWidth={2} />, cls: "bg-mint text-ok" },
+              { icon: <Building2 size={19} strokeWidth={2} />, cls: "bg-butter text-[oklch(0.55_0.12_75)]" },
+              { icon: <BookMarked size={19} strokeWidth={2} />, cls: "bg-lilac text-[oklch(0.51_0.19_295)]" },
+            ].map((ic, i) => (
+              <Kpi
+                key={M.kpis[i].label}
+                icon={ic.icon}
+                iconCls={ic.cls}
+                label={M.kpis[i].label}
+                value={M.kpis[i].value}
+                caption={M.kpis[i].caption}
+                delta={M.kpis[i].delta}
+              />
+            ))}
+            {/* The owner drew this tile's honesty themselves. It stays. */}
+            <Kpi
+              icon={<Activity size={19} strokeWidth={2} />}
+              iconCls="bg-panel text-muted"
+              label="Active Users"
+              value={null}
+              caption=""
+              reason="Not being measured yet. We're working on it."
+            />
+          </>
+        ) : (
+          <>
+        <Kpi
+          icon={<UsersIcon size={19} strokeWidth={2} />} iconCls="bg-accent-soft text-accent"
+          label="Total Users"
+          value={counts.state === "ok" ? counts.value.users.toLocaleString("en-GB") : null}
+          caption="Registered accounts"
+          reason={counts.state === "loading" ? "Counting…" : "reason" in counts ? counts.reason : undefined}
         />
-        <Stat tone="sky"
-          label="Active users"
+        <Kpi
+          icon={<Compass size={19} strokeWidth={2} />} iconCls="bg-mint text-ok"
+          label="Total Guides"
+          value={counts.state === "ok" ? counts.value.guides.toLocaleString("en-GB") : null}
+          caption="Guide profiles"
+          reason={counts.state === "loading" ? "Counting…" : "reason" in counts ? counts.reason : undefined}
+        />
+        <Kpi
+          icon={<Building2 size={19} strokeWidth={2} />} iconCls="bg-butter text-[oklch(0.55_0.12_75)]"
+          label="Total Expedition Companies"
+          value={counts.state === "ok" ? counts.value.companies.toLocaleString("en-GB") : null}
+          caption="Registered companies"
+          reason={counts.state === "loading" ? "Counting…" : "reason" in counts ? counts.reason : undefined}
+        />
+        <Kpi
+          icon={<BookMarked size={19} strokeWidth={2} />} iconCls="bg-lilac text-[oklch(0.51_0.19_295)]"
+          label="Total Bookings"
+          value={counts.state === "ok" ? counts.value.bookings.toLocaleString("en-GB") : null}
+          caption="All time"
+          reason={counts.state === "loading" ? "Counting…" : "reason" in counts ? counts.reason : undefined}
+        />
+        {/* The owner drew this tile's honesty themselves. Keep their words. */}
+        <Kpi
+          icon={<Activity size={19} strokeWidth={2} />} iconCls="bg-panel text-muted"
+          label="Active Users"
           value={null}
-          reason="Not measurable. Nothing records a sign-in, a session or a page view anywhere in the schema, so there is no last-seen date to count against. This tile stays put rather than showing a zero."
+          caption=""
+          reason="Not being measured yet. We're working on it."
         />
-        <Stat tone="lilac"
-          label="Companies"
-          value={text(countOf(companies))}
-          reason={reasonFor(companies)}
-          hint={activeCompanies === null ? undefined : `${activeCompanies} with an active account.`}
-        />
-        <Stat tone="mint"
-          label="Guides"
-          value={text(countOf(guides))}
-          reason={reasonFor(guides)}
-          hint={listedGuides === null ? undefined : `${listedGuides} listed on the marketplace.`}
-        />
-      </div>
-      <p className="mt-2 max-w-3xl text-[12px] leading-relaxed text-faint">
-        No period-over-period change is shown on these tiles. A delta needs a figure for a previous
-        period, and ICEFALL keeps no snapshot of any of these counts — an arrow drawn without one
-        would be decoration.
-      </p>
-
-      {/* ------------------------------------------------------------------ */}
-      {/* Marketplace funnel. It begins one step later than the mockup does.  */}
-      {/* ------------------------------------------------------------------ */}
-      <section className="mt-6">
-        <SectionLabel>Marketplace funnel</SectionLabel>
-        <Card className="mt-1.5">
-          <div className="flex flex-wrap items-stretch gap-1.5">
-            <Step
-              label="Views"
-              count={null}
-              reason="Not measured. Nothing writes an analytics event, and a view counted by the browser would be self-reported."
-              width={null}
-            />
-            <Gap rate={null} absence="No view count to divide by" />
-            <Step
-              label="Enquiries"
-              count={enquiries}
-              reason={reasonFor(leads)}
-              width={share(enquiries)}
-            />
-            <Gap rate={qualifiedRate} absence="No enquiries to divide by" />
-            <Step
-              label="Qualified"
-              count={qualified}
-              reason={reasonFor(leads)}
-              width={share(qualified)}
-            />
-            <Gap rate={bookedRate} absence="No qualified leads to divide by" />
-            <Step label="Bookings" count={booked} reason={reasonFor(leads)} width={share(booked)} />
-          </div>
-          <p className="mt-3 max-w-3xl text-[12px] leading-relaxed text-faint">
-            Bars are drawn against the enquiry count, which is the first step ICEFALL can count. Each
-            stage counts arrival, read from the timestamp that stage writes, so a lead that booked
-            and was later disputed still counts as having passed through both.
-            {unattributed !== null && unattributed > 0 && (
-              <>
-                {" "}
-                {unattributed} booking{unattributed === 1 ? " is" : "s are"} recorded with no enquiry
-                attached and {unattributed === 1 ? "does" : "do"} not appear above, because{" "}
-                {unattributed === 1 ? "it" : "they"} did not pass through this funnel.
-              </>
-            )}
-          </p>
-        </Card>
-      </section>
-
-      {/* ------------------------------------------------------------------ */}
-      {/* Revenue. Total, trend, and the split by stream.                     */}
-      {/* ------------------------------------------------------------------ */}
-      <section className="mt-6">
-        <SectionLabel>Revenue</SectionLabel>
-        <div className="mt-1.5">
-          <Resolve
-            result={revenue}
-            what="revenue records"
-            isEmpty={(v) => v.length === 0}
-            empty="Nothing has been recognised yet. A revenue record is written when a placement is invoiced or a booking converts a commission."
-          >
-            {(records) => {
-              const currencies = new Set(records.map((r) => r.currency));
-              const mixed = currencies.size > 1;
-              const currency = [...currencies][0] ?? "EUR";
-              const total = records.reduce((n, r) => n + r.amount_cents, 0);
-              const months = byMonth(records);
-              const streamTotal = (id: RevenueStream) =>
-                records.filter((r) => r.stream === id).reduce((n, r) => n + r.amount_cents, 0);
-              const uncategorised = records
-                .filter((r) => !STREAMS.some((s) => s.id === r.stream))
-                .reduce((n, r) => n + r.amount_cents, 0);
-
-              return (
-                <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-                  <Card className="lg:col-span-2">
-                    <div className="flex flex-wrap items-start gap-x-10 gap-y-4">
-                      <div className="min-w-[10rem]">
-                        <SectionLabel>Recognised revenue</SectionLabel>
-                        {mixed ? (
-                          <p className="mt-2 max-w-xs text-[12.5px] leading-snug text-faint">
-                            Records are held in {currencies.size} currencies and ICEFALL holds no
-                            exchange rate. A single total would be an invented conversion.
-                          </p>
-                        ) : (
-                          <p className="tnum mt-1.5 text-[26px] font-light leading-none text-ink">
-                            {formatCents(total, currency)}
-                          </p>
-                        )}
-                        <p className="mt-1.5 max-w-xs text-[12px] leading-relaxed text-faint">
-                          All-time, across the four streams. They are kept apart on Finance because a
-                          placement invoice, a referral claim and a guide commission are chased by
-                          different people and carry different collection risk.
-                        </p>
-                      </div>
-                      <div className="min-w-[10rem]">
-                        <SectionLabel>Booking value through ICEFALL</SectionLabel>
-                        {gmv.value === null ? (
-                          <p className="mt-2 max-w-xs text-[12.5px] leading-snug text-faint">
-                            {gmv.note}
-                          </p>
-                        ) : (
-                          <>
-                            <p className="tnum mt-1.5 text-[26px] font-light leading-none text-ink">
-                              {gmv.value}
-                            </p>
-                            <p className="mt-1.5 max-w-xs text-[12px] leading-relaxed text-faint">
-                              {gmv.note}
-                            </p>
-                          </>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="mt-5 border-t border-line-soft pt-4">
-                      <SectionLabel>Recognised by month</SectionLabel>
-                      {mixed ? (
-                        <p className="mt-2 text-[12.5px] leading-snug text-faint">
-                          Not drawn. A line across three currencies would be a line across nothing.
-                        </p>
-                      ) : months.length < 2 ? (
-                        <p className="mt-2 text-[12.5px] leading-snug text-faint">
-                          {months.length === 1
-                            ? `Everything recognised so far falls in one month (${months[0].label}). A trend needs at least two.`
-                            : "No month carries a recognised figure yet."}
-                        </p>
-                      ) : (
-                        <Trend points={months} currency={currency} />
-                      )}
-                      <p className="mt-3 max-w-2xl text-[12px] leading-relaxed text-faint">
-                        No month-on-month change is printed. The most recent month is still open, and
-                        comparing an open month against a closed one reports a shortfall that is only
-                        the calendar.
-                      </p>
-                    </div>
-                  </Card>
-
-                  <Card>
-                    <SectionLabel>Revenue by source</SectionLabel>
-                    {mixed ? (
-                      <p className="mt-2 text-[12.5px] leading-snug text-faint">
-                        Shares are not computed across {currencies.size} currencies — the proportions
-                        would be arithmetic on incomparable amounts.
-                      </p>
-                    ) : (
-                      <div className="mt-3 space-y-3">
-                        {STREAMS.map((s) => {
-                          const cents = streamTotal(s.id);
-                          const drawn = formatRatio({ numerator: cents, denominator: total });
-                          return (
-                            <div key={s.id}>
-                              <div className="flex items-baseline justify-between gap-3">
-                                <span className="flex min-w-0 items-center gap-2 text-[12.5px] text-ink">
-                                  <span
-                                    aria-hidden
-                                    className="h-2 w-2 shrink-0 rounded-full"
-                                    style={{ background: s.colour }}
-                                  />
-                                  <span className="truncate">{s.label}</span>
-                                </span>
-                                {cents === 0 ? (
-                                  <span className="shrink-0 text-[11.5px] text-faint">
-                                    Nothing recognised
-                                  </span>
-                                ) : (
-                                  <span className="tnum shrink-0 text-[12.5px] text-muted">
-                                    {money(cents, currency)}
-                                    {drawn !== null && <span className="text-faint"> · {drawn}</span>}
-                                  </span>
-                                )}
-                              </div>
-                              <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-pill bg-raised ring-1 ring-line">
-                                {total > 0 && cents > 0 && (
-                                  <div
-                                    className="h-full rounded-pill"
-                                    style={{
-                                      width: `${(cents / total) * 100}%`,
-                                      background: s.colour,
-                                    }}
-                                  />
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                        {streamTotal("subscription") === 0 && (
-                          <p className="text-[12px] leading-relaxed text-faint">
-                            Consumer subscriptions have recognised nothing because there is no
-                            subscription product to recognise it from. The row stays so the gap is
-                            visible.
-                          </p>
-                        )}
-                        {uncategorised > 0 && (
-                          <p className="text-[12px] leading-relaxed text-faint">
-                            {money(uncategorised, currency)} sits in records with no stream of their
-                            own and is excluded from the four bars above.
-                          </p>
-                        )}
-                      </div>
-                    )}
-                  </Card>
-                </div>
-              );
-            }}
-          </Resolve>
-        </div>
-      </section>
-
-      {/* ------------------------------------------------------------------ */}
-      {/* Alerts and activity.                                                */}
-      {/* ------------------------------------------------------------------ */}
-      <div className="mt-6 grid grid-cols-1 gap-5 lg:grid-cols-2">
-        <section>
-          <SectionLabel>Alerts</SectionLabel>
-          <Card className="mt-1.5" pad={false}>
-            <ul>
-              <AlertLine
-                to="/admin/approvals"
-                label="Content awaiting approval"
-                detail="Operator changes that cannot reach the marketplace until somebody reads them."
-                count={countOf(approvals)}
-                reason={reasonFor(approvals)}
-                colour="var(--crm-accent)"
-                tone="accent"
-              />
-              <AlertLine
-                to="/admin/placements"
-                // The label names the window the count actually uses. "At or past
-                // their term" over a 30-day filter would report positions that
-                // still have a month to run as though they had run out.
-                label="Placements ending within 30 days"
-                detail="Terms inside 30 days of their end date, including those already past it. A term ending changes nothing on its own — the company keeps the position until an administrator moves it."
-                count={countOf(
-                  placements,
-                  (p) => p.effective_status !== "cancelled" && p.days_remaining <= 30,
-                )}
-                reason={reasonFor(placements)}
-                colour="var(--crm-warn)"
-                tone="amber"
-              />
-              <AlertLine
-                to="/admin/billing"
-                label="Invoices past their due date"
-                detail="Issued and unpaid after the due date. Nothing chases them automatically."
-                count={countOf(
-                  invoices,
-                  (i) => (i.status === "overdue" || i.status === "sent") && daysUntil(i.due_on) < 0,
-                )}
-                reason={reasonFor(invoices)}
-                colour="var(--crm-bad)"
-                tone="red"
-              />
-              <AlertLine
-                to="/admin/verification"
-                label="Documents lapsed or lapsing"
-                detail="Within 60 days of a recorded expiry date, or already past it. A document that arrived without an expiry date is not counted — ICEFALL was never told when that cover lapses. Checked means a member of ICEFALL staff read the document; it never means the issuing body was contacted."
-                count={countOf(
-                  documents,
-                  (d) => d.state !== "rejected" && d.expires_on !== null && daysUntil(d.expires_on) <= 60,
-                )}
-                reason={reasonFor(documents)}
-                colour="var(--crm-warn)"
-                tone="amber"
-                note={
-                  documents.state === "ok"
-                    ? (() => {
-                        const soonest = documents.value
-                          .filter(
-                            (d) =>
-                              d.state !== "rejected" &&
-                              d.expires_on !== null &&
-                              daysUntil(d.expires_on) <= 60,
-                          )
-                          .map((d) => d.expires_on as string)
-                          .sort((a, b) => a.localeCompare(b))[0];
-                        // `formatDay` returns null on a date it cannot parse, and
-                        // interpolating that prints the word "null" as if it were
-                        // the date. The line is dropped instead.
-                        const day = soonest ? formatDay(soonest) : null;
-                        return day ? `Soonest lapse ${day}` : undefined;
-                      })()
-                    : undefined
-                }
-              />
-            </ul>
-          </Card>
-        </section>
-
-        <section>
-          <SectionLabel>Recent activity</SectionLabel>
-          <div className="mt-1.5">
-            <Resolve
-              result={events}
-              what="audit events"
-              isEmpty={(v) => v.length === 0}
-              empty="Nothing has been recorded yet. Every commercially meaningful action writes an entry here as it happens."
-            >
-              {(rows) => (
-                <Card pad={false}>
-                  <ul>
-                    {rows.map((e) => (
-                      <li
-                        key={e.id}
-                        className="flex items-start gap-3 border-b border-line-soft px-4 py-3 last:border-0"
-                      >
-                        <Avatar name={(e.actor_role ?? "").replace(/_/g, " ")} size={26} />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-[13px] leading-snug text-ink">
-                            <span className="font-medium">
-                              {e.actor_role ? e.actor_role.replace(/_/g, " ") : "Actor not recorded"}
-                            </span>
-                            <span className="text-muted"> · {e.action}</span>
-                          </p>
-                          <p className="mt-0.5 truncate text-[12px] text-faint">
-                            {e.entity_type} · {e.entity_id.slice(0, 8)}…
-                          </p>
-                        </div>
-                        <p className="tnum shrink-0 whitespace-nowrap text-[12px] text-faint">
-                          {relativeTime(e.created_at) ?? "at an unrecorded time"}
-                        </p>
-                      </li>
-                    ))}
-                  </ul>
-                  <div className="px-4 py-2.5">
-                    <Link
-                      to="/admin/activity"
-                      className="text-[12.5px] font-medium text-muted hover:text-accent"
-                    >
-                      Open the full log
-                    </Link>
-                  </div>
-                </Card>
-              )}
-            </Resolve>
-          </div>
-          <p className="mt-2 max-w-xl text-[12px] leading-relaxed text-faint">
-            The log records which account acted and under which desk, not a display name — so the
-            actor is shown as the role it held at the time.
-          </p>
-        </section>
-      </div>
-
-      <div className="mt-6">
-        <Unavailable
-          reason={
-            "Three things the mockup puts on this page are not here. There is no date-range control, " +
-            "because every figure above is all-time and a range that filtered nothing would imply it " +
-            "did. There is no Export, because nothing on this screen is assembled into a file yet. And " +
-            "there are no growth percentages, on any tile: ICEFALL keeps no snapshot of a previous " +
-            "period to compare against, so each one would be a number invented to fill a space."
-          }
-        />
-      </div>
-    </>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* Pieces used only by this screen                                            */
-/* -------------------------------------------------------------------------- */
-
-/** One funnel stage. `width` is a percentage of the widest countable stage. */
-function Step({
-  label,
-  count,
-  reason,
-  width,
-}: {
-  label: string;
-  count: number | null;
-  reason: string;
-  width: number | null;
-}) {
-  return (
-    <div className="min-w-[8.5rem] flex-1 rounded-tile border border-line bg-raised px-3 py-2.5">
-      <SectionLabel>{label}</SectionLabel>
-      {count === null ? (
-        <p className="mt-1.5 text-[11.5px] leading-snug text-faint">{reason}</p>
-      ) : (
-        <>
-          <p className="tnum mt-1 text-[22px] font-light leading-none text-ink">
-            {count.toLocaleString("en-GB")}
-          </p>
-          <div className="mt-2.5 h-1 w-full overflow-hidden rounded-pill bg-line">
-            {width !== null && width > 0 && (
-              <div className="h-full rounded-pill bg-accent" style={{ width: `${width}%` }} />
-            )}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-/** The conversion between two stages, or the reason it has no denominator. */
-function Gap({ rate, absence }: { rate: string | null; absence: string }) {
-  return (
-    <div className="flex w-24 shrink-0 flex-col items-center justify-center px-1 text-center">
-      <ChevronRight size={16} strokeWidth={1.8} className="text-faint" />
-      {rate === null ? (
-        <span className="mt-1 text-[11px] leading-tight text-faint">{absence}</span>
-      ) : (
-        <span className="tnum mt-1 text-[12.5px] font-medium text-ink">{rate}</span>
-      )}
-    </div>
-  );
-}
-
-/**
- * An alert row. A count of zero is a real measurement here — the set was read
- * and it was empty — so it renders as a word rather than as a figure, and only a
- * count that could not be read at all falls back to the reason.
- */
-function AlertLine({
-  to,
-  label,
-  detail,
-  count,
-  reason,
-  colour,
-  tone,
-  note,
-}: {
-  to: string;
-  label: string;
-  detail: string;
-  count: number | null;
-  reason: string;
-  colour: string;
-  tone: "accent" | "amber" | "red";
-  note?: string;
-}) {
-  return (
-    <li className="flex items-start gap-3 border-b border-line-soft px-4 py-3 last:border-0">
-      <span
-        aria-hidden
-        className="mt-1.5 h-2 w-2 shrink-0 rounded-full"
-        style={{ background: count === 0 ? "var(--crm-line)" : colour }}
-      />
-      <div className="min-w-0 flex-1">
-        <Link to={to} className="text-[13px] font-medium text-ink hover:text-accent">
-          {label}
-        </Link>
-        <p className="mt-0.5 max-w-md text-[12px] leading-relaxed text-faint">{detail}</p>
-        {note && count !== null && count > 0 && (
-          <p className="tnum mt-1 text-[12px] text-muted">{note}</p>
+          </>
         )}
       </div>
-      {count === null ? (
-        <span className="max-w-[9rem] shrink-0 text-right text-[11.5px] leading-tight text-faint">
-          {reason}
-        </span>
-      ) : count === 0 ? (
-        <span className="shrink-0 text-[11.5px] text-faint">None</span>
-      ) : (
-        <Pill tone={tone}>{count}</Pill>
-      )}
-    </li>
-  );
-}
 
-/**
- * The month-by-month line.
- *
- * No chart library is available and none is wanted for one polyline. The shape
- * is stretched to the card width, so the stroke is pinned with
- * `vectorEffect` and the points are drawn as round-capped zero-length lines —
- * a circle would arrive as an ellipse.
- */
-function Trend({ points, currency }: { points: MonthPoint[]; currency: string }) {
-  const W = 600;
-  const H = 128;
-  const top = 8;
-  const floor = H - 8;
-  const max = Math.max(...points.map((p) => p.cents));
-  if (max <= 0) {
-    return (
-      <p className="mt-2 text-[12.5px] leading-snug text-faint">
-        Every month so far recognised nothing, so there is no height to draw.
-      </p>
-    );
-  }
-  const x = (i: number) => (i / (points.length - 1)) * W;
-  const y = (c: number) => floor - (c / max) * (floor - top);
-  const line = points.map((p, i) => `${x(i).toFixed(1)},${y(p.cents).toFixed(1)}`).join(" ");
-  const area = `0,${floor} ${line} ${W},${floor}`;
-
-  return (
-    <div className="mt-3">
-      <svg
-        viewBox={`0 0 ${W} ${H}`}
-        preserveAspectRatio="none"
-        className="h-28 w-full overflow-visible"
-        role="img"
-        aria-label={`Recognised revenue by month, ${points.map((p) => p.label).join(" to ")}`}
-      >
-        <polygon points={area} fill="var(--crm-accent-soft)" />
-        <line
-          x1={0}
-          y1={floor}
-          x2={W}
-          y2={floor}
-          stroke="var(--crm-line)"
-          vectorEffect="non-scaling-stroke"
-        />
-        <polyline
-          points={line}
-          fill="none"
-          stroke="var(--crm-accent)"
-          strokeWidth={1.8}
-          strokeLinejoin="round"
-          strokeLinecap="round"
-          vectorEffect="non-scaling-stroke"
-        />
-        {points.map((p, i) => (
-          <line
-            key={p.key}
-            x1={x(i)}
-            y1={y(p.cents)}
-            x2={x(i)}
-            y2={y(p.cents)}
-            stroke="var(--crm-accent)"
-            strokeWidth={5}
-            strokeLinecap="round"
-            vectorEffect="non-scaling-stroke"
-          />
-        ))}
-      </svg>
-      <div className="mt-2 flex items-start justify-between gap-1">
-        {points.map((p, i) => (
-          <div
-            key={p.key}
-            className={
-              i === 0
-                ? "min-w-0 text-left"
-                : i === points.length - 1
-                  ? "min-w-0 text-right"
-                  : "min-w-0 text-center"
-            }
-          >
-            <p className="text-[11px] leading-none text-muted">{p.label}</p>
-            <p className="tnum mt-1 text-[11px] leading-none text-faint">
-              {money(p.cents, currency)}
-            </p>
+      {/* ── Users by Country ───────────────────────────────────────────── */}
+      <Card className="mt-4">
+        <SectionLabel>Users by Country</SectionLabel>
+        {M ? (
+          <div className="mt-3 grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
+            <div className="space-y-2">
+              {M.countries.map((c, i) => (
+                <div key={c.name} className="flex items-center justify-between text-[12.5px]">
+                  <span className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full" style={{ background: `oklch(${0.75 - i * 0.045} 0.13 255)` }} aria-hidden />
+                    <span className="font-medium text-ink">{c.name}</span>
+                  </span>
+                  <span className="tnum text-muted">{c.n} <span className="text-faint">({c.pct})</span></span>
+                </div>
+              ))}
+            </div>
+            <div className="relative min-h-[180px]">
+              {/* The demo face draws the map (stylised dot-grid, hot markets in
+                  blue) — the drawing has one and the face copies the drawing.
+                  The LIVE branch below keeps its honest no-map gap. */}
+              <WorldDots className="max-h-[300px]" />
+              <div className="mt-1 flex items-center gap-2 text-[10.5px] text-faint">
+                Low
+                <span className="h-1.5 w-24 rounded-full" style={{ background: "linear-gradient(to right,#E4ECF7,#5B8DEF)" }} aria-hidden />
+                High
+              </div>
+            </div>
           </div>
-        ))}
+        ) : countryStats === null ? (
+          <p className="mt-3 text-[12.5px] text-faint">
+            {countries.state === "loading" ? "Reading profiles…" : "reason" in countries ? countries.reason : ""}
+          </p>
+        ) : countryStats.stated.length === 0 ? (
+          <p className="mt-3 max-w-2xl text-[12.5px] leading-relaxed text-faint">
+            No user has stated a country yet — location is set by people in the phone app, never
+            guessed from an IP.{countryStats.unstated > 0 && ` ${countryStats.unstated} account${countryStats.unstated === 1 ? " has" : "s have"} no location on file.`}
+          </p>
+        ) : (
+          <div className="mt-3 grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
+            <div className="space-y-2">
+              {countryStats.stated.slice(0, 9).map(([code, n], i) => (
+                <div key={code} className="flex items-center justify-between text-[12.5px]">
+                  <span className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full" style={{ background: `oklch(${0.75 - i * 0.05} 0.13 255)` }} aria-hidden />
+                    <span className="font-medium text-ink">{countryName(code)}</span>
+                  </span>
+                  <span className="tnum text-muted">
+                    {n.toLocaleString("en-GB")}{" "}
+                    <span className="text-faint">({((n / countryStats.total) * 100).toFixed(1)}%)</span>
+                  </span>
+                </div>
+              ))}
+              {countryStats.unstated > 0 && (
+                <p className="pt-1 text-[11.5px] text-faint">
+                  {countryStats.unstated} account{countryStats.unstated === 1 ? "" : "s"} with no stated location — counted nowhere rather than guessed.
+                </p>
+              )}
+            </div>
+            <div className="grid min-h-[180px] place-items-center rounded-tile bg-panel">
+              {/* Honest gap, stated: no map asset exists in this codebase and
+                  geography drawn from memory would be wrong somewhere. The
+                  numbers on the left are the live data the map would colour. */}
+              <p className="max-w-[300px] p-6 text-center text-[12px] leading-relaxed text-faint">
+                The world map arrives with a licensed map asset — the figures beside this space are
+                live, and the map will colour exactly them.
+              </p>
+            </div>
+          </div>
+        )}
+      </Card>
+
+      {/* ── Revenue ────────────────────────────────────────────────────── */}
+      <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+        <Card>
+          <div className="flex items-center justify-between gap-3">
+            <SectionLabel>Revenue Overview</SectionLabel>
+            {M ? (
+              <span className="flex items-center gap-1.5 rounded-tile border border-line bg-surface px-2.5 py-1.5 text-[11.5px] font-medium text-ink">
+                May 24 – May 30, 2026 <ChevronDown size={12} strokeWidth={2} className="text-faint" aria-hidden />
+              </span>
+            ) : (
+              <Pill tone="neutral">{RANGES.find((r) => r.id === range)!.label}</Pill>
+            )}
+          </div>
+          {M ? (
+            // Drawn arrangement: the total sits BESIDE the chart, not above it.
+            <div className="mt-3 flex flex-wrap items-start gap-6">
+              <div className="shrink-0">
+                <p className="text-[12.5px] text-muted">Total Revenue</p>
+                <p className="tnum text-[28px] font-extrabold leading-tight text-ink">{M.revenue.total}</p>
+                <p className="mt-0.5 flex items-center gap-1 text-[11.5px] font-medium text-ok">
+                  <TrendingUp size={11} strokeWidth={2.25} aria-hidden />{M.revenue.delta}
+                </p>
+              </div>
+              <div className="min-w-[260px] flex-1">
+                <LineChart series={[M.revenue.points]} labels={M.revenue.labels} />
+              </div>
+            </div>
+          ) : revRows === null ? (
+            <p className="mt-3 text-[12.5px] text-faint">
+              {revenue.state === "loading" ? "Reading the ledger…" : "reason" in revenue ? revenue.reason : ""}
+            </p>
+          ) : revRows.length === 0 ? (
+            <p className="mt-3 max-w-xl text-[12.5px] leading-relaxed text-faint">
+              No revenue recognised in this range. The ledger is real and currently empty — the
+              chart draws itself the day money is recorded.
+            </p>
+          ) : (
+            <>
+              <p className="mt-2 text-[12.5px] text-muted">Total in range</p>
+              <p className="tnum text-[28px] font-extrabold leading-tight text-ink">{eur(revTotal)}</p>
+              {chart && <LineChart series={[chart.points]} labels={chart.labels} />}
+            </>
+          )}
+        </Card>
+
+        <Card>
+          <SectionLabel>Revenue Breakdown</SectionLabel>
+          {M ? (
+            <div className="mt-3 flex flex-wrap items-center gap-5">
+              <Donut segments={M.breakdownValues.map((v) => ({ value: v }))} centre={M.breakdownCentre} />
+              <div className="min-w-0 flex-1 space-y-2.5">
+                {M.breakdown.map((b, i) => (
+                  <div key={b.label} className="flex items-center justify-between gap-3 text-[12.5px]">
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: DONUT_COLORS[i % DONUT_COLORS.length] }} aria-hidden />
+                      <span className="min-w-0">
+                        <span className="block truncate font-medium text-ink">{b.label}</span>
+                        <span className="block truncate text-[11px] text-faint">{b.sub}</span>
+                      </span>
+                    </span>
+                    <span className="tnum shrink-0 text-muted">{b.amount} <span className="text-faint">{b.pct}</span></span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : breakdown === null ? (
+            <p className="mt-3 text-[12.5px] text-faint">
+              {revenue.state === "loading" ? "Reading the ledger…" : "reason" in revenue ? revenue.reason : ""}
+            </p>
+          ) : breakdown.length === 0 ? (
+            <p className="mt-3 max-w-xl text-[12.5px] leading-relaxed text-faint">
+              Nothing to break down — no revenue is recognised in this range.
+            </p>
+          ) : (
+            <div className="mt-3 flex flex-wrap items-center gap-5">
+              <Donut segments={breakdown.map(([, v]) => ({ value: v }))} centre={eur(revTotal)} />
+              <div className="min-w-0 flex-1 space-y-2.5">
+                {breakdown.map(([stream, cents], i) => (
+                  <div key={stream} className="flex items-center justify-between gap-3 text-[12.5px]">
+                    <span className="flex items-center gap-2">
+                      <span className="h-2.5 w-2.5 rounded-full" style={{ background: DONUT_COLORS[i % DONUT_COLORS.length] }} aria-hidden />
+                      <span className="font-medium text-ink">{STREAM_LABEL[stream]}</span>
+                    </span>
+                    <span className="tnum text-muted">
+                      {eur(cents)} <span className="text-faint">({((cents / Math.max(revTotal, 1)) * 100).toFixed(1)}%)</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {/* Subscriptions: named because the mockup names it; absent because
+              nothing exists to measure. Absence, not zero. */}
+          {!M && breakdown !== null && !breakdown.some(([s]) => s === "subscription") && (
+            <p className="mt-3 border-t border-line-soft pt-2.5 text-[11.5px] leading-relaxed text-faint">
+              Subscriptions — no subscription product exists yet, so there is nothing to measure here.
+            </p>
+          )}
+        </Card>
       </div>
-    </div>
+
+      {/* ── Recent activity (drawn: three cards across, markets included) ── */}
+      <div className={cn("mt-4 grid gap-4", M ? "xl:grid-cols-3" : "xl:grid-cols-2")}>
+        <Card>
+          <div className="flex items-center justify-between">
+            <SectionLabel>Recent Bookings</SectionLabel>
+            <Link to="/admin/bookings" className="text-[12px] font-medium text-accent-ink hover:underline">View all</Link>
+          </div>
+          {M ? (
+            <table className="mt-2 w-full text-[12px]">
+              <thead>
+                <tr className="text-left text-[10.5px] text-faint">
+                  <th className="py-1.5 pr-3 font-medium">Booking ID</th>
+                  <th className="py-1.5 pr-3 font-medium">Mountain / Trek</th>
+                  <th className="py-1.5 pr-3 font-medium">Company / Guide</th>
+                  <th className="py-1.5 pr-3 text-right font-medium">Amount</th>
+                  <th className="py-1.5 text-right font-medium">Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {M.recentBookings.map((b) => (
+                  <tr key={b.ref} className="border-t border-line-soft">
+                    <td className="tnum py-2.5 pr-3 font-medium text-accent-ink">{b.ref}</td>
+                    <td className="py-2.5 pr-3 text-ink">{b.trip}</td>
+                    <td className="py-2.5 pr-3 text-muted">{b.company}</td>
+                    <td className="tnum py-2.5 pr-3 text-right font-semibold text-ink">{b.amount}</td>
+                    <td className="tnum py-2.5 text-right text-faint">{b.date}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : bookings.state !== "ok" ? (
+            <p className="mt-3 text-[12.5px] text-faint">
+              {bookings.state === "loading" ? "Reading…" : "reason" in bookings ? bookings.reason : ""}
+            </p>
+          ) : bookings.value.length === 0 ? (
+            <p className="mt-3 text-[12.5px] leading-relaxed text-faint">
+              No bookings recorded yet — the first appears here the moment one is.
+            </p>
+          ) : (
+            <table className="mt-2 w-full text-[12.5px]">
+              <tbody>
+                {bookings.value.map((b) => (
+                  <tr key={b.id} className="border-t border-line-soft first:border-0">
+                    <td className="tnum py-2.5 pr-3 font-medium text-accent-ink">{b.id.slice(0, 8)}</td>
+                    <td className="py-2.5 pr-3 text-ink">{b.destination ?? "—"}</td>
+                    <td className="py-2.5 pr-3 text-muted">{b.company ?? ""}</td>
+                    <td className="tnum py-2.5 pr-3 text-right font-semibold text-ink">
+                      {b.value_cents !== null ? eur(b.value_cents) : <span className="font-normal text-faint">no value set</span>}
+                    </td>
+                    <td className="tnum py-2.5 text-right text-faint">{utc.format(new Date(b.booked_at))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </Card>
+
+        <Card>
+          <div className="flex items-center justify-between">
+            <SectionLabel>Recent Enquiries</SectionLabel>
+            <Link to="/admin/leads" className="text-[12px] font-medium text-accent-ink hover:underline">View all</Link>
+          </div>
+          {M ? (
+            <table className="mt-2 w-full text-[12px]">
+              <thead>
+                <tr className="text-left text-[10.5px] text-faint">
+                  <th className="py-1.5 pr-3 font-medium">Enquiry ID</th>
+                  <th className="py-1.5 pr-3 font-medium">Topic</th>
+                  <th className="py-1.5 pr-3 font-medium">Company / Guide</th>
+                  <th className="py-1.5 pr-3 text-right font-medium">Wait Time</th>
+                  <th className="py-1.5 text-right font-medium">Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {M.recentEnquiries.map((e) => (
+                  <tr key={e.ref} className="border-t border-line-soft">
+                    <td className="tnum py-2.5 pr-3 font-medium text-accent-ink">{e.ref}</td>
+                    <td className="py-2.5 pr-3 text-ink">{e.topic}</td>
+                    <td className="py-2.5 pr-3 text-muted">{e.who}</td>
+                    <td className="py-2.5 pr-3 text-right">
+                      {/* The drawing's traffic-light wait colours. */}
+                      <span className={cn("tnum font-semibold", e.tone === "ok" ? "text-ok" : e.tone === "warn" ? "text-[oklch(0.62_0.14_60)]" : "text-bad")}>{e.wait}</span>
+                    </td>
+                    <td className="tnum py-2.5 text-right text-faint">{e.date}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : waiting === null ? (
+            <p className="mt-3 text-[12.5px] text-faint">
+              {enquiries.state === "loading" ? "Reading…" : "reason" in enquiries ? enquiries.reason : ""}
+            </p>
+          ) : waiting.length === 0 ? (
+            <p className="mt-3 text-[12.5px] leading-relaxed text-faint">
+              Nobody is waiting. Enquiries from every app land here the moment they are sent.
+            </p>
+          ) : (
+            <table className="mt-2 w-full text-[12.5px]">
+              <tbody>
+                {waiting.slice(0, 5).map((e) => (
+                  <tr key={e.id} className="border-t border-line-soft first:border-0">
+                    <td className="py-2.5 pr-3 font-medium text-ink">{e.object_label}</td>
+                    <td className="py-2.5 pr-3 text-muted">{e.sender_name ?? e.sender_email ?? e.sender_kind}</td>
+                    <td className="py-2.5 pr-3 text-right">
+                      <span className="tnum rounded-pill bg-butter px-2 py-[2px] text-[11.5px] font-semibold text-[oklch(0.5_0.11_75)]">
+                        {waitedLabel(e.created_at)}
+                      </span>
+                    </td>
+                    <td className="tnum py-2.5 text-right text-faint">{utc.format(new Date(e.created_at))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </Card>
+
+        {M && (
+          <Card>
+            <SectionLabel>Top Markets</SectionLabel>
+            <table className="mt-2 w-full text-[12px]">
+              <thead>
+                <tr className="text-left text-[10.5px] text-faint">
+                  <th className="py-1.5 font-medium">Country</th>
+                  <th className="py-1.5 text-right font-medium">Users</th>
+                  <th className="py-1.5 text-right font-medium">Bookings</th>
+                  <th className="py-1.5 text-right font-medium">Revenue</th>
+                </tr>
+              </thead>
+              <tbody>
+                {M.topMarkets.map((m) => (
+                  <tr key={m.name} className="border-t border-line-soft">
+                    <td className="py-2.5 font-medium text-ink">{m.name}</td>
+                    <td className="tnum py-2.5 text-right text-muted">{m.users}</td>
+                    <td className="tnum py-2.5 text-right text-muted">{m.bookings}</td>
+                    <td className="tnum py-2.5 text-right text-ink">{m.revenue}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+        )}
+      </div>
+
+      {/* ── Top markets (live layout: its own full-width card) ─────────── */}
+      {!M && (
+      <Card className="mt-4">
+        <SectionLabel>Top Markets</SectionLabel>
+        {countryStats === null || countryStats.stated.length === 0 ? (
+          <p className="mt-3 text-[12.5px] leading-relaxed text-faint">
+            Markets appear when users state a country — none has yet.
+          </p>
+        ) : (
+          <>
+            <table className="mt-2 w-full text-[12.5px]">
+              <thead>
+                <tr className="text-left text-[11px] uppercase tracking-[0.06em] text-faint">
+                  <th className="py-2 font-medium">Country</th>
+                  <th className="py-2 text-right font-medium">Users</th>
+                  <th className="py-2 text-right font-medium">Bookings</th>
+                  <th className="py-2 text-right font-medium">Revenue</th>
+                </tr>
+              </thead>
+              <tbody>
+                {countryStats.stated.slice(0, 5).map(([code, n]) => (
+                  <tr key={code} className="border-t border-line-soft">
+                    <td className="py-2.5 font-medium text-ink">{countryName(code)}</td>
+                    <td className="tnum py-2.5 text-right text-muted">{n.toLocaleString("en-GB")}</td>
+                    <td className="py-2.5 text-right text-[11.5px] text-faint">not linked</td>
+                    <td className="py-2.5 text-right text-[11.5px] text-faint">not linked</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="mt-2 text-[11.5px] leading-relaxed text-faint">
+              Bookings and revenue are not attributable to a customer's country yet — nothing links
+              a payment to a person's stated location, so those columns say so instead of guessing.
+            </p>
+          </>
+        )}
+      </Card>
+      )}
+
+      <div className="mt-4 flex items-center justify-between text-[11.5px] text-faint">
+        <span>All times shown in UTC</span>
+        {M ? <span>{M.updated}</span> : asOf && <span className="tnum">Data as of {utcTime.format(asOf)} UTC</span>}
+      </div>
+    </>
   );
 }

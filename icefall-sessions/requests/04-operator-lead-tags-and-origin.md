@@ -2,7 +2,9 @@
 
 **From:** Session 04 (operator portal)
 **Date:** 2026-08-29
-**Status:** open — built against the in-memory adapter, needs the real columns
+**Status:** ACCEPTED 2026-08-29 — the CRM/schema session has taken ownership and
+will write the migrations next session. Confirmed cross-session; not lost.
+Built against the in-memory adapter until the columns land.
 
 The owner asked the operator portal for three things: easier notes/tags per
 lead, the ability to **add** leads, and a **pipeline** view. Notes and the

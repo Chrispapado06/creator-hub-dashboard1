@@ -21,6 +21,31 @@
  * same hue as the athlete app's, different lightness for a different ground.
  *
  * Colours are oklch, per the house rule.
+ *
+ * ── OP-09, 2026-08-31: LIGHT IS THE DEFAULT, DARK IS A CHOICE ───────────────
+ *
+ * Decision #18 above is NOT reversed. Light remains what the portal opens as
+ * for an operator who has never touched the setting, and the mockups are still
+ * the light set. What OP-09 adds is a second set of VALUES under the same token
+ * names, selected by `data-theme="dark"` on <html>, plus a Light / Dark /
+ * System control in Settings → Account.
+ *
+ * THE TOKEN NAMES DID NOT CHANGE AND NO TOKEN EXISTS IN ONLY ONE THEME. That
+ * is the whole reason this is a small change rather than a re-skin: every
+ * screen in the portal already speaks in `canvas`/`surface`/`ink`, so a second
+ * palette is a second block in this file and nothing else.
+ *
+ * The dark values are RECOVERED, not invented — they are the athlete app's
+ * (`icefall-app/src/index.css`), which is the family's canonical dark palette
+ * and the one this portal carried before #18. Where a token has no counterpart
+ * there (`expired`, and the two scrims) the deviation is noted at the line.
+ *
+ * The phone/web preview panes are NOT themed by either block. They depict the
+ * dark athlete app and are content, not chrome, so they hold their own literal
+ * oklch values in `TripAppPreview.tsx`, `CompanyPreview.tsx` and the `APP`
+ * constant in `MountainEditor.tsx`. They look identical in both themes, which
+ * is correct: what a climber sees does not change because an operator changed
+ * their own portal's colours.
  */
 
 @theme inline {
@@ -50,6 +75,14 @@
   --color-expired: var(--op-expired);
   --color-expired-soft: var(--op-expired-soft);
 
+  /*
+   * The dialog scrim. Added by OP-09 in BOTH themes at once, because the
+   * overlays were written as `bg-ink/30` — correct while `ink` was the only
+   * near-black in the file, and inverted the moment `ink` became near-white.
+   * A scrim is not a tint of the text colour; it is its own thing.
+   */
+  --color-scrim: var(--op-scrim);
+
   --font-sans: "Inter Tight", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-serif: "Instrument Serif", "Iowan Old Style", Georgia, serif;
 
@@ -61,6 +94,9 @@
 }
 
 :root {
+  /* Native form controls, scrollbars and the like follow the theme. */
+  color-scheme: light;
+
   /* Surfaces — the page a cool near-white, cards pure white above it */
   --op-canvas: oklch(0.9761 0.0029 264.5); /* #F6F7F9  app canvas   */
   --op-surface: oklch(1 0 0);              /* #FFFFFF  cards        */
@@ -97,6 +133,85 @@
   --op-rejected-soft: oklch(0.5253 0.1697 29.2 / 10%);
   --op-expired: oklch(0.5215 0.0787 299.4);
   --op-expired-soft: oklch(0.5215 0.0787 299.4 / 11%);
+
+  /* Behind a dialog: the page dimmed, never tinted with the text colour. */
+  --op-scrim: oklch(0.2444 0.0201 263.4 / 30%);
+}
+
+/**
+ * ── DARK ────────────────────────────────────────────────────────────────────
+ *
+ * Same names, other values. Chosen, not automatic: this block applies only when
+ * the operator has picked Dark, or picked System on a machine set to dark — see
+ * `src/state/theme.tsx`, which resolves the choice and stamps `data-theme` on
+ * <html> at import time so a dark operator never sees a white flash first.
+ *
+ * There is deliberately no bare `@media (prefers-color-scheme: dark)` rule here.
+ * The OS preference reaches this block only through the System option, so the
+ * setting is always the single explanation for what the operator is looking at.
+ *
+ * SOURCE: `icefall-app/src/index.css`, the family's canonical dark palette.
+ * obsidian→canvas, graphite→surface, slate→raised, elevated→elevated,
+ * snow→ink, mist→muted, mist-dim→faint, hairline-strong→line, hairline→
+ * line-soft, azure→azure, azure-bright→azure-bright, summit→live, alert→
+ * pending, danger→rejected.
+ */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Surfaces — near-black through graphite, all carrying a blue cast */
+  --op-canvas: oklch(0.1277 0.0108 259.6); /* #05070B  app canvas */
+  --op-surface: oklch(0.1814 0.0158 261.5); /* #0E1219  cards      */
+  --op-raised: oklch(0.2213 0.0192 262.1); /* #161B24  hover       */
+  --op-elevated: oklch(0.2627 0.0231 259.3); /* #1E2530  inputs    */
+
+  /* Ink — off-white, never pure, faintly cold */
+  --op-ink: oklch(0.9481 0.0103 261.8); /* #EAEEF5 */
+  --op-muted: oklch(0.6653 0.0287 264.4); /* #8B94A6 */
+  --op-faint: oklch(0.4986 0.0309 264.2); /* #5A6375 */
+
+  /*
+   * The border inverts from black-on-white to white-on-black. The app's two
+   * hairline weights map onto the portal's two: the stronger one carries
+   * `line`, which draws every card edge and has to be visible at 1px.
+   */
+  --op-line: oklch(1 0 0 / 12%);
+  --op-line-soft: oklch(1 0 0 / 7%);
+
+  /*
+   * Alpine azure at its full brightness — the light theme darkened it for a
+   * white ground and this is the undarkened original. `text-canvas` on
+   * `bg-azure` stays correct in both themes: near-white on a dark azure in
+   * light, near-black on a bright azure in dark.
+   */
+  --op-azure: oklch(0.6868 0.1674 255.4); /* #4B9BFF */
+  --op-azure-bright: oklch(0.8013 0.1024 253.4); /* #8FC2FF, hover + azure text */
+  --op-azure-soft: oklch(0.6868 0.1674 255.4 / 15%);
+  --op-azure-glow: oklch(0.6868 0.1674 255.4 / 38%);
+
+  /*
+   * The five publication states. Same semantic hues as light and as the athlete
+   * app, lifted for a dark ground — each one is read as ~11px text sitting on
+   * its own soft wash, so it is the text contrast that sets the lightness.
+   *
+   * `rejected` and `expired` are the two that are not a straight recovery.
+   * The app's `--ice-danger` (L 0.587) is a fill colour there and drops to
+   * roughly 3.4:1 as text on graphite, and the app has no purple at all. Both
+   * keep their hue and chroma and take the lightness the other four sit at.
+   */
+  --op-live: oklch(0.6687 0.1119 149.6); /* #5FA86F  summit green */
+  --op-live-soft: oklch(0.6687 0.1119 149.6 / 14%);
+  --op-pending: oklch(0.7471 0.127 77.8); /* #D9A244  alert amber */
+  --op-pending-soft: oklch(0.7471 0.127 77.8 / 14%);
+  --op-draft: oklch(0.6653 0.0287 264.4); /* the muted grey, as in light */
+  --op-draft-soft: oklch(1 0 0 / 8%);
+  --op-rejected: oklch(0.6653 0.1472 29.2); /* danger's hue, lifted to read */
+  --op-rejected-soft: oklch(0.6653 0.1472 29.2 / 14%);
+  --op-expired: oklch(0.7015 0.0787 299.4); /* light's violet, lifted */
+  --op-expired-soft: oklch(0.7015 0.0787 299.4 / 14%);
+
+  /* Dimming a dark page needs black, not the near-white ink. */
+  --op-scrim: oklch(0 0 0 / 62%);
 }
 
 * {

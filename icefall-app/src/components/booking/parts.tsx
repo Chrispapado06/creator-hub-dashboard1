@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { CalendarDays, ChevronRight, Lock, ShieldCheck, UserRound, Users } from "lucide-react";
-import { Card, SectionLabel } from "@/components/ui/primitives";
+import { Button, Card, SectionLabel } from "@/components/ui/primitives";
 import { useMountainImage } from "@/components/domain/MountainImage";
 import { cn } from "@/lib/utils";
 import { BOOKING, FEE_DISCLOSURE, GUIDE } from "@/screens/booking/data";
@@ -290,12 +290,22 @@ export function TrustBlock() {
         />
       </div>
 
+      {/* THIS SAID SUPPORT DID NOT EXIST, AND IT NOW DOES. The sentence here
+          was "Support is not staffed yet — this build has no inbox behind it",
+          written when the only contact route was a `mailto:` at an address
+          nobody read. There is a desk now: a request from this screen is
+          stored and comes back with a reference. The type is pre-set to
+          `booking`, because that is what somebody standing on a checkout
+          screen is asking about. */}
       <Card>
         <p className="text-[13px] text-snow">Need help?</p>
         <p className="mt-1.5 text-[12px] leading-relaxed text-mist">
-          Support is not staffed yet — this build has no inbox behind it. When it is, the address
-          will be here.
+          A question about this booking goes to ICEFALL's support desk and comes back with a
+          reference. No reply time is promised — nobody has been answered there yet.
         </p>
+        <Button asChild variant="secondary" size="sm" className="mt-3.5">
+          <Link to="/settings/contact?type=booking">Contact support</Link>
+        </Button>
       </Card>
     </div>
   );

@@ -1,6 +1,8 @@
 import { OVERPASS_TIMEOUT_MS, withTimeout } from "@/lib/netTimeout";
 import { haversine } from "@/tracking/filters";
 import { displayName } from "./peakNames";
+import { OFFLINE } from "@/offline/offline";
+import { offlineNearbyTrails, offlineTrailById } from "@/offline/fixtures";
 
 /**
  * Hiking trails, from OpenStreetMap route relations.
@@ -487,6 +489,16 @@ async function fetchNearbyTrails(
   }
 
   /*
+   * Offline, the prebuilt country files above ARE the trail database — they
+   * ship in `public/data/trails/` and cover most of the Alps, so a search
+   * around the demo's own valley answers with real indexed relations and never
+   * leaves the app. Off the edge of that coverage there is a small set of
+   * clearly-labelled sample routes, because "couldn't reach the trail
+   * database" on a plane is a dead screen rather than an honest one.
+   */
+  if (OFFLINE) return offlineNearbyTrails(lat, lon, 24);
+
+  /*
    * Live fallback. For a COUNTRY without a prebuilt file, the unfiltered query
    * cannot succeed — Austria needs 44 s of server time against a 20 s client
    * budget — so the area path asks only for the national and international
@@ -530,6 +542,9 @@ export async function trailById(osmId: number, signal?: AbortSignal): Promise<Tr
     const hit = list.find((t) => t.osmId === osmId);
     if (hit) return hit;
   }
+  // No Overpass offline. A warm list covers anything reached from a search;
+  // beyond that the sample routes resolve so a detail link never dead-ends.
+  if (OFFLINE) return offlineTrailById(osmId);
   const elements = await overpass(
     `[out:json][timeout:40];relation(${osmId});out tags center;`,
     signal,
@@ -753,6 +768,14 @@ export function measureLength(osmId: number, signal?: AbortSignal): Promise<numb
 export function trailGeometry(osmId: number): Promise<LatLon[]> {
   const cached = geometryCache.get(osmId);
   if (cached) return cached;
+
+  /*
+   * A relation's line lives only in Overpass — the prebuilt indexes carry
+   * names, refs and a centre point, not geometry. Offline there is nothing to
+   * draw and nothing to invent: an empty line is the honest answer, and the
+   * map area says it needs a connection rather than showing a made-up squiggle.
+   */
+  if (OFFLINE) return Promise.resolve([]);
 
   /*
    * DELIBERATELY NOT GIVEN A CALLER'S SIGNAL.

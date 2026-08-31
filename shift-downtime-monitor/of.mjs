@@ -206,7 +206,7 @@ export const removeUserFromList = (acct, listId, userId) => ofWrite("DELETE", `/
 export const createUserList = (acct, name) => ofWrite("POST", `/${acct}/user-lists`, { name });
 
 // Message history for one chat. Each item: {fromFan, text, createdAt}.
-// Used by the whale-intel pilot to feed chat content to the LLM extractor.
+// Used by the monitor to inspect recent chat content for a fan.
 export async function listChatMessages(accountId, fanId, { limit = 50 } = {}) {
   const json = await ofGet(`/${accountId}/chats/${fanId}/messages?limit=${limit}`);
   return asList(json).filter((m) => m?.id).map((m) => ({

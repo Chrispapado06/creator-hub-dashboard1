@@ -6,6 +6,7 @@ import {
   TriangleAlert, Users, Wind,
 } from "lucide-react";
 import { Button, Card, Disclaimer, SectionLabel } from "@/components/ui/primitives";
+import { CompanyMark } from "@/components/domain/CompanyMark";
 import { Rise, Screen, Stagger } from "@/components/layout/chrome";
 import { cn } from "@/lib/utils";
 import { fmtElevation, fmtPrice } from "@/lib/format";
@@ -411,18 +412,13 @@ function Detail({
             to={profile}
             className="mt-3 flex items-center gap-3.5 rounded-card border border-hairline bg-graphite p-3.5 transition-colors hover:border-hairline-strong"
           >
-            <span className="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-tile border border-hairline bg-elevated">
-              {operator.logo !== undefined ? (
-                <img
-                  src={operator.logo}
-                  alt=""
-                  aria-hidden
-                  className="h-full w-full object-contain p-1"
-                />
-              ) : (
-                <MountainIcon size={16} strokeWidth={1.7} className="text-mist" />
-              )}
-            </span>
+            {/* THE GENERIC MOUNTAIN GLYPH CAME OUT OF HERE. Every company got
+                the same picture, so the mark carried no identity — two
+                operators in a list were distinguishable only by reading the
+                name. Initials are not a decoration standing in for a logo; for
+                a company that has not uploaded a mark they ARE the mark, and
+                that is the normal case rather than a missing asset. */}
+            <CompanyMark name={operator.name} logoPath={operator.logo} size={44} />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[13.5px] text-snow">{operator.name}</span>
               <span className="mt-0.5 block truncate text-[11.5px] text-mist-dim">

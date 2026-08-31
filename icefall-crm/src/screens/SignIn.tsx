@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { supabase } from "@/lib/supabase";
 import { ArrowRight, Eye, EyeOff, Globe, Headset, Lock, Mail, Mountain, Quote, Users } from "lucide-react";
 import { SHOW_DEMO_DATA } from "@/lib/demoFlag";
 
@@ -54,6 +55,10 @@ const GOLD_HOVER = "#B27F3D";
 
 export default function SignIn() {
   const [showPassword, setShowPassword] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   return (
     <div className="flex min-h-screen flex-col bg-[#F2F2F0] px-4 py-4 sm:px-8 sm:py-7">
@@ -85,13 +90,17 @@ export default function SignIn() {
         <section className="flex min-w-0 flex-1 flex-col px-6 py-9 sm:px-14">
           <div className="flex items-center justify-end gap-3">
             <span className="text-[13.5px] text-[#6B6A66]">Need help?</span>
-            <a
-              href="mailto:support@icefall.example"
-              className="inline-flex h-10 items-center gap-2 rounded-[10px] border border-[#E4E3DF] px-4 text-[13.5px] font-medium text-[#12100E] transition-colors hover:bg-[#FAFAF8]"
+            {/* Drawn as the mockup draws it, but NOT a mailto: there is no
+                support mailbox — support contract correction, 30 Aug 2026.
+                A link to a dead address is a reply nobody will ever read.
+                Points at the real desk instead; staff sign in to reach it. */}
+            <span
+              className="inline-flex h-10 items-center gap-2 rounded-[10px] border border-[#E4E3DF] px-4 text-[13.5px] font-medium text-[#12100E]"
+              title="Support is handled inside the CRM — sign in to reach the desk."
             >
               <Headset size={16} strokeWidth={1.9} />
               Contact Support
-            </a>
+            </span>
           </div>
 
           <div className="mx-auto flex w-full max-w-[420px] flex-1 flex-col justify-center py-10">
@@ -102,13 +111,55 @@ export default function SignIn() {
               Sign in to access your ICEFALL CRM dashboard.
             </p>
 
-            <form className="mt-8 space-y-5" onSubmit={(e) => e.preventDefault()}>
+            {/*
+              THIS FORM USED TO DO NOTHING. `onSubmit={(e) => e.preventDefault()}`
+              and no handler — so the CRM rendered a complete, convincing sign-in
+              that could not sign anybody in. It was survivable only while a demo
+              fallback granted access when Supabase was unconfigured; the day real
+              credentials landed in `.env.local` that fallback became dead code
+              and the CRM became a locked door with no key.
+
+              Access still requires BOTH halves of the staff check in
+              `auth/session.tsx` — `profiles.role = 'admin'` AND an active
+              `staff_members` row. Signing in is not the same as being staff, and
+              a climber's account signing in here correctly lands on "not staff".
+            */}
+            <form
+              className="mt-8 space-y-5"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (busy) return;
+                setBusy(true);
+                setError(null);
+                if (!supabase) {
+                  setError("The CRM isn't connected to the database.");
+                  setBusy(false);
+                  return;
+                }
+                const { error: err } = await supabase.auth.signInWithPassword({
+                  email: email.trim().toLowerCase(),
+                  password,
+                });
+                setBusy(false);
+                if (err) {
+                  setError(
+                    /invalid login credentials/i.test(err.message)
+                      ? "That email and password don't match an account."
+                      : err.message,
+                  );
+                }
+                // On success the session listener in `auth/session.tsx` takes
+                // over and re-renders; there is nothing to navigate to here.
+              }}
+            >
               <Field label="Email address" htmlFor="email">
                 <Mail size={17} strokeWidth={1.8} className="text-[#9B9A95]" />
                 <input
                   id="email"
                   type="email"
                   autoComplete="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@example.com"
                   className="w-full bg-transparent text-[14.5px] text-[#12100E] outline-none placeholder:text-[#A9A8A3]"
                 />
@@ -121,6 +172,8 @@ export default function SignIn() {
                     id="password"
                     type={showPassword ? "text" : "password"}
                     autoComplete="current-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
                     placeholder="Enter your password"
                     className="w-full bg-transparent text-[14.5px] text-[#12100E] outline-none placeholder:text-[#A9A8A3]"
                   />
@@ -140,14 +193,20 @@ export default function SignIn() {
                 </div>
               </div>
 
+              {/* Render the failure. A form that refuses silently is the same
+                  defect as one that does nothing. */}
+              {error && (
+                <p className="text-[13px] leading-relaxed text-[#B23A2E]">{error}</p>
+              )}
               <button
                 type="submit"
+                disabled={busy}
                 className="flex h-[52px] w-full items-center justify-center gap-2 rounded-[10px] text-[15px] font-semibold text-white transition-colors"
                 style={{ backgroundColor: GOLD }}
                 onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = GOLD_HOVER)}
                 onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = GOLD)}
               >
-                Sign in
+                {busy ? "Signing in…" : "Sign in"}
                 <ArrowRight size={17} strokeWidth={2.1} />
               </button>
             </form>

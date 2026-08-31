@@ -1,6 +1,8 @@
 import { useMemo } from "react";
 import { useApp } from "@/state/AppState";
 import { DEMO_CONVERSATIONS, type Conversation } from "./data";
+import { OFFLINE } from "@/offline/offline";
+import { OFFLINE_CONVERSATIONS } from "@/offline/fixtures";
 
 /**
  * Every conversation the athlete has, from one place.
@@ -45,7 +47,15 @@ export function useConversations(): Conversation[] {
       return at(b).localeCompare(at(a));
     };
 
-    return [...real.sort(byRecency), ...DEMO_CONVERSATIONS];
+    /*
+     * The offline build carries its own invented threads, because
+     * `DEMO_CONVERSATIONS` is gated on `import.meta.env.DEV` and is therefore
+     * empty in any built bundle — including an offline one, which would leave
+     * Messages showing nothing at all. Real threads still sort first; nothing
+     * about a production build changes.
+     */
+    const invented = OFFLINE ? OFFLINE_CONVERSATIONS : DEMO_CONVERSATIONS;
+    return [...real.sort(byRecency), ...invented];
   }, [threads]);
 }
 

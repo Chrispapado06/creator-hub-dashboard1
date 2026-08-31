@@ -1,0 +1,51 @@
+name: Morning card
+
+# 04:40 UTC = 07:40 Europe/Nicosia — roughly three hours before the Day block
+# opens at 11:00, which is the runway the MM-approval gate needs.
+#
+# NOT on the Vercel cron: Hobby crons are daily-only and best-effort within the
+# hour (observed drift: 08:21–08:58 against a 0 8 * * * schedule), which would
+# land the card at midday — after the morning it exists to organise. GitHub
+# Actions also has the repo checked out, so the money line reuses
+# payout-bot/config.mjs directly with no new persistence layer.
+
+on:
+  schedule:
+    - cron: "40 4 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Print the card instead of posting it"
+        type: boolean
+        default: true
+
+concurrency:
+  group: morning-card
+  cancel-in-progress: false
+
+jobs:
+  card:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Post the morning card
+        env:
+          SUPABASE_URL: ${{ secrets.CADENCE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.CADENCE_SUPABASE_SERVICE_ROLE_KEY }}
+          # Transports, bot preferred: the bot can pin (replacing yesterday's
+          # card), a webhook can only post. Set both and the webhook is the
+          # fallback for when the bot lacks permission in the channel.
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          CADENCE_WEBHOOK_URL: ${{ secrets.CADENCE_WEBHOOK_URL }}
+          # Discord ids live in Secrets, never in this file.
+          CADENCE_CHANNEL_ID: ${{ secrets.CADENCE_CHANNEL_ID }}
+          CADENCE_OWNER_ID: ${{ secrets.CADENCE_OWNER_ID }}
+          ONLYFANSAPI_KEY: ${{ secrets.ONLYFANSAPI_KEY }}
+          CADENCE_TZ: Europe/Nicosia
+          DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
+        run: node cadence.mjs
+        working-directory: cadence

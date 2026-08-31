@@ -3,6 +3,7 @@ import { X } from "lucide-react";
 import { AppleMark, GoogleMark } from "./PayMarks";
 import { Button } from "./ui";
 import { useAuth } from "@/lib/auth";
+import type { ProviderKey } from "@/auth/account";
 import { cn } from "@/lib/utils";
 
 /**
@@ -16,11 +17,15 @@ import { cn } from "@/lib/utils";
  * have.
  */
 export function AuthModal() {
-  const { authOpen, authMode, setMode, closeAuth, signIn, signUp } = useAuth();
+  const { authOpen, authMode, setMode, closeAuth, signIn, signUp, signInWith, configured } =
+    useAuth();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [touched, setTouched] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [confirmSent, setConfirmSent] = useState<string | null>(null);
 
   const up = authMode === "up";
 
@@ -31,6 +36,9 @@ export function AuthModal() {
       setEmail("");
       setPassword("");
       setTouched(false);
+      setError(null);
+      setConfirmSent(null);
+      setBusy(false);
       const prev = document.body.style.overflow;
       document.body.style.overflow = "hidden";
       return () => {
@@ -54,11 +62,48 @@ export function AuthModal() {
   const nameOk = !up || name.trim().length >= 2;
   const valid = emailOk && passOk && nameOk;
 
-  const submit = () => {
+  /*
+    THE MODAL NO LONGER CLOSES ITSELF ON SUCCESS, and that is deliberate.
+
+    `onAuthStateChange` in `lib/auth.tsx` is the single place a session appears —
+    from a password, from a provider redirect, or from a restored token — and it
+    closes the modal and runs whatever action was waiting. Closing here as well
+    would mean two code paths for "you are in", which is how a social sign-in
+    ends up behaving differently from an email one.
+
+    The one case that does NOT produce a session is a sign-up needing email
+    confirmation. That is reported rather than guessed at: Supabase returns a
+    user with no session, and telling somebody "you're in" at that moment would
+    be a lie they discover on the next page.
+  */
+  const submit = async () => {
     setTouched(true);
-    if (!valid) return;
-    if (up) signUp(name.trim(), email.trim());
-    else signIn(email.trim());
+    if (!valid || busy) return;
+    setBusy(true);
+    setError(null);
+
+    const result = up
+      ? await signUp(name.trim(), email.trim(), password)
+      : await signIn(email.trim(), password);
+
+    if (!result.ok) {
+      setError(result.message);
+    } else if (result.needsEmailConfirmation) {
+      setConfirmSent(email.trim().toLowerCase());
+    }
+    setBusy(false);
+  };
+
+  const social = async (provider: ProviderKey) => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    // Success navigates away to the provider; only a failure returns here.
+    const result = await signInWith(provider);
+    if (!result.ok) {
+      setError(result.message);
+      setBusy(false);
+    }
   };
 
   return (
@@ -117,14 +162,39 @@ export function AuthModal() {
             />
           </div>
 
-          <Button size="lg" className="mt-4 w-full" onClick={submit}>
-            {up ? "Create account" : "Sign in"}
+          <Button size="lg" className="mt-4 w-full" onClick={submit} disabled={busy || !configured}>
+            {busy ? "Working" : up ? "Create account" : "Sign in"}
           </Button>
 
-          <p className="mt-3 rounded-tile border border-hairline bg-obsidian/40 px-3 py-2.5 text-[11px] leading-relaxed text-mist-dim">
-            This is a local demo session — ICEFALL has no account server connected yet. Your details
-            are kept on this device only and nothing is transmitted.
-          </p>
+          {error && (
+            <p role="alert" className="mt-3 text-[12px] leading-relaxed text-danger">
+              {error}
+            </p>
+          )}
+
+          {confirmSent && (
+            <p className="mt-3 rounded-tile border border-azure/25 bg-azure/[0.07] px-3 py-2.5 text-[11.5px] leading-relaxed text-mist">
+              Your account is made, but it needs confirming before you can sign in. A link is on its
+              way to <span className="text-snow/85">{confirmSent}</span>.
+            </p>
+          )}
+
+          {/*
+            The old copy here said the session was local and nothing was
+            transmitted. That was true and is now false — these are real accounts
+            on the same server the phone app uses. It comes down in the same
+            change that makes sign-in real, which is this one.
+
+            What replaces it is narrower: a note only when there is genuinely no
+            account server reachable, so a form that cannot work says so rather
+            than failing on submit.
+          */}
+          {!configured && (
+            <p className="mt-3 rounded-tile border border-hairline bg-obsidian/40 px-3 py-2.5 text-[11px] leading-relaxed text-mist-dim">
+              ICEFALL can't reach the account server from here, so nothing you enter is sent and no
+              account is created.
+            </p>
+          )}
 
           <div className="my-4 flex items-center gap-3">
             <span className="h-px flex-1 bg-hairline" />
@@ -133,12 +203,30 @@ export function AuthModal() {
           </div>
 
           <div className="space-y-2.5">
-            <Social icon={<AppleMark className="h-[18px] w-auto text-snow" />} label="Continue with Apple" />
-            <Social icon={<GoogleMark className="h-[18px] w-auto" />} label="Continue with Google" />
+            <Social
+              icon={<AppleMark className="h-[18px] w-auto text-snow" />}
+              label="Continue with Apple"
+              disabled={busy || !configured}
+              onClick={() => social("apple")}
+            />
+            <Social
+              icon={<GoogleMark className="h-[18px] w-auto" />}
+              label="Continue with Google"
+              disabled={busy || !configured}
+              onClick={() => social("google")}
+            />
+            {/*
+              No mark for Microsoft: there is no licensed Microsoft glyph in
+              `PayMarks`, and drawing an approximation of a company's logo is the
+              same trademark problem `CompanyMark` refuses for operators. The
+              label carries it instead.
+            */}
+            <Social
+              label="Continue with Microsoft"
+              disabled={busy || !configured}
+              onClick={() => social("microsoft")}
+            />
           </div>
-          <p className="mt-2.5 text-center text-[10.5px] text-mist-dim">
-            Social sign-in needs a backend and is not wired in this build.
-          </p>
 
           <p className="mt-5 text-center text-[12.5px] text-mist">
             {up ? "Already have an account?" : "New to ICEFALL?"}{" "}
@@ -187,11 +275,23 @@ function Field({
   );
 }
 
-function Social({ icon, label }: { icon: React.ReactNode; label: string }) {
+function Social({
+  icon,
+  label,
+  disabled,
+  onClick,
+}: {
+  icon?: React.ReactNode;
+  label: string;
+  disabled?: boolean;
+  onClick?: () => void;
+}) {
   return (
     <button
-      disabled
-      className="flex w-full items-center justify-center gap-2.5 rounded-tile border border-hairline bg-slate/60 py-2.5 text-[13px] text-mist disabled:opacity-55"
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className="flex w-full items-center justify-center gap-2.5 rounded-tile border border-hairline bg-slate/60 py-2.5 text-[13px] text-mist transition-colors hover:border-hairline-strong hover:text-snow disabled:opacity-55"
     >
       {icon}
       {label}

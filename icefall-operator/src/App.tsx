@@ -9,6 +9,8 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { Shell } from "@/components/Shell";
 import { OperatorProvider, useOperator } from "@/state/OperatorContext";
+import { OfflineBanner } from "@/offline/OfflineBanner";
+import { OFFLINE } from "@/offline/offline";
 import { can, type Permission } from "@/domain/authz";
 import Analytics from "@/screens/Analytics";
 import Bookings from "@/screens/Bookings";
@@ -23,9 +25,11 @@ import Inbox from "@/screens/Inbox";
 import LeadDetail from "@/screens/LeadDetail";
 import Leads from "@/screens/Leads";
 import MountainDetail from "@/screens/MountainDetail";
+import MountainEditor from "@/screens/MountainEditor";
 import Pipeline from "@/screens/Pipeline";
 import Mountains from "@/screens/Mountains";
 import ProductDetail from "@/screens/ProductDetail";
+import ProductEditor from "@/screens/ProductEditor";
 import ProductNew from "@/screens/ProductNew";
 import ProductPreview from "@/screens/ProductPreview";
 import Products from "@/screens/Products";
@@ -88,6 +92,33 @@ function Router() {
           <Gate>
             <RequirePermission permission="editCompanyProfile">
               <CompanyEditor />
+            </RequirePermission>
+          </Gate>
+        }
+      />
+      {/* The trip editor, same shape and for the same reason. */}
+      <Route
+        path="/operator/products/:id/edit"
+        element={
+          <Gate>
+            <RequirePermission permission="editProducts">
+              <ProductEditor />
+            </RequirePermission>
+          </Gate>
+        }
+      />
+      {/*
+        The mountain page editor, same shape again. It writes nothing — every
+        part of a mountain block is set on the company or the trip — so it is
+        gated on `editProducts`, the permission the mountain screens already
+        use for their own edit controls, rather than a new one.
+      */}
+      <Route
+        path="/operator/mountains/:id/edit"
+        element={
+          <Gate>
+            <RequirePermission permission="editProducts">
+              <MountainEditor />
             </RequirePermission>
           </Gate>
         }
@@ -158,6 +189,12 @@ function Shelled() {
 export default function App() {
   return (
     <OperatorProvider>
+      {/*
+        Above every route and every overlay, and never dismissable. Offline the
+        portal cannot measure anything it is showing, so it says so permanently
+        rather than once. Renders nothing at all when the flag is unset.
+      */}
+      {OFFLINE && <OfflineBanner />}
       <Router />
     </OperatorProvider>
   );

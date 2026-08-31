@@ -6,11 +6,13 @@ import {
 } from "lucide-react";
 import { Badge, VerifiedTick } from "@/components/ui";
 import { IS_DEMO } from "@/data/demo";
+import { OFFLINE } from "@/offline/offline";
 import { companyById, companySlug } from "@/data/companies";
 import { tripById, type Camp, type TripDetail } from "@/data/tripDetail";
 import { formatEur, STANDARD_POLICY } from "@/money/model";
 import { cn } from "@/lib/utils";
 import { demoNoticeFor, RealBusinessBanner } from "@/components/RealBusiness";
+import { CompanyMark } from "@/components/CompanyMark";
 import { peakFallback, peakImage } from "./peakPlate";
 
 /**
@@ -156,7 +158,14 @@ function Hero({
   const gallery = company?.gallery ?? [];
   // One flag, two meanings: pressed play. Whether that starts a film or
   // explains that there isn't one depends on the listing.
-  const playing = askedForVideo && trip.videoId !== null;
+  /*
+   * OFFLINE DEMO: the player never mounts. The film is served by
+   * youtube-nocookie.com, so offline the iframe would replace the hero
+   * photograph with a browser network-error frame inside the card — the one
+   * failure state this page has no branch for. The click still gets an answer;
+   * see the note under the play control.
+   */
+  const playing = !OFFLINE && askedForVideo && trip.videoId !== null;
   return (
     <section className="overflow-hidden rounded-card border border-hairline bg-graphite">
       <div className="relative aspect-[16/8]">
@@ -220,8 +229,24 @@ function Hero({
         )}
 
         <div className="absolute bottom-6 left-6 right-6">
-          <div className="flex items-center gap-2">
-            <MountainIcon size={15} className="text-azure" strokeWidth={1.9} />
+          <div className="flex items-center gap-2.5">
+            {/*
+              The operator's own mark, not a generic mountain.
+
+              This was a `MountainIcon` — the same glyph beside every company on
+              every trip page, which told a reader nothing and made four
+              operators look like one. `Company.tsx` and `Explore.tsx` already
+              showed the company here; this page had simply never been brought
+              across. A real business shows initials rather than a logo, and that
+              is the finished rendering — see `CompanyMark`.
+            */}
+            <CompanyMark
+              name={trip.company}
+              logo={companyById(companySlug(trip.company))?.logo}
+              size={26}
+              variant="card"
+              decorative
+            />
             <Link
               to={`/app/company/${companySlug(trip.company)}`}
               className="text-[12px] font-medium uppercase tracking-[0.12em] text-snow hover:text-azure-bright"
@@ -291,9 +316,17 @@ function Hero({
         >
           <Play size={20} className="ml-0.5 text-snow/80 group-hover:text-snow" strokeWidth={1.6} />
         </button>
-        {askedForVideo && trip.videoId === null && (
+        {askedForVideo && (OFFLINE || trip.videoId === null) && (
           <p className="absolute left-1/2 top-[calc(50%+52px)] -translate-x-1/2 whitespace-nowrap rounded-pill bg-obsidian/85 px-3 py-1.5 text-[11px] text-mist backdrop-blur">
-            No video has been published for this expedition.
+            {/*
+              Two absences, and they are not the same absence — one is "the
+              operator published no film", the other is "there is no connection
+              to fetch one over". Offline, saying the first would be inventing a
+              fact about the listing.
+            */}
+            {OFFLINE
+              ? "The expedition film needs a connection."
+              : "No video has been published for this expedition."}
           </p>
         )}
         </>

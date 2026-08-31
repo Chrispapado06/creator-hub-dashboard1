@@ -4,12 +4,14 @@ import {
   Award, Calendar, ChevronLeft, ChevronRight, Clock, Globe, MapPin,
   MessageSquare, Mountain as MountainIcon, ShieldCheck, Star, TrendingUp, Users,
 } from "lucide-react";
-import { GuidePhoto, VerifiedTick } from "@/components/ui";
+import { GuidePhoto } from "@/components/ui";
+import { GuideCredentialMark } from "@/components/marks";
 import { DEMO_NOTICE, EXPEDITIONS, GUIDES, IS_DEMO, type Guide } from "@/data/demo";
 import { objectiveIsOn, PEAKS, type Peak } from "@/data/peaks";
 import { peakFallback, peakImage } from "./peakPlate";
 import { formatEur } from "@/money/model";
 import { cn } from "@/lib/utils";
+import { EnquiryForm } from "@/components/EnquiryForm";
 
 /**
  * One guide.
@@ -113,7 +115,7 @@ export default function GuideProfile() {
                   </h1>
                   <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-mist">
                     <span>{guide.credential}</span>
-                    <VerifiedTick verifiedOn={guide.verifiedOn} size={13} />
+                    <GuideCredentialMark verifiedOn={guide.verifiedOn} size={13} />
                     <span className="text-mist-dim">&middot;</span>
                     <span className="tnum">{guide.yearsGuiding}+ years</span>
                   </p>
@@ -435,6 +437,9 @@ export default function GuideProfile() {
 function Availability({ guide, peaks }: { guide: Guide; peaks: Peak[] }) {
   const [peakId, setPeakId] = useState(peaks[0]?.id ?? "");
   const [group, setGroup] = useState("2 climbers");
+  // The label is stored beside the key so a later deletion cannot turn an old
+  // enquiry into "about nothing" — see `object_label` in the migration.
+  const peakName = peaks.find((p) => p.id === peakId)?.name ?? "";
 
   return (
     <section className="rounded-card border border-hairline bg-graphite p-5">
@@ -486,13 +491,20 @@ function Availability({ guide, peaks }: { guide: Guide; peaks: Peak[] }) {
         </span>
       </div>
 
-      <Link
-        to="/app/messages"
-        className="mt-4 flex h-11 items-center justify-center gap-2 rounded-tile bg-azure-cta text-[13px] font-medium text-obsidian transition-opacity hover:opacity-90"
-      >
-        <MessageSquare size={14} strokeWidth={1.9} />
-        Send an enquiry
-      </Link>
+      {/*
+        Filed against the MOUNTAIN this form already asks the reader to choose,
+        which is a real `destinations` row. The guide is not the object: guides
+        here are invented, and `enquiries` has no guide key — its objects are a
+        product, a destination or a company. Naming the mountain is true to what
+        was asked rather than a substitution.
+      */}
+      <EnquiryForm
+        object={{ kind: "destination", id: peakId, label: peakName }}
+        heading="Enquire"
+        intro="Ask ICEFALL about climbing this objective. Guides are not bookable yet, so the answer comes from us."
+        originScreen={`/app/guides/${guide.id}`}
+        fallbackLabel="Send an enquiry"
+      />
       <p className="tnum mt-3 text-center text-[11.5px] text-mist-dim">
         {formatEur(guide.dayRate)} / day &middot; you book with the guide directly
       </p>

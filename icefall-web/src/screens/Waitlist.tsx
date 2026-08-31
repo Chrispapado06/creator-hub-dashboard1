@@ -22,6 +22,7 @@ import {
   type WaitlistSource,
 } from "@/lib/waitlist";
 import { cn } from "@/lib/utils";
+import { BODY_MAX, BODY_MIN, SUBJECT_MAX, sendSupportMessage } from "@/lib/support";
 
 /**
  * icefall.app before launch.
@@ -110,7 +111,13 @@ const HERO_POINTS = [
 const SOCIAL: { icon: typeof Instagram; label: string; href: string | null }[] = [
   { icon: Instagram, label: "ICEFALL on Instagram", href: null },
   { icon: Youtube, label: "ICEFALL on YouTube", href: null },
-  { icon: Mail, label: "Email ICEFALL", href: null },
+  /*
+    Was `href: null` — an inert icon labelled "Email ICEFALL", which was honest
+    while there was no way to reach us. There is one now, directly above this
+    footer, so the icon points at it. Nothing edited this line; its meaning
+    changed underneath it when the contact form landed.
+  */
+  { icon: Mail, label: "Contact ICEFALL", href: "#contact" },
 ];
 
 /* -- page ------------------------------------------------------------------ */
@@ -122,6 +129,7 @@ export default function Waitlist() {
       <Hero />
       <Features />
       <Countdown />
+      <Contact />
       <Footer />
     </div>
   );
@@ -441,6 +449,235 @@ function Field({
   );
 }
 
+
+/* -- contact / support ----------------------------------------------------- */
+
+/**
+ * Support, for somebody who has no account and cannot get one.
+ *
+ * The signed-in apps open a ticket through a database function that works out
+ * who is asking from their session. There are no accounts on the public site, so
+ * this writes into the intake queue instead and staff turn those into tickets.
+ *
+ * ── THREE THINGS THIS FORM DELIBERATELY DOES NOT DO ─────────────────────────
+ *
+ *  1. IT PROMISES NO REPLY TIME. Not "usually within 24 hours", not "typically a
+ *     few hours". The column that would measure that is empty because nothing
+ *     has ever been answered. When it has data, the number can be stated.
+ *
+ *  2. IT SHOWS NO REFERENCE NUMBER. The intake row is not a ticket yet, and the
+ *     insert deliberately reads nothing back, so there is no reference to show.
+ *     Inventing one would hand somebody a receipt they could not quote to
+ *     anybody.
+ *
+ *  3. IT DOES NOT ASK WHO YOU ARE — climber, guide, company. On the signed-in
+ *     paths that is derived rather than declared, precisely so nobody can answer
+ *     it wrongly. Here there is nothing to derive it from, and a question
+ *     somebody can get wrong is worse than not asking.
+ *
+ * And on failure it KEEPS WHAT THEY TYPED. A support message can be long and
+ * carefully worded; clearing the box because the network dropped would be the
+ * cruellest possible response to it.
+ */
+function Contact() {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
+  const [website, setWebsite] = useState(""); // honeypot
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  /*
+    "Support isn't connected yet" is not the visitor's mistake, so it does not
+    render as one. A red validation colour beside a message about OUR plumbing
+    tells somebody they typed something wrong when they did not.
+  */
+  const [errorIsOurs, setErrorIsOurs] = useState(false);
+  const [sentTo, setSentTo] = useState<string | null>(null);
+  const live = useRef(true);
+
+  useEffect(() => {
+    live.current = true;
+    return () => {
+      live.current = false;
+    };
+  }, []);
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+
+    const result = await sendSupportMessage({ email, name, subject, body, website });
+    if (!live.current) return;
+
+    // Only the success branch clears the box.
+    if (result.ok) {
+      setSentTo(email.trim().toLowerCase());
+    } else {
+      setError(result.error);
+      setErrorIsOurs(result.notConnected);
+    }
+    setBusy(false);
+  }
+
+  const tooShort = body.trim().length > 0 && body.trim().length < BODY_MIN;
+
+  return (
+    <section id="contact" className="mx-auto mt-16 w-full max-w-[1240px] px-6 sm:px-8 lg:mt-20">
+      <div className="rounded-[14px] border border-hairline bg-slate/40 px-6 py-8 sm:px-10 sm:py-10">
+        <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,560px)] lg:gap-16">
+          <div>
+            <h2 className="text-[22px] font-light leading-[1.25] tracking-[-0.01em] text-snow sm:text-[26px]">
+              Something to ask us?
+            </h2>
+            <p className="mt-3 max-w-[34ch] text-[13px] leading-[1.7] text-mist">
+              We read everything sent here. Write as much as you need to.
+            </p>
+            {/*
+              What this says, and what it carefully does not. It commits to
+              reading and replying; it names no timeframe, because nothing has
+              been answered yet and there is no honest number to give.
+            */}
+            <p className="mt-4 max-w-[34ch] text-[12px] leading-[1.7] text-mist-dim">
+              We&rsquo;ll reply by email. ICEFALL hasn&rsquo;t opened yet, so there&rsquo;s no
+              support desk hours to quote you — a person will get to it.
+            </p>
+          </div>
+
+          <div>
+            {sentTo ? (
+              <div className="rounded-[12px] border border-azure/25 bg-azure/[0.07] px-5 py-5">
+                <div className="flex items-start gap-3">
+                  <CheckCircle2 size={18} strokeWidth={1.8} className="mt-px shrink-0 text-azure" />
+                  <div>
+                    <p className="text-[14px] text-snow">Message sent.</p>
+                    <p className="mt-1.5 text-[12.5px] leading-relaxed text-mist">
+                      We have it, and we&rsquo;ll reply to{" "}
+                      <span className="text-snow/85">{sentTo}</span>.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={onSubmit} noValidate>
+                {/* Honeypot: hidden from people, irresistible to the simpler bots. */}
+                <input
+                  type="text"
+                  name="website"
+                  tabIndex={-1}
+                  autoComplete="off"
+                  aria-hidden="true"
+                  value={website}
+                  onChange={(e) => setWebsite(e.target.value)}
+                  className="absolute h-0 w-0 overflow-hidden border-0 p-0 opacity-0"
+                />
+
+                <div className="space-y-2.5">
+                  <div className="grid gap-2.5 sm:grid-cols-2">
+                    <Field
+                      id="support-name"
+                      label="Your name (optional)"
+                      type="text"
+                      autoComplete="name"
+                      value={name}
+                      onChange={setName}
+                      disabled={busy}
+                    />
+                    <Field
+                      id="support-email"
+                      label="Email address"
+                      type="email"
+                      autoComplete="email"
+                      value={email}
+                      onChange={setEmail}
+                      disabled={busy}
+                      invalid={Boolean(error) && !email.trim()}
+                    />
+                  </div>
+
+                  <Field
+                    id="support-subject"
+                    label="Subject"
+                    type="text"
+                    autoComplete="off"
+                    value={subject}
+                    onChange={(v) => setSubject(v.slice(0, SUBJECT_MAX))}
+                    disabled={busy}
+                    invalid={Boolean(error) && !subject.trim()}
+                  />
+
+                  <div>
+                    <label htmlFor="support-body" className="sr-only">
+                      Your message
+                    </label>
+                    <textarea
+                      id="support-body"
+                      name="support-body"
+                      rows={6}
+                      placeholder="Your message"
+                      value={body}
+                      disabled={busy}
+                      aria-invalid={tooShort || undefined}
+                      aria-describedby="support-count"
+                      onChange={(e) => setBody(e.target.value.slice(0, BODY_MAX))}
+                      className={cn(
+                        "w-full min-w-0 resize-y rounded-[10px] border bg-slate/70 px-3.5 py-3 text-[13.5px] leading-[1.6] text-snow",
+                        "placeholder:text-mist-dim disabled:opacity-60",
+                        "transition-colors duration-200 focus:bg-slate",
+                        tooShort ? "border-danger/60" : "border-hairline hover:border-hairline-strong",
+                      )}
+                    />
+                    {/*
+                      Counts against the same numbers the database enforces, not
+                      approximately — a counter that disagrees with the rule that
+                      rejects you is worse than no counter at all.
+                    */}
+                    <p
+                      id="support-count"
+                      className="tnum mt-1.5 text-right text-[11px] text-mist-dim"
+                    >
+                      {tooShort
+                        ? `${BODY_MIN - body.trim().length} more characters`
+                        : `${body.length} / ${BODY_MAX}`}
+                    </p>
+                  </div>
+                </div>
+
+                {error && (
+                  <p
+                    role="alert"
+                    className={cn(
+                      "mt-3 text-[12.5px] leading-relaxed",
+                      errorIsOurs ? "text-mist" : "text-danger",
+                    )}
+                  >
+                    {error}
+                  </p>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={busy}
+                  className={cn(
+                    "mt-3 inline-flex h-11 items-center justify-center gap-2 rounded-[10px] px-6",
+                    "bg-azure text-[13px] font-medium text-obsidian",
+                    "transition-colors duration-200 hover:bg-azure-bright disabled:opacity-60",
+                  )}
+                >
+                  {busy && <Loader2 size={15} className="animate-spin" strokeWidth={2} />}
+                  {busy ? "Sending" : "Send message"}
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* -- features -------------------------------------------------------------- */
 
 function Features() {
@@ -619,12 +856,15 @@ function SocialIcon({
       </span>
     );
   }
+  // An in-page anchor is not a third-party destination: opening the contact
+  // form in a new tab would lose the page the visitor is already reading.
+  const internal = href.startsWith("#");
+
   return (
     <a
       href={href}
       aria-label={label}
-      target="_blank"
-      rel="noreferrer noopener"
+      {...(internal ? {} : { target: "_blank", rel: "noreferrer noopener" })}
       className="text-mist-dim transition-colors duration-200 hover:text-snow"
     >
       {glyph}

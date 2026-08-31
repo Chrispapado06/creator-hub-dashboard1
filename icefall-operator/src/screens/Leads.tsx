@@ -1,10 +1,12 @@
 /**
- * Leads & Messages — the mockup's unified two-pane screen.
+ * Leads & Messages — the mockup's unified screen, in three columns.
  *
- * One place for the whole of spec §9 and §10: the left pane is every enquiry
- * and conversation in one scrolling list; the right pane is the selected
- * thread with its composer. The lead pipeline is one step deeper (the "View
- * lead" menu item → `?view=detail`), not a separate section of the app.
+ * One place for the whole of spec §9 and §10: the left column is every enquiry
+ * and conversation in one scrolling list; the middle column is the selected
+ * thread with its composer; the right column is everything ABOUT the customer
+ * that the customer never sees — their tags and your team's internal notes. The
+ * lead pipeline is one step deeper (the "View lead" menu item → `?view=detail`),
+ * not a separate section of the app.
  *
  * URL-addressability is kept: `/operator/leads/:id` selects a row (the id may
  * be a lead id or — via the old inbox route's redirect — a conversation id),
@@ -15,18 +17,25 @@
  *   1. A REPLY CANNOT CARRY CONTACT DETAILS. The adapter's findContactDetails
  *      guard refuses the send and its reason is shown verbatim.
  *
- *   2. AN INTERNAL NOTE MUST NOT LOOK LIKE A MESSAGE. Notes sit in their own
- *      dashed-off section on a different ground, headed team-only, and at the
- *      OPPOSITE END of the pane from the composer — so the two boxes cannot be
- *      confused for one another even at a glance. That separation is why the
- *      notes moved up here rather than growing a bigger button down there: the
- *      old collapsed footer sat right against the composer, which is the one
- *      place an internal note must never be typed by accident.
+ *   2. AN INTERNAL NOTE MUST NOT LOOK LIKE A MESSAGE. Notes are not in the
+ *      conversation column at all — they are in a separate card, on a different
+ *      ground, headed team-only, with the whole thread between them and the
+ *      composer. That is the strongest form of the separation this screen has
+ *      always been trying to hold: an internal note cannot be typed into the
+ *      customer's box by accident when the two boxes are not even in the same
+ *      column. (OP-05. Before this they sat above the message list, inside the
+ *      conversation; before that, collapsed under the composer, which was
+ *      worse.)
  *
  *   3. A LEAD THE OPERATOR ADDED HAS NO ICEFALL THREAD. `origin: "company"`
  *      means ICEFALL never carried a word between these two people. The pane
  *      says so plainly instead of drawing an empty message list and a composer
  *      that would post into nothing.
+ *
+ * The right column is the first thing to go when the window narrows: below
+ * `xl` it drops under the conversation, and below `lg` the whole screen stacks.
+ * It is never hidden outright — the notes would become unreachable again, which
+ * is the complaint that started all of this.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -44,7 +53,15 @@ import {
   Tabs,
   inputClass,
   type RowMenuItem, PersonAvatar, VerifiedMark } from "@/components/ui";
-import { AddLeadDialog, OriginMark, StageChip, TagEditor, TagRow } from "@/components/leads";
+import {
+  AddLeadDialog,
+  OriginMark,
+  PRIMARY_TAGS,
+  StageChip,
+  TagEditor,
+  TagRow,
+} from "@/components/leads";
+import { OfferComposer } from "@/components/offer";
 import { timeAgo, NOW } from "@/domain/dates";
 import type { Conversation, Lead } from "@/domain/types";
 import { useAsync, useOperator, useSession } from "@/state/OperatorContext";
@@ -162,13 +179,14 @@ interface PaneNote {
 }
 
 /**
- * The team-only notes on this customer — out of the footer, under the header.
+ * The team-only notes on this customer — out of the conversation entirely.
  *
  * The operator's complaint was that nobody could find these. They were behind a
  * "Show" toggle at the bottom of the pane, below the composer, with no visible
- * way in. So: a headed section directly under the name, open by default when
- * there is anything to read, and an "Add note" box that is ALWAYS on screen. A
- * toggle you have to discover is not an affordance.
+ * way in. Then they moved above the message list, which found them but put them
+ * inside the chat. Now they live in the context column beside it: headed, open
+ * by default when there is anything to read, and an "Add note" box that is
+ * ALWAYS on screen. A toggle you have to discover is not an affordance.
  *
  * TWO STORES, ONE READING. Notes attach to a conversation (`getNotes`) or to a
  * lead (`getLeadNotes` — where the deeper lead view and the add-lead dialog's
@@ -258,8 +276,8 @@ function NotesPanel({
   const firstName = customerName.split(" ")[0];
 
   return (
-    /* Dashed and on canvas: visibly not the conversation, at the far end from it. */
-    <div className="border-b border-dashed border-line bg-canvas px-4 py-2.5">
+    /* Dashed and on canvas: visibly not the conversation, and not beside it. */
+    <div className="border-t border-dashed border-line bg-canvas px-4 py-3">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-[12px] font-semibold text-ink">Internal notes</span>
         <Pill>Your team only</Pill>
@@ -284,7 +302,7 @@ function NotesPanel({
       </p>
 
       {open && notes.length > 0 && (
-        <div className="mt-2 max-h-[148px] space-y-1.5 overflow-y-auto pr-0.5">
+        <div className="mt-2 max-h-[260px] space-y-1.5 overflow-y-auto pr-0.5">
           {notes.map((n) => (
             <div key={n.id} className="hairline rounded-tile bg-surface px-3 py-2">
               <div className="text-[11px] font-medium text-muted">
@@ -297,7 +315,7 @@ function NotesPanel({
       )}
 
       {/* Always on screen — this is the thing the operator could not find. */}
-      <div className="mt-2 flex items-center gap-2">
+      <div className="mt-2 space-y-2">
         <input
           ref={input}
           className={inputClass}
@@ -309,9 +327,11 @@ function NotesPanel({
           placeholder="Write a note for your team…"
           aria-label={`Add an internal note about ${customerName}. Only your team sees it.`}
         />
-        <Button onClick={() => void add()} disabled={!draft.trim()}>
-          <span className="whitespace-nowrap">Add note</span>
-        </Button>
+        <div className="flex justify-end">
+          <Button onClick={() => void add()} disabled={!draft.trim()}>
+            <span className="whitespace-nowrap">Add note</span>
+          </Button>
+        </div>
       </div>
 
       {error && <p className="mt-1.5 text-[11.5px] text-rejected">{error}</p>}
@@ -320,10 +340,158 @@ function NotesPanel({
 }
 
 /* -------------------------------------------------------------------------- */
+/* Ready-made tags                                                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The owner's four tags as one-click chips — "tags should be ready so cold
+ * lead, waste of time, interested, enquired".
+ *
+ * `TagEditor` already offers the full twelve, but only once you have opened its
+ * text box, which means the common four cost a click and a decision before they
+ * cost a tag. These sit permanently under the editor: one click, one write, no
+ * typing. A tag already on the lead is dropped from the row rather than shown
+ * inert, so the row is always a list of things that will actually do something.
+ *
+ * The write is the same backend call `TagEditor` makes, and its refusal is
+ * shown here rather than swallowed.
+ */
+function QuickTags({ lead }: { lead: Lead }) {
+  const session = useSession();
+  const { backend, refresh } = useOperator();
+  const [error, setError] = useState<string | null>(null);
+
+  const missing = PRIMARY_TAGS.filter(
+    (t) => !lead.tags.some((x) => x.toLowerCase() === t.toLowerCase()),
+  );
+
+  const add = async (tag: string) => {
+    setError(null);
+    const res = await backend.setLeadTags(session, lead.id, [...lead.tags, tag]);
+    if (!res.ok) {
+      setError(res.reason);
+      return;
+    }
+    refresh();
+  };
+
+  if (missing.length === 0 && !error) return null;
+
+  return (
+    <div className="mt-2.5">
+      {missing.length > 0 && (
+        <>
+          <div className="lbl text-faint">One click</div>
+          <div className="mt-1 flex flex-wrap gap-1">
+            {missing.map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => void add(t)}
+                className="rounded-pill bg-raised px-2 py-0.5 text-[11px] font-medium text-muted transition-colors hover:bg-azure-soft hover:text-azure-ink"
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+      {error && <p className="mt-1.5 text-[11.5px] text-rejected">{error}</p>}
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Right column — everything about the customer they never see                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Tags and internal notes, in their own column beside the conversation.
+ *
+ * OP-05, the owner's words: "Leads page on chats should remove the notes, and
+ * put then next to the right of ui interface + tags should be ready". Both live
+ * here now, and neither is in the chat column any more.
+ */
+function ContextColumn({ row, focusSignal }: { row: Row | null; focusSignal: number }) {
+  if (!row) {
+    return (
+      <div className="px-4 py-3">
+        <div className="lbl">Lead context</div>
+        <p className="mt-2 text-[12.5px] leading-relaxed text-muted">
+          Pick an enquiry on the left. Its tags and your team's internal notes appear here, beside
+          the conversation and never inside it.
+        </p>
+      </div>
+    );
+  }
+
+  const lead = row.lead;
+
+  return (
+    <>
+      <div className="border-b border-line-soft px-4 py-3">
+        <div className="lbl">Lead context</div>
+        <p className="mt-1 truncate text-[12.5px] text-muted" title={row.name}>
+          {row.name}
+        </p>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="px-4 py-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[12px] font-semibold text-ink">Tags</span>
+            {lead && lead.tags.length > 0 && (
+              <span className="tnum text-[11.5px] text-faint">{lead.tags.length}</span>
+            )}
+          </div>
+
+          {lead ? (
+            <>
+              <p className="mt-1 text-[11.5px] leading-snug text-muted">
+                Your own shorthand, laid on top of the stage — a lead can be Quoted and a cold lead
+                at the same time.
+              </p>
+              <div className="mt-2">
+                <TagEditor lead={lead} />
+              </div>
+              <QuickTags lead={lead} />
+            </>
+          ) : (
+            <p className="mt-1 text-[11.5px] leading-snug text-muted">
+              Tags belong to a lead. This conversation has no lead record behind it, so there is
+              nothing here to tag.
+            </p>
+          )}
+        </div>
+
+        <NotesPanel
+          rowKey={row.key}
+          customerName={row.name}
+          conversationId={row.conversation?.id ?? null}
+          leadId={lead?.id ?? null}
+          focusSignal={focusSignal}
+        />
+      </div>
+    </>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
 /* Right pane — the thread                                                    */
 /* -------------------------------------------------------------------------- */
 
-function ThreadPane({ row, notFound, pending }: { row: Row | null; notFound: boolean; pending: boolean }) {
+function ThreadPane({
+  row,
+  notFound,
+  pending,
+  onAddNote,
+}: {
+  row: Row | null;
+  notFound: boolean;
+  pending: boolean;
+  /** Opens and focuses the note box in the context column. */
+  onAddNote: () => void;
+}) {
   const session = useSession();
   const { backend, revision, refresh } = useOperator();
   const navigate = useNavigate();
@@ -352,13 +520,23 @@ function ThreadPane({ row, notFound, pending }: { row: Row | null; notFound: boo
 
   const [reply, setReply] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [focusNote, setFocusNote] = useState(0);
+  /**
+   * The custom offer composer (OP-05b), open against the selected row.
+   *
+   * It is a dialog rather than a fourth column because composing a price is a
+   * whole task — lines, party maths, exclusions, a cancellation policy — and it
+   * needs the width. It opens from the header, which is the one part of this
+   * pane that renders whether or not a thread exists: an operator can compose an
+   * offer for a lead ICEFALL has no conversation with, and only the delivery is
+   * impossible there.
+   */
+  const [offering, setOffering] = useState(false);
 
   // A new selection starts clean: no half-typed reply carried between customers.
   useEffect(() => {
     setReply("");
     setError(null);
-    setFocusNote(0);
+    setOffering(false);
   }, [row?.key]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -407,13 +585,23 @@ function ThreadPane({ row, notFound, pending }: { row: Row | null; notFound: boo
     ...(lead
       ? [{ label: "View lead", onClick: () => navigate(`/operator/leads/${lead.id}?view=detail`) }]
       : []),
-    { label: "Add note", onClick: () => setFocusNote((n) => n + 1) },
+    { label: "Add note", onClick: onAddNote },
   ];
 
   const ownLead = lead?.origin === "company";
 
   return (
     <>
+      {offering && (
+        <OfferComposer
+          customerName={row.name}
+          subject={row.line}
+          conversationId={conversation?.id ?? null}
+          addedByCompany={ownLead}
+          onClose={() => setOffering(false)}
+        />
+      )}
+
       {/* Header: who, what stage, whose lead it is — and the labels on it. */}
       <div className="border-b border-line-soft px-4 py-3">
         <div className="flex flex-wrap items-center gap-3">
@@ -429,6 +617,12 @@ function ThreadPane({ row, notFound, pending }: { row: Row | null; notFound: boo
             <div className="mt-0.5 truncate text-[12px] text-muted">{row.line}</div>
           </div>
           <div className="flex items-center gap-2">
+            {/*
+              Available on every row, thread or no thread. An offer for a lead
+              the company added itself is still theirs to make; the composer
+              says plainly that ICEFALL cannot deliver that one.
+            */}
+            <Button onClick={() => setOffering(true)}>Custom offer</Button>
             {lead && (
               <AssignMenu
                 ownerId={lead.ownerId}
@@ -450,21 +644,13 @@ function ThreadPane({ row, notFound, pending }: { row: Row | null; notFound: boo
           </div>
         </div>
 
-        {/* Tags, where the eye already is. They write straight through. */}
-        {lead && (
-          <div className="mt-2.5">
-            <TagEditor lead={lead} />
-          </div>
-        )}
+        {/*
+          Tags used to sit here and notes directly below. Both are now in the
+          context column to the right (OP-05) — a read-only echo of the tags is
+          on the list row, so nothing about this customer is only visible in a
+          column that a narrow window drops.
+        */}
       </div>
-
-      <NotesPanel
-        rowKey={row.key}
-        customerName={row.name}
-        conversationId={convId}
-        leadId={lead?.id ?? null}
-        focusSignal={focusNote}
-      />
 
       {!conversation ? (
         /*
@@ -479,7 +665,7 @@ function ThreadPane({ row, notFound, pending }: { row: Row | null; notFound: boo
             </p>
             <p className="mt-1 text-[12.5px] leading-relaxed text-muted">
               {ownLead
-                ? `You added ${row.name.split(" ")[0]} yourself, so Icefall has no conversation with them and there is nothing to reply to here. Keep talking to them however they reached you — the stage, tags and notes above are live and count as your own.`
+                ? `You added ${row.name.split(" ")[0]} yourself, so Icefall has no conversation with them and there is nothing to reply to here. Keep talking to them however they reached you — the stage above, and the tags and notes in Lead context, are live and count as your own.`
                 : "This enquiry was recorded without a conversation. Its pipeline and notes live on the lead."}
             </p>
             {lead && (
@@ -511,7 +697,14 @@ function ThreadPane({ row, notFound, pending }: { row: Row | null; notFound: boo
                 <div
                   className={`max-w-[78%] rounded-card px-3 py-2 ${m.fromCompany ? "bg-azure-soft" : "bg-raised"}`}
                 >
-                  <p className="text-[13px] leading-relaxed text-ink">{m.body}</p>
+                  {/*
+                    `whitespace-pre-wrap`: a message may be more than one line.
+                    A custom offer (OP-05b) is sent as a message and is a dozen
+                    lines of price, exclusions and cancellation tiers — without
+                    this they collapse into one paragraph and the bullets run
+                    together. Ordinary one-line replies are unaffected.
+                  */}
+                  <p className="text-[13px] leading-relaxed whitespace-pre-wrap text-ink">{m.body}</p>
                   <div className="mt-1 text-[10.5px] text-faint">
                     {m.senderName} · {timeAgo(m.createdAt, NOW)}
                   </div>
@@ -543,8 +736,9 @@ function ThreadPane({ row, notFound, pending }: { row: Row | null; notFound: boo
               </Button>
             </div>
             <p className="mt-1.5 text-[11px] leading-snug text-faint">
-              {row.name.split(" ")[0]} sees this. For something only your team should read, use Internal
-              notes at the top. Keep contact details out — it is what keeps the booking yours.
+              {row.name.split(" ")[0]} sees this. For something only your team should read, use
+              Internal notes in the Lead context column. Keep contact details out — it is what keeps
+              the booking yours.
             </p>
           </div>
         </>
@@ -674,6 +868,17 @@ export function LeadsMessages({ selectedId }: { selectedId?: string }) {
   const pending = selectedId !== undefined && selectedId === createdId && selected === null;
   const notFound = selectedId !== undefined && rows.length > 0 && selected === null && !pending;
 
+  /*
+   * "Add note" is in the thread's ⋮ menu and the note box is in the context
+   * column, so the signal between them is held here, above both. Bumped, not
+   * set true: the same menu item pressed twice must focus the box twice.
+   */
+  const [noteFocus, setNoteFocus] = useState(0);
+  const selectedKey = selected?.key ?? null;
+  useEffect(() => {
+    setNoteFocus(0);
+  }, [selectedKey]);
+
   return (
     <>
       <PageHeader
@@ -702,9 +907,19 @@ export function LeadsMessages({ selectedId }: { selectedId?: string }) {
           detail="When a climber enquires about one of your trips through Icefall, it appears here. You can also add a lead you got yourself — a phone call, a referral — with Add lead."
         />
       ) : (
-        <div className="flex flex-col gap-5 lg:h-[calc(100vh-190px)] lg:min-h-[440px] lg:flex-row">
-          {/* Left pane: the one list. */}
-          <Card className="flex max-h-[320px] flex-col overflow-hidden lg:max-h-none lg:w-[340px] lg:shrink-0">
+        /*
+          THREE COLUMNS AT xl: list | conversation | context.
+
+          A grid rather than nested flex rows so the context card can be placed
+          rather than moved: at `lg` it sits in row 2 of the conversation's
+          column (under the thread, still its own card, still not inside the
+          chat), and below `lg` the whole thing stacks. One instance of the
+          card in the DOM at every width — rendering it twice would mean two
+          note-drafts and two sets of reads.
+        */
+        <div className="grid gap-5 lg:h-[calc(100vh-190px)] lg:min-h-[440px] lg:grid-cols-[340px_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)_auto] xl:grid-cols-[340px_minmax(0,1fr)_320px] xl:grid-rows-[minmax(0,1fr)]">
+          {/* Left column: the one list. */}
+          <Card className="flex max-h-[320px] flex-col overflow-hidden lg:col-start-1 lg:row-span-2 lg:row-start-1 lg:max-h-none xl:row-span-1">
             <div className="space-y-2.5 border-b border-line-soft p-3">
               <Tabs
                 active={tab}
@@ -757,9 +972,22 @@ export function LeadsMessages({ selectedId }: { selectedId?: string }) {
             </div>
           </Card>
 
-          {/* Right pane: the selected thread. */}
-          <Card className="flex min-h-[420px] min-w-0 flex-1 flex-col overflow-hidden">
-            <ThreadPane row={selected} notFound={notFound} pending={pending} />
+          {/* Middle column: the selected thread. Nothing internal in it. */}
+          <Card className="flex min-h-[420px] min-w-0 flex-col overflow-hidden lg:col-start-2 lg:row-start-1 lg:min-h-0">
+            <ThreadPane
+              row={selected}
+              notFound={notFound}
+              pending={pending}
+              onAddNote={() => setNoteFocus((n) => n + 1)}
+            />
+          </Card>
+
+          {/*
+            Right column: tags and internal notes. First to give way — under the
+            conversation at lg, stacked at the bottom below it.
+          */}
+          <Card className="flex min-w-0 flex-col overflow-hidden lg:col-start-2 lg:row-start-2 lg:max-h-[270px] xl:col-start-3 xl:row-start-1 xl:max-h-none">
+            <ContextColumn row={selected} focusSignal={noteFocus} />
           </Card>
         </div>
       )}

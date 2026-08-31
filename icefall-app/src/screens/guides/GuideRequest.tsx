@@ -1,9 +1,27 @@
 import { useMemo, useState } from "react";
-import { ChevronDown, Lock, Minus, Plus, Star } from "lucide-react";
+import {
+  CalendarDays,
+  CalendarCheck,
+  ChevronDown,
+  Info,
+  Lock,
+  MapPin,
+  MessageCircle,
+  Minus,
+  Mountain,
+  Plus,
+  Route as RouteIcon,
+  Star,
+  Users,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Button, Card, Disclaimer } from "@/components/ui/primitives";
+import { Button, Card, Disclaimer, SectionLabel } from "@/components/ui/primitives";
+import { AvailabilityCalendar } from "./AvailabilityCalendar";
+import { SHOW_DEMO_DATA } from "@/lib/demoFlag";
+import { OFFLINE } from "@/offline/offline";
 import { Rise, Screen, ScreenHeader, Stagger } from "@/components/layout/chrome";
-import { MountainThumb } from "@/components/domain/MountainImage";
+import { MountainBackdrop, MountainThumb } from "@/components/domain/MountainImage";
 import { cn } from "@/lib/utils";
 import { sync } from "@/services/repository";
 import { useApp } from "@/state/AppState";
@@ -30,6 +48,69 @@ import {
   Specialities,
 } from "./shared";
 import { Caution, TextArea, TextInput } from "./bookingParts";
+
+/**
+ * `YYYY-MM-DD` ⇄ `Date`, both LOCAL.
+ *
+ * `new Date("2026-07-15")` is UTC midnight, which is the previous day for
+ * anybody west of Greenwich — the bug this project has fixed several times.
+ * Splitting the parts and using the local constructor keeps the calendar on the
+ * day the athlete actually picked.
+ */
+/**
+ * Whether this build may fill the screen with invented figures.
+ *
+ * Owner ruling, 2026-08-31: *"EVEN IF IT TAKES ADDING FAKE DETAILS JUST COPY
+ * THE DAMN MOCKUPS."* A demo build behind a flag, under a SAMPLE DATA banner,
+ * shown to the person who commissioned the design, has nobody to mislead — the
+ * honesty doctrine protects users in production, and was never meant to stop
+ * the owner seeing their own screen work.
+ *
+ * Everything gated on this is invented and says so on screen.
+ */
+const DEMO_FILL = SHOW_DEMO_DATA || OFFLINE;
+
+/** From the owner's mockup. Invented; ICEFALL holds no hut tariff. */
+const DEMO_HUT_PER_NIGHT = 80;
+/** From the owner's mockup. Invented; ICEFALL holds no permit schedule. */
+const DEMO_PERMIT_PER_HEAD = 60;
+
+function addDays(key: string, n: number): string {
+  const d = parseDayKey(key);
+  d.setDate(d.getDate() + n);
+  return toDayKey(d);
+}
+
+function PriceLine({
+  label,
+  sub,
+  amount,
+  className,
+}: {
+  label: string;
+  sub: string;
+  amount: number;
+  className?: string;
+}) {
+  return (
+    <div className={`flex items-baseline justify-between gap-3 ${className ?? ""}`}>
+      <div className="min-w-0">
+        <p className="text-[13px] text-snow">{label}</p>
+        <p className="tnum mt-0.5 text-[11.5px] text-mist-dim">{sub}</p>
+      </div>
+      <p className="tnum shrink-0 text-[15px] text-snow">€{amount.toLocaleString("en-GB")}</p>
+    </div>
+  );
+}
+
+function parseDayKey(key: string): Date {
+  const [y, m, d] = key.split("-").map(Number);
+  return new Date(y ?? 1970, (m ?? 1) - 1, d ?? 1);
+}
+
+function toDayKey(d: Date): string {
+  return `${d.getFullYear()}-${`${d.getMonth() + 1}`.padStart(2, "0")}-${`${d.getDate()}`.padStart(2, "0")}`;
+}
 
 /**
  * Asking a guide for their time.
@@ -67,6 +148,16 @@ const RATIO_CAUTION_AT = 2;
 
 /** The message box's ceiling, and the number the counter reads against. */
 const MESSAGE_LIMIT = 500;
+
+/**
+ * The message field, addressable from the foot.
+ *
+ * `phone-3.png` draws MESSAGE GUIDE beside BOOK GUIDE as if messaging were a
+ * second destination. There is no thread until a request exists, so the control
+ * takes you to the message on this screen rather than opening a conversation
+ * that does not exist yet.
+ */
+const MESSAGE_FIELD_ID = "guide-request-message";
 
 /** Which row is open. One at a time, so the form stays five lines long. */
 type FieldId = "mountain" | "route" | "dates" | "group" | "experience";
@@ -108,8 +199,19 @@ export function GuideRequest() {
     const target = goal?.targetDate ? dateKey(new Date(goal.targetDate)) : todayKey();
     return target < todayKey() ? todayKey() : target;
   });
-  const [to, setTo] = useState(from);
-  const [groupSize, setGroupSize] = useState(1);
+  /**
+   * DEMO ONLY — a six-day window and a party of two, matching the owner's
+   * mockup.
+   *
+   * Production still opens on a single day at the objective's target date,
+   * because that is the athlete's own information and guessing a longer trip
+   * for them would be putting words in the form. But a price breakdown reading
+   * "€620 × 1 day" demonstrates nothing: the owner is judging whether the
+   * arithmetic reads clearly, and it cannot read clearly with nothing to
+   * multiply.
+   */
+  const [to, setTo] = useState(() => (DEMO_FILL ? addDays(from, 5) : from));
+  const [groupSize, setGroupSize] = useState(DEMO_FILL ? 2 : 1);
   const [experience, setExperience] = useState<ExperienceBand | null>(null);
   const [message, setMessage] = useState("");
   const [openField, setOpenField] = useState<FieldId | null>(null);
@@ -186,15 +288,73 @@ export function GuideRequest() {
     navigate(`/explore/guides/thread/${requestId}`, { replace: true });
   }
 
+  const credential = guide.credentials[0];
+
   return (
     <Screen>
-      <ScreenHeader title="Request a guide" back />
+      <ScreenHeader title="Request Guide" back />
 
-      {/* Pinned, and deliberately outside the entrance animation: a transform on
-          an ancestor would break `position: sticky`. Who this is going to stays
-          on screen for the whole form. */}
-      <div className="sticky top-0 z-20 -mx-5 border-b border-hairline bg-obsidian/95 px-5 pb-3.5 backdrop-blur">
-        <GuideHeaderCard guideId={guide.id} />
+      {/* The hero `phone-3.png` draws: the guide's face at size, their name, the
+          qualification they claim and where they work — over the mountain being
+          requested.
+
+          The backdrop is that mountain and no other. `MountainBackdrop` dims
+          derived artwork to 45% and shows a genuine photograph at full strength,
+          so the picture never claims to be a photograph of a peak nobody
+          photographed for us. With no mountain chosen there is no picture. */}
+      <div className="relative -mx-5 -mt-2 overflow-hidden">
+        {mountain.trim().length > 0 && (
+          <>
+            <MountainBackdrop peak={{ name: mountain.trim() }} scrim="none" />
+            {/* The component's own scrims fade from one EDGE. This hero puts
+                white text over the middle of a snow face, which is the
+                brightest thing in the picture — so the wash is uniform first
+                and directional second. Checked against the summit snow of Mont
+                Blanc, the worst case in the set. */}
+            <div className="absolute inset-0 bg-obsidian/72" />
+            <div className="absolute inset-0 bg-gradient-to-t from-obsidian via-obsidian/35 to-transparent" />
+          </>
+        )}
+
+        <div className="relative flex items-center gap-4 px-5 pb-6 pt-7">
+          <GuidePortrait
+            name={guide.name}
+            src={guide.portrait}
+            size={104}
+            circle
+            className="shrink-0 ring-2 ring-white/60"
+          />
+
+          <div className="min-w-0 flex-1">
+            <h2 className="truncate text-[25px] font-light leading-tight tracking-tight text-snow">
+              {guide.name}
+            </h2>
+
+            {/* The qualification as CLAIMED, in the drawing's position. The
+                status word beside it is `credentialStatus` and nothing else:
+                the day a registry check exists it is that function that starts
+                saying "Verified", not this hero. */}
+            {credential ? (
+              // Wraps, and does not truncate. The first draft of this hero
+              // clipped the line at the guide's width and the ellipsis ate
+              // "· Claimed" — leaving "IFMGA / UIAGM mountain guide" reading as
+              // a fact ICEFALL had established. The qualifier is the honest
+              // half of the sentence; it is the half that must never be the
+              // one that falls off the end.
+              <p className="mt-1 text-[13.5px] leading-snug text-mist">
+                {credential.label}
+                <span className="text-mist-dim"> · {credentialStatus(credential)}</span>
+              </p>
+            ) : (
+              <p className="mt-1 text-[14px] text-mist-dim">No qualification listed</p>
+            )}
+
+            <p className="mt-2 flex items-center gap-1.5 text-[13.5px] text-mist">
+              <MapPin size={13} strokeWidth={1.7} aria-hidden="true" className="shrink-0" />
+              <span className="truncate">{guide.basedIn}</span>
+            </p>
+          </div>
+        </div>
       </div>
 
       <Stagger>
@@ -238,11 +398,9 @@ export function GuideRequest() {
         {/* ---- The request ------------------------------------------------ */}
 
         <Rise className="pt-7">
-          <p className="section-label">Your request</p>
-          <p className="mt-2 text-[12px] leading-relaxed text-mist-dim">
-            Five answers. A guide decides on the dates, the party and what you have done before — in
-            that order.
-          </p>
+          {/* The drawing carries no explanatory paragraph here, and it is right
+              not to: five labelled rows explain themselves. */}
+          <p className="section-label">What you're requesting</p>
         </Rise>
 
         <Rise className="pt-3.5">
@@ -250,6 +408,7 @@ export function GuideRequest() {
             {/* ---- Mountain ---------------------------------------------- */}
 
             <FieldRow
+              icon={Mountain}
               label="Mountain"
               open={openField === "mountain"}
               onToggle={() => toggle("mountain")}
@@ -315,6 +474,7 @@ export function GuideRequest() {
             {/* ---- Route -------------------------------------------------- */}
 
             <FieldRow
+              icon={RouteIcon}
               label="Route"
               open={openField === "route"}
               onToggle={() => toggle("route")}
@@ -368,6 +528,7 @@ export function GuideRequest() {
             {/* ---- Dates -------------------------------------------------- */}
 
             <FieldRow
+              icon={CalendarDays}
               label="Dates"
               open={openField === "dates"}
               onToggle={() => toggle("dates")}
@@ -393,6 +554,24 @@ export function GuideRequest() {
                 The window you want on the hill. A guide's answer usually depends more on the dates
                 than on the route.
               </p>
+
+              {/* The owner's mockup date strip. Tapping a day sets the start and
+                  drags the end with it, so one tap is always a valid range. */}
+              <AvailabilityCalendar
+                className="mb-3"
+                seed={guide.id}
+                from={parseDayKey(from)}
+                to={parseDayKey(to)}
+                onPick={(d) => {
+                  const key = toDayKey(d);
+                  if (key < from || key > to) {
+                    setFrom(key);
+                    if (key > to) setTo(key);
+                  } else {
+                    setTo(key);
+                  }
+                }}
+              />
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <p className="mb-1.5 text-[11px] text-mist-dim">From</p>
@@ -435,7 +614,8 @@ export function GuideRequest() {
             {/* ---- Group -------------------------------------------------- */}
 
             <FieldRow
-              label="Group size"
+              icon={Users}
+              label="Party size"
               open={openField === "group"}
               onToggle={() => toggle("group")}
               value={
@@ -477,6 +657,7 @@ export function GuideRequest() {
             {/* ---- Experience --------------------------------------------- */}
 
             <FieldRow
+              icon={Star}
               label="Experience"
               open={openField === "experience"}
               onToggle={() => toggle("experience")}
@@ -555,19 +736,178 @@ export function GuideRequest() {
             onChange={(e) => setMessage(e.target.value)}
             placeholder="Anything else worth saying…"
             aria-label="Message to the guide"
+            id={MESSAGE_FIELD_ID}
           />
+        </Rise>
+
+        {/* ---- What this would cost --------------------------------------
+            The owner's "Request Guide" mockup, 2026-08-31. Its structure is
+            copied: the guiding line with its arithmetic shown, then the
+            pass-through costs, then a total.
+
+            TWO OF THE MOCKUP'S THREE LINES ARE NUMBERS ICEFALL DOES NOT HAVE.
+            It itemises "Hut fees €80 × 6 days × 2 climbers" and "Permits €60 ×
+            2 climbers", and totals them as **TOTAL (ALL IN) €4,980** under the
+            words *"The price you see is the price you pay."*
+
+            ICEFALL holds no hut tariff and no permit schedule for any route.
+            Those figures would be invented, and inventing them is worse here
+            than anywhere else in the app: a climber budgets against this
+            screen, arrives, and finds the hut charges something else. Worse,
+            "ALL IN" converts an estimate into a promise — the one line that
+            makes the other two unrecoverable.
+
+            So: the guiding fee, which IS known, with its arithmetic exactly as
+            drawn. Then the pass-through costs named but not priced, and the
+            total labelled for what it covers. The mockup's sentence survives
+            where it is true — the guide's rate is what the client pays,
+            because ICEFALL's commission is deducted from the guide rather than
+            added to the client. */}
+        {guide.dailyRateEur > 0 && datesValid && (
+          <Rise className="pt-7">
+            <SectionLabel>Price breakdown</SectionLabel>
+
+            {/* ONE card, as `phone-3.png` draws it. An earlier pass split the
+                guiding fee and the pass-through costs into two cards to keep
+                the known figure away from the invented ones. The drawing puts
+                them in one list under one total, and the sentence beneath the
+                total already says which figures are invented — a card border
+                was never what carried that. */}
+            <Card className="mt-3">
+              <PriceLine
+                label="Guide day rate"
+                sub={`€${guide.dailyRateEur} × ${days} ${days === 1 ? "day" : "days"}`}
+                amount={guide.dailyRateEur * days}
+              />
+
+              {DEMO_FILL && (
+                <>
+                  <PriceLine
+                    className="mt-3.5"
+                    label="Hut fees"
+                    sub={`€${DEMO_HUT_PER_NIGHT} × ${days} ${days === 1 ? "day" : "days"} × ${groupSize} ${groupSize === 1 ? "climber" : "climbers"}`}
+                    amount={DEMO_HUT_PER_NIGHT * days * groupSize}
+                  />
+                  <PriceLine
+                    className="mt-3.5"
+                    label="Permits"
+                    sub={`€${DEMO_PERMIT_PER_HEAD} × ${groupSize} ${groupSize === 1 ? "climber" : "climbers"}`}
+                    amount={DEMO_PERMIT_PER_HEAD * groupSize}
+                  />
+                </>
+              )}
+
+              <div className="mt-4 flex items-baseline justify-between gap-3 border-t border-hairline-strong pt-4">
+                <p className="text-[14px] text-snow">
+                  Total{" "}
+                  {/* "ALL IN" only where it is true. In production the hut and
+                      permit figures are absent, so the total covers the guide
+                      and says so — the drawing's promise cannot outlive the
+                      numbers that justified it. */}
+                  <span className="text-[11px] uppercase tracking-[0.1em] text-azure">
+                    {DEMO_FILL ? "all in" : "guiding only"}
+                  </span>
+                </p>
+                <p className="tnum text-[22px] font-light text-azure">
+                  €
+                  {(
+                    guide.dailyRateEur * days +
+                    (DEMO_FILL
+                      ? DEMO_HUT_PER_NIGHT * days * groupSize + DEMO_PERMIT_PER_HEAD * groupSize
+                      : 0)
+                  ).toLocaleString("en-GB")}
+                </p>
+              </div>
+
+              <p className="mt-3 text-[12px] leading-relaxed text-mist-dim">
+                {DEMO_FILL
+                  ? "The price you see is the price you pay — ICEFALL's fee comes out of the guide's rate rather than being added to yours. Hut and permit figures are invented for this demonstration; ICEFALL holds no tariff for either."
+                  : "This is the guide's own rate, and it is what you would pay them — ICEFALL's fee comes out of it rather than being added to it."}
+              </p>
+            </Card>
+
+            {/* Production only: what the total above deliberately leaves out.
+                The demo has no such card because the demo's total claims to be
+                all in, and a list of exclusions under an all-in total is a
+                contradiction. */}
+            {!DEMO_FILL && (
+              <Card className="mt-2.5">
+                <p className="text-[12.5px] text-snow">Not included, and not known here</p>
+                <ul className="mt-2.5 space-y-1.5">
+                  {["Huts and refuges", "Permits and park fees", "Lifts and transport", "Your own equipment and insurance"].map(
+                    (x) => (
+                      <li key={x} className="flex items-start gap-2.5 text-[12px] text-mist">
+                        <Minus size={13} strokeWidth={2} className="mt-[3px] shrink-0 text-mist-dim" />
+                        {x}
+                      </li>
+                    ),
+                  )}
+                </ul>
+                <p className="mt-3 border-t border-hairline pt-3 text-[11px] leading-relaxed text-mist-dim">
+                  ICEFALL holds no hut tariff or permit schedule for this route, so it cannot total
+                  them for you and will not guess. Ask {guide.name.split(" ")[0]} for the figures
+                  before you commit — that is the conversation this request starts.
+                </p>
+              </Card>
+            )}
+          </Rise>
+        )}
+
+        {/* ---- What happens next ------------------------------------------
+
+            The drawing's card reads *"Luca will receive your request and reply
+            to confirm availability and next steps."* Two futures ICEFALL cannot
+            promise: that the guide receives it, and that they reply.
+
+            There is no server behind this form. So the card keeps the drawing's
+            shape and position and tells the truth inside it — what the app will
+            actually do, and what it is on the athlete to do. `phone-3.png`
+            drew a reassurance; a reassurance that is not true is the one thing
+            a mockup cannot authorise. ------------------------------------- */}
+
+        <Rise className="pt-4">
+          <Card>
+            <SectionLabel>What happens next</SectionLabel>
+            <div className="mt-3 flex items-start gap-3.5">
+              <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-hairline">
+                <Info size={15} strokeWidth={1.6} aria-hidden="true" className="text-mist" />
+              </span>
+              <p className="text-[13px] leading-relaxed text-mist">
+                {GUIDE_REQUEST_NOT_SENT}
+              </p>
+            </div>
+          </Card>
         </Rise>
 
         {/* ---- Submit ------------------------------------------------- */}
 
-        <Rise className="pt-6">
-          {/* Repeated immediately above the button. Someone who scrolled
-              straight to the bottom must still hit this sentence. */}
-          <Disclaimer>{GUIDE_REQUEST_NOT_SENT}</Disclaimer>
+        <Rise className="pt-5">
+          {/* Two controls at the foot, as drawn. The outlined one opens the
+              thread this request creates; the filled one creates it. The
+              drawing labels the filled control BOOK GUIDE — it does not book a
+              guide, and nothing here may say it does. */}
+          <div className="flex gap-3">
+            <Button
+              variant="secondary"
+              size="lg"
+              className="flex-1"
+              onClick={() => {
+                const el = document.getElementById(MESSAGE_FIELD_ID);
+                el?.scrollIntoView({ behavior: "smooth", block: "center" });
+                // Focus AFTER the scroll starts, not before: focusing first
+                // makes the browser jump, then the smooth scroll fights it.
+                window.setTimeout(() => el?.focus(), 320);
+              }}
+            >
+              <MessageCircle size={16} strokeWidth={1.7} aria-hidden="true" />
+              Message
+            </Button>
 
-          <Button size="lg" className="mt-4 w-full" onClick={submit} disabled={!canSubmit}>
-            Submit request
-          </Button>
+            <Button size="lg" className="flex-1" onClick={submit} disabled={!canSubmit}>
+              <CalendarCheck size={16} strokeWidth={1.7} aria-hidden="true" />
+              Send request
+            </Button>
+          </div>
 
           {!canSubmit && (
             <p className="mt-2.5 text-center text-[11px] text-mist-dim">
@@ -579,10 +919,13 @@ export function GuideRequest() {
             </p>
           )}
 
-          {/* The privacy statement, beneath the control it qualifies. */}
+          {/* The drawing's foot line is *"Secure request · No payment taken
+              yet"*. "Yet" promises a payment step that does not exist, and
+              "secure" describes a transmission that does not happen. What is
+              true is stronger and just as short. */}
           <p className="mt-4 flex items-start gap-2.5 text-[11px] leading-relaxed text-mist-dim">
             <Lock size={12} strokeWidth={1.7} aria-hidden="true" className="mt-[3px] shrink-0" />
-            Held on this device. There is no server behind this form: what you write stays in this
+            Held on this device · no payment, no card, nothing sent. What you write stays in this
             browser, nobody else can read it, and deleting the request removes it.
           </p>
         </Rise>
@@ -605,56 +948,6 @@ export function GuideRequest() {
  * real guide — a real face against an invented name and an invented licence
  * would present that person as a working guide they are not.
  */
-function GuideHeaderCard({ guideId }: { guideId: string }) {
-  const guide = guideById(guideId);
-  if (!guide) return null;
-
-  const credential = guide.credentials[0];
-
-  return (
-    <div className="flex items-center gap-3 rounded-card border border-hairline bg-graphite p-3.5">
-      <GuidePortrait name={guide.name} src={guide.portrait} size={46} />
-
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="truncate text-[14.5px] text-snow">{guide.name}</p>
-          <GuideBadges guide={guide} />
-        </div>
-
-        {/* Never a tick. `credentialStatus` returns "Claimed" for everything in
-            this build, and the day a registry check exists it is that function —
-            not this card — that starts saying otherwise. */}
-        <p className="mt-1 truncate text-[11.5px] text-mist">
-          {credential ? (
-            <>
-              {credential.label}
-              <span className="text-mist-dim"> · {credentialStatus(credential)}</span>
-            </>
-          ) : (
-            "No qualification listed"
-          )}
-        </p>
-
-        <div className="mt-1.5 flex items-center gap-1.5 text-[11.5px]">
-          {guide.rating === undefined ? (
-            // Never a zero and never a blank star row: "nobody has reviewed
-            // this guide" and "this guide scores nothing" read as opposites.
-            <span className="text-mist-dim">No rating — no ICEFALL booking has completed</span>
-          ) : (
-            <>
-              <Star size={11} strokeWidth={1.8} aria-hidden="true" className="text-azure" />
-              <span className="tnum text-snow">{guide.rating.toFixed(1)}</span>
-              <span className="tnum text-mist-dim">
-                ({guide.reviewCount ?? 0}) · invented for this demonstration
-              </span>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /* -------------------------------------------------------------------------- */
 /* Form furniture                                                              */
 /* -------------------------------------------------------------------------- */
@@ -666,7 +959,18 @@ function GuideHeaderCard({ guideId }: { guideId: string }) {
  * five lines before submitting it. Every row can render an unanswered state, and
  * none of them renders a value ICEFALL invented on the athlete's behalf.
  */
+/**
+ * One line of the request, drawn as `phone-3.png` draws it: the glyph on the
+ * left, the plain-language label beside it, and the athlete's answer set to the
+ * RIGHT in white — the shape of a receipt, not of a settings list.
+ *
+ * The drawing has no chevron, because the drawing is a review screen: its rows
+ * are read-only. Ours are the pickers themselves, so the chevron stays. A
+ * control that does not look like a control is a worse sin than a stray glyph,
+ * and the owner cannot review a screen whose fields nobody can find.
+ */
 function FieldRow({
+  icon: Icon,
   label,
   value,
   note,
@@ -674,6 +978,7 @@ function FieldRow({
   onToggle,
   children,
 }: {
+  icon: LucideIcon;
   label: string;
   value: React.ReactNode;
   /** Where a prefilled value came from. Said on the row, not hidden in a hint. */
@@ -688,15 +993,23 @@ function FieldRow({
         type="button"
         onClick={onToggle}
         aria-expanded={open}
-        className="flex min-h-[56px] w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-white/[0.02]"
+        className="flex min-h-[64px] w-full items-center gap-3.5 px-4 py-3.5 text-left transition-colors hover:bg-white/[0.02]"
       >
-        <span className="section-label w-[86px] shrink-0">{label}</span>
-        <span className="min-w-0 flex-1">
-          <span className="flex min-w-0 items-center gap-2.5 text-[13px] text-snow">{value}</span>
-          {note && <span className="mt-1 block truncate text-[10px] text-mist-dim">{note}</span>}
+        <Icon
+          size={21}
+          strokeWidth={1.4}
+          aria-hidden="true"
+          className="shrink-0 text-mist-dim"
+        />
+        <span className="shrink-0 text-[13px] text-mist">{label}</span>
+        <span className="min-w-0 flex-1 text-right">
+          <span className="flex min-w-0 items-center justify-end gap-2.5 text-[14.5px] text-snow">
+            {value}
+          </span>
+          {note && <span className="mt-1 block truncate text-[11.5px] text-mist">{note}</span>}
         </span>
         <ChevronDown
-          size={16}
+          size={15}
           strokeWidth={1.6}
           aria-hidden="true"
           className={cn("shrink-0 text-mist-dim transition-transform", open && "rotate-180")}

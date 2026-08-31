@@ -33,6 +33,16 @@ const SEEDED_HYDRATION_ML = import.meta.env.DEV ? 1850 : 0;
 const SEEDED_GOALS: Goal[] = import.meta.env.DEV ? GOALS : [];
 
 /**
+ * The weight a calorie figure is computed against when the athlete has not
+ * given one.
+ *
+ * Exported so the screens that SHOW a figure derived from it can name it in
+ * their caveat. A default nobody can see is how "72 kg" quietly became a fact
+ * about every user of this app.
+ */
+export const DEFAULT_BODY_MASS_KG = 72;
+
+/**
  * A mountain the athlete is keeping an eye on. Holds enough to render a row
  * without a lookup, because discovered peaks aren't in any local table.
  */
@@ -95,7 +105,13 @@ interface Persisted {
   sessionOverrides: Record<string, boolean>;
   hydrationMl?: number;
   kudos: string[];
-  /** Drives the calorie estimate. Was hardcoded to 72 kg for everyone. */
+  /**
+   * Drives the calorie estimate. Was hardcoded to 72 kg for everyone.
+   *
+   * Optional on purpose: undefined means the athlete has never told us, which
+   * is a different thing from weighing 72 kg. Read it through `bodyMassKgSet`
+   * wherever that difference matters.
+   */
   bodyMassKg?: number;
   autoPause?: boolean;
   objectives?: SavedObjective[];
@@ -347,7 +363,22 @@ interface AppStateValue {
   toggleSession: (weekIndex: number, date: string, fallback: boolean) => void;
   hydrationMl: number;
   addHydration: (ml: number) => void;
+  /**
+   * The athlete's weight, defaulted to 72 kg when they have never given one.
+   *
+   * Every consumer that needs a number can use this. Any consumer that needs to
+   * know whether the number is REAL must use `bodyMassKgSet` — the default is
+   * indistinguishable from a genuine 72 kg answer, and that ambiguity has
+   * already put an invented body into the AI coach's prompt once.
+   */
   bodyMassKg: number;
+  /**
+   * The weight as actually stored: `null` where the athlete has never set one.
+   *
+   * Not a boolean, for the reason recorded as §6ag — a boolean is a cached
+   * parse, and the value itself answers both "is it set" and "what is it".
+   */
+  bodyMassKgSet: number | null;
   setBodyMassKg: (kg: number) => void;
   autoPause: boolean;
   setAutoPause: (on: boolean) => void;
@@ -563,26 +594,13 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
        */
       summits: import.meta.env.DEV ? USER.summits : [],
       achievements: import.meta.env.DEV ? USER.achievements : [],
-      /**
-       * AND THE SAME APPLIES TO THE LEVEL, WHICH THIS FIX ORIGINALLY MISSED.
-       *
-       * `...USER` also carried `level: 24`, `xp: 12540` and `xpToNext: 14000`,
-       * so a fresh install opened the Profile at Level 24 with 12,540 XP and
-       * "1,460 XP to level 25" — sitting directly beneath career totals that
-       * had just been corrected to zero. A level is a claim about what the
-       * athlete has done, exactly like a summit, and there is no XP engine in
-       * the app: nothing awards it, nothing spends it, and the curve those
-       * three numbers imply was never designed. Points ARE real (they are
-       * awarded per recorded activity by `tracking/points.ts`), and the Profile
-       * shows those instead.
-       *
-       * `xpToNext: 0` is the marker for "no progression model is running", and
-       * the Profile reads it that way rather than printing a threshold nobody
-       * chose.
-       */
-      level: import.meta.env.DEV ? USER.level : 1,
-      xp: import.meta.env.DEV ? USER.xp : 0,
-      xpToNext: import.meta.env.DEV ? USER.xpToNext : 0,
+      /* Level / XP are gone from the model entirely — PH-22. The earlier fix
+         zeroed them in production but left the DEV fixture rendering Level 24,
+         and once points were removed (D5) that fixture was the only
+         progression figure left in any build. The sentence that used to close
+         this comment — "the Profile shows points instead" — had itself gone
+         stale: points were removed after it was written. A fake number behind
+         a DEV flag is still a fake number in every screenshot and review. */
       // A real date for this install, not "three years before whenever you
       // happen to open the app".
       memberSince: state.memberSince ?? USER.memberSince,
@@ -734,6 +752,24 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         createdAt: new Date().toISOString(),
         local: true,
       },
+      /*
+       * `name` IS SET HERE TOO, and that is not redundant.
+       *
+       * `user.name` reads `state.name ?? USER.name`, where USER is the demo
+       * fixture. Before accounts existed, `state.name` was only ever set by the
+       * onboarding question, so anybody who had not answered it rendered as the
+       * fixture athlete. That was survivable when nothing else on the screen was
+       * real.
+       *
+       * It is not survivable now: the Profile renders the SERVER handle directly
+       * under this name, so an unset name puts the demo athlete's name above a
+       * real person's @handle — two identities in one heading, which is worse
+       * than either being wrong alone. Seen on screen during testing.
+       *
+       * The account name wins only where the athlete has not chosen one; a name
+       * they typed in onboarding is theirs and is never overwritten.
+       */
+      name: s.name ?? a.name.trim(),
     }));
   }, []);
 
@@ -1408,7 +1444,8 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       toggleSession,
       hydrationMl: state.hydrationMl ?? SEEDED_HYDRATION_ML,
       addHydration,
-      bodyMassKg: state.bodyMassKg ?? 72,
+      bodyMassKg: state.bodyMassKg ?? DEFAULT_BODY_MASS_KG,
+      bodyMassKgSet: typeof state.bodyMassKg === "number" ? state.bodyMassKg : null,
       setBodyMassKg,
       autoPause: state.autoPause ?? true,
       setAutoPause,

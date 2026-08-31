@@ -1,0 +1,119 @@
+# UNCVRD Ad Tracker — Apps Script + Google Sheet
+
+An ad-tracking & split-test system for salary-model creators. It joins **ad
+spend** (Meta + OnlyFinder) to **backend money** (OnlyFans new fans + revenue)
+through one rule:
+
+> **One unique OnlyFans tracking link per split-test variant — and name the link
+> EXACTLY the same as the Variant you log.** That shared name is the join key.
+
+CPC, CAC, click→sub %, LTV, ROAS, Profit and the **SCALE / KEEP / CUT** verdict
+all calculate automatically. The backend half (new fans + revenue) refreshes
+itself daily via the OnlyFans API; the ad half is Meta (auto) + OnlyFinder
+(paste, or auto if you have an endpoint).
+
+## What's in here
+
+| File | Role |
+| --- | --- |
+| `Config.gs` | Constants + Script-Property helpers (where your keys live). |
+| `Setup.gs` | `buildTracker()` — scaffolds every tab + formula. `deleteExampleRows()`. |
+| `OnlyFans.gs` | `listLinks()` and `ofPull()` — the backend new-fans/revenue pull. |
+| `Meta.gs` | `metaRefresh()` — per-ad spend + paid clicks from the Meta API. |
+| `OnlyFinder.gs` | `onlyFinderRefresh()` — manual by default, auto if you set an endpoint. |
+| `Triggers.gs` | `installDailyTrigger()` + `dailyRefresh()` orchestrator. |
+| `Supabase.gs` | `pushToSupabase()` — optional mirror into Supabase. |
+| `appsscript.json` | Manifest (V8, OAuth scopes). |
+| `UNCVRD_Ad_Tracker.xlsx` | Ready-to-use spreadsheet — open in Excel or **File ▸ Import** into Google Sheets. All 5 tabs, working formulas, sample split-test data. |
+| `dashboard.html` | Self-contained visual dashboard — **double-click to open in any browser**. No build, no server. |
+
+## Two ways to use it
+
+- **Spreadsheet now:** open `UNCVRD_Ad_Tracker.xlsx`. To get the live API pulls,
+  import it into Google Sheets, then add the `.gs` files (below).
+- **Dashboard now:** open `dashboard.html`. It renders the sample data instantly.
+  Switch the source dropdown to **Live (Supabase)** and paste your project URL +
+  anon key to see real numbers, or **CSV upload** a Daily-Log export. It shows
+  KPIs, a "what to scale & cut" action list, a budget-reallocation tip, a
+  profit-vs-salary chart, a variant leaderboard and the platform split.
+
+## Setup (4 steps)
+
+1. Open your tracker Sheet → **Extensions ▸ Apps Script**. Create one `.gs` file
+   per file above and paste the contents in (and set the manifest from
+   `appsscript.json` under Project Settings ▸ *Show "appsscript.json"*).
+2. **Project Settings ▸ Script properties** → add your OnlyFans key as
+   **`OFAPI_KEY`**. *(You enter keys; they never live in code.)*
+3. Run **`buildTracker()`** once — it creates Settings, Daily Log, Split Tests,
+   Creator Dashboard and Platform Summary, with three example rows.
+4. Run **`listLinks()`** once — it writes an **OF Links** tab listing every
+   link's name + id. Then run **`installDailyTrigger()`** — backend refresh runs
+   ~6am daily.
+
+When you're ready to go live, run **`deleteExampleRows()`** to clear the three
+pink EXAMPLE rows.
+
+## Script Properties
+
+| Key | Required | Used by |
+| --- | --- | --- |
+| `OFAPI_KEY` | ✅ | OnlyFans backend pull (`Authorization: Bearer`). |
+| `META_TOKEN` | optional | Meta refresh — long-lived token with `ads_read`. |
+| `META_AD_ACCT` | optional | Meta ad account id **without** the `act_` prefix. |
+| `ONLYFINDER_ENDPOINT` | optional | OnlyFinder JSON endpoint; `{date}` is substituted. |
+| `ONLYFINDER_KEY` | optional | OnlyFinder bearer key. |
+| `SUPABASE_URL` | optional | Supabase mirror target. |
+| `SUPABASE_SERVICE_ROLE_KEY` | optional | Supabase writes (bypasses RLS). |
+| `AD_APPEND_MISSING` | optional | `"false"` to stop the OF pull adding backend-only rows. |
+
+> Meta stays **off** until `META_TOKEN` + `META_AD_ACCT` exist (it can't work
+> until your Business Manager access is restored). When on, it **overwrites the
+> Clicks** column for matched rows with paid link clicks.
+
+## Daily workflow
+
+1. In **Daily Log** add one row per ad/variant for the day: date, platform,
+   creator, campaign, what you're testing, variant name, OF link.
+2. Paste the **ad-side** numbers (Spend + Clicks) from OnlyFinder. (Meta fills
+   these itself once configured.)
+3. **New Fans + Revenue** arrive from the OnlyFans API in the ~6am refresh —
+   matched on link name.
+4. Everything else (CPC, CAC, click→sub %, LTV, ROAS, Profit, verdict) is
+   computed.
+
+Run `dailyRefresh()` by hand any time to pull immediately.
+
+## Tabs
+
+- **Settings** — yellow cells: ROAS/CAC/LTV targets, the SCALE (`B6`) and CUT
+  (`B7`) thresholds, and a per-creator salary table (`D:E`).
+- **Daily Log** — the one place you enter data. Columns L–R are formulas.
+- **Split Tests** — type a variant in `B3` for its aggregate + verdict; the
+  right-hand table auto-lists every variant with a SCALE/KEEP/CUT call.
+- **Creator Dashboard** — per-creator spend, CAC, LTV, ROAS, ad profit, salary,
+  net profit.
+- **Platform Summary** — Meta vs OnlyFinder spend / clicks / fans / revenue.
+- **OF Links** — generated by `listLinks()`.
+- **_Snapshots** — hidden; stores cumulative OF totals so daily deltas are
+  correct and same-day re-runs don't double-count.
+
+## How the join works
+
+The OnlyFans `tracking-links` endpoint reports **cumulative** clicks, subs and
+revenue per link. `ofPull()` stores yesterday's cumulative in `_Snapshots` and
+writes **today − start-of-today** as the day's New Fans / Revenue (and Clicks if
+that cell is still blank) into the Daily Log row whose **OF Link == the link
+name**. Meta/OnlyFinder match the same way on **ad name**.
+
+## Optional: Supabase mirror
+
+If you set `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`, `dailyRefresh()` also
+upserts Daily Log into Supabase. Apply the schema first — from the **repo root**:
+
+```bash
+supabase db push
+```
+
+Or paste `supabase/migrations/20260606130000_ad_tracker.sql` into the Supabase
+SQL editor. It creates `ad_settings`, `ad_creator_salaries`, `ad_daily_log` and
+the `ad_daily_log_metrics` view (CPC/CAC/LTV/ROAS/profit/verdict in SQL).

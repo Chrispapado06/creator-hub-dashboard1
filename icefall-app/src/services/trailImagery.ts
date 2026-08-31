@@ -33,6 +33,8 @@
  *   3. a contour plate                                         (only if tiles fail)
  */
 
+import { OFFLINE } from "@/offline/offline";
+
 /* -------------------------------------------------------------------------- */
 /* Slippy-map tile maths                                                      */
 /* -------------------------------------------------------------------------- */
@@ -67,6 +69,10 @@ const esri = (z: number, x: number, y: number) =>
  * time, at ~64 KB total.
  */
 export function satelliteTiles(lat: number, lon: number): string[] {
+  // Streamed from Esri, so there is nothing to return offline. Every caller
+  // already treats an unloaded tile as "keep showing the plate underneath".
+  if (OFFLINE) return [];
+
   const z = ZOOM;
   const x = lonToX(lon, z);
   const y = latToY(lat, z);

@@ -15,6 +15,7 @@ import { getCompany, listPlacements } from "@/data/queries";
 import { loading, type Result } from "@/data/result";
 import type { Company, PlacementView } from "@/data/types";
 import { VerificationChip, companyStatusState } from "./Companies";
+import { CompanyAccess } from "@/components/CompanyAccess";
 import { PlacementRow } from "@/components/placement";
 
 /**
@@ -72,6 +73,14 @@ export default function CompanyDetail() {
                     <>
                       <StatusChip state={companyStatusState(c.status)} label={c.status} />
                       <VerificationChip company={c} />
+                      {/* What this listing claims about itself. TRUE carries
+                          the public disclosure banner; FALSE is the default
+                          every company is born with. */}
+                      {c.real_business ? (
+                        <Pill tone="amber">Real business — disclosure shown</Pill>
+                      ) : (
+                        <Pill tone="neutral">Invented company</Pill>
+                      )}
                     </>
                   }
                 />
@@ -143,6 +152,8 @@ export default function CompanyDetail() {
                 </Resolve>
               </section>
             </div>
+
+            <CompanyAccess companyId={c.id} />
           </>
         );
       }}

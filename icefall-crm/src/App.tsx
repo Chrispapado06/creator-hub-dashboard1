@@ -4,15 +4,20 @@ import { DemoBanner } from "@/components/DemoBanner";
 import { Forbidden, Loading, Unavailable } from "@/components/states";
 import { useSession } from "@/auth/session";
 import { NOT_CONFIGURED } from "@/lib/supabase";
+import { OFFLINE } from "@/offline/offline";
 
 import SignIn from "@/screens/SignIn";
 import Dashboard from "@/screens/Dashboard";
 import Companies from "@/screens/Companies";
+import CompanyEdit from "@/screens/CompanyEdit";
+import CompanyPage from "@/screens/CompanyPage";
 import CompanyDetail from "@/screens/CompanyDetail";
 import Sales from "@/screens/Sales";
 import MountainPlacements from "@/screens/MountainPlacements";
+import SlotCalculator from "@/screens/SlotCalculator";
 import PlacementDetail from "@/screens/PlacementDetail";
 import Products from "@/screens/Products";
+import ProductDetail from "@/screens/ProductDetail";
 import Approvals from "@/screens/Approvals";
 import Leads from "@/screens/Leads";
 import LeadDetail from "@/screens/LeadDetail";
@@ -21,9 +26,12 @@ import Commissions from "@/screens/Commissions";
 import Finance from "@/screens/Finance";
 import Billing from "@/screens/Billing";
 import Guides from "@/screens/Guides";
+import GuideDetail from "@/screens/GuideDetail";
 import UsersScreen from "@/screens/Users";
 import Support from "@/screens/Support";
+import TicketDetail from "@/screens/TicketDetail";
 import Verification from "@/screens/Verification";
+import Promotions from "@/screens/Promotions";
 import Analytics from "@/screens/Analytics";
 import Tasks from "@/screens/Tasks";
 import ActivityLog from "@/screens/ActivityLog";
@@ -52,7 +60,14 @@ export default function App() {
   // way back to it, and in local development the demo session signs itself in,
   // so without this the screen would be unreachable in the one environment
   // where it can be looked at.
-  if (pathname === "/sign-in") return <SignIn />;
+  //
+  // OFFLINE, THAT ONE EXCEPTION IS CLOSED. The sign-in form's only action is a
+  // Supabase call that cannot be made, so the screen is a dead end with no way
+  // back — and a dead end is exactly what the offline build exists to prevent.
+  // Typing the URL lands on the dashboard instead.
+  if (pathname === "/sign-in") {
+    return OFFLINE ? <Navigate to="/admin/dashboard" replace /> : <SignIn />;
+  }
 
   // The whole application is behind the staff gate, including the dashboard.
   // There is no public surface here at all.
@@ -103,11 +118,17 @@ export default function App() {
         <Route path="/admin/analytics" element={<Analytics />} />
 
         <Route path="/admin/companies" element={<Companies />} />
+        <Route path="/admin/companies/page/new" element={<CompanyPage create />} />
+        <Route path="/admin/companies/:id/page" element={<CompanyPage />} />
+        <Route path="/admin/companies/edit/new" element={<CompanyEdit />} />
+        <Route path="/admin/companies/edit/:rosterId" element={<CompanyEdit />} />
         <Route path="/admin/companies/:id" element={<CompanyDetail />} />
         <Route path="/admin/sales" element={<Sales />} />
         <Route path="/admin/placements" element={<MountainPlacements />} />
+        <Route path="/admin/slot-calculator" element={<SlotCalculator />} />
         <Route path="/admin/placements/:id" element={<PlacementDetail />} />
         <Route path="/admin/products" element={<Products />} />
+        <Route path="/admin/products/:id" element={<ProductDetail />} />
 
         <Route path="/admin/approvals" element={<Approvals />} />
         <Route path="/admin/leads" element={<Leads />} />
@@ -119,10 +140,13 @@ export default function App() {
         <Route path="/admin/billing" element={<Billing />} />
 
         <Route path="/admin/guides" element={<Guides />} />
+        <Route path="/admin/guides/:id" element={<GuideDetail />} />
         <Route path="/admin/users" element={<UsersScreen />} />
 
         <Route path="/admin/support" element={<Support />} />
+        <Route path="/admin/support/:id" element={<TicketDetail />} />
         <Route path="/admin/verification" element={<Verification />} />
+        <Route path="/admin/promotions" element={<Promotions />} />
         <Route path="/admin/tasks" element={<Tasks />} />
 
         <Route path="/admin/activity" element={<ActivityLog />} />

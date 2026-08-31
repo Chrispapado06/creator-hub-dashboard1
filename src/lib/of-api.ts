@@ -109,6 +109,27 @@ function unwrap<T>(json: unknown): T {
   return (j && j.data !== undefined ? j.data : json) as T;
 }
 
+// The live OF API returns message `text` as HTML, e.g.
+// "<p>lowkey you subbed at the Perfect time😅</p>". The UI renders text as
+// plain strings, so we strip tags and decode the handful of HTML entities
+// OF actually emits before handing text to the normalisers. Mirrors the
+// `.replace(/<[^>]+>/g, "")` cleanup in shift-downtime-monitor/probe-of-sync.mjs.
+function cleanMessageText(raw: unknown): string | undefined {
+  if (typeof raw !== "string") return undefined;
+  const cleaned = raw
+    .replace(/<[^>]+>/g, "")        // drop HTML tags (<p>, <br>, <a …>, …)
+    .replace(/&nbsp;/g, " ")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#0?39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&")         // decode &amp; last so &amp;lt; → &lt;, not <
+    .replace(/\s+/g, " ")           // collapse the whitespace tags left behind
+    .trim();
+  return cleaned;
+}
+
 // ── Account-level ────────────────────────────────────────────────────
 
 export type OfAccount = {
@@ -236,15 +257,19 @@ export async function listFans(
 // ── Chats / messaging ────────────────────────────────────────────────
 //
 // OnlyFansAPI's actual response uses these field names:
-//   GET /api/{account}/chats          → { data: [{ fan, lastMessage, unreadCount }] }
-//   GET /api/{account}/chats/{id}/messages → { data: [{ id, text, sentBy, ... }] }
+//   GET /api/{account}/chats          → { data: [{ fan, lastMessage, unreadMessagesCount }] }
+//   GET /api/{account}/chats/{id}/messages → { data: [{ id, text, fromUser, isSentByMe, chatUserId, ... }] }
 //
-// Older docs and older versions of this client used `withUser` /
-// `unreadMessagesCount` / `isFromUser`. The normaliser below maps both
-// shapes onto a single internal type so consumers don't have to care
-// which version of the API is responding. The `chat_id` path parameter
-// for the messages endpoint accepts the fan's user id (data.fan.id) —
-// the OF API treats them as interchangeable.
+// Neither endpoint returns a `sentBy`/`isFromUser` sender flag. Who sent a
+// message is derived from ids: a message is fan-sent iff its `fromUser.id`
+// equals the chat's fan id (`fan.id` for /chats, `chatUserId` for the
+// messages endpoint); the messages endpoint also exposes an explicit
+// `isSentByMe` boolean. Older docs / older accounts used `withUser` /
+// `unreadMessagesCount` / `isFromUser` / `sentBy`; the normalisers below
+// map every shape onto a single internal type (with `sentBy` "fan"|"creator")
+// so consumers don't have to care which version of the API is responding.
+// The `chat_id` path parameter for the messages endpoint accepts the fan's
+// user id (data.fan.id) — the OF API treats them as interchangeable.
 
 export type OfChat = {
   id: number;
@@ -267,13 +292,23 @@ function normaliseChat(raw: unknown): OfChat | null {
   const lastRaw = r.lastMessage as Record<string, unknown> | undefined;
   let lastMessage: OfChat["lastMessage"];
   if (lastRaw) {
+    // The LIVE OF API's `lastMessage` carries neither `sentBy` nor
+    // `isFromUser` — it has `fromUser: { id }`. The fan sent the last
+    // message iff that id matches the fan we're chatting with; otherwise
+    // it's the creator (whose OF user id is a different constant). `_view`
+    // is not a discriminator and `unreadMessagesCount` can be 0 even on a
+    // fan-last thread, so neither is usable. We keep the legacy
+    // `sentBy`/`isFromUser` checks as fallbacks for any older account shape.
+    const lmFrom = lastRaw.fromUser as { id?: unknown } | undefined;
     const sentBy: "fan" | "creator" =
       typeof lastRaw.sentBy === "string"
         ? (lastRaw.sentBy === "fan" ? "fan" : "creator")
-        : (lastRaw.isFromUser === true ? "fan" : "creator");
+        : (lmFrom && typeof lmFrom.id === "number")
+          ? (lmFrom.id === Number(fanRaw.id) ? "fan" : "creator")
+          : (lastRaw.isFromUser === true ? "fan" : "creator");
     lastMessage = {
       id: Number(lastRaw.id ?? 0),
-      text: typeof lastRaw.text === "string" ? lastRaw.text : undefined,
+      text: cleanMessageText(lastRaw.text),
       createdAt: typeof lastRaw.createdAt === "string" ? lastRaw.createdAt : "",
       sentBy,
     };
@@ -310,7 +345,8 @@ export type OfChatMessage = {
   id: number;
   text?: string;
   // "fan" = sent by the fan, "creator" = sent by the creator.
-  // Preferred over `isFromUser` because the OF docs use it.
+  // Derived by normaliseMessage from the live API's `isSentByMe` /
+  // `fromUser.id` (the raw payload has no `sentBy` field).
   sentBy: "fan" | "creator";
   createdAt: string;
   price?: number;             // PPV price if any
@@ -322,10 +358,20 @@ export type OfChatMessage = {
 function normaliseMessage(raw: unknown): OfChatMessage | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
+  // The LIVE OF API's message objects have neither `sentBy` nor
+  // `isFromUser`. They expose `isSentByMe` (true → the creator sent it)
+  // plus `fromUser.id` and `chatUserId` (the fan's id). Prefer the
+  // explicit boolean, then compare the sender id to the chat's fan id,
+  // then fall back to the legacy fields for any older account shape.
+  const from = r.fromUser as { id?: unknown } | undefined;
   const sentBy: "fan" | "creator" =
     typeof r.sentBy === "string"
       ? (r.sentBy === "fan" ? "fan" : "creator")
-      : (r.isFromUser === true ? "fan" : "creator");
+      : typeof r.isSentByMe === "boolean"
+        ? (r.isSentByMe ? "creator" : "fan")
+        : (from && typeof from.id === "number" && typeof r.chatUserId === "number")
+          ? (from.id === r.chatUserId ? "fan" : "creator")
+          : (r.isFromUser === true ? "fan" : "creator");
   const mediaRaw = r.media as Array<Record<string, unknown>> | undefined;
   const media = Array.isArray(mediaRaw) ? mediaRaw.map((m) => ({
     id: Number(m.id ?? 0),
@@ -335,7 +381,7 @@ function normaliseMessage(raw: unknown): OfChatMessage | null {
   })) : undefined;
   return {
     id: Number(r.id ?? 0),
-    text: typeof r.text === "string" ? r.text : undefined,
+    text: cleanMessageText(r.text),
     sentBy,
     createdAt: typeof r.createdAt === "string" ? r.createdAt : "",
     price: typeof r.price === "number" ? r.price : undefined,

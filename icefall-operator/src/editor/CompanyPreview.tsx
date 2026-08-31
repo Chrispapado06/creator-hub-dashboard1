@@ -32,9 +32,10 @@
  * working, not an exception to it.
  */
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Lock } from "lucide-react";
 import type { StagedFile } from "./MediaDrop";
+import { Monogram } from "@/components/Shell";
 import type { Company } from "@/domain/types";
 
 /** The climber-facing commercial accent. Only ever used inside this pane. */
@@ -54,6 +55,59 @@ export interface PreviewData {
   faq: Company["faq"];
   documentsCheckedAt: string | null;
   productCount: number;
+  /**
+   * A RESOLVED, LOADABLE URL for the company's own logo, or null/absent.
+   *
+   * Optional because nothing can supply one yet: `Company.logoMediaId` points
+   * into the private media bucket and no backend method resolves an id to a
+   * URL. When one exists, the caller passes it and this pane and the trip hero
+   * draw the same thing — `TripAppPreview`'s `companyLogoUrl` carries the same
+   * contract and the same refusal.
+   *
+   * NEVER a mark ICEFALL made. A real business's logo is its trademark and does
+   * not ship here; the fallback is the operator's initials, set in type, and
+   * nothing else.
+   */
+  logoUrl?: string | null;
+}
+
+/**
+ * The company's own mark, or its initials. The trip preview's `CompanyMark`
+ * makes the same choice in the same order, so the two panes cannot disagree
+ * about what a company looks like.
+ *
+ * WHAT WAS HERE BEFORE: a gilt mountain glyph, drawn identically for every
+ * operator. It looked like a logo and identified nobody — the same placeholder
+ * the consumer web app still puts on its trip hero, and the reason this work
+ * exists. A logo that fails to load falls back too, as `ListingPhoto` does.
+ */
+function CompanyMark({ name, logoUrl, size }: { name: string; logoUrl: string | null; size: number }) {
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const trimmed = name.trim();
+
+  if (logoUrl !== null && failedUrl !== logoUrl) {
+    return (
+      <img
+        src={logoUrl}
+        alt=""
+        onError={() => setFailedUrl(logoUrl)}
+        className="shrink-0 rounded-pill bg-raised object-cover"
+        style={{ width: size, height: size }}
+      />
+    );
+  }
+  // No logo and no name is "nothing known yet", which is an empty tile — not a
+  // monogram of no initials, which would be a blank circle posing as a mark.
+  if (trimmed === "") {
+    return (
+      <span
+        className="hairline shrink-0 rounded-pill bg-raised"
+        style={{ width: size, height: size }}
+        aria-hidden
+      />
+    );
+  }
+  return <Monogram name={trimmed} size={size} />;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -186,9 +240,7 @@ export function WebCompanyPreview({
           <Hero banner={banner} height={176} />
           <div className="relative flex items-center gap-4 p-5">
             <div className="hairline grid h-[84px] w-[84px] shrink-0 place-items-center rounded-card bg-surface">
-              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" aria-hidden>
-                <path d="M2 20 L9 6 L13 13 L16 9 L22 20 Z" fill={GILT} opacity="0.85" />
-              </svg>
+              <CompanyMark name={d.name} logoUrl={d.logoUrl ?? null} size={56} />
             </div>
             <div className="flex min-w-0 flex-col gap-1.5">
               <DocumentsBadge checkedAt={d.documentsCheckedAt} />

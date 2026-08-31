@@ -99,14 +99,6 @@ export function useActivityById(id: string | undefined) {
   }, [id, recorded]);
 }
 
-export function useLifetimePoints() {
-  const recorded = useRecordedActivities();
-  return useMemo(() => {
-    const meta = loadMeta();
-    return meta.totalPoints || recorded.reduce((a, r) => a + (r.points_awarded ?? 0), 0);
-  }, [recorded]);
-}
-
 /**
  * Weekly progress computed from what the athlete has actually done, seeded and
  * recorded alike. Previously the dashboard and the Coach both read a fixed

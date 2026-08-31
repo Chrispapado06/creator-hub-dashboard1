@@ -22,7 +22,7 @@ import { formatDayShort, NOW } from "../dates";
 import type {
   Booking, Company, CompanyUser, Conversation, ConversationNote, ContentEntityType,
   ContentVersion, FunnelCounts, Lead, LeadNote, LeadStatus, Message, Mountain,
-  Product, ProductDeparture,
+  Product, ProductDeparture, Trek,
 } from "../types";
 import * as seed from "./seed";
 
@@ -58,6 +58,8 @@ const db = {
   users: [...seed.COMPANY_USERS],
   mountains: [...seed.MOUNTAINS],
   access: [...seed.COMPANY_MOUNTAINS],
+  treks: [...seed.TREKS],
+  trekAccess: [...seed.COMPANY_TREKS],
   placements: [...seed.PLACEMENTS],
   products: [...seed.PRODUCTS],
   departures: [...seed.DEPARTURES],
@@ -70,6 +72,7 @@ const db = {
   bookings: [...seed.BOOKINGS],
   notifications: [...seed.NOTIFICATIONS],
   events: [...seed.EVENTS],
+  media: [...seed.MEDIA_ASSETS],
 };
 
 /** Restores the seed. Used between tests so one cannot leak into the next. */
@@ -78,6 +81,8 @@ export function resetStore(): void {
   db.users = [...seed.COMPANY_USERS];
   db.mountains = [...seed.MOUNTAINS];
   db.access = [...seed.COMPANY_MOUNTAINS];
+  db.treks = [...seed.TREKS];
+  db.trekAccess = [...seed.COMPANY_TREKS];
   db.placements = [...seed.PLACEMENTS];
   db.products = seed.PRODUCTS.map((p) => ({ ...p }));
   db.departures = seed.DEPARTURES.map((d) => ({ ...d }));
@@ -90,6 +95,7 @@ export function resetStore(): void {
   db.bookings = [...seed.BOOKINGS];
   db.notifications = seed.NOTIFICATIONS.map((n) => ({ ...n }));
   db.events = [...seed.EVENTS];
+  db.media = [...seed.MEDIA_ASSETS];
 }
 
 let idCounter = 0;
@@ -173,6 +179,12 @@ export const memoryBackend: OperatorBackend = {
     return ok(updated);
   },
 
+  /**
+   * Writes the row and stops. No mail is dispatched here and none is queued for
+   * anyone else to dispatch — there is no mail sender in the project and no
+   * auth in this app, and a queue nobody drains is the silent failure the
+   * screen's copy exists to prevent. See `src/screens/Team.tsx`.
+   */
   async inviteTeamMember(session, input) {
     if (!can(session, "manageStaff")) return deny(DENY_ROLE);
     if (db.users.some((u) => u.email.toLowerCase() === input.email.trim().toLowerCase())) {
@@ -207,6 +219,25 @@ export const memoryBackend: OperatorBackend = {
 
   async getMountains(): Promise<Mountain[]> {
     return db.mountains;
+  },
+
+  /* ---- treks ----------------------------------------------------------- */
+
+  /**
+   * Icefall's catalogue of routes. Not scoped — a catalogue is public to every
+   * signed-in operator, exactly as `getMountains` is; what is scoped is which
+   * of them a company may work, which is the next method.
+   */
+  async getTreks(): Promise<Trek[]> {
+    return db.treks;
+  },
+
+  /**
+   * The trek authorization boundary, scoped by session like every other read.
+   * There is no companyId parameter to pass the wrong value into.
+   */
+  async getTrekAccess(session) {
+    return mine(session, db.trekAccess);
   },
 
   /* ---- products -------------------------------------------------------- */
@@ -267,9 +298,13 @@ export const memoryBackend: OperatorBackend = {
     // Both roles may do this. It is an operational fact, not a marketing claim,
     // and a sales employee finding out a trip is full should be able to say so.
     if (!can(session, "manageLeads")) return deny("Your account is not active.");
+    // `undefined` is "not in this patch"; `null` is the operator SAYING they do
+    // not state a figure. The two must not collapse — a null that became a 0
+    // would publish "sold out" on a trip with places on it.
     const updated: ProductDeparture = {
       ...d,
       availability: patch.availability ?? d.availability,
+      spotsTotal: patch.spotsTotal === undefined ? d.spotsTotal : patch.spotsTotal,
       spotsLeft: patch.spotsLeft === undefined ? d.spotsLeft : patch.spotsLeft,
     };
     db.departures = db.departures.map((x) => (x.id === d.id ? updated : x));
@@ -732,6 +767,25 @@ export const memoryBackend: OperatorBackend = {
     return out;
   },
 
+  /**
+   * The dev-server path for an asset this company owns.
+   *
+   * Only `approved` assets resolve. A pending or rejected mark must not appear
+   * on a preview of the published page — that preview's whole job is to show
+   * what a climber sees, and a climber never sees an unapproved asset.
+   */
+  async getMediaUrl(session, mediaId) {
+    if (!mediaId) return null;
+    const asset = db.media.find((m) => m.id === mediaId);
+    if (!asset || !ownsCompany(session, asset.companyId)) return null;
+    if (asset.state !== "approved") return null;
+    // The seed's storagePath is `<company>/<owner>/<file>`; this app serves the
+    // file itself from /img/companies. The Supabase implementation signs the
+    // storagePath instead — same method, same contract, different mechanism.
+    const file = asset.storagePath.split("/").pop();
+    return file ? `/img/companies/${file}` : null;
+  },
+
   async getProductPerformance(session): Promise<ProductPerformance[]> {
     const leads = mine(session, db.leads);
     return mine(session, db.products)
@@ -839,28 +893,43 @@ export const memoryBackend: OperatorBackend = {
       .map((id) => {
         const m = db.mountains.find((x) => x.id === id);
         const forMountain = leads.filter((l) => l.mountainId === id);
-        const booked = forMountain.filter((l) => l.bookedAt !== null).length;
-        const reported = bookings
-          .filter(
-            (b) =>
-              b.mountainId === id &&
-              (b.status === "confirmed" || b.status === "completed") &&
-              b.value.status === "reported",
-          )
-          .reduce((sum, b) => sum + (b.value.status === "reported" ? b.value.cents : 0), 0);
-        const anyRevenue = bookings.some(
-          (b) => b.mountainId === id && (b.status === "confirmed" || b.status === "completed"),
+        /*
+         * BOOKED COUNTS BOOKINGS, NOT LEADS THAT ONCE PASSED THROUGH BOOKED.
+         *
+         * The first version counted leads carrying a `bookedAt` stamp, which
+         * put a cancelled booking in a column headed "Booked" and sat it next
+         * to a revenue figure drawn from a different set entirely — so one row
+         * could read "Booked 1" beside "Nothing booked in this period yet".
+         * Both numbers were defensible alone and together they were nonsense.
+         * Booked and Revenue now come from the same rows.
+         *
+         * Cancelled is excluded: a cancellation is not a booking a company has.
+         */
+        const live = bookings.filter((b) => b.mountainId === id && b.status !== "cancelled");
+        const confirmed = live.filter((b) => b.status === "confirmed" || b.status === "completed");
+        const withValue = confirmed.filter((b) => b.value.status === "reported");
+        const reported = withValue.reduce(
+          (sum, b) => sum + (b.value.status === "reported" ? b.value.cents : 0),
+          0,
         );
+        const revenue =
+          withValue.length > 0
+            ? measured(reported)
+            : confirmed.length > 0
+              ? unavailable(OPERATOR_NOTICES.BOOKING_VALUE_NOT_REPORTED)
+              : live.length > 0
+                ? unavailable(OPERATOR_NOTICES.bookingsNotConfirmed(live.length))
+                : unavailable(OPERATOR_NOTICES.NO_BOOKINGS_YET);
         return {
           mountainId: id,
           name: m?.name ?? id,
           products: products.filter((p) => p.mountainIds.includes(id)).length,
           enquiries: forMountain.length,
           qualified: forMountain.filter((l) => l.qualifiedAt !== null).length,
-          bookings: booked,
-          conversion: conversionRate(booked, forMountain.length),
+          bookings: live.length,
+          conversion: conversionRate(live.length, forMountain.length),
           views: listingViews(`mountain:${id}`, forMountain.length, session),
-          revenue: anyRevenue ? measured(reported) : unavailable(OPERATOR_NOTICES.NO_BOOKINGS_YET),
+          revenue,
         };
       })
       .sort((a, b) => b.enquiries - a.enquiries || a.name.localeCompare(b.name));

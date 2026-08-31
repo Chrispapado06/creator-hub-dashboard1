@@ -21,6 +21,7 @@ import { fold, type Reading } from "@/domain/honesty";
 import type { ChipStatus } from "@/domain/types";
 import { formatDay, TODAY } from "@/domain/dates";
 import { demoCustomerPhoto, demoCustomerVerified } from "@/domain/demo";
+import { OFFLINE } from "@/offline/offline";
 import { Monogram } from "@/components/Shell";
 
 /* -------------------------------------------------------------------------- */
@@ -654,6 +655,13 @@ export function ListingPhoto({
   className?: string;
 }) {
   const [idx, setIdx] = useState(0);
+  /*
+   * OFFLINE: the photo library is served by icefall-web, which is not running
+   * and could not be reached anyway. Go straight to the drawing rather than
+   * firing requests that can only fail — this is the same fallback the pane
+   * would reach after them, minus the flicker.
+   */
+  if (OFFLINE) return <MountainFigure seed={seed} className={className} />;
   if (idx >= sources.length) return <MountainFigure seed={seed} className={className} />;
   return (
     <div className={`relative overflow-hidden bg-raised ${className}`}>
@@ -766,7 +774,12 @@ export function ProgressBar({ percent }: { percent: number }) {
  */
 export function PersonAvatar({ name, size = 30 }: { name: string; size?: number }) {
   const [failed, setFailed] = useState(false);
-  const src = demoCustomerPhoto(name);
+  /*
+   * OFFLINE: the demo portraits come from a stock-portrait host that cannot be
+   * reached, so no request is made and every customer shows initials — which is
+   * both this component's own designed fallback and what the doctrine prefers.
+   */
+  const src = OFFLINE ? null : demoCustomerPhoto(name);
   if (!src || failed) return <Monogram name={name} size={size} />;
   return (
     <img

@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { CompanyMark } from "@/components/domain/CompanyMark";
 import { Globe, MapPin, MessageSquare, Star } from "lucide-react";
 import { Badge, Button, Card } from "@/components/ui/primitives";
 import { useMountainImage } from "@/components/domain/MountainImage";
@@ -23,44 +24,21 @@ import type { Operator } from "@/services/operators";
  */
 
 /**
- * The operator mark. A real logo when the local mockup has one, otherwise a
- * monogram — the logos are gitignored, so a teammate cloning this repo gets
- * monograms and a working layout rather than four broken images.
+ * The operator mark now comes from `components/domain/CompanyMark`.
+ *
+ * There were FOUR of these, with four different monogram algorithms, and they
+ * disagreed on the names a production build actually renders: "Alaska & Yukon —
+ * sample listing" was `A&` on this card and `AY` in the Expeditions directory;
+ * "Himalaya — sample listing" was `HI` here, `HS` on the company profile, and
+ * `H—` as a round person avatar in the message list. The same company was three
+ * different marks depending on which screen you had reached it from.
+ *
+ * The version here also mutated the DOM outside React: its `onError` wrote
+ * `parentElement.textContent = monogram(...)`, which blows away React's
+ * children behind its back and leaves the next render fighting it.
  */
 function Mark({ o, size }: { o: { name: string; logo?: string }; size: number }) {
-  if (o.logo) {
-    return (
-      <span
-        className="grid shrink-0 place-items-center overflow-hidden rounded-tile border border-hairline bg-obsidian/80 p-1.5 backdrop-blur"
-        style={{ width: size, height: size }}
-      >
-        <img
-          src={o.logo}
-          alt=""
-          aria-hidden
-          className="max-h-full max-w-full object-contain"
-          onError={(e) => {
-            (e.currentTarget.parentElement as HTMLElement).textContent = monogram(o.name);
-          }}
-        />
-      </span>
-    );
-  }
-  return (
-    <span
-      className="grid shrink-0 place-items-center rounded-tile border border-hairline bg-elevated/40 tracking-[0.06em] text-mist"
-      style={{ width: size, height: size, fontSize: size > 44 ? 14 : 13 }}
-    >
-      {monogram(o.name)}
-    </span>
-  );
-}
-
-function monogram(name: string): string {
-  const words = name.replace(/—.*$/, "").trim().split(/\s+/).filter(Boolean);
-  if (words.length === 0) return "··";
-  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
-  return (words[0][0] + words[1][0]).toUpperCase();
+  return <CompanyMark name={o.name} logoPath={o.logo} size={size} className="bg-elevated/40" />;
 }
 
 const eur = (n: number) =>

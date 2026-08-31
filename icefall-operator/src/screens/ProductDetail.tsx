@@ -18,12 +18,13 @@
  * climber can still book it.
  */
 
-import { ArrowLeft, Eye } from "lucide-react";
+import { ArrowLeft, Eye, LayoutTemplate } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
-  Button, Card, Field, LockedNotice, Notice, StatusChip, formatMoney, inputClass,
+  Button, Card, Field, LockedNotice, Notice, StatusChip, Tabs, formatMoney, inputClass,
 } from "@/components/ui";
+import { ProductOverview } from "@/components/ProductOverview";
 import { can, findContactDetails } from "@/domain/authz";
 import { OPERATOR_NOTICES } from "@/domain/honesty";
 import { formatDay } from "@/domain/dates";
@@ -63,8 +64,29 @@ export default function ProductDetail() {
   const rejected = forThis.find((v) => v.state === "rejected");
   const draft = forThis.find((v) => v.state === "draft" || v.state === "changes_requested");
 
+  /*
+   * TWO VIEWS OF ONE TRIP, and Overview is the one that opens.
+   *
+   * This screen was only ever the editor. The detail specified in
+   * `icefall-sessions/requests/08-operator-product-detail-from-03.md` is a
+   * different question about the same record — how is this trip doing — and an
+   * operator arriving from the trips list is far more often asking that than
+   * asking to rewrite the description. The editor is UNCHANGED beneath the
+   * second tab; nothing about the draft, submit or availability paths moved.
+   */
+  const [view, setView] = useState<"overview" | "edit">("overview");
   const [section, setSection] = useState<Section>("basic");
-  const [form, setForm] = useState({ description: "", priceFrom: "", difficulty: "", duration: "" });
+  /*
+   * NO `difficulty` AND NO `maxAltitudeM` IN THIS FORM (owner, OP-03/OP-04).
+   *
+   * The trip editor took both away from the seller; this screen is the OTHER
+   * way into the same product, and a rule enforced on one of two doors is not
+   * enforced. Difficulty is a property of the route and is the same grade
+   * whoever sells it. The highest point was never editable here and stays that
+   * way — it is the figure a climber judges survivability by, and it is never
+   * filled in from the mountain's summit.
+   */
+  const [form, setForm] = useState({ description: "", priceFrom: "", duration: "" });
   const [message, setMessage] = useState<{ tone: "neutral" | "rejected" | "pending"; text: string } | null>(null);
 
   useEffect(() => {
@@ -72,7 +94,6 @@ export default function ProductDetail() {
     const o = (draft?.payload ?? {}) as Record<string, unknown>;
     setForm({
       description: (o.description as string) ?? product.description ?? "",
-      difficulty: (o.difficulty as string) ?? product.difficulty ?? "",
       duration: String((o.durationDays as number) ?? product.durationDays ?? ""),
       priceFrom:
         o.priceFromCents !== undefined
@@ -100,7 +121,6 @@ export default function ProductDetail() {
 
   const payload: Record<string, unknown> = {};
   if (form.description !== (product.description ?? "")) payload.description = form.description;
-  if (form.difficulty !== (product.difficulty ?? "")) payload.difficulty = form.difficulty;
   const durationDays = form.duration.trim() === "" ? null : Number(form.duration);
   if (durationDays !== product.durationDays && !Number.isNaN(durationDays)) payload.durationDays = durationDays;
   const priceCents = form.priceFrom.trim() === "" ? null : Math.round(Number(form.priceFrom) * 100);
@@ -158,6 +178,11 @@ export default function ProductDetail() {
               Submitted {formatDay(pending.submittedAt?.slice(0, 10) ?? null)}
             </span>
           )}
+          <Link to={`/operator/products/${product.id}/edit`}>
+            <Button>
+              <LayoutTemplate size={13} aria-hidden /> Edit page
+            </Button>
+          </Link>
           <Link to={`/operator/products/${product.id}/preview`}>
             <Button>
               <Eye size={13} aria-hidden /> Preview
@@ -167,11 +192,22 @@ export default function ProductDetail() {
       </div>
 
       <div className="mb-4">
-        <div className="lbl">Edit {product.kind}</div>
+        <div className="lbl">{product.kind}</div>
         <h1 className="ser mt-1 text-[26px] leading-tight text-ink">{product.name}</h1>
         <p className="mt-1 text-[12.5px] text-muted">
           {product.mountainIds.map((m) => mountains.find((x) => x.id === m)?.name ?? "—").join(", ")}
         </p>
+      </div>
+
+      <div className="mb-4">
+        <Tabs
+          tabs={[
+            { key: "overview" as const, label: "Overview" },
+            { key: "edit" as const, label: "Edit details" },
+          ]}
+          active={view}
+          onChange={setView}
+        />
       </div>
 
       {pending && (
@@ -189,6 +225,9 @@ export default function ProductDetail() {
         </div>
       )}
 
+      {view === "overview" && <ProductOverview product={product} />}
+
+      {view === "edit" && (
       <div className="grid gap-4 lg:grid-cols-[210px_1fr]">
         <Card className="h-fit p-2">
           {SECTIONS.map((s) => (
@@ -238,12 +277,16 @@ export default function ProductDetail() {
                   />
                 </Field>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <Field label="Difficulty" hint="What a climber needs before booking.">
+                  <Field
+                    label="Difficulty"
+                    hint="A property of the route, not of the company selling it. Ask Icefall to correct it."
+                  >
                     <input
                       className={inputClass}
-                      value={form.difficulty}
-                      disabled={!editable}
-                      onChange={(e) => setForm({ ...form, difficulty: e.target.value })}
+                      value={product.difficulty ?? ""}
+                      disabled
+                      readOnly
+                      placeholder="Not recorded for this trip"
                     />
                   </Field>
                   <Field label="Duration (days)">
@@ -258,14 +301,18 @@ export default function ProductDetail() {
                 </div>
                 <Field
                   label="Highest point (m)"
-                  hint="The highest the trip actually reaches — not the mountain's summit, when they differ."
+                  hint={
+                    product.maxAltitudeM !== null
+                      ? "The highest point this trip reaches. Not a seller's to state, and never the mountain's summit — ask Icefall to correct it."
+                      : "Icefall holds no highest point for this trip, so the page shows none. It is never filled in from the mountain's summit: a base-camp trek can top out thousands of metres below the peak it sits under."
+                  }
                 >
                   <input
                     className={inputClass}
                     value={product.maxAltitudeM ?? ""}
                     disabled
                     readOnly
-                    placeholder="Not set"
+                    placeholder="Not held by Icefall"
                   />
                 </Field>
               </div>
@@ -480,6 +527,7 @@ export default function ProductDetail() {
           )}
         </div>
       </div>
+      )}
     </>
   );
 }

@@ -6,6 +6,8 @@ import {
   Stethoscope, TriangleAlert, Users,
 } from "lucide-react";
 import { Button, Card, Disclaimer, SectionLabel } from "@/components/ui/primitives";
+import { CompanyMark } from "@/components/domain/CompanyMark";
+import { initialsFor } from "@/lib/monogram";
 import { Rise, Screen, Stagger } from "@/components/layout/chrome";
 import { cn } from "@/lib/utils";
 import { fmtElevation, fmtPrice } from "@/lib/format";
@@ -90,15 +92,10 @@ function composeHref(operatorId: string, ctx: EnquiryContext): string {
   return `/inbox/new?${q.toString()}`;
 }
 
-function monogram(name: string): string {
-  return name
-    .replace(/[^A-Za-z0-9 ]/g, " ")
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((w) => w[0]!.toUpperCase())
-    .join("");
-}
+/* The reviewer's initials came from a second, local person algorithm — first
+   two words, so a three-part Nepali name lost its family name. People and
+   companies now share `lib/monogram`; there is no second algorithm. */
+const monogram = initialsFor;
 
 const TABS = ["Overview", "Expeditions", "Reviews", "Gallery", "About"] as const;
 type TabId = (typeof TABS)[number];
@@ -243,21 +240,20 @@ function Profile({
 
           <div className="flex items-start gap-4 pb-5">
             <div className="relative shrink-0">
-              <div className="grid h-[92px] w-[92px] place-items-center overflow-hidden rounded-[14px] border border-hairline-strong bg-obsidian">
-                {operator.logo !== undefined && !logoFailed ? (
-                  <img
-                    src={operator.logo}
-                    alt=""
-                    aria-hidden
-                    onError={() => setLogoFailed(true)}
-                    className="h-full w-full object-contain p-2"
-                  />
-                ) : (
-                  <span className="text-[19px] tracking-[0.06em] text-mist">
-                    {monogram(operator.name)}
-                  </span>
-                )}
-              </div>
+              {/* THE MARK AND THE TICK ARE SEPARATE CLAIMS, and they are
+                  separate elements on purpose. The tick below is gated on
+                  `claims`; this is gated on nothing but whether the company
+                  uploaded a mark. A company with a logo and no check must not
+                  read as checked, and a checked company that never uploaded a
+                  logo must not read as unchecked. Wiring the two together — a
+                  tick that only appears on a card with an image, say — would
+                  make an upload look like evidence. */}
+              <CompanyMark
+                name={operator.name}
+                logoPath={operator.logo}
+                size={92}
+                className="rounded-[14px] border-hairline-strong bg-obsidian"
+              />
               {claims && (
                 <span
                   aria-hidden

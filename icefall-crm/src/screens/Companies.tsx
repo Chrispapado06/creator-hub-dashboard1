@@ -1,11 +1,42 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { Avatar, PageHead, Pill, Stat, StatusChip, TableCard } from "@/components/ui";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import {
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  EllipsisVertical,
+  Plus,
+} from "lucide-react";
+import { Button, PageHead, StatusChip, TableCard } from "@/components/ui";
 import { Resolve } from "@/components/states";
-import { listCompanies } from "@/data/queries";
+import { CompanyLogo } from "@/components/CompanyLogo";
+import { OFFLINE } from "@/offline/offline";
+import { cn, formatDay } from "@/lib/utils";
+import { listCompanies, listRevenue } from "@/data/queries";
 import { loading, type Result } from "@/data/result";
-import type { Company } from "@/data/types";
-import { formatDay } from "@/lib/utils";
+import type { Company, RevenueRecord } from "@/data/types";
+
+/**
+ * Companies — the mockup's design on the REAL query layer.
+ *
+ * This page rendered a fixture roster for a few hours on 30 Aug 2026 while its
+ * sibling screens read the live database, which meant it showed 48 companies
+ * that did not exist beside 21 screens showing the 8 that do. Same design,
+ * honest data source: `listCompanies()` with the `Result` wrapper, so "no
+ * database", "query failed" and "genuinely no companies" each say what they
+ * are instead of all rendering as an empty table.
+ *
+ * The tiles are COUNTED from the rows. Revenue YTD is summed from
+ * `revenue_records` for the current year — a company with no revenue rows says
+ * "None recorded", because an empty ledger is an absence, not a euro amount.
+ *
+ * THE SQUARE LOGOS STAY (owner: "real company logos … in square not circle").
+ * `OPERATOR_DOMAINS` maps a company slug to its real website, and the logo is
+ * fetched live from that domain. The live database holds invented companies
+ * today, so today you see initials; the moment a real operator's record exists
+ * under one of these slugs, its own mark appears. Nothing is copied into the
+ * repo either way.
+ */
 
 export const companyStatusTone = (s: Company["status"]) =>
   s === "active" ? "green" : s === "suspended" || s === "churned" ? "red" : "amber";
@@ -46,108 +77,283 @@ export function VerificationChip({ company }: { company: Company }) {
   return <StatusChip state="ok" label={on ? `Documents checked ${on}` : "Documents checked"} />;
 }
 
+/** Real operators' websites, by the slug their record would use. Public facts. */
+export const OPERATOR_DOMAINS: Record<string, string> = {
+  "elite-exped": "eliteexped.com",
+  "seven-summit-treks": "sevensummittreks.com",
+  "14-peaks-expedition": "14peaksexpedition.com",
+  "alpine-ascents-international": "alpineascents.com",
+  "adventure-consultants": "adventureconsultants.com",
+  "madison-mountaineering": "madisonmountaineering.com",
+  "furtenbach-adventures": "furtenbachadventures.com",
+  "imagine-nepal": "imagine-nepal.com",
+  "8k-expeditions": "8kexpeditions.com",
+  "climbing-the-seven-summits": "climbingthesevensummits.com",
+  "international-mountain-guides": "mountainguides.com",
+  "jagged-globe": "jagged-globe.co.uk",
+  "pioneer-adventure": "pioneeradventure.com",
+  "mountain-professionals": "mtnprofessionals.com",
+  "kobler-partner": "kobler-partner.ch",
+  "summitclimb": "summitclimb.com",
+};
+
+const STATUS_META: Record<Company["status"], { label: string; dot: string; text: string }> = {
+  prospect: { label: "Prospect", dot: "bg-[oklch(0.65_0.015_260)]", text: "text-muted" },
+  onboarding: { label: "Onboarding", dot: "bg-[oklch(0.75_0.14_70)]", text: "text-[oklch(0.55_0.12_70)]" },
+  active: { label: "Active", dot: "bg-ok", text: "text-ok" },
+  suspended: { label: "Suspended", dot: "bg-bad", text: "text-bad" },
+  churned: { label: "Churned", dot: "bg-bad", text: "text-bad" },
+};
+
+function StatTile({
+  label,
+  value,
+  caption,
+  tone,
+}: {
+  label: string;
+  value: number;
+  caption: string;
+  tone: "plain" | "blue" | "amber" | "red" | "grey";
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded-card p-4",
+        tone === "plain" && "bg-surface shadow-soft",
+        tone === "blue" && "bg-accent-soft",
+        tone === "amber" && "bg-butter",
+        tone === "red" && "bg-[oklch(0.955_0.03_25)]",
+        tone === "grey" && "bg-panel",
+      )}
+    >
+      <p
+        className={cn(
+          "text-[12.5px] font-semibold",
+          tone === "blue" && "text-accent-ink",
+          tone === "amber" && "text-[oklch(0.5_0.11_75)]",
+          tone === "red" && "text-[oklch(0.5_0.16_25)]",
+          (tone === "plain" || tone === "grey") && "text-muted",
+        )}
+      >
+        {label}
+      </p>
+      <p className="tnum mt-1 text-[24px] font-extrabold leading-tight text-ink">{value}</p>
+      <p className="mt-0.5 text-[11.5px] text-faint">{caption}</p>
+    </div>
+  );
+}
+
+/** Recognised revenue this calendar year, per company — or null for "no rows". */
+function revenueYtdByCompany(records: RevenueRecord[]): Map<string, number> {
+  const year = new Date().getFullYear();
+  const sums = new Map<string, number>();
+  for (const r of records) {
+    if (r.company_id === null) continue;
+    if (new Date(r.recognised_on).getFullYear() !== year) continue;
+    if (r.status === "written_off") continue;
+    sums.set(r.company_id, (sums.get(r.company_id) ?? 0) + r.amount_cents);
+  }
+  return sums;
+}
+
 export default function Companies() {
+  const navigate = useNavigate();
   const [result, setResult] = useState<Result<Company[]>>(loading);
+  const [revenue, setRevenue] = useState<Result<RevenueRecord[]>>(loading);
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(8);
+
   useEffect(() => {
     void listCompanies().then(setResult);
+    void listRevenue().then(setRevenue);
   }, []);
+
+  const ytd = useMemo(
+    () => (revenue.state === "ok" ? revenueYtdByCompany(revenue.value) : null),
+    [revenue],
+  );
 
   return (
     <>
       <PageHead
         title="Companies"
         subtitle="Every expedition company ICEFALL sells to or works with. One canonical record — the operator portal edits this same row."
+        actions={
+          <Button
+            className="!bg-accent text-white hover:opacity-90"
+            onClick={() => navigate("/admin/companies/page/new")}
+          >
+            <Plus size={15} strokeWidth={2.25} /> Add company
+          </Button>
+        }
       />
+
       <Resolve
         result={result}
         what="companies"
-        isEmpty={(v) => v.length === 0}
-        empty="No company records exist yet. Sales or Operations create the first one."
+        empty="No companies yet. The first operator ICEFALL signs appears here."
+        isEmpty={(rows) => rows.length === 0}
       >
-        {(companies) => {
-          // Counted over the rows in the table below and nothing else, so the
-          // tiles and the list can never disagree. Every one of these is a real
-          // measurement of a set that was read, which is why they are allowed to
-          // print a figure — including a zero.
-          const count = (of: (c: Company) => boolean) =>
-            companies.filter(of).length.toLocaleString("en-GB");
+        {(rows) => {
+          const counts = {
+            total: rows.length,
+            active: rows.filter((r) => r.status === "active").length,
+            onboarding: rows.filter((r) => r.status === "onboarding").length,
+            suspended: rows.filter((r) => r.status === "suspended").length,
+            unverified: rows.filter((r) => r.verification_status === "unverified").length,
+          };
+          const pages = Math.max(1, Math.ceil(rows.length / perPage));
+          const safePage = Math.min(page, pages);
+          const visible = rows.slice((safePage - 1) * perPage, safePage * perPage);
+          const from = (safePage - 1) * perPage + 1;
+          const to = Math.min(safePage * perPage, rows.length);
+          const pageItems: (number | "…")[] =
+            pages <= 5 ? Array.from({ length: pages }, (_, i) => i + 1) : [1, 2, 3, "…", pages];
 
           return (
             <>
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                <Stat
-                  tone="butter"
-                  label="Companies"
-                  value={companies.length.toLocaleString("en-GB")}
-                />
-                <Stat
-                  tone="sky"
-                  label="Active accounts"
-                  value={count((c) => c.status === "active")}
-                  hint="The rest are prospects, onboarding, suspended or churned."
-                />
-                <Stat
-                  tone="lilac"
-                  label="Documents checked"
-                  value={count((c) => c.verification_status === "verified")}
-                  hint="Checked means a member of ICEFALL staff read the documents; it never means the issuing body was contacted."
-                />
-                <Stat
-                  tone="mint"
-                  label="Awaiting a check"
-                  value={count((c) => c.verification_status === "pending")}
-                  hint="Companies whose verification status is still unverified are not counted here — nothing has been submitted for anyone to read."
-                />
+              <div className="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+                <StatTile label="Companies" value={counts.total} caption="Total companies" tone="plain" />
+                <StatTile label="Active accounts" value={counts.active} caption="Active and onboarded" tone="blue" />
+                <StatTile label="Onboarding" value={counts.onboarding} caption="In the onboarding flow" tone="amber" />
+                <StatTile label="Suspended" value={counts.suspended} caption="Access suspended" tone="red" />
+                <StatTile label="Unverified" value={counts.unverified} caption="Awaiting verification" tone="grey" />
               </div>
 
-              <div className="mt-5">
-                <TableCard>
-                  <table className="w-full min-w-[760px] text-[13.5px]">
-                    <thead>
-                      <tr className="border-b border-line-soft text-left">
-                        <th className="px-5 py-3.5 text-[12px] font-semibold text-faint">Company</th>
-                        <th className="px-5 py-3.5 text-[12px] font-semibold text-faint">Status</th>
-                        <th className="px-5 py-3.5 text-[12px] font-semibold text-faint">Countries</th>
-                        <th className="px-5 py-3.5 text-[12px] font-semibold text-faint">Trust</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {companies.map((c) => (
-                        <tr key={c.id} className="border-b border-line-soft last:border-0 hover:bg-raised">
-                          <td className="px-5 py-3.5">
-                            <Link
-                              to={`/admin/companies/${c.id}`}
-                              className="group inline-flex items-center gap-3"
-                            >
-                              <Avatar name={c.name} size={34} />
-                              <span className="font-medium text-ink group-hover:text-accent">
-                                {c.name}
-                              </span>
-                            </Link>
+              <TableCard>
+                <table className="w-full text-[13px]">
+                  <thead>
+                    <tr className="text-left text-[11.5px] uppercase tracking-[0.06em] text-faint">
+                      <th className="px-5 py-3 font-medium">Company</th>
+                      <th className="px-3 py-3 font-medium">Status</th>
+                      <th className="px-3 py-3 font-medium">Countries</th>
+                      <th className="px-3 py-3 font-medium">Trust</th>
+                      <th className="px-3 py-3 font-medium">Joined</th>
+                      <th className="px-3 py-3 text-right font-medium">Revenue YTD</th>
+                      <th className="px-4 py-3" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visible.map((r) => {
+                      const status = STATUS_META[r.status];
+                      const earned = ytd?.get(r.id);
+                      return (
+                        <tr
+                          key={r.id}
+                          onClick={() => navigate(`/admin/companies/${r.id}`)}
+                          className="cursor-pointer border-t border-line-soft hover:bg-raised/60"
+                        >
+                          <td className="px-5 py-3">
+                            <span className="flex items-center gap-3">
+                              {/* Offline the logo chain is skipped entirely:
+                                  it fetches each operator's mark from their own
+                                  site, which is a network call with nothing to
+                                  reach. Initials render instead — a missing
+                                  logo is a cosmetic absence, not information. */}
+                              <CompanyLogo
+                                name={r.name}
+                                domain={OFFLINE ? null : OPERATOR_DOMAINS[r.slug]}
+                                size={34}
+                              />
+                              <span className="font-semibold text-ink">{r.name}</span>
+                            </span>
                           </td>
-                          <td className="px-5 py-3.5">
-                            <StatusChip state={companyStatusState(c.status)} label={c.status} />
+                          <td className="px-3 py-3">
+                            <span className={cn("flex items-center gap-2 text-[12.5px] font-medium", status.text)}>
+                              <span className={cn("h-1.5 w-1.5 rounded-full", status.dot)} aria-hidden />
+                              {status.label}
+                            </span>
                           </td>
-                          <td className="px-5 py-3.5">
-                            {c.countries.length ? (
-                              <span className="flex flex-wrap gap-1.5">
-                                {c.countries.map((country) => (
-                                  <Pill key={country}>{country}</Pill>
-                                ))}
-                              </span>
+                          <td className="px-3 py-3 text-muted">
+                            {r.countries.length > 0 ? (
+                              r.countries.join(", ")
                             ) : (
                               <span className="text-faint">Not recorded</span>
                             )}
                           </td>
-                          <td className="px-5 py-3.5">
-                            <VerificationChip company={c} />
+                          <td className="px-3 py-3">
+                            <VerificationChip company={r} />
+                          </td>
+                          <td className="tnum px-3 py-3 text-muted">{formatDay(r.created_at)}</td>
+                          <td className="tnum px-3 py-3 text-right font-semibold text-ink">
+                            {revenue.state !== "ok" ? (
+                              <span className="font-normal text-faint">
+                                {revenue.state === "loading" ? "…" : "Ledger unavailable"}
+                              </span>
+                            ) : earned === undefined ? (
+                              <span className="font-normal text-faint">None recorded</span>
+                            ) : (
+                              `€${(earned / 100).toLocaleString("en-GB")}`
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <EllipsisVertical size={15} strokeWidth={2} className="inline text-faint" aria-hidden />
                           </td>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </TableCard>
-              </div>
+                      );
+                    })}
+                  </tbody>
+                </table>
+
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line-soft px-5 py-3">
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setPage((p) => Math.max(1, p - 1))}
+                      className="grid h-8 w-8 place-items-center rounded-[8px] text-muted hover:bg-raised"
+                      aria-label="Previous page"
+                    >
+                      <ChevronLeft size={15} strokeWidth={2} />
+                    </button>
+                    {pageItems.map((it, i) =>
+                      it === "…" ? (
+                        <span key={`e${i}`} className="px-1 text-[12.5px] text-faint">
+                          …
+                        </span>
+                      ) : (
+                        <button
+                          key={it}
+                          type="button"
+                          onClick={() => setPage(it)}
+                          className={cn(
+                            "grid h-8 w-8 place-items-center rounded-[8px] text-[12.5px] font-medium",
+                            it === safePage ? "bg-accent text-white" : "text-muted hover:bg-raised",
+                          )}
+                        >
+                          {it}
+                        </button>
+                      ),
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setPage((p) => Math.min(pages, p + 1))}
+                      className="grid h-8 w-8 place-items-center rounded-[8px] text-muted hover:bg-raised"
+                      aria-label="Next page"
+                    >
+                      <ChevronRight size={15} strokeWidth={2} />
+                    </button>
+                  </div>
+                  <p className="text-[12px] text-faint">
+                    Showing {from} to {to} of {rows.length} results
+                  </p>
+                  <label className="flex items-center gap-1.5 rounded-tile border border-line px-2.5 py-1.5 text-[12px] text-muted">
+                    <select
+                      value={perPage}
+                      onChange={(e) => {
+                        setPerPage(Number(e.target.value));
+                        setPage(1);
+                      }}
+                      className="appearance-none bg-transparent outline-none"
+                    >
+                      <option value={8}>8 per page</option>
+                      <option value={16}>16 per page</option>
+                      <option value={24}>24 per page</option>
+                    </select>
+                    <ChevronDown size={13} strokeWidth={2} aria-hidden />
+                  </label>
+                </div>
+              </TableCard>
             </>
           );
         }}

@@ -108,13 +108,23 @@ function DisciplinePicker({ onPick }: { onPick: (d: Discipline) => void }) {
                 Choose your activity to start recording and track your performance.
               </p>
             </div>
+            {/* PH-03 — "Needs to be an option to back out from the activity".
+                There WAS one: this button already called `navigate(-1)` and was
+                labelled "Close" to a screen reader. It was drawn as a mountain
+                glyph inside an azure ring, which reads as a brand mark or a
+                link to the mountains — not as a way out, which is why the exit
+                could not be found. The affordance was present and illegible,
+                and an exit nobody recognises is not an exit.
+
+                Now an X, in the same treatment the second step of this flow
+                already uses, so backing out looks the same at both steps. */}
             <button
               type="button"
               onClick={() => navigate(-1)}
               aria-label="Close"
-              className="mt-1 grid h-10 w-10 shrink-0 place-items-center rounded-full border border-azure/35 text-azure transition-colors hover:bg-azure/[0.08]"
+              className="mt-1 grid h-10 w-10 shrink-0 place-items-center rounded-full border border-hairline-strong text-mist transition-colors hover:border-azure/45 hover:text-snow"
             >
-              <Mountain size={17} strokeWidth={1.6} />
+              <X size={18} strokeWidth={1.8} />
             </button>
           </div>
         </Rise>

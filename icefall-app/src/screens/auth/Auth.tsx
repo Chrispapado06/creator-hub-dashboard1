@@ -6,32 +6,58 @@ import { Button } from "@/components/ui/primitives";
 import { IcefallLockup } from "@/components/ui/IcefallMark";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/state/AppState";
+import {
+  PROVIDERS,
+  type ProviderKey,
+  sendPasswordReset,
+  signInWithEmail,
+  signInWithProvider,
+  signUpWithEmail,
+  nextStepForSession,
+  serverIdentity,
+  storedOnboarding,
+} from "@/auth/account";
 
 /**
  * The way into ICEFALL.
  *
- * ONE THING TO UNDERSTAND BEFORE EDITING: there is no auth backend. These
- * screens create a profile on this device, and every screen says so rather than
- * implying a server exists. Concretely:
+ * THIS IS NOW A REAL ACCOUNT SERVER. Until 2026-08-30 these screens matched an
+ * email against a localStorage record and threw the password away on purpose,
+ * and said so on every screen. That is no longer true and the copy has moved
+ * with it — a screen still promising "stays on this device" would now be the
+ * lie, pointed the other way.
  *
- *   - no password is ever stored (the rules on the sign-up form are real, the
- *     value is validated and then discarded)
- *   - the Apple and Google buttons do not pretend to work; they say what they
- *     need, because a button that silently does nothing is worse than an
- *     honest one that is not ready
- *   - "send reset link" cannot send anything, and says so
+ * What changed:
+ *   - sign-up and sign-in call Supabase; the password is transmitted and never
+ *     stored by us
+ *   - Apple, Google and Microsoft are live, and are enabled ONLY in the same
+ *     change that made them work — a button that silently does nothing is worse
+ *     than an honest disabled one
+ *   - "send reset link" actually sends
  *
- * When a backend lands, this file is the only place that changes.
+ * THE ORDER IS ACCOUNT FIRST, THEN HANDLE, THEN QUESTIONS, and that is forced
+ * rather than chosen: with Google you have a session before anybody can be asked
+ * anything, and a username cannot be claimed without one. `/auth/handle` is
+ * therefore the single place both paths converge — see `Handle.tsx`.
+ *
+ * OFFLINE STAYS OFFLINE. A cached session opens the app. Only creating an
+ * account, claiming a handle and syncing need the network.
  */
 
-const LOCAL_ONLY =
-  "ICEFALL isn't connected to an account server yet, so your profile stays on this device and no password is stored.";
+/**
+ * Replaces the old LOCAL_ONLY note, which said the profile stayed on this
+ * device. It no longer does, and leaving that sentence up would have been the
+ * same failure as the old button that did nothing — a screen making a promise
+ * the code stopped keeping.
+ */
+const SERVER_NOTE =
+  "Your account lives on ICEFALL's server so it follows you to a new phone. Your training data stays on this device and syncs when you have signal.";
 
 /* -------------------------------------------------------------------------- */
 /* Shared chrome                                                              */
 /* -------------------------------------------------------------------------- */
 
-function AuthScreen({
+export function AuthScreen({
   eyebrow,
   title,
   subtitle,
@@ -103,7 +129,7 @@ function AuthScreen({
   );
 }
 
-function Field({
+export function Field({
   label,
   type = "text",
   value,
@@ -157,7 +183,7 @@ function Field({
   );
 }
 
-function Note({ children }: { children: React.ReactNode }) {
+export function Note({ children }: { children: React.ReactNode }) {
   return (
     <p className="mt-5 border-l border-hairline pl-3 text-[11px] leading-relaxed text-mist-dim">
       {children}
@@ -283,6 +309,23 @@ function ProviderButton({
 
 export function CreateAccount() {
   const navigate = useNavigate();
+  const [pending, setPending] = useState<ProviderKey | null>(null);
+  const [providerError, setProviderError] = useState<string | null>(null);
+
+  /**
+   * Hands off to the provider. On success the browser LEAVES, so there is no
+   * success branch to write — only a failure returns here, and it has to say
+   * something, or a tapped button that does nothing looks like a dead app.
+   */
+  async function go(key: ProviderKey) {
+    setPending(key);
+    setProviderError(null);
+    const r = await signInWithProvider(key);
+    if (!r.ok) {
+      setProviderError(`${PROVIDERS[key].label}: ${r.message}`);
+      setPending(null);
+    }
+  }
 
   return (
     <AuthScreen
@@ -294,18 +337,35 @@ export function CreateAccount() {
       footer={<AltLine text="Already have an account?" cta="Sign in" to="/auth/signin" />}
     >
       <div className="space-y-3">
+        {/*
+          ENABLED IN THE SAME CHANGE THAT MADE THEM WORK, never before. Each
+          navigates away to the provider and returns to /auth/callback.
+          A provider that is not switched on in the Supabase dashboard reports
+          it here rather than failing silently — see `providerError`.
+        */}
         <ProviderButton
           icon={<Apple size={17} strokeWidth={1.6} />}
           label="Continue with Apple"
-          disabled
-          hint="Needs an ICEFALL account server. Not connected yet."
+          onClick={() => go("apple")}
+          disabled={pending !== null}
         />
         <ProviderButton
           icon={<span className="text-[15px] font-medium leading-none">G</span>}
           label="Continue with Google"
-          disabled
-          hint="Needs an ICEFALL account server. Not connected yet."
+          onClick={() => go("google")}
+          disabled={pending !== null}
         />
+        <ProviderButton
+          icon={<span className="text-[15px] font-medium leading-none">M</span>}
+          label="Continue with Microsoft"
+          onClick={() => go("microsoft")}
+          disabled={pending !== null}
+        />
+        {providerError && (
+          <p className="text-[11.5px] leading-relaxed text-[color:var(--danger,#F08A7C)]">
+            {providerError}
+          </p>
+        )}
         <ProviderButton
           icon={<Mail size={17} strokeWidth={1.6} />}
           label="Continue with email"
@@ -323,7 +383,7 @@ export function CreateAccount() {
         Explore without an account
       </Button>
 
-      <Note>{LOCAL_ONLY}</Note>
+      <Note>{SERVER_NOTE}</Note>
     </AuthScreen>
   );
 }
@@ -348,15 +408,54 @@ export function SignUp() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
-  const passwordOk = RULES.every((r) => r.test(password));
-  const ready = name.trim().length > 1 && EMAIL_RE.test(email) && passwordOk;
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [confirmSent, setConfirmSent] = useState(false);
 
-  function submit() {
+  const passwordOk = RULES.every((r) => r.test(password));
+  const ready = name.trim().length > 1 && EMAIL_RE.test(email) && passwordOk && !busy;
+
+  async function submit() {
     if (!ready) return;
-    // The password is validated and then dropped on the floor — see the note at
-    // the top of this file. Nothing here is transmitted or persisted.
+    setBusy(true);
+    setError(null);
+
+    const r = await signUpWithEmail(name, email, password);
+    if (!r.ok) {
+      setError(r.message);
+      setBusy(false);
+      return;
+    }
+
+    // Keep the local profile so the app is usable immediately and offline; the
+    // server copy is the one that follows them to a new phone.
     createAccount({ name, email });
-    navigate("/onboarding", { replace: true });
+
+    // TWO OUTCOMES, AND THEY MUST NOT SHARE A SCREEN. With email confirmation on
+    // there is no session yet — routing to /auth/handle would land on a screen
+    // that cannot claim anything, because claiming needs a signed-in caller.
+    if (r.needsEmailConfirmation) {
+      setConfirmSent(true);
+      setBusy(false);
+      return;
+    }
+    navigate("/auth/handle", { replace: true });
+  }
+
+  if (confirmSent) {
+    return (
+      <AuthScreen
+        eyebrow="Almost there"
+        title={["Check your", "email."]}
+        subtitle={`We sent a link to ${email.trim().toLowerCase()}. Open it on this device and you'll pick your username next.`}
+        back="/auth/create"
+      >
+        <Note>
+          The link proves the address is yours. Until it's opened the account
+          can't be used — that's what stops somebody signing up as you.
+        </Note>
+      </AuthScreen>
+    );
   }
 
   return (
@@ -420,12 +519,20 @@ export function SignUp() {
           </ul>
         </div>
 
+        {/*
+          RENDER THE FAILURE. The first version of this set `error` and never
+          showed it, so a refused signup looked exactly like a dead button —
+          the same silent-failure class this codebase keeps finding.
+        */}
+        {error && (
+          <p className="text-[12px] leading-relaxed text-[color:var(--danger,#F08A7C)]">{error}</p>
+        )}
         <Button type="submit" className="w-full" disabled={!ready}>
-          Create account
+          {busy ? "Creating…" : "Create account"}
         </Button>
       </form>
 
-      <Note>{LOCAL_ONLY}</Note>
+      <Note>{SERVER_NOTE}</Note>
     </AuthScreen>
   );
 }
@@ -436,23 +543,65 @@ export function SignUp() {
 
 export function SignIn() {
   const navigate = useNavigate();
-  const { account, createAccount } = useApp();
+  const { account, createAccount, completeOnboarding } = useApp();
 
   const [email, setEmail] = useState(account?.email ?? "");
   const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const ready = EMAIL_RE.test(email) && password.length > 0;
 
-  function submit() {
-    if (!ready) return;
-    // With no server there is nothing to authenticate against. Rather than
-    // theatre — a spinner and a fake success — this restores the profile on
-    // this device if the email matches, and says plainly when it doesn't.
-    if (account && account.email === email.trim().toLowerCase()) {
-      navigate("/home", { replace: true });
+  async function submit() {
+    if (!ready || busy) return;
+    setBusy(true);
+    setError(null);
+
+    const r = await signInWithEmail(email, password);
+    if (!r.ok) {
+      setError(r.message);
+      setBusy(false);
       return;
     }
-    createAccount({ name: email.split("@")[0], email });
-    navigate("/onboarding", { replace: true });
+
+    // Hydrate this device from the SERVER record before routing. Without it the
+    // app keeps rendering whoever last used this phone — during testing a
+    // profile showed one person's name directly above another person's handle.
+    const who = await serverIdentity();
+    if (who) createAccount({ name: who.name, email: who.email });
+
+    // Route on the STATE of the account, not on how they got here: somebody who
+    // signed up but never picked a handle lands on the handle screen, whether
+    // they arrived by password or by Google.
+    const step = await nextStepForSession();
+
+    /*
+      RESTORE, DO NOT RE-ASK, AND DO NOT FAKE.
+
+      The server can say "this person finished onboarding" while THIS device has
+      never seen them — a new phone, or a cleared browser. Marking the device
+      onboarded on the strength of that alone sends them to Home with no
+      disciplines, no experience and no objective: a working app with an empty
+      person in it. Seen on screen during testing, as a bounce to /welcome.
+
+      So the answers come back with them. If they cannot be fetched, the honest
+      fallback is the questions — irritating, and correct.
+    */
+    if (step === "home") {
+      const restored = await storedOnboarding();
+      if (restored) {
+        completeOnboarding(restored as unknown as Parameters<typeof completeOnboarding>[0]);
+        setBusy(false);
+        navigate("/home", { replace: true });
+        return;
+      }
+      setBusy(false);
+      navigate("/onboarding", { replace: true });
+      return;
+    }
+
+    setBusy(false);
+    if (step === "handle") navigate("/auth/handle", { replace: true });
+    else navigate("/onboarding", { replace: true });
   }
 
   return (
@@ -497,15 +646,16 @@ export function SignIn() {
           </div>
         </div>
 
-        <Button type="submit" className="w-full" disabled={!ready}>
+        {error && (
+          <p className="text-[12px] leading-relaxed text-[color:var(--danger,#F08A7C)]">{error}</p>
+        )}
+        <Button type="submit" className="w-full" disabled={!ready || busy}>
           Sign in
         </Button>
       </form>
 
       <Note>
-        {LOCAL_ONLY} Signing in restores the profile saved here — it can't reach an account created
-        on another device.
-      </Note>
+        {SERVER_NOTE}</Note>
     </AuthScreen>
   );
 }
@@ -517,6 +667,7 @@ export function SignIn() {
 export function ForgotPassword() {
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   return (
     <AuthScreen
@@ -528,8 +679,15 @@ export function ForgotPassword() {
     >
       <form
         className="space-y-4"
-        onSubmit={(e) => {
+        onSubmit={async (e) => {
           e.preventDefault();
+          // It really sends now. The screen shows the same message whether or
+          // not the address has an account, deliberately — a different answer
+          // for "no such user" turns this form into a way to test whether
+          // somebody is a member.
+          setBusy(true);
+          await sendPasswordReset(email);
+          setBusy(false);
           setSent(true);
         }}
       >
@@ -541,8 +699,8 @@ export function ForgotPassword() {
           placeholder="alex@icefall.com"
           autoComplete="email"
         />
-        <Button type="submit" className="w-full" disabled={!EMAIL_RE.test(email)}>
-          Send reset link
+        <Button type="submit" className="w-full" disabled={!EMAIL_RE.test(email) || busy}>
+          {busy ? "Sending…" : "Send reset link"}
         </Button>
       </form>
 

@@ -163,6 +163,7 @@ export function ProductList({ kind }: { kind: ProductKind }) {
                   label={`Actions for ${p.name}`}
                   items={[
                     { label: "Edit", onClick: () => navigate(`/operator/products/${p.id}`) },
+                    { label: "Edit page", onClick: () => navigate(`/operator/products/${p.id}/edit`) },
                     { label: "Preview", onClick: () => navigate(`/operator/products/${p.id}/preview`) },
                     {
                       label: "Archive",

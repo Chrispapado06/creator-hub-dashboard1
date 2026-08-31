@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { Avatar, Button, Card, Pill, SectionLabel } from "@/components/ui";
 import { Resolve } from "@/components/states";
-import { listCompanies, listDestinations, listPlacements, listProducts } from "@/data/queries";
+import { listCompanies, listDestinations, listPlacements, listProducts, listLeadDestinations } from "@/data/queries";
 import { formatCents, formatCentsShort, loading, type Result } from "@/data/result";
 import type { Company, Mountain, PlacementView, Product } from "@/data/types";
 import { cn, daysUntil, formatDay } from "@/lib/utils";
@@ -118,6 +118,7 @@ export default function MountainPlacements() {
   const [kind, setKind] = useState<Kind>("all");
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
+  const [leadDests, setLeadDests] = useState<Result<{ destination_id: string | null }[]>>(loading);
   const [openPlacement, setOpenPlacement] = useState<PlacementView | null>(null);
   const [addingSlot, setAddingSlot] = useState<number | null>(null);
 
@@ -129,6 +130,7 @@ export default function MountainPlacements() {
     void listPlacements().then(setPlacements);
     void listCompanies().then(setCompanies);
     void listProducts().then(setProducts);
+    void listLeadDestinations().then(setLeadDests);
   }, []);
 
   const rows = placements.state === "ok" ? placements.value : [];
@@ -288,6 +290,11 @@ export default function MountainPlacements() {
             <MountainPane
               mountain={current}
               placements={held(current.id)}
+              enquiriesHere={
+                leadDests.state === "ok"
+                  ? leadDests.value.filter((l) => l.destination_id === current.id).length
+                  : null
+              }
               companyName={companyName}
               companyVerified={companyVerified}
               productName={productName}
@@ -533,10 +540,11 @@ function PageBtn({
 /* ========================================================================== */
 
 function MountainPane({
-  mountain: m, placements, companyName, companyVerified, productName, onManage, onAdd,
+  mountain: m, placements, companyName, companyVerified, productName, onManage, onAdd, enquiriesHere,
 }: {
   mountain: Mountain;
   placements: PlacementView[];
+  enquiriesHere: number | null;
   companyName: (id: string) => string | undefined;
   companyVerified: (id: string) => boolean;
   productName: (id: string | null) => string | undefined;
@@ -571,6 +579,23 @@ function MountainPane({
             </span>
           </div>
         </div>
+      </div>
+
+      {/* CR-06: performance of THIS mountain. Enquiries are counted from real
+          lead rows; searches are not measured anywhere in the family (nothing
+          emits a search event), and the strip says so instead of drawing 0. */}
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-card bg-surface px-5 py-3 shadow-soft">
+        <span className="text-[12px] font-semibold uppercase tracking-[0.06em] text-faint">Performance</span>
+        <span className="text-[12.5px] text-muted">
+          Enquiries:{" "}
+          <span className="tnum font-semibold text-ink">
+            {enquiriesHere === null ? "—" : enquiriesHere}
+          </span>
+          {enquiriesHere === null && <span className="text-faint"> (leads could not be read)</span>}
+        </span>
+        <span className="text-[12.5px] text-muted">
+          Searches: <span className="text-faint">not measured — nothing emits a search event yet</span>
+        </span>
       </div>
 
       <Card>

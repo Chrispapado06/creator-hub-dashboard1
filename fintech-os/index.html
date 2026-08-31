@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Meridian — The FinTech Operating System</title>
+  <meta name="description" content="Meridian is the FinTech operating system: trade 3,700+ markets with institutional-grade tools, real-time data and smart risk management." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <script>document.documentElement.classList.add("js");</script>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>◈</text></svg>" />
+</head>
+<body>
+
+  <!-- ============ RISK BAR ============ -->
+  <div class="risk-bar">
+    <p>Derivatives are complex instruments and carry a high risk of losing money rapidly. <strong>74.2% of retail investor accounts lose money</strong> when trading with this provider. This is a fictional demo site.</p>
+  </div>
+
+  <!-- ============ NAV ============ -->
+  <header class="site-header" id="siteHeader">
+    <div class="container nav-inner">
+      <a class="logo" href="#top">
+        <span class="logo-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" fill="none"><path d="M16 2 30 16 16 30 2 16Z" stroke="currentColor" stroke-width="2.5"/><path d="M16 9.5 22.5 16 16 22.5 9.5 16Z" fill="currentColor"/></svg>
+        </span>
+        Meridian
+      </a>
+      <nav class="main-nav" id="mainNav" aria-label="Main">
+        <a href="#markets">Markets</a>
+        <a href="#features">Trading</a>
+        <a href="#platform">Platform</a>
+        <a href="#learn">Learn</a>
+        <a href="#security">Security</a>
+        <div class="nav-cta-mobile">
+          <a class="btn btn-ghost" href="#cta">Log in</a>
+          <a class="btn btn-primary" href="#cta">Get started</a>
+        </div>
+      </nav>
+      <div class="nav-cta">
+        <a class="btn btn-ghost" href="#cta">Log in</a>
+        <a class="btn btn-primary" href="#cta">Get started</a>
+      </div>
+      <button class="nav-toggle" id="navToggle" aria-label="Toggle menu" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </header>
+
+  <main id="top">
+
+    <!-- ============ HERO ============ -->
+    <section class="hero">
+      <div class="hero-bg" aria-hidden="true">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
+        <div class="grid-overlay"></div>
+      </div>
+
+      <div class="container hero-inner">
+        <div class="hero-copy">
+          <p class="eyebrow reveal">◈ The FinTech Operating System</p>
+          <h1 class="reveal" data-delay="1">Trade the world's markets with <span class="grad-text">machine precision</span></h1>
+          <p class="hero-sub reveal" data-delay="2">One account. 3,700+ markets. Institutional-grade execution, real-time intelligence and risk tools that never sleep — all inside a single operating system for your capital.</p>
+          <div class="hero-actions reveal" data-delay="3">
+            <a class="btn btn-primary btn-lg" href="#cta">Start trading <span class="arr">→</span></a>
+            <a class="btn btn-outline btn-lg" href="#platform">Explore the platform</a>
+          </div>
+          <div class="hero-trust reveal" data-delay="4">
+            <div class="trust-item"><span class="dot"></span> Regulated &amp; licensed</div>
+            <div class="trust-item"><span class="dot"></span> 0% commission</div>
+            <div class="trust-item"><span class="dot"></span> 24/7 support</div>
+          </div>
+        </div>
+
+        <div class="hero-visual reveal" data-delay="2">
+          <div class="chart-card tilt" id="heroChartCard">
+            <div class="chart-card-head">
+              <div class="instrument">
+                <span class="coin-ic" aria-hidden="true">₿</span>
+                <div>
+                  <strong>BTC / USD</strong>
+                  <span class="muted">Bitcoin · Crypto</span>
+                </div>
+              </div>
+              <div class="chart-price">
+                <strong id="heroPrice">67,412.50</strong>
+                <span class="chg up" id="heroChange">+2.41%</span>
+              </div>
+            </div>
+            <canvas id="heroChart" height="220"></canvas>
+            <div class="chart-card-foot">
+              <button class="pill active">1H</button>
+              <button class="pill">4H</button>
+              <button class="pill">1D</button>
+              <button class="pill">1W</button>
+              <span class="live-dot">LIVE</span>
+            </div>
+          </div>
+
+          <div class="float-card float-card-1">
+            <span class="mini-ic up-bg">▲</span>
+            <div><strong>AAPL</strong><span class="muted" id="floatAapl">$213.44</span></div>
+            <span class="chg up">+1.2%</span>
+          </div>
+          <div class="float-card float-card-2">
+            <span class="mini-ic down-bg">▼</span>
+            <div><strong>EUR/USD</strong><span class="muted" id="floatEur">1.0842</span></div>
+            <span class="chg down">−0.3%</span>
+          </div>
+          <div class="float-card float-card-3">
+            <span class="mini-ic gold-bg">◉</span>
+            <div><strong>GOLD</strong><span class="muted" id="floatGold">2,384.5</span></div>
+            <span class="chg up">+0.8%</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ TICKER TAPE ============ -->
+    <div class="ticker-wrap" aria-hidden="true">
+      <div class="ticker" id="tickerTape"></div>
+    </div>
+
+    <!-- ============ STATS ============ -->
+    <section class="stats">
+      <div class="container stats-grid">
+        <div class="stat reveal">
+          <strong><span data-count="2.4" data-decimals="1">0</span>M+</strong>
+          <span>Registered users worldwide</span>
+        </div>
+        <div class="stat reveal" data-delay="1">
+          <strong><span data-count="3700">0</span>+</strong>
+          <span>Tradable markets &amp; instruments</span>
+        </div>
+        <div class="stat reveal" data-delay="2">
+          <strong><span data-count="0.03" data-decimals="2">0</span>s</strong>
+          <span>Median order execution</span>
+        </div>
+        <div class="stat reveal" data-delay="3">
+          <strong>$<span data-count="18">0</span>B</strong>
+          <span>Monthly trading volume</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ MARKETS ============ -->
+    <section class="section markets" id="markets">
+      <div class="container">
+        <div class="section-head reveal">
+          <p class="eyebrow">Markets</p>
+          <h2>Every market. <span class="grad-text">One terminal.</span></h2>
+          <p class="section-sub">Live streaming prices across crypto, shares, forex, commodities and indices — with spreads engineered to stay tight when it matters.</p>
+        </div>
+
+        <div class="tabs reveal" id="marketTabs" role="tablist" aria-label="Market categories">
+          <button class="tab active" id="tab-crypto" data-tab="crypto" role="tab" aria-selected="true" aria-controls="marketPanel">Crypto</button>
+          <button class="tab" id="tab-shares" data-tab="shares" role="tab" aria-selected="false" aria-controls="marketPanel" tabindex="-1">Shares</button>
+          <button class="tab" id="tab-forex" data-tab="forex" role="tab" aria-selected="false" aria-controls="marketPanel" tabindex="-1">Forex</button>
+          <button class="tab" id="tab-commodities" data-tab="commodities" role="tab" aria-selected="false" aria-controls="marketPanel" tabindex="-1">Commodities</button>
+          <button class="tab" id="tab-indices" data-tab="indices" role="tab" aria-selected="false" aria-controls="marketPanel" tabindex="-1">Indices</button>
+        </div>
+
+        <div class="market-table-wrap reveal" data-delay="1" id="marketPanel" role="tabpanel" aria-labelledby="tab-crypto">
+          <table class="market-table">
+            <thead>
+              <tr><th>Instrument</th><th class="hide-sm">Trend</th><th>Price</th><th>24h</th><th class="hide-sm"></th></tr>
+            </thead>
+            <tbody id="marketBody"><!-- rendered by JS --></tbody>
+          </table>
+        </div>
+        <p class="table-note reveal" data-delay="2">Prices shown are simulated for demonstration. <a href="#learn">See how live pricing works →</a></p>
+      </div>
+    </section>
+
+    <!-- ============ FEATURES ============ -->
+    <section class="section features" id="features">
+      <div class="container">
+        <div class="section-head reveal">
+          <p class="eyebrow">Trading intelligence</p>
+          <h2>Tools that think <span class="grad-text">as fast as you do</span></h2>
+          <p class="section-sub">Meridian isn't an app — it's an operating system. Every module streams into one workspace, from execution to analytics to risk.</p>
+        </div>
+
+        <div class="feature-grid">
+          <div class="feature-card reveal">
+            <div class="f-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 17l5-6 4 4 6-8 3 4"/><path d="M3 21h18"/></svg></div>
+            <h3>Pro charting</h3>
+            <p>75+ indicators, multi-timeframe layouts and one-click drawing tools rendered at 120fps.</p>
+          </div>
+          <div class="feature-card reveal" data-delay="1">
+            <div class="f-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v18M5 8l7-5 7 5M5 16l7 5 7-5"/></svg></div>
+            <h3>Smart risk guard</h3>
+            <p>Automated stop-loss, negative balance protection and exposure alerts before positions turn.</p>
+          </div>
+          <div class="feature-card reveal" data-delay="2">
+            <div class="f-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg></div>
+            <h3>0.03s execution</h3>
+            <p>Orders routed through low-latency infrastructure with median fill times of 30 milliseconds.</p>
+          </div>
+          <div class="feature-card reveal">
+            <div class="f-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></svg></div>
+            <h3>Trade everywhere</h3>
+            <p>Web, iOS, Android and desktop — one account, perfectly synced, always live.</p>
+          </div>
+          <div class="feature-card reveal" data-delay="1">
+            <div class="f-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2a7 7 0 0 1 7 7c0 5-7 13-7 13S5 14 5 9a7 7 0 0 1 7-7Z"/><circle cx="12" cy="9" r="2.5"/></svg></div>
+            <h3>Signals &amp; alerts</h3>
+            <p>Price alerts, volatility warnings and AI-curated market briefings pushed the second they matter.</p>
+          </div>
+          <div class="feature-card reveal" data-delay="2">
+            <div class="f-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 9h8M8 13h5M21 12a9 9 0 1 1-4-7.5"/></svg></div>
+            <h3>Open API</h3>
+            <p>Build on Meridian: REST + WebSocket APIs for algos, bots and custom dashboards.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ PLATFORM SHOWCASE ============ -->
+    <section class="section platform" id="platform">
+      <div class="container platform-inner">
+        <div class="platform-copy reveal">
+          <p class="eyebrow">The workspace</p>
+          <h2>Your entire portfolio, <span class="grad-text">one command center</span></h2>
+          <ul class="check-list">
+            <li>Multi-chart layouts with synced crosshairs</li>
+            <li>Depth-of-market and live order books</li>
+            <li>Portfolio analytics with P&amp;L heatmaps</li>
+            <li>Custom watchlists that follow you across devices</li>
+          </ul>
+          <a class="btn btn-primary" href="#cta">Try the demo account <span class="arr">→</span></a>
+        </div>
+
+        <div class="platform-visual reveal" data-delay="1">
+          <div class="terminal tilt" id="terminal">
+            <div class="terminal-top">
+              <span class="tdot r"></span><span class="tdot y"></span><span class="tdot g"></span>
+              <span class="terminal-title">MERIDIAN OS · v4.2</span>
+            </div>
+            <div class="terminal-body">
+              <aside class="t-side">
+                <div class="t-side-item active">◈ Overview</div>
+                <div class="t-side-item">📈 Charts</div>
+                <div class="t-side-item">💼 Portfolio</div>
+                <div class="t-side-item">⚡ Orders</div>
+                <div class="t-side-item">🔔 Alerts</div>
+              </aside>
+              <div class="t-main">
+                <div class="t-row">
+                  <div class="t-metric"><span>Equity</span><strong id="tEquity">$128,430.12</strong></div>
+                  <div class="t-metric"><span>Open P&amp;L</span><strong class="up" id="tPnl">+$2,841.90</strong></div>
+                  <div class="t-metric"><span>Margin</span><strong>18.2%</strong></div>
+                </div>
+                <canvas id="terminalChart" height="130"></canvas>
+                <div class="t-positions">
+                  <div class="t-pos"><span>BTC/USD</span><span class="up">+4.21%</span></div>
+                  <div class="t-pos"><span>NVDA</span><span class="up">+2.87%</span></div>
+                  <div class="t-pos"><span>EUR/USD</span><span class="down">−0.34%</span></div>
+                  <div class="t-pos"><span>GOLD</span><span class="up">+0.81%</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ SECURITY ============ -->
+    <section class="section security" id="security">
+      <div class="container">
+        <div class="section-head reveal">
+          <p class="eyebrow">Trust &amp; security</p>
+          <h2>Built like a bank. <span class="grad-text">Moves like a startup.</span></h2>
+        </div>
+        <div class="sec-grid">
+          <div class="sec-card reveal"><span class="sec-ic">🛡</span><h3>Segregated funds</h3><p>Client money held separately from company funds at tier-1 banks.</p></div>
+          <div class="sec-card reveal" data-delay="1"><span class="sec-ic">🔐</span><h3>Bank-grade encryption</h3><p>TLS 1.3 everywhere, biometric login and hardware-key 2FA support.</p></div>
+          <div class="sec-card reveal" data-delay="2"><span class="sec-ic">⚖️</span><h3>Regulated entity</h3><p>Licensed and audited under EU financial-services frameworks.</p></div>
+          <div class="sec-card reveal" data-delay="3"><span class="sec-ic">🧯</span><h3>Negative balance protection</h3><p>You can never lose more than the funds in your account.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ LEARN ============ -->
+    <section class="section learn" id="learn">
+      <div class="container">
+        <div class="section-head reveal">
+          <p class="eyebrow">Meridian Academy</p>
+          <h2>Learn the market <span class="grad-text">before you trade it</span></h2>
+        </div>
+        <div class="learn-grid">
+          <a class="learn-card reveal" href="#learn">
+            <div class="learn-tag">Course · 45 min</div>
+            <h3>Foundations of leverage</h3>
+            <p>What leverage really does to your exposure — and how professionals size positions.</p>
+            <span class="learn-more">Start learning →</span>
+          </a>
+          <a class="learn-card reveal" data-delay="1" href="#learn">
+            <div class="learn-tag">Guide · 12 min</div>
+            <h3>Reading candlestick charts</h3>
+            <p>From doji to engulfing: the patterns that actually carry statistical signal.</p>
+            <span class="learn-more">Start learning →</span>
+          </a>
+          <a class="learn-card reveal" data-delay="2" href="#learn">
+            <div class="learn-tag">Course · 1h 20m</div>
+            <h3>Risk management systems</h3>
+            <p>Stop-losses, hedging and portfolio heat — build rules you'll actually follow.</p>
+            <span class="learn-more">Start learning →</span>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ RATINGS ============ -->
+    <section class="section ratings">
+      <div class="container ratings-inner">
+        <div class="rating-card reveal"><strong>4.8</strong><span class="stars">★★★★★</span><span class="muted">App Store</span></div>
+        <div class="rating-card reveal" data-delay="1"><strong>4.7</strong><span class="stars">★★★★★</span><span class="muted">Google Play</span></div>
+        <div class="rating-card reveal" data-delay="2"><strong>4.9</strong><span class="stars">★★★★★</span><span class="muted">TrustRadar</span></div>
+        <div class="rating-card reveal" data-delay="3"><strong>#1</strong><span class="stars">🏆</span><span class="muted">FinReview Awards 2026</span></div>
+      </div>
+    </section>
+
+    <!-- ============ FAQ ============ -->
+    <section class="section faq">
+      <div class="container faq-inner">
+        <div class="section-head reveal">
+          <p class="eyebrow">FAQ</p>
+          <h2>Questions, <span class="grad-text">answered</span></h2>
+        </div>
+        <div class="accordion reveal" data-delay="1">
+          <div class="acc-item">
+            <button class="acc-head" aria-expanded="false" aria-controls="faq-1">How fast can I open an account? <span class="acc-ic" aria-hidden="true">+</span></button>
+            <div class="acc-body" id="faq-1"><p>Most accounts are verified in under 10 minutes. You'll need a photo ID and proof of address, then you can fund instantly by card or bank transfer.</p></div>
+          </div>
+          <div class="acc-item">
+            <button class="acc-head" aria-expanded="false" aria-controls="faq-2">What does trading cost? <span class="acc-ic" aria-hidden="true">+</span></button>
+            <div class="acc-body" id="faq-2"><p>Zero commission on all instruments. We earn from the spread — the small difference between buy and sell prices — which is always displayed before you trade.</p></div>
+          </div>
+          <div class="acc-item">
+            <button class="acc-head" aria-expanded="false" aria-controls="faq-3">Is there a demo account? <span class="acc-ic" aria-hidden="true">+</span></button>
+            <div class="acc-body" id="faq-3"><p>Yes — every account includes an unlimited demo with $10,000 in virtual funds and full access to live market data.</p></div>
+          </div>
+          <div class="acc-item">
+            <button class="acc-head" aria-expanded="false" aria-controls="faq-4">How is my money protected? <span class="acc-ic" aria-hidden="true">+</span></button>
+            <div class="acc-body" id="faq-4"><p>Client funds are segregated at tier-1 banks, accounts carry negative balance protection, and the platform is protected by bank-grade encryption and 2FA.</p></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ CTA ============ -->
+    <section class="section cta" id="cta">
+      <div class="container cta-card reveal">
+        <div class="cta-glow" aria-hidden="true"></div>
+        <h2>Your capital deserves an <span class="grad-text">operating system</span></h2>
+        <p>Open an account in minutes. Trade in seconds. Cancel never — there's no subscription.</p>
+        <div class="hero-actions">
+          <a class="btn btn-primary btn-lg" href="#top">Create free account <span class="arr">→</span></a>
+          <a class="btn btn-outline btn-lg" href="#platform">Try demo first</a>
+        </div>
+        <p class="cta-fine">Fictional demo — no real accounts, markets or money involved.</p>
+      </div>
+    </section>
+  </main>
+
+  <!-- ============ FOOTER ============ -->
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <a class="logo" href="#top">
+            <span class="logo-mark" aria-hidden="true">
+              <svg viewBox="0 0 32 32" fill="none"><path d="M16 2 30 16 16 30 2 16Z" stroke="currentColor" stroke-width="2.5"/><path d="M16 9.5 22.5 16 16 22.5 9.5 16Z" fill="currentColor"/></svg>
+            </span>
+            Meridian
+          </a>
+          <p class="muted">The FinTech operating system. Trade 3,700+ markets with institutional-grade tools.</p>
+        </div>
+        <div class="footer-col">
+          <h4>Markets</h4>
+          <a href="#markets">Crypto</a><a href="#markets">Shares</a><a href="#markets">Forex</a><a href="#markets">Commodities</a><a href="#markets">Indices</a>
+        </div>
+        <div class="footer-col">
+          <h4>Platform</h4>
+          <a href="#platform">Web terminal</a><a href="#platform">Mobile apps</a><a href="#features">API</a><a href="#features">Pricing</a>
+        </div>
+        <div class="footer-col">
+          <h4>Learn</h4>
+          <a href="#learn">Academy</a><a href="#learn">Market news</a><a href="#learn">Glossary</a><a href="#learn">Webinars</a>
+        </div>
+        <div class="footer-col">
+          <h4>Company</h4>
+          <a href="#security">About</a><a href="#security">Security</a><a href="#security">Careers</a><a href="#security">Contact</a>
+        </div>
+      </div>
+      <div class="footer-legal">
+        <p><strong>Risk warning:</strong> Derivative products are leveraged and can result in losses that exceed initial deposits. This entire website is a fictional design demo — Meridian is not a real company, broker or investment service, and nothing here is financial advice.</p>
+        <p>© 2026 Meridian Labs (fictional). All rights reserved.</p>
+      </div>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

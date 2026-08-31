@@ -26,6 +26,40 @@ export const VISIBILITY_OPTIONS: readonly { value: Visibility; label: string; de
   { value: "private", label: "Private", detail: "Only you." },
 ];
 
+/**
+ * PH-19c — who a POST is for. A different axis from `Visibility`.
+ *
+ * The owner asked for "friends or followers or public", which is not the
+ * existing `public | connections | private` set: a post always has an author,
+ * so "private" is not one of its answers, and "followers" is an audience the
+ * other three controls do not have.
+ *
+ * `followers` IS A FORWARD-LOOKING TIER AND THE UI SAYS SO. `profile/following`
+ * stores who YOU follow; nothing stores who follows you, and with no backend
+ * there is nobody to be followed by. It is offered because the owner named it
+ * and because the preference should be recorded before the audience exists —
+ * not because the app can currently resolve it.
+ */
+export type PostVisibility = "public" | "followers" | "connections";
+
+export const POST_VISIBILITY_OPTIONS: readonly {
+  value: PostVisibility;
+  label: string;
+  detail: string;
+}[] = [
+  { value: "public", label: "Public", detail: "Anyone on ICEFALL can see it." },
+  {
+    value: "followers",
+    label: "Followers",
+    detail: "People who follow you. ICEFALL has no followers yet — nobody can follow anybody until accounts can see each other.",
+  },
+  {
+    value: "connections",
+    label: "Friends",
+    detail: "Only people whose connection you have accepted.",
+  },
+];
+
 export type VerificationKind = "identity" | "history" | "professional";
 
 export interface Application {
@@ -60,6 +94,8 @@ export interface SettingsState {
   passportVisibility: Visibility;
   activityVisibility: Visibility;
   summitVisibility: Visibility;
+  /** PH-19c — posts, on their own axis. See `PostVisibility`. */
+  postVisibility: PostVisibility;
   onlineStatus: boolean;
 
   /* Who can reach me */
@@ -121,6 +157,9 @@ export const DEFAULT_SETTINGS: SettingsState = {
   passportVisibility: "connections",
   activityVisibility: "connections",
   summitVisibility: "connections",
+  // The narrowest of the three, like every other visibility default here:
+  // nobody is opted into an audience they did not choose.
+  postVisibility: "connections",
   onlineStatus: false,
 
   discoverable: false,

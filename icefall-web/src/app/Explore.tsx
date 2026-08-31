@@ -11,8 +11,11 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { companyById, companySlug } from "@/data/companies";
+import { CompanyMark } from "@/components/CompanyMark";
 import { RouteMap } from "./RouteMap";
 import { tileFor } from "./mapTiles";
+import { OFFLINE } from "@/offline/offline";
+import { MapThumbPlaceholder } from "@/offline/MapPlaceholder";
 import { peakFallback, peakImage } from "./peakPlate";
 import { objectiveIsOn, PEAKS, type Peak } from "@/data/peaks";
 import { peakCredit } from "@/data/peakPhotoCredits";
@@ -22,7 +25,6 @@ import {
   DEMO_NOTICE,
   EXPEDITIONS,
   IS_DEMO,
-  monogram,
   type Expedition,
 } from "@/data/demo";
 import { formatEur, type Cents } from "@/money/model";
@@ -175,7 +177,18 @@ const SECTIONS: Record<
   },
   mountains: {
     title: "Mountains",
-    blurb: "Fifty-one peaks, by altitude, range and country.",
+    /*
+      COUNTED, NOT SPELLED OUT. This read "Fifty-one peaks" while the same
+      screen rendered "52 peaks" from the catalogue directly below it — the
+      blurb was written when there were fifty-one and nothing updated it when
+      the fifty-second was added. A reader saw both numbers at once.
+
+      Same defect as the commission rate that said 10% after it became 15%: a
+      figure restated in prose is a second copy of a fact that lives somewhere
+      else, and it drifts silently because nothing typechecks English. Derive it
+      and the two can never disagree again.
+    */
+    blurb: `${PEAKS.length} peaks, by altitude, range and country.`,
     placeholder: "Peak or range",
     path: "/app/mountains",
   },
@@ -493,13 +506,26 @@ function Find({ query }: { query: string }) {
               )}
             >
               <span className="relative block aspect-[16/9] w-full bg-slate">
-                <img
-                  src={tileFor(t.lat, t.lon, 10)}
-                  alt=""
-                  aria-hidden
-                  loading="lazy"
-                  className="h-full w-full object-cover"
-                />
+                {/*
+                  OFFLINE DEMO. This image is a satellite tile of the route's own
+                  coordinates, streamed from Esri, and it is the ONLY <img> on
+                  this page with no onError fallback — offline every card in the
+                  grid becomes an empty slate box and the whole screen reads as
+                  broken. The list itself is local JSON and is perfectly
+                  populated, so the cards keep their place and say what is
+                  actually missing.
+                */}
+                {OFFLINE ? (
+                  <MapThumbPlaceholder />
+                ) : (
+                  <img
+                    src={tileFor(t.lat, t.lon, 10)}
+                    alt=""
+                    aria-hidden
+                    loading="lazy"
+                    className="h-full w-full object-cover"
+                  />
+                )}
                 <span className="absolute inset-0 bg-gradient-to-t from-graphite via-transparent to-transparent" />
                 {t.ref !== undefined && /[a-z]/i.test(t.ref) && (
                   <span className="absolute right-2.5 top-2.5 rounded-pill border border-azure/45 bg-obsidian/75 px-2 py-0.5 text-[10px] text-azure">
@@ -926,26 +952,13 @@ function Listing({ e, peak, best }: { e: Expedition; peak: Peak; best: boolean }
         <div className="flex items-start gap-3.5">
           {/* An invented company's mark, or its monogram. A real business's logo
               is not bundled — see the `logo` note in data/companies.ts. */}
-          {c?.logo ? (
-            <img
-              src={c.logo}
-              alt=""
-              aria-hidden
-              className={cn(
-                "shrink-0 rounded-tile border border-hairline object-contain",
-                best ? "h-[60px] w-[60px]" : "h-[52px] w-[52px]",
-              )}
-            />
-          ) : (
-            <span
-              className={cn(
-                "grid shrink-0 place-items-center rounded-tile border border-hairline bg-slate/60 tracking-[0.06em] text-mist",
-                best ? "h-[60px] w-[60px] text-[15px]" : "h-[52px] w-[52px] text-[13px]",
-              )}
-            >
-              {monogram(e.company)}
-            </span>
-          )}
+          <CompanyMark
+            name={e.company}
+            logo={c?.logo}
+            size={best ? 60 : 52}
+            variant="tile"
+            decorative
+          />
 
           <span className="min-w-0 flex-1">
             <span className="flex items-center gap-1.5">

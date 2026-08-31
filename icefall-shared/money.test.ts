@@ -186,17 +186,17 @@ const dayRate: Quote = {
 };
 const g = totalsFor(dayRate);
 is("the climber pays the advertised price", g.total, eur(1000));
-is("ICEFALL keeps 10% of it", g.commission, eur(100));
-is("the guide receives the rest", g.guideReceives, eur(900));
+is("ICEFALL keeps 15% of it", g.commission, eur(150));
+is("the guide receives the rest", g.guideReceives, eur(850));
 is("the fee is DEDUCTED, not added", g.total === eur(1000), true);
 is("parts reconcile", g.commission + g.guideReceives, g.total);
-is("default guide commission pct", GUIDE_COMMISSION_PCT, 10);
+is("default guide commission pct", GUIDE_COMMISSION_PCT, 15);
 
 // Rounding goes to the guide, never to ICEFALL. Rounding in the platform's
 // favour on every booking is how a marketplace quietly skims.
 const oddDay = totalsFor({ ...dayRate, lines: [{ label: "x", amount: 3333, per: "party" }] });
 is("rounding favours the guide", oddDay.commission + oddDay.guideReceives, 3333);
-is("...and the commission rounds down", oddDay.commission, 333);
+is("...and the commission rounds down", oddDay.commission, 499);
 
 /* ---- pass-through costs carry no commission ------------------------------ */
 
@@ -213,8 +213,8 @@ const withHuts = totalsFor({
 is("the climber pays the whole advertised price", withHuts.total, eur(1240));
 is("pass-through is excluded from the basis", withHuts.commissionable, eur(1000));
 is("...and reported separately", withHuts.passedThrough, eur(240));
-is("ICEFALL still keeps 100, not 124", withHuts.commission, eur(100));
-is("the guide receives everything else", withHuts.guideReceives, eur(1140));
+is("ICEFALL still keeps 150, not 186", withHuts.commission, eur(150));
+is("the guide receives everything else", withHuts.guideReceives, eur(1090));
 is("parts reconcile", withHuts.commission + withHuts.guideReceives, withHuts.total);
 
 // A per-person pass-through scales with the party, and is still excluded.
@@ -227,26 +227,26 @@ const party = totalsFor({
   ],
 });
 is("per-person pass-through scales", party.passedThrough, eur(180));
-is("...and the commission ignores all of it", party.commission, eur(150));
+is("...and the commission ignores all of it", party.commission, eur(225));
 
 // A quote with no flags behaves exactly as before — the flag is opt-in, so no
 // existing quote silently changes what it charges.
-is("an unflagged quote is unchanged", totalsFor(dayRate).commission, eur(100));
+is("an unflagged quote is unchanged", totalsFor(dayRate).commission, eur(150));
 
-// FLOOR, NOT ROUND. 3,335 cents at 10% is 333.5; the half-cent goes to the
+// FLOOR, NOT ROUND. 3,330 cents at 15% is 499.5; the half-cent goes to the
 // guide. `Math.round` would have sent it to ICEFALL half the time.
-const halfCent = totalsFor({ ...dayRate, lines: [{ label: "x", amount: 3335, per: "party" }] });
-is("a half-cent goes to the guide, never to ICEFALL", halfCent.commission, 333);
-is("parts still reconcile on a fraction", halfCent.commission + halfCent.guideReceives, 3335);
+const halfCent = totalsFor({ ...dayRate, lines: [{ label: "x", amount: 3330, per: "party" }] });
+is("a half-cent goes to the guide, never to ICEFALL", halfCent.commission, 499);
+is("parts still reconcile on a fraction", halfCent.commission + halfCent.guideReceives, 3330);
 
 /* ---- one implementation, two entry points -------------------------------- */
 
 // Session 02 holds a flat total rather than quote lines. The two entry points
 // must not be able to disagree about the deduction or the rounding.
 const flat = totalsForAmount(eur(1240), 1, GUIDE_COMMISSION_PCT, eur(240));
-is("a flat amount deducts the same way", flat.commission, eur(100));
+is("a flat amount deducts the same way", flat.commission, eur(150));
 is("...and reports the same basis", flat.commissionable, eur(1000));
-is("...and the same net to the guide", flat.guideReceives, eur(1140));
+is("...and the same net to the guide", flat.guideReceives, eur(1090));
 is("the two entry points agree exactly", JSON.stringify(flat), JSON.stringify(withHuts));
 
 // partySize is required and is used, not assumed.

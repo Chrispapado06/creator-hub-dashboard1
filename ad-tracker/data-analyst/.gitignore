@@ -1,0 +1,8 @@
+agent.json
+supabase.json
+credentials.json
+creators.json
+outputs/
+.env
+__pycache__/
+*.pyc

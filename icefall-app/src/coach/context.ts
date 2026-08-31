@@ -123,7 +123,7 @@ function daysUntilLocal(iso: string): number | null {
 }
 
 export function useCoachContext(): CoachContext {
-  const { user, coachProfile, bodyMassKg, todaysCheckIn } = useApp();
+  const { user, coachProfile, bodyMassKgSet, todaysCheckIn } = useApp();
   const intel = useCoachIntel();
   const activities = useRecordedActivities();
   const weeklyProgress = useWeeklyProgress();
@@ -144,8 +144,16 @@ export function useCoachContext(): CoachContext {
       technicalSkills: coachProfile.technicalSkills ?? [],
       maxAltitudeM: coachProfile.maxAltitudeM ?? null,
       // `bodyMassKg` falls back to 72 in AppState, so it cannot be told apart
-      // from a real answer there. Treated as absent unless a profile exists.
-      bodyMassKg: typeof bodyMassKg === "number" ? bodyMassKg : null,
+      // from a real answer there. `bodyMassKgSet` is the raw stored value and
+      // is null until the athlete gives one.
+      //
+      // This line used to read the DEFAULTED value and test it with `typeof
+      // === "number"`, which is always true — so the null branch never ran and
+      // the model was told "Body mass: 72 kg" as a fact about an athlete who
+      // had never been asked, then planned nutrition and load against it. The
+      // comment above described the defence; nothing implemented it. A guard
+      // that reads an already-defaulted value is not a guard.
+      bodyMassKg: bodyMassKgSet,
     };
 
     const objective: ObjectiveContext | null = intel.goal
@@ -197,7 +205,7 @@ export function useCoachContext(): CoachContext {
     };
 
     return { athlete, weekly, objective, today, intel, recent, cold: intel.cold };
-  }, [user, coachProfile, bodyMassKg, todaysCheckIn, intel, activities, weeklyProgress]);
+  }, [user, coachProfile, bodyMassKgSet, todaysCheckIn, intel, activities, weeklyProgress]);
 }
 
 /* -------------------------------------------------------------------------- */

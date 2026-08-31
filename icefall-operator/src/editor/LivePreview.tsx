@@ -26,6 +26,8 @@
  * marketplace gate lifts. That is stated rather than hidden.
  */
 import { useEffect, useRef, useState } from "react";
+import { OFFLINE } from "@/offline/offline";
+import { OfflinePreviewNotice } from "@/offline/OfflinePreviewNotice";
 
 const PROTOCOL_VERSION = 1;
 
@@ -82,6 +84,18 @@ export function LivePreview({
   requestTab: string | null;
   onBridge?: (b: PreviewBridge) => void;
 }) {
+  /*
+   * OFFLINE, BEFORE ANY HOOK RUNS.
+   *
+   * `OFFLINE` is a build-time constant, so this branch is fixed for the life of
+   * the component and the hook order below can never change under it. Returning
+   * here is what keeps the iframe from being created at all: no request to
+   * :5194, no six-second ping loop, and no "cannot reach your live page" —
+   * which would be true but would read as a fault to fix rather than the
+   * expected state of a demo running with no network.
+   */
+  if (OFFLINE) return <OfflinePreviewNotice what="company page" />;
+
   const frame = useRef<HTMLIFrameElement | null>(null);
   const [bridge, setBridge] = useState<PreviewBridge>({
     known: [], rects: [], activeTab: null, rejected: [], connected: false,

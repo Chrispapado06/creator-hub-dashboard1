@@ -96,6 +96,85 @@ Format: `- [owner-session] file:line — what is wrong. — found by NN, YYYY-MM
   `icefall-crm`, `icefall-operator` and `icefall-web` all re-export it correctly.
   `icefall-guide` was the last one. — found and fixed by 05, 2026-08-29
 
+- **[brain/schema — SECURITY] `guide_profiles_write` lets any signed-in user make
+  themselves a guide.** The policy is `for all to authenticated` with
+  `with check (id = auth.uid() or is_admin())`
+  (`20260817120000_icefall_foundation.sql:273`, re-issued unchanged at
+  `20260829210000_rls_hoist_auth_uid.sql` — the later migration only hoists
+  `auth.uid()` into a subquery and does not tighten the rule). So an athlete can
+  `insert into guide_profiles (id) values (auth.uid())` and then set
+  `listed = true` on it, because the same policy covers UPDATE.
+
+  **Why it matters beyond misfiled tickets.** `open_support_ticket` decides the
+  requester with `exists (select 1 from guide_profiles g where g.id = v_uid)`,
+  so a self-inserted row is enough to be stamped `guide`. And
+  `guide_profiles_select` permits `listed OR id = auth.uid()`, so a
+  self-listed profile is readable by every authenticated user — the moment any
+  surface renders a guide directory from this table, somebody nobody has checked
+  appears in it as bookable.
+
+  **VERIFIED BLAST RADIUS, separately from the defect (§6f).** The only live
+  reader of `guide_profiles` anywhere in the family today is
+  `icefall-guide/src/auth/account.ts:80`, the sign-in gate I added on
+  2026-08-30. **No app renders a public guide directory from the database yet**,
+  so nothing puts a fake guide in front of a climber today. What it does defeat
+  is that gate — the guide app's own door, which exists to say "ICEFALL decides
+  who is a guide".
+
+  **What still holds:** `credentials_verified` keeps `check (= false)`, so a
+  self-made guide cannot claim to have been checked, and
+  `verificationSentence()` renders "Not checked by ICEFALL" without a review
+  record. The badge is safe; the ROLE is not.
+
+  **The constitution states this as an invariant and the database does not
+  enforce it.** §6 decision 20 step 2: *"Signup always creates an `athlete`,
+  never a higher role (foundation migration invariant)."* That is true of
+  `profiles.role` — `profiles_insert_self` pins it — but `guide_profiles` is a
+  separate table and nothing pins membership of it. Two statements, each true of
+  its own table, and the guarantee people read from them is not held by either.
+
+  Not fixed here: the schema is the brain's. Reported rather than worked around.
+  — found by 05 (guide app), 2026-08-30
+
+- **[01 / 02 / handbook] §6aa swept family-wide after the 10% → 15% change. The
+  CODE IS CLEAN; five documents and comments are not.** Ran the check §6aa asks
+  for across all five apps on 2026-08-31.
+
+  **The reassuring half, verified rather than assumed:** no user-facing sentence
+  anywhere states a stale rate. Both places that quote the figure to a person
+  interpolate the constant — `GUIDE_FEE_DISCLOSURE` in `money.ts`, and
+  `icefall-app/src/screens/guides/GuideDashboard.tsx:840`, which builds *"ICEFALL's
+  ${PLATFORM_COMMISSION_PCT}% comes out of it, so you receive …"* from the alias.
+  Both now read 15% with no edit. `icefall-web/src/screens/BookingConfirm.tsx:367`
+  looked like rendered copy and is a JSX comment — checked, not assumed.
+
+  **Stale, and each belongs to someone else:**
+  - `icefall-app/src/guides/engagement.ts:48` — worked example *"The client pays
+    €1,000. The guide receives €900. ICEFALL keeps €100."* — **Session 01**
+  - `icefall-app/src/components/booking/parts.tsx:166` — *"ICEFALL's 10% is
+    deducted from what…"* — **Session 01**
+  - ~~`icefall-web/src/screens/BookingConfirm.tsx:367` — *"ICEFALL's 10% comes OUT
+    of the guiding figure"*~~ — **Session 02 — DONE 2026-08-31.** Fixed by naming
+    `GUIDE_COMMISSION_PCT` instead of restating its value, so it cannot go stale
+    again. A number repeated in prose is a second copy of a fact that lives
+    elsewhere, and it drifts exactly the way the four commission models did.
+  - `~/Downloads/ICEFALL-HANDBOOK.md` §6 "The 2026-08-28 honesty sweep" lines
+    ~15896–15935 — the €1,000 / €900 / €100 example three times, one of which
+    quotes the guide-facing sentence verbatim — **Session 01's chapter**
+  - `~/Downloads/ICEFALL-HANDBOOK.md` §17.9 handover list line ~18850 — *"a **10%
+    commission DEDUCTED from the guide's fee**"* stated as the current model
+
+  Not fixed: other sessions' apps and chapters (§5). **Chapter 20 is mine and is
+  corrected** — including a live claim that named the rate, a historical example
+  now labelled as historical, and a verification claim re-run at 15% (€2,400 with
+  €310 passed on → €313.50 on the €2,090 fee, rule unchanged).
+
+  **The pattern worth carrying:** every surviving stale figure is in prose, and
+  every one that self-corrected was interpolated. The remedy is §6aa's — write
+  the RULE beside the number. *"The commission is on the fee, never the total"*
+  survives a rate change; *"€100"* does not.
+  — found by 05 (guide app), 2026-08-31
+
 ## Resolved
 
 - **[01/03] The gold → azure rebrand only ever reached `icefall-app`.** Verified
@@ -163,11 +242,18 @@ Six-lens adversarial sweep, every finding re-checked by an independent skeptic
   expedition blows the ~5MB quota and stops snapshotting — the one case crash-safety
   exists for. Fix: cap the in-progress array the same way, or catch quota and drop
   oldest. **OWNER: was Session 01 (icefall-app), now gone.**
-- **[LOW/injection] Backslash URL bypasses the preview filter.** icefall-web:
-  `previewProtocol.ts:177` — a draft `gallery: ['/\\evil.com/x.gif']` is not
-  `//`-prefixed so it passes the guard and resolves to `http://evil.com/...` in the
-  dev preview. Fix: `new URL(s, location.origin)` and require same-origin. Dev-only
-  today. **OWNER: was Session 02 (icefall-web), now gone.**
+- ~~**[LOW/injection] Backslash URL bypasses the preview filter.**~~ icefall-web
+  `previewProtocol.ts` — **DONE 2026-08-31, Session 02 (not gone; same session).**
+  Reproduced first: `/\evil.com/x.gif` passed the old `startsWith("//")` guard and
+  resolved to `http://evil.com/x.gif`, because browsers treat `\` as `/` when
+  resolving. Fixed by parsing with `new URL(s, location.origin)` and judging the
+  RESULT — https absolute, or same-origin — rather than pattern-matching the input,
+  and by returning the parsed path so the trick is normalised away rather than one
+  spelling refused. Verified across nine cases: the bypass, protocol-relative,
+  http, `javascript:`, `data:` all rejected; app-relative, absolute https,
+  same-origin http and query strings all still work.
+  **The general lesson: a URL guard written as string prefixes is guessing at what
+  a browser will do with the string. Ask the parser.**
 
 ### Refuted on verify (recorded so they are not re-raised)
 - Events/Expeditions ungated scarcity counters — code claim TRUE but a plain
@@ -175,3 +261,24 @@ Six-lens adversarial sweep, every finding re-checked by an independent skeptic
   controls are disabled, so nobody is misled. Build-hygiene nit, not deception.
 - `LivePreview.tsx:145` misreads the `preview:rejected` shape — real, but the web
   side never emits that message on this path, so unreachable today.
+
+### The displacement audit generalises past the screen you noticed (05 guide, 2026-08-31)
+Fixing Home and Profile to respect the session felt like finishing the job. It
+was not: **twelve more screens still read the invented data**, so the app told
+the truth on one tab and contradicted itself on the next. The lesson is the
+audit itself — when a capability lands (a session, a real rate, a server), the
+question is not "which screen looks wrong" but **"who reads this now?"**, asked
+against the full list of readers.
+
+Three of the readers were ones no screen-by-screen sweep would catch:
+- a `localStorage` store, because saved data looks like the user's own and
+  therefore like the thing that should survive — but it was seeded from the
+  sample and would have re-supplied it after the gate;
+- a `useState` initialiser, which is a **snapshot of revocable data** — correct
+  when written, frozen the moment the data may be withdrawn;
+- a **tab-bar count**, still promising six unread messages after every screen was
+  clean. A badge is a reader.
+
+Worth other sessions' time: any app with seeded demo data and a login has this
+shape. Gate at one point, fail closed while the session is unknown, and check
+stores, initialisers and counts — not just screens.

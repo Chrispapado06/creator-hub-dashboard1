@@ -1,4 +1,5 @@
 import { PHOTOS_TIMEOUT_MS, withTimeout } from "@/lib/netTimeout";
+import { OFFLINE } from "@/offline/offline";
 import { haversine } from "@/tracking/filters";
 
 /**
@@ -145,6 +146,10 @@ export function photosNear(
   { radiusM = 10_000, limit = 6 }: { radiusM?: number; limit?: number } = {},
   signal?: AbortSignal,
 ): Promise<PlacePhoto[]> {
+  // Commons geosearch, or nothing. Empty is already this module's documented
+  // answer for a place nobody has photographed, and every caller handles it.
+  if (OFFLINE) return Promise.resolve([]);
+
   const key = keyFor(lat, lon, radiusM);
   if (key in cache) return Promise.resolve(cache[key].slice(0, limit));
   const existing = inflight.get(key);
@@ -395,6 +400,8 @@ export function photosOfNamed(
   names: string[],
   { near, signal }: { near?: { lat: number; lon: number }; signal?: AbortSignal } = {},
 ): Promise<PlacePhoto[]> {
+  if (OFFLINE) return Promise.resolve([]);
+
   const key = [names.filter(Boolean).join("|"), near ? `@${near.lat.toFixed(2)},${near.lon.toFixed(2)}` : ""].join("");
   if (!key) return Promise.resolve([]);
   const existing = namedCache.get(key);

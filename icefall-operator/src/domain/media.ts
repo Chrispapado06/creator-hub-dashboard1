@@ -32,7 +32,17 @@ import type { MediaKind } from "./types";
  */
 export const MEDIA_RULES: Record<
   MediaKind,
-  { mimeTypes: readonly string[]; maxBytes: number; minWidthPx?: number; minHeightPx?: number }
+  {
+    mimeTypes: readonly string[];
+    maxBytes: number;
+    minWidthPx?: number;
+    minHeightPx?: number;
+    /**
+     * The furthest from square a mark may be, longer side ÷ shorter side.
+     * Only set for `logo`; see the note on that entry.
+     */
+    maxAspectRatio?: number;
+  }
 > = {
   image: {
     mimeTypes: ["image/jpeg", "image/png", "image/webp", "image/avif"],
@@ -43,6 +53,50 @@ export const MEDIA_RULES: Record<
     minWidthPx: 1200,
     minHeightPx: 800,
   },
+  /**
+   * A COMPANY MARK, WHICH IS NOT A PHOTOGRAPH.
+   *
+   * This kind exists because `image`'s rules are wrong for a logo in all three
+   * dimensions, and applying them would have refused ordinary, correct files.
+   *
+   * NO `image/svg+xml`, AND THAT IS THE SECURITY DECISION, NOT A GAP. An SVG is
+   * a script-carrying document — it can hold `<script>`, event handlers and
+   * external references, and it executes when served same-origin. An operator
+   * upload is UNTRUSTED INPUT: it arrives from outside ICEFALL and is then shown
+   * to climbers on ICEFALL's own pages. `icefall-web` bundles `.svg` marks for
+   * its own seed companies, but those are build-time content the team wrote;
+   * they are not a precedent for accepting one over a form. AVIF is out too, for
+   * a duller reason: a mark gains nothing from it and PNG/WebP are universal.
+   */
+  logo: {
+    mimeTypes: ["image/png", "image/webp", "image/jpeg"],
+    // 2 MB. A mark is flat colour and small; the photograph's 12 MB ceiling is
+    // sized for a 6000px camera file and would wave through an unexported
+    // master that then has to be rejected by a human.
+    maxBytes: 2 * 1024 * 1024,
+    /**
+     * 256, and the number is reasoned rather than round.
+     *
+     * The largest slot a logo lands in today is the 64 CSS px tile on the
+     * company profile. At a 3× device pixel ratio that tile needs 192 real
+     * pixels, so 256 clears the biggest current use with headroom for a larger
+     * one later. It is also low enough that the ordinary square exports
+     * operators actually have — 256, 320, 512 — pass untouched, which the
+     * photograph's 1200×800 floor would not.
+     */
+    minWidthPx: 256,
+    minHeightPx: 256,
+    /**
+     * 2, so a horizontal wordmark is fine and a banner is not.
+     *
+     * The logo is drawn in a small, roughly square slot above the company name
+     * on every trip. A 6:1 strip put in that slot is either squashed or shrunk
+     * to an illegible sliver — neither is the operator's design, and both look
+     * like ICEFALL broke their brand. 2:1 accepts the common
+     * mark-beside-wordmark lockup and refuses the letterhead.
+     */
+    maxAspectRatio: 2,
+  },
   video: { mimeTypes: ["video/mp4", "video/webm"], maxBytes: 200 * 1024 * 1024 },
   document: {
     mimeTypes: ["application/pdf", "image/jpeg", "image/png"],
@@ -52,6 +106,7 @@ export const MEDIA_RULES: Record<
 
 const KIND_LABEL: Record<MediaKind, string> = {
   image: "photograph",
+  logo: "logo",
   video: "video",
   document: "document",
 };
@@ -119,7 +174,12 @@ export interface CandidateFile {
 export interface MediaProblem {
   /** Rendered to the operator as-is. Says what is wrong AND what to do. */
   message: string;
-  field: "type" | "size" | "dimensions" | "name";
+  /**
+   * `aspect` is its own field rather than a second `dimensions` problem so that
+   * a file which is both too small AND too wide reports both lines, each with
+   * its own key, instead of one silently overwriting the other.
+   */
+  field: "type" | "size" | "dimensions" | "aspect" | "name";
 }
 
 const mb = (bytes: number) => `${Math.round(bytes / (1024 * 1024))} MB`;
@@ -136,11 +196,19 @@ export function validateFile(kind: MediaKind, file: CandidateFile): MediaProblem
 
   if (!rules.mimeTypes.includes(file.mimeType)) {
     const accepted = rules.mimeTypes.map((m) => m.split("/")[1].toUpperCase()).join(", ");
+    // The SVG sentence is separate because "not an accepted type" reads as an
+    // oversight to someone holding the file every design tool exports by
+    // default. Saying it will not be accepted, and giving the export that will,
+    // is the difference between a refusal and a support email.
+    const svgSentence =
+      kind === "logo"
+        ? `Icefall cannot accept an SVG logo — an uploaded SVG can carry scripts, so it is refused rather than published. Export the same mark as a PNG or WebP at ${rules.minWidthPx} px or more on its shortest side.`
+        : "SVG cannot be used for a listing image. Export it as a PNG or WebP at 1200 px wide or more.";
     problems.push({
       field: "type",
       message:
         file.mimeType === "image/svg+xml"
-          ? "SVG cannot be used for a listing image. Export it as a PNG or WebP at 1200 px wide or more."
+          ? svgSentence
           : `That is not a file type Icefall can publish as a ${KIND_LABEL[kind]}. Accepted: ${accepted}.`,
     });
   }
@@ -154,15 +222,33 @@ export function validateFile(kind: MediaKind, file: CandidateFile): MediaProblem
     });
   }
 
-  // Dimensions are only knowable for an image, and only checked when the caller
-  // has actually measured them. An unmeasured image is not a failed one.
-  if (kind === "image" && rules.minWidthPx && rules.minHeightPx) {
-    const w = file.widthPx ?? null;
-    const h = file.heightPx ?? null;
-    if (w !== null && h !== null && (w < rules.minWidthPx || h < rules.minHeightPx)) {
+  // Dimensions are only knowable for a raster image, and only checked when the
+  // caller has actually measured them. An unmeasured image is not a failed one.
+  const w = file.widthPx ?? null;
+  const h = file.heightPx ?? null;
+  const measured = w !== null && h !== null && w > 0 && h > 0;
+
+  if ((kind === "image" || kind === "logo") && rules.minWidthPx && rules.minHeightPx) {
+    if (measured && (w < rules.minWidthPx || h < rules.minHeightPx)) {
       problems.push({
         field: "dimensions",
-        message: `That image is ${w}×${h}. Listing photographs need to be at least ${rules.minWidthPx}×${rules.minHeightPx} — smaller ones look soft on a phone.`,
+        message:
+          kind === "logo"
+            ? `That logo is ${w}×${h}. A mark needs to be at least ${rules.minWidthPx}×${rules.minHeightPx} — below that it blurs on a high-resolution screen. Export it again at a larger size; it does not need to be redrawn.`
+            : `That image is ${w}×${h}. Listing photographs need to be at least ${rules.minWidthPx}×${rules.minHeightPx} — smaller ones look soft on a phone.`,
+      });
+    }
+  }
+
+  // Shape, reported ALONGSIDE the other problems rather than instead of them.
+  // A wordmark is a legitimate logo, so this is not "wrong file" — it says what
+  // the slot is and what will happen, in a sentence the operator can act on.
+  if (rules.maxAspectRatio && measured) {
+    const ratio = Math.max(w, h) / Math.min(w, h);
+    if (ratio > rules.maxAspectRatio) {
+      problems.push({
+        field: "aspect",
+        message: `That mark is ${w}×${h}, about ${ratio.toFixed(1)}:1. Your logo is shown in a small, roughly square slot above your company name, and a shape that long is squashed or shrunk to a sliver there. Send a squarer lockup — up to ${rules.maxAspectRatio}:1 — or leave this empty and climbers see your initials.`,
       });
     }
   }

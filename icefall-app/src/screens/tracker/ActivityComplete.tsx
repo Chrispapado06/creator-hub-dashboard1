@@ -10,7 +10,10 @@ import { detectAchievements, detectRecords } from "@/tracking/records";
 import { activityById } from "@/tracking/activities";
 
 /**
- * Screens 06–08 — completion, ICEFALL Points, achievement.
+ * Screens 06–08 — completion and achievement.
+ *
+ * ICEFALL points were removed from this screen (PH-05) and from the product
+ * (PH-01). Nothing here reads `points_awarded`.
  *
  * Staged rather than dumped: the athlete gets the result, then the reward, then
  * the option to look deeper. The animation is restrained on purpose — a luxury
@@ -44,8 +47,6 @@ export default function ActivityComplete() {
     };
   }, [activity, all]);
 
-  const points = activity?.points_awarded ?? 0;
-  const [shown, setShown] = useState(0);
 
   // Staged reveal.
   useEffect(() => {
@@ -53,30 +54,9 @@ export default function ActivityComplete() {
     const timers = [
       setTimeout(() => setStage(1), reduce ? 0 : 900),
       setTimeout(() => setStage(2), reduce ? 0 : 2100),
-      setTimeout(() => setStage(3), reduce ? 0 : 3000),
     ];
     return () => timers.forEach(clearTimeout);
   }, [activity, reduce]);
-
-  // Count-up on the points figure.
-  useEffect(() => {
-    if (stage < 1 || !points) return;
-    if (reduce) {
-      setShown(points);
-      return;
-    }
-    const duration = 1100;
-    const t0 = performance.now();
-    let raf = 0;
-    const tick = (t: number) => {
-      const p = Math.min(1, (t - t0) / duration);
-      const eased = 1 - Math.pow(1 - p, 3);
-      setShown(Math.round(points * eased));
-      if (p < 1) raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [stage, points, reduce]);
 
   if (!activity) return <Navigate to="/activity" replace />;
 
@@ -178,23 +158,11 @@ export default function ActivityComplete() {
           </motion.div>
         )}
 
-        {/* Points */}
-        {stage >= 1 && (
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-            className="mt-10 w-full max-w-[320px]"
-          >
-            <Card className="border-azure/25 bg-azure/[0.05]">
-              <p className="section-label text-azure/80">You earned</p>
-              <div className="tnum mt-2 text-[42px] font-extralight leading-none text-azure">
-                +{shown.toLocaleString("en-GB")}
-              </div>
-              <p className="section-label mt-3">ICEFALL points</p>
-            </Card>
-          </motion.div>
-        )}
+        {/* PH-05: the ICEFALL points card is gone. It was the largest thing on
+            this screen — "You earned +N ICEFALL points", counted up in azure.
+            The owner is removing points from the system, not hiding the badge,
+            so the count-up animation and the `points_awarded` read went with
+            it rather than being left computing a number nobody sees. */}
 
         {/* Achievement */}
         {stage >= 2 && achievement && (
@@ -246,36 +214,12 @@ export default function ActivityComplete() {
           </motion.div>
         )}
 
-        {/* Points breakdown — the ceiling is never a mystery */}
-        {stage >= 3 && activity.pointsBreakdown && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.5 }}
-            className="mt-6 w-full max-w-[320px]"
-          >
-            <Card inset={false}>
-              <div className="px-4">
-                {activity.pointsBreakdown.map((b) => (
-                  <div
-                    key={b.label}
-                    className="flex items-baseline justify-between gap-3 border-b border-hairline py-2.5 text-[12px] last:border-0"
-                  >
-                    <span className="text-mist-dim">
-                      {b.label}
-                      {b.note && <span className="ml-1.5 text-alert/70">{b.note}</span>}
-                    </span>
-                    <span className="tnum text-snow">+{b.points}</span>
-                  </div>
-                ))}
-              </div>
-            </Card>
-            <Disclaimer className="mt-4 text-left">
-              Points reward consistency and vertical, and are capped so there is never a reason to
-              stay out longer than is safe.
-            </Disclaimer>
-          </motion.div>
-        )}
+        {/* PH-01 — the points breakdown table and its "capped so there is
+            never a reason to stay out longer than is safe" note are gone with
+            the rest of the points system. Stage 3 existed ONLY to unveil this
+            card, so its timer went too: stage 1 is the metrics, stage 2 the
+            achievement and records, and there is no third act. */}
+
       </div>
 
       <div

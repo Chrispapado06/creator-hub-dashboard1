@@ -14,7 +14,7 @@ import {
   Mountain as MountainIcon,
   MountainSnow,
   Pickaxe,
-  Send,
+  ArrowRight,
   Share,
   ShieldQuestion,
   Snowflake,
@@ -147,12 +147,22 @@ const PORTRAIT_IS_GENERATED =
 const CONTACT_NOTE =
   "Guides are contacted through ICEFALL. No personal phone number, private email address or home address is held or shown here — and an arrangement moved off ICEFALL leaves you with no record of what was agreed.";
 
-type ProfileTab = "about" | "experience" | "reviews" | "availability";
+/**
+ * The four tabs `phone-4.png` draws: Overview, Experience, Certification,
+ * Availability.
+ *
+ * The drawing has no Reviews tab, and it is right not to: there are no reviews,
+ * because a review needs a completed ICEFALL booking and none exists. What the
+ * tab held — the reason there is no rating — moves into Overview, where someone
+ * who never opens a tab still meets it. Nothing was deleted; a tab that could
+ * only ever say "nothing here" stopped being a tab.
+ */
+type ProfileTab = "overview" | "experience" | "certification" | "availability";
 
 const TABS: readonly { value: ProfileTab; label: string }[] = [
-  { value: "about", label: "About" },
+  { value: "overview", label: "Overview" },
   { value: "experience", label: "Experience" },
-  { value: "reviews", label: "Reviews" },
+  { value: "certification", label: "Certification" },
   { value: "availability", label: "Availability" },
 ];
 
@@ -186,7 +196,7 @@ export default function GuideProfile() {
   const { isBlocked, block, unblock, reportsFor } = useGuideModeration();
   const { isShortlisted, toggleShortlist } = useGuideStore();
 
-  const [tab, setTab] = useState<ProfileTab>("about");
+  const [tab, setTab] = useState<ProfileTab>("overview");
 
   const guide = id ? guideById(id) : undefined;
   const athleteExperience = experienceFromAppLevel(user.experience);
@@ -397,7 +407,7 @@ export default function GuideProfile() {
         </Rise>
 
         <Rise className="pt-5">
-          {tab === "about" && <AboutTab guide={guide} />}
+          {tab === "overview" && <AboutTab guide={guide} />}
           {tab === "experience" && (
             <ExperienceTab
               guide={guide}
@@ -405,7 +415,7 @@ export default function GuideProfile() {
               athleteStanding={EXPERIENCE_LABELS[athleteExperience].toLowerCase()}
             />
           )}
-          {tab === "reviews" && <ReviewsTab guide={guide} />}
+          {tab === "certification" && <CertificationTab guide={guide} />}
           {tab === "availability" && <AvailabilityTab guide={guide} />}
         </Rise>
 
@@ -436,19 +446,26 @@ export default function GuideProfile() {
         </Rise>
       </Stagger>
 
-      {/* ---- Sticky footer: rate left, the one azure action right ------------ */}
-      <div className="sticky bottom-0 -mx-5 mt-8 flex items-center gap-4 border-t border-hairline bg-obsidian/95 px-5 pb-4 pt-3 backdrop-blur">
-        <div className="min-w-0">
+      {/* ---- Sticky footer -------------------------------------------------
+          `phone-4.png` ends on one full-width azure control reading "Enquire
+          with Luca" — the guide's first name, because that is who you are
+          writing to. The rate and its qualifier keep their line above it: the
+          drawing has no rate at the foot, but it also has no screen where the
+          day rate could otherwise be missed, and a price is the thing an
+          athlete must not have to hunt for. -------------------------------- */}
+      <div className="sticky bottom-0 -mx-5 mt-8 border-t border-hairline bg-obsidian/95 px-5 pb-4 pt-3 backdrop-blur">
+        <div className="flex items-baseline gap-3">
           <GuideRateBadge guide={guide} />
-          <p className="mt-1 text-[10px] leading-tight text-mist-dim">
+          <p className="min-w-0 flex-1 text-right text-[10px] leading-tight text-mist-dim">
             Their figure. Permits, huts and travel on top
             {guide.demo ? ", and invented on a demo guide" : ""}.
           </p>
         </div>
-        <Button asChild className="ml-auto shrink-0">
+
+        <Button asChild size="lg" className="mt-3 w-full">
           <Link to={requestHref}>
-            <Send size={15} strokeWidth={1.8} />
-            Request
+            Enquire with {guide.name.split(" ")[0]}
+            <ArrowRight size={16} strokeWidth={1.8} className="ml-auto" />
           </Link>
         </Button>
       </div>
@@ -581,8 +598,11 @@ function AboutTab({ guide }: { guide: Guide }) {
         </p>
       </div>
 
+      {/* `phone-4.png` heads this "MOUNTAINS & ROUTES". The routes are the part
+          an athlete is actually choosing between, and naming only the mountain
+          hides them. */}
       <div>
-        <SectionLabel>Mountains</SectionLabel>
+        <SectionLabel>Mountains &amp; routes</SectionLabel>
         <MountainChips guide={guide} className="mt-3" />
       </div>
 
@@ -591,12 +611,47 @@ function AboutTab({ guide }: { guide: Guide }) {
         <LanguagesChips guide={guide} className="mt-3" />
       </div>
 
+      {/* The Reviews tab's content, moved here when the drawing's tab set
+          replaced that tab. Called as the component, NOT copied as its
+          no-rating branch: the first attempt inlined only the empty state, so a
+          demo guide who does have an invented rating would have been told
+          flatly "No rating" on the same screen that showed one. The component
+          knows which of the two cases it is in; a copy of one of them does not. */}
       <div>
-        <SectionLabel>Qualifications</SectionLabel>
-        <Card className="mt-3">
-          <Credentials guide={guide} />
-        </Card>
+        <SectionLabel>Rating</SectionLabel>
+        <div className="mt-3">
+          <ReviewsTab guide={guide} />
+        </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The Certification tab `phone-4.png` draws.
+ *
+ * The drawing puts the IFMGA roundel in it at 150px and captions the card
+ * *"Documents checked by ICEFALL on 31 May 2026."* Neither ships:
+ *
+ *  - **No federation roundel.** A federation's mark on a guide's page reads as
+ *    that federation endorsing this listing. They have endorsed nothing, and
+ *    the mark is theirs, not ours to place.
+ *  - **No checked date.** ICEFALL has not seen anybody's documents. The status
+ *    word beside every credential is whatever `credentialStatus` returns, which
+ *    is "Claimed" for every guide in this build — and the day a registry check
+ *    exists, it is that function that changes, not this card.
+ *
+ * Both were settled before the mockups arrived and both outrank them.
+ */
+function CertificationTab({ guide }: { guide: Guide }) {
+  return (
+    <div className="space-y-6">
+      <Card>
+        <SectionLabel>Qualifications</SectionLabel>
+        <div className="mt-3">
+          <Credentials guide={guide} />
+        </div>
+      </Card>
     </div>
   );
 }
