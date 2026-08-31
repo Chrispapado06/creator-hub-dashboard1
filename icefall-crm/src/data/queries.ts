@@ -785,18 +785,28 @@ export const listCompanyPosts = (companyId: string) =>
 
 export const createPromotion = async (p: {
   companyId: string; postId: string | null; productId: string | null;
-  goals: string[]; startsOn: string; endsOn: string;
+  audienceMode: "targeted" | "general"; countries: string[];
+  dailyBudgetCents: number; creativePath: string | null;
+  startsOn: string; endsOn: string;
 }): Promise<Result<null>> => {
   if (!isConfigured || !supabase) return unavailable<null>(NOT_CONFIGURED);
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) return failed<null>("Not signed in.");
   const { error } = await supabase.from("promoted_placements").insert({
     company_id: p.companyId, post_id: p.postId, product_id: p.productId,
-    declared_goals: p.goals, starts_on: p.startsOn, ends_on: p.endsOn,
+    audience_mode: p.audienceMode, countries: p.countries,
+    daily_budget_cents: p.dailyBudgetCents, creative_path: p.creativePath,
+    starts_on: p.startsOn, ends_on: p.endsOn,
     created_by: auth.user.id, // policy pins this to the caller
   });
   return error ? failed<null>(error.message) : ok(null);
 };
+
+/** The audience arithmetic's raw facts: every profile's role and stated
+ * country. Counted client-side so the reach number is exactly the rows. */
+export const listAudienceFacts = () =>
+  read<{ role: string; country_code: string | null }[]>((db) =>
+    db.from("profiles").select("role, country_code"));
 
 export const setPromotionStatus = async (
   id: string,

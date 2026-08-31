@@ -569,6 +569,14 @@ export interface PromotedPlacement {
   post_id: string | null;
   product_id: string | null;
   declared_goals: string[];
+  /** targeted = goals naming the promoted thing; general = everyone non-premium. */
+  audience_mode: "targeted" | "general";
+  /** ISO-3166 alpha-2 focus countries; empty = worldwide. */
+  countries: string[];
+  /** Integer cents; the campaign total is days × daily, derived where shown. */
+  daily_budget_cents: number | null;
+  /** Destination photo path or the promoted post's own media. */
+  creative_path: string | null;
   starts_on: string;
   ends_on: string;
   status: "draft" | "active" | "ended" | "suspended";

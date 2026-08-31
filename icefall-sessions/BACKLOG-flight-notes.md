@@ -2031,10 +2031,19 @@ were the account's real state.
      session branches' `identity={false}`) so the displacement list for this
      push is already written where the change happens. Sample branches keep
      deriving from the sample; only the session branches bind.
-  3. **`20260831140000` messaging** — GU-03b wiring (offer send + chat reply),
-     via `send_message` with a stored `client_id` for offline idempotency,
-     `mark_thread_read` on thread open. Reply-only per decision 19 — the
-     compose affordance is already gone.
+  3. **`20260831140000` messaging + `20260831200000` offers** — GU-03b wiring
+     (offer send + chat reply), via `send_message` with a stored `client_id`
+     for offline idempotency, `mark_thread_read` on thread open. Reply-only
+     per decision 19 — the compose affordance is already gone. The offers
+     migration (landed in the queue 2026-08-31, `e2e1cf9`) settles the send
+     shape: `quote` is **the money model's Quote verbatim as jsonb** — my
+     screen's local Quote object IS the payload, nothing renormalised — with
+     `seller_kind='guide'`, expiry derived from `valid_until`, amendment =
+     new offer + `supersedes`, and commission structural through the one
+     shared model (no second arithmetic; the title's "two models" is
+     guide-deducts vs company-none). PGRST201 note for this step: `offers`
+     carries TWO profiles FKs (`sender_id`, `recipient_id`) — any profiles
+     embed from offers must name its FK from birth.
 
   **One thing the migration changed in this app before any wiring:** decision 19
   — a guide or operator may REPLY, never OPEN — is now enforced in the INSERT

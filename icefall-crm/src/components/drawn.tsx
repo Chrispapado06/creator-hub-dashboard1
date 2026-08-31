@@ -15,16 +15,20 @@ export const GOLD = "#C79049";
 export const GOLD_HOVER = "#B27F3D";
 
 /** The drawings' primary action: a gold pill (same constant as SignIn). */
-export function GoldButton({ children, className }: { children: React.ReactNode; className?: string }) {
+export function GoldButton({ children, className, onClick, disabled }: {
+  children: React.ReactNode; className?: string; onClick?: () => void; disabled?: boolean;
+}) {
   return (
     <button
       type="button"
+      onClick={onClick}
+      disabled={disabled}
       className={cn(
-        "inline-flex h-10 items-center justify-center gap-2 rounded-[10px] px-4 text-[13px] font-semibold text-white transition-colors",
+        "inline-flex h-10 items-center justify-center gap-2 rounded-[10px] px-4 text-[13px] font-semibold text-white transition-colors disabled:opacity-40",
         className,
       )}
       style={{ background: GOLD }}
-      onMouseOver={(e) => (e.currentTarget.style.background = GOLD_HOVER)}
+      onMouseOver={(e) => { if (!disabled) e.currentTarget.style.background = GOLD_HOVER; }}
       onMouseOut={(e) => (e.currentTarget.style.background = GOLD)}
     >
       {children}

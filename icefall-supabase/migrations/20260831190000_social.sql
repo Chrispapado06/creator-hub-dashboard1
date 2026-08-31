@@ -121,6 +121,21 @@ create table if not exists public.promoted_placements (
   product_id uuid references public.products (id) on delete cascade,
   -- Audience by their own declared objectives; empty = everyone (non-premium).
   declared_goals text[] not null default '{}',
+  -- TARGETED = people whose declared goals name the promoted mountain/trek;
+  -- GENERAL = everyone (non-premium). The reading apps apply the rule against
+  -- the goals they hold; a server-side reach count for targeted mode waits on
+  -- goals syncing to the server, and no screen may invent one meanwhile.
+  audience_mode text not null default 'general'
+    check (audience_mode in ('targeted', 'general')),
+  -- Focus countries, ISO-3166 alpha-2, empty = worldwide. Matched against
+  -- profiles.country_code, which people set themselves.
+  countries text[] not null default '{}',
+  -- What the campaign spends per day, integer cents (the money rule). The
+  -- campaign's total is days × daily — DERIVED where displayed, never stored.
+  daily_budget_cents int check (daily_budget_cents is null or daily_budget_cents > 0),
+  -- The image the promotion shows: a destination photo path or the promoted
+  -- post's own media. A reference, not an upload — media lives in storage.
+  creative_path text,
   starts_on date not null,
   ends_on date not null,
   status text not null default 'draft'
