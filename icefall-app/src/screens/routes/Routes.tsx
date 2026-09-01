@@ -360,6 +360,7 @@ function WhereSheet({
   const [searching, setSearching] = useState(false);
   const [locating, setLocating] = useState(false);
   const [locateError, setLocateError] = useState<LocateError | null>(null);
+  const [searchFailed, setSearchFailed] = useState(false);
   const recents = useMemo(() => recentPlaces(), []);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -380,8 +381,20 @@ function WhereSheet({
     const ctrl = new AbortController();
     const t = setTimeout(() => {
       searchPlaces(q, ctrl.signal)
-        .then((r) => { if (!ctrl.signal.aborted) { setResults(r); setSearching(false); } })
-        .catch(() => setSearching(false));
+        .then((r) => {
+          if (ctrl.signal.aborted) return;
+          setResults(r);
+          setSearchFailed(false);
+          setSearching(false);
+        })
+        .catch(() => {
+          if (ctrl.signal.aborted) return;
+          // The lookup could not be made. Distinct from finding nothing, and
+          // the empty state below says which — see `searchFailed`.
+          setResults([]);
+          setSearchFailed(true);
+          setSearching(false);
+        });
     }, 250);
     return () => { clearTimeout(t); ctrl.abort(); };
   }, [query]);
@@ -442,10 +455,22 @@ function WhereSheet({
         )}
       </div>
 
+      {/* Two different things, and they used to share one sentence. "Nothing
+          found" when the request never completed is the screen claiming a
+          search happened that did not. */}
       {query.trim().length >= 2 && !searching && results.length === 0 && (
         <p className="py-4 text-[12.5px] text-mist-dim">
-          Nothing found for “{query.trim()}”. This searches towns and cities — where you are,
-          not where you are going. Search for a mountain by name under MOUNTAINS.
+          {searchFailed ? (
+            <>
+              The place directory could not be reached, so nothing was searched. Check your
+              connection and try again — your recent places below still work.
+            </>
+          ) : (
+            <>
+              Nothing found for “{query.trim()}”. This searches towns and cities — where you are,
+              not where you are going. Search for a mountain by name under MOUNTAINS.
+            </>
+          )}
         </p>
       )}
 

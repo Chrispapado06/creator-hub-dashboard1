@@ -1757,6 +1757,87 @@ Also fixed the copy it left behind: the empty state read *"Add mountains from
 **Near me**"*, pointing at a tab that no longer exists — §6aa, the sentence
 explaining a thing outliving the thing.
 
+### `PH-39` "Imagery loading" that never resolved — **DONE** · session 01, 2026-09-01
+Reported from an Explore review: route plates captioned *"Contours — imagery
+loading"*, permanently.
+
+**The component could not tell "still arriving" from "never coming."**
+`TrailImage`'s tiles carried `onLoad` and **no `onError`**, so a tile that 404'd
+or was blocked incremented nothing. The caption's branches were: photo → photo
+caption; 2+ tiles → satellite credit; OFFLINE → needs-a-connection; **else →
+"imagery loading"**. That last branch was the only home for both "loading" and
+"failed", so a failure rendered as a promise and stayed there. A loading state
+with no terminal state is a lie with a spinner's manners (§6c).
+
+Now: failures are counted, the tile set is `settled` when every tile has come
+back one way or the other, and a settled-but-empty result captions **"Contours
+from elevation data — no imagery for this area"** — naming what the picture IS
+rather than what is supposedly coming.
+
+Also fixed while in there: **the counts never reset between trails.** `tilesReady`
+persisted across a change of `lat`/`lon`, so a second trail could inherit the
+first one's count and caption itself from imagery it had never loaded. Keyed on
+the tile set now.
+
+**Verified by forcing the failure**, not by waiting to see one: overrode the
+image `src` setter to redirect every Esri tile to a 404 and opened a trail —
+`stillPromisingLoading: false`, `terminalCaptionShown: true`. On an ordinary
+load imagery arrives and the caption reads the Esri credit, so both ends of the
+state machine are exercised.
+
+**NOT investigated, and not claimed:** the second half of the report — *"some
+countries don't show mountains when they have"*. That is a coverage or
+coordinate question in peak search, not the caption, and it would look identical
+from the card. Unstarted.
+
+**Untouched, as instructed:** the keyless Esri tier's non-commercial licence
+(`trailImagery.ts:84`) remains the owner's launch blocker. This change makes the
+existing dependency honest about failing; it does not widen it.
+
+### `PH-40` Place search — **DONE**, but the report's premise was wrong · session 01
+Reported: searching "vietnam" returned a Washington DC war memorial three times,
+a Hanoi TV studio, a newspaper office and the Vietnamese coast guard HQ.
+
+**Those results cannot come from this code.** `places.ts:213` already sends
+`osm_tag=place`, and has since the app's first commit. Queried the live API both
+ways to be sure: **without** the filter you get exactly the reported list,
+memorial and coast guard included; **with** it, none of them appear. Whatever was
+tested is an older build or a stale deployment. Reported rather than quietly
+"fixed", because a fix aimed at a cause that is not there would have looked
+successful and changed nothing.
+
+**Two real faults were reproducible under the current filter, and both are
+fixed:**
+
+1. **Fuzzy matches were presented as answers.** "vietnam" returned **Vienna**
+   (city) and **Viennay** — names that do not contain the query at all.
+   `matchTier` already scored them 0; **0 was never discarded**, so prominence
+   alone carried them in. Photon matching fuzzily is reasonable of it; showing
+   the fuzz as a result is not. Tier 0 is now dropped.
+2. **Nine of twelve rows were fragments of a settlement** — `neighbourhood`,
+   `quarter`, `isolated_dwelling`, arriving as "Locality" — real places named
+   Vietnam in Uganda, Cuba and the Philippines, and none of them an answer to
+   "where are you?". Now an ALLOW-LIST down to hamlet, plus a rule that the app
+   must be able to NAME a thing before offering it (an absent `kind` means no
+   label exists, and the row rendered blank or as bare coordinates).
+
+**Hamlets deliberately kept**, and the Chamonix check is why: it returns
+Chamonix-Mont-Blanc (Town) **and Les Praz de Chamonix (Hamlet)** — a real
+mountain base. Filtering to towns-and-larger would have looked tidier on the
+"vietnam" case and lost genuine destinations.
+
+**Also fixed, and it is the honesty one:** a failed lookup returned `[]`, exactly
+like a successful search with no matches, so the screen said *"Nothing found for
+X"* when **nobody had looked**. `searchPlaces` now throws `PlaceSearchError`, an
+abort still returns `[]` (the caller cancelled it), and the empty state says
+which of the two happened.
+
+Dedupe now keys on the OSM element id where there is one — the name+region key
+missed one element returned twice under different tags.
+
+**Verified live:** "vietnam" → 6 rows, country first, no Vienna, no localities.
+"chamonix" → town and hamlet both present.
+
 #### Still to build from the mockups
 Find a Guide's inline availability calendar and selector rows; Request Guide's
 price breakdown; the guide profile's four tabs; the Plan screen's session

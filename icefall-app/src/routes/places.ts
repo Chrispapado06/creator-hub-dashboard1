@@ -158,6 +158,34 @@ const KIND_LABEL: Record<string, string> = {
   hamlet: "Hamlet",
 };
 
+/**
+ * Places a climber could plausibly BE — the answer to "where are you?".
+ *
+ * Settlements and areas, down to a hamlet, because mountain bases genuinely are
+ * hamlets. Below that are fragments OF a settlement — `locality`, `quarter`,
+ * `neighbourhood`, `suburb`, `isolated_dwelling` — and they were the bulk of
+ * what this search returned: nine of ten rows for "vietnam" were tiny districts
+ * in Uganda, Cuba and the Philippines that happen to carry the name. Real
+ * places, honestly reported, and none of them an answer to the question asked.
+ *
+ * An allow-list rather than a deny-list: an unfamiliar `osm_value` should be
+ * left out and noticed, not let in and rendered with no label.
+ */
+const SEARCHABLE_PLACES = new Set([
+  "country",
+  "state",
+  "region",
+  "province",
+  "island",
+  "archipelago",
+  "county",
+  "city",
+  "municipality",
+  "town",
+  "village",
+  "hamlet",
+]);
+
 const rankOf = (p: Record<string, string>) =>
   PLACE_RANK[p.osm_value ?? ""] ?? PLACE_RANK[p.type ?? ""] ?? 1;
 
@@ -213,7 +241,8 @@ export async function searchPlaces(query: string, signal?: AbortSignal): Promise
   const url = `${PHOTON}?q=${encodeURIComponent(q)}&limit=20&lang=en&osm_tag=place`;
   try {
     const res = await fetch(url, { signal: withTimeout(PEAKS_TIMEOUT_MS, signal) });
-    if (!res.ok) return [];
+    // Thrown, not swallowed into an empty array — see the note on the catch.
+    if (!res.ok) throw new Error(`photon ${res.status}`);
     const json = (await res.json()) as { features?: PhotonFeature[] };
 
     const wanted = q.toLowerCase();
@@ -224,8 +253,45 @@ export async function searchPlaces(query: string, signal?: AbortSignal): Promise
       const props = f.properties ?? {};
       const place = toPlace(f);
       if (!place) return;
-      // The same town arrives as a node and an area; one row each is plenty.
-      const key = `${place.name}|${place.region}`;
+
+      /*
+       * A result whose NAME does not contain what was typed is not a result.
+       *
+       * `matchTier` already scores those 0, but 0 was never discarded — so
+       * prominence alone carried them in, and searching "vietnam" offered
+       * **Vienna** (city, rank 50) and **Viennay**. Photon is matching fuzzily
+       * and that is reasonable of it; presenting the fuzz as an answer is not.
+       * Verified against the live API before and after.
+       */
+      if (matchTier(place.name, wanted) === 0) return;
+
+      /*
+       * Only places this app can NAME.
+       *
+       * `kind` comes from `KIND_LABEL`, so an absent kind means the app has no
+       * word for what it is about to offer — and the row renders with a blank
+       * subtitle or bare coordinates. Those are exactly the sub-settlement
+       * fragments that filled this search: `neighbourhood`, `quarter`,
+       * `isolated_dwelling`. Nine of twelve results for "vietnam" were these.
+       *
+       * Structural rather than a deny-list: if we cannot say what a thing is,
+       * we do not put it in front of somebody choosing where they are — and
+       * anything new Photon starts returning is covered by the same rule.
+       */
+      if (!place.kind) return;
+
+      // And a place-type that answers "where are you?" — see SEARCHABLE_PLACES.
+      const value = props.osm_value ?? props.type ?? "";
+      if (!SEARCHABLE_PLACES.has(value)) return;
+
+      /*
+       * Dedupe on the OSM element as well as the label.
+       *
+       * The name+region key misses the case where one element comes back twice
+       * under different tags — same way, same id, two rows. The id is the thing
+       * that is actually the same.
+       */
+      const key = place.osmId ? `osm:${place.osmType}${place.osmId}` : `${place.name}|${place.region}`;
       if (seen.has(key)) return;
       seen.add(key);
 
@@ -236,10 +302,23 @@ export async function searchPlaces(query: string, signal?: AbortSignal): Promise
       .sort((a, b) => b.score - a.score || a.order - b.order)
       .slice(0, 10)
       .map((x) => x.place);
-  } catch {
-    // Offline, or Photon is down. The caller falls back to suggestions and
-    // recents, both of which work without a network.
-    return [];
+  } catch (err) {
+    /*
+     * A failed lookup is NOT an empty result, and returning `[]` for both made
+     * the screen say "Nothing found for X" when the truth was that nobody had
+     * looked. An abort is the exception: the caller cancelled it on the next
+     * keystroke, and there is nothing to report.
+     */
+    if (err instanceof DOMException && err.name === "AbortError") return [];
+    throw new PlaceSearchError();
+  }
+}
+
+/** The lookup could not be made — as distinct from finding nothing. */
+export class PlaceSearchError extends Error {
+  constructor() {
+    super("The place directory could not be reached");
+    this.name = "PlaceSearchError";
   }
 }
 

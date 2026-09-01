@@ -43,10 +43,32 @@ export function TrailImage({
   className?: string;
 }) {
   const [tilesReady, setTilesReady] = useState(0);
+  /*
+   * Failures, counted — which nothing did before.
+   *
+   * The tiles carried `onLoad` and no `onError`, so a tile that 404'd or was
+   * blocked incremented nothing and the component had no way to tell "still
+   * arriving" from "never coming". The caption's last branch therefore read
+   * "imagery loading" forever: a loading state with no terminal state is a
+   * promise the screen cannot keep.
+   */
+  const [tilesFailed, setTilesFailed] = useState(0);
   const [photo, setPhoto] = useState<TrailPhoto | null>(null);
   const [photoReady, setPhotoReady] = useState(false);
 
   const tiles = satelliteTiles(lat, lon);
+  /** Identity of the current tile set, so counts reset when the place changes. */
+  const tileKey = tiles.join("|");
+
+  // Without this a second trail inherits the first one's counts and can caption
+  // itself from imagery it never loaded.
+  useEffect(() => {
+    setTilesReady(0);
+    setTilesFailed(0);
+  }, [tileKey]);
+
+  /** Every tile has come back one way or the other. */
+  const tilesSettled = tiles.length > 0 && tilesReady + tilesFailed >= tiles.length;
 
   useEffect(() => {
     let live = true;
@@ -63,11 +85,18 @@ export function TrailImage({
     if (!onCaption) return;
     if (photo && photoReady) onCaption(photoCaption(name, photo));
     else if (tilesReady >= 2) onCaption(SATELLITE_CREDIT);
+    /*
+     * Every tile answered and too few arrived to show. This is the terminal
+     * state the caption used to lack: it names what the picture IS — lines
+     * derived from elevation — rather than promising a photograph that is not
+     * coming. "Loading" that never resolves is a lie with a spinner's manners.
+     */
+    else if (tilesSettled) onCaption("Contours from elevation data — no imagery for this area");
     // Offline the satellite layer will never arrive, so the caption must not
     // sit on "loading" forever pretending that it might.
     else if (OFFLINE) onCaption("Contours drawn on the device — imagery needs a connection");
     else onCaption("Contours — imagery loading");
-  }, [photo, photoReady, tilesReady, name, onCaption]);
+  }, [photo, photoReady, tilesReady, tilesSettled, name, onCaption]);
 
   useEffect(() => {
     onPhoto?.(photoReady ? photo : null);
@@ -105,6 +134,7 @@ export function TrailImage({
             loading="lazy"
             decoding="async"
             onLoad={() => setTilesReady((n) => n + 1)}
+            onError={() => setTilesFailed((n) => n + 1)}
             className="block h-full w-full"
           />
         ))}
