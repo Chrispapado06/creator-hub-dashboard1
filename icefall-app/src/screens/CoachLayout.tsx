@@ -1,5 +1,6 @@
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { SegmentedTabs } from "@/components/layout/chrome";
+import { useTabSwipe } from "@/hooks/useTabSwipe";
 
 const TABS = [
   { value: "/coach", label: "Chat" },
@@ -39,6 +40,19 @@ export default function CoachLayout() {
   const active = (TABS.find((t) => t.value === normalised)?.value ??
     "/coach") as (typeof TABS)[number]["value"];
 
+  /*
+   * The same hook Explore uses. `!isDetail` is already the layout's own test
+   * for "is the tab strip showing", and where there is no strip there is no tab
+   * set to swipe within — a session or the check-in must not slide sideways
+   * into Plan mid-task.
+   */
+  const swipe = useTabSwipe({
+    tabs: TABS.map((t) => t.value),
+    current: active,
+    enabled: !isDetail,
+    onNavigate: (v) => navigate(v),
+  });
+
   return (
     // When the tab strip is showing it clears the notch, so a nested `Screen`
     // must not clear it a second time. On a detail route there is no strip, so
@@ -60,7 +74,7 @@ export default function CoachLayout() {
       {/* Must be a flex column: `Screen` inside uses `flex-1 overflow-y-auto`,
           which does nothing under a block parent — the content grew to its full
           height and was clipped instead of scrolling. */}
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-0 flex-1 flex-col" {...swipe.bind}>
         <Outlet />
       </div>
     </div>

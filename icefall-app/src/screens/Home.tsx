@@ -6,7 +6,6 @@ import {
 } from "lucide-react";
 import { Button, Card, SectionLabel } from "@/components/ui/primitives";
 import { MiniBars } from "@/components/ui/charts";
-import { ScoreRing } from "@/components/coach/CoachUI";
 import { Rise, Screen, Stagger } from "@/components/layout/chrome";
 import { MountainThumb } from "@/components/domain/MountainImage";
 import { IcefallMark } from "@/components/ui/IcefallMark";
@@ -61,6 +60,73 @@ const SAFE_TOP = "var(--screen-safe-top, env(safe-area-inset-top, 0px))";
  *     deliberately empty until there is a backend, and an invented climbing
  *     partner is a hazard rather than a placeholder.
  */
+/* -------------------------------------------------------------------------- */
+/* The hero photograph, rotated daily                                         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Five mountain photographs, one per day.
+ *
+ * EVERY ONE IS CC0 OR PUBLIC DOMAIN, and that is a constraint rather than a
+ * coincidence. `public/img/CREDITS.md` is explicit: CC BY and CC BY-SA files
+ * "require the credit shown wherever the image is displayed publicly". A
+ * full-bleed hero has nowhere to carry a photographer credit without becoming
+ * clutter, so only attribution-free images may sit here.
+ *
+ * The image this replaces — `home-hero.jpg` — is CC BY-SA 4.0 by Maksym
+ * Karmazin and was being shown with no credit anywhere. It is left OUT rather
+ * than quietly kept. See the note filed against this change.
+ *
+ * `flip` is per-image because mirroring is a composition decision, not a
+ * global one: the old hero was flipped because its peak sat on the left, under
+ * the greeting. None of these five need it — their weight already falls right
+ * or spreads evenly — but the flag stays so the next photograph can say so for
+ * itself instead of inheriting someone else's answer.
+ *
+ * All five already ship in `public/img`, so the rotation adds no download and
+ * nothing new for the service worker to precache.
+ */
+const HERO_IMAGES: readonly { src: string; flip: boolean }[] = [
+  // 4 — Mount Rainier over meadow, Wonderland Trail. Public domain.
+  { src: "/img/treks/wonderland-trail.jpg", flip: false },
+  /*
+   * 5 — the Tetons across a lake. Free use, no credit required.
+   *
+   * 750x540, the smallest of the six: it is a trek card's photograph, sized
+   * for a card. At 2x it is about 1:1 in this slot and looks right; on a 3x
+   * phone it is upscaled ~1.5x and will be softer than its neighbours. Kept
+   * because it was chosen, and flagged rather than silently swapped.
+   */
+  { src: "/img/treks/teton-crest-trail.jpg", flip: false },
+  // 8 — Denali at alpenglow, peak right. Public domain.
+  { src: "/img/denali.jpg", flip: false },
+  // 9 — Eiger north face at blue hour, peak right. CC0.
+  { src: "/img/eiger.jpg", flip: false },
+  // 10 — the Andes from above. CC0.
+  { src: "/img/aconcagua.jpg", flip: false },
+  // 19 — Hehuanshan under stars, Taiwan. CC0.
+  { src: "/img/private-hero.jpg", flip: false },
+];
+
+/**
+ * Today's photograph, by the LOCAL calendar day.
+ *
+ * `Date.UTC` applied to the local year/month/date turns the day the athlete is
+ * actually living in into a stable ordinal. Using the raw timestamp instead
+ * would roll the picture over at UTC midnight — the middle of the evening in
+ * the Americas — which is the same class of bug as `f2cb54c`, and going through
+ * UTC deliberately here is what avoids it rather than causes it: no local
+ * midnight is skipped or repeated when the clocks change, because the ordinal
+ * is built from calendar fields, not from elapsed time.
+ */
+function heroForToday(now: Date = new Date()): { src: string; flip: boolean } {
+  const ordinal = Math.floor(
+    Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) / 86_400_000,
+  );
+  const n = HERO_IMAGES.length;
+  return HERO_IMAGES[((ordinal % n) + n) % n]!;
+}
+
 export default function Home() {
   const { user, toggleSession } =
     useApp();
@@ -138,6 +204,11 @@ export default function Home() {
      The list itself lives on `/mountain/:id/checklist`, which Home still links
      to from Mountain intelligence. */
 
+  // Recomputed each render rather than memoised: it is two arithmetic
+  // operations, and a value cached for the session would hold yesterday's
+  // picture for anyone who leaves the app open across midnight.
+  const hero = heroForToday();
+
   const readinessKnown =
     typeof intel.readiness.score.value === "number" &&
     Number.isFinite(intel.readiness.score.value);
@@ -155,24 +226,37 @@ export default function Home() {
             className="pointer-events-none absolute inset-x-0 top-0 h-[300px] overflow-hidden"
           >
             {/*
-              Mirrored. The photograph puts the Matterhorn on the LEFT, which
-              is exactly where the greeting and the athlete's name sit — the
-              peak ended up behind the type. Flipping moves it under the
-              readiness dial on the right, where the composition has room, and
-              costs nothing: it is scenery, not a map, so left-right carries no
-              meaning to mislead.
+              One of five, chosen by the calendar day — see `HERO_IMAGES`.
+
+              Mirroring is per-photograph. It costs nothing to flip one: this is
+              scenery, not a map, so left-right carries no meaning to mislead —
+              but it is only worth doing when a peak would otherwise sit under
+              the greeting, which is why the flag lives on the image.
             */}
             <img
-              src="/img/home-hero.jpg"
+              src={hero.src}
               alt=""
-              className="h-full w-full scale-x-[-1] object-cover"
+              className={cn("h-full w-full object-cover", hero.flip && "scale-x-[-1]")}
             />
             {/* Two scrims. The vertical one dissolves the picture into the
                 canvas rather than ending it on a hard edge; the horizontal one
                 holds the left third dark enough for the greeting to read over
-                cloud, which is the brightest thing this photograph does. */}
-            <div className="absolute inset-0 bg-gradient-to-b from-obsidian/80 via-obsidian/45 to-obsidian" />
-            <div className="absolute inset-0 bg-gradient-to-r from-obsidian/70 via-obsidian/25 to-transparent" />
+                cloud, which is the brightest thing these photographs do.
+
+                LIGHTENED at the owner's request — "why are the pictures soo
+                dark". They were 80% and 70% at their strongest, and because the
+                two multiply, the top-left corner was landing at about 94%
+                black: the photograph was almost entirely scrim there. Now 55%
+                and 55%, which multiplies to roughly 80% in that corner and
+                drops the middle of the picture from ~59% to ~40%.
+
+                They cannot go to nothing. The greeting is white type sitting
+                directly on the photograph, and these six include an aerial of
+                bright cloud — the scrim is what keeps a name readable over it.
+                The bottom stop stays fully opaque so the picture still
+                dissolves into the canvas behind the objective card. */}
+            <div className="absolute inset-0 bg-gradient-to-b from-obsidian/55 via-obsidian/20 to-obsidian" />
+            <div className="absolute inset-0 bg-gradient-to-r from-obsidian/55 via-obsidian/15 to-transparent" />
           </div>
 
           {/* ---- Top bar, transparent over the photograph ----------------- */}
@@ -225,13 +309,26 @@ export default function Home() {
           </header>
 
           {/* ---- Greeting and today's readiness ---------------------------- */}
-          <div className="relative flex items-start justify-between gap-4 px-5 pb-1 pt-6">
+          {/*
+            A soft shadow on the type instead of a heavier scrim on the picture.
+
+            Lightening the gradients let the photographs through, and the cost
+            landed on the dimmest line — the italic quote, which sits over the
+            brightest part of an aerial. Darkening the scrim again would have
+            undone the thing that was asked for. Shadowing only the text keeps
+            the mountain bright AND the words readable, and it costs nothing on
+            the dark photographs where it is invisible.
+          */}
+          <div
+            className="relative flex items-start justify-between gap-4 px-5 pb-1 pt-6"
+            style={{ textShadow: "0 1px 12px rgba(5,7,11,0.85), 0 1px 3px rgba(5,7,11,0.7)" }}
+          >
             <div className="min-w-0 flex-1">
               <p className="text-[15px] text-mist">{greeting()},</p>
               <h1 className="mt-1 truncate text-[38px] font-light leading-[1.05] tracking-[-0.03em] text-snow">
                 {firstName}
               </h1>
-              <p className="mt-3 max-w-[22ch] text-[13px] italic leading-[1.5] text-mist-dim">
+              <p className="mt-3 max-w-[22ch] text-[13px] italic leading-[1.5] text-mist">
                 "The mountain is not a destination, it's a way of life."
               </p>
             </div>
@@ -309,6 +406,19 @@ export default function Home() {
                     label="Readiness"
                   />
                 </div>
+
+                {/* The objective's weather, inside the objective's card. Needs a
+                    position to ask about, so it appears only when the mountain
+                    has coordinates and an elevation — never as an empty slot. */}
+                {elevationM !== null && lat !== undefined && lon !== undefined && (
+                  <ConditionsPanel
+                    name={goal.name}
+                    elevationM={elevationM}
+                    lat={lat}
+                    lon={lon}
+                    goalId={goal.id}
+                  />
+                )}
               </Card>
             ) : (
               <Card>
@@ -357,22 +467,9 @@ export default function Home() {
           </Rise>
         )}
 
-        {/* ---- Conditions at your destination -------------------------------
-            PH-06: moved to sit DIRECTLY under the current objective. The
-            forecast is the objective's forecast — it was three sections down,
-            under the plan and the week, so the mountain and its weather were
-            never on screen together. */}
-        {goal && elevationM !== null && lat !== undefined && lon !== undefined && (
-          <Rise className="pt-7">
-            <ConditionsPanel
-              name={goal.name}
-              elevationM={elevationM}
-              lat={lat}
-              lon={lon}
-              goalId={goal.id}
-            />
-          </Rise>
-        )}
+        {/* PH-06 moved the forecast to sit under the objective; it is now INSIDE
+            the objective's card, so there is no separate section here. The
+            mountain and its weather are one thing to read, not two. */}
 
         {/* ---- Today's plan ------------------------------------------------ */}
         <Rise className="pt-8">
@@ -467,7 +564,6 @@ export default function Home() {
                 No session scheduled today. Recovery is training.
               </p>
             )}
-          </Card>
 
           {/* ---- Session plan ---------------------------------------------
               The vertical timeline `phone-5.png` draws. It renders on every
@@ -484,8 +580,12 @@ export default function Home() {
               heart and holds no threshold to divide one against, so there is no
               zone to name — effort stays in words until a device pairs. -- */}
           {today && today.durationMin ? (
-            <div className="mt-2.5">
-              <Card>
+            /* A SECTION of the session's card, not a card beside it. Owner:
+               "session plan should also be connected to the endurance box."
+               It is the same session broken down — it was never separate
+               information, only a separate border. */
+            <div className="mt-5 border-t border-hairline pt-4">
+              <>
                 <SectionLabel>Session plan</SectionLabel>
                 <ol className="mt-3.5">
                   {sessionSegments(today.durationMin, today.detail).map((seg, i, all) => (
@@ -528,9 +628,10 @@ export default function Home() {
                 <p className="mt-1 text-[11px] leading-relaxed text-mist-dim">
                   {SEGMENTS_ARE_A_STANDARD_SHAPE}
                 </p>
-              </Card>
+              </>
             </div>
           ) : null}
+          </Card>
 
           <div className="mt-2.5 grid grid-cols-2 gap-2.5">
             <TileLink
@@ -636,40 +737,12 @@ export default function Home() {
             already, which is why the card was redundant rather than merely
             surplus. */}
 
-        {/* ---- Training readiness ------------------------------------------- */}
-        <Rise className="pt-7">
-          <SectionLabel
-            action={
-              <Link
-                to="/coach/readiness"
-                className="section-label transition-colors hover:text-azure"
-              >
-                View analysis
-              </Link>
-            }
-          >
-            Training readiness
-          </SectionLabel>
-          <Card className="mt-3">
-            <div className="flex items-center gap-4">
-              <div className="min-w-0 flex-1">
-                {/* The readiness engine writes this. No verdict copy is
-                    invented here — "you're on track" is a judgement it is
-                    explicitly forbidden to make. */}
-                <p className="text-[12.5px] leading-relaxed text-mist">
-                  {firstSentence(intel.readiness.explanation)}
-                </p>
-                <Link
-                  to="/coach/readiness"
-                  className="mt-3 inline-flex items-center gap-1 text-[12.5px] text-azure"
-                >
-                  View analysis <ChevronRight size={14} strokeWidth={1.8} />
-                </Link>
-              </div>
-              <ScoreRing score={intel.readiness.score} size={78} className="shrink-0" />
-            </div>
-          </Card>
-        </Rise>
+        {/* PH-35 — TRAINING READINESS REMOVED FROM HOME at the owner's request.
+            The score itself is NOT gone: it still rides in the hero dial at the
+            top of this screen, still reads "—" when it cannot be computed, and
+            `/coach/readiness` remains the place that explains it. What went is
+            the duplicate panel two thirds of the way down, which restated a
+            number already on screen and sent you to the same analysis. */}
 
         {/* ---- Gear for the objective --------------------------------------- */}
         {goal?.mountainId && sync.systemForMountain(goal.mountainId) && (
@@ -869,12 +942,6 @@ function ReadinessDial({ score }: { score: Score }) {
   );
 }
 
-/** The coach's own prose, trimmed to its first sentence for a summary card. */
-function firstSentence(text: string): string {
-  const cut = text.indexOf(". ");
-  return cut === -1 ? text : text.slice(0, cut + 1);
-}
-
 function Meta({ icon: Icon, text }: { icon: typeof Route; text: string }) {
   return (
     <span className="flex items-center gap-1.5">
@@ -992,6 +1059,7 @@ function IntelRow({
  * "unavailable" rather than as calm weather.
  */
 function ConditionsPanel({
+  /** Used to request the forecast. Not rendered — the card prints it above. */
   name,
   elevationM,
   lat,
@@ -1033,77 +1101,80 @@ function ConditionsPanel({
   const failed = Boolean(data?.error) || temp === null || temp === undefined;
 
   return (
-    <>
-      <SectionLabel>Conditions at your destination</SectionLabel>
-      <Link to={`/mountain/${goalId}/conditions`} className="mt-3 block">
-        <div className="relative overflow-hidden rounded-card border border-hairline">
-          <img
-            src="/img/mont-blanc-2.jpg"
-            alt=""
-            aria-hidden
-            className="absolute inset-0 h-full w-full object-cover opacity-20"
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-graphite via-graphite/90 to-graphite/70" />
-          <div className="relative p-4">
-            <p className="text-[12px] text-mist">{name}</p>
+    /*
+      A SECTION OF THE OBJECTIVE CARD, not a card of its own.
 
-            {loading ? (
-              <p className="mt-3 text-[12.5px] text-mist">Requesting the forecast…</p>
-            ) : failed ? (
-              <p className="mt-3 text-[12.5px] leading-relaxed text-mist">
-                The forecast could not be loaded. ICEFALL will not show conditions it has not read —
-                nothing here is a guess.
+      Owner: "connect this to the current objective box together." They were two
+      boxes saying the same mountain's name twice — the forecast IS the
+      objective's forecast, and reading it as separate information was the
+      thing to fix.
+
+      A sibling `Link`, not a nested one: the card's upper half already links to
+      /goals, and an anchor inside an anchor is invalid. The two live side by
+      side inside the card, so tapping the summit goes to the objective and
+      tapping the weather goes to the forecast.
+
+      The name is gone from here — the card prints it at 26px two rows up — but
+      "at N m" stays: it is what ties the temperature to an ALTITUDE rather than
+      to the mountain in general, and a summit reading presented as the
+      mountain's weather is the kind of number someone packs against.
+    */
+    <Link
+      to={`/mountain/${goalId}/conditions`}
+      className="mt-4 block border-t border-hairline pt-4"
+    >
+      <p className="section-label">Conditions at your destination</p>
+
+      {loading ? (
+        <p className="mt-3 text-[12.5px] text-mist">Requesting the forecast…</p>
+      ) : failed ? (
+        <p className="mt-3 text-[12.5px] leading-relaxed text-mist">
+          The forecast could not be loaded. ICEFALL will not show conditions it has not read —
+          nothing here is a guess.
+        </p>
+      ) : (
+        <div className="mt-3 flex items-center gap-4">
+          <div className="flex shrink-0 items-center gap-2.5">
+            <CloudSun size={30} strokeWidth={1.2} className="text-azure/85" />
+            <div>
+              <p className="tnum text-[28px] font-light leading-none text-snow">
+                {Math.round(temp as number)}
+                <span className="text-[13px] text-mist">°C</span>
               </p>
-            ) : (
-              <div className="mt-3 flex items-center gap-4">
-                <div className="flex shrink-0 items-center gap-2.5">
-                  <CloudSun size={30} strokeWidth={1.2} className="text-azure/85" />
-                  <div>
-                    <p className="tnum text-[28px] font-light leading-none text-snow">
-                      {Math.round(temp as number)}
-                      <span className="text-[13px] text-mist">°C</span>
-                    </p>
-                    <p className="tnum mt-1 text-[10px] text-mist-dim">
-                      at {fmtElevation(elevationM)} m
-                    </p>
-                  </div>
-                </div>
-                <div className="grid flex-1 grid-cols-3 gap-2 border-l border-hairline pl-4">
-                  <Micro
-                    icon={Wind}
-                    label="Wind"
-                    value={wind !== null && wind !== undefined ? `${Math.round(wind)} km/h` : "—"}
-                  />
-                  <Micro
-                    icon={Droplets}
-                    label="Precip"
-                    value={
-                      precip !== null && precip !== undefined ? `${precip.toFixed(1)} mm` : "—"
-                    }
-                  />
-                  <Micro
-                    icon={Eye}
-                    label="Visibility"
-                    value={
-                      vis !== null && vis !== undefined
-                        ? vis >= 1000
-                          ? `${Math.round(vis / 1000)} km`
-                          : `${Math.round(vis)} m`
-                        : "—"
-                    }
-                  />
-                </div>
-              </div>
-            )}
-
-            <div className="mt-4 flex items-center justify-between border-t border-hairline pt-3">
-              <span className="text-[12.5px] text-azure">Full forecast</span>
-              <ChevronRight size={15} strokeWidth={1.8} className="text-azure" />
+              <p className="tnum mt-1 text-[10px] text-mist-dim">at {fmtElevation(elevationM)} m</p>
             </div>
           </div>
+          <div className="grid flex-1 grid-cols-3 gap-2 border-l border-hairline pl-4">
+            <Micro
+              icon={Wind}
+              label="Wind"
+              value={wind !== null && wind !== undefined ? `${Math.round(wind)} km/h` : "—"}
+            />
+            <Micro
+              icon={Droplets}
+              label="Precip"
+              value={precip !== null && precip !== undefined ? `${precip.toFixed(1)} mm` : "—"}
+            />
+            <Micro
+              icon={Eye}
+              label="Visibility"
+              value={
+                vis !== null && vis !== undefined
+                  ? vis >= 1000
+                    ? `${Math.round(vis / 1000)} km`
+                    : `${Math.round(vis)} m`
+                  : "—"
+              }
+            />
+          </div>
         </div>
-      </Link>
-    </>
+      )}
+
+      <div className="mt-3 flex items-center justify-between">
+        <span className="text-[12.5px] text-azure">Full forecast</span>
+        <ChevronRight size={15} strokeWidth={1.8} className="text-azure" />
+      </div>
+    </Link>
   );
 }
 

@@ -2123,6 +2123,18 @@ sails through and is trusted, which is the whole problem.
    silently becomes 3 March. Only a value that comes back as the day you asked for is
    the day you asked for.
 
+**The mirrored trap: `toISOString().slice(0,10)` is the UTC DAY** — tomorrow for
+anyone east of Greenwich in the evening. It is the obvious shortcut for "get the
+calendar day" and it walks straight into the same class from the other side.
+Build the day from local parts.
+
+**And a field must hold ONE shape.** Storing a bare calendar day into a column
+whose existing values are full instants — and which a generator parses with
+`new Date()` — reintroduces the bug at the write end that was just fixed at the
+render end. Two shapes in one field is also how the next reader gets it wrong.
+If the shape should change, change the readers in the same commit or not at all;
+**decline the half-change rather than delivering it.**
+
 **And the strictness belongs at the WRITE path, not only at display.** If a system
 stores what a person typed rather than a normalised value, every downstream guard is
 patching a hole it did not make. A date that cannot be parsed strictly should be

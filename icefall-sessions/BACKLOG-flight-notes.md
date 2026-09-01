@@ -1371,6 +1371,351 @@ bare day is parsed with the local constructor; no UTC anywhere.
 UTC day, which is tomorrow for anyone east of Greenwich in the evening. Same
 bug, mirrored.
 
+### `PH-31` The summit line — a peak that marks the tab you are on — **DONE** · session 01, 2026-09-01
+Owner, with a reference screenshot: a small mountain above the selected tab,
+sliding across when you change page.
+
+**It replaces the bar's `border-t` rather than sitting on it.** The reference
+draws ONE continuous silhouette — horizon in, summit, horizon out, and **no line
+across the base of the mountain**. A triangle stacked on an unbroken border
+reads as a shape resting on a wire. So `SummitEdge` draws the whole top edge:
+one hairline with a 52px bite taken out by an SVG mask, and the peak's legs
+landing exactly in the gap. Proportions 52:15, matching the reference's ~3.5:1 —
+a first pass at 60:11 read as a bump, not a summit.
+
+**One `MotionValue` drives the mask AND the peak.** Verified positions, exact:
+
+| Tab | Peak x at 375 | Expected |
+|---|---|---|
+| Home | 37.5 | 10% |
+| Explore | 112.5 | 30% |
+| Coach | 262.5 | 70% |
+| Profile | 337.5 | 90% |
+
+Caught mid-spring at 315.9 en route to 337.5, and **mask and peak were identical
+at every sample** — drift is impossible by construction rather than by two
+transitions happening to agree.
+
+**THE OWNER REJECTED THE FIRST PASS: "thats too high and nothing like my
+screenshot."** Both halves were right, and both were mine.
+
+1. **TWO OFFSETS FOR ONE POSITION.** The SVG had `bottom-0` — which on a
+   zero-height wrapper already lands its bottom edge exactly on the bar's top
+   edge — AND `translateY(-EDGE_H)` on top of that. The whole mark floated a
+   further 17px into the content above, feet clear of the bar, which is
+   precisely what "too high" describes. Measured after the fix:
+   `svgBottom === navTop`, apex 14px proud. **The earlier verification checked
+   that the peak was over the right TAB and never that it was at the right
+   HEIGHT** — every x was exact, and the y was never asserted at all.
+2. **The shoulders were invisible.** The reference draws a short horizontal run
+   either side of the summit IN THE ACCENT COLOUR, so the mark reads as a
+   mountain standing on its own horizon. Mine left those as the 7%-white
+   hairline, so all that showed was a large V floating in the dark. The stroke
+   now carries its own shoulders and the notch gives up the full 64px.
+
+Retuned to 36px base, 12px rise, 14px shoulders — the whole mark 64px, inside a
+75px tab instead of straddling its neighbours.
+
+**SECOND REJECTION: "the mountain has transparent background — fill it in the
+black navigation colour."** Correct again. The mark was a stroked OUTLINE, so
+the triangle was a window: on Explore the card title behind the bar read
+straight through the summit. That makes it a shape drawn ON the screen rather
+than the bar itself rising.
+
+Now filled with `var(--ice-obsidian)` before the stroke, so the peak is a piece
+of navigation that happens to be mountain-shaped. **Solid rather than the bar's
+own `obsidian/85`** — at 85% the content would still ghost through, which is
+the entire complaint; the app canvas is this colour everywhere, so the opaque
+peak and the translucent bar read as one surface with no seam. Verified against
+the brightest content in the app (Explore's satellite cards): the title behind
+is now occluded by the summit instead of showing through it.
+
+**THIRD AND FOURTH REJECTIONS — both about lines, both mine.**
+
+*"the mountain has transparent background"* — the mark was a stroked OUTLINE, so
+the summit was a window and the card behind read through it. Now filled with
+`var(--ice-obsidian)`, solid rather than the bar's `obsidian/85`, because at 85%
+the content still ghosts through and that is the whole complaint.
+
+*"theres still a small line under"* — two separate causes, found by measuring
+rather than squinting:
+- A **1px transparent row**: the horizon was drawn at `EDGE_H - 1` with the
+  SVG's bottom flush to the bar, leaving one transparent pixel ABOVE the bar
+  across its full width for content to show through. `bottom: -1` closes it —
+  confirmed `transparentRowAboveBar: 0`.
+- The **full-width hairline itself**. The reference has NO line beyond the
+  mountain's own shoulders. Replacing the bar's `border-t` with a drawn rule
+  plus a mask preserved a thing the drawing never had. Both the rule and the
+  mask are now gone; the bar separates from content by `obsidian/85` and
+  `backdrop-blur-xl` alone, as the reference does. `lines: 0, masks: 0`.
+
+**The lesson, and it cost four rounds:** I verified this mark exhaustively along
+one axis and never questioned the axis. Every x was exact to the pixel across
+four tabs; the y was never asserted at all, the fill was never tested against
+bright content, and the hairline was never questioned because I had inherited it
+from the border I replaced. **Reproducing a component's existing furniture is not
+the same as matching the drawing** — the border was mine to delete, and I kept
+re-drawing it in new forms while the owner kept pointing at it.
+
+**Three bugs found by looking, two of them mine:**
+
+1. **`animate={{ x }}` as a PROP does not re-target on an SVG `<g>`.** It
+   positioned correctly on load and then never moved again — route changed,
+   `aria-current` moved, transform frozen. `x` is an attribute name on many SVG
+   elements, so framer-motion does not treat it as a transform there. Driving a
+   `MotionValue` through `style` fixed it. **A thing that renders correctly once
+   is not a thing that works.**
+2. **ResizeObserver on a zero-area box.** The wrapper is `absolute inset-x-0`
+   with no height. `getBoundingClientRect` reported the right width so the first
+   measurement looked fine, but a 430x0 box is not a reliable thing to watch.
+   Now observes the nav, which has real dimensions.
+3. **The old `layoutId` underline** was left in place by the first pass, giving
+   two sliding markers for one selection.
+
+**Not verified, and stated rather than claimed:**
+- **Resize-following.** Proven UNTESTABLE here, not assumed: a control div
+  resized directly by JavaScript fired ResizeObserver **zero** times, and zero
+  `window.resize` events fired while the viewport went 375 -> 414. Neither
+  mechanism works in this preview. The initial read is correct at every width on
+  load; rotation on a real device fires both. §6ac — the control probe is what
+  separated "my code is broken" from "the harness cannot exercise it", and I had
+  already begun fixing working code twice.
+- **Reduced motion.** Same limitation as `SIGNUP-02`: the harness cannot set the
+  OS preference before load. The guard is `x.set()` instead of `animate()`,
+  matching the verified precedent in `ActivityComplete.tsx:25`.
+
+**PROCESS FAILURE, recorded because it nearly shipped.** I ran a Workflow to
+investigate before implementing. Its agents were told "do NOT propose a
+solution" — but they had write tools, and a design agent wrote a SECOND,
+different implementation directly into `TabBar.tsx` while I was writing mine.
+The file ended up 349 lines with two competing peak implementations interleaved
+(`PEAK_FILL`/`PEAK_RIDGE` beside my `SummitEdge`). Caught because an unrelated
+`sed` assertion failed on an anchor that should have matched. Recovered with
+`git checkout`, killed the workflow, reapplied in one pass.
+**"Do not propose a solution" is a request, not a permission boundary.** An
+investigating agent with an Edit tool is an implementing agent. Give read-only
+work read-only tools.
+
+**Also corrected: I fed that workflow a false premise** — that the raised centre
+START button makes the tabs unevenly spaced, which I told the judge was "the
+crux". Measured live before the answers came back: five slots, all `flex-1`,
+75px each, centres at 38/113/188/263/338. Perfectly even. START is absolutely
+positioned INSIDE its own `flex-1` slot and disturbs nothing.
+
+### `PH-32` Home hero — five photographs, one per day — **DONE** · session 01, 2026-09-01
+Owner: rotate the Home hero through five mountain images, a different one each
+day. Built, and it surfaced a licensing problem that decided the whole design.
+
+#### ⚠️ `PH-33` THE CURRENT HERO IS CC BY-SA AND SHIPS WITH NO CREDIT — for the owner
+`public/img/CREDITS.md` and `public/img/_credits.json` **disagree about the
+image on the most-viewed screen in the app**:
+
+| Source | Says `home-hero.jpg` is |
+|---|---|
+| `CREDITS.md` line 30 | *Mont Blanc (Unsplash)*, **CC0**, no attribution |
+| `_credits.json` | *Matterhorn by the dawn of the night*, **CC BY-SA 4.0, Maksym Karmazin** |
+
+The JSON is the correct one — `Home.tsx`'s own comment says "the photograph puts
+the Matterhorn on the LEFT", and `home-hero.previous.jpg` is the Mont Blanc shot
+the markdown still describes. **The hero was swapped and only the JSON was
+updated.** CREDITS.md's own rule: CC BY / CC BY-SA "require the credit shown
+wherever the image is displayed publicly."
+
+So the app has been displaying a CC BY-SA photograph full-bleed with no credit
+anywhere, **and the file anyone would check to find that out says it is CC0.**
+The stale record is what made it invisible — §6an in a new place: a fix (the
+image swap) that removed the symptom without updating the thing that would have
+caught it.
+
+**Not resolved in code, because it is the owner's call**: either credit Maksym
+Karmazin somewhere visible, or leave the image out. I have left it out of the
+rotation and said so; the file is untouched.
+
+#### The owner chose six, and the scrims came up
+Shown 20 candidates as a numbered picker — each rendered AS THE HERO (cropped to
+the hero's ratio, the app's real gradients over it, the greeting on top) rather
+than as bare photographs, so the choice was made on the finished thing.
+
+**Chosen: Mount Rainier, the Tetons, Denali, the Eiger, the Andes from above,
+and Hehuanshan under stars.** All six attribution-free.
+
+**Vetting the 20 mattered.** `treks/credits.ts` warns *"A NAME IS NOT A
+SUBJECT"* — an earlier pass fetched a West Highland terrier for the West
+Highland Way. The shortlist duly contained an archival black-and-white with
+handwriting across it, tourists on a path, a satellite relief frame, a mossy
+tunnel, a historical photo of stampeders, and the same photograph twice under
+two slugs. All cut by eye before the owner saw them.
+
+**"why are the pictures soo dark" — a real compounding bug, not taste.** Two
+scrims multiply: 80% vertical over 70% horizontal put the top-left corner at
+**~94% black**, so the photograph was almost entirely gradient there. Now 55%
+and 55% — about 80% in that corner, and the middle of the picture drops from
+~59% to ~40%.
+
+**The cost landed on the dimmest line, and was paid in the right place.**
+Lightening let the aerial's bright cloud through and the italic quote lost
+contrast. Darkening the scrim again would have undone the request, so instead
+the hero type carries a soft `text-shadow` and the quote lifts from `mist-dim`
+to `mist`. **The picture stays bright and the words stay readable** — and the
+shadow is invisible on the dark photographs, so it costs those nothing.
+Verified across the brightest (Andes), the darkest (Hehuanshan at night) and a
+mid case (Rainier).
+
+**One flagged, not silently swapped:** the Tetons photograph is 750x540 — a
+trek card's image, sized for a card. Roughly 1:1 in this slot at 2x, upscaled
+~1.5x on a 3x phone and softer than its neighbours. Kept because it was chosen.
+
+#### The rotation
+Five photographs, **every one CC0 or public domain**, so a full-bleed hero needs
+no credit line: Denali at alpenglow (PD), the Eiger north face at blue hour
+(CC0), Gran Paradiso's summit glacier (PD), the Andes from above (CC0), and the
+ridgeline that was the hero before the Matterhorn (CC0). All five already ship
+in `public/img`, so the rotation adds **no download and nothing new to
+precache** — verified all five load, 1400px wide, none broken.
+
+Chosen by eye, which is this project's own standard for imagery (CREDITS.md:
+"checked by eye"). Triglav and `expedition-hero` were rejected on sight — a
+bright snapshot that washes to blue-grey under the scrim, and a forested hillside
+rather than a mountain.
+
+**`flip` is per-image.** The old hero was mirrored because its peak sat on the
+left under the greeting; none of these five need it. The flag stays on the image
+so the next photograph answers for itself instead of inheriting someone else's
+composition.
+
+**The day is the LOCAL calendar day.** `Date.UTC` applied to local
+year/month/date gives a stable ordinal; using the raw timestamp would have
+rolled the picture at UTC midnight — mid-evening in the Americas, the same class
+as `f2cb54c`. Verified in three timezones (Athens, Los Angeles, Auckland):
+all five appear across 14 days, the image is stable through each whole day,
+it changes between 23:59 and 00:01 LOCAL, and the European DST weekend neither
+skips nor repeats a day.
+
+Not memoised on purpose — two arithmetic operations, and a value cached for the
+session would hold yesterday's picture for anyone who leaves the app open
+overnight.
+
+### `PH-34` Objective and conditions are one card — **DONE** · session 01, 2026-09-01
+Owner: *"connect this to current objective box together."* They were two boxes
+printing the same mountain's name twice; the forecast IS the objective's
+forecast, and reading it as separate information was the thing to fix.
+
+`ConditionsPanel` is now a SECTION of the objective card rather than a card of
+its own: its `SectionLabel`, its border, its background image and its duplicate
+name line are gone; the temperature, the three micro-stats and "Full forecast"
+sit under a hairline inside the card.
+
+- **A sibling `Link`, not a nested one.** The card's upper half already links to
+  `/goals`, and an anchor inside an anchor is invalid HTML — verified 0 nested
+  anchors in the DOM after the change. Tapping the summit goes to the
+  objective; tapping the weather goes to the forecast.
+- **"at 4,806 m" stays** even though the elevation is printed two rows above. It
+  is what ties the temperature to an ALTITUDE rather than to the mountain in
+  general, and a summit reading presented as the mountain's weather is a number
+  someone packs against. The name went, the qualifier did not.
+- **A hardcoded wrong mountain went with it.** The conditions card carried
+  `/img/mont-blanc-2.jpg` as its backdrop at 20% opacity **regardless of the
+  objective** — a Denali climber got Mont Blanc rock behind their Denali
+  forecast. Decorative and `aria-hidden`, so it claimed nothing in words, but it
+  was still the wrong mountain on the objective's own card. Dropped; the card
+  already carries the objective's real thumbnail.
+- Loading and failure states are untouched — "The forecast could not be loaded…
+  nothing here is a guess" still renders in place of invented weather.
+
+### `PH-35` Session plan folded in, training readiness removed — **DONE** · session 01, 2026-09-01
+Owner: *"session plan should also be connected to the endurance box. Remove
+training Readiness and home page should be ready."*
+
+**Session plan is now a section of the session's card**, under a hairline,
+exactly as the conditions merge (`PH-34`). It was never separate information —
+it is the same session broken down — only a separate border. The card now runs
+Endurance → figures → description → Start / Mark as done → Session plan
+timeline → the standard-shape disclosure, as one thing to read.
+
+**Training readiness removed from Home.** The SCORE is not gone and that
+distinction matters: it still rides in the hero dial at the top of this screen,
+still renders "—" rather than a zero when it cannot be computed, and
+`/coach/readiness` still explains it. What went is the duplicate panel two
+thirds down, which restated a number already on screen and linked to the same
+analysis.
+
+**Two orphans removed by hand.** `noUnusedLocals` is off in this project, so
+tsc stayed green while `ScoreRing`'s import and the `firstSentence` helper sat
+dead — both existed only for the panel that went. Checked by eye, per the
+standing lesson. The two surviving `ScoreRing` mentions are prose in a comment
+about the hero dial, which still exists, so they stay true.
+
+**Home's shape now**: hero → objective (with its forecast) → today's session
+(with its plan) → nutrition / recovery → this week → gear → mountain
+intelligence. Verified in the browser: no "Training readiness", no "View
+analysis", readiness still present in the hero, **0 nested anchors**.
+
+### `PH-36` Swipe between tabs — **DONE** · session 01, 2026-09-01
+One hook, `hooks/useTabSwipe.ts`, consumed by both `ExploreLayout` (six tabs)
+and `CoachLayout` (four). §6u: a feel adjustment lands in one place.
+
+**The judgement call answered itself.** Both layouts ALREADY compute the
+condition — Explore has `onTabRoot` for its back chevron, Coach has `isDetail`
+for its strip. A detail route keeps its parent tab lit and does not swipe, so
+nobody reading a trek loses their place. No awkwardness, nothing half-done.
+(`/explore/people` and `/explore/groups` are legacy aliases that light Social
+without being tab values, so they get no swipe either — the safe side.)
+
+**Stand-down is STRUCTURAL, not a list of selectors.** Walk the ancestors and
+ask "does this element own horizontal gestures right now?" — a canvas, a
+`role="slider"`, a range input, `touch-action: none`, or a box that can
+*actually* scroll sideways. A parallel read-only inventory found 25 rails, 3
+maps, 3 range inputs and a scrubber; the structural test covers all of them and
+anything added next month, which a selector list would not.
+
+That inventory also surfaced two traps the structural test already avoids, and
+they are the reason not to use `closest()` here:
+- **`.overflow-x-auto` matches rails that are not scrollable** — several pill
+  rails fit at common widths. Standing down for those would kill the swipe on
+  whole screens. Checking `scrollWidth > clientWidth` is the fix.
+- **`.no-scrollbar` is on `Screen` itself**, which wraps nearly every page.
+  Matching it would have disabled the gesture app-wide.
+
+Also learned from it: the maps are MapLibre and **their canvas does not exist in
+source** — the library builds it at runtime, so a source grep for `<canvas>`
+finds nothing and would wrongly conclude there are none. Runtime `tagName`
+catches it; `.maplibregl-map` is the insurance for a touch landing on a marker
+overlay instead. Worth noting the maps under Explore are all on DETAIL routes,
+so they are protected twice over.
+
+**Verified with real pointer events at 375** — every guard exercised:
+
+| Test | Result |
+|---|---|
+| Drag left / right between tabs | navigates both ways |
+| First tab, drag right | stays — no wraparound |
+| 210px over 300ms | commits on distance |
+| 60px in 90ms | commits on velocity (flick) |
+| 30px over 300ms | correctly ignored |
+| Diagonal, more vertical | ignored — vertical wins |
+| Start within 24px of the edge | ignored — iOS owns it |
+| Drag across the scrollable tab strip | no navigation |
+| Injected scrollable rail | stands down |
+| Injected canvas | stands down |
+| Big swipe on a detail route | stays put |
+| Coach, same hook | /coach → /coach/today |
+
+**PROBE ARTIFACT, the fourth of this class and the sharpest yet.** A 30px drag
+appeared to navigate, which looked like a broken threshold. It was not: synthetic
+events dispatched in ONE synchronous task all carry the SAME `timeStamp`, so
+elapsed time is 0, and **every drag reads as an infinitely fast flick**. Re-run
+with real `setTimeout` spacing, the short drag is correctly ignored. The velocity
+path is invisible to any probe that does not let real time pass — the previous
+three were about compressed actions, stale buffers and transitional DOM; this
+one is about compressed *time*.
+
+**Not done, and stated rather than fudged:** the tab underline slides on commit
+(framer `layoutId`, 0.28s) but does NOT track the finger mid-drag. Making it
+would mean threading a live progress value through `SegmentedTabs`, a shared
+component used by six-plus screens — a §6u change for one feature's benefit. The
+content follows the finger; the indicator catches up. Say the word and I will do
+it properly across all its call sites.
+
 #### Still to build from the mockups
 Find a Guide's inline availability calendar and selector rows; Request Guide's
 price breakdown; the guide profile's four tabs; the Plan screen's session

@@ -1,5 +1,6 @@
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { ScreenHeader, SegmentedTabs } from "@/components/layout/chrome";
+import { useTabSwipe } from "@/hooks/useTabSwipe";
 
 /**
  * Four tabs, and a hub above them.
@@ -75,6 +76,25 @@ export default function ExploreLayout() {
   const onTabRoot = TABS.some((t) => t.value === pathname);
   const back = onHub ? undefined : onTabRoot ? HUB : true;
 
+  /*
+   * Swipe between the six, but ONLY on a tab root.
+   *
+   * `onTabRoot` already exists above for the back chevron, and it is exactly
+   * the right condition: someone reading a trek detail who swiped to Mountains
+   * would lose their place. Detail routes keep their parent tab lit and stay
+   * put — the gesture belongs to the tab set, not to everything filed under it.
+   *
+   * `/explore/people` and `/explore/groups` are legacy aliases that light Social
+   * without being tab values, so they get no swipe either. That is the safe
+   * side of the line: no gesture rather than a gesture to the wrong place.
+   */
+  const swipe = useTabSwipe({
+    tabs: TABS.map((t) => t.value),
+    current: lit,
+    enabled: onTabRoot,
+    onNavigate: (v) => navigate(v),
+  });
+
   return (
     // This header clears the notch, so nested `Screen`s must not clear it again.
     <div className="flex h-full flex-col" style={{ "--screen-safe-top": "0px" } as React.CSSProperties}>
@@ -87,7 +107,7 @@ export default function ExploreLayout() {
       {/* Must be a flex column: `Screen` inside uses `flex-1 overflow-y-auto`,
           which does nothing under a block parent — the list grew to its full
           height and was clipped instead of scrolling. */}
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-0 flex-1 flex-col" {...swipe.bind}>
         <Outlet />
       </div>
     </div>
