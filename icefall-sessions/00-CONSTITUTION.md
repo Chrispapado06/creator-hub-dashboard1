@@ -2445,6 +2445,45 @@ re-read does.** The constitution prevents nothing by being read once; it works b
 being the thing you check your own diff against.
 
 
+
+## 6an. A BUG FIXED LOCALLY FOUR TIMES IS A BUG THAT LIVES SOMEWHERE CENTRAL
+
+**2026-09-01.** `lib/format.ts` called `new Date(iso)`, which for a bare
+`YYYY-MM-DD` is **UTC midnight** — the previous day in any negative-offset
+timezone. **Seventy call sites** reach for that helper, and none of them could
+see which kind of string it was being handed. Measured, not reasoned:
+
+    2027-05-01   America/Los_Angeles -> 30 Apr 2027    Europe/London -> 1 May
+                 America/New_York    -> 30 Apr 2027    Asia/Kathmandu -> 1 May
+
+So every user in the Americas saw their objective's target date, summit dates,
+event dates and trial-end date **one day early** — silently, and only for part
+of the world, which is why nobody in this project ever saw it.
+
+**This was the FOURTH fix of the same class here** (`guides/dates.ts`,
+`network/groups.ts`, `DateField`, now the shared formatter). Every earlier fix
+was made **at a call site, by somebody who had just been bitten**, and none of
+them turned round to look at the helper everyone else was using.
+
+**The rule: when you find yourself fixing a familiar bug, ask how many times it
+has been fixed before — and if the answer is more than once, the fix belongs
+upstream of all of them.** And the reason it stays hidden is counterintuitive:
+**the local fix is what stops you noticing.** It removes the symptom that would
+otherwise have led someone to the source, so each repair makes the next one
+less likely to happen.
+
+Same shape as §6aa's self-updating count beside a hand-written sentence:
+**partial correctness is what makes the remainder invisible.** A thing that is
+right in the places you look is a thing you stop looking for.
+
+Fix technique worth copying: the helper now parses a bare calendar date with
+the LOCAL constructor and **passes a full instant through untouched** — an
+instant carries its own offset and was already correct, so treating both alike
+would have broken the working half. Verified byte-identical output for instants
+across all four zones. Invalid input falls back to visibly wrong rather than
+quietly rolling into the next month.
+
+
 ## 6f. A SYNC SCRIPT'S CORRECTNESS IS NOT OBSERVABLE FROM THE FILE IT COPIES FROM
 
 `icefall-web` was never in `icefall-shared`'s sync list. Its `src/money/model.ts`

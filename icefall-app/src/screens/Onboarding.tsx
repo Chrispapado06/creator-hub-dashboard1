@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { DateField } from "@/components/ui/DateField";
 import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
@@ -176,6 +177,26 @@ const WEEK: { day: number; label: string; full: string }[] = [
   { day: 6, label: "Sat", full: "Saturday" },
   { day: 0, label: "Sun", full: "Sunday" },
 ];
+
+/**
+ * `Date` → bare `YYYY-MM-DD`, LOCAL. Never `toISOString().slice(0,10)`, which is
+ * the UTC day and therefore tomorrow for anyone east of Greenwich in the
+ * evening — the mirror of the bug fixed in `f2cb54c` at the render end.
+ */
+function isoDayKey(d: Date): string {
+  const p = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/** Bare `YYYY-MM-DD` → local `Date`, or null. Strict: rejects 2027-02-31. */
+function parseIsoDayLocal(key: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key);
+  if (!m) return null;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const date = new Date(y, mo - 1, d);
+  if (date.getFullYear() !== y || date.getMonth() !== mo - 1 || date.getDate() !== d) return null;
+  return date;
+}
 
 const SESSION_LENGTHS = [30, 45, 60, 90, 120];
 
@@ -615,6 +636,14 @@ export default function Onboarding() {
   const [heightPrivate, setHeightPrivate] = useState(false);
   const [birthYearPrivate, setBirthYearPrivate] = useState(false);
   const [timelineId, setTimelineId] = useState<string | null>(null);
+  /**
+   * A named target date, when the athlete has one — owner addition 2026-09-01.
+   *
+   * Bare `YYYY-MM-DD` while it lives on this screen, because that is what a
+   * calendar day IS and what `DateField` speaks. It becomes a local-time
+   * instant at the write, matching `monthsAhead` — see `targetDateIso`.
+   */
+  const [customDate, setCustomDate] = useState("");
   const [days, setDays] = useState<number[]>([]);
   const [sessionMin, setSessionMin] = useState<number | null>(null);
   const [equipment, setEquipment] = useState<Equipment[]>([]);
@@ -724,7 +753,26 @@ export default function Onboarding() {
     if (goalPeak) {
       const timeline = TIMELINES.find((t) => t.id === timelineId) ?? TIMELINES[1];
       const curated = goalPeak.curatedId ? sync.mountainById(goalPeak.curatedId) : undefined;
-      const targetDate = monthsAhead(timeline.months);
+
+      /*
+       * A named date wins over the preset it replaced.
+       *
+       * STORED AS A LOCAL-TIME INSTANT, not a bare calendar day — deliberately,
+       * and this is a considered deviation from "store the bare date". Existing
+       * goals hold full ISO instants written by `monthsAhead`, and
+       * `buildPlanForGoal` parses `goal.targetDate` with `new Date(...)`. A bare
+       * day in that same field would be read as UTC midnight and land a day
+       * early west of Greenwich — reintroducing at the WRITE end precisely the
+       * bug `f2cb54c` removed at the render end. Two shapes in one field is
+       * also how the next reader gets it wrong.
+       *
+       * So the bare day is parsed with the LOCAL constructor and anchored at
+       * 06:00 local, exactly as `monthsAhead` does. One shape, no UTC anywhere.
+       */
+      const picked = parseIsoDayLocal(customDate);
+      const targetDate = picked
+        ? (picked.setHours(6, 0, 0, 0), picked.toISOString())
+        : monthsAhead(timeline.months);
       const trainingStartedAt = new Date().toISOString();
 
       addGoal({
@@ -751,7 +799,10 @@ export default function Onboarding() {
         peak: goalPeak,
         targetDate,
         trainingStartedAt,
-        dateAssumed: Boolean(timeline.assumed),
+        // Nothing is assumed once they named the day. The payoff's caveat is
+        // driven by this flag, so it has to fall here too — not just on the
+        // step where the preset was offered.
+        dateAssumed: !picked && Boolean(timeline.assumed),
       });
     }
 
@@ -853,6 +904,7 @@ export default function Onboarding() {
     addGoal,
     altitudeId,
     altitudeIllness,
+    customDate,
     baseline,
     birthYearPrivate,
     limitations,
@@ -894,10 +946,20 @@ export default function Onboarding() {
     out.push(`Reading your ${answered} answers`);
 
     if (goalPeak) {
+      // The DATE if they named one, the band if they took a preset — the
+      // reveal must say back what they actually chose, not what the step
+      // offered. A person who typed 14 May 2027 seeing "within a year" would
+      // reasonably wonder whether their date had been taken at all.
+      const picked = parseIsoDayLocal(customDate);
       const t = TIMELINES.find((x) => x.id === timelineId);
+      const when = picked
+        ? picked.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })
+        : t
+          ? t.label.toLowerCase()
+          : "";
       out.push(
         `${goalPeak.name} · ${goalPeak.elevationM.toLocaleString("en-GB")} m` +
-          (t ? ` — ${t.label.toLowerCase()}` : ""),
+          (when ? ` — ${when}` : ""),
       );
     } else {
       out.push("No objective yet — building general mountain fitness");
@@ -938,6 +1000,7 @@ export default function Onboarding() {
   }, [
     altitudeIllness,
     baseline,
+    customDate,
     days,
     equipment,
     goalPeak,
@@ -947,6 +1010,38 @@ export default function Onboarding() {
     sessionMin,
     timelineId,
   ]);
+
+  /*
+   * The date this step actually resolves to, as a bare calendar day.
+   *
+   * A preset is a span from today; a picked date is itself. Either way the
+   * step shows the RESULT, because "within six months" is not a date and the
+   * plan is built backwards from a date.
+   */
+  const resolvedTargetKey = ((): string => {
+    if (customDate) return customDate;
+    const t = TIMELINES.find((x) => x.id === timelineId);
+    if (!t) return "";
+    const d = new Date();
+    d.setMonth(d.getMonth() + t.months);
+    return isoDayKey(d);
+  })();
+
+  /**
+   * How long the plan will actually run — the same arithmetic `buildPlanForGoal`
+   * does, including its 8–52 week clamp.
+   *
+   * The CLAMPED number is shown, not the raw span, because the clamp is what
+   * the athlete will actually get: promising "3 weeks" for a date a fortnight
+   * away when the generator will build eight is the sort of small lie this
+   * screen exists to avoid.
+   */
+  const resolvedWeeks = ((): number | null => {
+    const d = parseIsoDayLocal(resolvedTargetKey);
+    if (!d) return null;
+    const raw = Math.round((d.getTime() - Date.now()) / 604_800_000);
+    return Math.min(52, Math.max(8, raw));
+  })();
 
   /* ---- Gating ------------------------------------------------------------ */
 
@@ -978,7 +1073,7 @@ export default function Onboarding() {
       case "goal":
         return Boolean(goalPeak) || noGoal;
       case "timeline":
-        return timelineId !== null;
+        return timelineId !== null || customDate !== "";
       case "days":
         return days.length > 0 || noFixedDays;
       case "length":
@@ -1288,15 +1383,51 @@ export default function Onboarding() {
                       key={t.id}
                       label={t.label}
                       detail={
-                        t.assumed
+                        // The caveat belongs to the ASSUMPTION and dies with it.
+                        // Once a real date is named there is nothing assumed, and
+                        // a sentence explaining an assumption that no longer
+                        // exists is the §6aa failure in miniature.
+                        t.assumed && !customDate
                           ? "ICEFALL will assume twelve months so a plan can exist, and will say so"
                           : undefined
                       }
-                      selected={timelineId === t.id}
-                      onClick={() => setTimelineId(t.id)}
+                      selected={!customDate && timelineId === t.id}
+                      onClick={() => {
+                        setTimelineId(t.id);
+                        // Choosing a preset replaces a picked date, so the two
+                        // can never both look chosen.
+                        setCustomDate("");
+                      }}
                     />
                   ))}
                 </div>
+
+                {/* The "adjust it" half, and the more important one: whatever
+                    was chosen, the DATE IT RESOLVES TO is shown and is itself
+                    the control. Tapping it opens the picker on that month, so
+                    preset-then-adjust is one continuous motion rather than a
+                    mode switch. */}
+                {(timelineId !== null || customDate) && (
+                  <div className="mt-5">
+                    <p className="section-label text-mist-dim">
+                      {customDate ? "Your date" : "Which works out as"}
+                    </p>
+                    <DateField
+                      label="Target date"
+                      value={resolvedTargetKey}
+                      min={isoDayKey(new Date())}
+                      onChange={(iso) => setCustomDate(iso)}
+                      className="mt-2"
+                    />
+                    {resolvedWeeks !== null && (
+                      <p className="tnum mt-2 text-[11.5px] leading-relaxed text-mist-dim">
+                        {resolvedWeeks} weeks from today.
+                        {resolvedWeeks === 8 ? " The shortest plan ICEFALL will build." : ""}
+                        {resolvedWeeks === 52 ? " The longest plan ICEFALL will build." : ""}
+                      </p>
+                    )}
+                  </div>
+                )}
               </>
             )}
 

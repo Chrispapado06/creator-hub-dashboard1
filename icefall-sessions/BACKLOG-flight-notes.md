@@ -1326,6 +1326,51 @@ who had just been bitten, and none of them looked at the helper everyone else
 was using. **A bug fixed locally four times is a bug that lives somewhere
 central.**
 
+### `SIGNUP-03` Target date — presets kept, real dates now nameable — **DONE** · session 01, 2026-09-01
+Owner: let people adjust the timeline or name a custom date, using the CTRL
+picker. Someone with a booked expedition on 14 May 2027 could not say so, and
+the plan is generated backwards from that date — the difference between "about
+six months" and the real departure is weeks of Base/Build/Peak/Taper landing in
+the wrong places.
+
+**Presets stay the fast path; the resolved DATE is always shown and is itself
+the control.** Choose "Within 6 months" and the step says *"Which works out as
+1 Mar 2027 · 26 weeks from today"*. Tap that date and the picker opens **on that
+month** — preset-then-adjust is one motion, not a mode switch. Once a date is
+named the label becomes "Your date".
+
+Verified at 375, keyboard included:
+
+| Check | Result |
+|---|---|
+| Blocked until answered | Continue disabled on arrival |
+| Preset resolves | "Within 6 months" → 1 Mar 2027 · 26 weeks |
+| Picker opens on resolved month | March 2027 |
+| Keyboard adjust (↓ then Enter) | 8 Mar 2027 · **27 weeks** — count follows |
+| Past dates | all 31 days of August 2026 refused, quietly |
+| Escape | closes, value unchanged at 8 Mar 2027 |
+| Stored | `2027-03-08T04:00:00.000Z` = 8 Mar 06:00 LOCAL — **no day shift** |
+| Reveal line | "Mont Blanc · 4,806 m — 8 March 2027" |
+| "Assumes twelve months" caveat | gone the moment a real date exists |
+
+**The plan length shown is the CLAMPED one** — the same 8–52 week bound
+`buildPlanForGoal` applies — because promising "3 weeks" for a date a fortnight
+out when the generator will build eight is exactly the small lie this screen
+exists to avoid. It names the bound when it bites.
+
+**Considered deviation on storage, stated rather than hidden.** The brief said
+store a bare calendar date; I store a LOCAL-time instant at 06:00, matching
+`monthsAhead`. Existing goals hold full ISO instants and `buildPlanForGoal`
+parses `goal.targetDate` with `new Date(...)` — a bare day in that same field
+would be read as UTC midnight and land a day early west of Greenwich,
+**reintroducing at the WRITE end the exact bug `f2cb54c` removed at the render
+end**. Two shapes in one field is also how the next reader gets it wrong. The
+bare day is parsed with the local constructor; no UTC anywhere.
+
+`isoDayKey` deliberately does not use `toISOString().slice(0,10)` — that is the
+UTC day, which is tomorrow for anyone east of Greenwich in the evening. Same
+bug, mirrored.
+
 #### Still to build from the mockups
 Find a Guide's inline availability calendar and selector rows; Request Guide's
 price breakdown; the guide profile's four tabs; the Plan screen's session
