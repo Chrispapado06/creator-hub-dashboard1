@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft } from "lucide-react";
-import { motion } from "framer-motion";
+import { animate, motion, useMotionValue, useMotionValueEvent, type MotionValue } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 
@@ -101,12 +101,16 @@ export function ScreenHeader({
 /* SegmentedTabs — ACTIVE / COMPLETED style switcher                          */
 /* -------------------------------------------------------------------------- */
 
+/** The commit slide, matched to the `layoutId` transition on the untracked path. */
+const SLIDE = { duration: 0.28, ease: [0.22, 1, 0.36, 1] as const };
+
 export function SegmentedTabs<T extends string>({
   tabs,
   value,
   onChange,
   className,
   variant = "compact",
+  swipeOffset,
 }: {
   tabs: readonly { value: T; label: string }[];
   value: T;
@@ -119,6 +123,16 @@ export function SegmentedTabs<T extends string>({
    * Additive: every existing call site keeps `compact` untouched.
    */
   variant?: "compact" | "section";
+  /**
+   * Live swipe progress, for a layout whose content follows the finger.
+   *
+   * Signed fraction of one tab's worth of travel: negative is dragging toward
+   * the NEXT tab, positive toward the previous. `undefined` — which is every
+   * existing call site — takes the `layoutId` path below, unchanged and
+   * unaware. That is the point: this is a capability the component gained, not
+   * a swipe feature wearing its clothes.
+   */
+  swipeOffset?: MotionValue<number>;
 }) {
   const section = variant === "section";
   const scroller = useRef<HTMLDivElement | null>(null);
@@ -147,12 +161,118 @@ export function SegmentedTabs<T extends string>({
     return () => ro.disconnect();
   }, [tabs]);
 
+  /*
+   * ── TRACKING THE FINGER ───────────────────────────────────────────────────
+   *
+   * Only runs for a caller that passes `swipeOffset`. Everything below is inert
+   * otherwise: `tracking` is false, no rect is measured, and the `layoutId`
+   * underline renders exactly as it always has.
+   *
+   * The indicator tracks the ATTEMPT, not the outcome. It is driven by the same
+   * number that moves the content, so a drag released below the threshold
+   * carries the indicator back with the page rather than committing to a tab
+   * the content never reached. The strip is what people read to know where they
+   * are; it disagreeing with the screen would be worse than not tracking at all.
+   */
+  const tracking = swipeOffset !== undefined;
+  const idle = useMotionValue(0);
+  const offset = swipeOffset ?? idle;
+  const [rects, setRects] = useState<{ left: number; width: number }[]>([]);
+
+  useEffect(() => {
+    if (!tracking) return;
+    const el = scroller.current;
+    if (!el) return;
+    // `offsetLeft` is layout-relative, so it survives the strip being scrolled
+    // — which it is, whenever six tabs overflow the screen.
+    const measure = () =>
+      setRects(
+        Array.from(el.querySelectorAll<HTMLElement>("button")).map((b) => ({
+          left: b.offsetLeft,
+          width: b.offsetWidth,
+        })),
+      );
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [tracking, tabs]);
+
+
+  /*
+   * Position driven IMPERATIVELY, and this is a correction rather than a style
+   * preference.
+   *
+   * The first attempt derived left/width with `useTransform(offset, …)` reading
+   * `rects` from the render closure. It rendered at left:0 width:0 and stayed
+   * there: the rects are measured in an effect AFTER first paint, and a
+   * transform's output only recomputes when its SOURCE motion value changes.
+   * `offset` had not moved, so the underline kept the zero it was born with —
+   * an invisible indicator on both layouts. Caught by measuring the rendered
+   * element against the active button rather than by looking at it.
+   *
+   * So: refs for the inputs, so the maths always reads current values, and both
+   * a resting effect and a drag subscription write the same two values. One
+   * position, two things that can move it, no stale closure between them.
+   */
+  const left = useMotionValue(0);
+  const width = useMotionValue(0);
+  const rectsRef = useRef(rects);
+  rectsRef.current = rects;
+  const activeIndex = tabs.findIndex((t) => t.value === value);
+  const activeRef = useRef(activeIndex);
+  activeRef.current = activeIndex;
+
+  /** Where the underline sits for a given drag offset. Ends damp in place. */
+  const positionFor = (o: number): { left: number; width: number } | null => {
+    const r = rectsRef.current;
+    const from = r[activeRef.current];
+    if (!from) return null;
+    const neighbour = r[activeRef.current + (o < 0 ? 1 : -1)];
+    const f = Math.min(1, Math.abs(o));
+    if (!neighbour) return { left: from.left + (o < 0 ? -1 : 1) * f * 6, width: from.width };
+    return {
+      left: from.left + (neighbour.left - from.left) * f,
+      width: from.width + (neighbour.width - from.width) * f,
+    };
+  };
+
+  // Resting position: after measuring, and after a commit changes the tab.
+  useEffect(() => {
+    if (!tracking) return;
+    const at = positionFor(offset.get());
+    if (!at) return;
+    // The first placement is not a slide — there was nothing to slide from.
+    const settled = left.get() === 0 && width.get() === 0;
+    if (settled) {
+      left.set(at.left);
+      width.set(at.width);
+      return;
+    }
+    const a = animate(left, at.left, SLIDE);
+    const b = animate(width, at.width, SLIDE);
+    return () => {
+      a.stop();
+      b.stop();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tracking, rects, activeIndex]);
+
+  // Under the finger: follow it exactly, no spring, no lag.
+  useMotionValueEvent(offset, "change", (o) => {
+    if (!tracking) return;
+    const at = positionFor(o);
+    if (!at) return;
+    left.set(at.left);
+    width.set(at.width);
+  });
+
   return (
     <div className={cn("relative", className)}>
       <div
         ref={scroller}
         className={cn(
-          "no-scrollbar flex overflow-x-auto border-b border-hairline",
+          "no-scrollbar relative flex overflow-x-auto border-b border-hairline",
           // `section` runs larger caps, so it buys the width back from the gaps
           // — five Explore tabs have to reach both edges of a 375 px screen.
           section ? "gap-2.5" : "gap-4",
@@ -181,7 +301,7 @@ export function SegmentedTabs<T extends string>({
               )}
             >
               {t.label}
-              {active && (
+              {active && !tracking && (
                 <motion.span
                   layoutId={`seg-${tabs.map((x) => x.value).join("")}`}
                   className={cn(
@@ -194,6 +314,22 @@ export function SegmentedTabs<T extends string>({
             </button>
           );
         })}
+
+        {/* The tracked underline — one element for the whole strip, positioned
+            in the scroller rather than inside a button, because it has to be
+            able to sit BETWEEN two of them mid-drag. Only rendered for a caller
+            that opted in; the untracked path keeps its per-button `layoutId`
+            span above. */}
+        {tracking && rects[activeIndex] && (
+          <motion.span
+            aria-hidden
+            style={{ left, width }}
+            className={cn(
+              "pointer-events-none absolute -bottom-px bg-azure",
+              section ? "h-0.5 rounded-full" : "h-px",
+            )}
+          />
+        )}
       </div>
       {/* A hairline fade so a clipped tab reads as scrollable rather than broken. */}
       {clipped && (

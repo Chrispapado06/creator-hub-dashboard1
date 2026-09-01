@@ -68,7 +68,12 @@ export default function CoachLayout() {
           // there is no notch; the added space is what gives it room to breathe.
           style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 18px)", paddingBottom: "2px" }}
         >
-          <SegmentedTabs tabs={TABS} value={active} onChange={(v) => navigate(v)} />
+          <SegmentedTabs
+            tabs={TABS}
+            value={active}
+            onChange={(v) => navigate(v)}
+            swipeOffset={swipe.swipeOffset}
+          />
         </div>
       )}
       {/* Must be a flex column: `Screen` inside uses `flex-1 overflow-y-auto`,

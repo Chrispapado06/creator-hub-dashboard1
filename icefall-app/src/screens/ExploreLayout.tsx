@@ -102,7 +102,13 @@ export default function ExploreLayout() {
         {/* The chevron is the way back to the hub from a tab. Without it the
             hub would be reachable only by leaving Explore and returning. */}
         <ScreenHeader title="Explore" back={back} large />
-        <SegmentedTabs tabs={TABS} value={lit} onChange={(v) => navigate(v)} variant="section" />
+        <SegmentedTabs
+          tabs={TABS}
+          value={lit}
+          onChange={(v) => navigate(v)}
+          variant="section"
+          swipeOffset={swipe.swipeOffset}
+        />
       </div>
       {/* Must be a flex column: `Screen` inside uses `flex-1 overflow-y-auto`,
           which does nothing under a block parent — the list grew to its full

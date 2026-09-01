@@ -1716,6 +1716,47 @@ component used by six-plus screens — a §6u change for one feature's benefit. 
 content follows the finger; the indicator catches up. Say the word and I will do
 it properly across all its call sites.
 
+### `PH-37` The tab indicator tracks the finger — **DONE** · session 01, 2026-09-01
+Owner: *"track it"*, done across the shared component rather than special-cased.
+
+`SegmentedTabs` gains ONE optional prop, `swipeOffset`. **Thirteen consumers do
+not pass it and take the untouched `layoutId` path; two do.** That split is the
+test the brief set, and it is verified in the browser: Goals still renders its
+per-button underline and no tracked indicator.
+
+The indicator tracks the ATTEMPT. It is driven by the same number that moves the
+content, written in one place, so a drag released below threshold carries both
+back together — measured: underline travelled 41 → 50.5 with the finger and
+returned to 41 on release, route unchanged. At the ends it damps 0.4px in place
+rather than sliding toward a tab that does not exist.
+
+**A bug in my own work, caught by measuring rather than looking.** The first
+version derived left/width with `useTransform(offset, …)` reading `rects` from
+the render closure. It rendered at **left:0 width:0 and stayed there** — an
+invisible underline on both layouts. Cause: rects are measured in an effect
+after first paint, and **a transform's output only recomputes when its SOURCE
+motion value changes**. `offset` had not moved, so the derived value kept the
+zero it was born with. A glance at the screen would have shown "no underline"
+and invited a hunt through CSS; comparing the rendered element's `left` against
+the active button's `offsetLeft` named it immediately. Now driven imperatively
+from refs, with a resting effect and a drag subscription writing the same two
+values.
+
+### `PH-38` Near me removed from Explore → Mountains — **DONE** · session 01
+Owner's request. It was one half of an OBJECTIVES / NEAR ME pair, so **the tab
+row went with it** — a row containing a single tab is chrome that decides
+nothing. The objectives list now renders directly.
+
+Removed with it: the `NearbyPeaks` panel, `SubTabs`, the `Tab` type and state,
+and the `nearbyFromCatalogue` / `nearbyLive` imports it alone consumed —
+checked by hand, because `noUnusedLocals` is off and tsc stays green over dead
+imports. `PeakRow` STAYS: search above still uses it, so peak search reaches
+every peak in the catalogue exactly as before.
+
+Also fixed the copy it left behind: the empty state read *"Add mountains from
+**Near me**"*, pointing at a tab that no longer exists — §6aa, the sentence
+explaining a thing outliving the thing.
+
 #### Still to build from the mockups
 Find a Guide's inline availability calendar and selector rows; Request Guide's
 price breakdown; the guide profile's four tabs; the Plan screen's session

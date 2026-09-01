@@ -26,19 +26,10 @@ import { useGoalsWithProgress } from "@/tracking/training";
 import {
   PEAK_ATTRIBUTION,
   mergePeaks,
-  nearbyFromCatalogue,
-  nearbyLive,
   rememberPeaks,
   searchCatalogueByName,
   type Peak,
 } from "@/services/peaks";
-
-const TABS = [
-  { value: "icefall", label: "Objectives" },
-  { value: "nearby", label: "Near me" },
-] as const;
-
-type Tab = (typeof TABS)[number]["value"];
 
 /** True when a peak's derived band passes the current chip selection. */
 type BandFilter = (elevationM: number, lat: number, lon?: number) => boolean;
@@ -51,7 +42,6 @@ type BandFilter = (elevationM: number, lat: number, lon?: number) => boolean;
  * assessment instead. Search spans both.
  */
 export default function Mountains() {
-  const [tab, setTab] = useState<Tab>("icefall");
   const [q, setQ] = useState("");
   const [results, setResults] = useState<Peak[]>([]);
   const [filterOpen, setFilterOpen] = useState(false);
@@ -161,60 +151,17 @@ export default function Mountains() {
           )}
         </Stagger>
       ) : (
-        <>
-          <div className="mt-5">
-            <SubTabs value={tab} onChange={setTab} />
-          </div>
-          {tab === "icefall" ? (
-            <ObjectivesList matchesBand={matchesBand} filtered={bands.size > 0} />
-          ) : (
-            <NearbyPeaks matchesBand={matchesBand} />
-          )}
-        </>
+        /* NEAR ME REMOVED at the owner's request. It was one half of an
+           OBJECTIVES / NEAR ME pair, and a tab row with a single tab in it is
+           chrome that decides nothing — so the row went with it and the list
+           renders directly. Peak search above is untouched and still reaches
+           every peak in the catalogue. */
+        <ObjectivesList matchesBand={matchesBand} filtered={bands.size > 0} />
       )}
     </Screen>
   );
 }
 
-/**
- * OBJECTIVES / NEAR ME. Deliberately not `SegmentedTabs`: this row sits under
- * the Explore tab strip, and a second full-width rule directly beneath the
- * first reads as a broken border rather than a second level.
- */
-function SubTabs({ value, onChange }: { value: Tab; onChange: (v: Tab) => void }) {
-  return (
-    <div className="flex gap-6">
-      {TABS.map((t) => {
-        const active = t.value === value;
-        return (
-          <button
-            key={t.value}
-            type="button"
-            onClick={() => onChange(t.value)}
-            aria-current={active ? "true" : undefined}
-            className={cn(
-              "relative pb-2.5 text-[12px] font-medium uppercase tracking-[0.14em] transition-colors",
-              active ? "text-snow" : "text-mist-dim hover:text-mist",
-            )}
-          >
-            {t.label}
-            {active && (
-              <span
-                aria-hidden
-                className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-azure"
-              />
-            )}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-/**
- * The funnel's contents. These are the seven assessment bands themselves, not
- * an invented taxonomy — the same ones every peak is graded against.
- */
 function BandChips({
   selected,
   onToggle,
@@ -315,8 +262,7 @@ function ObjectivesList({
         <Card>
           <p className="text-[14px] text-snow">No objectives yet</p>
           <p className="mt-1.5 text-[12px] leading-relaxed text-mist">
-            Add mountains from <strong className="text-snow">Near me</strong>, or search for one by
-            name. They'll collect here.
+            Search for one by name above and add it. They'll collect here.
           </p>
         </Card>
       </div>
@@ -483,141 +429,6 @@ function ObjectiveCard({
         </button>
       </div>
     </div>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* Near me                                                                     */
-/* -------------------------------------------------------------------------- */
-
-type LocState = "idle" | "asking" | "ready" | "denied" | "unavailable";
-
-function NearbyPeaks({ matchesBand }: { matchesBand: BandFilter }) {
-  const [state, setState] = useState<LocState>("idle");
-  const [detail, setDetail] = useState<string | null>(null);
-  const [origin, setOrigin] = useState<{ lat: number; lon: number } | null>(null);
-  const [peaks, setPeaks] = useState<Peak[]>([]);
-  const [loadingMore, setLoadingMore] = useState(false);
-
-  const locate = useCallback(() => {
-    if (typeof navigator === "undefined" || !navigator.geolocation) {
-      setState("unavailable");
-      setDetail("This browser has no location API.");
-      return;
-    }
-    setState("asking");
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setOrigin({ lat: pos.coords.latitude, lon: pos.coords.longitude });
-        setState("ready");
-      },
-      (err) => {
-        if (err.code === err.PERMISSION_DENIED) {
-          setState("denied");
-          setDetail("Location was declined. ICEFALL can't work out what's near you without it.");
-        } else {
-          setState("unavailable");
-          setDetail("No position available yet — try again with a clearer view of the sky.");
-        }
-      },
-      { enableHighAccuracy: false, timeout: 15_000, maximumAge: 300_000 },
-    );
-  }, []);
-
-  // Catalogue first for an instant list, then OpenStreetMap fills in the rest.
-  useEffect(() => {
-    if (!origin) return;
-    let cancelled = false;
-    const ctrl = new AbortController();
-
-    nearbyFromCatalogue(origin.lat, origin.lon, { radiusM: 60_000, limit: 40 }).then((instant) => {
-      if (cancelled) return;
-      rememberPeaks(instant);
-      setPeaks(instant);
-      setLoadingMore(true);
-
-      nearbyLive(origin.lat, origin.lon, { radiusM: 25_000, limit: 150 }, ctrl.signal)
-        .then(({ peaks: live }) => {
-          if (cancelled || live.length === 0) return;
-          const merged = mergePeaks(instant, live);
-          rememberPeaks(merged);
-          setPeaks(merged);
-        })
-        // `nearbyLive` now rejects when every Overpass mirror is down, so that
-        // callers can tell that apart from an empty area. Here the bundled
-        // catalogue results already on screen stand, and the widening search
-        // simply stops.
-        .catch(() => {})
-        .finally(() => !cancelled && setLoadingMore(false));
-    });
-
-    return () => {
-      cancelled = true;
-      ctrl.abort();
-    };
-  }, [origin]);
-
-  const shown = useMemo(
-    () => peaks.filter((p) => matchesBand(p.elevationM, p.lat, p.lon)),
-    [peaks, matchesBand],
-  );
-
-  if (state !== "ready") {
-    return (
-      <div className="mt-5">
-        <Card>
-          <div className="flex items-start gap-3">
-            <MapPin size={16} strokeWidth={1.5} className="mt-0.5 shrink-0 text-azure" />
-            <div className="min-w-0">
-              <p className="text-[14px] text-snow">What's around you</p>
-              <p className="mt-1.5 text-[12px] leading-relaxed text-mist">
-                {detail ??
-                  "ICEFALL will find every named peak near you, closest first, with an assessment of what each one asks for."}
-              </p>
-            </div>
-          </div>
-          <Button className="mt-4 w-full" onClick={locate} disabled={state === "asking"}>
-            {state === "asking" ? (
-              <>
-                <Loader2 size={15} className="animate-spin" /> Finding you…
-              </>
-            ) : (
-              "Use my location"
-            )}
-          </Button>
-          <p className="mt-3 text-[11px] leading-relaxed text-mist-dim">
-            Your position is used once, on this device, to sort the list. It is never stored or sent
-            anywhere.
-          </p>
-        </Card>
-      </div>
-    );
-  }
-
-  return (
-    <>
-      <div className="mt-5 flex items-center justify-between">
-        <span className="section-label">{shown.length} peaks near you</span>
-        {loadingMore && <Loader2 size={13} className="animate-spin text-mist-dim" />}
-      </div>
-
-      <Stagger className="mt-3 space-y-2.5">
-        {shown.map((p) => (
-          <Rise key={p.id}>
-            <PeakRow peak={p} />
-          </Rise>
-        ))}
-        {shown.length === 0 && (
-          <p className="py-12 text-center text-[13px] text-mist-dim">
-            {peaks.length === 0
-              ? "No named peaks found within 60 km."
-              : "No peaks nearby in the selected bands."}
-          </p>
-        )}
-      </Stagger>
-
-      <p className="pt-5 text-center text-[10px] text-mist-dim">{PEAK_ATTRIBUTION}</p>
-    </>
   );
 }
 

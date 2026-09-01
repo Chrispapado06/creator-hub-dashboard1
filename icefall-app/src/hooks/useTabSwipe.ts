@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import { useReducedMotion } from "framer-motion";
+import { animate, useMotionValue, useReducedMotion, type MotionValue } from "framer-motion";
 
 /**
  * Swiping left and right between the tabs of a section.
@@ -102,6 +102,14 @@ function gestureBelongsElsewhere(target: EventTarget | null, root: HTMLElement):
 }
 
 export interface TabSwipe {
+  /**
+   * Signed fraction of one tab's travel, for the strip to track.
+   *
+   * `undefined` under reduced motion — which makes `SegmentedTabs` fall back to
+   * its ordinary commit-time slide. Someone who asked the OS for less movement
+   * should not be given a new thing that follows their finger.
+   */
+  swipeOffset: MotionValue<number> | undefined;
   /** Spread onto the element that holds the tab's content. */
   bind: {
     ref: (node: HTMLElement | null) => void;
@@ -134,6 +142,16 @@ export function useTabSwipe({
   const [dx, setDx] = useState(0);
   const [dragging, setDragging] = useState(false);
 
+  /*
+   * The same number that moves the content, handed to the tab strip.
+   *
+   * Written in ONE place alongside `setDx`, so the underline and the page
+   * cannot disagree about how far the drag has gone — which is the whole
+   * requirement: the indicator tracks the ATTEMPT, and a drag released below
+   * the threshold takes both of them back together.
+   */
+  const offset = useMotionValue(0);
+
   const start = useRef<{ x: number; y: number; t: number } | null>(null);
   /** null until the first few pixels decide; false means "not ours". */
   const horizontal = useRef<boolean | null>(null);
@@ -145,7 +163,10 @@ export function useTabSwipe({
     horizontal.current = null;
     setDragging(false);
     setDx(0);
-  }, []);
+    // Eased rather than snapped: this is the return journey a below-threshold
+    // drag makes, and the underline rides it back with the page.
+    animate(offset, 0, { type: "spring", stiffness: 700, damping: 50, mass: 0.4 });
+  }, [offset]);
 
   const onPointerDown = useCallback(
     (e: React.PointerEvent) => {
@@ -193,7 +214,10 @@ export function useTabSwipe({
       // reads as a broken gesture; a little give reads as "there is no more".
       const atStart = index === 0 && moveX > 0;
       const atEnd = index === tabs.length - 1 && moveX < 0;
-      setDx(atStart || atEnd ? moveX * RUBBER_BAND : moveX);
+      const travel = atStart || atEnd ? moveX * RUBBER_BAND : moveX;
+      setDx(travel);
+      // A full screen-width drag is exactly one tab's worth of travel.
+      offset.set(Math.max(-1, Math.min(1, travel / window.innerWidth)));
     },
     [index, tabs.length],
   );
@@ -224,6 +248,7 @@ export function useTabSwipe({
   );
 
   return {
+    swipeOffset: reduce ? undefined : offset,
     bind: {
       ref: (node: HTMLElement | null) => {
         rootRef.current = node;

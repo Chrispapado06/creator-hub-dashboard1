@@ -1999,6 +1999,19 @@ Scope the probe to the live subtree, not the document. Third in the family, with
 the probe that compressed two user actions into one task (manufacturing a bug)
 and the one that read a stale console buffer.
 
+**FOURTH AND SHARPEST: A PROBE CAN COMPRESS TIME.** Synthetic events dispatched
+in ONE synchronous task all carry the **same `timeStamp`**, so elapsed time is
+zero and **every drag reads as an infinitely fast flick** — a 30px nudge appeared
+to trip a 210px threshold, looking like broken logic. With real `setTimeout`
+spacing it is correctly ignored. **Any velocity- or duration-based logic is
+untestable without letting the clock actually run.**
+
+That completes a set worth memorising, all found in this project by distrusting
+an alarming result: a probe that compressed **actions** into one task
+(manufacturing a bug), one that read a **stale buffer** (missing a real one), one
+that read the **whole document mid-transition** (two screens at once), and this
+one, which compressed **time**.
+
 Corollary, from the same batch: **404 and 401 distinguish absent from unreadable.**
 Session 01's table probes were sound precisely because the contrast carried the
 information — `enquiries` 404 (absent) against `support_tickets` 401 (present,
@@ -2494,6 +2507,35 @@ instant carries its own offset and was already correct, so treating both alike
 would have broken the working half. Verified byte-identical output for instants
 across all four zones. Invalid input falls back to visibly wrong rather than
 quietly rolling into the next month.
+
+
+
+## 6ao. GUARD BY WHAT A THING DOES, NOT BY WHAT IT IS CALLED
+
+**2026-09-01, the swipe gesture.** The brief specified a selector list of things
+the gesture must stand down over (maps, `.overflow-x-auto` rails). Session 01
+built a **structural** test instead — walk the ancestors and ask *does this
+element own horizontal gestures right now?*: a canvas, `role="slider"`, a range
+input, `touch-action: none`, or a box where `scrollWidth > clientWidth`.
+
+An inventory run to check that decision found the two traps the list walks into:
+
+- **`.overflow-x-auto` matches rails that cannot scroll.** Several pill rails fit
+  inside 375px. A selector match stands down over a rail carrying no gesture and
+  kills the feature on whole screens for nothing. **`scrollWidth > clientWidth`
+  is the difference between a rail that owns the axis and one that merely exists.**
+- **`.no-scrollbar` sits on `Screen` itself**, wrapping nearly every page — any
+  list built from the codebase's own scroll utilities disables the gesture
+  everywhere.
+
+**And the case a source-grep cannot see at all: the MapLibre canvases do not
+exist in the source.** The library builds them at runtime, so grepping for
+`<canvas>` concludes there are none to guard. Only a runtime `tagName` test finds
+them.
+
+**The general rule: a capability test survives the codebase changing; a name test
+is only as good as the last person who remembered to update it.** Prefer asking
+what an element can do at the moment the question matters.
 
 
 ## 6f. A SYNC SCRIPT'S CORRECTNESS IS NOT OBSERVABLE FROM THE FILE IT COPIES FROM
