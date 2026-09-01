@@ -1288,6 +1288,44 @@ reach framer-motion's cached read. The guard is an early `onDone()` + `return
 null`, matching the verified precedent in `ActivityComplete.tsx:25`. Stated
 rather than claimed.
 
+### `PH-30` `fmtDate` rendered every calendar date A DAY EARLY west of Greenwich — **DONE** · session 01, 2026-09-01
+Flagged during the CTRL sweep, fixed now. `lib/format.ts` did `new Date(iso)`,
+which for a bare `YYYY-MM-DD` is **UTC midnight** — the previous day for anyone
+in a negative-offset timezone. **70 call sites reach for this helper**, and none
+of them could see which kind of string they were passing.
+
+Measured, not reasoned about — the same three dates through the old and new
+paths in four timezones:
+
+| Zone | `2027-05-01` before | after |
+|---|---|---|
+| America/Los_Angeles | **30 Apr 2027** | 1 May 2027 |
+| America/New_York | **30 Apr 2027** | 1 May 2027 |
+| Europe/London | 1 May 2027 | 1 May 2027 |
+| Asia/Kathmandu | 1 May 2027 | 1 May 2027 |
+
+So for every user in the Americas: **their objective's target date, their summit
+dates, event dates and the date their trial ends all displayed one day early.**
+Silently, and only for part of the world — which is why nobody here saw it.
+
+**Fixed at the helper, not at 70 call sites.** `asLocalDate` parses a bare
+calendar date with the LOCAL constructor and passes anything else through
+untouched: a full instant carries its own offset and was already correct, so
+treating the two alike would have broken the working half. Invalid dates
+(`2027-02-31`) fall back to the original path rather than being invented into
+March — "Invalid Date" is visibly wrong instead of quietly wrong.
+
+Reproduce:
+
+    TZ=America/Los_Angeles node -e "console.log(new Date('2027-05-01').toLocaleDateString('en-GB'))"
+
+**This is the fourth time this project has fixed this exact class** —
+`guides/dates.ts`, `network/groups.ts`, `DateField`, now the shared formatter.
+The pattern worth naming: each earlier fix was made at a call site by somebody
+who had just been bitten, and none of them looked at the helper everyone else
+was using. **A bug fixed locally four times is a bug that lives somewhere
+central.**
+
 #### Still to build from the mockups
 Find a Guide's inline availability calendar and selector rows; Request Guide's
 price breakdown; the guide profile's four tabs; the Plan screen's session

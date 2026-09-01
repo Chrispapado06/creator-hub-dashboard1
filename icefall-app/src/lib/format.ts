@@ -42,8 +42,44 @@ export const fmtPrice = (eur: number) =>
     maximumFractionDigits: 0,
   }).format(eur);
 
+/**
+ * A calendar day (`2027-05-01`) as a LOCAL date; anything else unchanged.
+ *
+ * THE BUG THIS FIXES, WHICH WAS EVERYWHERE.
+ *
+ * `new Date("2027-05-01")` is parsed as UTC midnight by specification. West of
+ * Greenwich that instant is still 30 April, so every bare calendar date in this
+ * app — objective target dates, summit dates, event dates, trial end dates —
+ * rendered as THE DAY BEFORE for a user in the Americas. Their summit date, the
+ * date their trial ends, the day they topped out: all off by one, silently, and
+ * only for some of the world.
+ *
+ * A full instant (`2026-08-30T04:05:00.000Z`) carries its own offset and is
+ * already correct, so it is passed through untouched — the two must not be
+ * treated alike, which is exactly why this is a parse and not a blanket change.
+ *
+ * The project has fixed this same class of bug several times at individual call
+ * sites (`guides/dates.ts`, `network/groups.ts`, `DateField`). It lived on here
+ * because this helper is where 70 call sites reach for a date, and none of them
+ * could see which kind of string they were passing.
+ */
+function asLocalDate(iso: string): Date {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.trim());
+  if (!m) return new Date(iso);
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const date = new Date(y, mo - 1, d);
+  // Rejects 2027-02-31, which the constructor would roll silently into March.
+  // An unparseable date falls back to the original behaviour rather than
+  // inventing a day — an Invalid Date renders as "Invalid Date", which is at
+  // least visibly wrong instead of quietly wrong.
+  if (date.getFullYear() !== y || date.getMonth() !== mo - 1 || date.getDate() !== d) {
+    return new Date(iso);
+  }
+  return date;
+}
+
 export function fmtDate(iso: string, opts: Intl.DateTimeFormatOptions = {}) {
-  return new Date(iso).toLocaleDateString("en-GB", {
+  return asLocalDate(iso).toLocaleDateString("en-GB", {
     day: "numeric",
     month: "short",
     year: "numeric",
@@ -52,7 +88,7 @@ export function fmtDate(iso: string, opts: Intl.DateTimeFormatOptions = {}) {
 }
 
 export function fmtDateShort(iso: string) {
-  return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  return asLocalDate(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 }
 
 export function fmtTime(iso: string) {

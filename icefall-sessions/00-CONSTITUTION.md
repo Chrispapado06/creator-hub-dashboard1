@@ -1830,6 +1830,14 @@ just gets believed.**
 
 Two corollaries:
 
+- **A SELF-UPDATING NUMBER BESIDE A HAND-WRITTEN SENTENCE IS THE WORST OF BOTH.**
+  The onboarding intro read "N questions — two are recorded for later"; the count
+  derived itself from `ALL_QUESTION_STEPS` and stayed right, while the sentence
+  beside it silently went false when the two became declinable and three questions
+  were added. **Deriving half a claim makes the other half harder to notice** —
+  the number moving is exactly what reassures a reader that the line is maintained.
+  Derive the whole sentence or none of it.
+
 - **When an ACCESS RULE moves, look for the sentence that explains it** (Session
   01, the messaging gate). `isLocked()` breaks loudly the first time the new policy
   refuses to match it — but *"You can message a guide once you have booked them"*,
@@ -1980,6 +1988,16 @@ dies on the missing email. **Which error fires is the proof the row exists.** A
 question was answered without read access and without a write — two failing calls
 where one succeeding call would have answered destructively. When you cannot read
 and must not write, arrange two refusals whose difference carries the answer.
+
+**A PROBE THAT READS THE WHOLE DOCUMENT DURING A TRANSITION IS READING TWO
+SCREENS AT ONCE** (Session 01, the onboarding step-through). Their robot
+oscillated between "5 OF 12" and "5 OF 13" and was nearly filed as a bug: with
+`AnimatePresence` deliberately running WITHOUT `mode="wait"`, outgoing and
+incoming steps are both in the DOM mid-transition, so the robot was clicking the
+OLD step's buttons and toggling an answer that adds or removes a later step.
+Scope the probe to the live subtree, not the document. Third in the family, with
+the probe that compressed two user actions into one task (manufacturing a bug)
+and the one that read a stale console buffer.
 
 Corollary, from the same batch: **404 and 401 distinguish absent from unreadable.**
 Session 01's table probes were sound precisely because the contrast carried the
