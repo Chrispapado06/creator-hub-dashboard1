@@ -53,6 +53,17 @@ export interface AthleteProfileContext {
   maxAltitudeM: number | null;
   /** Used for fuelling maths. Null when the athlete never set one. */
   bodyMassKg: number | null;
+  /**
+   * What may NOT be loaded, and what the athlete said in their own words.
+   *
+   * Carried so the prompt can forbid prescribing into it. NOT carried so the
+   * model can reason about it — see `systemPromptFor`, which frames these as
+   * constraints and explicitly bars interpretation.
+   */
+  limitations: string[];
+  limitationsNote: string;
+  altitudeIllness: string | null;
+  trainingBaseline: string | null;
 }
 
 export interface ObjectiveContext {
@@ -143,6 +154,10 @@ export function useCoachContext(): CoachContext {
       typicalSessionMin: coachProfile.typicalSessionMin,
       technicalSkills: coachProfile.technicalSkills ?? [],
       maxAltitudeM: coachProfile.maxAltitudeM ?? null,
+      limitations: coachProfile.limitations ?? [],
+      limitationsNote: coachProfile.limitationsNote ?? "",
+      altitudeIllness: coachProfile.altitudeIllness ?? null,
+      trainingBaseline: coachProfile.trainingBaseline ?? null,
       // `bodyMassKg` falls back to 72 in AppState, so it cannot be told apart
       // from a real answer there. `bodyMassKgSet` is the raw stored value and
       // is null until the athlete gives one.
@@ -255,6 +270,9 @@ export function describeAthlete(ctx: CoachContext): string {
   );
   lines.push(`Typical session length: ${a.typicalSessionMin} min`);
   lines.push(`Body mass: ${or(a.bodyMassKg, "not set")}${a.bodyMassKg ? " kg" : ""}`);
+  // Where they START from. Without it a plan is reasoned backwards from the
+  // objective date alone, and a beginner gets an athlete's week.
+  lines.push(`Currently training: ${or(a.trainingBaseline, "not given")}`);
 
   return lines.join("\n");
 }
@@ -354,6 +372,50 @@ export function describeState(ctx: CoachContext): string {
  * know ICEFALL's constraints will happily invent a readiness score, clear
  * someone for a summit, or prescribe a hard day the app has already vetoed.
  */
+/**
+ * The train-around constraints, as CONSTRAINTS.
+ *
+ * Owner addition 2026-09-01, with a boundary that is the whole point: this
+ * block narrows what the coach may prescribe and must never invite diagnosis,
+ * interpretation or reassurance. The model may decline to load a declared knee.
+ * It may not say what is wrong with the knee, whether it is healing, or when to
+ * return to it — and it may not phrase an adjustment as though it had judged
+ * the condition.
+ *
+ * Framed as a closed list of prohibitions (§6am): the model chooses from what
+ * it may prescribe rather than reasoning about a body nobody has examined.
+ * Returns "" when there is nothing to constrain, so the prompt does not carry
+ * an empty section inviting the model to fill it.
+ */
+function limitationsBlock(ctx: CoachContext): string {
+  const parts: string[] = [];
+
+  if (ctx.athlete.limitations.length > 0 || ctx.athlete.limitationsNote !== "") {
+    const named = ctx.athlete.limitations.length > 0 ? ctx.athlete.limitations.join(", ") : "none by category";
+    parts.push(
+      `AREAS YOU MUST NOT PRESCRIBE LOAD INTO: ${named}.` +
+        (ctx.athlete.limitationsNote ? `\nTheir own words, verbatim: "${ctx.athlete.limitationsNote}"` : ""),
+    );
+  }
+
+  if (ctx.athlete.altitudeIllness === "serious" || ctx.athlete.altitudeIllness === "mild") {
+    parts.push(
+      `They have reported ${ctx.athlete.altitudeIllness} altitude illness. Treat conservative ascent rates as the only acceptable suggestion.`,
+    );
+  }
+
+  if (parts.length === 0) return "";
+
+  return `
+
+WHAT YOU MUST TRAIN AROUND — CONSTRAINTS, NOT A CLINICAL PICTURE
+${parts.join("\n")}
+- These narrow WHAT YOU MAY PRESCRIBE. They are not information about a body for you to reason about.
+- Do NOT name, explain, interpret or speculate about any condition. Do not say what is wrong, whether it is improving, or when they may return to something.
+- Do NOT offer reassurance about it, and do not attribute a change to it in a way that reads as medical judgement. Adjust the session and move on.
+- If they ask you about the condition itself, say plainly that it is for a doctor or physiotherapist who can examine them, and answer only the training question.`;
+}
+
 export function systemPromptFor(ctx: CoachContext): string {
   return `You are the ICEFALL Coach, inside a mountaineering training app.
 
@@ -373,5 +435,5 @@ HOW YOU MUST BEHAVE
   judgement to a certified mountain guide. Never clear anyone as "ready" for a summit.
 - Never infer technical skill or altitude experience they did not claim.
 - Be concise and specific — a few short paragraphs, no lists of caveats.
-- British English, plain and direct. No hype.`;
+- British English, plain and direct. No hype.${limitationsBlock(ctx)}`;
 }

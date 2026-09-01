@@ -76,7 +76,43 @@ function seedObjectives(): SavedObjective[] {
   }));
 }
 
+/**
+ * What "none" was actually answered to.
+ *
+ * Owner ruling 2026-09-01: every onboarding question must be answered, and
+ * "none" is a legitimate answer to several of them. An empty array cannot say
+ * whether the question was asked — so these flags carry it. Absent and "none"
+ * must not collapse into one value (§6ag).
+ */
+export interface OnboardingDeclined {
+  noDisciplines: boolean;
+  noFixedTrainingDays: boolean;
+  noTechnicalSkills: boolean;
+  heightDeclined: boolean;
+  birthYearDeclined: boolean;
+  noObjectiveYet: boolean;
+  /** "Nothing right now" to the train-around question. */
+  noLimitations: boolean;
+}
+
 export interface OnboardingAnswers {
+  /** Optional only for records written before this flow existed. */
+  declined?: OnboardingDeclined;
+  /**
+   * What sessions must train AROUND — category ids, plus the athlete's own
+   * words verbatim.
+   *
+   * A CONSTRAINT LIST, never clinical context. The coach may decline to load a
+   * declared knee; it may not say what is wrong with it, whether it is healing,
+   * or when to return. ICEFALL is not a doctor and this field does not make it
+   * one — it only narrows what may be prescribed.
+   */
+  limitations?: string[];
+  limitationsNote?: string;
+  /** Constrains ascent-rate guidance. Diagnoses nothing. */
+  altitudeIllness?: string | null;
+  /** Where training starts FROM, so a plan is not built for a body at rest. */
+  trainingBaseline?: string | null;
   name: string;
   disciplines: Discipline[];
   experience: ExperienceLevel;
@@ -253,6 +289,18 @@ export interface CoachProfile {
   technicalSkills: string[];
   /** Highest altitude actually reached, self-reported. */
   maxAltitudeM?: number;
+  /**
+   * What sessions must train AROUND. Category ids plus the athlete's own words.
+   *
+   * A PRESCRIPTION CONSTRAINT, not clinical context. Everything downstream of
+   * this field may narrow what it offers; nothing downstream may interpret it.
+   */
+  limitations?: string[];
+  limitationsNote?: string;
+  /** Constrains ascent-rate guidance only. */
+  altitudeIllness?: string | null;
+  /** Days a week currently trained, at signup. */
+  trainingBaseline?: string | null;
 }
 
 /**

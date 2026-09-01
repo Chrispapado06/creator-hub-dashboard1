@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   Anchor,
   ArrowLeft,
@@ -180,6 +180,59 @@ const WEEK: { day: number; label: string; full: string }[] = [
 const SESSION_LENGTHS = [30, 45, 60, 90, 120];
 
 /** Labels for the real `Equipment` union — see src/coach/exercises.ts. */
+/**
+ * What ICEFALL must train AROUND — owner addition, 2026-09-01.
+ *
+ * THE BOUNDARY, AND WHY IT IS THE WHOLE POINT OF THIS QUESTION.
+ *
+ * The coach's system prompt already says "You are NOT a doctor. Defer anything
+ * medical." That instruction stays, and this answer does not soften it. What
+ * this list does is CONSTRAIN WHAT MAY BE PRESCRIBED — it must never invite
+ * diagnosis, interpretation or reassurance.
+ *
+ * So: the coach may avoid loading a declared knee. It may not say what is wrong
+ * with the knee, may not suggest it is healing, and may not adjust "because of"
+ * a condition in a way that reads as a medical judgement. The answer travels as
+ * a hard constraint list, never as clinical context — §6am's closed world in a
+ * new place: the coach chooses from what it may prescribe rather than reasoning
+ * about a body it has never examined.
+ *
+ * These are broad categories on purpose. A finer list would invite people to
+ * describe a diagnosis, which is exactly the thing this must not collect.
+ */
+const LIMITATIONS: { id: string; label: string }[] = [
+  { id: "knee", label: "Knee" },
+  { id: "back", label: "Back" },
+  { id: "shoulder", label: "Shoulder" },
+  { id: "ankle-foot", label: "Ankle or foot" },
+  { id: "breathing", label: "Asthma or breathing" },
+  { id: "heart", label: "Heart" },
+  { id: "recent-surgery", label: "Recent surgery" },
+  { id: "other", label: "Something else" },
+];
+
+/** Where the athlete is starting FROM, not where they are going. */
+const BASELINES: { id: string; label: string; note: string }[] = [
+  { id: "none", label: "Not training right now", note: "The plan starts from here, and builds." },
+  { id: "occasional", label: "Occasionally", note: "Less than once a week." },
+  { id: "1-2", label: "1–2 days a week", note: "" },
+  { id: "3-4", label: "3–4 days a week", note: "" },
+  { id: "5-plus", label: "5+ days a week", note: "" },
+];
+
+/**
+ * Altitude illness history. Constrains ascent-rate guidance; diagnoses nothing.
+ *
+ * "Never been high enough to know" is a real and common answer, and collapsing
+ * it into "never" would turn an absence of exposure into a clean record.
+ */
+const ALTITUDE_ILLNESS: { id: string; label: string; note: string }[] = [
+  { id: "never", label: "Never", note: "Been to altitude and had no trouble." },
+  { id: "mild", label: "Mild", note: "Headache, poor sleep, loss of appetite." },
+  { id: "serious", label: "Serious", note: "HAPE or HACE, or a descent for symptoms." },
+  { id: "unknown", label: "Never been high enough to know", note: "Not the same as never." },
+];
+
 const EQUIPMENT: { id: Equipment; label: string; note?: string }[] = [
   { id: "none", label: "Bodyweight only", note: "No kit at all" },
   { id: "dumbbells", label: "Dumbbells" },
@@ -493,9 +546,12 @@ type StepKey =
   | "equipment"
   | "skills"
   | "altitude"
+  | "altitudeIllness"
+  | "baseline"
+  | "limitations"
   | "body"
-  | "intent"
   | "name"
+  | "building"
   | "payoff";
 
 /**
@@ -516,8 +572,10 @@ const ALL_QUESTION_STEPS: StepKey[] = [
   "equipment",
   "skills",
   "altitude",
+  "altitudeIllness",
+  "baseline",
+  "limitations",
   "body",
-  "intent",
   "name",
 ];
 
@@ -541,6 +599,21 @@ export default function Onboarding() {
   const [levels, setLevels] = useState<Record<string, Level>>({});
   const [goalPeak, setGoalPeak] = useState<Peak | null>(null);
   const [noGoal, setNoGoal] = useState(false);
+
+  /*
+   * The explicit "none" answers — owner ruling 2026-09-01: every question must
+   * be ANSWERED, and required-to-answer is not required-to-have-a-value. Each
+   * of these is a real selectable option stored as the answer given, so a
+   * beginner is never forced to invent a discipline, a training day or a
+   * qualification to get past a gate. They are mutually exclusive with real
+   * selections: picking one clears the other side.
+   */
+  const [noneDisciplines, setNoneDisciplines] = useState(false);
+  const [noFixedDays, setNoFixedDays] = useState(false);
+  const [noSkills, setNoSkills] = useState(false);
+  /** "Prefer not to say", per measurement — an answer, not an omission. */
+  const [heightPrivate, setHeightPrivate] = useState(false);
+  const [birthYearPrivate, setBirthYearPrivate] = useState(false);
   const [timelineId, setTimelineId] = useState<string | null>(null);
   const [days, setDays] = useState<number[]>([]);
   const [sessionMin, setSessionMin] = useState<number | null>(null);
@@ -551,7 +624,18 @@ export default function Onboarding() {
   const [weightKg, setWeightKg] = useState("");
   const [heightCm, setHeightCm] = useState("");
   const [birthYear, setBirthYear] = useState("");
-  const [intent, setIntent] = useState<IntentId | null>(null);
+  /*
+   * The three questions added 2026-09-01.
+   *
+   * `limitations` constrains what may be PRESCRIBED and nothing else — see the
+   * note on `LIMITATIONS`. `noLimitations` is its explicit "nothing right now",
+   * because an empty list cannot say whether the question was put.
+   */
+  const [altitudeIllness, setAltitudeIllness] = useState<string | null>(null);
+  const [baseline, setBaseline] = useState<string | null>(null);
+  const [limitations, setLimitations] = useState<string[]>([]);
+  const [limitationsNote, setLimitationsNote] = useState("");
+  const [noLimitations, setNoLimitations] = useState(false);
   const [created, setCreated] = useState<CreatedGoal | null>(null);
 
   /**
@@ -568,14 +652,29 @@ export default function Onboarding() {
     // "body" and "intent" sit BEFORE "name" deliberately: `finish()` runs on
     // leaving the name step, so anything asked after it would be written after
     // the answers were already saved.
-    s.push("days", "length", "equipment", "skills", "altitude", "body", "intent", "name", "payoff");
+    s.push(
+      "days",
+      "length",
+      "equipment",
+      "skills",
+      "altitude",
+      "altitudeIllness",
+      "baseline",
+      "limitations",
+      "body",
+      "name",
+      "building",
+      "payoff",
+    );
     return s;
   }, [disciplines.length, goalPeak]);
 
   const step = steps[Math.min(index, steps.length - 1)];
 
   // The intro and the payoff are not questions, so they are outside the count.
-  const questions: StepKey[] = steps.filter((s) => s !== "intro" && s !== "payoff");
+  const questions: StepKey[] = steps.filter(
+    (s) => s !== "intro" && s !== "building" && s !== "payoff",
+  );
   const questionNumber = questions.indexOf(step) + 1;
 
   const toggle = <T,>(list: T[], value: T): T[] =>
@@ -592,6 +691,10 @@ export default function Onboarding() {
     saved.current = true;
 
     updateCoachProfile({
+      limitations: noLimitations ? [] : limitations,
+      limitationsNote: noLimitations ? "" : limitationsNote.trim(),
+      altitudeIllness,
+      trainingBaseline: baseline,
       disciplineExperience: levels,
       availableEquipment: equipment,
       trainingDays: days,
@@ -656,7 +759,36 @@ export default function Onboarding() {
       .filter((id) => Object.values(levels).includes(id))
       .at(-1);
 
+    /*
+     * The declined answers, written as ANSWERS.
+     *
+     * `disciplines: []` on its own is indistinguishable from a person who was
+     * never asked — and this flow now guarantees everyone WAS asked, so that
+     * ambiguity would throw away the only new fact. Each flag records that the
+     * question was put and answered "none", which is a different thing from
+     * silence and must stay a different thing (§6ag).
+     *
+     * They travel to the server inside the same `answers` blob, so a person who
+     * signs up on the phone is not re-asked on the web.
+     */
+    const declined = {
+      noLimitations,
+      noDisciplines: noneDisciplines,
+      noFixedTrainingDays: noFixedDays,
+      noTechnicalSkills: noSkills,
+      heightDeclined: heightPrivate,
+      birthYearDeclined: birthYearPrivate,
+      noObjectiveYet: noGoal,
+    };
+
     const answers: OnboardingAnswers = {
+      declined,
+      // Constraints on what may be PRESCRIBED. Never clinical context — the
+      // coach may avoid loading a declared knee and may not reason about it.
+      limitations,
+      limitationsNote: limitationsNote.trim(),
+      altitudeIllness,
+      trainingBaseline: baseline,
       name,
       disciplines: disciplines
         .map((id) => DISCIPLINES.find((d) => d.id === id)?.discipline)
@@ -677,16 +809,39 @@ export default function Onboarding() {
      * Height, birth year and the training intent go to settings, which is where
      * the rest of the profile lives.
      */
+    const derivedIntent: IntentId = goalPeak
+      ? "vertical"
+      : disciplines.includes("trail-running")
+        ? "endurance"
+        : disciplines.includes("mountaineering") || disciplines.includes("ski-touring")
+          ? "vertical"
+          : "endurance";
+
     const kg = Number(weightKg.replace(",", "."));
     if (Number.isFinite(kg) && kg > 0) setBodyMassKg(kg);
 
     const cm = Number(heightCm.replace(",", "."));
     const year = Number(birthYear);
     patchSettings({
-      heightCm: Number.isFinite(cm) && cm > 0 ? Math.round(cm) : undefined,
-      birthYear: Number.isFinite(year) && year > 1900 ? Math.round(year) : undefined,
-      trainingIntent: intent ?? undefined,
-      sessionGoal: intent ?? undefined,
+      // `undefined` here means "not held". The DECLINED flags above are what
+      // carry "asked, and they chose not to say" — the settings field cannot
+      // express that, and must not be made to look as though it does.
+      heightCm: !heightPrivate && Number.isFinite(cm) && cm > 0 ? Math.round(cm) : undefined,
+      birthYear:
+        !birthYearPrivate && Number.isFinite(year) && year > 1900 ? Math.round(year) : undefined,
+      /*
+       * DERIVED, not asked — the "what are you training for?" step was removed
+       * 2026-09-01 as already answered by disciplines and the objective.
+       *
+       * The SETTING is preserved rather than dropped: a session still defaults
+       * to something, and that default is now inferred from what they told us
+       * elsewhere. An objective is a mountain, so vertical; otherwise the
+       * strongest signal in their disciplines; endurance when they named none,
+       * which is the least specific default and therefore the safest one to
+       * assume on someone's behalf.
+       */
+      trainingIntent: derivedIntent,
+      sessionGoal: derivedIntent,
     });
 
     completeOnboarding(answers);
@@ -697,7 +852,18 @@ export default function Onboarding() {
   }, [
     addGoal,
     altitudeId,
+    altitudeIllness,
+    baseline,
+    birthYearPrivate,
+    limitations,
+    limitationsNote,
+    noLimitations,
     completeOnboarding,
+    heightPrivate,
+    noFixedDays,
+    noGoal,
+    noSkills,
+    noneDisciplines,
     days,
     disciplines,
     equipment,
@@ -710,23 +876,131 @@ export default function Onboarding() {
     updateCoachProfile,
   ]);
 
+  /*
+   * The building-your-plan lines — owner addition, 2026-09-01.
+   *
+   * EVERY LINE IS DERIVED FROM AN ANSWER THEY GAVE, and a line whose answer is
+   * absent simply does not appear. That is the whole difference between this
+   * and a spinner with rotating copy: someone who declared no injuries never
+   * sees "working around", and someone with no kit never sees the kit line.
+   *
+   * Nothing here claims work that is not happening. No "comparing you to
+   * thousands of climbers", no "consulting expedition data" — each line either
+   * repeats something they typed or names a step the generator actually runs.
+   */
+  const buildingLines = useMemo(() => {
+    const out: string[] = [];
+    const answered = questions.length;
+    out.push(`Reading your ${answered} answers`);
+
+    if (goalPeak) {
+      const t = TIMELINES.find((x) => x.id === timelineId);
+      out.push(
+        `${goalPeak.name} · ${goalPeak.elevationM.toLocaleString("en-GB")} m` +
+          (t ? ` — ${t.label.toLowerCase()}` : ""),
+      );
+    } else {
+      out.push("No objective yet — building general mountain fitness");
+    }
+
+    if (days.length > 0) {
+      const names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+      out.push(`${days.map((d) => names[d]).join(", ")} — your days`);
+    } else if (noFixedDays) {
+      out.push("No fixed days — the week stays flexible");
+    }
+
+    if (sessionMin !== null) out.push(`Sessions at ${sessionMin} minutes`);
+
+    if (baseline) {
+      const b = BASELINES.find((x) => x.id === baseline);
+      if (b) out.push(`Starting from: ${b.label.toLowerCase()}`);
+    }
+
+    if (limitations.length > 0) {
+      const labels = limitations
+        .map((id) => LIMITATIONS.find((l) => l.id === id)?.label.toLowerCase())
+        .filter(Boolean);
+      out.push(`Working around your ${labels.join(", ")}`);
+    }
+
+    if (equipment.includes("none")) {
+      out.push("Nothing that needs kit you do not have");
+    } else if (equipment.length > 0) {
+      out.push(`Built for the ${equipment.length} pieces of kit you have`);
+    }
+
+    if (altitudeIllness === "mild" || altitudeIllness === "serious") {
+      out.push("Conservative ascent rates, as you asked");
+    }
+
+    return out;
+  }, [
+    altitudeIllness,
+    baseline,
+    days,
+    equipment,
+    goalPeak,
+    limitations,
+    noFixedDays,
+    questions.length,
+    sessionMin,
+    timelineId,
+  ]);
+
   /* ---- Gating ------------------------------------------------------------ */
 
-  // Multi-select steps never block. Every single-select offers an answer for
-  // every athlete — including "not sure" and "I don't have one yet" — so
-  // requiring one asks nothing unreasonable.
+  // EVERY question blocks until answered — owner ruling 2026-09-01. No step
+  // asks anything unreasonable, because every step offers an answer every
+  // athlete can truthfully give: "none of these yet", "no fixed days",
+  // "bodyweight only", "prefer not to say". Requiring an answer is not the
+  // same as requiring a value, and the difference is what keeps this gate from
+  // manufacturing a false history for a beginner.
+  const validWeight = ((): boolean => {
+    const kg = Number(weightKg.replace(",", "."));
+    return Number.isFinite(kg) && kg >= 30 && kg <= 200;
+  })();
+  const validHeight = ((): boolean => {
+    const cm = Number(heightCm.replace(",", "."));
+    return Number.isFinite(cm) && cm >= 100 && cm <= 250;
+  })();
+  const validBirthYear = ((): boolean => {
+    const y = Number(birthYear);
+    return Number.isFinite(y) && y > 1900 && y <= new Date().getFullYear() - 5;
+  })();
+
   const canAdvance = ((): boolean => {
     switch (step) {
+      case "disciplines":
+        return disciplines.length > 0 || noneDisciplines;
       case "experience":
         return disciplines.every((id) => levels[id] !== undefined);
       case "goal":
         return Boolean(goalPeak) || noGoal;
       case "timeline":
         return timelineId !== null;
+      case "days":
+        return days.length > 0 || noFixedDays;
       case "length":
         return sessionMin !== null;
+      case "equipment":
+        // "Bodyweight only" is in the list as a real option, so non-empty IS
+        // answered — no extra tile needed here.
+        return equipment.length > 0;
+      case "skills":
+        return skills.length > 0 || noSkills;
       case "altitude":
         return altitudeId !== null;
+      case "body":
+        // Weight is genuinely required — it is the calorie estimate's only
+        // input. Height and year accept "prefer not to say" as the answer.
+        return validWeight && (validHeight || heightPrivate) && (validBirthYear || birthYearPrivate);
+      case "altitudeIllness":
+        return altitudeIllness !== null;
+      case "baseline":
+        return baseline !== null;
+      case "limitations":
+        return limitations.length > 0 || noLimitations;
       case "name":
         return name.trim().length > 0;
       default:
@@ -747,7 +1021,7 @@ export default function Onboarding() {
         className="flex shrink-0 items-center gap-3 px-5 pb-3"
         style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 18px)" }}
       >
-        {index > 0 && step !== "payoff" ? (
+        {index > 0 && step !== "payoff" && step !== "building" ? (
           <button
             type="button"
             onClick={() => setIndex((i) => Math.max(0, i - 1))}
@@ -763,7 +1037,7 @@ export default function Onboarding() {
         <div className="flex flex-1 gap-1">
           {questions.map((key, i) => {
             const reached = questionNumber > 0 && i < questionNumber;
-            const done = step === "payoff";
+            const done = step === "payoff" || step === "building";
             return (
               <span key={key} className="h-px flex-1 overflow-hidden bg-hairline">
                 <motion.span
@@ -780,9 +1054,11 @@ export default function Onboarding() {
         <span className="section-label tnum shrink-0">
           {step === "intro"
             ? "INTRO"
-            : step === "payoff"
-              ? "DONE"
-              : `${questionNumber} OF ${questions.length}`}
+            : step === "building"
+              ? "BUILDING"
+              : step === "payoff"
+                ? "DONE"
+                : `${questionNumber} OF ${questions.length}`}
         </span>
       </div>
 
@@ -823,6 +1099,7 @@ export default function Onboarding() {
                         selected={on}
                         className="p-4"
                         onClick={() => {
+                          setNoneDisciplines(false);
                           setDisciplines((s) => toggle(s, d.id));
                           // Dropping a discipline drops its experience answer —
                           // keeping it would write a level for something the
@@ -847,11 +1124,28 @@ export default function Onboarding() {
                     );
                   })}
                 </div>
-                <EmptyMeaning>
-                  Choosing nothing is allowed. ICEFALL then skips the experience question and
-                  records no disciplines — your sessions and your plan are unaffected, because
-                  neither is built from this answer.
-                </EmptyMeaning>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNoneDisciplines((v) => !v);
+                    setDisciplines([]);
+                  }}
+                  aria-pressed={noneDisciplines}
+                  className={cn(
+                    "relative mt-4 w-full rounded-tile border p-4 text-left transition-colors duration-200",
+                    noneDisciplines
+                      ? "border-azure/60 bg-azure/[0.07]"
+                      : "border-hairline bg-elevated/40 hover:border-hairline-strong",
+                  )}
+                >
+                  <span className="block text-[13px] text-snow">None of these yet</span>
+                  <span className="mt-1 block pr-6 text-[11px] leading-relaxed text-mist-dim">
+                    A real answer, recorded as such. ICEFALL skips the experience question — a
+                    question it declined to ask, not one you skipped — and never invents a
+                    discipline for you.
+                  </span>
+                  {noneDisciplines && <Ticked />}
+                </button>
               </>
             )}
 
@@ -1020,7 +1314,10 @@ export default function Onboarding() {
                       <button
                         key={d.day}
                         type="button"
-                        onClick={() => setDays((s) => toggle(s, d.day))}
+                        onClick={() => {
+                          setNoFixedDays(false);
+                          setDays((s) => toggle(s, d.day));
+                        }}
                         aria-pressed={on}
                         aria-label={d.full}
                         className={cn(
@@ -1035,12 +1332,28 @@ export default function Onboarding() {
                     );
                   })}
                 </div>
-                <EmptyMeaning>
-                  Choosing nothing means ICEFALL holds no training days for you. Be aware of what
-                  this answer does either way: the generated week is currently a fixed six sessions
-                  and one rest day, and ICEFALL does not yet move sessions onto the days you pick.
-                  It is recorded on your profile, not applied to the plan.
-                </EmptyMeaning>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNoFixedDays((v) => !v);
+                    setDays([]);
+                  }}
+                  aria-pressed={noFixedDays}
+                  className={cn(
+                    "relative mt-4 w-full rounded-tile border p-4 text-left transition-colors duration-200",
+                    noFixedDays
+                      ? "border-azure/60 bg-azure/[0.07]"
+                      : "border-hairline bg-elevated/40 hover:border-hairline-strong",
+                  )}
+                >
+                  <span className="block text-[13px] text-snow">No fixed days — it varies</span>
+                  <span className="mt-1 block pr-6 text-[11px] leading-relaxed text-mist-dim">
+                    Recorded on your profile as its own answer. Either way, the generated week is
+                    currently a fixed six sessions and one rest day — ICEFALL does not yet move
+                    sessions onto the days you pick.
+                  </span>
+                  {noFixedDays && <Ticked />}
+                </button>
               </>
             )}
 
@@ -1124,7 +1437,10 @@ export default function Onboarding() {
                             <button
                               key={s}
                               type="button"
-                              onClick={() => setSkills((v) => toggle(v, s))}
+                              onClick={() => {
+                                setNoSkills(false);
+                                setSkills((v) => toggle(v, s));
+                              }}
                               aria-pressed={on}
                               className={cn(
                                 "flex w-full items-center gap-3 rounded-tile border px-3.5 py-3 text-left transition-colors duration-200",
@@ -1152,15 +1468,23 @@ export default function Onboarding() {
                   ))}
                 </div>
 
-                {skills.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setSkills([])}
-                    className="section-label mt-6 text-mist transition-colors hover:text-snow"
-                  >
-                    Clear all — none of these yet
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNoSkills((v) => !v);
+                    setSkills([]);
+                  }}
+                  aria-pressed={noSkills}
+                  className={cn(
+                    "relative mt-5 w-full rounded-tile border p-4 text-left transition-colors duration-200",
+                    noSkills
+                      ? "border-azure/60 bg-azure/[0.07]"
+                      : "border-hairline bg-elevated/40 hover:border-hairline-strong",
+                  )}
+                >
+                  <span className="block text-[13px] text-snow">None of these yet</span>
+                  {noSkills && <Ticked />}
+                </button>
 
                 <EmptyMeaning>
                   None of these yet is a normal place to be, and it is the honest answer if you have
@@ -1224,7 +1548,7 @@ export default function Onboarding() {
                 <StepHead
                   eyebrow="You"
                   title="A few numbers about you."
-                  subtitle="All optional. Weight is the one that changes anything today — the calorie estimate has no other input, and until now it assumed 72 kg for everybody."
+                  subtitle="Weight is required — the calorie estimate has no other input, and without it every figure would describe an assumed 72 kg body instead of yours. The other two take 'prefer not to say'."
                 />
                 <div className="mt-7 space-y-3">
                   <NumberField
@@ -1233,54 +1557,194 @@ export default function Onboarding() {
                     value={weightKg}
                     onChange={setWeightKg}
                     placeholder="72"
-                    note="Used for the calorie estimate on every session."
+                    note={
+                      weightKg.trim() !== "" && !validWeight
+                        ? "Between 30 and 200 kg — outside that the estimate would be describing a typo."
+                        : "Used for the calorie estimate on every session."
+                    }
                   />
                   <NumberField
                     label="Height"
                     unit="cm"
                     value={heightCm}
-                    onChange={setHeightCm}
+                    onChange={(v) => {
+                      setHeightPrivate(false);
+                      setHeightCm(v);
+                    }}
                     placeholder="178"
                     note="Recorded only. Nothing in ICEFALL uses it yet."
+                    privacy={{
+                      on: heightPrivate,
+                      toggle: () => {
+                        setHeightPrivate((v) => !v);
+                        setHeightCm("");
+                      },
+                    }}
                   />
                   <NumberField
                     label="Year of birth"
                     unit=""
                     value={birthYear}
-                    onChange={setBirthYear}
+                    onChange={(v) => {
+                      setBirthYearPrivate(false);
+                      setBirthYear(v);
+                    }}
                     placeholder="1994"
                     note="Recorded only. ICEFALL will not turn your age into a heart-rate zone — that formula is a population average, not a measurement of you."
+                    privacy={{
+                      on: birthYearPrivate,
+                      toggle: () => {
+                        setBirthYearPrivate((v) => !v);
+                        setBirthYear("");
+                      },
+                    }}
                   />
                 </div>
               </>
             )}
 
-            {step === "intent" && (
+            {step === "altitudeIllness" && (
               <>
                 <StepHead
-                  eyebrow="Training"
-                  title="What are you training for?"
-                  subtitle="This sets what a session defaults to. You can change it every time you record, and it never overrides what you actually do."
+                  eyebrow="Altitude"
+                  title="Have you had altitude sickness?"
+                  subtitle="This constrains how fast ICEFALL is willing to suggest you go up. It is not a diagnosis and ICEFALL will not offer one — altitude illness is a medical matter for a doctor who can see you."
                 />
                 <div className="mt-7 space-y-2.5">
-                  {SESSION_INTENTS.filter((i) => i.id !== "free").map((i) => (
+                  {ALTITUDE_ILLNESS.map((o) => (
                     <button
-                      key={i.id}
+                      key={o.id}
                       type="button"
-                      onClick={() => setIntent(i.id)}
+                      onClick={() => setAltitudeIllness(o.id)}
+                      aria-pressed={altitudeIllness === o.id}
                       className={cn(
                         "w-full rounded-tile border px-4 py-3.5 text-left transition-colors",
-                        intent === i.id
+                        altitudeIllness === o.id
                           ? "border-azure/55 bg-azure/[0.08]"
                           : "border-hairline bg-elevated/40 hover:border-hairline-strong",
                       )}
                     >
-                      <span className="block text-[15px] text-snow">{i.label}</span>
-                      <span className="mt-0.5 block text-[12px] text-mist-dim">{i.blurb}</span>
+                      <span className="block text-[15px] text-snow">{o.label}</span>
+                      <span className="mt-0.5 block text-[12px] text-mist-dim">{o.note}</span>
                     </button>
                   ))}
                 </div>
               </>
+            )}
+
+            {step === "baseline" && (
+              <>
+                <StepHead
+                  eyebrow="Right now"
+                  title="How much are you training at the moment?"
+                  subtitle="Where you are starting FROM. Without it a plan is built backwards from your date alone, and a beginner gets the same week as somebody already training five days — which is how people arrive at the mountain injured."
+                />
+                <div className="mt-7 space-y-2.5">
+                  {BASELINES.map((o) => (
+                    <button
+                      key={o.id}
+                      type="button"
+                      onClick={() => setBaseline(o.id)}
+                      aria-pressed={baseline === o.id}
+                      className={cn(
+                        "w-full rounded-tile border px-4 py-3.5 text-left transition-colors",
+                        baseline === o.id
+                          ? "border-azure/55 bg-azure/[0.08]"
+                          : "border-hairline bg-elevated/40 hover:border-hairline-strong",
+                      )}
+                    >
+                      <span className="block text-[15px] text-snow">{o.label}</span>
+                      {o.note && (
+                        <span className="mt-0.5 block text-[12px] text-mist-dim">{o.note}</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {step === "limitations" && (
+              <>
+                <StepHead
+                  eyebrow="Training around"
+                  title="Anything ICEFALL should train around?"
+                  subtitle="So sessions stop loading something that should not be loaded. ICEFALL will not tell you what is wrong, whether it is healing, or when to return — that belongs with a doctor or a physiotherapist who can examine you."
+                />
+                <div className="mt-7 grid grid-cols-2 gap-2.5">
+                  {LIMITATIONS.map((l) => {
+                    const on = limitations.includes(l.id);
+                    return (
+                      <button
+                        key={l.id}
+                        type="button"
+                        onClick={() => {
+                          setNoLimitations(false);
+                          setLimitations((v) => toggle(v, l.id));
+                        }}
+                        aria-pressed={on}
+                        className={cn(
+                          "rounded-tile border px-3.5 py-3 text-left text-[13px] transition-colors",
+                          on
+                            ? "border-azure/60 bg-azure/[0.07] text-snow"
+                            : "border-hairline bg-elevated/40 text-mist hover:border-hairline-strong",
+                        )}
+                      >
+                        {l.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Verbatim to the constraint list, never parsed into a
+                    category: "left knee ACL 2024" is more useful to a human
+                    reading the row than any bucket this app could guess, and
+                    guessing would be the app interpreting a medical statement. */}
+                {(limitations.length > 0 || limitationsNote.trim() !== "") && (
+                  <textarea
+                    value={limitationsNote}
+                    onChange={(e) => {
+                      setNoLimitations(false);
+                      setLimitationsNote(e.target.value.slice(0, 300));
+                    }}
+                    rows={3}
+                    placeholder="Anything worth adding, in your own words — optional"
+                    aria-label="Anything worth adding"
+                    className="mt-3 w-full resize-none rounded-tile border border-hairline bg-elevated/40 p-3.5 text-[13px] leading-relaxed text-snow outline-none transition-colors placeholder:text-mist-dim focus:border-azure/50"
+                  />
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNoLimitations((v) => !v);
+                    setLimitations([]);
+                    setLimitationsNote("");
+                  }}
+                  aria-pressed={noLimitations}
+                  className={cn(
+                    "relative mt-4 w-full rounded-tile border p-4 text-left transition-colors duration-200",
+                    noLimitations
+                      ? "border-azure/60 bg-azure/[0.07]"
+                      : "border-hairline bg-elevated/40 hover:border-hairline-strong",
+                  )}
+                >
+                  <span className="block text-[13px] text-snow">Nothing right now</span>
+                  {noLimitations && <Ticked />}
+                </button>
+
+                <EmptyMeaning>
+                  ICEFALL never asks you to train through pain, whatever is recorded here. If
+                  something hurts during a session, stop — that instruction does not depend on this
+                  answer, and no answer here removes it.
+                </EmptyMeaning>
+              </>
+            )}
+
+            {step === "building" && (
+              <BuildingPlan
+                lines={buildingLines}
+                onDone={() => setIndex((i) => Math.min(i + 1, steps.length - 1))}
+              />
             )}
 
             {step === "payoff" && (
@@ -1304,7 +1768,12 @@ export default function Onboarding() {
         className="shrink-0 border-t border-hairline bg-obsidian px-5 pt-4"
         style={{ paddingBottom: "calc(1.25rem + env(safe-area-inset-bottom, 0px))" }}
       >
-        {step === "payoff" ? (
+        {step === "building" ? (
+          // No control: the reveal advances itself. A button here would invite
+          // someone to skip the one moment that exists to be watched, and a
+          // disabled one would just look broken.
+          <span className="block h-[52px]" />
+        ) : step === "payoff" ? (
           <Button size="lg" className="w-full" onClick={() => navigate("/trial")}>
             Continue
             <ArrowRight size={16} strokeWidth={1.8} />
@@ -1330,7 +1799,13 @@ function IntroStep({ count }: { count: number }) {
       <StepHead
         eyebrow="Personalisation"
         title={["Let's build", "your mountain."]}
-        subtitle={`${count} questions at most — a couple drop out if they don't apply to you. About a minute. Almost every one changes something: which movements your sessions prescribe, how long your plan runs, and what ICEFALL is willing to say about your readiness for a summit. Two are recorded for later, and say so when you reach them.`}
+        // The count comes from `ALL_QUESTION_STEPS`, so it cannot drift from
+        // the flow. The sentence after it can, and did — "two are recorded for
+        // later" described height and year before they became declinable and
+        // before three questions were added that all change something. A
+        // promise about the questions has to be re-read every time the
+        // questions change.
+        subtitle={`${count} questions at most — a couple drop out if they don't apply to you. About a minute. Every one is answerable: where a truthful answer is "none" or "prefer not to say", that is offered as a real option. They change which movements your sessions prescribe, how fast ICEFALL is willing to suggest you go up, and what it will train around.`}
       />
 
       <div className="mt-9 space-y-px overflow-hidden rounded-card border border-hairline">
@@ -1370,6 +1845,79 @@ function Line({ label, value, effect }: { label: string; value: string; effect: 
         <span className="tnum min-w-0 text-right text-[13px] text-snow">{value}</span>
       </div>
       <p className="mt-1.5 text-[11px] leading-relaxed text-mist">{effect}</p>
+    </div>
+  );
+}
+
+/**
+ * The 10–12 second moment before the plan appears.
+ *
+ * WHY THIS IS NOT A PROGRESS BAR.
+ *
+ * Generating the plan is near-instant. A progress track or a percentage would
+ * be drawing a measurement of remaining work that nobody is measuring — the
+ * same fabrication as any other invented figure, just wearing a loading
+ * animation. So this is a PACED REVEAL: the timing is honest about being
+ * presentation, and every line it shows is something the athlete typed.
+ *
+ * The lines arrive from `buildingLines`, which omits any line whose answer is
+ * absent. Somebody who declared no injuries never sees an injury line. A line
+ * that appeared for everyone regardless of their answers would be the generic
+ * version wearing this one's clothes.
+ *
+ * `prefers-reduced-motion` skips the whole thing — the plan is already built,
+ * so there is nothing to wait for and nothing is lost.
+ */
+function BuildingPlan({ lines, onDone }: { lines: string[]; onDone: () => void }) {
+  const reduce = useReducedMotion();
+  const [shown, setShown] = useState(0);
+
+  // Fewer answers means fewer lines, so the pace stretches to fill the same
+  // window rather than the screen being padded with generic filler.
+  const stepMs = Math.min(1600, Math.max(950, Math.round(10_500 / Math.max(1, lines.length))));
+
+  useEffect(() => {
+    if (reduce) {
+      onDone();
+      return;
+    }
+    if (shown >= lines.length) {
+      // A beat after the last line lands, so it is read rather than glimpsed.
+      const t = window.setTimeout(onDone, 900);
+      return () => window.clearTimeout(t);
+    }
+    const t = window.setTimeout(() => setShown((n) => n + 1), shown === 0 ? 350 : stepMs);
+    return () => window.clearTimeout(t);
+  }, [shown, lines.length, reduce, stepMs, onDone]);
+
+  if (reduce) return null;
+
+  return (
+    <div className="flex min-h-[60vh] flex-col justify-center py-10">
+      <p className="section-label text-azure">Building your plan</p>
+
+      <div className="mt-6 space-y-3.5">
+        {lines.slice(0, shown).map((line, i) => (
+          <motion.p
+            key={line}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: i === shown - 1 ? 1 : 0.45, y: 0 }}
+            transition={{ duration: 0.5, ease: EASE }}
+            className="text-[17px] font-light leading-snug text-snow"
+          >
+            {line}
+          </motion.p>
+        ))}
+      </div>
+
+      {/* A breathing dot, not a progress track: it says "working", and claims
+          no knowledge of how much is left, because nothing measures that. */}
+      <motion.span
+        aria-hidden
+        animate={{ opacity: [0.25, 1, 0.25] }}
+        transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut" }}
+        className="mt-8 h-1.5 w-1.5 rounded-full bg-azure"
+      />
     </div>
   );
 }
@@ -1569,11 +2117,16 @@ function Payoff({
 }
 
 /**
- * One optional measurement.
+ * One measurement.
  *
  * Every field says what it is used for, including the ones that are used for
  * nothing yet — asking for a number and not saying why is how an onboarding
  * flow starts feeling like a form.
+ *
+ * `privacy`, where offered, renders "Prefer not to say" as a control INSIDE the
+ * field: an explicit answer, mutually exclusive with typing a number, stored as
+ * the answer given. A field left blank is unanswered and blocks Next; a field
+ * declined is answered. The two must never look the same (§6ag).
  */
 function NumberField({
   label,
@@ -1582,6 +2135,7 @@ function NumberField({
   onChange,
   placeholder,
   note,
+  privacy,
 }: {
   label: string;
   unit: string;
@@ -1589,23 +2143,45 @@ function NumberField({
   onChange: (v: string) => void;
   placeholder: string;
   note: string;
+  privacy?: { on: boolean; toggle: () => void };
 }) {
   return (
-    <label className="block rounded-tile border border-hairline bg-elevated/40 px-4 py-3 transition-colors focus-within:border-azure/50">
+    <label
+      className={cn(
+        "block rounded-tile border px-4 py-3 transition-colors focus-within:border-azure/50",
+        privacy?.on ? "border-azure/40 bg-azure/[0.05]" : "border-hairline bg-elevated/40",
+      )}
+    >
       <span className="flex items-baseline justify-between gap-3">
         <span className="text-[12px] uppercase tracking-[0.1em] text-mist-dim">{label}</span>
         <span className="flex items-baseline gap-1.5">
           <input
             inputMode="numeric"
             value={value}
+            disabled={privacy?.on === true}
             onChange={(e) => onChange(e.target.value.replace(/[^0-9.,]/g, ""))}
-            placeholder={placeholder}
-            className="w-[74px] bg-transparent text-right text-[19px] font-light text-snow outline-none placeholder:text-mist-dim/60"
+            placeholder={privacy?.on ? "—" : placeholder}
+            className="w-[74px] bg-transparent text-right text-[19px] font-light text-snow outline-none placeholder:text-mist-dim/60 disabled:opacity-50"
           />
           {unit && <span className="text-[12px] text-mist-dim">{unit}</span>}
         </span>
       </span>
       <span className="mt-1.5 block text-[11px] leading-relaxed text-mist-dim">{note}</span>
+      {privacy && (
+        <button
+          type="button"
+          onClick={privacy.toggle}
+          aria-pressed={privacy.on}
+          className={cn(
+            "mt-2.5 rounded-full border px-3 py-1 text-[11px] transition-colors",
+            privacy.on
+              ? "border-azure/60 bg-azure/10 text-azure"
+              : "border-hairline text-mist hover:border-hairline-strong hover:text-snow",
+          )}
+        >
+          {privacy.on ? "Prefer not to say — your answer" : "Prefer not to say"}
+        </button>
+      )}
     </label>
   );
 }

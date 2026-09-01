@@ -1206,6 +1206,88 @@ OFFLINE anywhere, **6 tile.openstreetmap.org requests + live Overpass on
 stays suppressed, so `enquiryGate` says held-on-device to the public — the
 per-path gate doing exactly what it was built for.
 
+### `SIGNUP-01` Every question answered, three added, one removed — **DONE** · session 01, 2026-09-01
+Owner: *"all questions when made account need to be filled in."* **12 → 14
+questions, every one gated.**
+
+**Required to ANSWER is not required to have a VALUE.** Every step that could
+strand somebody now ships an explicit truthful answer, stored AS an answer:
+"None of these yet" (disciplines, skills), "No fixed days — it varies",
+"Nothing right now" (train-around), "Prefer not to say" (height, year of
+birth), alongside the existing "I don't have one yet" (objective). Each is
+mutually exclusive with a real selection and each is written to a
+`declined` block on `OnboardingAnswers` — because `disciplines: []` cannot say
+whether the question was ever put, and a flow that guarantees everyone was
+asked would otherwise throw away the only new fact (§6ag).
+
+**Weight is genuinely required**, bounded 30–200 kg with the reason shown on a
+bad value. **That closes the calorie thread**: verified BOTH branches in a
+browser — no weight set renders *"est. for an assumed 72 kg"* plus a link
+to Settings; weight set renders neither. Full flow now saves `bodyMassKg: 74`
+and `onboarded: true`.
+
+**Three added.** *Anything ICEFALL should train around?* (categories + verbatim
+free text), *How much are you training at the moment?*, *Have you had altitude
+sickness?*
+
+**The medical boundary, which is the point of the first one.** The answer
+CONSTRAINS WHAT MAY BE PRESCRIBED and never invites diagnosis. `context.ts`
+gains a `limitationsBlock` framed as a closed list of prohibitions: the coach
+may decline to load a declared knee; it may not name, explain, interpret or
+speculate about the condition, may not say it is improving, may not offer
+reassurance, and may not attribute a change to it in a way that reads as
+medical judgement. Free text is passed VERBATIM and never parsed into a
+category — guessing a bucket would be the app interpreting a medical
+statement. "Never asks you to train through pain" stays, and the step says so.
+
+**One removed** — "What are you training for?", already answered by disciplines
+and the objective. The SETTING is preserved and derived (objective → vertical;
+else strongest discipline signal; else endurance), not dropped. **The type
+system did that sweep**: cutting `"intent"` from `StepKey` made tsc enumerate
+every remaining reader.
+
+**And the intro's promise was re-read, which it needed.** It said *"Two are
+recorded for later"* — true before height and year became declinable and before
+three questions were added that all change something. The count comes from
+`ALL_QUESTION_STEPS` so it self-updated to 14; the sentence beside it could not,
+and did not.
+
+### `SIGNUP-02` The building-your-plan reveal — **DONE** · session 01, 2026-09-01
+A 10–12 second paced reveal before the summary. **Every line is DERIVED from an
+answer they gave**; a line whose answer is absent does not appear. Verified in
+the browser on a run that declined everything optional:
+
+    Reading your 12 answers
+    No objective yet — building general mountain fitness
+    No fixed days — the week stays flexible
+    Sessions at 30 minutes
+    Starting from: not training right now
+    Nothing that needs kit you do not have
+
+No injury line, because that person declared none. That absence IS the feature.
+
+**No progress bar and no percentage** — generating the plan is near-instant, so
+a progress track would draw a measurement of remaining work that nobody is
+measuring: the same fabrication as any invented figure, wearing a loading
+animation. A breathing dot says "working" and claims no knowledge of how much
+is left. Nothing claims work that is not happening; no "comparing you to
+thousands of climbers". Pace stretches when there are fewer lines rather than
+padding with filler.
+
+**Probe lesson, third instance and the sharpest.** The step-through robot kept
+oscillating between "5 OF 12" and "5 OF 13". Not a product bug: `AnimatePresence`
+deliberately runs WITHOUT `mode="wait"`, so the outgoing and incoming steps are
+both in the DOM during a transition, and the robot was clicking the OLD step's
+buttons — toggling a discipline, which adds or removes the experience step.
+**A probe that reads the whole document during a transition is reading two
+screens at once.** Scoping clicks to the last child of the step area fixed it.
+
+**Reduced motion: NOT verified in-browser** — the harness cannot set the OS
+preference before app load, and overriding `matchMedia` afterwards does not
+reach framer-motion's cached read. The guard is an early `onDone()` + `return
+null`, matching the verified precedent in `ActivityComplete.tsx:25`. Stated
+rather than claimed.
+
 #### Still to build from the mockups
 Find a Guide's inline availability calendar and selector rows; Request Guide's
 price breakdown; the guide profile's four tabs; the Plan screen's session
