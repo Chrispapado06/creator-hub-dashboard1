@@ -1,6 +1,7 @@
 import { MOUNTAINS } from "@/data/mock/mountains";
 import { plateDataUri } from "@/components/domain/TrailPlate";
-import { TREK_PHOTO_CREDITS, TREK_PHOTO_IDS } from "./credits";
+import { TREK_PHOTO_CREDITS, TREK_PHOTO_IDS, type TrekPhotoCredit } from "./credits";
+import { TREK_PHOTO_OVERRIDES } from "./photoOverrides";
 import type { Trek } from "./model";
 
 /**
@@ -26,9 +27,26 @@ import type { Trek } from "./model";
 
 export { TREK_PHOTO_CREDITS };
 
-export const trekHasPhoto = (id: string): boolean => TREK_PHOTO_IDS.has(id);
+/**
+ * THE ONE PLACE THAT ANSWERS "who took this trek's photograph".
+ *
+ * Hand-picked overrides win over the generated map. This exists as a single
+ * accessor rather than two lookups because the credit is a LICENCE OBLIGATION:
+ * every photograph in both maps is CC BY or CC BY-SA, which requires the
+ * author named wherever the work appears. The trek card and the trek detail
+ * page used to read `TREK_PHOTO_CREDITS` separately, so a photograph added in
+ * one place would have shown up credited on one screen and anonymous on the
+ * other — which is a breach, not a cosmetic slip. Read this instead.
+ */
+export const trekPhotoCredit = (id: string): TrekPhotoCredit | undefined =>
+  TREK_PHOTO_OVERRIDES[id] ?? TREK_PHOTO_CREDITS[id];
+
+export const trekHasPhoto = (id: string): boolean =>
+  id in TREK_PHOTO_OVERRIDES || TREK_PHOTO_IDS.has(id);
 
 export function trekImage(trek: Trek): string {
+  const override = TREK_PHOTO_OVERRIDES[trek.id];
+  if (override) return override.src;
   if (TREK_PHOTO_IDS.has(trek.id)) return `/img/treks/${trek.id}.jpg`;
   for (const id of trek.mountainIds) {
     // The curated mountain's own photograph, which this app already bundles.
@@ -49,7 +67,9 @@ export const trekPlate = (id: string): string => plateDataUri(id);
  * it. Null means the image is of the route itself and needs no qualifier.
  */
 export function trekImageSubject(trek: Trek): string | null {
-  if (TREK_PHOTO_IDS.has(trek.id)) return null;
+  // `trekHasPhoto`, not the generated set: an overridden route's picture is of
+  // the route, so it needs no "this is the mountain, not the walk" qualifier.
+  if (trekHasPhoto(trek.id)) return null;
   for (const id of trek.mountainIds) {
     const m = MOUNTAINS.find((p) => p.id === id);
     if (m) return m.name;
@@ -59,7 +79,7 @@ export function trekImageSubject(trek: Trek): string | null {
 
 /** The caption under a trek image — attribution where it is owed. */
 export function trekImageCaption(trek: Trek): string {
-  const credit = TREK_PHOTO_CREDITS[trek.id];
+  const credit = trekPhotoCredit(trek.id);
   if (credit) {
     // CC BY and CC BY-SA require the author named wherever the work appears.
     return [credit.credit ? `Photograph: ${credit.credit}` : "Photograph", credit.license, "Wikimedia Commons"]

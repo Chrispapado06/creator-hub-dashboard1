@@ -213,7 +213,16 @@ export function cachedVerifiedPhoto(
  */
 export function photoCaption(name: string, photo: TrailPhoto): string {
   if (photo.kind === "of") {
-    return `${name} · Wikimedia Commons`;
+    /*
+     * A photograph OF the trail still needs its photographer named. This used
+     * to return the site alone, which silently dropped the credit on every
+     * "of" entry — the same CC BY-SA breach the `near` branch below was
+     * written to avoid, hiding in the branch nobody re-read. Attribution is
+     * owed per PHOTO, not per kind.
+     */
+    const who = photo.credit ?? "Unknown photographer";
+    const site = photo.source === "geograph" ? "Geograph" : "Wikimedia Commons";
+    return `${name} · ${who} · ${photo.license} · ${site}`;
   }
   /*
    * "near" — from Geograph OR from Commons, and the caption must say which.

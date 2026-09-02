@@ -1,7 +1,8 @@
 import { motion, useReducedMotion } from "framer-motion";
-import { useId } from "react";
+import { useId, useState } from "react";
 import { cn } from "@/lib/utils";
 import { elevationPath } from "@/lib/geo";
+import { fmtDistance, fmtElevation } from "@/lib/format";
 import type { TrackPoint } from "@/types";
 
 /**
@@ -279,6 +280,164 @@ export function MacroBar({
           style={{ background: s.color }}
         />
       ))}
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* MonthlyVolume — the season, month by month                                 */
+/* -------------------------------------------------------------------------- */
+
+export type VolumeMonth = {
+  /** First of the month, local time. */
+  date: Date;
+  distanceKm: number;
+  elevationM: number;
+  activities: number;
+};
+
+/**
+ * Two measures, TWO PLOTS — never one plot with two y-axes.
+ *
+ * Distance is tens of kilometres and elevation is thousands of metres, so
+ * drawing both against a single frame means choosing an arbitrary alignment
+ * between the two scales, and the reader sees a correlation the data never
+ * claimed. Small multiples sharing ONE x-axis keep every honest comparison
+ * (which month was bigger, where the season peaked) and make no dishonest one.
+ *
+ * One series per plot, so neither needs a legend — the label above it names it.
+ * Selecting a month highlights it in BOTH plots, which is the whole reason the
+ * two are stacked and share a month axis rather than sitting in separate cards.
+ */
+/**
+ * One plot of the pair.
+ *
+ * Declared at module scope, NOT inside `MonthlyVolume`. A component defined in
+ * another component's body is a new type on every render, so React unmounts and
+ * remounts the whole subtree each time state changes — which replayed the grow-in
+ * animation on every tap and left the just-clicked button detached, so a second
+ * tap on the same month never registered and the selection could not be cleared.
+ */
+function VolumePlot({
+  values,
+  max,
+  selected,
+  onSelect,
+  reduce,
+}: {
+  values: number[];
+  max: number;
+  selected: number;
+  onSelect(i: number): void;
+  reduce: boolean;
+}) {
+  return (
+    <div className="flex h-[54px] items-end gap-[2px]">
+      {values.map((v, i) => {
+        const pct = max > 0 ? (v / max) * 100 : 0;
+        const on = i === selected;
+        return (
+          <button
+            key={i}
+            type="button"
+            onClick={() => onSelect(i)}
+            /* The hit area is the whole column including its 2px gap, so a
+               thumb never has to find a 6px bar. */
+            className="flex h-full flex-1 items-end justify-center"
+          >
+            <motion.span
+              className={cn(
+                /* Capped, not slot-filling: a bar that fills its band reads as a
+                   solid block and loses the rhythm of the months. */
+                "w-full max-w-[14px] rounded-t-[3px]",
+                on ? "bg-azure" : v > 0 ? "bg-white/22" : "bg-white/[0.06]",
+              )}
+              initial={{ height: reduce ? `${Math.max(pct, 3)}%` : "3%" }}
+              animate={{ height: `${Math.max(pct, 3)}%` }}
+              transition={{
+                duration: reduce ? 0 : 0.6,
+                ease: [0.22, 1, 0.36, 1],
+                delay: reduce ? 0 : i * 0.035,
+              }}
+            />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export function MonthlyVolume({
+  months,
+  className,
+}: {
+  months: VolumeMonth[];
+  className?: string;
+}) {
+  const reduce = useReducedMotion();
+  const [sel, setSel] = useState<number | null>(null);
+
+  if (months.length === 0) return null;
+
+  const maxKm = Math.max(...months.map((m) => m.distanceKm), 1);
+  const maxM = Math.max(...months.map((m) => m.elevationM), 1);
+  // The tallest month is worth naming outright; every other value is one tap
+  // away. A number above every bar is noise nobody reads.
+  const peak = months.reduce((b, m, i) => (m.distanceKm > months[b].distanceKm ? i : b), 0);
+  const shown = sel ?? peak;
+  const active = months[shown];
+  /* Tapping the selected month again clears the selection and returns the
+     readout to the biggest month. */
+  const pick = (i: number) => setSel((cur) => (cur === i ? null : i));
+
+  return (
+    <div className={cn("select-none", className)}>
+      {/* The reading for whichever month is selected. Values live in text, not
+          only in a tooltip, so nothing is reachable by hover alone. */}
+      <div className="flex items-baseline justify-between">
+        <p className="text-[11.5px] text-mist-dim">
+          {active.date.toLocaleDateString(undefined, { month: "long", year: "numeric" })}
+          {sel === null && <span className="ml-1.5 text-white/30">·&nbsp;biggest month</span>}
+        </p>
+        <p className="tnum text-[11.5px] text-mist">
+          {active.activities === 0
+            ? "nothing recorded"
+            : `${fmtDistance(active.distanceKm, 0)} km · ${fmtElevation(active.elevationM)} m`}
+        </p>
+      </div>
+
+      <p className="mt-3 text-[10px] uppercase tracking-[0.14em] text-mist-dim">Distance</p>
+      <VolumePlot
+        values={months.map((m) => m.distanceKm)}
+        max={maxKm}
+        selected={shown}
+        onSelect={pick}
+        reduce={!!reduce}
+      />
+
+      <p className="mt-3 text-[10px] uppercase tracking-[0.14em] text-mist-dim">Elevation gain</p>
+      <VolumePlot
+        values={months.map((m) => m.elevationM)}
+        max={maxM}
+        selected={shown}
+        onSelect={pick}
+        reduce={!!reduce}
+      />
+
+      {/* One shared month axis under both plots — the reason they are stacked. */}
+      <div className="mt-1.5 flex gap-[2px]">
+        {months.map((m, i) => (
+          <span
+            key={i}
+            className={cn(
+              "flex-1 text-center text-[9px]",
+              i === shown ? "text-azure" : "text-white/25",
+            )}
+          >
+            {m.date.toLocaleDateString(undefined, { month: "narrow" })}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }

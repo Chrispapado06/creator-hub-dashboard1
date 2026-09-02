@@ -130,7 +130,6 @@ export interface SettingsState {
   /* Recording — remembered between sessions so the athlete sets them once. */
   /** Carried load in kilograms. Feeds nothing automatic; it is a record. */
   packWeightKg?: number;
-  footwear?: string;
   /** The chosen training intent — see `coach/sessionIntent.ts`. */
   sessionGoal?: string;
   autoPause?: boolean;

@@ -22,6 +22,8 @@ import { MountainBackdrop, MountainThumb } from "@/components/domain/MountainIma
 import { fmtDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/state/AppState";
+import { MOUNTAINS } from "@/data/mock/mountains";
+import { isExpeditionGround } from "@/services/operators";
 import { EXPERIENCE_LABELS, experienceFromAppLevel, type ExperienceLevel } from "@/network/types";
 import { ACCESS_DISCLAIMER } from "@/services/expeditionAccess";
 import { rankGuides, type RankedGuide } from "@/guides/matching";
@@ -36,7 +38,6 @@ import { AvailabilityCalendar } from "./AvailabilityCalendar";
 import {
   GuideCardTall,
   GuideRow,
-  GuideVsCompany,
   SpecialityGrid,
 } from "./shared";
 import {
@@ -51,6 +52,7 @@ import {
   defaultGuideFilters,
   guideBounds,
   matchesGuideFilters,
+  worksMountain,
   type Bound,
   type GuideFilters,
 } from "./filters";
@@ -79,9 +81,16 @@ import { fmtElevation } from "@/lib/format";
  *     licence, and the caption travels with every score.
  *   · Nothing renders as verified — credentials are CLAIMED, because nothing in
  *     this build can check one.
- *   · Order is organic and stated: relevance to the objective, recorded ascents,
+ *   · Order is organic: relevance to the objective, recorded ascents,
  *     availability and depth, exactly what `guideMatch` weighs. `featured` is
  *     labelled and takes no part in the ranking.
+ *
+ *     IT IS NO LONGER STATED ON THIS SCREEN. The note that spelled the
+ *     ordering out — and with it the "no position in this list is for sale"
+ *     line — was removed at the owner's request along with the other standing
+ *     paragraphs. The ranking is unchanged and still takes no money, but a
+ *     reader can no longer see that from here. If a promoted slot is ever
+ *     actually sold, that sentence has to come back before it ships.
  *   · No private contact detail exists in the model, so none can leak onto a
  *     card. A guide is reached through the request flow.
  *
@@ -96,11 +105,7 @@ import { fmtElevation } from "@/lib/format";
  * nobody in it.
  */
 
-const ORDERING_NOTE =
-  "Ordered on relevance to your objective: recorded ascents of the mountain, whether the guide is taking work, the ground they list and the depth behind it. No position in this list is for sale. A promoted slot, if one is ever sold, is labelled FEATURED and stays out of the ranking — a paid position says nothing about a qualification.";
 
-const NO_OBJECTIVE_NOTE =
-  "Guides are matched through the mountain, so without one the comparison has little to work with and the order means little. You can still browse.";
 
 const DATES_NOTE =
   "Carried into the comparison, and they exclude nobody: ICEFALL holds no diary for any guide, so a date range cannot be checked against one. Availability is a standing status the guide set.";
@@ -181,6 +186,73 @@ export default function Guides() {
     [catalogue],
   );
 
+  /**
+   * Curated peaks NO guide in the directory lists, on expedition ground.
+   *
+   * These used to be invisible here. The mountain filter is built from the
+   * mountains guides themselves name, which is the right default — but it
+   * meant someone looking for a guide on K2 found no K2 at all, and learned
+   * nothing. An absent option reads as an oversight; the peak listed with the
+   * reason beside it is the actual answer, and it is the same answer the
+   * mountain page gives from the other direction.
+   *
+   * Derived, never hand-listed: a peak leaves this group the moment a guide
+   * adds it to their profile, with no second place to update.
+   */
+  const expeditionOnly = useMemo(
+    () =>
+      MOUNTAINS.filter(
+        (m) =>
+          // The regulatory fact first: on these the permit goes to an
+          // expedition or a licensed operator, so an individual guide is not
+          // an option however many of them have stood on the summit. Everest
+          // belongs here for that reason and not because nobody guides it —
+          // one guide in this directory has been up it.
+          m.permitIssuedToOperator ||
+          // Then the empirical one: high ground nobody here lists.
+          (isExpeditionGround(m.elevationM) && !catalogue.some((g) => worksMountain(g, m.name))),
+      ).sort((a, b) => b.elevationM - a.elevationM),
+    [catalogue],
+  );
+
+  /**
+   * The guide-named list, minus anything already shown above it.
+   *
+   * Everest is named by a guide AND permitted to expeditions, so without this
+   * it would appear in both groups — the same peak twice in one sheet, each
+   * time saying something different about it.
+   */
+  const guideNamedMountains = useMemo(
+    () => options.mountains.filter((n) => !expeditionOnly.some((m) => m.name === n)),
+    [options.mountains, expeditionOnly],
+  );
+
+
+  /** The curated record behind the chosen name, when there is one. */
+  const selectedMountain = useMemo(
+    () => MOUNTAINS.find((m) => m.name === filters.mountain),
+    [filters.mountain],
+  );
+
+  /**
+   * Results are shown on request, not while the athlete is still describing
+   * what they want.
+   *
+   * The screen used to answer continuously, so "0 guides available" sat under
+   * a half-finished search and read as a verdict on the mountain rather than
+   * on a query nobody had finished writing. Search draws the line between
+   * describing and asking.
+   *
+   * Changing the MOUNTAIN un-asks the question — it is a different search, and
+   * carrying the old answer under a new peak would be the same lie in reverse.
+   * Dates and the sheet filters leave the results up, because those are
+   * adjustments to a question already asked.
+   */
+  const [searched, setSearched] = useState(false);
+  useEffect(() => {
+    setSearched(false);
+  }, [filters.mountain]);
+
   const filterCount = activeFilterCount(filters);
   const reset = () =>
     setFilters(defaultGuideFilters(objective ? { peakName: objective.peakName } : undefined));
@@ -215,27 +287,38 @@ export default function Guides() {
             <Rise className="pt-5">
               <SelectorTile
                 icon={MountainIcon}
+                thumb={
+                  filters.mountain ? (
+                    <MountainThumb
+                      size={42}
+                      peak={{
+                        name: filters.mountain,
+                        elevationM: selectedMountain?.elevationM,
+                        lat: selectedMountain?.coords.lat,
+                        lon: selectedMountain?.coords.lon,
+                        curatedId: selectedMountain?.id,
+                        photo: selectedMountain?.photo,
+                      }}
+                    />
+                  ) : undefined
+                }
                 label="Mountain / Region"
                 value={filters.mountain || "Any mountain"}
                 onClick={() => setSheet("mountain")}
               />
-              <SelectorTile
-                className="mt-2.5"
-                icon={CalendarDays}
-                label="Dates"
-                value={datesLabel(filters)}
-                onClick={() => setSheet("dates")}
-              />
-              {objective ? (
-                <ObjectiveLine objective={objective} />
-              ) : (
-                <NoObjectiveNote className="mt-3.5" />
-              )}
+              {/* NO "DATES" TILE HERE. There were two date controls on this
+                  screen — this tile, which opened a sheet, and the calendar
+                  under "Select your dates" a few lines below, which is always
+                  visible. The owner's frame asks for the calendar inline
+                  rather than behind a sheet, so the tile was the duplicate and
+                  it is gone. The dates still show as a removable chip with the
+                  other filters, and the calendar is the only way to set them. */}
             </Rise>
 
             <Rise className="pt-5">
               <p className="text-[13.5px] text-snow">Select your dates</p>
               <AvailabilityCalendar
+                layout="month"
                 className="mt-3"
                 /* The directory view has no single guide, and the owner's
                    mockup still draws dots here. One stable key for the whole
@@ -255,6 +338,20 @@ export default function Guides() {
               />
             </Rise>
 
+            {/* ---- Search ----------------------------------------------------- */}
+            {/* The line between describing a trip and asking the question. What
+                is above it is the athlete filling in a form; what is below only
+                exists once they say they are ready. */}
+            <Rise className="pt-5">
+              <Button className="w-full" onClick={() => setSearched(true)}>
+                <Search size={16} strokeWidth={1.8} aria-hidden="true" />
+                Search guides
+              </Button>
+            </Rise>
+
+
+            {searched && (
+              <>
             {/* ---- The list --------------------------------------------------- */}
             <Rise className="pt-6">
               <div className="flex items-baseline justify-between gap-3">
@@ -349,10 +446,8 @@ export default function Guides() {
               </button>
               {filterCount > 0 && <FilterSummary filters={filters} onChange={setFilters} />}
             </Rise>
-
-            <Rise className="pt-6">
-              <Disclaimer>{ORDERING_NOTE}</Disclaimer>
-            </Rise>
+              </>
+            )}
 
             {blockedIds.length > 0 && (
               <Rise className="pt-4">
@@ -365,16 +460,6 @@ export default function Guides() {
           </>
         )}
 
-        {/* ---- Guide or company --------------------------------------------- */}
-        <Rise className="pt-6">
-          <GuideVsCompany
-            action={
-              <Button asChild variant="secondary" size="sm">
-                <Link to="/explore/expeditions">See expedition operators instead</Link>
-              </Button>
-            }
-          />
-        </Rise>
 
         <Rise className="pt-5">
           <Disclaimer>{ACCESS_DISCLAIMER}</Disclaimer>
@@ -385,7 +470,8 @@ export default function Guides() {
       <MountainSheet
         open={sheet === "mountain"}
         onClose={closeSheet}
-        mountains={options.mountains}
+        mountains={guideNamedMountains}
+        expeditionOnly={expeditionOnly}
         objectiveName={objectiveName}
         value={filters.mountain}
         onChange={(mountain) => setFilters((f) => ({ ...f, mountain }))}
@@ -498,12 +584,22 @@ function groupLabel(size: number | null): string {
  */
 function SelectorTile({
   icon: Icon,
+  thumb,
   label,
   value,
   onClick,
   className,
 }: {
   icon: typeof MountainIcon;
+  /**
+   * A photograph of the thing chosen, replacing the generic icon.
+   *
+   * The tile used to draw the same outline triangle whether the answer was
+   * "Any mountain" or "Kilimanjaro", so the one control that decides the whole
+   * search looked identical however it was set. A picture of the peak is the
+   * fastest possible confirmation that it took.
+   */
+  thumb?: React.ReactNode;
   label: string;
   value: string;
   onClick: () => void;
@@ -518,7 +614,9 @@ function SelectorTile({
         className,
       )}
     >
-      <Icon size={19} strokeWidth={1.5} className="shrink-0 text-mist" aria-hidden="true" />
+      {thumb ?? (
+        <Icon size={19} strokeWidth={1.5} className="shrink-0 text-mist" aria-hidden="true" />
+      )}
       <span className="min-w-0 flex-1">
         <span className="block text-[11px] text-mist-dim">{label}</span>
         <span className="mt-0.5 block truncate text-[14.5px] text-snow">{value}</span>
@@ -588,45 +686,6 @@ function SelectorCard({
   );
 }
 
-/** What the ranking is being made against, and where it came from. */
-function ObjectiveLine({ objective }: { objective: SearchObjective }) {
-  return (
-    <div className="mt-3.5 flex items-center gap-3">
-      <MountainThumb
-        peak={{
-          name: objective.peakName,
-          elevationM: objective.elevationM,
-          lat: objective.lat,
-          lon: objective.lon,
-        }}
-        size={38}
-      />
-      <div className="min-w-0 flex-1">
-        <p className="section-label">Matching against</p>
-        <p className="mt-1.5 truncate text-[13px] text-snow">{objective.peakName}</p>
-        <p className="tnum mt-0.5 text-[11px] text-mist-dim">
-          {objective.elevationM !== undefined
-            ? `${objective.elevationM.toLocaleString("en-GB")} m`
-            : "No height recorded"}
-          {objective.targetDate ? ` · ${fmtDate(objective.targetDate)}` : " · no date set"}
-          {objective.source === "goal" ? " · your active goal" : ""}
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function NoObjectiveNote({ className }: { className?: string }) {
-  return (
-    <Card className={className}>
-      <p className="section-label">No objective set</p>
-      <p className="mt-2.5 text-[13px] leading-relaxed text-mist">{NO_OBJECTIVE_NOTE}</p>
-      <Button asChild variant="secondary" size="sm" className="mt-3.5">
-        <Link to="/goals">Set an objective</Link>
-      </Button>
-    </Card>
-  );
-}
 
 /* -------------------------------------------------------------------------- */
 /* Empty result                                                                */
@@ -854,6 +913,7 @@ function MountainSheet({
   open,
   onClose,
   mountains,
+  expeditionOnly,
   objectiveName,
   value,
   onChange,
@@ -861,6 +921,8 @@ function MountainSheet({
   open: boolean;
   onClose: () => void;
   mountains: string[];
+  /** Curated peaks on expedition ground that no listed guide names. */
+  expeditionOnly: { id: string; name: string; elevationM: number }[];
   objectiveName: string;
   value: string;
   onChange: (mountain: string) => void;
@@ -967,6 +1029,58 @@ function MountainSheet({
                   <span className="min-w-0 truncate text-[13px] text-snow">{p.name}</span>
                   <span className="tnum shrink-0 text-[11px] text-mist-dim">
                     {fmtElevation(p.elevationM)} m{p.country ? ` · ${p.country}` : ""}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* PEAKS NO GUIDE LISTS, SHOWN RATHER THAN OMITTED. Leaving K2 out of a
+          mountain picker teaches nobody anything; listing it with the reason
+          is the answer. Hidden while searching, because then the matches
+          above already are the answer. */}
+      {expeditionOnly.length > 0 && !needle && (
+        <div className="mb-3">
+          {/* THE HEADING HAS TO COVER BOTH RULES BEHIND THIS GROUP, and two
+              earlier attempts did not. "Expedition ground" was wrong the
+              moment Kilimanjaro joined — a 5,895 m walk-up is not expedition
+              ground. "No individual guide listed" was wrong the moment Everest
+              joined, because a guide in this directory HAS been up Everest;
+              it is in this group for the permit, not for a lack of guides.
+              What is true of every entry is the conclusion, so that is what it
+              says. Altitude decides none of it: Aconcagua at 6,961 m is
+              permitted to the individual climber, while Denali at 6,190 m is
+              in practice company-only. */}
+          <p className="section-label">Book through a company</p>
+          <p className="mt-1.5 text-[11.5px] leading-relaxed text-mist-dim">
+            On most of these the climbing permit is issued to an expedition or a licensed
+            operator rather than to a person, so a company is the way in even where an individual
+            guide has stood on the summit. The rest are high peaks no guide here lists.
+          </p>
+          <ul className="mt-1.5">
+            {expeditionOnly.map((m) => (
+              <li key={m.id}>
+                <button
+                  type="button"
+                  onClick={() => choose(m.name)}
+                  className="flex min-h-[52px] w-full items-center gap-3 border-b border-hairline py-1.5 text-left last:border-b-0"
+                >
+                  <MountainThumb
+                    size={34}
+                    peak={{ name: m.name, elevationM: m.elevationM, curatedId: m.id }}
+                  />
+                  <span
+                    className={cn(
+                      "min-w-0 flex-1 truncate text-[13px]",
+                      m.name === value ? "text-azure" : "text-snow",
+                    )}
+                  >
+                    {m.name}
+                  </span>
+                  <span className="tnum shrink-0 text-[11px] text-mist-dim">
+                    {fmtElevation(m.elevationM)} m
                   </span>
                 </button>
               </li>

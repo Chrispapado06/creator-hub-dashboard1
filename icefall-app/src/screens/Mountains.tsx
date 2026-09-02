@@ -523,6 +523,7 @@ export function MountainDetail() {
         region: mountain.range,
         curatedId: mountain.id,
         photo: mountain.photo,
+        photoCredit: mountain.photoCredit,
         curated: mountain,
         goal,
         objectiveId: `curated:${mountain.id}`,

@@ -54,8 +54,26 @@ export const SHOW_DEMO_COMMUNITY = SHOW_DEMO_DATA || DEMO;
 export const COMMUNITY_DEMO_NOTICE =
   "Placeholder posts, shown to review this layout. Posting is not built, so nobody has posted anything — these people, times and figures were written by ICEFALL and none of it happened.";
 
-export const COMMUNITY_HOUSE_RULE =
-  "Built for mountain athletes. Be respectful. Report anything that doesn't belong.";
+/**
+ * THERE WERE TWO STATEMENTS OF THE RULES AND NOW THERE IS ONE.
+ *
+ * This constant used to hold its own sentence — "Built for mountain athletes.
+ * Be respectful. Report anything that doesn't belong." — rendered as the house
+ * rule in `screens/explore/Community.tsx:470`. It was a second, and materially
+ * different, statement of what is allowed here: "be respectful" is a clause
+ * with no number, so a post removed under it could be neither cited nor
+ * appealed.
+ *
+ * `social/houseRules.ts` now holds the owner's six numbered rules as the single
+ * source of truth, and this is an alias of its one-line banner so the sentence
+ * beside the shield POINTS AT them rather than standing in for them. The name
+ * is kept so Community.tsx does not have to change; new code should import
+ * `HOUSE_RULES_SUMMARY` directly.
+ *
+ * DO NOT GIVE THIS A STRING OF ITS OWN AGAIN. Two copies of the rules is how a
+ * removal notice ends up citing text the app never showed.
+ */
+export { HOUSE_RULES_SUMMARY as COMMUNITY_HOUSE_RULE } from "./houseRules";
 
 export const SUMMIT_VERIFIED_MEANING =
   "Verified means the summit was reached during an activity recorded in ICEFALL, and the track reached the summit. It is not a check on the person.";
@@ -113,7 +131,7 @@ function buildDemoPosts(): CommunityPost[] {
     id: "p-activity-1",
     kind: "activity",
     hoursAgo: 2,
-    author: { id: "a-alex", name: "Alex Martin", region: "Around Chamonix" },
+    author: { id: "a-alex", name: "Alex Martin", region: "Around Chamonix", avatar: "/img/guides/guide-demo-wehrli.jpg" },
     objective: { mountain: "Mont Blanc", when: "July 2027" },
     title: "Morning vertical session",
     stats: [
@@ -130,7 +148,7 @@ function buildDemoPosts(): CommunityPost[] {
     id: "p-summit-1",
     kind: "summit",
     hoursAgo: 26,
-    author: { id: "a-sarah", name: "Sarah D.", region: "Around Marrakesh" },
+    author: { id: "a-sarah", name: "Sarah D.", region: "Around Marrakesh", avatar: "/img/guides/guide-demo-kastrinaki.jpg" },
     objective: { mountain: "Toubkal", when: "Completed" },
     title: "Summited Toubkal",
     summit: { elevationM: 4167, range: "Atlas Mountains", verified: true },
@@ -142,7 +160,7 @@ function buildDemoPosts(): CommunityPost[] {
     id: "p-report-1",
     kind: "route-report",
     hoursAgo: 30,
-    author: { id: "a-james", name: "James Parker", region: "Around Litochoro" },
+    author: { id: "a-james", name: "James Parker", region: "Around Litochoro", avatar: "/img/guides/guide-demo-ait-benhaddou.jpg" },
     objective: { mountain: "Olympus", when: "Route report" },
     title: "Trail conditions update",
     report: {
@@ -159,7 +177,7 @@ function buildDemoPosts(): CommunityPost[] {
     id: "p-partners-1",
     kind: "looking-for-partners",
     hoursAgo: 3,
-    author: { id: "a-elena", name: "Elena Rossi", region: "Around Zermatt" },
+    author: { id: "a-elena", name: "Elena Rossi", region: "Around Zermatt", avatar: "/img/guides/guide-demo-falkenrath.jpg" },
     objective: { mountain: "Matterhorn", when: "July 2027" },
     title: "Looking for 2 partners",
     bullets: ["Matterhorn", "12 – 16 July 2027", "Intermediate", "Based in Europe"],
@@ -172,7 +190,7 @@ function buildDemoPosts(): CommunityPost[] {
     id: "p-milestone-1",
     kind: "milestone",
     hoursAgo: 5,
-    author: { id: "a-mark", name: "Mark Williams", region: "Around Grenoble" },
+    author: { id: "a-mark", name: "Mark Williams", region: "Around Grenoble", avatar: "/img/guides/guide-demo-lama.jpg" },
     objective: { mountain: "Mont Blanc", when: "July 2027" },
     title: "80% ready for Mont Blanc",
     body: "Big week of training behind me. Final push starts now.",
@@ -184,7 +202,7 @@ function buildDemoPosts(): CommunityPost[] {
     id: "p-group-1",
     kind: "group",
     hoursAgo: 9,
-    author: { id: "a-daniel", name: "Daniel Roux", region: "Around Courmayeur" },
+    author: { id: "a-daniel", name: "Daniel Roux", region: "Around Courmayeur", avatar: "/img/guides/guide-demo-zelenika.jpg" },
     objective: { mountain: "Mont Blanc", when: "July 2027" },
     title: "Mont Blanc — July 2027",
     bullets: ["Intermediate", "Training together", "2 places available"],
@@ -197,7 +215,7 @@ function buildDemoPosts(): CommunityPost[] {
     id: "p-activity-2",
     kind: "activity",
     hoursAgo: 34,
-    author: { id: "a-nina", name: "Nina Haugen", region: "Around Bergen" },
+    author: { id: "a-nina", name: "Nina Haugen", region: "Around Bergen", avatar: "/img/guides/guide-demo-halvorsen.jpg" },
     objective: { mountain: "Gran Paradiso", when: "September 2026" },
     title: "Long carry with a loaded pack",
     stats: [

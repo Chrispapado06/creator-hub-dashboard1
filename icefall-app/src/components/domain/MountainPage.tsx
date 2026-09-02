@@ -37,8 +37,13 @@ import { fmtCountdown, fmtDate, fmtElevation } from "@/lib/format";
 import { sync } from "@/services/repository";
 import { useApp } from "@/state/AppState";
 import { ASSESSMENT_DISCLAIMER, assessPeak } from "@/services/peakAssessment";
-import { ACCESS_DISCLAIMER, accessFor, operatorSearchUrl } from "@/services/expeditionAccess";
-import { DEMO_NOTICE, OPERATOR_DISCLAIMER, operatorsFor } from "@/services/operators";
+import { ACCESS_DISCLAIMER, operatorSearchUrl } from "@/services/expeditionAccess";
+import {
+  DEMO_NOTICE,
+  EXPEDITION_TERRAIN_M,
+  OPERATOR_DISCLAIMER,
+  operatorsFor,
+} from "@/services/operators";
 import { OperatorCard } from "@/components/domain/OperatorCard";
 import { PEAK_ATTRIBUTION } from "@/services/peaks";
 import type { Goal, Mountain, Season } from "@/types";
@@ -99,6 +104,10 @@ export interface MountainPageData {
   preparationFooter?: React.ReactNode;
 }
 
+/* The 3,000 m expedition/guided threshold now lives in `services/operators.ts`,
+   beside the altitude filter it describes — this screen and the expeditions
+   directory both ask the question and must not drift apart. */
+
 type Tab = "overview" | "routes" | "preparation" | "equipment" | "expeditions";
 
 export function MountainPage({ data }: { data: MountainPageData }) {
@@ -121,10 +130,15 @@ export function MountainPage({ data }: { data: MountainPageData }) {
     list.push(
       { value: "preparation", label: "Preparation" },
       { value: "equipment", label: "Equipment" },
-      { value: "expeditions", label: "Expeditions" },
+      // The value stays `expeditions` — it is the "who takes you up" tab either
+      // way, and renaming it would churn every reference for a label change.
+      {
+        value: "expeditions",
+        label: data.elevationM >= EXPEDITION_TERRAIN_M ? "Expeditions" : "Guides",
+      },
     );
     return list;
-  }, [data.curated]);
+  }, [data.curated, data.elevationM]);
 
   const [tab, setTab] = useState<Tab>("overview");
 
@@ -170,7 +184,7 @@ export function MountainPage({ data }: { data: MountainPageData }) {
         {tab === "routes" && data.curated && <Routes mountain={data.curated} />}
         {tab === "preparation" && <Preparation data={data} assessment={assessment} />}
         {tab === "equipment" && <Equipment data={data} assessment={assessment} />}
-        {tab === "expeditions" && <Expeditions data={data} assessment={assessment} />}
+        {tab === "expeditions" && <Expeditions data={data} />}
       </Stagger>
 
       <ActionBar data={data} assessment={assessment} />
@@ -915,13 +929,17 @@ function Equipment({ data, assessment }: { data: MountainPageData; assessment: A
 /* Expeditions                                                                */
 /* -------------------------------------------------------------------------- */
 
-function Expeditions({ data, assessment }: { data: MountainPageData; assessment: Assessment }) {
-  const access = accessFor({
-    country: data.country,
-    requiresGuide: assessment.requiresGuide,
-    elevationM: data.elevationM,
-  });
-  const operators = operatorsFor({ country: data.country, elevationM: data.elevationM });
+function Expeditions({ data }: { data: MountainPageData }) {
+  /*
+   * `accessFor(...)` was computed here and never rendered — dead since
+   * `noUnusedLocals` is off, so nothing complained. Removed rather than left
+   * for the next reader to wonder about. `ACCESS_DISCLAIMER` below is a
+   * constant and does not need it.
+   */
+  const expeditionGround = data.elevationM >= EXPEDITION_TERRAIN_M;
+  const operators = expeditionGround
+    ? operatorsFor({ country: data.country, elevationM: data.elevationM })
+    : [];
 
   return (
     <>
@@ -948,6 +966,19 @@ function Expeditions({ data, assessment }: { data: MountainPageData; assessment:
         </Link>
       </Rise>
 
+      {!expeditionGround && (
+        <Rise className="pt-6">
+          <p className="text-[12px] leading-relaxed text-mist-dim">
+            {data.name} is a guided objective rather than an expedition. Expedition companies
+            organise permits, base camps and logistics for high peaks — the lowest altitude any
+            of them works at is well above this summit, so none is listed here. That is not a
+            gap in the listings; it is the wrong kind of help for this mountain.
+          </p>
+          <Disclaimer className="mt-4">{ACCESS_DISCLAIMER}</Disclaimer>
+        </Rise>
+      )}
+
+      {expeditionGround && (
       <Rise className="pt-1">
         <SectionLabel>Companies that run this objective</SectionLabel>
         <p className="mt-2 text-[12px] leading-relaxed text-mist-dim">
@@ -989,7 +1020,9 @@ function Expeditions({ data, assessment }: { data: MountainPageData; assessment:
 
         <Disclaimer className="mt-4">{OPERATOR_DISCLAIMER}</Disclaimer>
       </Rise>
+      )}
 
+      {expeditionGround && (
       <Rise className="pt-6">
         <SectionLabel>Find a real operator</SectionLabel>
         <a
@@ -1003,6 +1036,7 @@ function Expeditions({ data, assessment }: { data: MountainPageData; assessment:
         </a>
         <Disclaimer className="mt-4">{ACCESS_DISCLAIMER}</Disclaimer>
       </Rise>
+      )}
 
       <Rise className="pt-6">
         <Link to="/messages">

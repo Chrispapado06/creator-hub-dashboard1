@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { useMemo, useState, useEffect } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   ArrowRight, BookmarkCheck, Check, Download, Share2, Smartphone, UserPlus,
 } from "lucide-react";
@@ -9,6 +9,7 @@ import { IcefallLockup } from "@/components/ui/IcefallMark";
 import { BadgeHex } from "@/components/domain/BadgeHex";
 import { BADGES } from "@/badges/model";
 import { decodeProfile, type SharedProfile } from "@/profile/shareLink";
+import { useSessionState } from "@/auth/session";
 import { bannerFor } from "@/profile/banners";
 import { FOLLOW_NOTICE, useFollowing } from "@/profile/following";
 import { IOS_INSTALL_STEPS, useInstall } from "@/lib/install";
@@ -26,6 +27,35 @@ import { fmtElevation } from "@/lib/format";
 export default function PublicProfile() {
   const { hash } = useLocation();
   const profile = useMemo(() => decodeProfile(hash), [hash]);
+  const session = useSessionState();
+  const navigate = useNavigate();
+
+  /*
+   * A SHARED LINK NOW OPENS THE REAL PROFILE — for anybody who has an account.
+   *
+   * This card carries its whole contents inside the link, which is what makes it
+   * work with no account, no server and no signal. That was the only option when
+   * ICEFALL had no server. It has one now, and the card's weakness became the
+   * important thing: THE CARD IS A PHOTOGRAPH, NOT A WINDOW. It is frozen at the
+   * moment it was shared, so changing your objective leaves every link you ever
+   * sent showing the old one, for ever, with no way to correct it. The two also
+   * drifted — the card shows an objective and a summit count, the real profile
+   * deliberately shows neither, because it cannot read those about another
+   * person. One app was giving two different answers about the same climber.
+   *
+   * So: if the reader is SIGNED IN, send them to the live profile, keyed by the
+   * handle the card already carries. If they are not, they see the card, which
+   * is exactly what it is for — a stranger with no account still gets something
+   * real rather than a sign-up wall.
+   *
+   * `replace` so the card does not sit in history: tapping back from the profile
+   * should leave, not bounce through a frozen copy of the same person.
+   */
+  useEffect(() => {
+    if (session && profile?.handle) {
+      navigate(`/explore/people/${encodeURIComponent(profile.handle)}`, { replace: true });
+    }
+  }, [session, profile?.handle, navigate]);
   const [copied, setCopied] = useState(false);
   const { mode, install } = useInstall();
   const { isSaved, save, forget } = useFollowing();
@@ -136,7 +166,18 @@ export default function PublicProfile() {
               onClick={() => (saved ? forget(profile.handle) : save(profile))}
             >
               {saved ? <BookmarkCheck size={15} strokeWidth={1.9} /> : <UserPlus size={15} strokeWidth={1.8} />}
-              {saved ? `Following ${profile.name.split(" ")[0]}` : `Follow ${profile.name.split(" ")[0]}`}
+              {/*
+                SAVE, NOT FOLLOW. `profile/following.ts` states the rule in its own
+                header — "the card is SAVED, not followed" — and this label had
+                drifted from it. Nothing is notified and no feed is subscribed to:
+                the card is kept on this device so the person is there when ICEFALL
+                is opened, rather than lost in a chat thread.
+
+                A real follow needs an account, and anybody holding one is now
+                redirected to the live profile before they ever reach this card —
+                so "Follow" here could only ever name something that did not happen.
+              */}
+            {saved ? "Card saved" : `Save ${profile.name.split(" ")[0]}'s card`}
             </Button>
 
             {mode === "installed" ? (

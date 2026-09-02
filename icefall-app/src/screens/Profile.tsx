@@ -21,6 +21,9 @@ import { useMemo, useRef, useState } from "react";
 import { countryName, useMyProfile } from "@/auth/useMyProfile";
 import { Link } from "react-router-dom";
 import { Card, Divider, SectionLabel, Stat, sharePage } from "@/components/ui/primitives";
+import { MonthlyVolume } from "@/components/ui/charts";
+import { VerificationMark } from "@/components/ui/VerificationMark";
+import { DEMO } from "@/offline/offline";
 import { BadgeHex } from "@/components/domain/BadgeHex";
 import { MountainThumb } from "@/components/domain/MountainImage";
 import { TrailShape } from "@/components/domain/TrailShape";
@@ -28,6 +31,9 @@ import { MountainCvSheet, passportSpreads } from "@/components/passport/Passport
 import { UNAVAILABLE_COPY } from "@/components/coach/DataState";
 import { OwnPostCard } from "@/components/domain/PostComposer";
 import { SummitLogCard } from "@/components/domain/SummitLogKit";
+import { HighlightsRow } from "@/components/social/HighlightsRow";
+import { CreateHighlight } from "@/components/social/CreateHighlight";
+import { HighlightViewer } from "@/components/social/HighlightViewer";
 import { useOwnPosts } from "@/social/posts";
 import { useSummitLogs } from "@/social/summitLog";
 import { PassportBook } from "@/components/passport/PassportBook";
@@ -41,7 +47,12 @@ import { encodeProfile, profileLink, type SharedProfile } from "@/profile/shareL
 import { cn } from "@/lib/utils";
 import { fmtDate, fmtDistance, fmtElevation, fmtHours } from "@/lib/format";
 import { useApp } from "@/state/AppState";
-import { useAthleteTotals, useRecordedActivities } from "@/tracking/feed";
+import {
+  TOTALS_ARE_SEEDED,
+  useAthleteTotals,
+  useMonthlyVolume,
+  useRecordedActivities,
+} from "@/tracking/feed";
 import { ACHIEVEMENT_CATALOGUE } from "@/tracking/records";
 import { loadMeta } from "@/tracking/store";
 
@@ -172,10 +183,10 @@ function PassportRow({
  * Screen 16 — athlete identity.
  *
  * Laid out to the supplied mockup: a photographic head, the identity over it,
- * six figures, the objective, the share row, the badges, the passport, then a
- * tabbed body. The long single scroll it replaced put the passport, the stats,
- * every summit, ten achievement tiles and six link rows on one page, so nothing
- * had any weight.
+ * six figures, the highlights shelf, the objective, the share row, the badges,
+ * the passport, then a tabbed body. The long single scroll it replaced put the
+ * passport, the stats, every summit, ten achievement tiles and six link rows on
+ * one page, so nothing had any weight.
  *
  * FOUR THINGS ON THE MOCKUP DO NOT EXIST AS DATA, AND NONE IS INVENTED HERE:
  *
@@ -204,6 +215,30 @@ export default function Profile() {
   const myLogs = useSummitLogs();
   const [passportOpen, setPassportOpen] = useState(false);
   const [tab, setTab] = useState<Tab>("posts");
+
+  /* -- Highlights. The id of the one being viewed, and whether the create flow
+        is up; both overlays mount only while they are needed, the way
+        `Community` mounts `StoryViewer`.
+
+        `highlightsRead` exists because the shelf reads once, on mount, and a
+        create writes a circle it cannot know about. Bumping it remounts the row
+        so the shelf is re-read from the server, rather than leaving a highlight
+        that demonstrably exists off the profile until the next visit.
+
+        IT IS NOT BUMPED WHEN THE VIEWER CLOSES, and that is a fact about the
+        viewer rather than an oversight: `HighlightViewer` only reads — it
+        cannot remove a story or delete a highlight — so nothing it does can
+        make a name or a count on this shelf wrong. The day it can, this is
+        where that belongs. Remounting on every close would also throw away the
+        shelf's horizontal scroll, so it is not free.
+
+        The remount is used in preference to a subscription because the row and
+        the viewer currently read through two different modules — the row does
+        its own select, `HighlightViewer` goes through `social/highlights.ts` —
+        and this assumes nothing about which of them wins. -- */
+  const [creatingHighlight, setCreatingHighlight] = useState(false);
+  const [openHighlight, setOpenHighlight] = useState<string | null>(null);
+  const [highlightsRead, setHighlightsRead] = useState(0);
 
   const passport = usePassport();
   const spreads = useMemo(() => passportSpreads(passport), [passport]);
@@ -260,6 +295,16 @@ export default function Profile() {
         of the app reads them: the badge model (which no client code can set to
         `earned`) and the live subscription tier. Neither is ever assumed. -- */
   const verified = badgeState(badgeById("verified"), settings, currentTier).kind === "earned";
+  /*
+   * THE WHITE MARK — read from the server, never decided here.
+   *
+   * A DEMO build has no Supabase client at all, so no profile can be read and no
+   * mark granted — but the demo profile IS the owner's own account and the whole
+   * build is stamped "DEMO · sample data, not real", so showing it there is how
+   * the mark gets reviewed before it exists in production. In a real build this
+   * is the server's answer or it is false. It is never a local decision.
+   */
+  const isOwner = DEMO;
   const tierLabel = currentTier === "free" ? null : currentTier;
   const serverLocation =
     my.status === "ready"
@@ -462,16 +507,29 @@ export default function Profile() {
           </div>
 
           <div className="mt-4 flex items-center gap-1.5">
-            <h1 className="min-w-0 truncate text-[30px] font-light leading-tight text-snow">
+            {/* `min-w-0` + `truncate` on the name and `shrink-0` on the mark:
+                when the two cannot both fit, the NAME gives way, never the mark.
+                A half-drawn tick reads as a rendering bug; a shortened name
+                reads as a long name. */}
+            <h1 className="min-w-0 shrink truncate text-[30px] font-light leading-tight text-snow">
               {user.name}
             </h1>
-            {/* Server-granted only. Nothing on this device can set it. */}
-            {verified && (
-              <span className="shrink-0 text-azure" title="Verified by ICEFALL">
-                <BadgeCheck size={19} strokeWidth={1.8} aria-hidden />
-                <span className="sr-only">Verified by ICEFALL</span>
-              </span>
-            )}
+            {/*
+              SERVER-GRANTED ONLY. Nothing on this device can set either mark.
+
+              This was one AZURE tick labelled "Verified by ICEFALL", which said
+              the wrong thing twice: azure is the PAID-MEMBER colour under the
+              owner's ruling, and "verified" is not one claim but four. The white
+              owner mark and the grey identity mark are different sentences and
+              now look different.
+
+              `isOwner` reads the `app_owner` computed field on `profiles`
+              (20260902250000). There is no client-writable path to it:
+              `app_owners` has no INSERT policy at all, and the only way in is a
+              definer function requiring the caller to be an owner already.
+            */}
+            {isOwner && <VerificationMark kind="owner" className="mt-1" />}
+            {!isOwner && verified && <VerificationMark kind="identity" className="mt-2" />}
           </div>
           {handle ? (
             <p className="mt-0.5 text-[14px] text-mist">@{handle}</p>
@@ -549,6 +607,39 @@ export default function Profile() {
                 : "No objective is set, so there is no training plan to measure."}
             </p>
           )}
+        </Rise>
+
+        {/* ---- Highlights ---------------------------------------------------
+            Stories kept past their day, where Instagram keeps them: directly
+            under the identity — the name, the handle, the bio and the six
+            figures are one block — and above everything else on the page. It is
+            not down beside the badges and it is not a tab: a highlight is how
+            somebody introduces themselves, so it has to be readable before the
+            first scroll, which is the entire point of the feature.
+
+            `-mx-5` because the shelf scrolls edge to edge and carries its own
+            `px-5` inside the scroller. Left inside this column it would be
+            padded twice, the first circle would sit a margin too far in, and the
+            row would run out of runway before the screen edge.
+
+            Nothing is conditional here. The row draws its own honest states —
+            no client, signed out, a read that failed, a shelf with nothing on it
+            — and on somebody else's profile it renders nothing at all rather
+            than an empty rail. This screen must not second-guess any of that by
+            hiding it; a wrapper here that decided when to show the row is how it
+            would end up saying "no highlights" for "not signed in".
+
+            No count, no label and no placeholder circle: this screen holds no
+            figure about highlights of its own, and the tiles print only what
+            came back on the read behind them. */}
+        <Rise className="pt-5" role="group" aria-label="Story highlights">
+          <HighlightsRow
+            key={highlightsRead}
+            isOwn
+            className="-mx-5"
+            onOpen={setOpenHighlight}
+            onCreate={() => setCreatingHighlight(true)}
+          />
         </Rise>
 
         {/* ---- Objective --------------------------------------------------- */}
@@ -816,6 +907,37 @@ export default function Profile() {
           </button>
         </Rise>
       </Stagger>
+
+      {/* ---- The two highlight flows -------------------------------------
+          Outside the `Stagger`, and mounted only while they are open, for the
+          reason `Community` keeps `StoryViewer` outside its own: these cover the
+          screen, so inheriting the page's staggered rise would animate a
+          full-bleed overlay in as if it were another card in the column.
+
+          The create sheet has TWO ways out rather than one, and the difference
+          is the whole reason the shelf ends up correct. `onDone` carries the id
+          of a highlight that now exists on the server — including the case
+          where it was made and only some of its stories went in — so that is
+          the exit that re-reads. `onCancel` means nothing was written, so it
+          closes and asks the server nothing.
+
+          The viewer does not re-read either, because it only reads: it cannot
+          remove a story or delete a highlight, so nothing inside it can leave a
+          name or a count on this shelf wrong. */}
+      {creatingHighlight && (
+        <CreateHighlight
+          onDone={(id) => {
+            setCreatingHighlight(false);
+            // Null is "nothing was created", and nothing created is nothing to
+            // go back for.
+            if (id) setHighlightsRead((n) => n + 1);
+          }}
+          onCancel={() => setCreatingHighlight(false)}
+        />
+      )}
+      {openHighlight !== null && (
+        <HighlightViewer highlightId={openHighlight} onClose={() => setOpenHighlight(null)} />
+      )}
     </Screen>
   );
 }
@@ -932,6 +1054,19 @@ function SummitsTab({ summits }: { summits: { name: string; date?: string; eleva
   );
 }
 
+/**
+ * Screen 16, Stats — the season, then the career.
+ *
+ * This was four totals in a grid: true, and it read as a scoreboard for a game
+ * nobody is playing. The owner asked for the record of a season instead, so the
+ * tab now opens on twelve months of recorded volume and the four all-time
+ * figures sit underneath as the summary they actually are.
+ *
+ * The chart is deliberately two stacked plots on one month axis rather than one
+ * plot with two scales — see `MonthlyVolume`. Nothing here is invented: a month
+ * with no activity is an empty column, and a profile with nothing recorded gets
+ * a sentence instead of an axis.
+ */
 function StatsTab({
   stats,
   achievements,
@@ -939,10 +1074,28 @@ function StatsTab({
   stats: ReturnType<typeof useAthleteTotals>;
   achievements: { id: string; name: string; locked: boolean }[];
 }) {
+  const months = useMonthlyVolume(12);
+  const recordedAnything = months.some((m) => m.activities > 0);
+
   return (
     <>
       <Rise className="pt-5">
-        <div className="grid grid-cols-2 gap-3">
+        <SectionLabel>Last 12 months</SectionLabel>
+        {recordedAnything ? (
+          <MonthlyVolume months={months} className="mt-3" />
+        ) : (
+          /* An axis with twelve empty columns is a chart of nothing pretending
+             to be a chart of something. Say it in words instead. */
+          <p className="mt-2 text-[11.5px] leading-relaxed text-mist-dim">
+            Nothing recorded in the last twelve months. Record an activity and
+            your season builds here, month by month.
+          </p>
+        )}
+      </Rise>
+
+      <Rise className="pt-6">
+        <SectionLabel>All time</SectionLabel>
+        <div className="mt-3 grid grid-cols-2 gap-3">
           <Stat size="lg" value={String(stats.activities)} label="Activities" />
           <Stat size="lg" value={fmtDistance(stats.distanceKm, 0)} unit="km" label="Distance" />
           <Stat size="lg" value={fmtElevation(stats.elevationM)} unit="m" label="Elevation gain" />
@@ -954,9 +1107,14 @@ function StatsTab({
             now start at nothing, which is correct and reads harshly without a
             sentence saying what they count and what they do not. */}
         <p className="mt-3 text-[11.5px] leading-relaxed text-mist-dim">
-          {stats.activities === 0
-            ? "Nothing recorded yet. These count what you record in ICEFALL — they do not include anything you climbed before installing it."
-            : "Counted from what you have recorded in ICEFALL. Anything you climbed before installing it is not included."}
+          {TOTALS_ARE_SEEDED
+            ? /* DEV only. Saying "counted from what you have recorded" over the
+                 demo athlete's career is a false sentence, and the chart above
+                 now proves it false on the same screen. */
+              "Development build: these totals start from the demo athlete's career, which carries no dates and so cannot appear in the chart above. A real install starts at nothing."
+            : stats.activities === 0
+              ? "Nothing recorded yet. These count what you record in ICEFALL — they do not include anything you climbed before installing it."
+              : "Counted from what you have recorded in ICEFALL. Anything you climbed before installing it is not included."}
         </p>
       </Rise>
 

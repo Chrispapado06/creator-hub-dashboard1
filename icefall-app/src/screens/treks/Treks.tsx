@@ -26,9 +26,20 @@ import { trekImage, trekImageSubject } from "@/treks/images";
  * The second commercial category, beside expeditions and separate from them.
  * An expedition climbs a summit; a trek walks to, around or between mountains,
  * and the two are bought by different people. Folding treks into the expedition
- * list would put a fortnight's walking at 5,364 m next to a two-month climb at
+ * LIST would put a fortnight's walking at 5,364 m next to a two-month climb at
  * 8,849 m under one heading — which is the distinction a reader opens this
  * section to make.
+ *
+ * THIS IS NOT THE ONLY PLACE TREKS APPEAR, and that sentence used to imply it
+ * was. `screens/Expeditions.tsx` now carries a "Treks on {peak}" rail and a
+ * hand-picked "Best known treks" rail under its mountain selector. The rule
+ * above survives intact because those are their OWN headed sections with their
+ * own vocabulary — no trek is ever merged into the company listings, which is
+ * what the paragraph was actually protecting against.
+ *
+ * This screen remains the whole catalogue: 252 routes, 22 regions, and the
+ * region / difficulty / length filters. The Expeditions rails are a way in, not
+ * a replacement, and both link back here.
  *
  * NO PRICES. Every card says "Price on enquiry", because that is true: a
  * starting price is an operator's commercial claim, no operator has given us

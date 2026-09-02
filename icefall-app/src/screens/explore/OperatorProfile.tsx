@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { Button, Card, Disclaimer, SectionLabel } from "@/components/ui/primitives";
 import { CompanyMark } from "@/components/domain/CompanyMark";
+import { CompanyChannels } from "@/components/domain/CompanyChannels";
 import { initialsFor } from "@/lib/monogram";
 import { Rise, Screen, Stagger } from "@/components/layout/chrome";
 import { cn } from "@/lib/utils";
@@ -331,6 +332,19 @@ function Profile({
               </Link>
             </Button>
           )}
+        </Rise>
+
+        {/* ---- Channels --------------------------------------------------
+            OUTSIDE THE TABS on purpose. It first went in the About tab, where
+            nobody would find it: a promotion posted yesterday is the live thing
+            on this page and it outranks a static list of regions covered. It is
+            also the feature the owner asked for, and burying it two taps deep
+            is how a feature reads as missing. */}
+        <Rise className="pt-5">
+          <SectionLabel>Channels</SectionLabel>
+          <div className="mt-3">
+            <CompanyChannels companyId={operator.id} />
+          </div>
         </Rise>
 
         {/* ---- The notice, above everything it warns about --------------- */}
@@ -743,7 +757,9 @@ function AboutTab({
               }
               numeric
             />
-            <Fact label="Typical response" value={`Within ${operator.responseHours} hours`} numeric />
+            {operator.responseHours !== undefined && (
+              <Fact label="Typical response" value={`Within ${operator.responseHours} hours`} numeric />
+            )}
           </dl>
         </Card>
         <p className="mt-3 text-[11px] leading-relaxed text-mist-dim">

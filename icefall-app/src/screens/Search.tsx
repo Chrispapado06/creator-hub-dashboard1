@@ -1,16 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
-  ArrowLeft, Backpack, ChevronRight, CloudSun, Compass, Flag, Gauge, Heart, MessageCircle, Mountain,
-  Salad, Search as SearchIcon, Settings as SettingsIcon, ShoppingBag, Target, Users,
+  ArrowLeft, Backpack, ChevronRight, CloudSun, Compass, Flag, Footprints, Gauge, Heart,
+  MessageCircle, Mountain, Route as RouteIcon, Salad, Search as SearchIcon,
+  Settings as SettingsIcon, ShoppingBag, Target, Users,
 } from "lucide-react";
 import { Rise, Stagger } from "@/components/layout/chrome";
 import { fmtDistance, fmtElevation } from "@/lib/format";
 import { loadPeakCatalogue, type Peak } from "@/services/peaks";
+import { TRAIL_ATTRIBUTION } from "@/services/trails";
 import { allGuides, credentialStatus } from "@/guides/types";
 import { DEMO_OPERATORS, allOperators } from "@/services/operators";
 import { DISCOVERABLE_ATHLETES, matchesAthlete } from "@/network/directory";
-import { Badge, SectionLabel } from "@/components/ui/primitives";
+import { TREKS } from "@/treks";
+import {
+  PEOPLE_NO_MATCH, PEOPLE_SOURCE_NOTE, usePeopleSearch, type SearchHit,
+} from "@/search/people";
+import { useGroupSearch, useTrekSearch } from "@/search/treksAndGroups";
+import { useTrailSearch } from "@/search/trails";
+import { Avatar, Badge, SectionLabel } from "@/components/ui/primitives";
 import { useActivityFeed } from "@/tracking/feed";
 import { useApp } from "@/state/AppState";
 import { cn } from "@/lib/utils";
@@ -21,12 +29,37 @@ import { cn } from "@/lib/utils";
  * The app is 78 routes deep and ships a catalogue of thousands of peaks, but
  * every search box in it used to be local to one screen: you could only find a
  * mountain if you were already standing in the mountain library. This searches
- * across four things at once — the places in the app, your objectives, your
- * recorded activities, and the peak catalogue — so "toubkal" or "kit" gets you
- * there from anywhere.
+ * everything ICEFALL holds at once — the places in the app, your objectives,
+ * your recorded activities, the peak catalogue, guides, companies, the 252-route
+ * trek catalogue, hiking trails, groups and real ICEFALL accounts.
  *
- * The peak catalogue is precached by the service worker, so this keeps working
- * with no signal.
+ * ── WHERE THE WORK HAPPENS ──────────────────────────────────────────────────
+ * Ten sources, and only three of them can be slow. Each of those three lives in
+ * its own module under `src/search/` and does its own debouncing, cancellation
+ * and budgeting, because a source that can stall the keyboard must own that
+ * problem rather than leaving it to whichever screen imports it:
+ *
+ *   · people  — one server request per settled query, 250 ms debounce, aborted
+ *               when the query changes, 4 s budget.
+ *   · trails  — 2 MB of prebuilt country indexes, fetched once and then scanned
+ *               in memory in single-digit milliseconds, 180 ms debounce.
+ *   · groups  — one request on mount for the shared list, then in-memory.
+ *
+ * Everything else answers from bundled data on the keystroke itself.
+ *
+ * ── SECTION ORDER SERVES A MOUNTAINEER ──────────────────────────────────────
+ * Mountains, treks and trails first; the app's own screens last. Someone typing
+ * "toubkal" wants the mountain, not the Settings page, and the old order put
+ * "In the app" above every piece of subject matter on the platform.
+ *
+ * ── THE HONESTY RULE THIS SCREEN CARRIES ────────────────────────────────────
+ * Three of the sources can fail to answer, and an empty section looks identical
+ * whether it means "nobody by that name", "you are signed out", "the server did
+ * not reply" or "that continent is not indexed". Each source returns the
+ * sentence for its own state; this screen renders it, either under the section
+ * it belongs to or — when a source produced no rows at all and so has no
+ * section — in the "Search coverage" block at the bottom. Nothing a source said
+ * about its own limits is dropped on the floor.
  */
 
 interface Place {
@@ -52,6 +85,8 @@ const PLACES: Place[] = [
   { label: "Start an activity", detail: "Record a new one", to: "/activity/select", icon: Mountain, keywords: "track record gps" },
   { label: "Objectives", detail: "The mountains you're training for", to: "/goals", icon: Flag, keywords: "goals summit target" },
   { label: "Mountain library", detail: "Every peak ICEFALL holds", to: "/explore/mountains", icon: Compass, keywords: "peaks explore browse search" },
+  { label: "Treks", detail: "Multi-day walking routes", to: "/explore/treks", icon: Footprints, keywords: "trek trekking hike walking camino tour" },
+  { label: "Groups", detail: "Parties heading for a mountain", to: "/explore/groups", icon: Users, keywords: "group party team partners" },
   { label: "Gear", detail: "The system for your objective", to: "/gear", icon: ShoppingBag, keywords: "kit equipment boots" },
   { label: "Health", detail: "What ICEFALL reads, and from where", to: "/health", icon: Heart, keywords: "sensors heart rate" },
   { label: "Expedition network", detail: "People and groups", to: "/explore/people", icon: Users, keywords: "partners climbers friends" },
@@ -69,6 +104,26 @@ function objectivePlaces(goalId: string, goalName: string): Place[] {
   ];
 }
 
+/** The icon tile for a hit from one of the `src/search/` sources. */
+const KIND_ICON: Record<SearchHit["kind"], typeof Compass> = {
+  person: Users,
+  trek: Footprints,
+  group: Users,
+  trail: RouteIcon,
+};
+
+/**
+ * People is the only source that has to ask a server before it can say
+ * anything, so it is the only one with a wait worth naming. Said here because
+ * the source has no sentence for "in flight" — its `state` carries the fact and
+ * the words belong on the surface that draws the wait.
+ */
+const PEOPLE_SEARCHING =
+  "Still searching ICEFALL accounts — people are the one source that has to ask the server.";
+
+/** How many rows a section shows. The sources cap themselves; people cap at 20. */
+const PERSON_LIMIT = 6;
+
 export default function Search() {
   const navigate = useNavigate();
   const { goals } = useApp();
@@ -83,6 +138,17 @@ export default function Search() {
   }, []);
 
   const query = q.trim().toLowerCase();
+
+  /* ---- The live sources ---------------------------------------------------
+     Each of these is handed the RAW box contents, not `query`. They trim and
+     fold on their own terms — trails lowercases, treks strips accents so
+     "frances" finds Camino Francés, people strips PostgREST wildcards — and
+     pre-normalising here would hand each of them a string another one had
+     already chewed. */
+  const people = usePeopleSearch(q);
+  const trekHits = useTrekSearch(q);
+  const groups = useGroupSearch(q);
+  const trails = useTrailSearch(q);
 
   const places = useMemo(() => {
     const active = goals.filter((g) => g.status === "active");
@@ -120,14 +186,13 @@ export default function Search() {
     return [...starts.sort(by), ...contains.sort(by)].slice(0, 8);
   }, [query, peaks]);
 
-  /* ---- Guides, companies, people — PH-21 -------------------------------
-     All three read the SAME gated sources their own screens read —
-     `allGuides()`, `allOperators()`, `DISCOVERABLE_ATHLETES` — never the raw
-     fixture arrays. A search surface is a new reader of every list it indexes
-     (§6aj): pulling from the ungated arrays would resurrect entities the
-     definitions have already removed from this build. Reading through the
-     gate means production search inherits production truth with no logic
-     here at all. */
+  /* ---- Guides, companies — PH-21 ---------------------------------------
+     Both read the SAME gated sources their own screens read — `allGuides()`,
+     `allOperators()` — never the raw fixture arrays. A search surface is a new
+     reader of every list it indexes (§6aj): pulling from the ungated arrays
+     would resurrect entities the definitions have already removed from this
+     build. Reading through the gate means production search inherits
+     production truth with no logic here at all. */
 
   const guideHits = useMemo(() => {
     if (query.length < 2) return [];
@@ -148,27 +213,104 @@ export default function Search() {
   }, [query]);
 
   /*
-   * People match on NAME and BIO only, never their objective — the same rule
-   * as social search, for the same reason: typing a mountain and getting a
-   * list of who will be on it in March is a different product, and one the
-   * athlete never opted into. `DISCOVERABLE_ATHLETES` is empty until a backend
-   * returns real people, so this finds nobody today; the empty state says so
-   * in words rather than letting silence read as "no such person exists".
+   * PEOPLE COME FROM TWO PLACES, AND ONE OF THEM IS STILL EMPTY.
+   *
+   * `usePeopleSearch` reads `public.profiles` — real accounts that real people
+   * made, readable by any signed-in user. `DISCOVERABLE_ATHLETES` is the older,
+   * deliberately EMPTY local list whose header explains why it must stay that
+   * way (an invented climbing partner is a hazard, not a placeholder). It is
+   * still read here rather than deleted, because the day it is populated by a
+   * real source it must appear in search without anyone remembering to rewire
+   * this screen — the same argument its own file makes for iterating it as a
+   * list instead of branching on it.
+   *
+   * `matchesAthlete` matches NAME AND BIO ONLY, never the objective, and that
+   * rule survives the merge: neither source lets a stranger type a mountain
+   * name and get a list of who will be on it in March.
    */
-  const peopleHits = useMemo(() => {
-    if (query.length < 2) return [];
-    return DISCOVERABLE_ATHLETES.filter((a) => matchesAthlete(a, query)).slice(0, 5);
-  }, [query]);
+  const personHits = useMemo<SearchHit[]>(() => {
+    const local: SearchHit[] =
+      query.length < 2
+        ? []
+        : DISCOVERABLE_ATHLETES.filter((a) => matchesAthlete(a, query)).map((a) => ({
+            id: `athlete:${a.id}`,
+            kind: "person",
+            title: a.displayName,
+            subtitle: a.bio ?? undefined,
+            to: "/explore/people",
+          }));
+    return [...local, ...people.hits].slice(0, PERSON_LIMIT);
+  }, [query, people.hits]);
 
-  const empty =
-    query.length > 0 &&
+  const groupHits = groups.hits;
+  const trailHits = trails.hits;
+
+  /*
+   * The trail section is drawn while the index is still loading, because an
+   * absent section during a 2 MB download reads as "no trail is called that" —
+   * the exact confusion the coverage note exists to prevent. `trails.loading`
+   * is only ever true once the query is long enough for trails to answer.
+   */
+  const showTrails = trailHits.length > 0 || trails.loading;
+
+  /*
+   * WHAT COULD NOT BE SEARCHED, collected in one place at the bottom.
+   *
+   * Every source that produced ROWS carries its own sentence under its own
+   * section, where it is read in context. A source that produced NOTHING has no
+   * section to hang a sentence on — and that is exactly the case where silence
+   * is a lie, because an absent People section and an absent Trails section
+   * look identical whether the answer was "nobody by that name" or "you are
+   * signed out" or "half the world is not indexed".
+   *
+   * `PEOPLE_NO_MATCH` is deliberately NOT collected here. "No ICEFALL account
+   * has that handle or name" is a RESULT, not a limitation, and printing it
+   * under every search for "kit" or "settings" would be noise dressed as
+   * disclosure. It belongs in the empty state, where somebody was plainly
+   * looking for something and found nothing — and that is where it is rendered.
+   */
+  const coverage = useMemo(() => {
+    if (!query) return [];
+    const lines: string[] = [];
+    if (personHits.length === 0) {
+      if (people.state === "searching") lines.push(PEOPLE_SEARCHING);
+      else if (people.state !== "ready" && people.message) lines.push(people.message);
+    }
+    if (groupHits.length === 0 && groups.note) lines.push(groups.note);
+    if (!showTrails && trails.coverageNote) lines.push(trails.coverageNote);
+    return lines;
+  }, [
+    query,
+    personHits.length,
+    people.state,
+    people.message,
+    groupHits.length,
+    groups.note,
+    showTrails,
+    trails.coverageNote,
+  ]);
+
+  const nothing =
     places.length === 0 &&
     objectives.length === 0 &&
     activities.length === 0 &&
     peakHits.length === 0 &&
+    trekHits.length === 0 &&
+    trailHits.length === 0 &&
+    groupHits.length === 0 &&
+    personHits.length === 0 &&
     guideHits.length === 0 &&
-    companyHits.length === 0 &&
-    peopleHits.length === 0;
+    companyHits.length === 0;
+
+  /*
+   * "Nothing matches" is a VERDICT, and a verdict delivered while two sources
+   * are still working is wrong as often as it is right. While anything is in
+   * flight the screen says it is still looking instead — which is also what
+   * stops the empty state flashing between the last keystroke and the answer.
+   */
+  const busy = people.state === "searching" || trails.loading;
+  const empty = query.length > 0 && nothing && !busy;
+  const searching = query.length > 0 && nothing && busy;
 
   return (
     <div className="no-scrollbar relative h-full overflow-y-auto bg-obsidian">
@@ -192,7 +334,7 @@ export default function Search() {
               ref={inputRef}
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Search mountains, guides, companies, anything"
+              placeholder="Mountains, treks, trails, people, groups"
               aria-label="Search ICEFALL"
               className="h-11 w-full bg-transparent text-[14px] text-snow outline-none placeholder:text-mist-dim"
             />
@@ -210,6 +352,10 @@ export default function Search() {
         </div>
       </div>
 
+      {/* Every child of `Stagger` below is a `Rise`, an array of them, or
+          nothing. A plain wrapper element between the two breaks framer-motion's
+          variant propagation and leaves the rows sitting at opacity 0 with no
+          error anywhere — a full afternoon of debugging, once. */}
       <Stagger className="px-5 pb-10">
         {!query && (
           <Rise className="pt-6">
@@ -219,22 +365,18 @@ export default function Search() {
                 <Row key={p.to} to={p.to} icon={p.icon} title={p.label} detail={p.detail} />
               ))}
             </div>
+            {/* Every number in this sentence is counted from the data it names,
+                and the sentence stops where the app's knowledge does: the trail
+                index covers part of Europe and nothing else, so the count of
+                countries is left to the trail results themselves, which
+                recompute it from what actually loaded. */}
             <p className="mt-4 text-[11.5px] leading-relaxed text-mist-dim">
-              Searches the whole app — every screen, your objectives, everything you have
-              recorded, and {peaks.length ? peaks.length.toLocaleString("en-GB") : "thousands of"}{" "}
-              peaks. The peak catalogue works offline.
+              Searches the whole app — every screen, your objectives, everything you have recorded,{" "}
+              {peaks.length ? peaks.length.toLocaleString("en-GB") : "thousands of"} peaks and{" "}
+              {TREKS.length} treks. Peaks and treks work offline; trail results say which countries
+              are indexed, and people and other climbers' groups need a signal and a signed-in
+              account.
             </p>
-          </Rise>
-        )}
-
-        {places.length > 0 && (
-          <Rise className="pt-6">
-            <SectionLabel>In the app</SectionLabel>
-            <div className="mt-3 divide-y divide-hairline border-y border-hairline">
-              {places.map((p) => (
-                <Row key={p.to} to={p.to} icon={p.icon} title={p.label} detail={p.detail} />
-              ))}
-            </div>
           </Rise>
         )}
 
@@ -249,23 +391,6 @@ export default function Search() {
                   icon={Flag}
                   title={g.name}
                   detail={g.elevationM ? `${fmtElevation(g.elevationM)} m · your objective` : "Your objective"}
-                />
-              ))}
-            </div>
-          </Rise>
-        )}
-
-        {activities.length > 0 && (
-          <Rise className="pt-6">
-            <SectionLabel>Your activities</SectionLabel>
-            <div className="mt-3 divide-y divide-hairline border-y border-hairline">
-              {activities.map((a) => (
-                <Row
-                  key={a.id}
-                  to={`/activity/${a.id}`}
-                  icon={Mountain}
-                  title={a.title}
-                  detail={`${fmtDistance(a.distanceKm)} km · ${fmtElevation(a.elevationGainM)} m${a.location ? ` · ${a.location}` : ""}`}
                 />
               ))}
             </div>
@@ -290,6 +415,88 @@ export default function Search() {
                 />
               ))}
             </div>
+          </Rise>
+        )}
+
+        {trekHits.length > 0 && (
+          <Rise className="pt-6">
+            <SectionLabel>Treks</SectionLabel>
+            <div className="mt-3 divide-y divide-hairline border-y border-hairline">
+              {trekHits.map((h) => (
+                <HitRow key={h.id} hit={h} />
+              ))}
+            </div>
+          </Rise>
+        )}
+
+        {showTrails && (
+          <Rise className="pt-6">
+            <SectionLabel>Trails</SectionLabel>
+            {trailHits.length > 0 && (
+              <div className="mt-3 divide-y divide-hairline border-y border-hairline">
+                {trailHits.map((h) => (
+                  <HitRow key={h.id} hit={h} />
+                ))}
+              </div>
+            )}
+            {/* THE COVERAGE NOTE IS NOT OPTIONAL. The index holds 22 European
+                countries and nothing else; without this sentence an empty trail
+                list reads as a verdict on the trail rather than on the index,
+                and a full one implies the whole world was searched. The
+                attribution below it is a licence obligation on ODbL data — no
+                other source in this box carries it, so nothing else will. */}
+            {trails.coverageNote && <SourceNote>{trails.coverageNote}</SourceNote>}
+            <SourceNote>{TRAIL_ATTRIBUTION}.</SourceNote>
+          </Rise>
+        )}
+
+        {activities.length > 0 && (
+          <Rise className="pt-6">
+            <SectionLabel>Your activities</SectionLabel>
+            <div className="mt-3 divide-y divide-hairline border-y border-hairline">
+              {activities.map((a) => (
+                <Row
+                  key={a.id}
+                  to={`/activity/${a.id}`}
+                  icon={Mountain}
+                  title={a.title}
+                  detail={`${fmtDistance(a.distanceKm)} km · ${fmtElevation(a.elevationGainM)} m${a.location ? ` · ${a.location}` : ""}`}
+                />
+              ))}
+            </div>
+          </Rise>
+        )}
+
+        {groupHits.length > 0 && (
+          <Rise className="pt-6">
+            <SectionLabel>Groups</SectionLabel>
+            <div className="mt-3 divide-y divide-hairline border-y border-hairline">
+              {groupHits.map((h) => (
+                <HitRow key={h.id} hit={h} />
+              ))}
+            </div>
+            {/* Says which groups were reachable at all — "no group called that"
+                and "ICEFALL could not read the group list" lead a climber to
+                opposite conclusions about whether to keep looking for a
+                partner. Placeholder rows are marked individually as well, so
+                the disclosure survives even if this paragraph scrolls away. */}
+            {groups.note && <SourceNote>{groups.note}</SourceNote>}
+          </Rise>
+        )}
+
+        {personHits.length > 0 && (
+          <Rise className="pt-6">
+            <SectionLabel>People</SectionLabel>
+            <div className="mt-3 divide-y divide-hairline border-y border-hairline">
+              {personHits.map((h) => (
+                <HitRow key={h.id} hit={h} />
+              ))}
+            </div>
+            {/* These rows now open `/explore/people/:id`, so this no longer
+                explains a dead end — it carries the one caveat that outlived
+                the dead end: the accounts are real, and ICEFALL has vouched for
+                none of them. */}
+            <SourceNote>{PEOPLE_SOURCE_NOTE}</SourceNote>
           </Rise>
         )}
 
@@ -329,10 +536,10 @@ export default function Search() {
                   key={o.id}
                   to={`/operator/${encodeURIComponent(o.id)}`}
                   icon={Compass}
-                  title={o.name}
                   /* Certification and regions only. `responseHours` exists on
                      this record and is the standing invented-response-time
                      defect — it does not get a new surface here. */
+                  title={o.name}
                   detail={`${o.certification} · ${o.regions.slice(0, 3).join(", ")}`}
                   badge={
                     DEMO_OPERATORS.some((d) => d.id === o.id) ? (
@@ -347,23 +554,24 @@ export default function Search() {
           </Rise>
         )}
 
-        {peopleHits.length > 0 && (
+        {places.length > 0 && (
           <Rise className="pt-6">
-            <SectionLabel>People</SectionLabel>
+            <SectionLabel>In the app</SectionLabel>
             <div className="mt-3 divide-y divide-hairline border-y border-hairline">
-              {peopleHits.map((a) => (
-                <Row
-                  key={a.id}
-                  to={`/explore/people`}
-                  icon={Users}
-                  title={a.displayName}
-                  /* The bio, never the objective. The row must not leak where
-                     somebody will be and when — the same line the matcher
-                     already holds. */
-                  detail={a.bio ?? "ICEFALL athlete"}
-                />
+              {places.map((p) => (
+                <Row key={p.to} to={p.to} icon={p.icon} title={p.label} detail={p.detail} />
               ))}
             </div>
+          </Rise>
+        )}
+
+        {searching && (
+          <Rise className="pt-16">
+            <p className="text-center text-[13px] text-mist">Searching…</p>
+            <p className="mt-1.5 text-center text-[11.5px] text-mist-dim">
+              Nothing on this device matches "{q}" yet. The sources that have to load or ask the
+              server have not answered.
+            </p>
           </Rise>
         )}
 
@@ -371,19 +579,77 @@ export default function Search() {
           <Rise className="pt-16">
             <p className="text-center text-[13px] text-mist">Nothing matches "{q}".</p>
             <p className="mt-1.5 text-center text-[11.5px] text-mist-dim">
-              Try a mountain name, a guide, a company, or a word like "kit" or "settings".
+              Try a mountain, a trek, a trail, a guide, a company, or a word like "kit" or
+              "settings".
             </p>
-            {/* Said here because silence lies: a name search that renders
-                nothing reads as "no such person", when the truth is that no
-                climber directory exists yet for anyone to be found in. */}
-            <p className="mx-auto mt-4 max-w-[300px] text-center text-[11px] leading-relaxed text-mist-dim">
-              People cannot be found yet — there is no climber directory until accounts connect,
-              so nobody is searchable, not just this name.
-            </p>
+            {/* Only when people were genuinely LOOKED UP and genuinely not
+                found. Every other people state — signed out, unreachable, no
+                server — is a different sentence and is carried below. */}
+            {people.state === "ready" && (
+              <p className="mx-auto mt-4 max-w-[300px] text-center text-[11.5px] leading-relaxed text-mist-dim">
+                {PEOPLE_NO_MATCH}
+              </p>
+            )}
+          </Rise>
+        )}
+
+        {coverage.length > 0 && (
+          <Rise className="pt-6">
+            <SectionLabel>Search coverage</SectionLabel>
+            <div className="mt-3 space-y-2.5 border-t border-hairline pt-3">
+              {coverage.map((line) => (
+                <p key={line} className="text-[11px] leading-relaxed text-mist-dim">
+                  {line}
+                </p>
+              ))}
+            </div>
           </Rise>
         )}
       </Stagger>
     </div>
+  );
+}
+
+/** The sentence a source says about its own limits, under that source's rows. */
+function SourceNote({ children }: { children: React.ReactNode }) {
+  return <p className="mt-2.5 text-[11px] leading-relaxed text-mist-dim">{children}</p>;
+}
+
+/**
+ * One row from a `src/search/` source.
+ *
+ * NO PHOTOGRAPHS, AND THAT IS DELIBERATE. `SearchHit.imageUrl` is populated by
+ * two of the sources and is dropped here for two separate reasons. The trek
+ * photographs are Wikimedia CC BY / CC BY-SA, and `treks/images.ts` says in as
+ * many words that naming the author wherever the work appears is a licence
+ * obligation rather than a courtesy — a 36 px thumbnail in a list of ten rows
+ * has nowhere to put ten credits. And a person's avatar is a real face fetched
+ * from the network on every keystroke's worth of results; `Avatar` draws their
+ * initials with no request and no chance of a stranger's photograph arriving
+ * late against the wrong name. Every other row on this screen is an icon tile,
+ * so this is also what the screen already looks like.
+ */
+function HitRow({ hit }: { hit: SearchHit }) {
+  return (
+    <Row
+      to={hit.to}
+      icon={KIND_ICON[hit.kind]}
+      leading={hit.kind === "person" ? <Avatar name={hit.title} size={36} /> : undefined}
+      title={hit.title}
+      detail={hit.subtitle}
+      /* The row's own disclosure — "Placeholder group" — beside the title
+         rather than in the detail line, because the detail line truncates and a
+         disclosure an ellipsis can eat is not a disclosure.
+
+         The `kind !== "person"` guard is kept though `toHit` no longer sets a
+         person note: a badge on a person row would be a mark beside a real
+         name, and `AthleteProfile`'s header explains at length why this feature
+         puts no mark of any kind next to somebody's name. Nothing about an
+         account is a badge ICEFALL has earned the right to print. */
+      badge={
+        hit.note && hit.kind !== "person" ? <Badge tone="neutral">{hit.note}</Badge> : undefined
+      }
+    />
   );
 }
 
@@ -393,29 +659,54 @@ function Row({
   title,
   detail,
   badge,
+  leading,
 }: {
+  /**
+   * Empty means this row opens nothing. No hit builder produces one any more —
+   * people were the last, and they now open `/explore/people/:id` — but the
+   * empty case is still handled below rather than asserted away, because the
+   * failure mode is silent: see the chevron comment.
+   */
   to: string;
   icon: typeof Compass;
   title: string;
-  detail: string;
-  /** A disclosure chip — Demo, Sample. Rendered beside the title, never after
-      the detail, so truncation can only ever eat the geography, not the
-      disclosure. */
+  detail?: string;
+  /** A disclosure chip — Demo, Sample, Placeholder group. Rendered beside the
+      title, never after the detail, so truncation can only ever eat the
+      geography, not the disclosure. */
   badge?: React.ReactNode;
+  /** Replaces the icon tile. Used for a person's initials. */
+  leading?: React.ReactNode;
 }) {
-  return (
-    <Link to={to} className={cn("flex items-center gap-3.5 py-3")}>
-      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-tile border border-hairline text-azure/85">
-        <Icon size={16} strokeWidth={1.6} />
-      </span>
+  const body = (
+    <>
+      {leading ?? (
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-tile border border-hairline text-azure/85">
+          <Icon size={16} strokeWidth={1.6} />
+        </span>
+      )}
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-2">
           <span className="truncate text-[13.5px] text-snow">{title}</span>
           {badge}
         </span>
-        <span className="mt-0.5 block truncate tnum text-[11.5px] text-mist-dim">{detail}</span>
+        {detail && (
+          <span className="mt-0.5 block truncate tnum text-[11.5px] text-mist-dim">{detail}</span>
+        )}
       </span>
-      <ChevronRight size={16} className="shrink-0 text-mist-dim" />
+      {/* The chevron is the promise that tapping goes somewhere. A row with no
+          destination does not draw one, and is not a link at all: an empty `to`
+          in a react-router `<Link>` resolves to the CURRENT url, so the tap
+          would silently reload the search rather than doing nothing visibly. */}
+      {to ? <ChevronRight size={16} className="shrink-0 text-mist-dim" /> : null}
+    </>
+  );
+
+  if (!to) return <div className={cn("flex items-center gap-3.5 py-3")}>{body}</div>;
+
+  return (
+    <Link to={to} className={cn("flex items-center gap-3.5 py-3")}>
+      {body}
     </Link>
   );
 }

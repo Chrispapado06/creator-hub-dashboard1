@@ -6,6 +6,7 @@ import { PhoneShell } from "@/components/layout/PhoneShell";
 import { TabBar } from "@/components/layout/TabBar";
 import { IcefallMark } from "@/components/ui/IcefallMark";
 import { Button } from "@/components/ui/primitives";
+import { useSessionState } from "@/auth/session";
 import { useApp } from "@/state/AppState";
 import { DEMO } from "@/offline/offline";
 import { OfflineRouteGuard } from "@/offline/OfflineRouteGuard";
@@ -146,10 +147,37 @@ function PageLoader() {
  * The five-tab shell. Content crossfades on navigation; the tab bar never
  * moves, which is what makes the app feel like one place.
  */
+/**
+ * THE SHELL GATE — an account is required, ruled by the owner 2026-09-02.
+ *
+ * This used to check `onboarded` alone, which is a LOCAL flag: anyone could set
+ * it by walking the onboarding questions, and the splash offered "Explore
+ * without an account" as a third door that did exactly that. So the whole app
+ * was reachable with no account at all, while every screen was being written to
+ * handle a signed-out visitor honestly. Two different products, half-built each.
+ *
+ * The owner's ruling: an account is required. So the gate now asks for a real
+ * SESSION, and the guest door is gone from Auth.tsx.
+ *
+ * DEMO BUILDS ARE THE DELIBERATE EXCEPTION. The Vercel links the owner shares
+ * are `VITE_ICEFALL_DEMO=1`, and the offline bundle is the same flag — neither
+ * has a Supabase session and neither should. Gating them would break the one
+ * way anybody outside the team sees this app. `DEMO` is a build-time constant,
+ * so this branch folds away entirely in a production bundle.
+ *
+ * `session === undefined` means "not yet known", which is NOT "signed out" —
+ * redirecting during the first async check would bounce a signed-in person to
+ * the splash on every cold start. It holds instead.
+ */
 function AppShell() {
   const { pathname } = useLocation();
   const { onboarded } = useApp();
+  const session = useSessionState();
 
+  if (!DEMO) {
+    if (session === undefined) return <PageLoader />;
+    if (session === null) return <Navigate to="/" replace />;
+  }
   if (!onboarded) return <Navigate to="/" replace />;
 
   return (
@@ -310,12 +338,19 @@ export default function App() {
               <Route path="peak/:id" element={<PeakDetail />} />
               <Route path="expeditions" element={<Expeditions />} />
               <Route path="expeditions/:id" element={<ExpeditionDetail />} />
-              {/* AthleteCard links here; the full profile/connect flow is not
-                  built (and cannot honestly be, before a backend). Unreachable
-                  today — the discoverable list is empty by design — but the day
-                  the first real athlete renders, these must not be a 404. */}
+              {/* The connect flow is not built (and cannot honestly be against
+                  the local, empty `network/` directory), so it still lands on
+                  the people list rather than 404ing.
+
+                  `people/:id` USED TO BE REDIRECTED HERE TOO, and correctly:
+                  `AthleteProfile` read local state, so with no server it
+                  resolved every id but the phone owner's to nobody. Supabase is
+                  live now, `profiles` holds real accounts and `profiles_select`
+                  is `to authenticated using (true)` — so that redirect became
+                  the only thing standing between a people-search result and the
+                  person it found. It is gone; the declaration below is the one
+                  that resolves. */}
               <Route path="people/:id/connect" element={<Navigate to="/explore/social?tab=people" replace />} />
-              <Route path="people/:id" element={<Navigate to="/explore/social?tab=people" replace />} />
               <Route path="crew" element={<Navigate to="/explore/groups" replace />} />
               <Route path="crew/new" element={<Navigate to="/explore/groups/new" replace />} />
               {/* Merged into Social; the old path still resolves. */}

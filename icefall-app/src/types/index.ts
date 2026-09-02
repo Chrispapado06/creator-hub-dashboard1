@@ -210,7 +210,32 @@ export interface Mountain {
   recommendedGearIds: string[];
   routes: MountainRoute[];
   conditions: Conditions;
+  /**
+   * True where the climbing permit is issued to an EXPEDITION OR OPERATOR
+   * rather than to a person.
+   *
+   * This is a regulatory fact about the mountain, not a difficulty rating, and
+   * it is the thing that actually decides whether hiring an individual guide
+   * is an option at all. It does not track altitude: Nepal and Pakistan issue
+   * 8,000 m permits to a named expedition, and Tanzania requires Kilimanjaro
+   * at 5,895 m to be climbed with a licensed operator — while Aconcagua at
+   * 6,961 m is permitted to the individual climber.
+   *
+   * The guides directory uses it to say "a company is the way in" instead of
+   * offering a peak nobody can be hired for directly.
+   */
+  permitIssuedToOperator?: true;
   photo: string;
+  /**
+   * Attribution for `photo`, when ICEFALL did not take it.
+   *
+   * REQUIRED FOR ANY CC BY / CC BY-SA IMAGE, which is most of the newer ones —
+   * those licences oblige us to name the photographer wherever the work is
+   * shown. Leaving it undefined is not neutral: `MountainImage` falls back to
+   * "<name> — ICEFALL photography", so an uncredited borrowed photograph does
+   * not merely go unattributed, it gets actively claimed as ours.
+   */
+  photoCredit?: string;
   summary: string;
   /** True when the objective genuinely needs a certified guide or operator. */
   requiresProfessionalSupport: boolean;

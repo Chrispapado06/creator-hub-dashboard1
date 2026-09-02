@@ -1,4 +1,5 @@
-import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Outlet, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { Plus } from "lucide-react";
 import { ScreenHeader, SegmentedTabs } from "@/components/layout/chrome";
 import { useTabSwipe } from "@/hooks/useTabSwipe";
 
@@ -30,12 +31,20 @@ import { useTabSwipe } from "@/hooks/useTabSwipe";
  * going with).
  */
 const TABS: readonly { value: string; label: string }[] = [
+  // Order is a claim about what this section is for. Find leads; then the two
+  // ways to hire somebody — a company for an expedition, an individual for a
+  // day — because that is what most people open Explore to do, and Social last.
+  //
+  // MOUNTAINS AND TREKS ARE NOT TABS ANY MORE. Both were removed from this bar
+  // at the owner's request. Their ROUTES still exist and still work: the
+  // Expeditions screen rails "Explore mountains" and "Famous treks" each carry
+  // a "View all" through to them, which is now the only way in. Nothing is
+  // orphaned and nothing was deleted — they stopped being top-level
+  // destinations and became the depth behind two rails.
   { value: "/explore/routes", label: "Find" },
-  { value: "/explore/mountains", label: "Mountains" },
-  { value: "/explore/social", label: "Social" },
   { value: "/explore/expeditions", label: "Expeditions" },
-  { value: "/explore/treks", label: "Treks" },
   { value: "/explore/guides", label: "Guides" },
+  { value: "/explore/social", label: "Social" },
 ];
 
 /** The hub. Reached by the back chevron from any tab. */
@@ -44,6 +53,7 @@ const HUB = "/explore/hub";
 /** Everything beyond your own training lives here. */
 export default function ExploreLayout() {
   const { pathname } = useLocation();
+  const [params] = useSearchParams();
   const navigate = useNavigate();
 
   // Longest matching prefix so detail routes keep their parent tab lit. No

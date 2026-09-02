@@ -256,7 +256,15 @@ export function SummitLogCard({
           <div className="min-w-0">
             <p className="text-[18px] font-light leading-snug text-snow">
               {log.peakName}
-              {log.elevationM ? (
+              {/* `typeof === "number"` and NOT a truthiness test, matching the
+                  server-side card in `components/social/SummitLogCard.tsx`.
+                  `elevationM` is optional, so `undefined` is "no height was
+                  recorded" and is rightly omitted — but `0` is a height that
+                  WAS recorded, and a truthy test silently drops it and prints
+                  the peak as though nobody had given one. That collapses a
+                  measured nought into an unmeasured absence, which is the
+                  distinction this app keeps everywhere else. */}
+              {typeof log.elevationM === "number" ? (
                 <span className="tnum text-[14px] text-mist"> · {fmtElevation(log.elevationM)} m</span>
               ) : null}
             </p>

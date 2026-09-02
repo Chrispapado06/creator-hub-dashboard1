@@ -8,15 +8,18 @@ import { Rise, Screen, SegmentedTabs, Stagger } from "@/components/layout/chrome
 import { MOUNTAINS } from "@/data/mock/mountains";
 import {
   TREKS, peaksForTrek, trekAltitude, trekById, trekDuration, trekRegion, treksInRegion,
+  type Trek,
 } from "@/treks";
-import { trekImage, trekImageCaption, trekImageSubject } from "@/treks/images";
-import { TREK_PHOTO_CREDITS } from "@/treks/credits";
+import { trekImage, trekImageCaption, trekImageSubject, trekPhotoCredit } from "@/treks/images";
 import { TrekCard } from "@/screens/treks/Treks";
+import { DEMO_NOTICE, OPERATOR_DISCLAIMER, operatorsFor, type Operator } from "@/services/operators";
+import { OperatorCard } from "@/components/domain/OperatorCard";
 
 const TABS = [
   { value: "overview", label: "Overview" },
   { value: "route", label: "The route" },
   { value: "prepare", label: "Preparation" },
+  { value: "companies", label: "Companies" },
   { value: "nearby", label: "Nearby" },
 ] as const;
 
@@ -31,8 +34,10 @@ type Tab = (typeof TABS)[number]["value"];
  *   no star rating    nobody has rated this route through ICEFALL
  *   no success rate   a walk does not have a summit success rate, and the
  *                     figure would be invented even if it did
- *   no operator list  no operator has listed a trek with us yet; the enquiry
- *                     route is the message screen, which is honest about that
+ *   no operator LINK  no operator has listed a trek with us — `operatorIds` is
+ *                     empty on all 252 routes. The Companies tab therefore
+ *                     shows a MATCH on country and high point, and says so in
+ *                     as many words; it never claims a company runs this walk
  *   no day-by-day     itineraries vary by operator and we hold none of them.
  *                     A plausible invented one is the worst thing this page
  *                     could carry, because it is the part a walker plans from.
@@ -55,11 +60,33 @@ export default function TrekDetail() {
     [trek],
   );
 
+  /**
+   * Companies, matched the same way the mountain page matches them.
+   *
+   * `operatorsFor` filters the directory on the country (it splits compound
+   * strings like "France / Italy / Switzerland" itself) and on the working
+   * altitude, so a Karakoram outfit whose floor is 5,000 m does not surface
+   * under the West Highland Way.
+   *
+   * THE HIGH POINT IS THE ALTITUDE, and where it is unpublished this returns
+   * nothing rather than defaulting to zero. A zero would pass the
+   * `>= minElevationM` test for every operator in the directory and hand the
+   * reader a full list of companies selected by nothing at all — the failure
+   * mode is a confident wrong answer, not an empty one, so the guard is on
+   * the null and the tab explains itself instead.
+   */
+  const operators = useMemo(() => {
+    if (!trek || trek.maxAltitudeM === null) return [];
+    return operatorsFor({ country: trek.country, elevationM: trek.maxAltitudeM });
+  }, [trek]);
+
   // Every hook is above this line: an early return before them would skip the
   // ones below it and React would render fewer hooks than it expected.
   if (!trek) return <Navigate to="/explore/treks" replace />;
 
-  const credit = TREK_PHOTO_CREDITS[trek.id];
+  // The shared accessor, not the generated map — a hand-picked photograph is
+  // still CC BY-SA and must name its photographer on this page too.
+  const credit = trekPhotoCredit(trek.id);
   const subject = trekImageSubject(trek);
 
   return (
@@ -225,6 +252,23 @@ export default function TrekDetail() {
         </Stagger>
       )}
 
+      {/*
+       * COMPANIES — the same directory the mountain page shows, on the same
+       * terms. A walker choosing an operator for the Annapurna Circuit is
+       * making the decision a climber makes on a peak page, so it would be
+       * strange to answer it in one place and not the other.
+       *
+       * WHAT THE HEADING MAY AND MAY NOT CLAIM. No trek in the catalogue
+       * carries an operator link — `operatorIds` is empty on all 252 — so this
+       * app CANNOT say "these companies run this trek". What it can say is
+       * what it actually did: matched the directory on the route's country and
+       * its high point. The sub-line states that, and the wording is the load-
+       * bearing part of this section, not decoration. A future dataset with
+       * real operator links should replace the match, and then the heading can
+       * make the stronger claim honestly.
+       */}
+      {tab === "companies" && <TrekCompanies trek={trek} operators={operators} />}
+
       {tab === "nearby" && (
         <div className="mt-4">
           {alsoHere.length === 0 ? (
@@ -247,6 +291,74 @@ export default function TrekDetail() {
         </div>
       )}
     </Screen>
+  );
+}
+
+/**
+ * The companies tab.
+ *
+ * A separate component so `maxAltitudeM` can be narrowed ONCE, at the top,
+ * and stay narrowed inside the map below — TypeScript drops the narrowing of a
+ * property access as soon as it crosses into a closure, and the workaround
+ * people reach for there is `?? 0`, which is precisely the zero this section
+ * exists to refuse.
+ */
+function TrekCompanies({ trek, operators }: { trek: Trek; operators: Operator[] }) {
+  const highPoint = trek.maxAltitudeM;
+
+  if (highPoint === null) {
+    return (
+      <Stagger className="mt-4 space-y-3">
+        <Card className="p-4">
+          <p className="text-sm leading-relaxed text-mist/80">
+            No high point is published for this route, and companies are matched partly on the
+            altitude they work at. Rather than list every operator in the directory and let the
+            order imply a match nobody made, this shows none.
+          </p>
+        </Card>
+      </Stagger>
+    );
+  }
+
+  return (
+    <Stagger className="mt-4 space-y-3">
+      <div>
+        <SectionLabel>Companies working this route</SectionLabel>
+        {/* THE CLAIM IS THE MATCH, NOT THE BOOKING. No trek carries an operator
+            link, so "companies that run this trek" would be an assertion the
+            data cannot support. This says what was actually done. */}
+        <p className="mt-2 text-xs leading-relaxed text-mist/55">
+          Matched to {trek.country} and to the {trekAltitude(trek)} high point of this walk — not
+          booked, endorsed or paid for. Ordered by that match, then alphabetically.
+        </p>
+      </div>
+
+      {operators.some((o) => o.demo) && <Disclaimer>{DEMO_NOTICE}</Disclaimer>}
+
+      {operators.length === 0 ? (
+        <Card className="p-4">
+          <p className="text-sm leading-relaxed text-mist/80">
+            No listing in the directory covers {trek.country} at this altitude. That is a gap in
+            ICEFALL's directory, not a statement about who guides this route — plenty of
+            companies will.
+          </p>
+        </Card>
+      ) : (
+        <div className="space-y-2.5">
+          {operators.map((o, i) => (
+            <OperatorCard
+              key={o.id}
+              operator={o}
+              lead={i === 0}
+              rank={i === 0 ? undefined : i + 1}
+              peak={{ name: trek.name, elevationM: highPoint }}
+            />
+          ))}
+        </div>
+      )}
+
+      <Disclaimer>{OPERATOR_DISCLAIMER}</Disclaimer>
+    </Stagger>
   );
 }
 

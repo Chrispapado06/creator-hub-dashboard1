@@ -6,22 +6,44 @@ import { Rise, Screen, SegmentedTabs, Stagger } from "@/components/layout/chrome
 import { QualifierBadge, ScoreValue, UnavailableState } from "@/components/coach/DataState";
 import { COACH_DISCLAIMER, isKnown, known, unavailable } from "@/coach/types";
 import { useCoachIntel } from "@/coach/hooks";
+import { fuellingFor, NUTRITION_DISCLAIMER, type FuellingPlan } from "@/coach/nutrition";
+import { FOCUS_GUIDANCE } from "@/services/coach";
 import { useTraining } from "@/tracking/training";
 import { useApp } from "@/state/AppState";
 import { cn } from "@/lib/utils";
-import { FOCUS_LABELS, fmtDistance, fmtDurationCompact, fmtElevation } from "@/lib/format";
+import { FOCUS_LABELS, fmtDate, fmtDistance, fmtDurationCompact, fmtElevation } from "@/lib/format";
 import { isoDate } from "@/data/mock/clock";
 import type { Score } from "@/coach/types";
-import type { Readiness } from "@/coach/readiness";
+import type { Briefing } from "@/coach/briefing";
 import type { TrainingDay, TrainingPlan, TrainingWeek } from "@/types";
 
 /**
- * Coach screen 02 — the plan.
+ * Coach screen 02 — today's session, and the rest of the build under it.
  *
- * Three ways into the same generated block: the week you are in, the shape of
- * the whole build, and a month at a glance. Nothing on this screen is a fixture.
- * The weeks come from `buildPlanForGoal`, the phases are read back out of the
- * block names that generator wrote, and completion comes from what the athlete
+ * THE SUBJECT OF THIS SCREEN IS TODAY. Everything above the tab strip is the
+ * one session the athlete is being asked to do now and the things that get it
+ * done: what it is for, where the full session lives, how to record it, whether
+ * it is ticked, and how to fuel it. The week, the phases and the calendar are
+ * still here — an athlete needs to see the shape of the build — but they sit
+ * below today rather than competing with it.
+ *
+ * NO READINESS ON THIS SCREEN. It used to carry a "readiness is running on less
+ * than four inputs" panel, which was a second copy of `MissingPanel` in
+ * ReadinessScreen.tsx: same four components, same four actions, computed from
+ * the same `useCoachIntel()` call. Two screens explaining one score is how the
+ * two drift apart, and the score is not what an athlete comes to the plan for.
+ * Readiness lives at /coach/readiness and is reached from Coach's Today tab.
+ *
+ * The one place readiness still reaches this screen is indirect and deliberate:
+ * `briefing.training` substitutes an easy session when recovery is poor, load
+ * has spiked, or readiness is low, and the substitution carries its own reason
+ * in prose. Rendering the prescribed hard session instead would put this screen
+ * in contradiction with Coach's Today tab and with the chat coach, which is a
+ * bug this project has already had once.
+ *
+ * Nothing on this screen is a fixture. The weeks come from `buildPlanForGoal`,
+ * the phases are read back out of the block names that generator wrote, the
+ * fuelling comes from `fuellingFor`, and completion comes from what the athlete
  * actually recorded or actually ticked.
  *
  * Three rules govern every completion mark here, and none of them are cosmetic:
@@ -205,13 +227,17 @@ const TABS = [
 ] as const;
 
 export default function CoachPlan() {
-  const { plan, readiness, cold } = useCoachIntel();
+  const { plan, briefing, cold } = useCoachIntel();
   // `useCoachIntel` gives the plan and the current week but not completion —
   // that lives in the training state, keyed by date, and is the only source
   // allowed to say a session is done. Reading it here rather than recomputing
   // keeps this screen and the goal's preparation figure on the same numbers.
   const { goal, completedByDate, satisfiedByActivity } = useTraining();
-  const { toggleSession } = useApp();
+  // `bodyMassKgSet`, never `bodyMassKg`: the latter defaults to 72 kg for an
+  // athlete who has never given one, and a gram figure computed from a default
+  // body is a number about nobody. `fuellingFor` drops to descriptive portions
+  // when it is handed undefined, and says in `context` that it did.
+  const { toggleSession, todaysCheckIn, bodyMassKgSet } = useApp();
 
   const [tab, setTab] = useState<Tab>("week");
   const [weekIndex, setWeekIndex] = useState<number | null>(null);
@@ -222,6 +248,17 @@ export default function CoachPlan() {
     [plan, completedByDate, todayKey],
   );
 
+  // The week that holds today, which is not always `plan.currentWeek`: the
+  // current week is derived from elapsed time and a plan can start in the
+  // future or have run out. `toggleSession` is keyed by week index, so a tick
+  // written against the wrong index would be stored against a day that is not
+  // the one on screen.
+  const todayWeek = useMemo(
+    () => plan?.weeks.find((w) => w.days.some((d) => d.date === todayKey)) ?? null,
+    [plan, todayKey],
+  );
+  const today = todayWeek?.days.find((d) => d.date === todayKey);
+
   if (!plan || !goal) return <NoObjective />;
 
   const index = Math.min(plan.totalWeeks, Math.max(1, weekIndex ?? plan.currentWeek));
@@ -230,15 +267,39 @@ export default function CoachPlan() {
   return (
     <Screen>
       <Stagger>
-        <Rise className="pt-5">
-          <p className="section-label">Training plan</p>
-          <h2 className="mt-2 text-[21px] font-light tracking-[-0.02em] text-snow">{plan.title}</h2>
-          <p className="tnum mt-1.5 text-[12px] text-mist-dim">
+        <Today
+          plan={plan}
+          todayKey={todayKey}
+          day={today}
+          training={briefing.training}
+          completed={completedByDate.get(todayKey) === true}
+          fromActivity={satisfiedByActivity.has(todayKey)}
+          checkedIn={Boolean(todaysCheckIn)}
+          bodyMassKg={bodyMassKgSet ?? undefined}
+          onToggle={
+            today && todayWeek
+              ? () =>
+                  toggleSession(
+                    todayWeek.index,
+                    today.date,
+                    // Same fallback rule as the week list below.
+                    satisfiedByActivity.has(today.date) || today.completed,
+                  )
+              : undefined
+          }
+        />
+
+        <Rise className="pt-9">
+          <SectionLabel>The rest of the build</SectionLabel>
+          {/* `plan.title` is "{objective} — {n} weeks" and is deliberately not
+              printed here: beside this sentence it says the objective twice and
+              the week count twice. */}
+          <p className="tnum mt-2.5 text-[12px] leading-relaxed text-mist-dim">
             Week {plan.currentWeek} of {plan.totalWeeks} · built backwards from {goal.name}
           </p>
         </Rise>
 
-        <Rise className="pt-5">
+        <Rise className="pt-4">
           <SegmentedTabs tabs={TABS} value={tab} onChange={setTab} />
         </Rise>
       </Stagger>
@@ -262,7 +323,6 @@ export default function CoachPlan() {
               )
             }
             todayKey={todayKey}
-            readiness={readiness}
             cold={cold}
           />
         )}
@@ -338,6 +398,294 @@ function NoObjective() {
 }
 
 /* -------------------------------------------------------------------------- */
+/* TODAY — the subject of this screen                                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Today's session, and the things that get it done.
+ *
+ * Four things are load-bearing here.
+ *
+ *  1. WHAT IS SHOWN IS `briefing.training`, NOT `today`. The briefing swaps a
+ *     prescribed hard session for an easy one when recovery is poor, load has
+ *     spiked or readiness is low. Rendering the plan's own row instead would put
+ *     "intervals" on this screen on a morning Coach's Today tab and the chat
+ *     coach both said to ease off — the contradiction those three surfaces share
+ *     one context object to prevent.
+ *
+ *  2. WHEN IT HAS BEEN ADAPTED, THE PRESCRIBED FIGURES ARE NOT PRINTED. They
+ *     belong to a session that is no longer today's, and beside "easy session"
+ *     they read as targets. Same rule, and the same detection, as `PlanCard` in
+ *     CoachHome.tsx: a focus that differs from the plan's is the signal, because
+ *     the pass-through branch copies the focus verbatim and the substitution
+ *     branch always writes "recovery" over a focus that was in the hard set.
+ *
+ *  3. A REST DAY GETS NO CONTROLS. No open, no record, no tick — offering a
+ *     "lighter version" of rest is how rest quietly stops being rest, and the
+ *     hard days in this plan are costed on the assumption that it does not.
+ *
+ *  4. HELP IS DERIVED OR IT IS ABSENT. The purpose lines come from the plan and
+ *     from `FOCUS_GUIDANCE`, which is the same text the chat coach answers
+ *     "what should I train today" with. Fuelling comes from `fuellingFor`, which
+ *     drops to descriptive portions when it has no usable body mass rather than
+ *     computing grams from a default body. Nothing here is written for this
+ *     screen alone.
+ */
+function Today({
+  plan,
+  todayKey,
+  day,
+  training,
+  completed,
+  fromActivity,
+  checkedIn,
+  bodyMassKg,
+  onToggle,
+}: {
+  plan: TrainingPlan;
+  todayKey: string;
+  day?: TrainingDay;
+  training: Briefing["training"];
+  completed: boolean;
+  fromActivity: boolean;
+  checkedIn: boolean;
+  bodyMassKg?: number;
+  onToggle?: () => void;
+}) {
+  const adapted = Boolean(day && training && training.focus !== day.focus);
+  const isRest = (training?.focus ?? day?.focus) === "rest";
+
+  /*
+   * Fuelling is asked for today's PLANNED day, and deliberately without an
+   * altitude. `fuellingFor` takes one and changes its advice above 2,500 m —
+   * but the only altitude ICEFALL holds is the objective's, and today's session
+   * is being done at home. Passing the mountain's height would turn a Tuesday
+   * hill session into guidance for a summit day nobody is on.
+   */
+  const fuel = useMemo<FuellingPlan | null>(
+    () => (day ? fuellingFor({ day, bodyMassKg }) : null),
+    [day, bodyMassKg],
+  );
+
+  const dateLabel = fmtDate(todayKey, { weekday: "long", month: "long", year: undefined });
+
+  /* ---- Out of the plan's range ------------------------------------------- */
+
+  if (!day) {
+    const first = plan.weeks[0]?.days[0]?.date;
+    const last = plan.weeks[plan.weeks.length - 1]?.days.slice(-1)[0]?.date;
+
+    return (
+      <>
+        <Rise className="pt-5">
+          <p className="section-label">Today · {dateLabel}</p>
+          <h2 className="mt-2 text-[21px] font-light tracking-[-0.02em] text-snow">
+            No session on today&rsquo;s date
+          </h2>
+        </Rise>
+
+        <Rise className="pt-5">
+          <Card>
+            <p className="text-[13px] leading-relaxed text-mist">
+              {first && last
+                ? `This plan runs from ${fmtDate(first)} to ${fmtDate(last)}, and today falls outside it. Nothing was prescribed for today, so nothing is missing.`
+                : "Nothing was prescribed for today, so nothing is missing."}
+            </p>
+            <p className="mt-2.5 text-[12px] leading-relaxed text-mist-dim">
+              Anything you record today is still kept. Sessions are matched to the plan by date.
+            </p>
+            <Button asChild variant="secondary" size="sm" className="mt-4">
+              <Link to="/activity/select">Record a session</Link>
+            </Button>
+          </Card>
+        </Rise>
+      </>
+    );
+  }
+
+  /* ---- The session -------------------------------------------------------- */
+
+  const headline = training?.title ?? day.title;
+  const focus = training?.focus ?? day.focus;
+  const purpose = adapted ? training?.detail : day.detail;
+  const guidance = FOCUS_GUIDANCE[focus];
+
+  return (
+    <>
+      <Rise className="pt-5">
+        <p className="section-label">Today · {dateLabel}</p>
+        <div className="mt-2 flex items-start justify-between gap-3">
+          <h2 className="min-w-0 text-[21px] font-light tracking-[-0.02em] text-snow">
+            {headline}
+          </h2>
+          {adapted && (
+            <Badge tone="azure" className="mt-0.5 shrink-0">
+              Adjusted
+            </Badge>
+          )}
+        </div>
+        <p className="tnum mt-1.5 text-[12px] text-mist-dim">
+          {adapted
+            ? // The prescribed numbers are withheld, not the fact that they
+              // exist — an athlete who cannot see what was taken out puts it back.
+              `Your plan has ${day.title.toLowerCase()} today. ICEFALL has eased it.`
+            : dayMeta(day)}
+        </p>
+      </Rise>
+
+      <Rise className="pt-5">
+        <Card inset={false}>
+          <div className="p-4">
+            <p className="section-label">Why today</p>
+            {purpose && <p className="mt-2.5 text-[13px] leading-relaxed text-mist">{purpose}</p>}
+            {guidance && <p className="mt-2.5 text-[13px] leading-relaxed text-mist">{guidance}</p>}
+            {!adapted && !day.durationMin && !day.distanceKm && !day.elevationM && !isRest && (
+              // Absence with a reason. Some sessions are prescribed by intent
+              // rather than by numbers, and an em-dash would read as a gap.
+              <p className="mt-2.5 text-[11px] leading-relaxed text-mist-dim">
+                No distance or duration prescribed for this session.
+              </p>
+            )}
+          </div>
+
+          {isRest ? (
+            <div className="border-t border-hairline px-4 py-3.5">
+              <p className="text-[12px] leading-relaxed text-mist-dim">
+                Nothing to complete today, and nothing to make up. Missed work earlier in the week
+                is not a debt, and paying it back on a rest day costs you the days after it.
+              </p>
+            </div>
+          ) : (
+            <div className="border-t border-hairline p-4">
+              <Button asChild className="w-full">
+                <Link to={`/coach/session/${day.date}`}>Open the session</Link>
+              </Button>
+              <p className="mt-2.5 text-center text-[11px] leading-relaxed text-mist-dim">
+                Warm-up, main work and cool-down, with the movements adapted to what you own.
+              </p>
+
+              <div className="mt-3.5 grid grid-cols-2 gap-2.5">
+                <Button asChild variant="secondary" size="sm">
+                  <Link to="/activity/select">Record it</Link>
+                </Button>
+                {onToggle && (
+                  <Button variant="secondary" size="sm" onClick={onToggle} aria-pressed={completed}>
+                    {completed ? "Mark not done" : "Mark done"}
+                  </Button>
+                )}
+              </div>
+
+              <div className="mt-3.5 flex flex-wrap items-center gap-2">
+                {completed ? (
+                  <>
+                    <span className="text-[11px] text-mist-dim">
+                      {fromActivity ? "Matched from what you recorded" : "Marked by you"}
+                    </span>
+                    {/* Provenance, not decoration — see the note on DayRow. */}
+                    <QualifierBadge kind={fromActivity ? "estimated" : "self-reported"} />
+                  </>
+                ) : (
+                  <span className="text-[11px] leading-relaxed text-mist-dim">
+                    Recording an activity today ticks this off on its own.
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+        </Card>
+      </Rise>
+
+      {/* The one thing the athlete can do right now that changes what today is.
+          Placed above fuelling because it can still change the session itself. */}
+      {!checkedIn && !isRest && (
+        <Rise className="pt-6">
+          <Card>
+            <SectionLabel>Before you start</SectionLabel>
+            <p className="mt-2.5 text-[13px] leading-relaxed text-mist">
+              You have not checked in today. A poor check-in is one of the three things that make
+              ICEFALL ease a hard day; without one, today is shown as the plan wrote it.
+            </p>
+            <Link
+              to="/coach/check-in"
+              className="mt-3 inline-flex min-h-[32px] items-center gap-1.5 text-[12px] text-azure transition-colors hover:text-azure-bright"
+            >
+              Log today&rsquo;s check-in
+              <ChevronRight size={13} strokeWidth={1.6} />
+            </Link>
+          </Card>
+        </Rise>
+      )}
+
+      {fuel && (
+        <>
+          <Rise className="pt-6">
+            <SectionLabel>Fuelling today</SectionLabel>
+            <Card className="mt-3" inset={false}>
+              {fuel.emphasis && (
+                <p className="px-4 pt-4 text-[13px] leading-relaxed text-snow">{fuel.emphasis}</p>
+              )}
+              <FuelGroup label="Before" lines={fuel.before} first={!fuel.emphasis} />
+              <FuelGroup label="During" lines={fuel.during} />
+              <FuelGroup label="After" lines={fuel.after} />
+              <FuelGroup label="Water" lines={fuel.hydration} />
+              {/* What the guidance was built from, including when that was very
+                  little — the engine writes its own limits into this line. */}
+              <p className="border-t border-hairline px-4 py-3.5 text-[11px] leading-relaxed text-mist-dim">
+                {fuel.context}
+              </p>
+            </Card>
+          </Rise>
+
+          <Rise className="pt-4">
+            <Disclaimer>{NUTRITION_DISCLAIMER}</Disclaimer>
+          </Rise>
+        </>
+      )}
+
+      <Rise className="pt-5">
+        <Link
+          to="/coach"
+          className="flex items-center gap-2.5 rounded-card border border-hairline bg-graphite px-4 py-3.5 text-[13px] text-mist transition-colors hover:border-azure/50 hover:text-snow"
+        >
+          <span className="flex-1">Ask the coach about today</span>
+          <ChevronRight size={15} strokeWidth={1.7} />
+        </Link>
+      </Rise>
+    </>
+  );
+}
+
+/** One labelled group of fuelling lines. Omitted entirely when it has none. */
+function FuelGroup({
+  label,
+  lines,
+  first = false,
+}: {
+  label: string;
+  lines: string[];
+  first?: boolean;
+}) {
+  if (lines.length === 0) return null;
+
+  return (
+    <div className={cn("px-4 py-3.5", !first && "border-t border-hairline")}>
+      <p className="section-label">{label}</p>
+      <ul className="mt-2 space-y-2">
+        {lines.map((line) => (
+          <li key={line} className="flex gap-2.5 text-[13px] leading-relaxed text-mist">
+            <span
+              aria-hidden="true"
+              className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-azure/60"
+            />
+            <span className="min-w-0">{line}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
 /* WEEK                                                                        */
 /* -------------------------------------------------------------------------- */
 
@@ -349,7 +697,6 @@ function WeekView({
   satisfiedByActivity,
   onToggle,
   todayKey,
-  readiness,
   cold,
 }: {
   plan: TrainingPlan;
@@ -359,7 +706,6 @@ function WeekView({
   satisfiedByActivity: Set<string>;
   onToggle: (day: TrainingDay) => void;
   todayKey: string;
-  readiness: Readiness;
   cold: boolean;
 }) {
   const sessions = week.days.filter((d) => d.focus !== "rest");
@@ -484,7 +830,7 @@ function WeekView({
         </Card>
       </Rise>
 
-      <PlanInputs readiness={readiness} cold={cold} />
+      <PlanLimits cold={cold} />
     </>
   );
 }
@@ -603,37 +949,13 @@ function DayRow({
 /* -------------------------------------------------------------------------- */
 
 /**
- * How to close each readiness gap, keyed by the component ids `computeReadiness`
- * emits. Every line is an instruction about DATA, never about training: "record
- * what you do" is a request for honesty, "train more often" would be this screen
- * pushing volume to improve its own score.
+ * What the plan is built on, and what it cannot see.
+ *
+ * The readiness panel that used to sit here is gone — see the note at the top
+ * of this file. What is left is a statement about THE PLAN: which signals it
+ * does not adjust to, and why they are absent rather than estimated.
  */
-const SUPPLY_HINT: Record<string, { text: string; to: string; action: string }> = {
-  training: {
-    text: "The comparison needs your own recent weeks to sit against.",
-    to: "/activity/select",
-    action: "Record a session",
-  },
-  recovery: {
-    text: "Recovery is a self-report, and nothing is assumed in its place.",
-    to: "/coach/check-in",
-    action: "Log today's check-in",
-  },
-  consistency: {
-    text: "A fortnight of recorded history is the least a pattern can be read from.",
-    to: "/activity/select",
-    action: "Record a session",
-  },
-  "goal-alignment": {
-    text: "This reads the shape of your last four weeks against the objective.",
-    to: "/activity/select",
-    action: "Record a session",
-  },
-};
-
-function PlanInputs({ readiness, cold }: { readiness: Readiness; cold: boolean }) {
-  const missing = readiness.components.filter((c) => c.score.value === null);
-
+function PlanLimits({ cold }: { cold: boolean }) {
   return (
     <>
       <Rise className="pt-7">
@@ -652,54 +974,6 @@ function PlanInputs({ readiness, cold }: { readiness: Readiness; cold: boolean }
           </div>
         </Card>
       </Rise>
-
-      {missing.length > 0 && (
-        <Rise className="pt-7">
-          <SectionLabel>Readiness is running on less than four inputs</SectionLabel>
-          <Card className="mt-3">
-            <p className="text-[13px] leading-relaxed text-mist">
-              {missing.length} of the four components behind readiness could not be computed. The
-              weights redistribute across what is left rather than assuming an average for what is
-              not, so the number is narrower than it looks.
-            </p>
-
-            <div className="mt-5 space-y-5 border-t border-hairline pt-5">
-              {missing.map((component) => {
-                const hint = SUPPLY_HINT[component.id];
-                return (
-                  <div key={component.id} className="flex items-start gap-4">
-                    <UnavailableState
-                      reason={component.score.reason ?? "no-data"}
-                      size="sm"
-                      className="w-[86px] shrink-0"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[13px] text-snow">{component.label}</p>
-                      <p className="mt-1.5 text-[12px] leading-relaxed text-mist-dim">
-                        {component.note}
-                      </p>
-                      {hint && (
-                        <>
-                          <p className="mt-2 text-[12px] leading-relaxed text-mist-dim">
-                            {hint.text}
-                          </p>
-                          <Link
-                            to={hint.to}
-                            className="mt-2 inline-flex min-h-[28px] items-center gap-1.5 text-[12px] text-azure transition-colors hover:text-azure-bright"
-                          >
-                            {hint.action}
-                            <ChevronRight size={13} strokeWidth={1.6} />
-                          </Link>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </Card>
-        </Rise>
-      )}
 
       {cold && (
         <Rise className="pt-4">

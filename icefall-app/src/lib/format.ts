@@ -23,8 +23,13 @@ export function fmtDurationCompact(totalSec: number) {
 }
 
 export function fmtHours(hours: number) {
-  const h = Math.floor(hours);
-  const m = Math.round((hours - h) * 60);
+  /* Round ONCE, in minutes, then split. Flooring the hours first and rounding
+     the remainder separately lets the remainder reach 60: 188.995 h rendered as
+     "188h 60m" on the profile. Rounding the total first cannot produce a
+     minute field of 60. */
+  const total = Math.round(hours * 60);
+  const h = Math.floor(total / 60);
+  const m = total % 60;
   return m === 0 ? `${h}h` : `${h}h ${m}m`;
 }
 

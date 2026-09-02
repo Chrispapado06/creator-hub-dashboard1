@@ -4,11 +4,20 @@ import { SHOW_DEMO_DATA } from "@/lib/demoFlag";
 /**
  * The expedition operator directory.
  *
- * IMPORTANT: these are SAMPLE listings, not real companies. ICEFALL has no
- * operator partnerships, and the one thing this app must never do is send
- * someone's money or their season to a guiding company that doesn't exist. So
- * every listing is flagged `sample: true`, every card that renders one says so,
- * and the enquiry flow states plainly that nothing leaves the device.
+ * TWO KINDS OF LISTING, AND THE DIFFERENCE MATTERS.
+ *
+ * Most are SAMPLE listings — placeholder companies that do not exist, flagged
+ * `sample: true`, so the one thing this app must never do is send someone's
+ * money or their season to a guiding company that isn't there.
+ *
+ * A few name REAL companies and are flagged `real: true`. Those carry nothing
+ * but checkable facts: the name, the ground they work, a link to their own
+ * site. No rating, no price, no response time — because inventing any of those
+ * about an identifiable business is defamatory, which this directory learned
+ * the hard way (see the note above `DEMO_OPERATORS`).
+ *
+ * ICEFALL has no operator partnerships of either kind, vets nobody, and the
+ * enquiry flow states plainly that nothing leaves the device.
  *
  * When real partnerships exist, this module is where they land — the screens
  * above it don't change.
@@ -67,9 +76,47 @@ export interface Operator {
   regions: string[];
   /** Minimum elevation band this operator works on. */
   minElevationM: number;
-  responseHours: number;
-  /** Always true today. A real partner would be false. */
-  sample: true;
+  /**
+   * Typical reply time. OPTIONAL, because it is a claim.
+   *
+   * A sample listing can carry one — nobody is being described. A listing that
+   * names a REAL company cannot: ICEFALL has never messaged them and has no
+   * idea how fast they answer, and "Replies within 24 h" beside a real firm's
+   * name is a service claim we invented on their behalf.
+   */
+  responseHours?: number;
+  /** True on a placeholder listing. Absent on one that names a real business. */
+  sample?: true;
+  /**
+   * NAMES AN ACTUAL COMPANY.
+   *
+   * Such an entry may carry ONLY checkable facts — the name, the ground it
+   * works, a link to its own site. No rating, no review count, no price band,
+   * no response time, no summit rate, and never `demo`. The reason is written
+   * at length above `DEMO_OPERATORS`: this directory once carried exactly
+   * these companies with invented figures, and inventing commercial claims
+   * about an identifiable business is defamatory regardless of who reads it.
+   * A flag is cheaper than remembering the rule, so the flag is here and the
+   * figures are simply absent from the record.
+   */
+  real?: true;
+  /** The company's own site — the only place a real one can be acted on. */
+  website?: string;
+  /**
+   * PINNED TO THE TOP SLOT, AND LABELLED THERE.
+   *
+   * The list is otherwise ordered on how specifically a listing covers the
+   * peak, then alphabetically, and the top card says "Best match for Everest"
+   * because that is what the ordering computed. A chosen slot is not that, and
+   * dressing it as a match would make the one honest signal on the screen
+   * meaningless.
+   *
+   * So a featured entry takes the top card and the badge reads FEATURED
+   * instead — which is the arrangement this screen has always described for a
+   * promoted position: labelled, and outside the ranking. Nothing is being
+   * paid for today; this is the owner's editorial choice.
+   */
+  featured?: true;
 
   /* ---- Mockup-only presentation fields ---------------------------------- */
   /**
@@ -94,14 +141,20 @@ export interface Operator {
   priceFromEur?: number;
   priceToEur?: number;
   /**
-   * NOTHING SETS THIS ANY MORE, AND THAT IS THE POINT.
+   * A COMPANY'S OWN MARK, AND ONLY FROM ITS OWNER.
    *
-   * It held third-party trademarks for four real companies. Those companies are
-   * now invented (see `DEMO_OPERATORS`), an invented company has no mark, and
-   * every card renders the monogram fallback. The field survives for a real
-   * operator's own logo once operators can list — uploaded by them, not
-   * collected by us. `public/img/operators` stays gitignored and vercelignored
-   * regardless.
+   * Set on the `real` entries whose files the owner supplied into
+   * `public/img/operators` — a directory that is gitignored AND vercelignored,
+   * so a mark stays on the machine it was put on and reaches no build. That is
+   * the whole safety model here: ICEFALL never collects a trademark, it renders
+   * one that has been handed to it, and a fresh clone of this repo shows
+   * monograms because the files are simply not in it.
+   *
+   * The INVENTED companies in `DEMO_OPERATORS` have none and never will — an
+   * invented company has no mark.
+   *
+   * A logo is not evidence. It must never sit beside a verification tick, and
+   * `CompanyMark` keeps the two apart deliberately.
    */
   logo?: string;
   blurb?: string;
@@ -134,9 +187,54 @@ export interface Operator {
 }
 
 export const OPERATOR_DISCLAIMER =
-  "Sample directory. These are illustrative listings, not real companies — ICEFALL has no operator partnerships and does not vet, endorse or take payment for expeditions. Use them to try the enquiry flow, and find a real IFMGA-certified operator before booking anything.";
+  "ICEFALL has no operator partnerships and does not vet, endorse or take payment for expeditions. Entries marked as sample listings are illustrative and exist to try the enquiry flow. The rest name real companies and carry nothing but their name and the ground they work — no rating, price or response time, because ICEFALL has not measured any of them. Check any operator's credentials yourself before booking.";
 
 const OPERATORS: Operator[] = [
+  /*
+   * REAL COMPANIES, FACTS ONLY.
+   *
+   * Requested by the owner for the Everest list. They are named because they
+   * genuinely run 8,000 m expeditions, and they carry no rating, no review
+   * count, no price and no response time — see `real` on the interface, and
+   * the note above `DEMO_OPERATORS` for what happened the last time this
+   * directory attached invented figures to these exact businesses.
+   *
+   * No logos either. A trademark on a card ICEFALL assembled reads as the
+   * company's own page; `logo` stays empty and the monogram renders instead,
+   * until an operator uploads their own.
+   */
+  {
+    id: "op-elite-exped",
+    name: "Elite Exped",
+    featured: true,
+    certification: "Nepal-registered expedition operator",
+    regions: ["Nepal", "China", "Pakistan"],
+    minElevationM: 5000,
+    real: true,
+    logo: "/img/operators/ee.svg",
+    website: "https://eliteexped.com",
+  },
+  {
+    id: "op-14-peaks",
+    name: "14 Peaks Expedition",
+    certification: "Nepal-registered expedition operator",
+    regions: ["Nepal", "China"],
+    minElevationM: 5000,
+    real: true,
+    logo: "/img/operators/p14.png",
+    website: "https://14peaksexpedition.com",
+  },
+  {
+    // No mark: nothing has been supplied for 8K, so the monogram renders.
+    // `CompanyMark` falls back on its own if a path is missing or fails.
+    id: "op-8k-expeditions",
+    name: "8K Expeditions",
+    certification: "Nepal-registered expedition operator",
+    regions: ["Nepal", "China", "Pakistan"],
+    minElevationM: 5000,
+    real: true,
+    website: "https://8kexpeditions.com",
+  },
   {
     id: "op-himalaya",
     name: "Himalaya — sample listing",
@@ -697,6 +795,26 @@ export function allOperators(): Operator[] {
 }
 
 /** Listings plausible for this peak — region first, then the global fallback. */
+/**
+ * Above this, an objective is expedition ground; below it, it is a guided day.
+ *
+ * Owner's ruling, and the data already agreed: `operatorsFor` keeps a listing
+ * only when `elevationM >= o.minElevationM`, and the lowest floor any company
+ * in the directory sets is 4,000 m. So a sub-3,000 m summit — Mount Olympus at
+ * 2,918 m is the one that prompted this — can never match an expedition
+ * company. Offering the heading anyway promised something the query could only
+ * ever answer "none", which reads as a gap in the market rather than the
+ * category error it is. What such a mountain wants is a guide.
+ *
+ * IT LIVES HERE, beside the matching rule it describes, because two screens
+ * ask the question — the mountain page and the expeditions directory — and a
+ * threshold copied into both drifts the moment one of them is edited.
+ */
+export const EXPEDITION_TERRAIN_M = 3000;
+
+export const isExpeditionGround = (elevationM: number): boolean =>
+  elevationM >= EXPEDITION_TERRAIN_M;
+
 export function operatorsFor(peak: { country?: string; elevationM: number }): Operator[] {
   const pool = allOperators();
   /**

@@ -21,6 +21,33 @@ const DEM_ATTRIBUTION = "Elevation: Mapzen / AWS Terrain Tiles";
 
 export const MAP_ATTRIBUTION = `${OSM_ATTRIBUTION} · ${DEM_ATTRIBUTION}`;
 
+const OPENTOPO_ATTRIBUTION =
+  'Map data © OpenStreetMap contributors · <a href="https://opentopomap.org" target="_blank">OpenTopoMap</a> (CC-BY-SA)';
+
+/**
+ * The credit line for the style ACTUALLY ON SCREEN.
+ *
+ * `TerrainMap` printed `MAP_ATTRIBUTION` unconditionally, so switching to
+ * satellite left Esri's imagery credited to OpenFreeMap and OpenStreetMap —
+ * crediting the wrong people for someone else's work, and omitting the one
+ * party whose licence requires the credit. It also made the line useless as a
+ * signal: it read the same whatever style was live, which is how a satellite
+ * map that was not rendering went unnoticed.
+ *
+ * The DEM is appended to every one of them because the terrain mesh is the
+ * same AWS source under all three styles.
+ */
+export function attributionFor(id: MapStyleId | undefined): string {
+  switch (id) {
+    case "satellite":
+      return `${ESRI_ATTRIBUTION} · ${DEM_ATTRIBUTION}`;
+    case "terrain":
+      return `${OPENTOPO_ATTRIBUTION} · ${DEM_ATTRIBUTION}`;
+    default:
+      return MAP_ATTRIBUTION;
+  }
+}
+
 /** Terrain source id, referenced when toggling 3D. */
 export const TERRAIN_SOURCE = "icefall-dem";
 
@@ -317,10 +344,7 @@ export function styleFor(id: MapStyleId): StyleSpecification {
       return rasterStyle([ESRI_IMAGERY], ESRI_ATTRIBUTION);
     case "terrain":
       // OpenTopoMap: contour lines and hillshade, the paper-map look.
-      return rasterStyle(
-        ["https://a.tile.opentopomap.org/{z}/{x}/{y}.png"],
-        'Map data © OpenStreetMap contributors · <a href="https://opentopomap.org" target="_blank">OpenTopoMap</a> (CC-BY-SA)',
-      );
+      return rasterStyle(["https://a.tile.opentopomap.org/{z}/{x}/{y}.png"], OPENTOPO_ATTRIBUTION);
     default:
       return icefallMapStyle;
   }

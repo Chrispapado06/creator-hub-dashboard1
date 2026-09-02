@@ -51,6 +51,26 @@ interface PackedPeak {
   o: number;
   w?: string;
   v?: number;
+  /**
+   * Country, stamped into the bundle offline.
+   *
+   * The catalogue shipped without one and nothing could tell you where a peak
+   * was. The `w` field looks like it might — "fr:Mont Blanc" — but that prefix
+   * is the WIKIPEDIA LANGUAGE, not the country, and reading it as one puts the
+   * Matterhorn and the Weisshorn in France. A longitude band is no better; the
+   * same test swept both Swiss peaks into a French box.
+   *
+   * So every peak was placed by point-in-polygon against Natural Earth's 10 m
+   * admin-0 boundaries (public domain) as a one-off, and the answer baked in.
+   * All 4,193 resolved. Spot-checked: Mont Blanc France, Matterhorn and Eiger
+   * Switzerland, Gran Paradiso Italy, Barre des Écrins France.
+   *
+   * A summit exactly on a border lands in whichever polygon contains the point
+   * — Mont Blanc's sovereignty is disputed and this says France. The curated
+   * mountains keep their own hand-written `country`, which is the one that
+   * shows on their page, so the disputed cases are stated properly there.
+   */
+  c?: string;
 }
 
 const BUNDLE_URL = "/data/peaks.json";
@@ -88,6 +108,7 @@ const packedToPeak = (p: PackedPeak): Peak => ({
   lon: p.o,
   wikipedia: p.w,
   volcano: p.v === 1,
+  country: p.c,
 });
 
 /**

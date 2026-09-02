@@ -242,7 +242,10 @@ function Meta({ o, price }: { o: Operator; price: string | null }) {
         )}
         {!o.demo && (
           <span className="tnum">
-            Replies within {o.responseHours} h · from {o.minElevationM.toLocaleString("en-GB")} m
+            {/* A real company has no response time here, because ICEFALL has
+                never messaged them — the ground it works is all we can say. */}
+            {o.responseHours !== undefined && `Replies within ${o.responseHours} h · `}
+            from {o.minElevationM.toLocaleString("en-GB")} m
           </span>
         )}
       </div>

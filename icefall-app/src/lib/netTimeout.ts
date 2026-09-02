@@ -52,5 +52,26 @@ export const PEAKS_TIMEOUT_MS = 8_000;
  * Overpass's own `[timeout:40]` is the server-side cap; this is the client's.
  */
 export const OVERPASS_TIMEOUT_MS = 20_000;
+
+/**
+ * THE WHOLE BUDGET FOR ONE SEARCH ON EXPLORE → FIND.
+ *
+ * `OVERPASS_TIMEOUT_MS` is a PER-MIRROR cap and there are two mirrors tried in
+ * turn, so a search that hit a slow instance and then a dead one could sit
+ * there for forty seconds with a spinner. Nobody waits forty seconds, and the
+ * screen gave no sign it was still trying.
+ *
+ * This is the cap on the whole attempt, mirrors included. It is deliberately
+ * short: past about five seconds the answer has stopped being useful even if
+ * it eventually arrives.
+ *
+ * WHEN IT FIRES THE SCREEN MUST SAY SO. The abort it raises is an AbortError,
+ * which is the same thing the effect's own cleanup raises, and Find already —
+ * correctly — treats "we stopped asking" as a non-event. Distinguish them by
+ * checking the caller's own controller: if that has NOT aborted, the budget
+ * ran out, and an empty list without that sentence is indistinguishable from
+ * "there is nothing here".
+ */
+export const FIND_TIMEOUT_MS = 5_000;
 /** Summit photography: entirely cosmetic, so it waits the least. */
 export const PHOTOS_TIMEOUT_MS = 6_000;

@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
+import { useReducedMotion } from "framer-motion";
 import {
   Bell,
   ChevronRight,
@@ -29,12 +30,15 @@ import {
   OPERATOR_DISCLAIMER,
   SHOW_DEMO_OPERATORS,
   allOperators,
+  isExpeditionGround,
   operatorsFor,
   type Operator,
 } from "@/services/operators";
-import { NETWORK_LABEL, nearbyTrails, type Trail } from "@/services/trails";
-import { TrailImage } from "@/components/domain/TrailImage";
-import { searchPeaks, type Peak } from "@/services/peaks";
+import { TREKS, trekById, trekDuration, type Trek } from "@/treks";
+import { FAMOUS_TREKS } from "@/treks/famous";
+import { trekHasPhoto, trekImage, trekImageSubject } from "@/treks/images";
+import { loadPeakCatalogue, searchPeaks, type Peak } from "@/services/peaks";
+import { lastPlace } from "@/routes/places";
 import { useApp, usePrimaryGoal, type EnquiryThread } from "@/state/AppState";
 import type { Goal, Mountain } from "@/types";
 
@@ -145,6 +149,95 @@ function countriesOf(value: string | undefined): string[] {
     .split("/")
     .map((c) => c.trim())
     .filter(Boolean);
+}
+
+/**
+ * WHAT THE COMPANY LIST IS ABOUT — a mountain, or a trek.
+ *
+ * The rails on this tab select rather than navigate, and both of them feed the
+ * same list of companies underneath. That is the whole interaction: tap a
+ * mountain to see who climbs it, tap a trek to see who walks it, without
+ * leaving the page. This type is what makes the second half possible without
+ * duplicating the company section, and it is deliberately NARROWER than `Peak`
+ * — name, altitude and country are all `operatorsFor` actually matches on.
+ */
+interface ListingSubject {
+  kind: "peak" | "trek";
+  /** Selection key, so a rail can mark the chosen tile. */
+  key: string;
+  name: string;
+  elevationM: number;
+  country?: string;
+  lat?: number;
+  lon?: number;
+  curatedId?: string;
+  photo?: string;
+}
+
+const subjectFromPeak = (p: Peak): ListingSubject => ({
+  kind: "peak",
+  key: p.id,
+  name: p.name,
+  elevationM: p.elevationM,
+  country: p.country,
+  lat: p.lat,
+  lon: p.lon,
+  curatedId: p.curatedId,
+  photo: p.photo,
+});
+
+/**
+ * A trek as a listing subject.
+ *
+ * NO COORDINATES, ON PURPOSE. A trek is a line, not a point, and the catalogue
+ * stores no position for one. Omitting lat/lon leaves `useMountainImage` to
+ * fall back to terrain art, which it captions as derived; borrowing the
+ * coordinates of a mountain the route passes would caption someone else's
+ * summit as this walk, and defaulting to 0,0 would send the imagery lookup to
+ * the Gulf of Guinea.
+ *
+ * UNDEFINED WHEN THE HIGH POINT IS UNPUBLISHED. Companies are matched partly
+ * on the altitude they work at, so a missing altitude has no honest default:
+ * zero clears every operator's floor and would return the entire directory,
+ * ordered as though something had matched. One of the 31 picked treks — the
+ * Kumano Kodo — is in exactly that position, and the tab says so.
+ */
+const subjectFromTrek = (t: Trek): ListingSubject | undefined =>
+  t.maxAltitudeM === null
+    ? undefined
+    : {
+        kind: "trek",
+        key: `trek:${t.id}`,
+        name: t.name,
+        elevationM: t.maxAltitudeM,
+        country: t.country,
+        // The route's OWN photograph, and only when one exists — `trekImage`
+        // would otherwise hand back a contour plate as though it were a
+        // picture. Passing it here means the featured card's banner shows the
+        // walk rather than generated terrain, which is both better looking and
+        // a truer answer to "what is this list about".
+        photo: trekHasPhoto(t.id) ? trekImage(t) : undefined,
+      };
+
+/**
+ * The country the athlete last looked at, read from the saved place.
+ *
+ * TWO SHAPES, because a place can BE a country. `region` reads
+ * "Haute-Savoie, France" for a town, so the country is its last comma segment
+ * — but for a country the geocoder returns `{ name: "Slovakia", region: "",
+ * kind: "Country" }`, and reading the region there yields nothing at all. The
+ * first version did exactly that and silently opened on "Everywhere" for
+ * anyone whose last search was a whole country.
+ */
+function countryOfLastPlace(): string {
+  const place = lastPlace();
+  if (!place) return "";
+  if (place.kind === "Country" && place.name) return place.name;
+  const parts = (place.region ?? "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+  return parts.length > 0 ? parts[parts.length - 1]! : "";
 }
 
 /** A listing with no regions works everywhere — the model's global fallback. */
@@ -310,12 +403,12 @@ const ELEVATION_BANDS: number[] = Array.from(new Set(allOperators().map((o) => o
  *   HIKES TO MOUNTAINS the walk-ins and approach trails around the peak
  */
 
-type TabId = "explore" | "mountains" | "hikes";
+type TabId = "explore" | "mountains" | "treks";
 
 const TABS: readonly { id: TabId; label: string }[] = [
   { id: "explore", label: "Explore" },
   { id: "mountains", label: "Mountains" },
-  { id: "hikes", label: "Hikes to mountains" },
+  { id: "treks", label: "Treks" },
 ];
 
 /** Opening peak when the athlete has no objective set. */
@@ -337,15 +430,17 @@ const CURATED_PEAKS: Peak[] = sync.mountains.map((m) => ({
   country: m.country,
   curatedId: m.id,
   photo: m.photo,
+  photoCredit: m.photoCredit,
 }));
 
 export default function Expeditions() {
   const goal = usePrimaryGoal();
-  const [tab, setTab] = useState<TabId>("explore");
   const [query, setQuery] = useState("");
   const [peakId, setPeakId] = useState<string>(
     goal?.mountainId ? `curated:${goal.mountainId}` : `curated:${DEFAULT_PEAK}`,
   );
+  const [tab, setTab] = useState<TabId>("explore");
+  const [trekId, setTrekId] = useState<string | null>(null);
   const [found, setFound] = useState<Peak[] | null>(null);
   const [loadingPeaks, setLoadingPeaks] = useState(false);
 
@@ -408,14 +503,28 @@ export default function Expeditions() {
     return CURATED_PEAKS.find((m) => m.id === peakId) ?? CURATED_PEAKS[0];
   }, [needle, shownMountains, peakId]);
 
-  /** Every company that works this peak's country at this altitude. */
+  /**
+   * The trek in focus, when a trek tile was the last thing tapped.
+   *
+   * A trek selection OUTRANKS the peak selection rather than replacing it:
+   * choosing a mountain clears this, so the two rails cannot both look active
+   * while only one of them is driving the list below.
+   */
+  const selectedTrek = trekId ? trekById(trekId) : undefined;
+
+  const subject = useMemo<ListingSubject | undefined>(
+    () => (selectedTrek ? subjectFromTrek(selectedTrek) : peak ? subjectFromPeak(peak) : undefined),
+    [selectedTrek, peak],
+  );
+
+  /** Every company that works this subject's country at this altitude. */
   const listings = useMemo(() => {
-    if (!peak) return [];
+    if (!subject) return [];
     const byId = new Map<string, Operator>();
     const scopes: (string | undefined)[] =
-      countriesOf(peak.country).length > 0 ? countriesOf(peak.country) : [undefined];
+      countriesOf(subject.country).length > 0 ? countriesOf(subject.country) : [undefined];
     for (const country of scopes) {
-      for (const o of operatorsFor({ country, elevationM: peak.elevationM })) byId.set(o.id, o);
+      for (const o of operatorsFor({ country, elevationM: subject.elevationM })) byId.set(o.id, o);
     }
 
     let out = [...byId.values()];
@@ -429,7 +538,7 @@ export default function Expeditions() {
       );
     }
     return out.sort((a, b) => a.name.localeCompare(b.name, "en-GB"));
-  }, [peak, needle, shownMountains.length]);
+  }, [subject, needle, shownMountains.length]);
 
   const objective = objectiveFrom(goal);
 
@@ -468,6 +577,10 @@ export default function Expeditions() {
         </Rise>
 
         {/* ---- Tabs ------------------------------------------------------ */}
+        {/* These are the Expeditions screen's OWN sub-pages and they stay.
+            The Explore bar above lost its Mountains and Treks tabs; these are
+            not those. Here they are the depth behind the two rails on the
+            Explore sub-tab — the full grid of peaks, and the trek list. */}
         <Rise className="no-scrollbar -mx-5 mt-5 flex gap-7 overflow-x-auto border-b border-hairline px-5">
           {TABS.map((t) => (
             <button
@@ -488,24 +601,34 @@ export default function Expeditions() {
         </Rise>
 
         {tab === "explore" && (
-          <ExploreTab
-            peak={peak}
+        <ExploreTab
+          subject={subject}
+          selectedTrek={selectedTrek}
+          mountains={shownMountains}
+          selectedId={selectedTrek ? undefined : peak?.id}
+          selectedTrekId={trekId}
+          onSelect={(id) => {
+            setPeakId(id);
+            setTrekId(null);
+            setQuery("");
+          }}
+          onSelectTrek={setTrekId}
+          listings={listings}
+          objective={objective}
+          searching={needle !== ""}
+          loading={loadingPeaks}
+        />
+        )}
+
+        {tab === "mountains" && (
+          <MountainsTab
             mountains={shownMountains}
-            selectedId={peak?.id}
-            onSelect={(id) => {
-              setPeakId(id);
-              setQuery("");
-            }}
-            listings={listings}
-            objective={objective}
-            searching={needle !== ""}
             loading={loadingPeaks}
+            searching={needle !== ""}
           />
         )}
 
-        {tab === "mountains" && <MountainsTab mountains={shownMountains} loading={loadingPeaks} />}
-
-        {tab === "hikes" && <HikesTab peak={peak} />}
+        {tab === "treks" && <TreksTab />}
       </Stagger>
     </Screen>
   );
@@ -516,24 +639,82 @@ export default function Expeditions() {
 /* -------------------------------------------------------------------------- */
 
 function ExploreTab({
-  peak,
+  subject,
+  selectedTrek,
   mountains,
   selectedId,
+  selectedTrekId,
   onSelect,
+  onSelectTrek,
   listings,
   objective,
   searching,
   loading,
 }: {
-  peak: Peak | undefined;
+  subject: ListingSubject | undefined;
+  selectedTrek: Trek | undefined;
   mountains: Peak[];
   selectedId: string | undefined;
+  selectedTrekId: string | null;
   onSelect: (id: string) => void;
+  onSelectTrek: (id: string) => void;
   listings: Operator[];
   objective: EnquiryObjective | undefined;
   searching: boolean;
   loading: boolean;
 }) {
+  const companiesRef = useRef<HTMLDivElement>(null);
+  const reduceMotion = useReducedMotion();
+
+  /**
+   * Choosing a mountain scrolls to what choosing it changed.
+   *
+   * On a phone the company list for a peak starts below the fold — under the
+   * banner, the rail and the trek rail — so tapping a tile updated a heading
+   * nobody could see and the tap read as doing nothing at all.
+   *
+   * Two frames, not one: the section being aimed at re-renders with the new
+   * peak, and a selection made from search results also clears the query,
+   * which re-lays out the whole tab. Measuring before that settles scrolls to
+   * where the companies USED to be.
+   */
+  const revealCompanies = () => {
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        const el = companiesRef.current;
+        if (!el) return;
+        const scroller = scrollParentOf(el);
+        if (!scroller) return;
+        const top =
+          el.getBoundingClientRect().top -
+          scroller.getBoundingClientRect().top +
+          scroller.scrollTop;
+        scroller.scrollTo({
+          top: Math.max(0, top - 12),
+          behavior: reduceMotion ? "auto" : "smooth",
+        });
+      }),
+    );
+  };
+
+  const handleSelect = (id: string) => {
+    onSelect(id);
+    revealCompanies();
+  };
+
+  /**
+   * A trek tile SELECTS, it does not navigate.
+   *
+   * The rail used to be a row of links straight to the trek page, and leaving
+   * the screen to find out who runs a walk is not what the mountain rail does
+   * two sections above it. Both rails now answer the same question in the same
+   * place. The trek's own page is still reachable from the section below.
+   */
+  const handleSelectTrek = (id: string) => {
+    onSelectTrek(id);
+    revealCompanies();
+  };
+
   return (
     <>
       {/* The banner is the section's one piece of styling, and it goes away
@@ -578,21 +759,98 @@ function ExploreTab({
               key={m.id}
               mountain={m}
               selected={m.id === selectedId}
-              onSelect={() => onSelect(m.id)}
+              onSelect={() => handleSelect(m.id)}
             />
           ))}
         </Rise>
       )}
 
+      {/* ---- Famous treks, directly under the mountains ------------------ */}
+      {/* Hidden mid-search: the results are about what was typed, and a fixed
+          rail of world-famous walks under a search for "alpine ascents"
+          answers a question nobody asked. */}
+      {!searching && (
+        <FamousTreks selectedId={selectedTrekId} onSelect={handleSelectTrek} />
+      )}
+
       {/* ---- The companies ---------------------------------------------- */}
-      {peak && (
+      {/* Where a tap on either rail scrolls to. A zero-height anchor rather
+          than a wrapper, so the `Stagger` sequence below is left alone. It sits
+          outside the conditional so the scroll target exists even while a trek
+          with no published high point is selected. */}
+      <div ref={companiesRef} aria-hidden className="h-0" />
+
+      {/* A trek was chosen, but its high point is unpublished — so there is
+          nothing to match companies on. Saying that is the honest answer; a
+          list assembled without the altitude filter would be the directory in
+          alphabetical order, wearing the authority of a match. */}
+      {selectedTrek && !subject && (
+        <Rise className="pt-8">
+          <p className="section-label">Companies on {selectedTrek.name}</p>
+          <Card className="mt-3">
+            <p className="text-[12.5px] leading-relaxed text-mist">
+              No high point is published for this route, and companies are matched partly on the
+              altitude they work at. Rather than list every operator and let the order imply a
+              match nobody made, this shows none.
+            </p>
+          </Card>
+        </Rise>
+      )}
+
+      {/* A summit below expedition ground. Mount Olympus at 2,918 m is the
+          case that prompted this: no company in the directory works below
+          4,000 m, so the heading could only ever be followed by "no listing
+          covers this peak" — which reads as a hole in the market rather than
+          the category error it is. It wants a guide, and says so. */}
+      {subject?.kind === "peak" && !isExpeditionGround(subject.elevationM) && (
         <>
           <Rise className="pt-8">
-            <p className="section-label">Expeditions on {peak.name}</p>
-            <p className="mt-1.5 text-[12px] text-mist-dim">
+            <p className="section-label">Guides on {subject.name}</p>
+            <p className="mt-1.5 text-[12px] leading-relaxed text-mist-dim">
+              {subject.name} is a guided objective rather than an expedition. Expedition companies
+              organise permits, base camps and logistics for high peaks, and the lowest altitude
+              any of them works at is well above this summit.
+            </p>
+          </Rise>
+          <Rise className="pt-3">
+            <Link
+              to={`/explore/guides?peak=${encodeURIComponent(subject.name)}&elevation=${subject.elevationM}${subject.country ? `&country=${encodeURIComponent(subject.country)}` : ""}`}
+              className="flex items-center gap-3.5 rounded-card border border-hairline bg-graphite p-4 transition-colors hover:border-azure/50"
+            >
+              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-tile border border-hairline bg-elevated/40 text-mist">
+                <MountainIcon size={17} strokeWidth={1.4} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[14px] text-snow">Find a guide</span>
+                <span className="mt-0.5 block text-[12px] leading-relaxed text-mist">
+                  Individual professional guides, matched to {subject.name}.
+                </span>
+              </span>
+              <ChevronRight size={16} strokeWidth={1.7} className="shrink-0 text-mist-dim" />
+            </Link>
+          </Rise>
+        </>
+      )}
+
+      {subject && (subject.kind === "trek" || isExpeditionGround(subject.elevationM)) && (
+        <>
+          <Rise className="pt-8">
+            <p className="section-label">
+              {subject.kind === "trek"
+                ? `Companies on ${subject.name}`
+                : `Expeditions on ${subject.name}`}
+            </p>
+            <p className="mt-1.5 text-[12px] leading-relaxed text-mist-dim">
               {listings.length === 0
-                ? "No listing covers this peak."
-                : `${listings.length} ${listings.length === 1 ? "company" : "companies"} offering expeditions`}
+                ? subject.kind === "trek"
+                  ? "No listing covers this route."
+                  : "No listing covers this peak."
+                : subject.kind === "trek"
+                  ? // The claim is the MATCH, not a booking: no trek in the
+                    // catalogue carries an operator link, so "companies that
+                    // run this trek" would assert what the data cannot.
+                    `${listings.length} ${listings.length === 1 ? "company" : "companies"} matched to ${subject.country} at ${fmtElevation(subject.elevationM)} m`
+                  : `${listings.length} ${listings.length === 1 ? "company" : "companies"} offering expeditions`}
             </p>
           </Rise>
 
@@ -600,18 +858,25 @@ function ExploreTab({
             {(() => {
               // The best match is lifted out and shown first, highlighted; the
               // rest keep their alphabetical order underneath it.
-              const best = bestMatchFor(listings, peak);
+              // A pinned entry takes the top card; otherwise the ranking picks
+              // it. The two are different claims and the badge says which.
+              const best = listings.find((o) => o.featured) ?? bestMatchFor(listings, subject);
               const rest = listings.filter((o) => o.id !== best?.id);
               return (
                 <>
                   {best && (
                     <Rise key={best.id}>
-                      <OperatorCard operator={best} peak={peak} objective={objective} featured />
+                      <OperatorCard
+                        operator={best}
+                        subject={subject}
+                        objective={objective}
+                        featured
+                      />
                     </Rise>
                   )}
                   {rest.map((o) => (
                     <Rise key={o.id}>
-                      <OperatorCard operator={o} peak={peak} objective={objective} />
+                      <OperatorCard operator={o} subject={subject} objective={objective} />
                     </Rise>
                   ))}
                 </>
@@ -619,18 +884,27 @@ function ExploreTab({
             })()}
           </div>
 
-          <Rise className="pt-3.5">
-            <p className="text-[10.5px] leading-relaxed text-mist-dim">
-              Ordered on how specifically a listing covers {peak.name} — the ground it works and
-              the altitude it works at. No position here is for sale, and ICEFALL takes no part in
-              a booking.
-            </p>
-          </Rise>
-
-          <Rise className="pt-5">
-            <Disclaimer>{OPERATOR_DISCLAIMER}</Disclaimer>
-            {SHOW_DEMO_OPERATORS && <Disclaimer className="mt-3">{DEMO_NOTICE}</Disclaimer>}
-          </Rise>
+          {/*
+           * THE THREE PARAGRAPHS THAT USED TO CLOSE THIS LIST ARE GONE.
+           *
+           * An ordering note, `OPERATOR_DISCLAIMER` and `DEMO_NOTICE` stacked
+           * up to a wall of small grey text under every company list, and the
+           * owner asked for it removed. What each of them said still reaches
+           * the reader, which is the only reason removing them was safe:
+           *
+           *   · "not vetted, no part in a booking" — the TrustStrip at the
+           *     foot of this tab says exactly that, in full, unconditionally.
+           *   · "these companies are invented" — every demo listing carries a
+           *     DEMO chip on the card itself, beside the invented figures.
+           *   · "no position is for sale" — the TrustStrip covers the paid-
+           *     placement claim too.
+           *
+           * So this is a de-duplication, not a quiet dropping of the honesty
+           * copy. If the TrustStrip is ever removed from this screen or the
+           * DEMO chip stops rendering, these have to come back — the facts are
+           * load-bearing and a reader must not be able to reach an invented
+           * company without meeting one of them.
+           */}
         </>
       )}
 
@@ -641,27 +915,61 @@ function ExploreTab({
   );
 }
 
+/**
+ * The nearest ancestor that actually scrolls.
+ *
+ * Found by BEHAVIOUR, not by class name: this app's scroll container is a
+ * Tailwind `overflow-y-auto` today, and a selector looking for that string
+ * would break silently the day the layout is refactored — leaving the tap
+ * feedback dead with nothing to show for it. Asking whether an element
+ * overflows and scrolls cannot go stale that way.
+ */
+function scrollParentOf(el: HTMLElement): HTMLElement | null {
+  let node = el.parentElement;
+  while (node) {
+    const overflowY = getComputedStyle(node).overflowY;
+    if (/(auto|scroll)/.test(overflowY) && node.scrollHeight > node.clientHeight) return node;
+    node = node.parentElement;
+  }
+  return null;
+}
+
 /** A peak in the horizontal rail — photo, name, height. */
 function MountainTile({
   mountain,
-  selected,
+  selected = false,
   onSelect,
+  to,
 }: {
   mountain: Peak;
-  selected: boolean;
-  onSelect: () => void;
+  selected?: boolean;
+  onSelect?: () => void;
+  /**
+   * Render as a link, filling its container, instead of a fixed-width selector.
+   *
+   * The tile is 128 px wide because that is what the horizontal rail wants. In
+   * the two-column grid on the Mountains sub-tab the cell is 162 px, so the
+   * tile sat in it leaving 34 px of dead space down the right of every card —
+   * which read as the grid having too much gap, when the gap was 12 px and it
+   * was the tile that was short.
+   *
+   * It also fixes a real defect: the grid used to wrap this BUTTON in a Link,
+   * which is invalid HTML and lets the button swallow the click. Now the tile
+   * is the anchor.
+   */
+  to?: string;
 }) {
   // `useMountainImage` returns { src, real } — `real: false` means it fell back
   // to generated terrain art rather than a photograph of this peak.
   const image = useMountainImage(mountain);
+  const Tag = (to ? Link : "button") as React.ElementType;
 
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      aria-pressed={selected}
+    <Tag
+      {...(to ? { to } : { type: "button" as const, onClick: onSelect, "aria-pressed": selected })}
       className={cn(
-        "relative w-[128px] shrink-0 overflow-hidden rounded-card border text-left transition-colors",
+        "relative block overflow-hidden rounded-card border text-left transition-colors",
+        to ? "w-full" : "w-[128px] shrink-0",
         selected ? "border-azure/70" : "border-hairline hover:border-hairline-strong",
       )}
     >
@@ -678,7 +986,405 @@ function MountainTile({
         <p className="truncate text-[13px] text-snow">{mountain.name}</p>
         <p className="tnum mt-0.5 text-[11px] text-mist">{fmtElevation(mountain.elevationM)} m</p>
       </div>
-    </button>
+    </Tag>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Treks                                                                      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * FAMOUS TREKS — a rail, built like the mountain rail at the top of the tab.
+ *
+ * A trek is not an expedition and this block does not pretend otherwise: it
+ * keeps its own heading and its own vocabulary, and no trek is ever merged
+ * into the company listings. The distinction `treks/model.ts` draws is the one
+ * a reader comes here to make — an expedition climbs a summit, a trek walks to,
+ * around or between mountains — and one list holding both would file a
+ * fortnight's walking at 5,364 m beside a two-month climb at 8,849 m.
+ *
+ * ── IT IS NOT SCOPED TO THE SELECTED PEAK, ON PURPOSE ───────────────────────
+ * The first build of this rail answered "treks on {peak}" and changed with the
+ * mountain selection. It was cut. Only four of the ten curated mountains have
+ * a linked route at all, so six of them showed a paragraph explaining an
+ * absence instead of a list — a section that is empty more often than not is
+ * furniture, and the fix is to not ask the question. The catalogue's 252
+ * routes are a world list; this rail shows the well-known ones and stays put.
+ * Anything peak-specific belongs on the mountain's own page.
+ *
+ * ── "FAMOUS" IS AN OPINION, AND THE HEADING IS NOW ALL THAT SAYS SO ─────────
+ * Nobody has walked these through ICEFALL, no operator reports numbers to us,
+ * and the `Trek` model holds no popularity, rating or booking field — so there
+ * is nothing here to rank and the order below is editorial.
+ *
+ * A sub-line used to carry that qualification in words ("picked by hand, not
+ * ranked"); it was removed with the rest of the small grey text on this tab.
+ * The claim is therefore doing its work through ONE WORD: "Famous" asserts
+ * recognition, which is a fair editorial judgement, where "Top", "Best", "Most
+ * popular" or a numbered list would each assert a measurement this app cannot
+ * make. Rename the heading to any of those and the sentence has to come back.
+ * `treks/famous.ts` records what was refused in assembling the list, including
+ * the plausible-looking near miss.
+ */
+function FamousTreks({
+  selectedId,
+  onSelect,
+}: {
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <>
+      <Rise className="flex items-baseline justify-between pt-8">
+        <p className="section-label">Famous treks</p>
+        <Link
+          to="/explore/treks"
+          className="flex items-center gap-0.5 text-[11.5px] text-azure transition-colors hover:text-azure-bright"
+        >
+          View all
+          <ChevronRight size={13} strokeWidth={1.9} />
+        </Link>
+      </Rise>
+
+      {/* NO SUB-LINE. It read "picked by hand, not ranked", and the owner asked
+          for the small grey text on this tab to go. The qualification it
+          carried is real — the `Trek` model holds no popularity field, so the
+          order here is editorial and nothing on screen may imply otherwise —
+          and it now rests entirely on the heading staying the word "Famous",
+          which claims recognition rather than rank. "Top", "Best", "Most
+          popular" or a numbered list would each need the sentence back. */}
+      <Rise className="no-scrollbar -mx-5 mt-3 flex gap-3 overflow-x-auto px-5">
+        {FAMOUS_TREKS.map((t) => (
+          <TrekTile
+            key={t.id}
+            trek={t}
+            selected={t.id === selectedId}
+            onSelect={() => onSelect(t.id)}
+          />
+        ))}
+      </Rise>
+    </>
+  );
+}
+
+/**
+ * A trek in a horizontal rail — photograph, name, days.
+ *
+ * A BUTTON, NOT A LINK, and built to match `MountainTile` exactly: same width,
+ * same ratio, same selected border. Tapping it chooses what the company list
+ * below is about instead of leaving the screen, because the mountain rail two
+ * sections above behaves that way and a rail that looks identical must not
+ * behave differently.
+ */
+function TrekTile({
+  trek,
+  selected = false,
+  onSelect,
+  to,
+}: {
+  trek: Trek;
+  selected?: boolean;
+  onSelect?: () => void;
+  /**
+   * Render as a link instead of a selector.
+   *
+   * The rail on the Explore sub-tab SELECTS — it changes what the company list
+   * below is about without leaving the page. The Treks sub-tab is a
+   * destination grid and opens the route, exactly as the Mountains grid opens
+   * a peak. Same tile, two jobs, and the anchor is a real anchor rather than a
+   * button wrapped in one.
+   */
+  to?: string;
+}) {
+  // Null means the photograph is OF THE ROUTE and needs no qualifier.
+  const subject = trekImageSubject(trek);
+  const Tag = (to ? Link : "button") as React.ElementType;
+
+  return (
+    <Tag
+      {...(to ? { to } : { type: "button" as const, onClick: onSelect, "aria-pressed": selected })}
+      className={cn(
+        "relative block shrink-0 overflow-hidden rounded-card border text-left transition-colors",
+        to ? "w-full" : "w-[142px]",
+        selected ? "border-azure/70" : "border-hairline hover:border-hairline-strong",
+      )}
+    >
+      <div className="aspect-[4/5] w-full bg-slate">
+        <img
+          src={trekImage(trek)}
+          alt=""
+          aria-hidden
+          loading="lazy"
+          className="h-full w-full object-cover"
+        />
+      </div>
+
+      {/* A picture of the MOUNTAIN above a route's name quietly claims to be
+          the route. Where it is the peak's photograph, the tile names it. */}
+      {subject && (
+        <p className="absolute inset-x-0 top-0 bg-obsidian/70 px-2 py-1 text-[9.5px] leading-tight text-mist/75 backdrop-blur">
+          {subject}
+        </p>
+      )}
+
+      <div className="absolute inset-x-0 bottom-0 scrim-bottom px-3 pb-2.5 pt-8">
+        {/* `clamp-2`, not `line-clamp-2` — see the note in index.css: Tailwind
+            v4.2's unprefixed form clips to a height and shows the wrong lines. */}
+        <p className="clamp-2 text-[12.5px] leading-tight text-snow">{trek.name}</p>
+        <p className="tnum mt-0.5 text-[11px] text-mist">{trekDuration(trek)}</p>
+      </div>
+    </Tag>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Mountains                                                                  */
+/* -------------------------------------------------------------------------- */
+
+function MountainsTab({
+  mountains,
+  loading,
+  searching,
+}: {
+  mountains: Peak[];
+  loading: boolean;
+  searching: boolean;
+}) {
+  /**
+   * Opens on where the athlete last looked, not on "Everywhere".
+   *
+   * The signal is the last place they searched or located — `lastPlace()` —
+   * whose `region` reads "Haute-Savoie, France", so the country is the last
+   * comma segment. That is a real record of where they were looking, not a
+   * guess at where they live, and it is the only location fact this app holds
+   * without asking for a permission it has no other use for.
+   *
+   * It is a starting chip, never a restriction: "Everywhere" sits first in the
+   * row, and a country the catalogue cannot answer for clears itself below.
+   */
+  const [country, setCountry] = useState(() => countryOfLastPlace());
+
+  /**
+   * The bundled catalogue, so a country shows the peaks that are actually in
+   * it rather than only the handful ICEFALL has written a page for.
+   *
+   * "France" used to return one card — Mont Blanc — because the grid could
+   * only ever show the fourteen curated objectives. The catalogue holds 636
+   * French summits, 1,621 Italian, 1,177 Swiss and 759 Austrian, each with a
+   * name, a height and a position from OpenStreetMap. `loadPeakCatalogue`
+   * memoises its fetch, so this costs nothing after the first screen to ask.
+   */
+  const [catalogue, setCatalogue] = useState<Peak[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    loadPeakCatalogue()
+      .then((rows) => live && setCatalogue(rows))
+      .catch(() => live && setCatalogue([]));
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  /**
+   * The countries actually present, never a fixed world list.
+   *
+   * Compound entries are split — Mont Blanc is "France / Italy" and Everest is
+   * "Nepal / China", so a border peak belongs under both names rather than
+   * under a hyphenated one that matches nothing a person would tap.
+   */
+  const countries = useMemo(() => {
+    const set = new Set<string>();
+    for (const m of mountains) for (const c of countriesOf(m.country)) set.add(c);
+    // Countries the catalogue can answer for, even where no curated objective
+    // sits in them — Austria has 759 peaks and not one written page.
+    for (const p of catalogue ?? []) if (p.country) set.add(p.country);
+    return [...set].sort((a, b) => a.localeCompare(b, "en-GB"));
+  }, [mountains, catalogue]);
+
+  /**
+   * A selection that is no longer on offer is dropped rather than left to
+   * empty the grid in silence — searching "K2" removes France from the
+   * options, and a France chip nobody can see would then hide every result.
+   */
+  useEffect(() => {
+    // `catalogue === null` means it has not loaded yet, and half the countries
+    // come from it — clearing before then would drop a valid opening choice.
+    if (catalogue !== null && country && !countries.includes(country)) setCountry("");
+  }, [catalogue, country, countries]);
+
+  /** How many catalogue peaks a country gets before the list is cut. */
+  const CATALOGUE_CAP = 60;
+
+  const inCountry = useMemo(() => {
+    if (!country) return { list: mountains, total: mountains.length };
+
+    // Curated first: they carry a photograph, a grade and a written route.
+    const curated = mountains.filter((m) => countriesOf(m.country).includes(country));
+    const seenNames = new Set(curated.map((m) => m.name.toLowerCase()));
+    const seenIds = new Set(curated.map((m) => m.curatedId).filter(Boolean));
+
+    /**
+     * De-duplicated on the id AND on every alias in the name.
+     *
+     * An exact-name test is not enough: the catalogue calls the peak
+     * "Mont Blanc / Monte Bianco" and the curated record calls it "Mont
+     * Blanc", so France listed it twice at two different heights — 4,806 m
+     * from the written page and 4,807 m from OSM — which reads as two
+     * mountains. `withCurated` already stamps `curatedId` on the catalogue
+     * row, so the id is the reliable half and the aliases catch the rest.
+     */
+    const rest = (catalogue ?? [])
+      .filter(
+        (p) =>
+          p.country === country &&
+          !(p.curatedId && seenIds.has(p.curatedId)) &&
+          !p.name
+            .toLowerCase()
+            .split("/")
+            .some((alias) => seenNames.has(alias.trim())),
+      )
+      .sort((a, b) => b.elevationM - a.elevationM);
+
+    return { list: [...curated, ...rest.slice(0, CATALOGUE_CAP)], total: curated.length + rest.length };
+  }, [mountains, catalogue, country]);
+
+  const shown = inCountry.list;
+
+  /** Peaks the filter can never match, because no country is recorded for them. */
+  const unplaced = useMemo(
+    () => mountains.filter((m) => countriesOf(m.country).length === 0).length,
+    [mountains],
+  );
+
+  return (
+    <>
+      {/* Headed like the Treks sub-tab beside it, and for the same reason: the
+          grid shows what this screen holds, and the link is the way to the
+          whole library — every mountain with its routes, grades and seasons —
+          which is no longer a tab on the Explore bar. */}
+      <Rise className="flex items-baseline justify-between pt-6">
+        <p className="section-label">{searching ? "Matching mountains" : "Explore mountains"}</p>
+        <Link
+          to="/explore/mountains"
+          className="flex items-center gap-0.5 text-[11.5px] text-azure transition-colors hover:text-azure-bright"
+        >
+          Search all
+          <ChevronRight size={13} strokeWidth={1.9} />
+        </Link>
+      </Rise>
+
+      {countries.length > 1 && (
+        <Rise className="no-scrollbar -mx-5 mt-3 flex gap-2 overflow-x-auto px-5">
+          {["", ...countries].map((c) => (
+            <button
+              key={c || "all"}
+              type="button"
+              onClick={() => setCountry(c)}
+              aria-pressed={c === country}
+              className={cn(
+                "shrink-0 whitespace-nowrap rounded-pill border px-3.5 py-1.5 text-[12px] transition-colors",
+                c === country
+                  ? "border-azure/70 text-azure"
+                  : "border-hairline text-mist hover:border-hairline-strong hover:text-snow",
+              )}
+            >
+              {c || "Everywhere"}
+            </button>
+          ))}
+        </Rise>
+      )}
+
+      {/* The cap is stated rather than left to look like the whole answer. */}
+      {country !== "" && inCountry.total > shown.length && (
+        <Rise>
+          <p className="tnum mt-2.5 text-[11px] leading-relaxed text-mist-dim">
+            The {shown.length} highest of {inCountry.total.toLocaleString("en-GB")} peaks recorded
+            in {country}. Search for one by name to reach the rest.
+          </p>
+        </Rise>
+      )}
+
+      {/* Said once, where it matters: a peak with no country recorded cannot
+          match any of these chips, so it leaves the grid the moment one is
+          chosen. Better to name the omission than let a count quietly drop. */}
+      {country !== "" && unplaced > 0 && (
+        <Rise>
+          <p className="mt-2.5 text-[11px] leading-relaxed text-mist-dim">
+            {unplaced} {unplaced === 1 ? "peak has" : "peaks have"} no country recorded and cannot
+            be placed, so {unplaced === 1 ? "it is" : "they are"} not shown under any location.
+          </p>
+        </Rise>
+      )}
+
+      {shown.length === 0 ? (
+        <Rise className="pt-3">
+          <Card>
+            <p className="text-[12.5px] text-mist">
+              {loading
+                ? "Searching every peak…"
+                : country
+                  ? `No mountain here is in ${country}.`
+                  : "No mountain matches that."}
+            </p>
+          </Card>
+        </Rise>
+      ) : (
+        <div className="grid grid-cols-2 gap-3 pt-3">
+          {shown.map((m) => (
+            <Rise key={m.id}>
+              <MountainTile
+                mountain={m}
+                to={m.curatedId ? `/explore/mountain/${m.curatedId}` : `/explore/peak/${m.id}`}
+              />
+            </Rise>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Treks                                                                      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * THE SUB-TAB THAT REPLACED "HIKES TO MOUNTAINS".
+ *
+ * That tab asked OpenStreetMap for named waymarked routes within 30 km of the
+ * selected peak, on a live Overpass call per peak, and drew whatever came
+ * back. It was honest and close to useless here: the answer was local path
+ * fragments ordered by proximity — "Via Alpina Red R118", "R119" — and nobody
+ * on an expeditions screen is looking for the nearest waymarked footpath.
+ *
+ * What belongs here is the walking people can actually name. Same 31 routes
+ * the Explore rail carries; `treks/famous.ts` records what that list does and
+ * does not claim, and the heading says "Famous" rather than "Top" for exactly
+ * that reason.
+ */
+function TreksTab() {
+  return (
+    <>
+      <Rise className="flex items-baseline justify-between pt-6">
+        <p className="section-label">Famous treks</p>
+        <Link
+          to="/explore/treks"
+          className="flex items-center gap-0.5 text-[11.5px] text-azure transition-colors hover:text-azure-bright"
+        >
+          All {TREKS.length}
+          <ChevronRight size={13} strokeWidth={1.9} />
+        </Link>
+      </Rise>
+
+      <div className="grid grid-cols-2 gap-3 pt-3">
+        {FAMOUS_TREKS.map((t) => (
+          <Rise key={t.id}>
+            <TrekTile trek={t} to={`/explore/trek/${t.id}`} />
+          </Rise>
+        ))}
+      </div>
+    </>
   );
 }
 
@@ -727,18 +1433,20 @@ function OperatorMark({ operator, size }: { operator: Operator; size: number }) 
  */
 function OperatorCard({
   operator,
-  peak,
+  subject,
   objective,
   featured = false,
 }: {
   operator: Operator;
-  peak: Peak;
+  subject: ListingSubject;
   objective: EnquiryObjective | undefined;
   featured?: boolean;
 }) {
   const showClaims = SHOW_DEMO_OPERATORS && operator.demo === true;
   // Hooks cannot be conditional — resolved always, drawn only when featured.
-  const peakImage = useMountainImage(peak);
+  // A trek subject carries no coordinates, so this resolves to terrain art,
+  // which `useMountainImage` captions as derived rather than photographic.
+  const peakImage = useMountainImage(subject);
 
   /**
    * The enquiry is about the peak ON SCREEN, not the athlete's saved goal.
@@ -750,10 +1458,10 @@ function OperatorCard({
    * overriding what the person was actually looking at.
    */
   const target: EnquiryObjective = {
-    peakName: peak.name,
-    elevationM: peak.elevationM,
-    countries: countriesOf(peak.country),
-    goalId: objective?.peakName === peak.name ? objective.goalId : undefined,
+    peakName: subject.name,
+    elevationM: subject.elevationM,
+    countries: countriesOf(subject.country),
+    goalId: objective?.peakName === subject.name ? objective.goalId : undefined,
   };
 
   return (
@@ -783,7 +1491,7 @@ function OperatorCard({
           <div className="absolute inset-0 scrim-bottom" />
           <p className="absolute bottom-2.5 left-3 inline-flex items-center gap-1.5 rounded-pill border border-gilt/45 bg-obsidian/70 px-2.5 py-1 text-[9.5px] font-medium uppercase tracking-[0.14em] text-gilt-bright backdrop-blur-sm">
             <Star size={9} strokeWidth={0} fill="currentColor" />
-            Best match for {peak.name}
+            {operator.featured ? "Featured" : `Best match for ${subject.name}`}
           </p>
         </div>
       )}
@@ -842,7 +1550,7 @@ function OperatorCard({
           <p className="w-full truncate text-[11px] text-mist-dim">
             {operator.coverage ?? operator.certification}
           </p>
-          <p className="tnum text-[11px] text-mist-dim">{fmtElevation(peak.elevationM)} m</p>
+          <p className="tnum text-[11px] text-mist-dim">{fmtElevation(subject.elevationM)} m</p>
         </div>
 
         <ChevronRight
@@ -867,226 +1575,19 @@ function OperatorCard({
  * a paid position says nothing about a qualification, and this is a directory
  * people choose a mountain partner from.
  */
-function bestMatchFor(list: Operator[], peak: Peak): Operator | undefined {
+function bestMatchFor(list: Operator[], subject: ListingSubject): Operator | undefined {
   if (list.length === 0) return undefined;
-  const named = list.find((o) => o.popularObjectives?.some((p) => p.includes(peak.name)));
+  const named = list.find((o) => o.popularObjectives?.some((p) => p.includes(subject.name)));
   if (named) return named;
 
-  const capable = list.filter((o) => o.minElevationM <= peak.elevationM);
+  const capable = list.filter((o) => o.minElevationM <= subject.elevationM);
   const pool = capable.length > 0 ? capable : list;
   return [...pool].sort((a, b) => b.minElevationM - a.minElevationM)[0];
 }
 
 /* -------------------------------------------------------------------------- */
-/* Mountains                                                                  */
-/* -------------------------------------------------------------------------- */
-
-function MountainsTab({ mountains, loading }: { mountains: Peak[]; loading: boolean }) {
-  if (mountains.length === 0) {
-    return (
-      <Rise className="pt-6">
-        <Card>
-          <p className="text-[12.5px] text-mist">
-            {loading ? "Searching every peak…" : "No mountain matches that."}
-          </p>
-        </Card>
-      </Rise>
-    );
-  }
-
-  return (
-    <div className="grid grid-cols-2 gap-3 pt-6">
-      {mountains.map((m) => (
-        <Rise key={m.id}>
-          <Link
-            to={m.curatedId ? `/explore/mountain/${m.curatedId}` : `/explore/peak/${m.id}`}
-            className="block"
-          >
-            <MountainTile mountain={m} selected={false} onSelect={() => {}} />
-          </Link>
-        </Rise>
-      ))}
-    </div>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
 /* Hikes to mountains                                                         */
 /* -------------------------------------------------------------------------- */
-
-/**
- * The walk-in.
- *
- * Every expedition on this screen starts with days of approach, and those are
- * ordinary waymarked paths that OpenStreetMap already holds — so this tab is
- * real data about the real ground around the peak, not another directory. It is
- * the one thing on this screen that needs no company to exist.
- */
-/**
- * Which paths are worth showing beside an expedition.
- *
- * Somebody researching who to climb a mountain with wants the named approaches
- * and the long-distance routes that reach it — not the 400 m link path between
- * two car parks, which is what "nearest first" surfaces around any trailhead in
- * the Alps. So a local walking network (`lwn`) is dropped outright, a trail
- * needs a name to be worth a card, and a broken or missing measurement means it
- * cannot be judged and is left out too.
- */
-function isResearchWorthy(t: Trail): boolean {
-  if (t.network === "lwn") return false;
-  if (t.name.trim() === "") return false;
-  if (t.lengthBroken === true || t.lengthKm == null) return false;
-  return true;
-}
-
-function HikesTab({ peak }: { peak: Peak | undefined }) {
-  const [trails, setTrails] = useState<Trail[] | null>(null);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    if (!peak) return;
-    let live = true;
-    setTrails(null);
-    setFailed(false);
-
-    nearbyTrails(peak.lat, peak.lon, {
-      radiusM: 30_000,
-      // Ask for plenty, because the filter below throws most of them away.
-      limit: 40,
-      rank: "significant",
-    })
-      .then((found: Trail[]) => {
-        if (live) setTrails(found.filter(isResearchWorthy).slice(0, 8));
-      })
-      .catch(() => live && setFailed(true));
-
-    return () => {
-      live = false;
-    };
-  }, [peak]);
-
-  if (!peak) return null;
-
-  return (
-    <>
-      <Rise className="pt-6">
-        <p className="section-label">Approaches to {peak.name}</p>
-        <p className="mt-1.5 text-[12px] leading-relaxed text-mist-dim">
-          Named and waymarked routes within 30 km, from OpenStreetMap. These are the walk-ins and
-          long-distance routes that reach the mountain — not the climb itself.
-        </p>
-      </Rise>
-
-      {failed && (
-        <Rise className="pt-4">
-          <Card>
-            <p className="text-[12.5px] text-mist">
-              Couldn't reach the trail database. Try again in a moment.
-            </p>
-          </Card>
-        </Rise>
-      )}
-
-      {trails === null && !failed && (
-        <Rise className="pt-4">
-          <Card>
-            <p className="text-[12.5px] text-mist-dim">Looking for routes around {peak.name}…</p>
-          </Card>
-        </Rise>
-      )}
-
-      {trails?.length === 0 && (
-        <Rise className="pt-4">
-          <Card>
-            <p className="text-[12.5px] leading-relaxed text-mist">
-              No named route within 30 km of {peak.name} is recorded with a usable length. The local
-              paths around it were left out rather than padding this list.
-            </p>
-          </Card>
-        </Rise>
-      )}
-
-      <div className="mt-3 space-y-3">
-        {trails?.map((t) => (
-          <Rise key={t.id}>
-            <HikeCard trail={t} peak={peak} />
-          </Rise>
-        ))}
-      </div>
-    </>
-  );
-}
-
-/**
- * A hike, drawn the way Explore draws one.
- *
- * `TrailImage` is the same three-layer component the Find tab uses — contour
- * plate first so the card is never blank, satellite over it, and a verified
- * photograph on top if Wikidata vouches for this exact relation. Deliberately a
- * SMALLER card than Find's: that one carries a distance-away badge and a
- * directions control which make sense when you are standing somewhere choosing
- * a walk, and make none when you are reading about an expedition company.
- */
-function HikeCard({ trail, peak }: { trail: Trail; peak: Peak }) {
-  const [caption, setCaption] = useState("Contours — no verified photograph of this trail");
-
-  /**
-   * The peak travels with the link.
-   *
-   * A `Trail` records no country and no summit altitude, so the trail page has
-   * nothing to match a guiding company against on its own — and matching on
-   * altitude alone would list companies with no connection to where the path
-   * is. Arriving from an expedition carries that context along, and the trail
-   * page shows companies only when it has it.
-   */
-  const href = `/explore/trail/${trail.osmId}?${new URLSearchParams({
-    peak: peak.name,
-    elevation: String(peak.elevationM),
-    ...(peak.country !== undefined ? { country: peak.country } : {}),
-  }).toString()}`;
-
-  return (
-    <Link to={href} className="block">
-      <div className="overflow-hidden rounded-card border border-hairline bg-graphite transition-colors hover:border-hairline-strong">
-        <div className="relative h-[124px] bg-slate">
-          <TrailImage
-            osmId={trail.osmId}
-            lat={trail.lat}
-            lon={trail.lon}
-            name={trail.name}
-            onCaption={setCaption}
-            className="absolute inset-0 h-full w-full"
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-graphite/95 via-transparent to-obsidian/40" />
-
-          {trail.network !== undefined && (
-            <span className="absolute left-3 top-3 rounded-pill border border-hairline-strong bg-obsidian/75 px-2.5 py-1 text-[10.5px] text-snow backdrop-blur">
-              {NETWORK_LABEL[trail.network]}
-            </span>
-          )}
-          {trail.ref !== undefined && /[a-z]/i.test(trail.ref) && (
-            <span className="absolute right-3 top-3 rounded-pill border border-azure/45 bg-obsidian/75 px-2.5 py-1 text-[10.5px] text-azure backdrop-blur">
-              {trail.ref}
-            </span>
-          )}
-          <span className="absolute bottom-2.5 left-3 right-3 truncate text-[10px] text-mist">
-            {caption}
-          </span>
-        </div>
-
-        <div className="flex items-center gap-3 p-3.5">
-          <div className="min-w-0 flex-1">
-            <h3 className="truncate text-[14px] leading-snug text-snow">{trail.name}</h3>
-            <p className="tnum mt-1 text-[11.5px] text-mist-dim">
-              {trail.lengthKm != null ? `${trail.lengthKm.toFixed(1)} km` : "Length not recorded"}
-            </p>
-          </div>
-          <ChevronRight size={15} strokeWidth={1.8} className="shrink-0 text-mist-dim" />
-        </div>
-      </div>
-    </Link>
-  );
-}
 
 /* -------------------------------------------------------------------------- */
 /* Invitations                                                                */
@@ -1137,7 +1638,8 @@ function CompanyRow({
           <p className="text-[14px] leading-snug text-snow">{operator.name}</p>
           <p className="mt-1 text-[12px] leading-relaxed text-mist">{operator.certification}</p>
           <p className="tnum mt-1.5 text-[11px] text-mist-dim">
-            Typically replies within {operator.responseHours} h ·{" "}
+            {operator.responseHours !== undefined &&
+              `Typically replies within ${operator.responseHours} h · `}
             {operator.minElevationM > 0
               ? `from ${fmtElevation(operator.minElevationM)} m`
               : "any altitude"}

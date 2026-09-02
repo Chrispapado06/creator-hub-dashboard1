@@ -1,13 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LngLatBounds, Map as MapLibreMap, Marker, type GeoJSONSource } from "maplibre-gl";
 import { Box, Crosshair, Layers, Loader2 } from "lucide-react";
 import "maplibre-gl/dist/maplibre-gl.css";
 
-import { MAP_ATTRIBUTION, TERRAIN_SOURCE, icefallMapStyle, styleFor, type MapStyleId } from "./icefallStyle";
+import { attributionFor, TERRAIN_SOURCE, icefallMapStyle, styleFor, type MapStyleId } from "./icefallStyle";
 import { RouteMap } from "@/components/ui/RouteMap";
 import { cn } from "@/lib/utils";
 import { OFFLINE } from "@/offline/offline";
 import { MapUnavailable } from "@/offline/MapUnavailable";
+import { bearingDelta, cameraSnapM, cameraStepM, followCameraFor } from "@/tracking/display";
+import { haversine } from "@/tracking/filters";
+import type { ActivityTypeId } from "@/tracking/types";
 import type { TrackPoint } from "@/types";
 
 /**
@@ -27,6 +30,12 @@ export interface GeoPointLite {
   lat: number;
   lon: number;
   heading?: number | null;
+  /**
+   * Reported horizontal accuracy, metres. Optional, and honestly optional: the
+   * follow camera uses it to decide how much movement to believe, and a caller
+   * that does not know is treated as not knowing rather than as certain.
+   */
+  accuracy?: number | null;
 }
 
 interface TerrainMapProps {
@@ -36,6 +45,12 @@ interface TerrainMapProps {
   current?: GeoPointLite | null;
   /** Keep the camera on the athlete instead of framing the whole route. */
   follow?: boolean;
+  /**
+   * Tunes how reluctantly the follow camera moves. Optional: without it the
+   * defaults apply, which are the walking/hiking numbers. See `followCameraFor`
+   * in `@/tracking/display` — a bicycle and a belay want different cameras.
+   */
+  followActivityTypeId?: ActivityTypeId;
   interactive?: boolean;
   showControls?: boolean;
   start3D?: boolean;
@@ -61,6 +76,7 @@ export function TerrainMap({
   track,
   current,
   follow = false,
+  followActivityTypeId,
   interactive = true,
   showControls = true,
   start3D = true,
@@ -95,6 +111,26 @@ export function TerrainMap({
   const [showPeaks, setShowPeaks] = useState(true);
 
   const head = current ?? track[track.length - 1] ?? null;
+
+  /*
+   * The head as VALUES, not as an object.
+   *
+   * `current` is rebuilt by the caller on every snapshot — LiveTracker maps the
+   * point list into fresh objects — so effects keyed on `head` re-ran on every
+   * emit even when the athlete had not moved a centimetre. Keying on the three
+   * numbers means an effect runs when the POSITION changes, which is the thing
+   * it actually cares about.
+   */
+  const headLat = head ? head.lat : null;
+  const headLon = head ? head.lon : null;
+  const headHeading =
+    head && typeof head.heading === "number" && Number.isFinite(head.heading) ? head.heading : null;
+  const headAccuracy =
+    head && typeof head.accuracy === "number" && Number.isFinite(head.accuracy)
+      ? head.accuracy
+      : null;
+
+  const camera = useMemo(() => followCameraFor(followActivityTypeId), [followActivityTypeId]);
 
   /* ------------------------------------------------------------------ */
   /* Init                                                                */
@@ -288,13 +324,16 @@ export function TerrainMap({
       }
     }
 
-    if (head && !hideLiveMarker) {
+    // The MARKER always tells the truth, at full rate. It is the camera that is
+    // held back below — a dot that twitches two metres is honest reporting of a
+    // two-metre fix; a horizon that swings with it is not.
+    if (headLat !== null && headLon !== null && !hideLiveMarker) {
       if (!liveMarker.current) {
         liveMarker.current = new Marker({ element: dot("live") })
-          .setLngLat([head.lon, head.lat])
+          .setLngLat([headLon, headLat])
           .addTo(map);
       } else {
-        liveMarker.current.setLngLat([head.lon, head.lat]);
+        liveMarker.current.setLngLat([headLon, headLat]);
       }
     }
 
@@ -304,23 +343,150 @@ export function TerrainMap({
       const b = coords.reduce((acc, c) => acc.extend(c), new LngLatBounds(coords[0], coords[0]));
       map.fitBounds(b, { padding: 56, duration: 900, pitch: is3D ? 55 : 0, maxZoom: 16 });
     }
-  }, [track, head, ready, follow, is3D, hideLiveMarker]);
+  }, [track, headLat, headLon, ready, follow, is3D, hideLiveMarker]);
 
-  /* Follow the athlete. */
+  /* ------------------------------------------------------------------ */
+  /* Follow camera                                                       */
+  /* ------------------------------------------------------------------ */
+
+  /** Where the camera last chose to look — the anchor movement is measured from. */
+  const cameraAnchor = useRef<{ lat: number; lon: number } | null>(null);
+  /** The smoothed aim point. NOT a position: see `targetAlpha` in display.ts. */
+  const cameraTarget = useRef<{ lat: number; lon: number } | null>(null);
+  /** Where the map last turned — bearing needs more travel than centring does. */
+  const bearingAnchor = useRef<{ lat: number; lon: number } | null>(null);
+  const lastCameraAt = useRef(0);
+  const lastBearingAt = useRef(0);
+  /** Until when the camera belongs to the hand on the glass, not to us. */
+  const userHeldUntil = useRef(0);
+  const lockedOn = useRef(false);
+
+  /*
+   * A gesture takes the camera.
+   *
+   * Following an athlete and honouring a pinch are the same actuator, so one of
+   * them has to yield. It is always the app: an athlete who pans ahead to read
+   * the next col is asking a question, and snapping the view back a second
+   * later answers it with "no". The Crosshair control hands the camera back.
+   */
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !ready || !follow || !head) return;
+    if (!map || !ready) return;
+    const take = (e: { originalEvent?: unknown }) => {
+      // Our own `easeTo` fires these too, but without an originalEvent — only a
+      // real pointer, wheel or touch counts as the user taking over.
+      if (!e?.originalEvent) return;
+      userHeldUntil.current = Date.now() + camera.userControlGraceMs;
+    };
+    map.on("dragstart", take);
+    map.on("zoomstart", take);
+    map.on("rotatestart", take);
+    map.on("pitchstart", take);
+    return () => {
+      map.off("dragstart", take);
+      map.off("zoomstart", take);
+      map.off("rotatestart", take);
+      map.off("pitchstart", take);
+    };
+  }, [ready, camera.userControlGraceMs]);
+
+  /*
+   * Follow the athlete — deliberately reluctant.
+   *
+   * What this replaced: an `easeTo` on every change of the `head` OBJECT, which
+   * the caller rebuilt on every emit. So the camera was re-ordered about once a
+   * second with a 900 ms animation, restarting before it had arrived, and it
+   * did that whether or not the athlete had moved — a stationary GPS wanders
+   * metres a second, and the map faithfully chased the wander. That is the
+   * shaking. It also re-applied zoom and pitch every time, undoing whatever the
+   * athlete had just pinched, and re-aimed the bearing at a heading that is
+   * derived from noise at walking speed.
+   *
+   * The rule now: the camera moves only when the ATHLETE has moved, at most
+   * once per `minCameraGapMs`, and it never touches zoom or pitch again after
+   * the first frame. Stopped means still.
+   */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || !follow || headLat === null || headLon === null) return;
+    const here = { lat: headLat, lon: headLon };
+
+    // First lock-on: the one and only time the follow camera sets a zoom.
+    if (!lockedOn.current) {
+      lockedOn.current = true;
+      cameraAnchor.current = here;
+      cameraTarget.current = here;
+      bearingAnchor.current = here;
+      lastCameraAt.current = Date.now();
+      map.easeTo({
+        center: [headLon, headLat],
+        zoom: Math.max(map.getZoom(), camera.firstFollowZoom),
+        duration: camera.easeMs,
+      });
+      return;
+    }
+
+    const now = Date.now();
+    if (now < userHeldUntil.current) return;
+
+    /*
+     * The AIM POINT, smoothed. This is not a claim about where the athlete is —
+     * the marker, the drawn track and every recorded metre stay on the raw fix
+     * — it is only where a camera points. Without it a stationary fix random-
+     * walks past any fixed gate and ratchets the camera along behind it.
+     */
+    const previous = cameraTarget.current;
+    const target =
+      !previous || haversine(previous, here) > cameraSnapM(headAccuracy, camera)
+        ? here // too far to be noise: a real relocation, so go, don't crawl
+        : {
+            lat: previous.lat + camera.targetAlpha * (headLat - previous.lat),
+            lon: previous.lon + camera.targetAlpha * (headLon - previous.lon),
+          };
+    cameraTarget.current = target;
+
+    // Has the athlete actually gone anywhere? Measured from the position the
+    // camera last acted on, not from the previous fix, so a slow walker's small
+    // steps accumulate towards a move instead of each being dismissed.
+    const anchor = cameraAnchor.current;
+    if (anchor && haversine(anchor, target) < cameraStepM(headAccuracy, camera)) return;
+    if (now - lastCameraAt.current < camera.minCameraGapMs) return;
+    cameraAnchor.current = target;
+
+    // Bearing is priced separately and far higher: centring slides the ground,
+    // rotation moves every pixel on the screen.
+    let bearing: number | undefined;
+    if (
+      camera.rotateWithHeading &&
+      headHeading !== null &&
+      now - lastBearingAt.current >= camera.minBearingGapMs
+    ) {
+      const from = bearingAnchor.current;
+      if (!from || haversine(from, target) >= camera.bearingStepM) {
+        bearingAnchor.current = target;
+        if (bearingDelta(headHeading, map.getBearing()) >= camera.bearingDeltaDeg) {
+          bearing = headHeading;
+          lastBearingAt.current = now;
+        }
+      }
+    }
+
+    lastCameraAt.current = now;
+    // No `zoom`, no `pitch`, and not `essential`: the first two are the
+    // athlete's to set, and leaving the animation non-essential means a phone
+    // asking for reduced motion gets an instant cut rather than a glide.
     map.easeTo({
-      center: [head.lon, head.lat],
-      zoom: Math.max(map.getZoom(), 15),
-      pitch: is3D ? 60 : 0,
-      bearing:
-        typeof head.heading === "number" && Number.isFinite(head.heading)
-          ? head.heading
-          : map.getBearing(),
-      duration: 900,
+      center: [target.lon, target.lat],
+      ...(bearing === undefined ? {} : { bearing }),
+      duration: camera.easeMs,
     });
-  }, [head, follow, is3D, ready]);
+  }, [headLat, headLon, headHeading, headAccuracy, follow, ready, camera]);
+
+  // Leaving follow mode releases the lock, so re-entering it frames the athlete
+  // again rather than silently inheriting a camera from the last session.
+  useEffect(() => {
+    if (!follow) lockedOn.current = false;
+  }, [follow]);
 
   /* ------------------------------------------------------------------ */
   /* Controls                                                            */
@@ -341,9 +507,22 @@ export function TerrainMap({
 
   const recenter = useCallback(() => {
     const map = mapRef.current;
-    if (!map || !head) return;
-    map.easeTo({ center: [head.lon, head.lat], zoom: Math.max(map.getZoom(), 15), duration: 700 });
-  }, [head]);
+    if (!map || headLat === null || headLon === null) return;
+    // Asking for the camera back ends the gesture hold at once — that is the
+    // whole purpose of this control, and it is the only way back other than
+    // waiting out `userControlGraceMs`.
+    userHeldUntil.current = 0;
+    // A deliberate request goes to the RAW position, and re-seeds the smoother
+    // there: the athlete asked where they are, not where the average says.
+    cameraAnchor.current = { lat: headLat, lon: headLon };
+    cameraTarget.current = { lat: headLat, lon: headLon };
+    lastCameraAt.current = Date.now();
+    map.easeTo({
+      center: [headLon, headLat],
+      zoom: Math.max(map.getZoom(), camera.firstFollowZoom),
+      duration: camera.easeMs,
+    });
+  }, [headLat, headLon, camera.firstFollowZoom, camera.easeMs]);
 
   const togglePeaks = useCallback(() => {
     const map = mapRef.current;
@@ -410,7 +589,7 @@ export function TerrainMap({
       {ready && (
         <div
           className="pointer-events-none absolute inset-x-0 bottom-0 px-2 pb-1 text-[8px] leading-tight text-mist-dim/70 [&_a]:underline"
-          dangerouslySetInnerHTML={{ __html: MAP_ATTRIBUTION }}
+          dangerouslySetInnerHTML={{ __html: attributionFor(styleId) }}
         />
       )}
     </div>

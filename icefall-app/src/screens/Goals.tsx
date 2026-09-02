@@ -338,6 +338,7 @@ export function GoalDetail() {
         wikipedia: goal.wikipedia,
         curatedId: goal.mountainId,
         photo: goal.photo ?? curated?.photo,
+        photoCredit: curated?.photoCredit,
         curated,
         goal,
         objectiveId: goal.mountainId ? `curated:${goal.mountainId}` : undefined,

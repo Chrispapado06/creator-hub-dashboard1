@@ -65,6 +65,7 @@ export function AvailabilityCalendar({
   to,
   onPick,
   className,
+  layout = "strip",
 }: {
   /**
    * Seeds the demo pattern. A guide's id on their own screen; a stable
@@ -76,6 +77,17 @@ export function AvailabilityCalendar({
   to: Date;
   onPick?: (day: Date) => void;
   className?: string;
+  /**
+   * "month" draws the whole month at once, seven columns deep.
+   *
+   * The strip shows fourteen days and scrolls sideways, which is right in a
+   * narrow row on a profile but wrong where this IS the date control: someone
+   * picking climbing dates thinks in months, and a fortnight that hides the
+   * rest behind a horizontal scroll makes them hunt for a date they can
+   * already name. The search screen asks for "month"; everything else keeps
+   * the strip it was drawn with.
+   */
+  layout?: "strip" | "month";
 }) {
   const [anchor, setAnchor] = useState(() => new Date(from));
   const showDots = (SHOW_DEMO_DATA || DEMO) && seed !== undefined;
@@ -91,6 +103,29 @@ export function AvailabilityCalendar({
       return d;
     });
   }, [anchor]);
+
+  const cellW = "w-10";
+  const cellH = "h-10";
+  const dayText = "text-[13px]";
+  const gap = "gap-1";
+
+  /**
+   * The anchor month as a Monday-first grid, padded so the columns line up.
+   * Nulls are the blanks before the 1st and after the last — rendered as empty
+   * cells rather than as days from the neighbouring months, which would be
+   * tappable dates the header says you are not looking at.
+   */
+  const monthCells = useMemo(() => {
+    if (layout !== "month") return [];
+    const y = anchor.getFullYear();
+    const m = anchor.getMonth();
+    const lead = (new Date(y, m, 1).getDay() + 6) % 7;
+    const count = new Date(y, m + 1, 0).getDate();
+    const cells: (Date | null)[] = Array.from({ length: lead }, () => null);
+    for (let i = 1; i <= count; i++) cells.push(new Date(y, m, i));
+    while (cells.length % 7 !== 0) cells.push(null);
+    return cells;
+  }, [anchor, layout]);
 
   const fromKey = dayKey(from);
   const toKey = dayKey(to);
@@ -119,20 +154,79 @@ export function AvailabilityCalendar({
         </button>
       </div>
 
+      {layout === "month" ? (
+        <div className="mt-3">
+          <div className="grid grid-cols-7 gap-1">
+            {WEEKDAY.map((w, i) => (
+              <span
+                key={`w-${i}`}
+                className="py-1 text-center text-[10.5px] uppercase tracking-[0.06em] text-mist-dim"
+              >
+                {w}
+              </span>
+            ))}
+          </div>
+
+          <div className="mt-1 grid grid-cols-7 gap-1">
+            {monthCells.map((d, i) => {
+              if (!d) return <span key={`blank-${i}`} aria-hidden />;
+              const key = dayKey(d);
+              const isEnd = key === fromKey || key === toKey;
+              const inRange = key > fromKey && key < toKey;
+              const status = showDots && seed !== undefined ? demoAvailability(seed, key) : null;
+
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => onPick?.(d)}
+                  className={cn(
+                    "flex aspect-square flex-col items-center justify-center gap-1 rounded-full text-[13.5px] transition-colors",
+                    isEnd
+                      ? "bg-azure font-medium text-obsidian"
+                      : inRange
+                        ? "bg-azure/[0.18] text-snow"
+                        : "text-snow hover:bg-white/[0.06]",
+                  )}
+                >
+                  <span>{d.getDate()}</span>
+                  {status && (
+                    <span
+                      className={cn(
+                        "h-1.5 w-1.5 rounded-full",
+                        isEnd
+                          ? "bg-obsidian/45"
+                          : status === "available"
+                            ? "bg-summit"
+                            : status === "limited"
+                              ? "bg-mist-dim"
+                              : "bg-transparent",
+                      )}
+                    />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
       <div className="no-scrollbar mt-3 overflow-x-auto">
         <div className="min-w-max">
-          <div className="flex gap-1">
+          <div className={cn("flex", gap)}>
             {days.map((d, i) => (
               <span
                 key={`w-${i}`}
-                className="w-10 text-center text-[10.5px] uppercase tracking-[0.06em] text-mist-dim"
+                className={cn(
+                  "text-center text-[10.5px] uppercase tracking-[0.06em] text-mist-dim",
+                  cellW,
+                )}
               >
                 {WEEKDAY[(d.getDay() + 6) % 7]}
               </span>
             ))}
           </div>
 
-          <div className="mt-1.5 flex gap-1">
+          <div className={cn("mt-2 flex", gap)}>
             {days.map((d) => {
               const key = dayKey(d);
               const isEnd = key === fromKey || key === toKey;
@@ -145,7 +239,10 @@ export function AvailabilityCalendar({
                   type="button"
                   onClick={() => onPick?.(d)}
                   className={cn(
-                    "grid h-10 w-10 place-items-center rounded-full text-[13px] transition-colors",
+                    "grid place-items-center rounded-full transition-colors",
+                    cellH,
+                    cellW,
+                    dayText,
                     isEnd
                       ? "bg-azure font-medium text-obsidian"
                       : inRange
@@ -160,11 +257,11 @@ export function AvailabilityCalendar({
           </div>
 
           {showDots && (
-            <div className="mt-1.5 flex gap-1">
+            <div className={cn("mt-2 flex", gap)}>
               {days.map((d) => {
                 const status = demoAvailability(seed, dayKey(d));
                 return (
-                  <span key={`d-${dayKey(d)}`} className="grid h-3 w-10 place-items-center">
+                  <span key={`d-${dayKey(d)}`} className={cn("grid h-3 place-items-center", cellW)}>
                     <span
                       className={cn(
                         "h-1.5 w-1.5 rounded-full",
@@ -182,6 +279,7 @@ export function AvailabilityCalendar({
           )}
         </div>
       </div>
+      )}
 
       {showDots ? (
         <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-hairline pt-3">

@@ -8,10 +8,11 @@ import { sync } from "@/services/repository";
  * ICEFALL's notifications — computed, not delivered.
  *
  * THE HONEST SHAPE OF THIS FEATURE. A notification normally means a server
- * decided something mattered and pushed it to a device. ICEFALL has no server
- * and no push certificate, so nothing here was sent to anybody: every item is
- * DERIVED on open from state already on this phone — the plan, the objective,
- * the message queue, the unread counts.
+ * decided something mattered and pushed it to a device. ICEFALL has a server
+ * now, but no push of any kind — so nothing here was sent to anybody: every
+ * item is FOUND when the screen is opened, not delivered. The ones in this file
+ * are derived on open from state already on this phone — the plan, the
+ * objective, the message queue, the unread counts.
  *
  * That distinction is not pedantry. A climber who believes this screen will
  * wake their phone might rely on it for a weather change or a departure time,
@@ -117,5 +118,11 @@ export function useNotifications(): Notice[] {
   }, [conversations, goal]);
 }
 
+/*
+ * The same stale claim was in this sentence too, and this is the half a person
+ * actually reads. "ICEFALL has no server" stopped being true when the migrations
+ * went live; "cannot wake your phone" is still exactly true, and it is the part
+ * that matters to somebody on a mountain.
+ */
 export const NOTIFICATIONS_NOT_PUSHED =
-  "ICEFALL has no server and cannot wake your phone. Everything here is worked out from what is already on this device when you open the screen — it is a summary, not an alert, and it will not reach you on the mountain.";
+  "Nothing here was pushed. ICEFALL has no push notifications, so everything on this screen is found when you open it — worked out from what is on this device, or read back from the server at that moment. It is a summary, not an alert: it cannot wake your phone and it will not reach you on the mountain.";

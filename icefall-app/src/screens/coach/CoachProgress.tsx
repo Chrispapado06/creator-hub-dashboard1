@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useReducedMotion } from "framer-motion";
 import { Link } from "react-router-dom";
 import { Card, Disclaimer, SectionLabel } from "@/components/ui/primitives";
 import { Button } from "@/components/ui/primitives";
@@ -35,6 +36,14 @@ import { fmtDistance, fmtDurationCompact, fmtElevation } from "@/lib/format";
  * The reviews, the load model and the records all come from modules that
  * already enforce these rules — this file renders their output and never
  * recomputes a figure that one of them owns.
+ *
+ * CAPTIONS ARE SCOPE, NOT ESSAY. Every caption below earns its place by saying
+ * what a figure is measured over — which window, out of how many sessions,
+ * against what — or it is not there. The reasoning behind each refusal lives in
+ * these comments, where it belongs; it used to live on the screen as well, and
+ * an athlete reading four lines of philosophy above three numbers stops reading
+ * the numbers. Cut prose freely here. Never cut the window, the denominator, or
+ * the sentence that stops a figure being read as a target.
  */
 
 /* -------------------------------------------------------------------------- */
@@ -198,6 +207,48 @@ function distributionIn(acts: RecordedActivity[], days: number, now: Date): Segm
 }
 
 /* -------------------------------------------------------------------------- */
+/* Entrance                                                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The house entrance, and the one preference that switches it off.
+ *
+ * `Stagger`/`Rise` animate through framer-motion, which drives inline styles
+ * from its own loop rather than declaring a CSS transition — so the global
+ * `prefers-reduced-motion` rule in index.css, which flattens
+ * `transition-duration` and `animation-duration`, never reaches them. A screen
+ * that wants to honour the preference has to check it in TypeScript.
+ *
+ * Under the preference this renders a plain div, which is enough on its own:
+ * `Rise` is a `motion.div` carrying only `variants`, and with no motion parent
+ * there is no `initial`/`animate` for it to inherit, so the variants sit unused
+ * and every section is simply present on the first frame.
+ *
+ * `resetKey` re-runs the cascade when the athlete changes the range — the same
+ * thing CoachPlan does when its tab changes. Every figure underneath belongs to
+ * a different window after that tap, and swapping four numbers in place reads
+ * as a glitch rather than as a new answer to a new question.
+ */
+function Entrance({
+  still,
+  resetKey,
+  className,
+  children,
+}: {
+  still: boolean;
+  resetKey?: string;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  if (still) return <div className={className}>{children}</div>;
+  return (
+    <Stagger key={resetKey} className={className}>
+      {children}
+    </Stagger>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
 /* Screen                                                                      */
 /* -------------------------------------------------------------------------- */
 
@@ -206,6 +257,7 @@ export default function CoachProgress() {
   const activities = useRecordedActivities();
   const records = useAllTimeRecords();
   const [range, setRange] = useState<RangeId>("month");
+  const still = useReducedMotion() ?? false;
 
   // One instant for the whole render, so the window boundaries, the reviews and
   // the distribution cannot disagree by a few milliseconds mid-paint.
@@ -241,12 +293,21 @@ export default function CoachProgress() {
 
   return (
     <Screen padded={false}>
-      <div className="px-5">
-        <ScreenHeader title="Progress" subtitle="Built only from what you record" />
-        <SegmentedTabs tabs={RANGES} value={range} onChange={setRange} />
-      </div>
+      {/* The header and the range strip animate in with everything else — they
+          are the first thing on screen, and a page that opens with its top
+          block already planted and its body still arriving looks like two
+          screens loading at different speeds. Their entrance is separate from
+          the content's so that changing the range re-runs the body only. */}
+      <Entrance still={still} className="px-5">
+        <Rise>
+          <ScreenHeader title="Progress" />
+        </Rise>
+        <Rise>
+          <SegmentedTabs tabs={RANGES} value={range} onChange={setRange} />
+        </Rise>
+      </Entrance>
 
-      <Stagger className="px-5">
+      <Entrance still={still} resetKey={range} className="px-5">
         {/* ---- Totals for the selected window ------------------------------ */}
         <Rise className="pt-6">
           <SectionLabel>Last {config.noun}</SectionLabel>
@@ -254,10 +315,11 @@ export default function CoachProgress() {
           {current.activities === 0 ? (
             <Card className="mt-3 py-8">
               <UnavailableState reason="no-data" size="md" className="mx-auto" />
+              {/* The tiles are absent rather than zeroed — the reason is refusal
+                  1 at the top of this file, and it does not need restating to
+                  the athlete beside an obviously empty card. */}
               <p className="mt-4 text-center text-[12px] leading-relaxed text-mist-dim">
-                No activities recorded in the last {config.noun}. Distance, ascent and time are left
-                empty rather than shown as zero — ICEFALL cannot tell a rest block from a block you
-                did not record.
+                Nothing recorded in the last {config.noun}.
               </p>
             </Card>
           ) : (
@@ -305,13 +367,17 @@ export default function CoachProgress() {
                 )}
               </div>
 
+              {/* What the deltas are measured against, and how much of the
+                  window the time figure actually covers. Both are scope, not
+                  commentary — without them "+2.4 km" and a time total that
+                  silently excludes half the sessions are unreadable. */}
               <p className="mt-3 text-[12px] leading-relaxed text-mist-dim">
                 {previous
-                  ? `Changes compare with the ${config.noun} before this one.`
-                  : `Nothing was recorded in the ${config.noun} before this one, so there is nothing to compare against and no change is shown.`}
+                  ? `Change vs the previous ${config.noun}.`
+                  : `Nothing recorded in the previous ${config.noun} — no comparison.`}
                 {current.timedActivities > 0 &&
                   current.timedActivities < current.activities &&
-                  ` Time covers ${current.timedActivities} of ${current.activities} activities — the rest recorded no moving time.`}
+                  ` Time from ${current.timedActivities} of ${current.activities} activities.`}
               </p>
             </>
           )}
@@ -324,9 +390,13 @@ export default function CoachProgress() {
             {plotLoad ? (
               <>
                 <TrendLine data={load.daily} band={band} height={104} />
+                {/* "Not a target" stays however short this caption gets. It is
+                    the whole of refusal 3: the band is a description of the
+                    athlete's own normal, and a band on a chart with nothing
+                    saying otherwise is read as a thing to get inside. */}
                 <p className="mt-3 text-[11px] leading-relaxed text-mist-dim">
                   {band
-                    ? "The band is your own twenty-eight-day average, from 0.8× to 1.15×. It is a reference for where a day sits against your normal, not a target — a day below it is not a debt to repay."
+                    ? "Band: your own 28-day average, 0.8× to 1.15×. Not a target."
                     : "Each point is one day's recorded load."}
                 </p>
               </>
@@ -334,10 +404,8 @@ export default function CoachProgress() {
               <div className="py-6">
                 <UnavailableState reason="too-little-history" size="md" className="mx-auto" />
                 <p className="mt-4 text-center text-[12px] leading-relaxed text-mist-dim">
-                  Comparing a seven-day average against a twenty-eight-day one needs about{" "}
-                  {MIN_DAYS_FOR_RATIO} days of recorded history and at least four sessions. You have{" "}
-                  {load.observedDays} {load.observedDays === 1 ? "day" : "days"} on record, so
-                  nothing is plotted yet.
+                  Needs {MIN_DAYS_FOR_RATIO} days of history and four sessions. You have{" "}
+                  {load.observedDays} {load.observedDays === 1 ? "day" : "days"}.
                 </p>
               </div>
             )}
@@ -362,7 +430,7 @@ export default function CoachProgress() {
               <div className="py-6">
                 <UnavailableState reason="no-data" size="md" className="mx-auto" />
                 <p className="mt-4 text-center text-[12px] leading-relaxed text-mist-dim">
-                  No activities recorded in the last {config.noun}.
+                  Nothing recorded in the last {config.noun}.
                 </p>
               </div>
             ) : (
@@ -371,10 +439,12 @@ export default function CoachProgress() {
                   <DonutChart segments={segments} size={112} />
                   <Legend segments={segments} />
                 </div>
+                {/* The denominator and the unit of counting. A reader who
+                    assumes these percentages are shares of TIME reads a legend
+                    that says something else entirely. */}
                 <p className="mt-4 text-[11px] leading-relaxed text-mist-dim">
-                  Share of the {current.activities}{" "}
-                  {current.activities === 1 ? "session" : "sessions"} recorded in the last{" "}
-                  {config.noun}, counted per session rather than by time.
+                  {current.activities} {current.activities === 1 ? "session" : "sessions"} in the
+                  last {config.noun}, by count not by time.
                 </p>
               </>
             )}
@@ -398,9 +468,10 @@ export default function CoachProgress() {
           {records.length === 0 ? (
             <Card className="mt-3 py-8">
               <UnavailableState reason="no-data" size="md" className="mx-auto" />
+              {/* The scope survives every cut: a climber who reads these as
+                  career bests is reading a different number than the one shown. */}
               <p className="mt-4 text-center text-[12px] leading-relaxed text-mist-dim">
-                Records come from activities recorded in ICEFALL. Sessions logged elsewhere are not
-                counted, so these are bests within the app rather than bests of your career.
+                Bests within ICEFALL only, not of your career.
               </p>
             </Card>
           ) : (
@@ -419,7 +490,7 @@ export default function CoachProgress() {
                 ))}
               </Card>
               <p className="mt-3 text-[11px] leading-relaxed text-mist-dim">
-                All-time across every activity recorded in ICEFALL.
+                All-time, within ICEFALL only.
               </p>
             </>
           )}
@@ -428,7 +499,7 @@ export default function CoachProgress() {
         <Rise className="pt-6">
           <Disclaimer>{COACH_DISCLAIMER}</Disclaimer>
         </Rise>
-      </Stagger>
+      </Entrance>
     </Screen>
   );
 }
@@ -509,7 +580,7 @@ function ReviewBlock({ review, noun }: { review: Review; noun: "week" | "month" 
 
       {!review.sparse && (
         <p className="text-[11px] leading-relaxed text-mist-dim">
-          Describes the {noun} so far, against the same span of the {noun} before it.
+          To date, against the same span of the previous {noun}.
         </p>
       )}
     </div>
@@ -564,21 +635,28 @@ function ObservationList({ title, items }: { title: string; items: string[] }) {
  * projection. An athlete with nothing recorded is told exactly what this screen
  * will show once there is something to show, and given the one control that
  * gets them there.
+ *
+ * The "what appears here" rows are a contents page, not an explanation. Each
+ * one carries the fact a climber would otherwise have to discover — the windows,
+ * the two thresholds, which records — and nothing else. They used to run two or
+ * three sentences each, which made the emptiest screen in the app also the
+ * wordiest one.
  */
 function FirstRun({ hasGoal, hasPlan }: { hasGoal: boolean; hasPlan: boolean }) {
+  const still = useReducedMotion() ?? false;
+
   return (
     <Screen padded={false}>
-      <div className="px-5">
-        <ScreenHeader title="Progress" subtitle="Nothing recorded yet" />
-      </div>
+      <Entrance still={still} className="px-5">
+        <Rise>
+          <ScreenHeader title="Progress" subtitle="Nothing recorded yet" />
+        </Rise>
 
-      <Stagger className="px-5">
         <Rise className="pt-6">
           <Card className="py-10">
             <UnavailableState reason="no-data" size="lg" className="mx-auto" />
             <p className="mt-5 text-center text-[13px] leading-relaxed text-mist">
-              Progress is built entirely from activities you record. There is nothing to summarise
-              yet, and nothing here is filled in with an example.
+              Everything here is built from activities you record.
             </p>
           </Card>
         </Rise>
@@ -589,21 +667,19 @@ function FirstRun({ hasGoal, hasPlan }: { hasGoal: boolean; hasPlan: boolean }) 
             {[
               {
                 title: "Distance, ascent and time",
-                detail:
-                  "Totals for the last week, month, three months or year, compared with the period before once there is one.",
+                detail: "Week, month, three months or year.",
               },
               {
                 title: "Training load",
-                detail: `A daily load series against your own twenty-eight-day average. It needs about ${MIN_DAYS_FOR_RATIO} days of history and four sessions before any comparison is shown.`,
+                detail: `Needs ${MIN_DAYS_FOR_RATIO} days of history and four sessions.`,
               },
               {
                 title: "Weekly and monthly reviews",
-                detail:
-                  "Written from your recorded sessions. Below two sessions in a period they say there is too little to describe, rather than describing it anyway.",
+                detail: "From two recorded sessions in a period upward.",
               },
               {
                 title: "Personal records",
-                detail: "Your longest, highest and biggest days, across everything you record.",
+                detail: "Your longest, highest and biggest days.",
               },
             ].map((row) => (
               <div key={row.title} className="border-b border-hairline p-4 last:border-b-0">
@@ -639,7 +715,7 @@ function FirstRun({ hasGoal, hasPlan }: { hasGoal: boolean; hasPlan: boolean }) 
         <Rise className="pt-6">
           <Disclaimer>{COACH_DISCLAIMER}</Disclaimer>
         </Rise>
-      </Stagger>
+      </Entrance>
     </Screen>
   );
 }

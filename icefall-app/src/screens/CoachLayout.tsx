@@ -4,6 +4,18 @@ import { useTabSwipe } from "@/hooks/useTabSwipe";
 
 const TABS = [
   { value: "/coach", label: "Chat" },
+  /*
+   * Fuel sits SECOND, beside Chat, at the owner's request (2026-09-02).
+   * It was reachable only as a detail view before — linked from Today and from
+   * nowhere else — which made the app's fuelling guidance effectively invisible
+   * to anybody who did not already know it existed.
+   *
+   * "Fuel", not "Nutrition": the screen is about supporting the work, and
+   * `coach/nutrition.ts` is explicit that ICEFALL sets no weight or
+   * body-composition targets. "Nutrition" is the word every calorie app the
+   * athlete has already deleted uses on its tab bar.
+   */
+  { value: "/coach/nutrition", label: "Fuel" },
   { value: "/coach/today", label: "Today" },
   { value: "/coach/plan", label: "Plan" },
   { value: "/coach/progress", label: "Progress" },
@@ -22,7 +34,6 @@ const DETAIL_PREFIXES = [
   "/coach/check-in",
   "/coach/readiness",
   "/coach/recovery",
-  "/coach/nutrition",
   "/coach/prep",
   // Linked from Home and from empty session states; without this it rendered
   // under the strip with the CHAT tab lit, since unmatched paths fall back to

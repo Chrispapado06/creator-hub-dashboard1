@@ -29,6 +29,7 @@ import { enrichPeaks } from "@/services/peakWikidata";
 import {
   NETWORK_LABEL, SAC_LABEL, cachedLengthKm, measureLength, nearbyTrails, type Trail,
 } from "@/services/trails";
+import { FIND_TIMEOUT_MS, withTimeout } from "@/lib/netTimeout";
 import { TrailImage } from "@/components/domain/TrailImage";
 /**
  * What the card says when it is showing its plate.
@@ -224,11 +225,15 @@ export default function Routes() {
         {hits.length === 0 && trails.list.length === 0 && !trails.loading && trails.failed && (
           <Rise className="pt-4">
             <div className="rounded-card border border-hairline bg-graphite p-4">
-              <p className="text-[13px] text-snow">Couldn't reach the trail database.</p>
+              <p className="text-[13px] text-snow">
+                {trails.timedOut
+                  ? "That search was taking too long."
+                  : "Couldn't reach the trail database."}
+              </p>
               <p className="mt-1.5 text-[11.5px] leading-relaxed text-mist-dim">
-                The walks around {place.name} come from OpenStreetMap, and it did not answer.
-                This is a connection problem, not an empty map — it says nothing about what is
-                actually near you.
+                {trails.timedOut
+                  ? `The walks around ${place.name} come from OpenStreetMap, and it had not answered after five seconds, so the search was stopped. It says nothing about what is actually near you — a wider area takes longer, and trying again often lands on a faster server.`
+                  : `The walks around ${place.name} come from OpenStreetMap, and it did not answer. This is a connection problem, not an empty map — it says nothing about what is actually near you.`}
               </p>
               <button
                 type="button"
@@ -246,11 +251,15 @@ export default function Routes() {
           !peaks.loading && peaks.failed && peaks.list.length === 0 && (
           <Rise className="pt-4">
             <div className="rounded-card border border-hairline bg-graphite p-4">
-              <p className="text-[13px] text-snow">Couldn't reach the summit database.</p>
+              <p className="text-[13px] text-snow">
+                {peaks.timedOut
+                  ? "That search was taking too long."
+                  : "Couldn't reach the summit database."}
+              </p>
               <p className="mt-1.5 text-[11.5px] leading-relaxed text-mist-dim">
-                The peaks around {place.name} come from OpenStreetMap, and it did not answer.
-                This is a connection problem, not an empty map — it says nothing about what is
-                actually near you.
+                {peaks.timedOut
+                  ? `The peaks around ${place.name} come from OpenStreetMap, and it had not answered after five seconds, so the search was stopped. It says nothing about what is actually near you — a wider area takes longer, and trying again often lands on a faster server.`
+                  : `The peaks around ${place.name} come from OpenStreetMap, and it did not answer. This is a connection problem, not an empty map — it says nothing about what is actually near you.`}
               </p>
               <button
                 type="button"
@@ -548,6 +557,7 @@ function useNearbyTrails(place: Place, radiusKm: number | null, enabled: boolean
   const [shown, setShown] = useState(PAGE);
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [timedOut, setTimedOut] = useState(false);
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
@@ -559,6 +569,7 @@ function useNearbyTrails(place: Place, radiusKm: number | null, enabled: boolean
       // summits behind it never appeared.
       setLoading(false);
       setFailed(false);
+    setTimedOut(false);
       return;
     }
     let live = true;
@@ -575,6 +586,7 @@ function useNearbyTrails(place: Place, radiusKm: number | null, enabled: boolean
 
     setLoading(true);
     setFailed(false);
+    setTimedOut(false);
     setAll([]);
     setShown(PAGE);
 
@@ -598,7 +610,8 @@ function useNearbyTrails(place: Place, radiusKm: number | null, enabled: boolean
         areaId: areaIdFor(place),
         rank: isWidePlace(place) ? "significant" : "near",
       },
-      ctrl.signal,
+      // The whole attempt, both mirrors included — see FIND_TIMEOUT_MS.
+      withTimeout(FIND_TIMEOUT_MS, ctrl.signal),
     )
       .then((t) => {
         if (live) setAll(t);
@@ -614,7 +627,18 @@ function useNearbyTrails(place: Place, radiusKm: number | null, enabled: boolean
          * error as an empty map, which the comment above the NoRoutes block
          * already warns about.
          */
-        if (err instanceof DOMException && err.name === "AbortError") return;
+        if (err instanceof DOMException && err.name === "AbortError") {
+          // Our own cleanup aborted: a non-event, as the note above says. But
+          // if OUR controller is untouched, the five-second budget is what
+          // fired, and that must not vanish into the same silence — an empty
+          // list with no sentence reads as "there is nothing here".
+          if (ctrl.signal.aborted) return;
+          if (live) {
+            setTimedOut(true);
+            setFailed(true);
+          }
+          return;
+        }
         if (live) setFailed(true);
       })
       .finally(() => {
@@ -632,6 +656,7 @@ function useNearbyTrails(place: Place, radiusKm: number | null, enabled: boolean
     list,
     loading,
     failed,
+    timedOut,
     total: all.length,
     hasMore: all.length > list.length,
     loadMore: () => setShown((n) => n + PAGE),
@@ -851,6 +876,7 @@ function useNearbyPeaks(place: Place, activity: ActivityKind, radiusKm: number |
   // answers. Either way the athlete gets told, rather than being left with a
   // blank page that looks like "there are no mountains here".
   const [failed, setFailed] = useState(false);
+  const [timedOut, setTimedOut] = useState(false);
   const [attempt, setAttempt] = useState(0);
   // Set when the ground was too dense to search the whole radius — see the note
   // rendered under the list. Null means the radius asked for was the radius searched.
@@ -896,6 +922,7 @@ function useNearbyPeaks(place: Place, activity: ActivityKind, radiusKm: number |
     setLoading(true);
     setStage("catalogue");
     setFailed(false);
+    setTimedOut(false);
     setList([]);
     setAll([]);
     setShown(PAGE);
@@ -913,7 +940,7 @@ function useNearbyPeaks(place: Place, activity: ActivityKind, radiusKm: number |
           place.lat,
           place.lon,
           { radiusM, limit: 500, minElevationM, areaId: areaIdFor(place) },
-          ctrl.signal,
+          withTimeout(FIND_TIMEOUT_MS, ctrl.signal),
         );
       })
       .then(async (found) => {
@@ -934,7 +961,17 @@ function useNearbyPeaks(place: Place, activity: ActivityKind, radiusKm: number |
         rememberPeaks(enriched);
         if (live) setList(enriched);
       })
-      .catch(() => {
+      .catch((err: unknown) => {
+        // Same split as the trails search: our own cleanup is a non-event, the
+        // five-second budget running out is not.
+        if (err instanceof DOMException && err.name === "AbortError") {
+          if (ctrl.signal.aborted) return;
+          if (live) {
+            setTimedOut(true);
+            setFailed(true);
+          }
+          return;
+        }
         if (live) setFailed(true);
       })
       .finally(() => { if (live) setLoading(false); });
@@ -957,6 +994,7 @@ function useNearbyPeaks(place: Place, activity: ActivityKind, radiusKm: number |
   return {
     list,
     loading,
+    timedOut,
     stage,
     failed,
     total: all.length,

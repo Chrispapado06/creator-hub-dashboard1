@@ -757,19 +757,623 @@ export const createGuideProfileFor = async (profileId: string): Promise<Result<n
   return auditErr ? failed<null>(`Profile created, but the audit trace failed: ${auditErr.message}`) : ok(null);
 };
 
-/* ---- Moderation: the reports queue ---------------------------------------- */
+/* -------------------------------------------------------------------------- */
+/* Moderation — the queue, what it is about, and the acts it can take         */
+/* -------------------------------------------------------------------------- */
 
-export const listReports = () =>
-  read<ReportRow[]>((db) =>
-    db.from("reports").select("*").order("created_at", { ascending: false }));
+/**
+ * THE LIVE `reports` TABLE IS NOT THE MIGRATED ONE, AND THIS FILE ASKS RATHER
+ * THAN ASSUMING.
+ *
+ * `20260903010000_block_and_report.sql` gives `reports` the columns that let it
+ * say what it is about — `post_id`, `comment_id`, `group_message_id`,
+ * `channel_message_id`, `message_id`, `subject_kind` — plus `handled_by`,
+ * `handled_at` and `resolution`. Queried against the live database on 3 Sep
+ * 2026, NONE of them exist: the migration is written and has not been pushed.
+ *
+ * So the read below MEASURES which table it is talking to instead of believing
+ * one. The full column list is asked for first; PostgREST answers `42703` when
+ * a column is missing, and only then is the legacy list asked for. Which of the
+ * two came back travels to the screen, because "nothing is waiting" and "no
+ * report about a post can even be FILED yet" render as the same empty queue and
+ * are entirely different news. The phone app has been inserting `post_id` since
+ * before that column existed, so every post report ever filed has failed at the
+ * database and been kept on the reporter's device.
+ */
 
-export const setReportStatus = async (
-  id: string,
+export type ReportSubjectKind =
+  | "profile" | "thread" | "post" | "comment"
+  | "group_message" | "channel_message" | "message";
+
+/** Which shape of `reports` answered. Measured, never assumed. */
+export type ReportsSchema = "content_aware" | "legacy";
+
+/**
+ * A report as this queue needs it. `ReportRow` in `data/types.ts` is the older
+ * shape and is deliberately left alone — it is the phone app's and the CRM's
+ * shared vocabulary, and widening it would tell every other reader that columns
+ * exist which, today, do not.
+ */
+export interface ModerationReport extends ReportRow {
+  comment_id: string | null;
+  group_message_id: string | null;
+  channel_message_id: string | null;
+  message_id: string | null;
+  subject_kind: ReportSubjectKind | null;
+  handled_by: string | null;
+  handled_at: string | null;
+  resolution: string | null;
+}
+
+export interface ReportsRead {
+  rows: ModerationReport[];
+  schema: ReportsSchema;
+}
+
+const REPORT_COLUMNS_LEGACY =
+  "id, reporter_id, subject_id, thread_id, reason, detail, created_at, status";
+const REPORT_COLUMNS_CONTENT =
+  `${REPORT_COLUMNS_LEGACY}, post_id, comment_id, group_message_id, channel_message_id, ` +
+  "message_id, subject_kind, handled_by, handled_at, resolution";
+
+/**
+ * Every column the type promises, filled in explicitly.
+ *
+ * A legacy row has no `post_id` key at all, and `undefined` under a field typed
+ * `string | null` is a lie the compiler cannot see. Spreading the row would
+ * carry that lie into every screen; naming the fields cannot.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const asModerationReport = (row: any): ModerationReport => ({
+  id: row.id,
+  reporter_id: row.reporter_id,
+  subject_id: row.subject_id ?? null,
+  thread_id: row.thread_id ?? null,
+  post_id: row.post_id ?? null,
+  comment_id: row.comment_id ?? null,
+  group_message_id: row.group_message_id ?? null,
+  channel_message_id: row.channel_message_id ?? null,
+  message_id: row.message_id ?? null,
+  subject_kind: row.subject_kind ?? null,
+  reason: row.reason,
+  detail: row.detail ?? null,
+  created_at: row.created_at,
+  status: row.status,
+  handled_by: row.handled_by ?? null,
+  handled_at: row.handled_at ?? null,
+  resolution: row.resolution ?? null,
+});
+
+/** PostgREST's answer when a column is not there. Anything else is a real fault
+ *  and is reported as one — a database that is merely unreachable must never be
+ *  mistaken for a database that is one migration behind. */
+const missingColumn = (e: { code?: string; message?: string } | null): boolean =>
+  !!e && (e.code === "42703" || /column .+ does not exist/i.test(e.message ?? ""));
+
+export const listReports = async (): Promise<Result<ReportsRead>> => {
+  if (!isConfigured || !supabase) return unavailable<ReportsRead>(NOT_CONFIGURED);
+  const full = await supabase
+    .from("reports")
+    .select(REPORT_COLUMNS_CONTENT)
+    .order("created_at", { ascending: false });
+  if (!full.error)
+    return ok<ReportsRead>({ rows: (full.data ?? []).map(asModerationReport), schema: "content_aware" });
+  if (!missingColumn(full.error)) return failed<ReportsRead>(full.error.message);
+
+  const legacy = await supabase
+    .from("reports")
+    .select(REPORT_COLUMNS_LEGACY)
+    .order("created_at", { ascending: false });
+  if (legacy.error) return failed<ReportsRead>(legacy.error.message);
+  return ok<ReportsRead>({ rows: (legacy.data ?? []).map(asModerationReport), schema: "legacy" });
+};
+
+/* ---- What the desk may actually do, per kind of thing --------------------- */
+
+/**
+ * READ OFF `pg_policies` IN THE LIVE DATABASE ON 3 SEP 2026, not inferred from
+ * the migration files. A queue that offers a button the database will refuse is
+ * a queue that wastes a moderator's decision.
+ *
+ *   posts_select            … OR is_staff()                       → readable
+ *   post_comments_select    EXISTS(posts p …) — and staff read
+ *                           every post, so every comment           → readable
+ *   channel_messages_select … OR is_staff()                       → readable
+ *   messages_select         is_thread_participant OR is_admin()   → readable
+ *   threads_select          … OR is_admin()                       → readable
+ *   profiles_select         true                                  → readable
+ *   group_messages_select   is_group_member(group_id)             → NOT readable
+ *
+ * The group-message line is the one that moves: `20260903010000` adds the staff
+ * arm. Until it is pushed, a reported group message cannot be shown to the desk
+ * at all, and this screen says that rather than rendering an empty card.
+ */
+export const deskCanRead = (kind: ReportSubjectKind, schema: ReportsSchema): boolean =>
+  kind === "group_message" ? schema === "content_aware" : true;
+
+/**
+ * The same exercise for DELETE.
+ *
+ *   posts_delete            author OR company admin OR is_staff()  → removable
+ *   post_comments_delete    author OR is_staff()                   → removable
+ *   group_messages_delete   author OR founder — staff arm arrives with the
+ *                           migration                              → after push
+ *   channel_messages_delete company admin — staff arm likewise     → after push
+ *   messages                NO delete policy and NO delete grant, for anybody.
+ *                           A direct message cannot be removed by ICEFALL, and
+ *                           that is deliberate: both people hold the record.
+ *   threads, profiles       not content; nothing to remove.
+ *
+ * THE INFERENCE, STATED. The probe measures COLUMNS and this function reads a
+ * POLICY off it. They are the same migration file, so in practice they arrive
+ * together — but if that ever stops being true the delete simply fails and the
+ * screen prints the database's own refusal. Nothing here silently assumes.
+ */
+export const deskCanRemove = (kind: ReportSubjectKind, schema: ReportsSchema): boolean =>
+  kind === "post" || kind === "comment"
+    ? true
+    : kind === "group_message" || kind === "channel_message"
+      ? schema === "content_aware"
+      : false;
+
+/* ---- The reported thing itself ------------------------------------------- */
+
+/**
+ * What was reported, fetched so a moderator is not deciding blind.
+ *
+ * One shape per kind, discriminated by the same seven words the database
+ * stamps into `subject_kind`, so a screen cannot end up with an eighth.
+ */
+export type ReportedContent =
+  | { kind: "post"; id: string; author_id: string; author_kind: string;
+      company_id: string | null; body: string; media_path: string | null;
+      expires_at: string | null; created_at: string }
+  | { kind: "comment"; id: string; post_id: string; author_id: string;
+      body: string; created_at: string }
+  | { kind: "group_message"; id: string; group_id: string; group_name: string | null;
+      author_id: string; body: string | null; media_path: string | null; created_at: string }
+  | { kind: "channel_message"; id: string; channel_id: string; channel_name: string | null;
+      company_id: string | null; author_id: string; body: string;
+      media_path: string | null; created_at: string }
+  | { kind: "message"; id: string; thread_id: string; author_id: string;
+      body: string | null; message_kind: string; created_at: string }
+  | { kind: "thread"; id: string; title: string | null; peak_name: string | null;
+      thread_kind: string | null; created_at: string }
+  | { kind: "profile"; id: string; display_name: string; username: string | null;
+      role: string; created_at: string };
+
+export interface ContentIndex {
+  /** Keyed by `kind:id`. Present = the desk read it. */
+  found: Map<string, ReportedContent>;
+  /**
+   * Why a whole kind is absent, when the reason is known — no read policy, or a
+   * query that failed. A target that is in NEITHER map is a row the desk could
+   * have read and the database did not return: it is gone, which usually means
+   * somebody already deleted it. Those two must not share a sentence.
+   */
+  withheld: Map<ReportSubjectKind, string>;
+}
+
+export const contentKey = (kind: ReportSubjectKind, id: string) => `${kind}:${id}`;
+
+const NO_READ_POLICY: Partial<Record<ReportSubjectKind, string>> = {
+  group_message:
+    "The moderation desk has no read policy on group messages until " +
+    "20260903010000_block_and_report.sql is applied — only members of that group can see it. " +
+    "ICEFALL cannot show you what was said, and cannot tell you whether it is still there.",
+};
+
+const chunked = <T,>(xs: T[], size = 150): T[][] => {
+  const out: T[][] = [];
+  for (let i = 0; i < xs.length; i += size) out.push(xs.slice(i, i + size));
+  return out;
+};
+
+/**
+ * Fetch every reported thing in one pass — one query per KIND, not one per
+ * report. Five reports about one post ask for that post once.
+ *
+ * Names of containers (the group, the channel) are looked up flat rather than
+ * embedded, for the reason stated at `profileNames` above: a display name is
+ * not worth a dependency on PostgREST's relationship cache. A container name
+ * that fails to arrive costs a heading; the words are the evidence and they
+ * come from the row itself.
+ */
+export const readReportedContent = async (
+  targets: { kind: ReportSubjectKind; id: string }[],
+  schema: ReportsSchema,
+): Promise<Result<ContentIndex>> => {
+  if (!isConfigured || !supabase) return unavailable<ContentIndex>(NOT_CONFIGURED);
+  const db = supabase;
+  const found = new Map<string, ReportedContent>();
+  const withheld = new Map<ReportSubjectKind, string>();
+
+  const idsOf = (k: ReportSubjectKind) =>
+    Array.from(new Set(targets.filter((t) => t.kind === k).map((t) => t.id)));
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const gather = async (kind: ReportSubjectKind, table: string, columns: string): Promise<any[]> => {
+    const ids = idsOf(kind);
+    if (ids.length === 0) return [];
+    if (!deskCanRead(kind, schema)) {
+      withheld.set(kind, NO_READ_POLICY[kind] ?? "The desk has no read policy on this.");
+      return [];
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rows: any[] = [];
+    for (const part of chunked(ids)) {
+      const { data, error } = await db.from(table).select(columns).in("id", part);
+      if (error) {
+        withheld.set(kind, error.message);
+        return [];
+      }
+      rows.push(...(data ?? []));
+    }
+    return rows;
+  };
+
+  /** Container names. A failure here is silent BY DESIGN — it costs a label,
+   *  never a decision — so it returns an empty map rather than an error. */
+  const namesFrom = async (table: string, ids: string[], extra = ""): Promise<Map<string, Record<string, unknown>>> => {
+    const unique = Array.from(new Set(ids.filter(Boolean)));
+    const out = new Map<string, Record<string, unknown>>();
+    for (const part of chunked(unique)) {
+      const { data } = await db.from(table).select(`id, name${extra}`).in("id", part);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const r of (data ?? []) as any[]) out.set(r.id, r);
+    }
+    return out;
+  };
+
+  try {
+    const posts = await gather(
+      "post", "posts",
+      "id, author_id, author_kind, company_id, body, media_path, expires_at, created_at",
+    );
+    for (const p of posts)
+      found.set(contentKey("post", p.id), {
+        kind: "post", id: p.id, author_id: p.author_id, author_kind: p.author_kind,
+        company_id: p.company_id ?? null, body: p.body, media_path: p.media_path ?? null,
+        expires_at: p.expires_at ?? null, created_at: p.created_at,
+      });
+
+    const comments = await gather("comment", "post_comments", "id, post_id, author_id, body, created_at");
+    for (const c of comments)
+      found.set(contentKey("comment", c.id), {
+        kind: "comment", id: c.id, post_id: c.post_id, author_id: c.author_id,
+        body: c.body, created_at: c.created_at,
+      });
+
+    const groupMessages = await gather(
+      "group_message", "group_messages", "id, group_id, author_id, body, media_path, created_at",
+    );
+    const groups = await namesFrom("groups", groupMessages.map((g) => g.group_id));
+    for (const g of groupMessages)
+      found.set(contentKey("group_message", g.id), {
+        kind: "group_message", id: g.id, group_id: g.group_id,
+        group_name: (groups.get(g.group_id)?.name as string | undefined) ?? null,
+        author_id: g.author_id, body: g.body ?? null, media_path: g.media_path ?? null,
+        created_at: g.created_at,
+      });
+
+    const channelMessages = await gather(
+      "channel_message", "channel_messages", "id, channel_id, author_id, body, media_path, created_at",
+    );
+    const channels = await namesFrom("channels", channelMessages.map((c) => c.channel_id), ", company_id");
+    for (const c of channelMessages)
+      found.set(contentKey("channel_message", c.id), {
+        kind: "channel_message", id: c.id, channel_id: c.channel_id,
+        channel_name: (channels.get(c.channel_id)?.name as string | undefined) ?? null,
+        company_id: (channels.get(c.channel_id)?.company_id as string | undefined) ?? null,
+        author_id: c.author_id, body: c.body, media_path: c.media_path ?? null,
+        created_at: c.created_at,
+      });
+
+    const messages = await gather("message", "messages", "id, thread_id, sender_id, body, kind, created_at");
+    for (const m of messages)
+      found.set(contentKey("message", m.id), {
+        kind: "message", id: m.id, thread_id: m.thread_id, author_id: m.sender_id,
+        body: m.body ?? null, message_kind: m.kind, created_at: m.created_at,
+      });
+
+    const threads = await gather("thread", "threads", "id, title, peak_name, kind, created_at");
+    for (const t of threads)
+      found.set(contentKey("thread", t.id), {
+        kind: "thread", id: t.id, title: t.title ?? null, peak_name: t.peak_name ?? null,
+        thread_kind: t.kind ?? null, created_at: t.created_at,
+      });
+
+    const people = await gather("profile", "profiles", "id, display_name, username, role, created_at");
+    for (const p of people)
+      found.set(contentKey("profile", p.id), {
+        kind: "profile", id: p.id, display_name: p.display_name,
+        username: p.username ?? null, role: p.role, created_at: p.created_at,
+      });
+  } catch (e) {
+    return failed<ContentIndex>(e instanceof Error ? e.message : String(e));
+  }
+
+  return ok<ContentIndex>({ found, withheld });
+};
+
+/**
+ * The conversation a reported thread — or a reported direct message — sits in.
+ *
+ * Fetched ON DEMAND, when a moderator opens that case, rather than with the
+ * queue: a report about a conversation is rare and a conversation is long, and
+ * reading every one of them up front would put other people's private messages
+ * on a screen nobody asked to see them on.
+ *
+ * `total` is a real COUNT of the rows, alongside the handful returned, because
+ * "the last fifteen messages" and "the whole conversation" are different claims
+ * and a moderator reading an excerpt has to know which one they are holding.
+ * If the count fails it stays null and the screen says the total is not known —
+ * it is never quietly replaced by the number of rows on screen.
+ */
+export interface ThreadMessage {
+  id: string;
+  author_id: string;
+  body: string | null;
+  message_kind: string;
+  created_at: string;
+}
+
+export interface ConversationRead {
+  messages: ThreadMessage[];
+  total: number | null;
+}
+
+export const readThreadMessages = async (
+  threadId: string,
+  limit = 15,
+): Promise<Result<ConversationRead>> => {
+  if (!isConfigured || !supabase) return unavailable<ConversationRead>(NOT_CONFIGURED);
+  const { data, error } = await supabase
+    .from("messages")
+    .select("id, sender_id, body, kind, created_at")
+    .eq("thread_id", threadId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) return failed<ConversationRead>(error.message);
+  const { count } = await supabase
+    .from("messages")
+    .select("*", { count: "exact", head: true })
+    .eq("thread_id", threadId);
+  return ok<ConversationRead>({
+    // Newest first from the database so the LIMIT takes the recent end; reversed
+    // here so a person reads it downwards, the way it was written.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    messages: (data ?? []).map((m: any): ThreadMessage => ({
+      id: m.id, author_id: m.sender_id, body: m.body ?? null,
+      message_kind: m.kind, created_at: m.created_at,
+    })).reverse(),
+    total: count ?? null,
+  });
+};
+
+/* ---- Acting on a case ----------------------------------------------------- */
+
+/**
+ * A CASE, not a report: five reports about one post are one decision, so every
+ * act below takes the whole group and moves all of it together.
+ */
+export interface ReportCase {
+  /**
+   * What the case is about — or `null` when the thing it named has been deleted
+   * and only the report survives, and when a legacy row names nothing at all.
+   * The audit event then belongs to the REPORT rather than to a post whose id
+   * nobody holds any more: filing it under a person's id with `entity_type:
+   * 'post'` would put a record against an entity that does not exist.
+   */
+  subjectKind: ReportSubjectKind | null;
+  /** The id of the thing reported; the first report's id when there is none. */
+  subjectId: string;
+  /** Every report in this case that is not already closed. */
+  reportIds: string[];
+  /** The statuses those reports carry right now, for the audit's `previous`. */
+  statuses: string[];
+  /** A phrase for the audit when the subject cannot be pointed at. */
+  about?: string;
+}
+
+/** The audit log's own vocabulary for these entities — matched to what the
+ *  database's delete triggers already write, so the log reads as one log. */
+const AUDIT_ENTITY: Record<ReportSubjectKind, string> = {
+  profile: "profile",
+  thread: "thread",
+  post: "post",
+  comment: "post_comment",
+  group_message: "group_message",
+  channel_message: "channel_message",
+  message: "message",
+};
+
+const REMOVABLE_TABLE: Partial<Record<ReportSubjectKind, string>> = {
+  post: "posts",
+  comment: "post_comments",
+  group_message: "group_messages",
+  channel_message: "channel_messages",
+};
+
+/** `reports_resolution_length` allows 1–2000 characters. */
+const capped = (s: string) => s.trim().slice(0, 2000);
+
+/**
+ * The trace. Written by hand rather than by a definer function because there is
+ * no audited function for moderation, and a queue whose actions leave no record
+ * of who acted is the queue this screen replaced.
+ *
+ * `actor_role` is "admin" and that is READ OFF A POLICY, not guessed:
+ * `audit_events_insert` demands `is_staff()`, and `is_staff()` demands
+ * `profiles.role = 'admin'` as well as an active staff row — so an insert that
+ * succeeds was made by an admin. It is the same word the database's own delete
+ * triggers write via `my_role()::text`.
+ */
+const writeAudit = async (e: {
+  actorId: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  previous: Record<string, unknown> | null;
+  next: Record<string, unknown> | null;
+  reason: string | null;
+  companyId?: string | null;
+}): Promise<string | null> => {
+  const { error } = await supabase!.from("audit_events").insert({
+    actor_id: e.actorId,
+    actor_role: "admin",
+    action: e.action,
+    entity_type: e.entityType,
+    entity_id: e.entityId,
+    previous: e.previous,
+    next: e.next,
+    reason: e.reason,
+    company_id: e.companyId ?? null,
+  });
+  return error ? error.message : null;
+};
+
+const moveReportCase = async (
+  c: ReportCase,
   status: ReportRow["status"],
+  note: string | null,
+  schema: ReportsSchema,
+  action: string,
 ): Promise<Result<null>> => {
   if (!isConfigured || !supabase) return unavailable<null>(NOT_CONFIGURED);
-  const { error } = await supabase.from("reports").update({ status }).eq("id", id);
-  return error ? failed<null>(error.message) : ok(null);
+  if (c.reportIds.length === 0)
+    return failed<null>("Every report in this case has already been closed. Reload the queue.");
+  if (status === "closed" && (note ?? "").trim().length < 4)
+    return failed<null>(
+      "Closing a report needs a sentence saying why. On this database it is the only record of the decision.",
+    );
+  const { data: auth } = await supabase.auth.getUser();
+  if (!auth.user) return failed<null>("Not signed in.");
+
+  const patch: Record<string, unknown> = { status };
+  // `resolution` arrives with 20260903010000. On the legacy table the desk's
+  // words are NOT lost — they go into the audit event below — but they cannot
+  // be written onto the report row, and nothing here pretends otherwise.
+  if (schema === "content_aware" && note) patch.resolution = capped(note);
+
+  const { error } = await supabase.from("reports").update(patch).in("id", c.reportIds);
+  if (error) return failed<null>(error.message);
+
+  const auditErr = await writeAudit({
+    actorId: auth.user.id,
+    action,
+    entityType: c.subjectKind ? AUDIT_ENTITY[c.subjectKind] : "report",
+    entityId: c.subjectId,
+    previous: { status: Array.from(new Set(c.statuses)).sort().join(" / "), reports: c.reportIds.length },
+    next: { status, reports: c.reportIds.length, ...(c.about ? { about: c.about } : {}) },
+    reason: note ? capped(note) : null,
+  });
+  return auditErr
+    ? failed<null>(
+        `The ${c.reportIds.length === 1 ? "report was" : "reports were"} moved to ${status}, ` +
+          `but the audit trace failed: ${auditErr}. Record it by hand.`,
+      )
+    : ok(null);
+};
+
+/** Somebody has picked this case up. Says so to the rest of the desk. */
+export const claimReportCase = (c: ReportCase, schema: ReportsSchema) =>
+  moveReportCase(c, "reviewing", null, schema, "moderation.case_claimed");
+
+/** A closed case reopened — a second look, recorded as one. */
+export const reopenReportCase = (c: ReportCase, schema: ReportsSchema) =>
+  moveReportCase(c, "reviewing", null, schema, "moderation.case_reopened");
+
+/** Looked at, nothing to remove. The reason is the whole record of that call. */
+export const dismissReportCase = (c: ReportCase, note: string, schema: ReportsSchema) =>
+  moveReportCase(c, "closed", note, schema, "moderation.case_dismissed");
+
+/**
+ * REMOVAL. The act this queue existed without.
+ *
+ * ORDER MATTERS AND IS DELIBERATE. The row is deleted first, then the audit
+ * event is written, then the reports are closed. Writing the audit first would
+ * leave a log entry claiming a removal that a refused delete never performed —
+ * a false record is worse than a missing one. Writing it after means the trace
+ * can fail on its own, and when it does this returns the failure in words
+ * rather than reporting success.
+ *
+ * `count` IS CHECKED, and that is not belt-and-braces. A DELETE that row-level
+ * security refuses returns NO ERROR and removes nothing. Without the count this
+ * function would report a removal that never happened, which is exactly the
+ * class of lie the whole CRM is built to avoid.
+ *
+ * WHAT SURVIVES: the words. `content` is the row as the desk read it and goes
+ * into the audit event's `previous`. (For posts and comments the database's own
+ * `posts_delete_audit` trigger independently copies the whole row out — checked
+ * live, 3 Sep 2026. The two message tables have no such trigger until
+ * 20260903010000, so for those this insert is the only copy.)
+ */
+export const removeReportedContent = async (req: {
+  content: ReportedContent;
+  reportCase: ReportCase;
+  reason: string;
+  schema: ReportsSchema;
+}): Promise<Result<null>> => {
+  if (!isConfigured || !supabase) return unavailable<null>(NOT_CONFIGURED);
+  const table = REMOVABLE_TABLE[req.content.kind];
+  if (!table || !deskCanRemove(req.content.kind, req.schema))
+    return failed<null>("ICEFALL cannot remove this kind of thing. Nothing was changed.");
+  if (req.reason.trim().length < 4)
+    return failed<null>("A removal is permanent, so it needs a reason. Nothing was changed.");
+  const { data: auth } = await supabase.auth.getUser();
+  if (!auth.user) return failed<null>("Not signed in.");
+
+  const { error, count } = await supabase
+    .from(table)
+    .delete({ count: "exact" })
+    .eq("id", req.content.id);
+  if (error) return failed<null>(error.message);
+  if (!count)
+    return failed<null>(
+      "Nothing was removed. Either it had already gone, or the database refused the deletion for this " +
+        "account. Reload the queue before deciding again — no report was closed.",
+    );
+
+  const companyId =
+    req.content.kind === "post" || req.content.kind === "channel_message"
+      ? req.content.company_id
+      : null;
+
+  const auditErr = await writeAudit({
+    actorId: auth.user.id,
+    action: "moderation.content_removed",
+    entityType: AUDIT_ENTITY[req.content.kind],
+    entityId: req.content.id,
+    previous: { ...req.content },
+    next: { removed: true, reports_closed: req.reportCase.reportIds.length },
+    reason: capped(req.reason),
+    companyId,
+  });
+
+  let closeErr: string | null = null;
+  if (req.reportCase.reportIds.length > 0) {
+    const patch: Record<string, unknown> = { status: "closed" };
+    if (req.schema === "content_aware") patch.resolution = capped(`Content removed. ${req.reason}`);
+    const { error: e2 } = await supabase.from("reports").update(patch).in("id", req.reportCase.reportIds);
+    closeErr = e2 ? e2.message : null;
+  }
+
+  if (auditErr && closeErr)
+    return failed<null>(
+      `It was removed. Neither the audit trace (${auditErr}) nor the closing of its reports (${closeErr}) ` +
+        "went through — both need doing by hand.",
+    );
+  if (auditErr)
+    return failed<null>(
+      `It was removed and its reports were closed, but the audit trace failed: ${auditErr}. ` +
+        "Nothing records who did this — record it by hand.",
+    );
+  if (closeErr)
+    return failed<null>(
+      `It was removed and the act was recorded, but its reports are still open: ${closeErr}.`,
+    );
+  return ok(null);
 };
 
 /* ---- CR-17: promoted placements (S2) ------------------------------------- */

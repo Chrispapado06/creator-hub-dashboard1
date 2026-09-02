@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowRight,
+  BadgeCheck,
   Compass,
   Globe,
   Loader2,
@@ -9,6 +10,7 @@ import {
   Mountain as MountainIcon,
   Search,
   Share2,
+  SlidersHorizontal,
   UserPlus,
   Users,
 } from "lucide-react";
@@ -28,8 +30,11 @@ import {
   assessObjectiveReadiness,
 } from "@/coach/mountainReadiness";
 import { DISCOVERABLE_ATHLETES } from "@/network/directory";
+import { NO_GUIDES_NOTICE, allGuides, type Guide } from "@/guides/types";
+import { verificationLabel, verificationState } from "@/guides/verification";
+import { GuidePortrait } from "@/screens/guides/shared";
 import { matchScore, type MatchResult } from "@/network/matching";
-import { LOCATION_NOTICE, SAFETY_REMINDER, approxDistanceLabel } from "@/network/privacy";
+import { LOCATION_NOTICE, approxDistanceLabel } from "@/network/privacy";
 import {
   DEFAULT_RADIUS_KM,
   fmtKm,
@@ -54,14 +59,30 @@ import { useRecordedActivities } from "@/tracking/feed";
 import { haversine } from "@/tracking/filters";
 
 /**
- * The Expedition Network — People.
+ * The Expedition Network — the PEOPLE half of one merged page.
  *
- * WHAT THIS SCREEN ACTUALLY IS
+ * THIS IS NOT A SCREEN ANY MORE. People and Groups were two sub-tabs asking one
+ * question between them, and the owner's note for PH-08 collapsed them: "People
+ * and groups need to be one page together." So this file exports `PeopleSection`
+ * rather than a default screen, and the page that mounts it — the mountains you
+ * want to climb, the groups forming for them, and then these people — lives in
+ * `./Groups`. There is no `Screen` or `Stagger` below: the page owns both, and a
+ * second scroll container inside the first is how a merged page ends up with two
+ * scrollbars.
  *
- * ICEFALL has no server, no user database and no other users. So this screen is
- * not a partner search that happens to have no results today: it is the honest
- * rendering of a network at zero members, and the empty state below is the
- * screen essentially everyone will see.
+ * WHAT THIS HALF ACTUALLY IS
+ *
+ * ICEFALL has no directory of athletes. So this is not a partner search that
+ * happens to have no results today: it is the honest rendering of a network at
+ * zero members, and the empty state below is what essentially everyone sees.
+ *
+ * It is worth being precise about the difference from the other half of the
+ * page, because the two are now inches apart. The MOUNTAINS half can be live —
+ * `groups`/`group_members` are real tables and a real count of interested people
+ * can come back from them. This half cannot: there is no table of discoverable
+ * athletes, `DISCOVERABLE_ATHLETES` is empty by rule, and no amount of backend
+ * changes that until somebody builds a directory. Do not let a working count in
+ * the section above become a reason to soften the notice below.
  *
  * Nothing here invents a person. There are no sample athletes, no seeded
  * profiles, no "demo" flag. That is not fastidiousness about mock data —
@@ -157,7 +178,191 @@ const nearRadiusKm = (location: LocationFilter) =>
 /* Screen                                                                      */
 /* -------------------------------------------------------------------------- */
 
+/* -------------------------------------------------------------------------- */
+/* PEOPLE — the owner's 1:1 mockup, 2026-09-02                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * PEOPLE.
+ *
+ * Built to the owner's mockup: a search field with a filter button, then cards
+ * with the portrait down the left, the name and credential beside it, and the
+ * years of experience large on the right. Under a divider, the two lines the
+ * drawing calls for — how many mountains the guide lists, and when ICEFALL last
+ * read their documents.
+ *
+ * ── "DOCS CHECKED 31 MAY 2026" IS REAL, AND TODAY IT SAYS SOMETHING ELSE ────
+ * The mockup fills that line in with a date, and the line has genuine backing:
+ * `GuideVerificationRecord.checkedAt`, resolved through `verificationState`,
+ * which fails closed on an unreadable date, a missing expiry or an unnamed
+ * checker. So the line renders exactly what the record supports.
+ *
+ * No guide in this build carries one, so every card currently reads "Not
+ * checked" — and that is the correct rendering, not a gap to fill. `types.ts`
+ * is explicit that nothing in this app may write `verification`; the audited
+ * write path belongs to another session. Inventing a date here would put a
+ * fabricated compliance check against a named person, which is the one thing
+ * this file's own header forbids at length.
+ *
+ * ── WHY THESE PEOPLE ARE INVENTED ───────────────────────────────────────────
+ * `allGuides()` is empty in an ordinary build and returns invented guides only
+ * behind the demo flag. There is no such thing as a placeholder person, so at
+ * zero guides this screen renders its empty state rather than seeding one.
+ */
 export default function People() {
+  const [query, setQuery] = useState("");
+  const guides = useMemo(() => allGuides(), []);
+
+  const needle = query.trim().toLowerCase();
+  const shown = useMemo(
+    () =>
+      needle.length === 0
+        ? guides
+        : guides.filter((g) =>
+            [g.name, g.headline, g.basedIn, ...g.mountains].some((f) =>
+              f?.toLowerCase().includes(needle),
+            ),
+          ),
+    [guides, needle],
+  );
+
+  return (
+    <Screen padded={false}>
+      <Stagger className="px-5 pb-24 pt-1">
+        {/* ---- Search + filter ------------------------------------------- */}
+        <Rise className="flex items-center gap-2.5">
+          <div className="relative min-w-0 flex-1">
+            <Search
+              size={16}
+              strokeWidth={1.6}
+              className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-mist-dim"
+            />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search people"
+              aria-label="Search people"
+              className="h-12 w-full rounded-tile border border-hairline bg-elevated/40 pl-10 pr-4 text-[14px] text-snow outline-none transition-colors placeholder:text-mist-dim focus:border-azure/50 [&::-webkit-search-cancel-button]:hidden"
+            />
+          </div>
+          <button
+            type="button"
+            aria-label="Filter people"
+            className="grid h-12 w-12 shrink-0 place-items-center rounded-tile border border-hairline text-mist transition-colors hover:border-hairline-strong hover:text-snow"
+          >
+            <SlidersHorizontal size={17} strokeWidth={1.7} />
+          </button>
+        </Rise>
+
+        {shown.length === 0 ? (
+          <Rise className="pt-5">
+            <Card>
+              <p className="text-[13px] leading-relaxed text-mist">
+                {guides.length === 0
+                  ? NO_GUIDES_NOTICE
+                  : `Nobody here matches “${query.trim()}”.`}
+              </p>
+            </Card>
+          </Rise>
+        ) : (
+          /*
+           * EACH `Rise` IS A DIRECT CHILD OF `Stagger`, and it has to be.
+           *
+           * These were wrapped in a plain `<div className="space-y-3">` for
+           * spacing, and every card rendered at opacity 0 — present in the DOM,
+           * invisible on screen. `Stagger` drives its children through
+           * framer-motion variants, and variant inheritance only reaches DIRECT
+           * children: one ordinary div in between and the animate state never
+           * arrives, so the initial hidden state is where they stay. Spacing
+           * goes on the items instead.
+           */
+          shown.map((g) => (
+            <Rise key={g.id} className="pt-3">
+              <PersonCard guide={g} />
+            </Rise>
+          ))
+        )}
+      </Stagger>
+    </Screen>
+  );
+}
+
+/** One person, drawn as the mockup draws them. */
+function PersonCard({ guide }: { guide: Guide }) {
+  const state = verificationState(guide.verification);
+
+  return (
+    <Link
+      to={`/explore/guide/${guide.id}`}
+      className="flex overflow-hidden rounded-card border border-hairline bg-graphite transition-colors hover:border-hairline-strong"
+    >
+      {/* The portrait, down the left, full height of the card. */}
+      <div className="w-[112px] shrink-0">
+          <GuidePortrait name={guide.name} src={guide.portrait} fill />
+        </div>
+
+      <div className="min-w-0 flex-1 p-4">
+        <div className="flex items-start gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="flex items-center gap-1.5 text-[16px] leading-tight text-snow">
+              <span className="truncate">{guide.name}</span>
+              {/* The tick means a credential is CLAIMED, never that ICEFALL
+                  checked it — the line under the divider says which. */}
+              <BadgeCheck size={15} strokeWidth={1.7} className="shrink-0 text-gilt" />
+            </p>
+            {/* The credential the guide CLAIMS, in their own words. */}
+            <p className="mt-1 truncate text-[12.5px] text-gilt">
+              {guide.credentials[0]?.label ?? guide.headline}
+            </p>
+            <p className="mt-1.5 flex items-center gap-1.5 text-[12px] text-mist-dim">
+              <MapPin size={12} strokeWidth={1.6} className="shrink-0" />
+              <span className="truncate">{guide.basedIn}</span>
+            </p>
+          </div>
+
+          <div className="shrink-0 text-right">
+            <p className="tnum text-[24px] font-light leading-none text-snow">
+              {guide.yearsGuiding}
+            </p>
+            <p className="mt-1 text-[10.5px] leading-tight text-mist-dim">years exp.</p>
+          </div>
+        </div>
+
+        <div className="mt-3.5 space-y-1 border-t border-hairline pt-3">
+          <p className="tnum text-[12.5px] text-mist">
+            {guide.mountains.length}{" "}
+            {guide.mountains.length === 1 ? "mountain" : "mountains"} guided
+          </p>
+          <p className="text-[12.5px] text-mist-dim">
+            {state.kind === "checked"
+              ? `Docs checked ${fmtDate(state.checkedAt.toISOString())}`
+              : verificationLabel(state)}
+          </p>
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* The athlete-matching section, kept                                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * FELLOW CLIMBERS, MATCHED ON THE OBJECTIVE — not part of the owner's mockup.
+ *
+ * This is the body the previous session built when People and Groups were one
+ * page (BACKLOG PH-08, now superseded). It is a different question from the
+ * mockup's: that one asks "who can I hire", this asks "who else is going".
+ *
+ * NOTHING RENDERS IT TODAY. It is left exported rather than deleted because it
+ * is a thousand lines of working objective matching, location banding and
+ * readiness comparison, and throwing that away is the owner's call, not a side
+ * effect of a redesign. If they say it is gone, delete the whole section — do
+ * not leave it here indefinitely as scenery.
+ */
+export function PeopleSection() {
   const {
     user,
     coachProfile,
@@ -464,154 +669,145 @@ export default function People() {
         : null;
 
   return (
-    <Screen>
-      <Stagger className="pt-5">
-        {/* ---- Hero ------------------------------------------------------- */}
-        <Rise>
-          <h2 className="display text-[34px] text-snow">Find your people.</h2>
-          <p className="mt-2.5 max-w-[34ch] text-[13px] leading-relaxed text-mist">
-            Mountaineers training for the same objectives, near you and around the world.
-          </p>
-        </Rise>
+    <>
+      {/* The first thing this half says, before any list, any filter and any
+          control that reads like it sends something. It stays here rather than
+          moving to the top of the merged page because it is true of THIS half
+          only: the mountains above can be live, and a single notice covering
+          both would either overclaim there or underclaim here. */}
+      <Rise className="mt-3">
+        <NotConnectedCard />
+      </Rise>
 
-        {/* The first thing the screen says, before any list, any filter and any
-            control that reads like it sends something. */}
-        <Rise className="mt-5">
-          <NotConnectedCard />
-        </Rise>
-
-        {/* ---- Your objective --------------------------------------------- */}
-        <Rise className="mt-6">
-          <SectionLabel>Your objective</SectionLabel>
-        </Rise>
-        <Rise className="mt-3">
-          {goal && peak ? (
-            <YourObjective
-              name={peak.name}
-              elevationM={peak.elevationM}
-              lat={peak.lat}
-              lon={peak.lon}
-              photo={goal.photo}
-              wikipedia={goal.wikipedia}
-              targetDate={goal.targetDate}
-              readiness={readiness?.overall ?? null}
-              qualifier={readinessQualifier}
-              onFindClimbers={findSameObjective}
-              finding={filteredToGoal}
-            />
-          ) : (
-            <NoObjective />
-          )}
-        </Rise>
-
-        {readiness && (
-          <Rise className="mt-3">
-            <Disclaimer>{OBJECTIVE_READINESS_DISCLAIMER}</Disclaimer>
-          </Rise>
+      {/* ---- Your objective --------------------------------------------- */}
+      <Rise className="mt-6">
+        <SectionLabel>Your objective</SectionLabel>
+      </Rise>
+      <Rise className="mt-3">
+        {goal && peak ? (
+          <YourObjective
+            name={peak.name}
+            elevationM={peak.elevationM}
+            lat={peak.lat}
+            lon={peak.lon}
+            photo={goal.photo}
+            wikipedia={goal.wikipedia}
+            targetDate={goal.targetDate}
+            readiness={readiness?.overall ?? null}
+            qualifier={readinessQualifier}
+            onFindClimbers={findSameObjective}
+            finding={filteredToGoal}
+          />
+        ) : (
+          <NoObjective />
         )}
+      </Rise>
 
-        {/* ---- Location --------------------------------------------------- */}
-        <Rise className="mt-7">
-          <SectionLabel>Location</SectionLabel>
-        </Rise>
+      {readiness && (
         <Rise className="mt-3">
-          {showLocationPrompt ? (
-            <LocationOptIn
-              state={locationState}
-              onEnable={enableLocation}
-              onDecline={() => setLocationState("declined")}
-            />
-          ) : (
-            <LocationSettled
-              on={locationOptIn}
-              areaLabel={me.approxLocation?.label ?? null}
-              failure={locationFailure}
-              onEnable={enableLocation}
-              onDisable={disableLocation}
-              enabling={locationState === "asking"}
-            />
-          )}
+          <Disclaimer>{OBJECTIVE_READINESS_DISCLAIMER}</Disclaimer>
         </Rise>
+      )}
 
-        {/* ---- Filters ---------------------------------------------------- */}
-        <Rise className="mt-7">
-          <SectionLabel>Filters</SectionLabel>
-        </Rise>
+      {/* ---- Location --------------------------------------------------- */}
+      <Rise className="mt-7">
+        <SectionLabel>Location</SectionLabel>
+      </Rise>
+      <Rise className="mt-3">
+        {showLocationPrompt ? (
+          <LocationOptIn
+            state={locationState}
+            onEnable={enableLocation}
+            onDecline={() => setLocationState("declined")}
+          />
+        ) : (
+          <LocationSettled
+            on={locationOptIn}
+            areaLabel={me.approxLocation?.label ?? null}
+            failure={locationFailure}
+            onEnable={enableLocation}
+            onDisable={disableLocation}
+            enabling={locationState === "asking"}
+          />
+        )}
+      </Rise>
+
+      {/* ---- Filters ---------------------------------------------------- */}
+      <Rise className="mt-7">
+        <SectionLabel>Filters</SectionLabel>
+      </Rise>
+      <Rise className="mt-3">
+        <PeopleFilterBar
+          filters={filters}
+          touched={touched}
+          locationOptIn={locationOptIn}
+          goalPeak={goalPick}
+          onObjective={setObjective}
+          onDate={setDate}
+          onLocation={setLocation}
+          onLookingFor={setLookingFor}
+          onReset={reset}
+        />
+      </Rise>
+
+      {/* ---- Best matches ----------------------------------------------- */}
+      <Rise className="mt-6">
+        <SectionLabel>Best matches</SectionLabel>
+      </Rise>
+      {visible.length > 0 ? (
+        <div className="mt-3 space-y-3">
+          {visible.map((entry) => (
+            <AthleteCard
+              key={entry.athlete.id}
+              athlete={entry.athlete}
+              match={entry.match}
+              distanceKm={entry.distanceKm}
+            />
+          ))}
+        </div>
+      ) : (
         <Rise className="mt-3">
-          <PeopleFilterBar
+          <MountainWaiting
             filters={filters}
-            touched={touched}
-            locationOptIn={locationOptIn}
-            goalPeak={goalPick}
-            onObjective={setObjective}
-            onDate={setDate}
-            onLocation={setLocation}
-            onLookingFor={setLookingFor}
-            onReset={reset}
+            locationOn={locationOptIn}
+            canExpand={
+              filters.location.kind === "near-me" && nextRadiusKm(filters.location.km) !== null
+            }
+            invite={invite}
+            onExpand={expandSearch}
+            onAnywhere={searchAnywhere}
+            onInvite={() => void inviteFriends()}
           />
         </Rise>
+      )}
 
-        {/* ---- Best matches ----------------------------------------------- */}
-        <Rise className="mt-6">
-          <SectionLabel>Best matches</SectionLabel>
-        </Rise>
-        {visible.length > 0 ? (
-          <div className="mt-3 space-y-3">
-            {visible.map((entry) => (
-              <AthleteCard
-                key={entry.athlete.id}
-                athlete={entry.athlete}
-                match={entry.match}
-                distanceKm={entry.distanceKm}
-              />
-            ))}
-          </div>
-        ) : (
-          <Rise className="mt-3">
-            <MountainWaiting
-              filters={filters}
-              locationOn={locationOptIn}
-              canExpand={
-                filters.location.kind === "near-me" && nextRadiusKm(filters.location.km) !== null
-              }
-              invite={invite}
-              onExpand={expandSearch}
-              onAnywhere={searchAnywhere}
-              onInvite={() => void inviteFriends()}
+      {/* ---- Near you --------------------------------------------------- */}
+      <Rise className="mt-7">
+        <SectionLabel>Near you</SectionLabel>
+      </Rise>
+      {nearYou.length > 0 ? (
+        <div className="mt-3 space-y-3">
+          {nearYou.map((entry) => (
+            <AthleteCard
+              key={entry.athlete.id}
+              athlete={entry.athlete}
+              match={entry.match}
+              distanceKm={entry.distanceKm}
             />
-          </Rise>
-        )}
-
-        {/* ---- Near you --------------------------------------------------- */}
-        <Rise className="mt-7">
-          <SectionLabel>Near you</SectionLabel>
-        </Rise>
-        {nearYou.length > 0 ? (
-          <div className="mt-3 space-y-3">
-            {nearYou.map((entry) => (
-              <AthleteCard
-                key={entry.athlete.id}
-                athlete={entry.athlete}
-                match={entry.match}
-                distanceKm={entry.distanceKm}
-              />
-            ))}
-          </div>
-        ) : (
-          <Rise className="mt-3">
-            <NearYouEmpty locationOn={locationOptIn} km={nearRadiusKm(filters.location)} />
-          </Rise>
-        )}
-
-        {/* ---- Safety ----------------------------------------------------- */}
-        <Rise className="mt-8">
-          <SectionLabel>Before you meet anyone</SectionLabel>
-        </Rise>
+          ))}
+        </div>
+      ) : (
         <Rise className="mt-3">
-          <Disclaimer>{SAFETY_REMINDER}</Disclaimer>
+          <NearYouEmpty locationOn={locationOptIn} km={nearRadiusKm(filters.location)} />
         </Rise>
-      </Stagger>
-    </Screen>
+      )}
+
+      {/* The safety reminder is NOT here. Both halves used to carry their own
+          copy, and on one page that reads as boilerplate the eye skips. The
+          merged page draws it once, last, where it applies to everything above
+          it — meeting a stranger from a mountain's list and meeting one from a
+          match are the same evening out. See `./Groups`. */}
+    </>
   );
 }
 
@@ -987,9 +1183,9 @@ function MountainWaiting({
         />
         <EmptyAction
           icon={<Users size={15} strokeWidth={1.6} />}
-          label="Create an expedition"
-          detail="Set out the objective, the window and the party you want."
-          to="/explore/crew/new"
+          label="Create a group"
+          detail="The same form as Your groups, higher up this page."
+          to="/explore/groups/new"
         />
         <EmptyAction
           icon={

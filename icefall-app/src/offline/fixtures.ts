@@ -549,7 +549,6 @@ export const OFFLINE_SETTINGS: Partial<SettingsState> = !DEMO
       interests: "Alpine mountaineering, glacier travel, ski touring",
       heightCm: 176,
       packWeightKg: 12,
-      footwear: "B2 mountain boot",
       defaultActivity: "fast-hiking",
       trainingIntent: "endurance",
       ageBand: "25-34",
