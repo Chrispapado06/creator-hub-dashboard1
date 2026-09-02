@@ -1725,8 +1725,11 @@ const promo = r.ok ? r.value.rows[0].id : null;
 r = await as(athlete, () => db.query(`select id from public.promoted_placements`));
 check("PROMO: a draft is invisible to the feed", r.ok && rows(r) === 0, r.ok ? `${rows(r)} LEAKED` : r.error);
 
+// `surfaces` is named on the way to active, because since 20260903000000 an
+// active placement that names no surface is refused — a promotion runs where
+// somebody chose to run it, and the old default was every surface at once.
 await asCommitted(opN, () => db.query(
-  `update public.promoted_placements set status='active' where id = $1`, [promo]));
+  `update public.promoted_placements set status='active', surfaces = array['feed'] where id = $1`, [promo]));
 r = await as(athlete, () => db.query(`select id, status from public.promoted_placements`));
 check("PROMO: an ACTIVE campaign inside its dates reaches the feed — labelled by the table it came from",
   r.ok && rows(r) === 1, r.ok ? `${rows(r)}` : r.error);

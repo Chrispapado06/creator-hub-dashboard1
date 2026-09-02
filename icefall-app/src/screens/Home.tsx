@@ -8,6 +8,7 @@ import { Button, Card, SectionLabel } from "@/components/ui/primitives";
 import { MiniBars } from "@/components/ui/charts";
 import { Rise, Screen, Stagger } from "@/components/layout/chrome";
 import { MountainThumb } from "@/components/domain/MountainImage";
+import { PromotedCard } from "@/components/domain/PromotedCard";
 import { IcefallMark } from "@/components/ui/IcefallMark";
 import {
   fmtCountdown, fmtDistance, fmtElevation, fmtHours, greeting, FOCUS_LABELS,
@@ -22,6 +23,7 @@ import { usePrimaryGoalWithProgress, useTraining } from "@/tracking/training";
 import { useConversations } from "@/screens/chat/useConversations";
 import { useCoachIntel } from "@/coach/hooks";
 import { getMountainConditions, type MountainConditions } from "@/services/conditions";
+import { usePromotedHomeCard } from "@/social/promoted";
 import { parseDay } from "@/network/groups";
 import type { Score } from "@/coach/types";
 import { cn } from "@/lib/utils";
@@ -136,6 +138,15 @@ export default function Home() {
   const { plan, today, currentWeek, completedByDate, satisfiedByActivity } = useTraining();
   const intel = useCoachIntel();
   const conversations = useConversations();
+  /*
+   * The one paid thing on Home, and usually there is nothing.
+   *
+   * The hook is called unconditionally — it is nine states wide and eight of
+   * them draw nothing, so the check lives at the render site rather than here.
+   * It asks the server nothing at all on a paid plan; see
+   * `PROMOTED_SUBSCRIBER_RULE` for exactly how much that promise is worth.
+   */
+  const promo = usePromotedHomeCard();
 
   const firstName = user.name.split(" ")[0];
   const unread = conversations.reduce((n, c) => n + c.unread, 0);
@@ -464,6 +475,45 @@ export default function Home() {
                 </span>
               </div>
             </Link>
+          </Rise>
+        )}
+
+        {/* ---- A promotion, if one is running ------------------------------
+            WHERE, AND WHY IT MOVED FROM THE DRAWING. The mockup puts this
+            "between the greeting and the weather strip". That gap no longer
+            exists: PH-06 moved the forecast INSIDE the objective card, so the
+            greeting, the objective and the weather are now one block with
+            nothing between them, and splitting that card to insert an
+            advertisement into it would put a paid placement inside the
+            athlete's own objective. This is the first thing after that block
+            instead — the same position on the page, one card later.
+
+            BELOW THE ACTIVE SESSION, DELIBERATELY. An activity in progress is
+            the most time-critical control on this screen and the only one an
+            athlete may be standing in the cold looking for. Nothing paid goes
+            above it.
+
+            A DIRECT `<Rise>` CHILD OF THE `<Stagger>`, and that is load-bearing
+            rather than tidy: `Stagger` animates its DIRECT children only, so a
+            card wrapped in a plain `<div>` never receives the `show` variant
+            and sits at opacity 0 — invisible, with no error and no warning.
+            This has bitten the codebase before, and `usePromotedHomeCard`'s own
+            doc comment carries the same warning.
+
+            EVERY OTHER STATE DRAWS NOTHING — no skeleton, no reserved height,
+            no "couldn't load this". Eight of the nine states are silences that
+            a log can tell apart and a reader never should: nobody is
+            advertising, we could not ask, this account is on a paid plan, they
+            closed it. An advertisement is the one thing on this page nobody
+            came for, and a failure to deliver one is not news. */}
+        {promo.state === "ready" && promo.card && (
+          <Rise className="pt-7">
+            <PromotedCard
+              key={promo.card.id}
+              card={promo.card}
+              onDismiss={promo.dismiss}
+              onShown={promo.markShown}
+            />
           </Rise>
         )}
 
