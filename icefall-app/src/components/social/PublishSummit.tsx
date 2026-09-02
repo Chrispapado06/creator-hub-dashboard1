@@ -4,8 +4,12 @@ import { Camera, Loader2, Mountain as MountainIcon, Search, X } from "lucide-rea
 import { AzureNotice, Button, Disclaimer, SectionLabel } from "@/components/ui/primitives";
 import { DateField } from "@/components/ui/DateField";
 import { isBackendConfigured } from "@/backend/client";
+import { useSessionState } from "@/auth/session";
 import { destinationIdForPeak } from "@/enquiries/send";
 import { PEAK_ATTRIBUTION, rememberPeaks, searchPeaks, type Peak } from "@/services/peaks";
+import { houseRulesBlockPublish, HOUSE_RULES_BLOCKING_POST } from "./Composer";
+import { HouseRulesBlock } from "./HouseRules";
+import { houseRulesAccountKey, useHouseRulesAcknowledgement } from "@/social/houseRules";
 import {
   NO_EDIT_AFTER_PUBLISH,
   PUBLISH_ELEVATION_RANGE,
@@ -69,6 +73,24 @@ import { cn } from "@/lib/utils";
  * NOTHING HERE DRAWS A TICK OR THE WORD "VERIFIED", for the reason set out at
  * length in `SummitLogCard`: no summit log can be verified today, so no summit
  * log may be decorated as though it might be.
+ *
+ * ── A SUMMIT LOG IS A POST, SO THE HOUSE RULES GATE IT ───────────────────────
+ *
+ * This is the second of the two surfaces in the app that genuinely publishes,
+ * and it is not a lesser one: it writes a `posts` row like the composer does,
+ * carrying a photograph and a caption to the same feed with a mountain and a
+ * date attached. Every one of the six rules can be broken by a summit photo —
+ * rule 3 (say what happened in the caption) and rule 4 (do not photograph the
+ * dead) are broken here more often than anywhere else in mountaineering, because
+ * the summit day is the day it goes wrong.
+ *
+ * So it takes the SAME card and the SAME acknowledgement as `Composer.tsx`:
+ * `HouseRules.tsx`'s `<HouseRulesBlock />`, resolving the same account against
+ * the same store. Somebody who acknowledged in the composer is not asked again
+ * here — one tap covers posting, not one tap per screen — and one shared
+ * component is why the two cannot drift apart. The argument for blocking at all
+ * is written out in `Composer.tsx`, once, and imported from there as
+ * `houseRulesBlockPublish` so the two surfaces cannot answer it differently.
  *
  * ── EVERY FAILURE SENTENCE COMES FROM THE DATA LAYER ─────────────────────────
  *
@@ -367,6 +389,28 @@ export function PublishSummit({
   const connected = isBackendConfigured();
   const maxDate = latestSummitDate();
 
+  /**
+   * The house rules, for the account this will publish as.
+   *
+   * `useSessionState` answers in three states and the third is doing work here:
+   * `undefined` is "not resolved yet", and it is passed through as `undefined`
+   * rather than being flattened with `?.` — `session?.user.id` yields
+   * `undefined` for BOTH "not known" and "signed out", which would file a
+   * signed-out person's acknowledgement under the unknown key and lose it.
+   *
+   * While the session is unresolved `HouseRulesBlock` draws the reminder card
+   * with no acknowledgement control on it, and this does NOT block — which is
+   * the one deliberate hole: for the moment before the session lands, Publish is
+   * not gated. It is a moment; this form needs a peak, a date and a paragraph
+   * before Publish can fire at all; and the alternative is a button disabled
+   * beside a card offering no way to enable it. See `houseRulesBlockPublish`.
+   */
+  const session = useSessionState();
+  const houseRules = useHouseRulesAcknowledgement(
+    houseRulesAccountKey(session === undefined ? undefined : (session?.user.id ?? null)),
+  );
+  const rulesBlock = houseRulesBlockPublish(houseRules);
+
   // An object URL outlives the component that made it, so the preview is
   // released when it is replaced and when the composer goes away.
   useEffect(() => {
@@ -406,10 +450,15 @@ export function PublishSummit({
     trimmedBody.length > 0 &&
     !bodyOverLimit &&
     elevationOk &&
-    !busy;
+    !busy &&
+    !rulesBlock;
 
   async function submit() {
     if (!chosen || !ready) return;
+    /* `ready` already carries this. Repeated at the write for the reason the
+       composer gives: a gate that exists only in a `disabled` prop is one
+       refactor away from not existing. */
+    if (rulesBlock) return;
     setBusy(true);
     setFailure(null);
     setStranded(null);
@@ -473,6 +522,11 @@ export function PublishSummit({
   return (
     <div className="space-y-5">
       <SectionLabel>Publish a summit</SectionLabel>
+
+      {/* Before the first question, not after the last one. The same card the
+          composer shows, resolving the same account from the same store — a
+          direct child of the `space-y-5` column, so it spaces itself. */}
+      <HouseRulesBlock />
 
       {/* ---- Which mountain --------------------------------------------- */}
       {chosen === null ? (
@@ -708,6 +762,15 @@ export function PublishSummit({
           {busy ? "Publishing…" : "Publish"}
         </Button>
       </div>
+
+      {/* This form is long enough that the rules card is well off screen by the
+          time the button is reached, and a refusal with no sentence is the one
+          thing this screen has spent 200 lines avoiding. */}
+      {rulesBlock && (
+        <p className="-mt-2 text-[11px] leading-relaxed text-mist-dim">
+          {HOUSE_RULES_BLOCKING_POST}
+        </p>
+      )}
 
       <Disclaimer>
         {NO_EDIT_AFTER_PUBLISH} It is self-reported: {SUMMITS_SELF_REPORTED} Another climber may

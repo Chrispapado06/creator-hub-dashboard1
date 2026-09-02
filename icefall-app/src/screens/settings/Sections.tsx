@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import {
   Award, Bell, Building2, Copy, Download, ExternalLink, Flag, LifeBuoy, LogOut, MapPin,
@@ -8,7 +8,7 @@ import {
 import { Button, Card, Disclaimer, Stat, sharePage } from "@/components/ui/primitives";
 import { Rise } from "@/components/layout/chrome";
 import {
-  ActionRow, ChoiceRow, Group, InfoRow, LinkRow, NOT_BUILT, SettingsPage, StatusPill,
+  ActionRow, ChoiceRow, Group, InfoRow, LinkRow, SettingsPage, StatusPill,
   ToggleRow,
 } from "@/components/settings/kit";
 import {
@@ -28,6 +28,20 @@ import { supabase } from "@/backend/client";
 import { sendPasswordReset } from "@/auth/account";
 import SupportRequest from "./SupportRequest";
 import { SUPPORT_ABUSE_IS_SEPARATE, SUPPORT_NO_RESPONSE_TIME } from "@/support/tickets";
+import { Listbox } from "@/components/ui/Listbox";
+import { cn } from "@/lib/utils";
+import { countryName, useMyProfile, type MyProfileState } from "@/auth/useMyProfile";
+import {
+  COUNTRY_IS_NEVER_PARSED, SYNC_NOT_DEPLOYED, SYNC_NO_PHOTO_STORE, fetchInterestTags,
+  flushProfile, pendingProfileEdit, saveProfile,
+  type FieldResult, type FieldState, type InterestTag, type ProfileEdit, type ProfileFieldName,
+  type SaveProfileResult,
+} from "@/settings/sync";
+import {
+  HANDLE_CHANGE_BREAKS_LINKS, PROBLEM_TEXT, availabilitySentence, changeFailureSentence,
+  changeUsername, changeWarning, checkAvailability, fetchHoldPromise, formatProblem, normalise,
+  releasedSentence, type Availability, type HoldPromise,
+} from "@/auth/username";
 
 /**
  * Every settings sub-screen, in one file.
@@ -76,55 +90,912 @@ export default function SettingsSection() {
 /* Profile                                                                    */
 /* ========================================================================== */
 
-function Field({
-  label, value, onChange, placeholder, multiline, hint,
+/* --------------------------------------------------------------------------
+ * PROFILE EDITS NOW LEAVE THE PHONE — AND EVERY FIELD SAYS WHETHER IT ARRIVED.
+ *
+ * WHAT WAS WRONG. Every control in this section wrote through `patch()`, which
+ * is localStorage and nothing else. Nothing in the app has ever issued an
+ * UPDATE against `profiles` — every `from("profiles")` call is a `select`. So a
+ * person changed their name, their bio and their photograph, watched all three
+ * change in front of them, and no other human being ever saw any of it: the
+ * public profile and the share link kept whatever signup had put there.
+ *
+ * WHAT IS DIFFERENT. The local write is UNCHANGED. It is what makes this screen
+ * instant and what makes it work in a hut at 4am with no signal. The server
+ * write is IN ADDITION, through `settings/sync.ts`, which reads the written row
+ * back and reports, per field, what became of it.
+ *
+ * WHY PER FIELD AND NEVER PER SCREEN. Exactly half of this form can reach the
+ * server today. `display_name`, `location_label` and `country_code` are live
+ * columns with a working update policy; `bio`, `languages`, `interests` and a
+ * bucket to put a photograph in arrive with a migration that is written and not
+ * yet pushed. One tick over the whole form would be true of one half and a lie
+ * about the other — so there is no screen-level tick anywhere below.
+ *
+ * WHEN IT SAVES: ON BLUR, plus an explicit Save on any field with something
+ * unsent. Not on a keystroke timer — a debounce that fires mid-sentence sends
+ * half a bio and then has to correct itself, and one long enough to avoid that
+ * is long enough to lose the edit when somebody leaves. Leaving the box is the
+ * moment a person is finished with it, and tapping anything else — including
+ * the back arrow — blurs the box first. A field still dirty when this screen
+ * unmounts is sent on the way out; if that send fails, `sync.ts` keeps it in
+ * its outbox. Nothing typed is discarded because a request failed.
+ *
+ * THE ONE CONTROL THAT IS NOT SAVED ON BLUR IS THE HANDLE, because changing a
+ * handle GIVES THE OLD ONE AWAY. That takes a deliberate tap and a warning
+ * read first — see `HandleField`.
+ *
+ * WHAT NOTHING HERE MAY DO: show "Saved" before the server confirmed that
+ * field. `FieldResult.state === "saved"` is the only thing that earns the word,
+ * and `sync.ts` sets it only after reading the written row back.
+ * -------------------------------------------------------------------------- */
+
+/** The three states this screen owns, plus the five `sync.ts` reports. */
+type FieldSync =
+  | { kind: "untouched" }
+  | { kind: "unsent" }
+  | { kind: "saving" }
+  | { kind: "done"; result: FieldResult };
+
+/** Trim and collapse exactly as `sync.ts` does, so "is this different?" here
+    and "is this different?" there cannot disagree. */
+const tidy = (v: string | null | undefined) => (v ?? "").trim().replace(/\s+/g, " ");
+
+/**
+ * One save for one field, with the guard that matters: a REQUEST THAT LANDS
+ * AFTER THE PERSON HAS TYPED AGAIN IS DISCARDED. Without it, an answer about
+ * "chris" arrives after an answer about "christofis" and the field reports a
+ * save of a value that is no longer in the box — the same sequence bug the
+ * signup screen's availability check guards against, with worse consequences.
+ */
+function useFieldSync(field: ProfileFieldName, onSettled?: () => void) {
+  const [sync, setSync] = useState<FieldSync>({ kind: "untouched" });
+  const seq = useRef(0);
+
+  const send = useCallback(
+    async (edit: ProfileEdit): Promise<FieldResult | undefined> => {
+      const mine = ++seq.current;
+      setSync({ kind: "saving" });
+      const result = await saveProfile(edit);
+      const one = result.fields[field];
+      onSettled?.();
+      if (seq.current !== mine) return one;
+      setSync(one ? { kind: "done", result: one } : { kind: "untouched" });
+      return one;
+    },
+    [field, onSettled],
+  );
+
+  /** Somebody typed. Whatever the last answer said is now about an older value. */
+  const touch = useCallback(() => {
+    seq.current++;
+    setSync({ kind: "unsent" });
+  }, []);
+
+  /**
+   * Typed, then typed it back. There is nothing to send and nothing to report,
+   * and leaving "Not sent yet" under a box that matches the server would be a
+   * warning about a problem that does not exist.
+   */
+  const reset = useCallback(() => {
+    seq.current++;
+    setSync({ kind: "untouched" });
+  }, []);
+
+  return { sync, send, touch, reset };
+}
+
+const SYNC_TONE: Record<FieldState, string> = {
+  saved: "text-summit",
+  "not-yet-on-server": "text-mist-dim",
+  queued: "text-azure",
+  "not-storable": "text-danger",
+  failed: "text-danger",
+};
+
+/**
+ * The word at the head of the status line.
+ *
+ * "Saved" appears for exactly one state. `queued` and `not-yet-on-server` are
+ * both "it is on this phone and nobody else has it", and they are two different
+ * sentences because one may pass with signal and the other needs a migration.
+ */
+const SYNC_WORD: Record<FieldState, string> = {
+  saved: "Saved",
+  "not-yet-on-server": "On this phone only",
+  queued: "Waiting to send",
+  "not-storable": "Not saved",
+  failed: "Not saved",
+};
+
+function SyncLine({
+  tone,
+  word,
+  children,
 }: {
-  label: string; value: string; onChange: (v: string) => void;
-  placeholder?: string; multiline?: boolean; hint?: string;
+  tone: string;
+  word: string;
+  children?: React.ReactNode;
 }) {
   return (
-    <div className="border-t border-hairline px-4 py-3.5 first:border-t-0">
-      <label className="block text-[11px] uppercase tracking-[0.1em] text-mist-dim">{label}</label>
-      {multiline ? (
-        <textarea
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-          rows={3}
-          className="mt-2 w-full resize-none bg-transparent text-[14px] text-snow outline-none placeholder:text-mist-dim"
-        />
-      ) : (
-        <input
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-          className="mt-2 w-full bg-transparent text-[14px] text-snow outline-none placeholder:text-mist-dim"
-        />
+    <p className="mt-2 text-[11.5px] leading-relaxed text-mist-dim">
+      <span className={cn("text-[10.5px] uppercase tracking-[0.09em]", tone)}>{word}</span>
+      {children ? <> — {children}</> : null}
+    </p>
+  );
+}
+
+const SAVE_BUTTON =
+  "mt-2.5 rounded-pill border border-azure/45 bg-azure/[0.10] px-4 py-2.5 text-[12.5px] text-azure";
+
+/**
+ * What the server now holds, as a person can read it.
+ *
+ * `stored` comes back off the written row, and for two fields it is not what
+ * anybody typed: languages are stored as ISO codes and interests as slugs. A
+ * line reading "en, el" is a true statement rendered uselessly, so the codes go
+ * back through `Intl` and the slugs back through the vocabulary they came from.
+ * A code with no name and a slug not in the list are printed AS THEY ARE rather
+ * than dropped — the row holds them either way.
+ */
+function storedText(
+  field: ProfileFieldName,
+  stored: string | string[] | null,
+  tags: InterestTag[],
+): string | null {
+  if (stored === null) return null;
+  if (typeof stored === "string") {
+    if (stored.length === 0) return null;
+    return field === "countryCode" ? (countryName(stored) ?? stored) : stored;
+  }
+  if (stored.length === 0) return null;
+  if (field === "languages") {
+    let names: Intl.DisplayNames | null = null;
+    try {
+      names = new Intl.DisplayNames(undefined, { type: "language" });
+    } catch {
+      names = null;
+    }
+    return stored.map((code) => names?.of(code) ?? code).join(", ");
+  }
+  if (field === "interests") {
+    return stored.map((slug) => tags.find((t) => t.slug === slug)?.label ?? slug).join(", ");
+  }
+  return stored.join(", ");
+}
+
+/**
+ * The status under one field. Four shapes, one per thing that can be true.
+ *
+ * `resting` is what to say when nothing has been typed this session — it is
+ * the caller's, because "what the server already holds" is a different question
+ * for a live column and for one that does not exist yet.
+ */
+function SyncNote({
+  field,
+  sync,
+  resting,
+  typed,
+  tags,
+  onSave,
+  onRetry,
+}: {
+  field: ProfileFieldName;
+  sync: FieldSync;
+  resting?: React.ReactNode;
+  /** What is in the box, so an unchanged echo is not printed twice. */
+  typed?: string;
+  tags: InterestTag[];
+  onSave: () => void;
+  onRetry?: () => void;
+}) {
+  if (sync.kind === "untouched") return <>{resting}</>;
+
+  if (sync.kind === "unsent") {
+    return (
+      <div>
+        <SyncLine tone="text-mist-dim" word="Not sent yet">
+          It is on this phone and ICEFALL has not been told. Tap Save — or leave the box — and this
+          line will say where it got to.
+        </SyncLine>
+        <button type="button" onClick={onSave} className={SAVE_BUTTON}>
+          Save
+        </button>
+      </div>
+    );
+  }
+
+  if (sync.kind === "saving") {
+    return <SyncLine tone="text-azure" word="Sending" />;
+  }
+
+  const r = sync.result;
+  const echo = r.state === "saved" ? storedText(field, r.stored ?? null, tags) : null;
+  return (
+    <div>
+      <SyncLine tone={SYNC_TONE[r.state]} word={SYNC_WORD[r.state]}>
+        {r.message}
+      </SyncLine>
+      {echo !== null && tidy(echo) !== tidy(typed) && (
+        <p className="mt-1 text-[11px] leading-relaxed text-mist-dim">
+          Other climbers see it as “{echo}”.
+        </p>
       )}
-      {hint && <p className="mt-1.5 text-[11px] leading-relaxed text-mist-dim">{hint}</p>}
+      {r.dropped && r.dropped.length > 0 && (
+        <p className="mt-1 text-[11px] leading-relaxed text-danger">
+          Not stored: {r.dropped.join(", ")}.
+        </p>
+      )}
+      {r.keptOnDevice && onRetry && (
+        <button type="button" onClick={onRetry} className={SAVE_BUTTON}>
+          Try again
+        </button>
+      )}
     </div>
   );
 }
 
 /**
- * The display name.
+ * Whether THIS deployment has the columns the profile migration adds.
  *
- * `AppState` has no general name setter — the name is written once by
- * onboarding and by `createAccount`, and nothing else may overwrite it. Rather
- * than add a second path into the same field, this row says where the name
- * comes from and links to the one screen that owns it.
+ * ASKED, NOT ASSUMED, AND NOT HARDCODED. `interest_tags`, `profiles.bio`,
+ * `profiles.languages` and `profiles.interests` are created by ONE migration
+ * file, so a successful read of the vocabulary is evidence for all four. A
+ * missing table answers `not-provisioned`; every other failure — no signal, a
+ * lapsed session — answers `unknown`, and `unknown` must never be rendered as
+ * "there is nowhere to keep this", which would be a statement about ICEFALL's
+ * server made on the strength of bad reception.
+ *
+ * IT DOES NOT ANSWER FOR THE PHOTOGRAPH. The same migration creates the
+ * `profile-media` bucket inside a handler that SKIPS it where the deployment
+ * will not grant storage privileges, so the columns can exist while the bucket
+ * does not. The avatar's status therefore comes only from trying to upload one.
+ *
+ * The vocabulary it fetches is the interests picker, which is the other half of
+ * why this call is worth making at all.
  */
-function NameField() {
-  const { user } = useApp();
+type Deployment =
+  | { state: "checking" }
+  | { state: "ready"; tags: InterestTag[] }
+  | { state: "absent" }
+  | { state: "unknown" };
+
+function useProfileColumns(): Deployment {
+  const [state, setState] = useState<Deployment>({ state: "checking" });
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      const r = await fetchInterestTags();
+      if (!alive) return;
+      setState(
+        r.ok
+          ? { state: "ready", tags: r.tags }
+          : { state: r.failure === "not-provisioned" ? "absent" : "unknown" },
+      );
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return state;
+}
+
+/** The resting line for a field whose column may not exist yet. */
+function PendingColumnResting({ deployment }: { deployment: Deployment }) {
+  switch (deployment.state) {
+    case "checking":
+      return (
+        <SyncLine tone="text-mist-dim" word="Checking">
+          Asking ICEFALL’s server whether it can keep this yet.
+        </SyncLine>
+      );
+    case "absent":
+      return (
+        <SyncLine tone="text-mist-dim" word="On this phone only">
+          {SYNC_NOT_DEPLOYED}
+        </SyncLine>
+      );
+    case "ready":
+      // NOT "not sent yet" — this screen has never read a bio back, so it does
+      // not know whether a previous session's save is already on the server.
+      // Asserting either way would be inventing a fact about somebody's row.
+      return (
+        <SyncLine tone="text-mist-dim" word="Not checked">
+          ICEFALL’s server can keep this now. Whether it already holds what is in the box is only
+          known by saving — leave the box, or tap Save.
+        </SyncLine>
+      );
+    case "unknown":
+      return (
+        <SyncLine tone="text-mist-dim" word="Not known">
+          ICEFALL could not ask its server whether it can keep this. It is on this phone either way,
+          and saving will say what happened.
+        </SyncLine>
+      );
+  }
+}
+
+/** The resting line for a column that is live today, compared against the row. */
+function LiveColumnResting({
+  profile,
+  matches,
+  blank,
+}: {
+  profile: MyProfileState;
+  matches: boolean;
+  /** The matching value is empty. A MEASURED absence — the row was read and
+      holds nothing — which is a different sentence from holding something. */
+  blank?: boolean;
+}) {
+  if (profile.status === "loading") {
+    return (
+      <SyncLine tone="text-mist-dim" word="Checking">
+        Reading what ICEFALL’s server holds.
+      </SyncLine>
+    );
+  }
+  if (profile.status === "unavailable") {
+    return (
+      <SyncLine tone="text-mist-dim" word="Not known">
+        ICEFALL could not read your profile from its server, so this screen cannot say what other
+        climbers see. Being signed out and having no signal both land here.
+      </SyncLine>
+    );
+  }
+  if (matches && blank) {
+    return (
+      <SyncLine tone="text-mist-dim" word="Not set">
+        ICEFALL’s server holds nothing here, and this box is empty. They agree.
+      </SyncLine>
+    );
+  }
+  return matches ? (
+    <SyncLine tone="text-summit" word="On your profile">
+      This is what ICEFALL’s server held when this screen opened.
+    </SyncLine>
+  ) : (
+    <SyncLine tone="text-mist-dim" word="Not sent yet">
+      ICEFALL’s server holds something else. Leave the box, or tap Save, to send this.
+    </SyncLine>
+  );
+}
+
+/** The text box, the hint, and the truth underneath it. */
+function EditableField({
+  label,
+  value,
+  onChange,
+  onCommit,
+  placeholder,
+  multiline,
+  hint,
+  field,
+  sync,
+  resting,
+  tags,
+  onRetry,
+  children,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  onCommit: () => void;
+  placeholder?: string;
+  multiline?: boolean;
+  hint?: React.ReactNode;
+  field: ProfileFieldName;
+  sync: FieldSync;
+  resting?: React.ReactNode;
+  tags: InterestTag[];
+  onRetry?: () => void;
+  children?: React.ReactNode;
+}) {
+  const id = useId();
+  const shared =
+    "mt-2 w-full bg-transparent text-[14px] text-snow outline-none placeholder:text-mist-dim";
   return (
     <div className="border-t border-hairline px-4 py-3.5 first:border-t-0">
-      <label className="block text-[11px] uppercase tracking-[0.1em] text-mist-dim">
-        Display name
+      <label htmlFor={id} className="block text-[11px] uppercase tracking-[0.1em] text-mist-dim">
+        {label}
       </label>
-      <p className="mt-2 text-[14px] text-snow">{user.name}</p>
+      {multiline ? (
+        <textarea
+          id={id}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onBlur={onCommit}
+          placeholder={placeholder}
+          rows={3}
+          className={cn(shared, "resize-none")}
+        />
+      ) : (
+        <input
+          id={id}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onBlur={onCommit}
+          placeholder={placeholder}
+          className={shared}
+        />
+      )}
+      {hint && <p className="mt-1.5 text-[11px] leading-relaxed text-mist-dim">{hint}</p>}
+      {children}
+      <SyncNote
+        field={field}
+        sync={sync}
+        resting={resting}
+        typed={value}
+        tags={tags}
+        onSave={onCommit}
+        onRetry={onRetry}
+      />
+    </div>
+  );
+}
+
+/**
+ * The display name — a LIVE column, and the one field with no home on this
+ * phone.
+ *
+ * `AppState` has no name setter: `state.name` is written by onboarding and by
+ * `createAccount` and by nothing else, and this file does not own `AppState`.
+ * So the box is seeded from the SERVER row and saved to the server, and the
+ * hint says plainly which name this changes and which it does not. Half a truth
+ * here would be somebody renaming themselves for strangers and wondering why
+ * their own home screen disagrees — so the screen says it rather than hides it.
+ */
+function NameField({
+  profile,
+  tags,
+  onSettled,
+}: {
+  profile: MyProfileState;
+  tags: InterestTag[];
+  onSettled: () => void;
+}) {
+  const { user } = useApp();
+  const { sync, send, touch, reset } = useFieldSync("displayName", onSettled);
+  const [draft, setDraft] = useState<string | null>(null);
+  const [confirmed, setConfirmed] = useState<string | null>(null);
+  /** The last value handed to the server, so leaving the screen cannot send the
+      same edit a second time just because the first one has not landed. */
+  const attempted = useRef<string | null>(null);
+
+  const base =
+    confirmed ??
+    (profile.status === "ready" ? profile.profile.displayName : null) ??
+    user.name ??
+    "";
+  const value = draft ?? base;
+  const dirty = tidy(value) !== tidy(base);
+
+  const commit = useCallback(async () => {
+    if (!dirty) {
+      reset();
+      return;
+    }
+    attempted.current = value;
+    const r = await send({ displayName: value });
+    // The server trims and collapses; showing what it actually holds is the
+    // point of reading the row back at all.
+    if (r?.state === "saved" && typeof r.stored === "string") {
+      setConfirmed(r.stored);
+      setDraft(r.stored);
+    }
+  }, [dirty, reset, send, value]);
+
+  // Sent on the way out if the box was left dirty — a swipe-back with the
+  // keyboard open never fires a blur. Fire and forget: the screen is gone, so
+  // nothing is claimed on it; a failure lands in `sync.ts`'s outbox and shows
+  // as waiting the next time this screen opens.
+  const latest = useRef({ dirty, value });
+  latest.current = { dirty, value };
+  useEffect(
+    () => () => {
+      const { dirty: d, value: v } = latest.current;
+      if (d && v !== attempted.current) void saveProfile({ displayName: v });
+    },
+    [],
+  );
+
+  return (
+    <EditableField
+      label="Display name"
+      field="displayName"
+      value={value}
+      onChange={(v) => {
+        setDraft(v);
+        touch();
+      }}
+      onCommit={() => void commit()}
+      placeholder="Your name"
+      hint="The name on your ICEFALL profile — what other climbers see. The name this phone shows you elsewhere in the app was set when you joined, and this screen cannot change that one yet."
+      sync={sync}
+      tags={tags}
+      resting={<LiveColumnResting profile={profile} matches={!dirty} />}
+      onRetry={() => void flushProfile()}
+    />
+  );
+}
+
+/**
+ * The handle — and the one control on this screen that is NOT saved on blur.
+ *
+ * WHY IT CANNOT GO THROUGH THE ORDINARY PATH. `profiles_update_self` pins the
+ * username: the policy's WITH CHECK refuses any update where `username` differs
+ * from the one already on the row. `sync.ts` therefore has no `username` key at
+ * all, deliberately, and a text box wired to `patch()` would have gone on
+ * looking like it worked forever. The only path is `claim_username`, which is
+ * SECURITY DEFINER and claims the name atomically.
+ *
+ * WHY IT TAKES A TAP. A change gives the old handle away. `auth/username.ts`
+ * already owns every sentence about that — the warning before, the read-back
+ * after, and what became of the name released — precisely so this screen and
+ * the signup screen cannot make different promises. Blur is not consent.
+ *
+ * THE LOCAL MIRROR IS WRITTEN ONLY ON A CONFIRMED CLAIM. `settings.username`
+ * is what the share card prints as `@name`; mirroring an unclaimed draft would
+ * put an address on a card sent to strangers that reaches nobody. The single
+ * exception is a build with no server at all, where there is no namespace to
+ * claim and the card is the only thing the handle was ever for — and it says
+ * so in that case rather than implying a claim.
+ */
+function HandleField({ profile }: { profile: MyProfileState }) {
+  const { settings, patch } = useSettings();
+  /**
+   * `useMyProfile` reads once and does not refetch, so after a successful claim
+   * its answer is a handle nobody wears any more. Without this, the availability
+   * check compares the new name against the OLD one, asks the server, and is
+   * told "taken" — by the person themselves, one second after they took it.
+   */
+  const [claimedNow, setClaimedNow] = useState<string | null>(null);
+  const current = claimedNow ?? (profile.status === "ready" ? profile.profile.username : null);
+
+  const [draft, setDraft] = useState<string | null>(null);
+  const value = draft ?? current ?? settings.username;
+  const candidate = normalise(value);
+  const problem = formatProblem(candidate);
+  /* Nothing is "a change" until somebody edits the box. Deriving it from the
+     text alone put the give-away-your-handle warning on screen the moment Edit
+     profile opened for anyone whose profile read had failed. */
+  const changing =
+    draft !== null && (current !== null ? candidate !== normalise(current) : candidate.length > 0);
+
+  const [avail, setAvail] = useState<Availability>({ state: "unknown" });
+  const [promise, setPromise] = useState<HoldPromise | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [outcome, setOutcome] = useState<{ good: boolean; lines: string[] } | null>(null);
+  const seq = useRef(0);
+  const id = useId();
+
+  // Debounced availability, with the same sequence guard the signup screen
+  // uses: a fast typist can have three checks in flight and the answer for
+  // "chr" must not overwrite the answer for "chris".
+  useEffect(() => {
+    if (draft === null) return;
+    if (problem) {
+      setAvail({ state: problem === "empty" ? "unknown" : "format" });
+      return;
+    }
+    const mine = ++seq.current;
+    setAvail({ state: "checking" });
+    const t = setTimeout(async () => {
+      const r = await checkAvailability(candidate, current);
+      if (seq.current === mine) setAvail(r);
+    }, 350);
+    return () => clearTimeout(t);
+  }, [candidate, problem, current, draft]);
+
+  // The hold window is read from the server only once somebody is actually
+  // contemplating a change. Opening Edit profile should not cost an RPC that
+  // most visits will never need.
+  useEffect(() => {
+    if (!changing || problem || promise) return;
+    let alive = true;
+    void fetchHoldPromise().then((p) => {
+      if (alive) setPromise(p);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [changing, problem, promise]);
+
+  const submit = useCallback(async () => {
+    if (busy || problem) return;
+    setBusy(true);
+    setOutcome(null);
+    const r = await changeUsername(candidate, current);
+
+    if (r.ok) {
+      patch({ username: r.username });
+      setClaimedNow(r.username);
+      setDraft(r.username);
+      setAvail({ state: "current" });
+      const lines = [`Your handle is @${r.username}.`];
+      const released = releasedSentence(r.previous, r.released);
+      if (released) lines.push(released);
+      setOutcome({ good: true, lines });
+      setBusy(false);
+      return;
+    }
+
+    // Clear a stale tick first: a green "available" above a red "someone has
+    // that one" is the screen arguing with itself.
+    if (r.reason === "taken") setAvail({ state: "taken", suggestions: r.suggestions });
+    else if (r.reason === "held")
+      setAvail({ state: "held", heldUntil: r.heldUntil, suggestions: r.suggestions });
+    else if (r.reason === "reserved") setAvail({ state: "reserved" });
+
+    const lines = [changeFailureSentence(r)];
+    if (r.reason === "no-backend") {
+      // No server means no namespace to claim, so the local mirror is the only
+      // thing a handle can be in this build — and the card is the only place it
+      // appears. Kept, and described as exactly that.
+      patch({ username: candidate });
+      lines.push(
+        `On this phone, the card you share now carries @${candidate}. That is the only place a handle appears in this build — nothing has been claimed and nobody can find you by it.`,
+      );
+    }
+    setOutcome({ good: false, lines });
+    setBusy(false);
+  }, [busy, problem, candidate, current, patch]);
+
+  const suggestions = avail.state === "taken" || avail.state === "held" ? avail.suggestions : [];
+  const line =
+    problem && candidate.length > 0 ? PROBLEM_TEXT[problem] : availabilitySentence(avail);
+
+  return (
+    <div className="border-t border-hairline px-4 py-3.5 first:border-t-0">
+      <label htmlFor={id} className="block text-[11px] uppercase tracking-[0.1em] text-mist-dim">
+        Username
+      </label>
+      <input
+        id={id}
+        value={value}
+        onChange={(e) => {
+          setDraft(normalise(e.target.value));
+          setOutcome(null);
+        }}
+        placeholder="christofis"
+        autoComplete="off"
+        className="mt-2 w-full bg-transparent text-[14px] text-snow outline-none placeholder:text-mist-dim"
+      />
       <p className="mt-1.5 text-[11px] leading-relaxed text-mist-dim">
-        Set when you joined. Changing it will move here once accounts exist.
+        Letters, numbers, dots and underscores. A handle is claimed on ICEFALL’s server rather than
+        saved on this phone, so it only changes when you tap the button — leaving the box does
+        nothing.
       </p>
+
+      {profile.status !== "ready" && (
+        <SyncLine tone="text-mist-dim" word="Not known">
+          ICEFALL could not read the handle you hold, so this is what this phone remembers. Changing
+          it still asks the server, and the server decides.
+        </SyncLine>
+      )}
+
+      {line && (
+        <p
+          className={cn(
+            "mt-2 text-[11.5px] leading-relaxed",
+            avail.state === "free" || avail.state === "current" || avail.state === "reclaim"
+              ? "text-summit"
+              : "text-mist",
+          )}
+        >
+          {line}
+        </p>
+      )}
+
+      {suggestions.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {suggestions.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setDraft(s)}
+              className="rounded-pill border border-hairline-strong px-3 py-2 text-[12px] text-mist"
+            >
+              @{s}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {changing && !problem && (
+        <div className="mt-3 rounded-card border border-hairline-strong bg-slate/40 p-3">
+          <p className="text-[11.5px] leading-relaxed text-mist">
+            {promise
+              ? changeWarning(current, promise)
+              : "ICEFALL is checking what happens to your old handle."}
+          </p>
+          <p className="mt-2 text-[11.5px] leading-relaxed text-mist">
+            {HANDLE_CHANGE_BREAKS_LINKS}
+          </p>
+          <button
+            type="button"
+            onClick={() => void submit()}
+            disabled={busy}
+            className={cn(SAVE_BUTTON, "w-full disabled:opacity-50")}
+          >
+            {busy ? "Asking ICEFALL’s server…" : `Change handle to @${candidate}`}
+          </button>
+        </div>
+      )}
+
+      {outcome && (
+        <div className="mt-2">
+          {outcome.lines.map((l, i) => (
+            <p
+              key={i}
+              className={cn(
+                "mt-1 text-[11.5px] leading-relaxed",
+                i > 0 ? "text-mist" : outcome.good ? "text-summit" : "text-danger",
+              )}
+            >
+              {l}
+            </p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The country — a LIVE column, and the reason it needs a picker.
+ *
+ * `sync.ts` refuses to derive a country from the town somebody typed, and says
+ * why in `COUNTRY_IS_NEVER_PARSED`: "Georgia" is a country and a US state,
+ * "Vienna" is in Austria and in Virginia, and a guessed code would go on to
+ * drive currency and regional filtering — a decision somebody feels without
+ * ever having been asked. So the only way this column is ever written is an
+ * explicit choice, which is this control.
+ *
+ * THE CODES ARE THE SAME SHORT LIST THE HANDLE SCREEN OFFERS, deliberately: two
+ * surfaces offering different countries for one column is how a person ends up
+ * unable to re-pick what they chose at signup. The list is repeated rather than
+ * imported because `screens/auth/Handle.tsx` does not export it and belongs to
+ * another surface; the NAMES are not repeated — they come from `Intl` through
+ * `countryName`, so they arrive in the reader's own language.
+ */
+// prettier-ignore
+const COUNTRY_CODES = [
+  "AR", "AT", "AU", "BE", "BO", "BR", "CA", "CH", "CL", "CN", "CZ", "DE", "DK", "EC", "ES", "FI",
+  "FR", "GB", "GR", "IE", "IN", "IS", "IT", "JP", "KE", "KG", "MA", "MX", "NL", "NO", "NP", "NZ",
+  "PE", "PK", "PL", "PT", "RO", "SE", "SI", "SK", "TZ", "US", "ZA",
+];
+
+function CountryField({
+  profile,
+  tags,
+  onSettled,
+}: {
+  profile: MyProfileState;
+  tags: InterestTag[];
+  onSettled: () => void;
+}) {
+  const { sync, send, touch } = useFieldSync("countryCode", onSettled);
+  const [draft, setDraft] = useState<string | null>(null);
+  const [confirmed, setConfirmed] = useState<string | null>(null);
+
+  const server =
+    confirmed ?? (profile.status === "ready" ? profile.profile.countryCode : null) ?? "";
+  const value = draft ?? server;
+
+  const options = useMemo(
+    () => [
+      { value: "", label: "Prefer not to say" },
+      ...COUNTRY_CODES.map((code) => ({ value: code, label: countryName(code) ?? code })).sort(
+        (a, b) => a.label.localeCompare(b.label),
+      ),
+    ],
+    [],
+  );
+
+  const choose = useCallback(
+    async (code: string) => {
+      setDraft(code);
+      touch();
+      // A pick IS the explicit act — there is no half-finished country to wait
+      // for a blur on, and nothing is typed that could be lost.
+      const r = await send({ countryCode: code.length > 0 ? code : null });
+      if (r?.state === "saved") setConfirmed(typeof r.stored === "string" ? r.stored : "");
+    },
+    [send, touch],
+  );
+
+  return (
+    <div className="border-t border-hairline px-4 py-3.5 first:border-t-0">
+      <span className="block text-[11px] uppercase tracking-[0.1em] text-mist-dim">Country</span>
+      <Listbox
+        label="Country"
+        value={value}
+        onChange={(v) => void choose(v)}
+        placeholder="Prefer not to say"
+        options={options}
+        className="mt-2"
+      />
+      <p className="mt-1.5 text-[11px] leading-relaxed text-mist-dim">
+        {value.length === 0
+          ? COUNTRY_IS_NEVER_PARSED
+          : "Chosen from this list only. ICEFALL never works a country out from the town you typed."}
+      </p>
+      <SyncNote
+        field="countryCode"
+        sync={sync}
+        tags={tags}
+        typed={value.length > 0 ? (countryName(value) ?? value) : ""}
+        resting={
+          <LiveColumnResting
+            profile={profile}
+            matches={value === server}
+            blank={value.length === 0}
+          />
+        }
+        onSave={() => void choose(value)}
+        onRetry={() => void flushProfile()}
+      />
+    </div>
+  );
+}
+
+/**
+ * The interests picker — the reason the vocabulary is fetched at all.
+ *
+ * `interests` is a CLOSED list on the server so people can be found by it, and
+ * `sync.ts` refuses to guess: "Alpine climbing" matches neither `climbing` nor
+ * `mountaineering`, and picking one on somebody's behalf prints a guess on their
+ * profile as though they had said it. Without something to tap, the box is a
+ * dead end where most of what anybody types is reported as not stored. So the
+ * words themselves are on the screen, and the box stays typeable for anybody
+ * who prefers it.
+ *
+ * Tapping a word writes the SERVER'S OWN LABEL into the box, which is the
+ * spelling the matcher recognises without a synonym table.
+ */
+const slugish = (s: string) =>
+  s
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+function InterestChips({
+  text,
+  tags,
+  onToggle,
+}: {
+  text: string;
+  tags: InterestTag[];
+  onToggle: (label: string) => void;
+}) {
+  const chosen = new Set(
+    text
+      .split(",")
+      .map((p) => slugish(p))
+      .filter(Boolean),
+  );
+  return (
+    <div className="mt-2.5 flex flex-wrap gap-2">
+      {tags.map((t) => {
+        const on = chosen.has(t.slug) || chosen.has(slugish(t.label));
+        return (
+          <button
+            key={t.slug}
+            type="button"
+            onClick={() => onToggle(t.label)}
+            aria-pressed={on}
+            className={cn(
+              "rounded-pill border px-3 py-2 text-[12px] transition-colors",
+              on
+                ? "border-azure/55 bg-azure/[0.12] text-azure"
+                : "border-hairline-strong text-mist hover:text-snow",
+            )}
+          >
+            {t.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -132,14 +1003,29 @@ function NameField() {
 /**
  * Tap the photo to change it.
  *
- * The file never leaves the device — there is nowhere to send it — so it is
- * redrawn through a canvas at 256 px and kept as a small JPEG. See
- * `lib/image.ts`: a raw phone photo would eat the whole localStorage quota and
- * start silently dropping the athlete's training history.
+ * IT NOW LEAVES THE PHONE — or says why it did not. `sync.ts` uploads the data
+ * URL that `lib/image.ts` produced into the `profile-media` bucket and writes
+ * the resulting URL to `avatar_url`, which is a LIVE column; the bucket is the
+ * part that may not exist yet, and the difference is reported rather than
+ * flattened. The local copy is kept regardless: it is what the app draws
+ * offline, and it is why the picture appears the instant it is chosen.
  */
-function AvatarPicker() {
+function AvatarPicker({
+  deployment,
+  tags,
+  onSettled,
+}: {
+  deployment: Deployment;
+  tags: InterestTag[];
+  onSettled: () => void;
+}) {
   const { user } = useApp();
   const { settings, patch } = useSettings();
+  const { sync, send, touch } = useFieldSync("avatar", onSettled);
+  const resend = useCallback(
+    () => void send({ avatar: settings.avatar ?? null }),
+    [send, settings.avatar],
+  );
   const input = useRef<HTMLInputElement | null>(null);
   const [error, setError] = useState<string | null>(null);
   const photo = settings.avatar;
@@ -147,11 +1033,24 @@ function AvatarPicker() {
   async function choose(file: File | undefined) {
     if (!file) return;
     setError(null);
+    let data: string;
     try {
-      patch({ avatar: await readAvatar(file) });
+      data = await readAvatar(file);
     } catch (e) {
       setError((e as { message?: string }).message ?? "That image couldn't be used.");
+      return;
     }
+    // Local first: the picture is on screen before the upload starts, and stays
+    // there whatever the upload does.
+    patch({ avatar: data });
+    touch();
+    await send({ avatar: data });
+  }
+
+  async function remove() {
+    patch({ avatar: undefined });
+    touch();
+    await send({ avatar: null });
   }
 
   return (
@@ -176,22 +1075,22 @@ function AvatarPicker() {
         <div className="min-w-0 flex-1">
           <p className="text-[13.5px] text-snow">Profile photo</p>
           <p className="mt-1 text-[11.5px] leading-relaxed text-mist-dim">
-            Tap the circle to choose one. It stays on this device and is scaled down before it is
-            saved.
+            Tap the circle to choose one. It is scaled down before it is kept on this phone, and
+            sent to ICEFALL if there is somewhere to put it.
           </p>
           <div className="mt-2.5 flex gap-2">
             <button
               type="button"
               onClick={() => input.current?.click()}
-              className="rounded-pill border border-azure/45 bg-azure/[0.10] px-3 py-1.5 text-[12px] text-azure"
+              className="rounded-pill border border-azure/45 bg-azure/[0.10] px-3 py-2 text-[12px] text-azure"
             >
               {photo ? "Change photo" : "Add photo"}
             </button>
             {photo && (
               <button
                 type="button"
-                onClick={() => patch({ avatar: undefined })}
-                className="rounded-pill border border-hairline-strong px-3 py-1.5 text-[12px] text-mist"
+                onClick={() => void remove()}
+                className="rounded-pill border border-hairline-strong px-3 py-2 text-[12px] text-mist"
               >
                 Remove
               </button>
@@ -201,6 +1100,38 @@ function AvatarPicker() {
       </div>
 
       {error && <p className="mt-3 text-[11.5px] text-danger">{error}</p>}
+
+      <SyncNote
+        field="avatar"
+        sync={sync}
+        tags={tags}
+        onSave={resend}
+        onRetry={resend}
+        resting={
+          !photo ? (
+            // There is no picture, so there is nothing to report about one.
+            // What this screen genuinely does not know is whether the SERVER
+            // holds a photograph from signup: `useMyProfile` does not read
+            // `avatar_url`, so this says so instead of implying there is none.
+            <SyncLine tone="text-mist-dim" word="Not set">
+              This phone has no photograph for you. If ICEFALL’s server holds one from when you
+              joined, this screen does not read it.
+            </SyncLine>
+          ) : deployment.state === "absent" ? (
+            // The bucket ships in the same migration as the columns, so a
+            // server with no columns has no bucket either. This much IS
+            // measured.
+            <SyncLine tone="text-mist-dim" word="On this phone only">
+              {SYNC_NO_PHOTO_STORE}
+            </SyncLine>
+          ) : (
+            <SyncLine tone="text-mist-dim" word="Not known">
+              Whether ICEFALL’s server holds this picture is only known by sending it — tap Save and
+              this row will say where it got to.
+            </SyncLine>
+          )
+        }
+      />
 
       <input
         ref={input}
@@ -217,52 +1148,290 @@ function AvatarPicker() {
   );
 }
 
+const FIELD_LABEL: Record<ProfileFieldName, string> = {
+  displayName: "Display name",
+  region: "Town or region",
+  countryCode: "Country",
+  bio: "Bio",
+  languages: "Languages",
+  interests: "Interests",
+  avatar: "Profile photo",
+  banner: "Profile banner",
+};
+
+/**
+ * What is still sitting on this phone waiting to go.
+ *
+ * `sync.ts` never drains its outbox on a timer, at startup or on reconnect —
+ * only after a save the server has just proved it will take, and through this
+ * control, which is a person choosing. So the queue has to be visible, or an
+ * edit made in a hut waits for a save that nobody makes.
+ *
+ * It names the fields and the day, because "something did not save" that will
+ * not say WHAT is the kind of warning people learn to scroll past.
+ */
+function WaitingToSend({
+  pending,
+  onSettled,
+  tags,
+}: {
+  pending: NonNullable<ReturnType<typeof pendingProfileEdit>>;
+  onSettled: () => void;
+  tags: InterestTag[];
+}) {
+  const [busy, setBusy] = useState(false);
+  const [report, setReport] = useState<SaveProfileResult | null>(null);
+
+  const fields = (Object.keys(pending) as (keyof typeof pending)[])
+    .filter((k): k is ProfileFieldName => k !== "at")
+    .map((k) => FIELD_LABEL[k]);
+
+  return (
+    <div className="px-4 py-3.5">
+      <p className="text-[13.5px] text-snow">
+        {fields.length === 1
+          ? "One edit is on this phone and has not reached ICEFALL."
+          : `${fields.length} edits are on this phone and have not reached ICEFALL.`}
+      </p>
+      <p className="mt-1 text-[11.5px] leading-relaxed text-mist-dim">
+        {fields.join(", ")} — edited {fmtDate(pending.at)}. Nothing is lost, and nobody else can see
+        it yet.
+      </p>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          const r = await flushProfile();
+          setReport(r);
+          setBusy(false);
+          onSettled();
+        }}
+        className={cn(SAVE_BUTTON, "disabled:opacity-50")}
+      >
+        {busy ? "Sending…" : "Try to send now"}
+      </button>
+
+      {/* A flush is reported per field for the same reason a save is: it can
+          take the name and leave the bio behind, and one line for both would be
+          wrong about one of them. */}
+      {report &&
+        (Object.keys(report.fields) as ProfileFieldName[]).map((key) => {
+          const r = report.fields[key];
+          if (!r) return null;
+          const echo = r.state === "saved" ? storedText(key, r.stored ?? null, tags) : null;
+          return (
+            <div key={key}>
+              <SyncLine
+                tone={SYNC_TONE[r.state]}
+                word={`${FIELD_LABEL[key]} — ${SYNC_WORD[r.state]}`}
+              >
+                {r.message}
+              </SyncLine>
+              {echo !== null && (
+                <p className="mt-1 text-[11px] leading-relaxed text-mist-dim">
+                  Other climbers see it as “{echo}”.
+                </p>
+              )}
+            </div>
+          );
+        })}
+    </div>
+  );
+}
+
 function EditProfile() {
   const { user } = useApp();
   const { settings, patch } = useSettings();
+  const profile = useMyProfile();
+  const deployment = useProfileColumns();
+  const tags = deployment.state === "ready" ? deployment.tags : [];
+
+  const [pending, setPending] = useState(() => pendingProfileEdit());
+  const onSettled = useCallback(() => setPending(pendingProfileEdit()), []);
+
+  const bio = useFieldSync("bio", onSettled);
+  const region = useFieldSync("region", onSettled);
+  const languages = useFieldSync("languages", onSettled);
+  const interests = useFieldSync("interests", onSettled);
+
+  const serverRegion = profile.status === "ready" ? profile.profile.locationLabel : null;
+  const [regionConfirmed, setRegionConfirmed] = useState<string | null>(null);
+  const regionBase = regionConfirmed ?? serverRegion ?? "";
+
+  /* Every text field keeps the same shape: patch() the phone on every
+     keystroke, and send to the server when the box is left. The two are not
+     alternatives — the first is why this works with no signal, the second is
+     why anybody else ever sees it.
+
+     A COMMIT ONLY FIRES ON A BOX SOMEBODY TOUCHED. Blur runs whenever focus
+     moves, so committing unconditionally would send the bio to the server
+     because a person tapped through the form on their way to the photo, and
+     would then hang a status line under a field nobody edited. */
+  const commitRegion = useCallback(async () => {
+    if (region.sync.kind !== "unsent") return;
+    if (tidy(settings.region) === tidy(regionBase)) {
+      region.reset();
+      return;
+    }
+    const r = await region.send({ region: settings.region });
+    if (r?.state === "saved") {
+      const held = typeof r.stored === "string" ? r.stored : "";
+      setRegionConfirmed(held);
+      // The server trims and collapses. Mirroring what it actually holds back
+      // into the phone stops the two drifting a space apart and calling that a
+      // pending edit forever.
+      patch({ region: held });
+    }
+  }, [patch, region, regionBase, settings.region]);
+
+  const commitBio = useCallback(() => {
+    if (bio.sync.kind === "unsent") void bio.send({ bio: settings.bio });
+  }, [bio, settings.bio]);
+  const commitLanguages = useCallback(() => {
+    if (languages.sync.kind === "unsent") void languages.send({ languages: settings.languages });
+  }, [languages, settings.languages]);
+  const commitInterests = useCallback(() => {
+    if (interests.sync.kind === "unsent") void interests.send({ interests: settings.interests });
+  }, [interests, settings.interests]);
+
+  /*
+    ANYTHING LEFT UNSENT WHEN THE SCREEN CLOSES GOES ON THE WAY OUT.
+
+    Blur covers a tap on anything else, including the back arrow. It does not
+    cover a swipe-back with the keyboard open, and losing a bio to a gesture is
+    not acceptable. Fire and forget, deliberately: the screen is gone, so
+    nothing is claimed on it, and a send that fails is kept in `sync.ts`'s
+    outbox and shown as waiting the next time this screen opens.
+  */
+  const leaving = useRef<ProfileEdit>({});
+  leaving.current = {
+    ...(bio.sync.kind === "unsent" ? { bio: settings.bio } : {}),
+    ...(languages.sync.kind === "unsent" ? { languages: settings.languages } : {}),
+    ...(interests.sync.kind === "unsent" ? { interests: settings.interests } : {}),
+    ...(region.sync.kind === "unsent" && tidy(settings.region) !== tidy(regionBase)
+      ? { region: settings.region }
+      : {}),
+  };
+  useEffect(
+    () => () => {
+      if (Object.keys(leaving.current).length > 0) void saveProfile(leaving.current);
+    },
+    [],
+  );
 
   return (
     <SettingsPage title="Edit profile" subtitle="What other athletes see about you.">
       <Group label="Photo">
-        <AvatarPicker />
+        <AvatarPicker deployment={deployment} tags={tags} onSettled={onSettled} />
       </Group>
 
       <Group label="About you">
-        <NameField />
-        <Field
-          label="Username"
-          value={settings.username}
-          onChange={(v) => patch({ username: v.replace(/[^a-zA-Z0-9_.]/g, "").toLowerCase() })}
-          placeholder="christofis"
-          hint="Letters, numbers, dots and underscores."
-        />
-        <Field
+        <NameField profile={profile} tags={tags} onSettled={onSettled} />
+        <HandleField profile={profile} />
+        <EditableField
           label="Bio"
+          field="bio"
           value={settings.bio}
-          onChange={(v) => patch({ bio: v })}
+          onChange={(v) => {
+            patch({ bio: v });
+            bio.touch();
+          }}
+          onCommit={commitBio}
           placeholder="Mountain athlete. Training for big objectives."
           multiline
+          hint="Up to 300 characters."
+          sync={bio.sync}
+          tags={tags}
+          resting={<PendingColumnResting deployment={deployment} />}
+          onRetry={() => void flushProfile()}
         />
-        <Field
-          label="Country / region"
+        <EditableField
+          label="Town or region"
+          field="region"
           value={settings.region}
-          onChange={(v) => patch({ region: v })}
-          placeholder="Athens, Greece"
+          onChange={(v) => {
+            patch({ region: v });
+            region.touch();
+          }}
+          onCommit={() => void commitRegion()}
+          placeholder="Chamonix"
           hint="A town or region. Never an address — ICEFALL has no field for one."
+          sync={region.sync}
+          tags={tags}
+          resting={
+            <LiveColumnResting
+              profile={profile}
+              matches={tidy(settings.region) === tidy(regionBase)}
+              blank={tidy(settings.region).length === 0}
+            />
+          }
+          onRetry={() => void flushProfile()}
         />
-        <Field
+        <CountryField profile={profile} tags={tags} onSettled={onSettled} />
+        <EditableField
           label="Languages"
+          field="languages"
           value={settings.languages}
-          onChange={(v) => patch({ languages: v })}
+          onChange={(v) => {
+            patch({ languages: v });
+            languages.touch();
+          }}
+          onCommit={commitLanguages}
           placeholder="English, Greek"
+          hint="Written as you like — ICEFALL stores them as language codes so a search matches the language rather than the spelling, and says which words it did not recognise."
+          sync={languages.sync}
+          tags={tags}
+          resting={<PendingColumnResting deployment={deployment} />}
+          onRetry={() => void flushProfile()}
         />
-        <Field
+        <EditableField
           label="Interests"
+          field="interests"
           value={settings.interests}
-          onChange={(v) => patch({ interests: v })}
-          placeholder="Alpine climbing, ski touring, long days"
-        />
+          onChange={(v) => {
+            patch({ interests: v });
+            interests.touch();
+          }}
+          onCommit={commitInterests}
+          placeholder="Ski touring, mountaineering"
+          hint={
+            tags.length > 0
+              ? "ICEFALL keeps interests as a fixed list so people can be found by them. Tap the words below, or type — anything not on the list stays in the box and is not saved as an interest."
+              : "ICEFALL keeps interests as a fixed list so people can be found by them. The list could not be read, so anything typed here may not match it."
+          }
+          sync={interests.sync}
+          tags={tags}
+          resting={<PendingColumnResting deployment={deployment} />}
+          onRetry={() => void flushProfile()}
+        >
+          {tags.length > 0 && (
+            <InterestChips
+              text={settings.interests}
+              tags={tags}
+              onToggle={(label) => {
+                const parts = settings.interests
+                  .split(",")
+                  .map((p) => p.trim())
+                  .filter(Boolean);
+                const at = parts.findIndex((p) => slugish(p) === slugish(label));
+                if (at >= 0) parts.splice(at, 1);
+                else parts.push(label);
+                patch({ interests: parts.join(", ") });
+                interests.touch();
+              }}
+            />
+          )}
+        </EditableField>
       </Group>
+
+      {/* `> 1` because every entry carries `at`. An outbox holding only a
+          timestamp is nothing waiting, and would head a card with "0 edits". */}
+      {pending && Object.keys(pending).length > 1 && (
+        <Group label="Waiting to send">
+          <WaitingToSend pending={pending} onSettled={onSettled} tags={tags} />
+        </Group>
+      )}
 
       <Group label="Experience">
         <InfoRow
@@ -279,7 +1448,12 @@ function EditProfile() {
       </Group>
 
       <Rise className="pt-4">
-        <Disclaimer>{NOT_BUILT}</Disclaimer>
+        <Disclaimer>
+          Your name, town, country and photograph have somewhere to live on ICEFALL’s server; your
+          bio, languages and interests do not yet. Either way, nothing on this screen calls itself
+          saved unless the server confirmed that field — the line under each box is the truth about
+          that box, and it is the only place to read it.
+        </Disclaimer>
       </Rise>
     </SettingsPage>
   );
@@ -299,7 +1473,23 @@ function ShareProfile() {
    */
   const earned = BADGES.filter((b) => badgeState(b, settings, currentTier).kind === "earned");
 
-  const handle = settings.username || (user.name ?? "athlete").toLowerCase().replace(/[^a-z0-9]/g, "");
+  /**
+   * THE HANDLE ON THE CARD IS THE ONE THE SERVER HOLDS, when the server can be
+   * asked.
+   *
+   * `settings.username` is a local field somebody can type anything into; the
+   * handle on `public.profiles` is unique across the platform and claimed
+   * atomically, and it is the one that resolves at `/explore/people/:handle`.
+   * Printing the local one on a card sent to a stranger gives them an address
+   * that reaches nobody — which is exactly why `useMyProfile` exists. The local
+   * value is still the fallback, because a card has to render with no signal,
+   * and the note under the card says which of the two is on it.
+   */
+  const myProfile = useMyProfile();
+  const claimed = myProfile.status === "ready" ? myProfile.profile.username : null;
+  const handle =
+    claimed ??
+    (settings.username || (user.name ?? "athlete").toLowerCase().replace(/[^a-z0-9]/g, ""));
 
   /**
    * A link that opens something.
@@ -336,7 +1526,12 @@ function ShareProfile() {
       <Rise>
         <div className="overflow-hidden rounded-card border border-azure/30 bg-graphite">
           <div className="relative h-[150px]">
-            <img src={banner} alt="" aria-hidden className="h-full w-full object-cover opacity-60" />
+            <img
+              src={banner}
+              alt=""
+              aria-hidden
+              className="h-full w-full object-cover opacity-60"
+            />
             <div className="absolute inset-0 bg-gradient-to-t from-graphite via-graphite/40 to-transparent" />
             <p className="absolute left-4 top-4 text-[10px] uppercase tracking-[0.3em] text-snow/80">
               Icefall
@@ -386,6 +1581,18 @@ function ShareProfile() {
         </div>
       </Rise>
 
+      {/* Not shown while the read is still in flight — a warning that appears
+          for a second and then vanishes teaches people to ignore warnings. */}
+      {myProfile.status !== "loading" && claimed === null && (
+        <Rise className="pt-4">
+          <p className="text-[11.5px] leading-relaxed text-mist-dim">
+            ICEFALL has no claimed handle for you — either you have not picked one or it could not
+            be read — so the card shows what this phone remembers. It may not be the handle that
+            finds you.
+          </p>
+        </Rise>
+      )}
+
       <Group label="Who can open it">
         <ChoiceRow
           title="Profile visibility"
@@ -412,7 +1619,11 @@ function ShareProfile() {
           detail="Send it through your phone's share sheet."
           onClick={() => sharePage(`${user.name} · ICEFALL`, link)}
         />
-        <LinkRow to={`/p#${encodeProfile(shared)}`} title="Preview the card" detail="See exactly what other people will open." />
+        <LinkRow
+          to={`/p#${encodeProfile(shared)}`}
+          title="Preview the card"
+          detail="See exactly what other people will open."
+        />
       </Group>
 
       <Rise className="pt-4">

@@ -70,6 +70,23 @@ export const COMMUNITY_DEMO_NOTICE =
  * is kept so Community.tsx does not have to change; new code should import
  * `HOUSE_RULES_SUMMARY` directly.
  *
+ * RETIRED, NOT FOLDED IN — and the distinction is worth the line, because the
+ * old sentence had three clauses and only one of them was doing work:
+ *
+ *   "Built for mountain athletes"  — a description of the audience. It says
+ *     nothing about what may be posted, so there was nothing to fold.
+ *   "Be respectful"                — the unciteable one. Removing a post under
+ *     it means citing a clause with no number, which is the failure the whole
+ *     of `houseRules.ts` exists to prevent. Retired outright; it is deliberately
+ *     NOT rule 7, because the owner wrote six rules and inventing a seventh in
+ *     their voice is not a developer's act.
+ *   "Report anything that doesn't belong" — the one real instruction, and it
+ *     survives as a control rather than as a sentence: every `PostCard` carries
+ *     Report in its overflow menu (`PostCard.tsx:537` → `ReportDialog`), so the
+ *     affordance is on every post instead of once at the foot of the feed. That
+ *     is why retiring the sentence costs nothing operational. If reporting is
+ *     ever taken off the cards, this line has to come back somewhere.
+ *
  * DO NOT GIVE THIS A STRING OF ITS OWN AGAIN. Two copies of the rules is how a
  * removal notice ends up citing text the app never showed.
  */

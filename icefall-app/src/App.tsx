@@ -62,6 +62,7 @@ const SettingsSection = lazy(() => import("@/screens/settings/Sections"));
 const Badges = lazy(() => import("@/screens/settings/Badges"));
 const PublicProfile = lazy(() => import("@/screens/PublicProfile"));
 const PostDetail = lazy(() => import("@/screens/social/PostDetail"));
+const HouseRulesScreen = lazy(() => import("@/screens/social/HouseRulesScreen"));
 const ActivityReplay = lazy(() => import("@/screens/tracker/ActivityReplay"));
 const ActivityAnalysis = lazy(() => import("@/screens/tracker/ActivityAnalysis"));
 const ProApplication = lazy(() => import("@/screens/settings/Application"));
@@ -245,6 +246,16 @@ export default function App() {
           <Route path="/readiness-test" element={<ReadinessTest />} />
           <Route path="/readiness-result" element={<ReadinessResult />} />
           <Route path="/pricing" element={<Pricing />} />
+          {/* OUTSIDE AppShell DELIBERATELY, and this is the whole point of the
+              route. A removal notice carries this URL, and the person who opens
+              it is the least likely person in the app to have a live session in
+              that browser: it arrives by email, is read days later, sometimes by
+              somebody whose account is the thing under dispute. Inside the shell
+              they would be redirected to the splash and the notice would become
+              unanswerable. The path is stable forever — links in notices already
+              sent point at it — and every rule is an anchor beneath it,
+              /house-rules#human-remains. See @/social/houseRules.ts. */}
+          <Route path="/house-rules" element={<HouseRulesScreen />} />
           <Route path="/share/readiness" element={<ShareReadiness />} />
           <Route path="/onboarding" element={<Onboarding />} />
           {/* Full-bleed: once you're starting an activity, the tab bar gets out

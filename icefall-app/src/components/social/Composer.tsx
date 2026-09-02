@@ -1,32 +1,17 @@
 import { useEffect, useRef, useState, type JSX } from "react";
 import { Link } from "react-router-dom";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import {
-  Check,
-  ChevronDown,
-  Clock,
-  Film,
-  Image as ImageIcon,
-  Loader2,
-  Lock,
-  ShieldCheck,
-  X,
-} from "lucide-react";
+import { Clock, Film, Image as ImageIcon, Loader2, Lock, ShieldCheck, X } from "lucide-react";
 import { AzureNotice, Badge, Button, Card, Disclaimer, SectionLabel } from "@/components/ui/primitives";
 import { BACKEND_NOT_CONNECTED, supabase } from "@/backend/client";
+import { useSessionState } from "@/auth/session";
 import {
-  HOUSE_RULES,
-  HOUSE_RULES_ACK_IS_LOCAL,
-  HOUSE_RULES_ACK_LABEL,
-  HOUSE_RULES_ACK_NOT_HELD_BY_ICEFALL,
-  HOUSE_RULES_NEW_VERSION_NOTICE,
-  HOUSE_RULES_SUMMARY,
-  HOUSE_RULES_TITLE,
   houseRulesAccountKey,
   useHouseRulesAcknowledgement,
   type HouseRulesAckState,
 } from "@/social/houseRules";
-import { fmtDate, fmtTime } from "@/lib/format";
+import { HouseRulesBlock } from "./HouseRules";
+import { fmtTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 /**
@@ -66,9 +51,10 @@ import { cn } from "@/lib/utils";
  * 4. THE HOUSE RULES ARE READ BEFORE THE FIRST POST, AND THEY STOP THE BUTTON.
  *    `social/houseRules.ts` holds the owner's six numbered rules; this is one of
  *    the two surfaces that genuinely publishes, so it is one of the two that
- *    gates. The argument for gating rather than decorating is written out above
- *    `HouseRulesGate` below, along with the sentence that keeps it honest: the
- *    acknowledgement is on this phone and ICEFALL does not hold it.
+ *    gates. The card itself is `HouseRules.tsx`; the argument for gating rather
+ *    than decorating is inside `Composer` below, along with the sentence that
+ *    keeps it honest — the acknowledgement is on this phone and ICEFALL does
+ *    not hold it.
  */
 
 /* -------------------------------------------------------------------------- */
@@ -266,6 +252,52 @@ function readFailure(code: string | undefined, message: string): string {
 }
 
 /* -------------------------------------------------------------------------- */
+/* The house rules, in front of the box                                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * WHO OWNS WHAT, so nobody adds a second rules card.
+ *
+ * The READING of the rules is `components/social/HouseRules.tsx` — one
+ * `<HouseRulesBlock />`, dropped above whatever is about to publish, which reads
+ * the session itself and shows either the six rules with the acknowledgement or
+ * the compact reminder afterwards. It is deliberately presentational: it does
+ * not know, and must not know, whether the surface it is sitting on refuses to
+ * publish without it. `HouseRulesLink` is the same file's no-gate variant for
+ * the group workspace.
+ *
+ * The two values below are the other half — the PUBLISH POLICY — and they live
+ * beside the composer because that is what they are about. They are exported
+ * only so `PublishSummit.tsx` uses the same answer; the alternative is two
+ * surfaces each deciding for itself what an unacknowledged rule set means, which
+ * is how one of them ends up not deciding at all.
+ */
+
+/**
+ * Does this state stop a publish? One function so the two publishing surfaces
+ * cannot answer it differently.
+ *
+ * `unknown` does NOT block. It is not an answer — it is the millisecond before
+ * one — and a button disabled on it would be a button disabled for a reason the
+ * screen cannot yet state. It is also the state in which `HouseRulesBlock`
+ * draws the reminder card with no acknowledgement control on it, so blocking
+ * here would be a locked button beside a card offering no way to unlock it.
+ *
+ * This and `HOUSE_RULES_BLOCKING_POST` are why eslint warns
+ * `react-refresh/only-export-components` on this file: a module exporting both
+ * components and plain values loses fast refresh. A development warning with no
+ * runtime effect, accepted knowingly — the alternative is a third file holding
+ * two lines, or the same two lines written out twice.
+ */
+export function houseRulesBlockPublish(state: HouseRulesAckState): boolean {
+  return state.status === "not-accepted" || state.status === "outdated";
+}
+
+/** Said next to the disabled button, because a disabled control explains nothing. */
+export const HOUSE_RULES_BLOCKING_POST =
+  "Read the house rules above and acknowledge them to post. It takes one tap and works offline.";
+
+/* -------------------------------------------------------------------------- */
 /* Composer                                                                    */
 /* -------------------------------------------------------------------------- */
 
@@ -278,6 +310,57 @@ export function Composer({
   className?: string;
 }): JSX.Element {
   const account = useComposerAccount();
+
+  /**
+   * THE GATE BLOCKS THE POST. The argument, because "should it block" is the
+   * only real question this feature asks and a wrong answer either way is
+   * expensive.
+   *
+   * A gate that cannot be passed offline is a broken app. A gate that can be
+   * ignored is not a gate — it is a paragraph, and a paragraph nobody has to
+   * pass is read by nobody. Both are true, so the test is whether a blocking
+   * gate can be built that costs the athlete almost nothing. Here it can:
+   *
+   *   · IT NEEDS NO NETWORK. The rules are compiled into the bundle and the
+   *     acknowledgement is `localStorage`. Cold, gloved, 4am, in a hut with no
+   *     signal: read, tap, post. Nothing in this path asks the server anything,
+   *     and if that ever stops being true this must stop blocking.
+   *   · IT COSTS ONE TAP, ONCE. Keyed by account AND version, so the only thing
+   *     that can bring it back is the rules actually changing.
+   *   · TWO OF THE RULES ARE ABOUT OTHER PEOPLE. Rule 1 is somebody else's
+   *     photograph and rule 4 is somebody's family lying on a mountainside.
+   *     Those are not things to discover from a removal notice afterwards.
+   *
+   * WHAT THE BLOCK IS NOT: evidence. ICEFALL holds no record — see
+   * `HOUSE_RULES_ACK_NOT_HELD_BY_ICEFALL` — so all this secures is that the app
+   * put the rules on screen before the first post from this device. Somebody
+   * who clears their storage is asked again, which is the safe direction to
+   * fail in, and somebody who calls the API directly is not touched by it at
+   * all. It is a gate on the composer, not a control on the table.
+   *
+   * WHAT IT MUST NEVER GROW INTO: a block on anything other than publishing.
+   * Reading the feed, deleting your own post and reporting somebody else's all
+   * stay open — a person who has not tapped this is not a person ICEFALL should
+   * stop from reporting a photograph of a corpse. And it must never block on
+   * `unknown`; see `houseRulesBlockPublish`.
+   *
+   * THE KEY COMES FROM `useSessionState`, NOT FROM `account.uid`, and the reason
+   * is not tidiness. `HouseRulesBlock` resolves its own key from
+   * `useSessionState`; if this read the uid from `useComposerAccount` instead —
+   * a different request, on a different timeline — the two could disagree for a
+   * moment, and the shape of that disagreement is the worst one available: a
+   * disabled Post button beside a card that has not yet drawn the control to
+   * enable it. One source, no window.
+   *
+   * `undefined` is passed through rather than flattened with `?.`, because
+   * `session?.user.id` yields `undefined` for BOTH "not resolved yet" and
+   * "signed out", and those are different keys — see `houseRulesAccountKey`.
+   */
+  const session = useSessionState();
+  const houseRules = useHouseRulesAcknowledgement(
+    houseRulesAccountKey(session === undefined ? undefined : (session?.user.id ?? null)),
+  );
+  const rulesBlock = houseRulesBlockPublish(houseRules);
 
   const [body, setBody] = useState("");
   const [isStory, setIsStory] = useState(false);
@@ -312,10 +395,15 @@ export function Composer({
   const canWrite = account.status === "ready";
   const trimmed = body.trim();
   const overLimit = trimmed.length > MAX_BODY;
-  const canPost = canWrite && trimmed.length > 0 && !overLimit && !busy;
+  const canPost = canWrite && trimmed.length > 0 && !overLimit && !busy && !rulesBlock;
 
   async function publish() {
     if (account.status !== "ready" || !untyped) return;
+    /* The button is already disabled; this is the same rule stated where the
+       insert happens, so a later refactor of the button cannot quietly open the
+       path. A gate enforced only by a `disabled` attribute is a gate one prop
+       away from not existing. */
+    if (rulesBlock) return;
     setBusy(true);
     setFailure(null);
 
@@ -413,6 +501,13 @@ export function Composer({
       >
         {isStory ? "New story" : "New post"}
       </SectionLabel>
+
+      {/* Above the box, in the flow, so the rules are met before the words are
+          written rather than after they are typed. It reads the acknowledgement
+          itself; `houseRules` above is the same store, and the two stay in step
+          through `houseRules.ts`'s subscriber set. A `Card` is `space-y-4`, so
+          this is a direct child and spaces itself. */}
+      <HouseRulesBlock />
 
       <textarea
         value={body}
@@ -573,6 +668,15 @@ export function Composer({
       <Button className="w-full" disabled={!canPost} onClick={() => void publish()}>
         {busy ? "Posting…" : isStory ? "Post story" : "Post"}
       </Button>
+
+      {/* The rules card can be scrolled off by then, and a button that refuses
+          without saying why is the failure this file already refuses to ship in
+          the media rows. */}
+      {rulesBlock && (
+        <p className="-mt-1 text-[11px] leading-relaxed text-mist-dim">
+          {HOUSE_RULES_BLOCKING_POST}
+        </p>
+      )}
 
       <Disclaimer>
         A post cannot be edited once it is up — the feed has no update path at all. It can be
