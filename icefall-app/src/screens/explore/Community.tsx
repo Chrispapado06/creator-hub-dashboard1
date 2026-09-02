@@ -2,22 +2,41 @@ import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import {
-  ChevronRight, Flag, Heart, MessageCircle, MoreHorizontal, Mountain as MountainIcon,
-  Plus, Route as RouteIcon, Search as SearchIcon, ShieldCheck, TriangleAlert, Users, X,
+  ChevronRight,
+  Flag,
+  Mountain as MountainIcon,
+  PenLine,
+  Plus,
+  Route as RouteIcon,
+  Search as SearchIcon,
+  ShieldCheck,
+  TriangleAlert,
+  Users,
+  X,
 } from "lucide-react";
-import { Card, Disclaimer } from "@/components/ui/primitives";
+import { Avatar, Card, Disclaimer } from "@/components/ui/primitives";
 import { LogSummitSheet } from "@/components/domain/SummitLogKit";
 import { CreatePostSheet } from "@/components/domain/PostComposer";
-import { Sheet, SheetRow } from "@/components/ui/Sheet";
+import { Sheet } from "@/components/ui/Sheet";
 import { Rise, Screen, Stagger } from "@/components/layout/chrome";
-import { ProgressRing } from "@/components/ui/charts";
+import { Comments } from "@/components/social/Comments";
+import { Composer } from "@/components/social/Composer";
+import { PostCard, type PostDetail } from "@/components/social/PostCard";
+import { ReportDialog } from "@/components/social/ReportDialog";
+import { StoryRail, useStories, type PromotedPlacement } from "@/components/social/StoryRail";
+import { StoryViewer } from "@/components/social/StoryViewer";
 import {
-  COMMUNITY_DEMO_NOTICE, COMMUNITY_HOUSE_RULE, FEED_FILTERS, SHOW_DEMO_COMMUNITY,
-  SUMMIT_VERIFIED_MEANING, agoLabel, communityPosts, type FeedFilter,
+  COMMUNITY_DEMO_NOTICE,
+  COMMUNITY_HOUSE_RULE,
+  FEED_FILTERS,
+  SHOW_DEMO_COMMUNITY,
+  communityPosts,
+  type FeedFilter,
 } from "@/social/community";
-import { CREATE_OPTIONS, POST_KIND_LABEL, type CommunityPost, type PostKind } from "@/social/types";
-import { MIN_QUERY, searchSocial } from "@/social/search";
-import { usePrimaryGoal } from "@/state/AppState";
+import { CREATE_OPTIONS, type CommunityPost, type Post, type PostKind } from "@/social/types";
+import { searchSocial } from "@/social/search";
+import { useFollowing } from "@/profile/following";
+import { useApp } from "@/state/AppState";
 import { cn } from "@/lib/utils";
 
 /**
@@ -35,34 +54,275 @@ import { cn } from "@/lib/utils";
  *   · No exact location, ever. Authors carry a band ("Around Chamonix"); the
  *     model has no field for a coordinate, so no card can leak one.
  *   · No age. Profiles use bands where they need age at all.
+ *
+ * ── THE CARD IS NOW THE SERVER'S CARD ────────────────────────────────────────
+ *
+ * This screen used to draw its own post card: a kind chip, a stats row, a
+ * milestone ring, a route-report table. `@/social/types` explains at length why
+ * none of that survives contact with `public.posts` — the table is a body, an
+ * optional media reference and a timestamp, with no column for a taxonomy — so
+ * the feed renders `components/social/PostCard`, which is built on the row that
+ * will actually arrive, and `feedPost` below adapts the demo content into it.
+ *
+ * WHAT THE ADAPTER DROPS IS THE POINT. The demo posts' figures ("+1,420 m",
+ * "4 of 6", "80% ready") have nowhere to live on a real post, and carrying them
+ * into a card the server will one day fill would mean the card had to invent
+ * them the day it stopped being demo content. The words survive; the invented
+ * taxonomy does not. Same conversion `StoryRail.demoPostAsStory` already makes,
+ * for the same reason.
+ *
+ * ── LIKES, AND WHAT A LIKE CURRENTLY IS ──────────────────────────────────────
+ *
+ * There is no likes table — `20260831190000_social.sql` ships posts, comments,
+ * follows and promoted placements and nothing else — so a like is the reader's
+ * own mark, held for this session, sent nowhere, and no author is told. That is
+ * exactly the one like ICEFALL can vouch for, which is why `LIKE_NOTICE` sits
+ * under the feed saying so rather than letting a heart imply an audience. It is
+ * deliberately NOT written to the device: a like that survived the session
+ * would start reading as a record ICEFALL kept, and it keeps none.
  */
+
+/**
+ * How many posts pass between promoted placements.
+ *
+ * The owner's instruction was advertising "a little bit" — so one placement per
+ * six posts, and never on the end of the feed. The "never last" rule is the
+ * same one the story run uses: a scroll that finishes on an advertisement
+ * finishes on the one card the athlete did not come for.
+ */
+const POSTS_BETWEEN_PROMOTIONS = 6;
+
+const LIKE_NOTICE =
+  "Liking a post marks it for you, for this session. ICEFALL has no likes table yet, so nothing is sent, no author is told, and no total is kept — the only like this app can stand behind is your own.";
+
+/* -------------------------------------------------------------------------- */
+/* The demo feed, read as the rows it would have been                         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * One demo post as a `posts` row.
+ *
+ * WORDS ARE CARRIED, FIGURES ARE NOT. `posts.body` is one NOT NULL text column,
+ * so the title, the body and a route report's note — all of them sentences
+ * somebody wrote — are joined into it. The stats, the bullets, the milestone
+ * percentage and the group's "4 of 6" are dropped: they are structured claims
+ * with no column behind them, and a card that renders them today is a card that
+ * has to invent them tomorrow.
+ *
+ * `likeCount` and `commentCount` are left UNDEFINED rather than carrying the
+ * demo's own `likes: 32` / `comments: 6`. `undefined` means NOT COUNTED and
+ * prints nothing; a printed 32 above a thread that opens empty is the app
+ * contradicting itself in two taps.
+ */
+/**
+ * The mockup's extras, lifted off the community row.
+ *
+ * The title comes OUT of the body here — `feedPost` used to fold it in with
+ * the prose, which is why the drawing's headline ("Morning vertical session")
+ * had nowhere to be set apart from the words under it.
+ */
+function feedDetail(post: CommunityPost): PostDetail {
+  return {
+    chip: POST_KIND_CHIP[post.kind],
+    title: post.title,
+    // "Mont Blanc · July 2026" — the objective, exactly as the mockup writes it.
+    subtitle: `${post.objective.mountain} · ${post.objective.when}`,
+    stats: post.stats,
+  };
+}
+
+/** The chip the mockup puts above the headline, one word per kind of post. */
+const POST_KIND_CHIP: Record<CommunityPost["kind"], string> = {
+  activity: "Activity",
+  summit: "Summit",
+  "route-report": "Conditions",
+  "looking-for-partners": "Partners",
+  milestone: "Milestone",
+  group: "Group",
+};
+
+function feedPost(post: CommunityPost, now: number): Post {
+  const words = [post.body, post.report?.note].filter(Boolean).join("\n\n");
+  return {
+    id: post.id,
+    author: {
+      id: post.author.id,
+      name: post.author.name,
+      // `Author.location` is a label somebody typed, never a coordinate — and
+      // the demo model's band ("Around Chamonix") is already exactly that.
+      location: post.author.region,
+      avatarUrl: post.author.avatar,
+      kind: "profile",
+    },
+    body: words,
+    media: post.photo ? { url: post.photo } : undefined,
+    createdAt: new Date(now - post.hoursAgo * 3_600_000).toISOString(),
+    // The demo rows carry both, and the mockup shows both. `PostCard` prints
+    // nothing for a zero, so an unengaged post stays clean.
+    likeCount: post.likes,
+    commentCount: post.comments,
+  };
+}
+
+type FeedItem = { kind: "post"; post: Post } | { kind: "promoted"; placement: PromotedPlacement };
+
+/** Lays the promotions into the scroll: one every N posts, never on the end. */
+function withPromotions(posts: Post[], placements: PromotedPlacement[]): FeedItem[] {
+  const items: FeedItem[] = [];
+  let placed = 0;
+
+  posts.forEach((post, i) => {
+    items.push({ kind: "post", post });
+
+    const due = (i + 1) % POSTS_BETWEEN_PROMOTIONS === 0;
+    const somethingFollows = i + 1 < posts.length;
+    if (due && somethingFollows && placements.length > 0) {
+      items.push({ kind: "promoted", placement: placements[placed % placements.length] });
+      placed += 1;
+    }
+  });
+
+  return items;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Community                                                                  */
+/* -------------------------------------------------------------------------- */
+
 export default function Community() {
   const [filter, setFilter] = useState<FeedFilter>("for-you");
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
+  const [composing, setComposing] = useState(false);
   const [logging, setLogging] = useState(false);
   const [posting, setPosting] = useState(false);
-  const goal = usePrimaryGoal();
+  const [storyAt, setStoryAt] = useState<number | null>(null);
+  const [commenting, setCommenting] = useState<Post | null>(null);
+  const [reporting, setReporting] = useState<string | null>(null);
+  /** The reader's own likes. Session-only, on purpose — see the header. */
+  const [liked, setLiked] = useState<ReadonlySet<string>>(() => new Set<string>());
+
+  const { goals } = useApp();
+  const { people: saved } = useFollowing();
+  const { slides } = useStories();
+
+  /**
+   * Frozen at mount rather than read per render.
+   *
+   * The demo posts carry an age ("2 hours ago"), not an instant, so the instant
+   * has to be computed — and recomputing it every render would move every post
+   * forward in time as the screen re-rendered, which is how a feed starts
+   * showing "just now" on a post that was two hours old a keystroke ago.
+   */
+  const [now] = useState(() => Date.now());
 
   const results = useMemo(() => searchSocial(query), [query]);
   const searching = results.ran;
 
+  const all = useMemo(() => communityPosts(), []);
+
+  /* The mockup's chip, headline and stat trio, keyed by post id. Built from the
+     same rows the feed is built from, so the two cannot drift apart. */
+  const details = useMemo(
+    () => new Map(all.map((p) => [p.id, feedDetail(p)] as const)),
+    [all],
+  );
   /** Whether the FEED is empty, as distinct from this filter matching nothing. */
-  const feedEmpty = communityPosts().length === 0;
+  const feedEmpty = all.length === 0;
 
-  const posts = useMemo(() => {
-    const all = communityPosts();
-    const spec = FEED_FILTERS.find((f) => f.id === filter);
+  /**
+   * The mountains this athlete has set as objectives.
+   *
+   * READ FROM `goals`, NOT FROM `objectives`, AND THE DIFFERENCE MATTERS. The
+   * `objectives` list in `AppState` is SEEDED with every curated ICEFALL
+   * mountain on first run, so filtering on it would match nearly everything and
+   * "My Mountains" would silently become a second copy of the main feed. `goals`
+   * is what the athlete actually named — at onboarding or by adding one — which
+   * is what the owner's "mountains you set as goals" means.
+   *
+   * COMPLETED GOALS COUNT. The tab is My Mountains, not My Objectives, and a
+   * peak you summited is still yours — `usePrimaryGoal` filters to active
+   * because the coach can only train you for something ahead of you, and that
+   * is a different question from which mountains you want to read about.
+   *
+   * THE MATCH IS EXACT, on purpose. A goal named "Mount Olympus" does not pull
+   * in a post about "Olympus", and it should not start to: a fuzzy mountain
+   * match is how a feed quietly shows somebody the wrong peak, which this app
+   * has already been bitten by once in place search. When posts arrive from the
+   * server this joins on a mountain id and the string comparison goes away.
+   */
+  const myMountains = useMemo(
+    () => new Set(goals.map((g) => g.name.trim().toLowerCase())),
+    [goals],
+  );
 
-    if (spec?.kinds) return all.filter((p) => spec.kinds!.includes(p.kind));
-    if (filter === "my-mountains" && goal?.name) {
-      return all.filter((p) => p.objective.mountain === goal.name);
+  /**
+   * The people whose cards this device has kept.
+   *
+   * Following is not a subscription yet — `profile/following.ts` says so at
+   * length: a saved card is held on the device and nobody is notified. But it
+   * is a real list the athlete built, so the Following tab filters on it rather
+   * than showing the whole feed behind a disclaimer, which is what it used to
+   * do. Matched on NAME because that is the only field a saved card and a post
+   * byline both carry; when posts arrive from the server this becomes a query
+   * against `follows` and the match stops being a string comparison.
+   */
+  const followedNames = useMemo(
+    () => new Set(saved.map((p) => p.name.trim().toLowerCase())),
+    [saved],
+  );
+
+  /**
+   * The placements the story run was given, reused for the scroll.
+   *
+   * Deliberately not a second source: `useStories` is where the two schema
+   * rules already live — premium members are excluded from promotion delivery,
+   * and the demo placements may only name an INVENTED company — so taking the
+   * rows from there means the feed cannot disagree with the stories about
+   * either. When a read of `promoted_placements` exists, both surfaces call it.
+   */
+  const placements = useMemo(() => {
+    const out: PromotedPlacement[] = [];
+    for (const slide of slides) {
+      if (slide.kind !== "promoted") continue;
+      if (out.some((p) => p.id === slide.placement.id)) continue;
+      out.push(slide.placement);
     }
-    // "Nearby" needs a location the athlete has opted into sharing and a
-    // backend to compare against; until then it is the same feed rather than a
-    // filter that silently pretends to have run.
-    return all;
-  }, [filter, goal?.name]);
+    return out;
+  }, [slides]);
+
+  /*
+   * FILTERING HAPPENS ON THE DEMO SHAPE, BEFORE THE ADAPTER RUNS.
+   *
+   * `feedPost` drops the objective and the region, because a real `posts` row
+   * has neither — so the mountain a post is about only exists on this side of
+   * the conversion. Filter first, adapt second, and the day the feed is fetched
+   * these two filters become `where` clauses instead.
+   */
+  const items = useMemo(() => {
+    const matched = all.filter((p) => {
+      if (filter === "following") return followedNames.has(p.author.name.trim().toLowerCase());
+      if (filter === "my-mountains") {
+        return myMountains.has(p.objective.mountain.trim().toLowerCase());
+      }
+      return true;
+    });
+    return withPromotions(
+      matched.map((p) => feedPost(p, now)),
+      placements,
+    );
+  }, [all, filter, followedNames, myMountains, now, placements]);
+
+  const posts = items.filter((i) => i.kind === "post").length;
+
+  function toggleLike(post: Post, next: boolean) {
+    setLiked((current) => {
+      const copy = new Set(current);
+      if (next) copy.add(post.id);
+      else copy.delete(post.id);
+      return copy;
+    });
+  }
 
   return (
     <Screen padded={false}>
@@ -127,6 +387,14 @@ export default function Community() {
         )}
       </div>
 
+      {/* ---- Stories -------------------------------------------------------
+          Under the header, above the feed. The rail renders its own honest
+          empty state — two of them, in fact — so it needs no condition around
+          it; it is hidden only while a search is running, for the same reason
+          the filter chips are. `onOpen` hands over a SLIDE index, which is
+          exactly what `StoryViewer` takes: no translation, by design. */}
+      {!searching && <StoryRail onOpen={setStoryAt} />}
+
       {/*
         Two things are deliberately not at the top of this feed any more.
 
@@ -141,63 +409,94 @@ export default function Community() {
         together — which is where you go to see what you have written.
       */}
       {searching ? (
-        <SearchResults query={query} results={results} />
+        <SearchResults query={query} results={results} now={now} />
       ) : (
-      <Stagger className="px-5 pb-24 pt-4">
-        {filter === "following" && (
-          <Rise className="pt-3">
-            <Disclaimer>
-              Following needs connections, and connections need accounts ICEFALL has not built. This
-              is the same feed — nothing has been filtered by who you follow.
-            </Disclaimer>
-          </Rise>
-        )}
+        <Stagger className="px-5 pb-24 pt-4">
+          {items.map((item, i) =>
+            item.kind === "promoted" ? (
+              <Rise key={`promoted:${item.placement.id}:${i}`} className="pt-3">
+                <PromotedCard placement={item.placement} />
+              </Rise>
+            ) : (
+              <Rise key={item.post.id} className="pt-3">
+                <TappablePost
+                  post={item.post}
+                  detail={details.get(item.post.id)}
+                  liked={liked.has(item.post.id)}
+                  onOpenComments={setCommenting}
+                  onReport={(p) => setReporting(p.id)}
+                  onLike={toggleLike}
+                />
+              </Rise>
+            ),
+          )}
 
-        {posts.map((post) => (
-          <Rise key={post.id} className="pt-3">
-            <PostCard
-              post={post}
-            />
-          </Rise>
-        ))}
+          {posts === 0 && (
+            <Rise className="pt-4">
+              <Card>
+                <p className="text-[13px] text-snow">Nothing here yet.</p>
+                {/* FIVE DIFFERENT EMPTINESSES, AND THEY ARE NOT THE SAME
+                    STATEMENT. "No posts match this filter" implies there are
+                    posts — that somewhere behind the filter is a feed. In a
+                    production build there is not: nobody can post yet, so
+                    nobody has posted anything, and saying so is the honest
+                    answer rather than one that reads as a filter that came back
+                    empty. The two tabs then split again on whether the athlete
+                    has done their half — set an objective, saved a card —
+                    because "nobody you follow has posted" blames people for a
+                    server that does not exist. */}
+                <p className="mt-1.5 text-[11.5px] leading-relaxed text-mist-dim">
+                  {feedEmpty
+                    ? "Nobody has posted anything, because posting is not built yet. This is an empty feature rather than a filter that came back with nothing — when people can post, what they write appears here."
+                    : filter === "following"
+                      ? followedNames.size === 0
+                        ? "You have not saved anybody yet. Opening someone's shared profile link keeps their card on this device, and this tab reads that list — following is not a subscription yet, so nobody is notified and nothing is fetched on your behalf."
+                        : "Nothing from the people whose cards you have kept. ICEFALL cannot ask them what they posted, so this is silence from the app rather than from them."
+                      : filter === "my-mountains"
+                        ? myMountains.size === 0
+                          ? "Set an objective and this fills with what other people are doing on it."
+                          : "Nobody has posted about the mountains you have set as goals."
+                        : "No posts match this filter."}
+                </p>
+              </Card>
+            </Rise>
+          )}
 
-        {posts.length === 0 && (
-          <Rise className="pt-4">
-            <Card>
-              <p className="text-[13px] text-snow">Nothing here yet.</p>
-              {/* THREE DIFFERENT EMPTINESSES, AND THEY ARE NOT THE SAME
-                  STATEMENT. "No posts match this filter" implies there are
-                  posts — that somewhere behind the filter is a feed. In a
-                  production build there is not: nobody can post yet, so
-                  nobody has posted anything, and saying so is the honest answer
-                  rather than one that reads as a filter that came back empty.
-                  Same rule as the people directory further down this screen. */}
-              <p className="mt-1.5 text-[11.5px] leading-relaxed text-mist-dim">
-                {feedEmpty
-                  ? "Nobody has posted anything, because posting is not built yet. This is an empty feature rather than a filter that came back with nothing — when people can post, what they write appears here."
-                  : filter === "my-mountains" && !goal
-                    ? "Set an objective and this fills with what other people are doing on it."
-                    : "No posts match this filter."}
+          {/* ---- House rule + honesty ---------------------------------------- */}
+          <Rise className="pt-6">
+            <div className="rounded-card border border-hairline bg-graphite p-4">
+              <p className="flex items-center gap-2 text-[12.5px] text-snow">
+                <ShieldCheck size={14} strokeWidth={1.7} className="shrink-0 text-azure" />
+                {COMMUNITY_HOUSE_RULE}
               </p>
-            </Card>
-          </Rise>
-        )}
+              {/*
+                THE UNDER-18 SENTENCE IS GONE, and it must not come back until
+                something enforces it. `settings.ageBand` is stored and read by
+                exactly one screen — the one that sets it. No discovery, message
+                or profile path consults it anywhere, so "restricted people
+                discovery and no private messaging" described protections that
+                did not exist.
 
-        {/* ---- House rule + honesty ---------------------------------------- */}
-        <Rise className="pt-6">
-          <div className="rounded-card border border-hairline bg-graphite p-4">
-            <p className="flex items-center gap-2 text-[12.5px] text-snow">
-              <ShieldCheck size={14} strokeWidth={1.7} className="shrink-0 text-azure" />
-              {COMMUNITY_HOUSE_RULE}
-            </p>
-            <p className="mt-2 text-[11px] leading-relaxed text-mist-dim">
-              Private messages are only available inside a group you have both joined. Accounts
-              under 18 have restricted people discovery and no private messaging.
-            </p>
-          </div>
-          {SHOW_DEMO_COMMUNITY && <Disclaimer className="mt-3">{COMMUNITY_DEMO_NOTICE}</Disclaimer>}
-        </Rise>
-      </Stagger>
+                It was also expensive. Under the Online Safety Act the cheapest
+                position available to ICEFALL is a defensible finding that the
+                service is NOT likely to be accessed by children — and a claim
+                on screen that under-18 protections are running is evidence the
+                operator expected them. Deleting it is worth more than any
+                control it purported to describe.
+
+                The first sentence stays because it is TRUE: `messages` really
+                is gated on shared membership.
+              */}
+              <p className="mt-2 text-[11px] leading-relaxed text-mist-dim">
+                Private messages are only available inside a group you have both joined.
+              </p>
+            </div>
+            <p className="mt-3 text-[11px] leading-relaxed text-mist-dim">{LIKE_NOTICE}</p>
+            {SHOW_DEMO_COMMUNITY && (
+              <Disclaimer className="mt-3">{COMMUNITY_DEMO_NOTICE}</Disclaimer>
+            )}
+          </Rise>
+        </Stagger>
       )}
 
       {/* ---- Create -------------------------------------------------------
@@ -210,7 +509,9 @@ export default function Community() {
           aria-label="Create a post"
           onClick={() => setCreating(true)}
           className="absolute right-5 z-30 grid h-14 w-14 place-items-center rounded-full bg-azure text-obsidian shadow-lg transition-colors hover:bg-azure-bright"
-          style={{ bottom: "calc(1.25rem + env(safe-area-inset-bottom, 0px) + var(--tabbar-h, 0px))" }}
+          style={{
+            bottom: "calc(1.25rem + env(safe-area-inset-bottom, 0px) + var(--tabbar-h, 0px))",
+          }}
         >
           <Plus size={24} strokeWidth={2} />
         </button>,
@@ -220,6 +521,10 @@ export default function Community() {
       {creating && (
         <CreateSheet
           onClose={() => setCreating(false)}
+          onCompose={() => {
+            setCreating(false);
+            setComposing(true);
+          }}
           onPick={(kind) => {
             setCreating(false);
             // "Summit" is a structured record with a route and conditions, not
@@ -229,8 +534,22 @@ export default function Community() {
           }}
         />
       )}
+      {composing && (
+        <Sheet title="New post" onClose={() => setComposing(false)}>
+          <div className="py-4">
+            {/* The composer owns every state this can be in — no backend, signed
+                out, verified, refused — so nothing is decided for it here. It
+                closes only once the server has returned a row id. */}
+            <Composer onPosted={() => setComposing(false)} />
+          </div>
+        </Sheet>
+      )}
       {logging && <LogSummitSheet onClose={() => setLogging(false)} />}
       {posting && <CreatePostSheet onClose={() => setPosting(false)} />}
+
+      {storyAt !== null && <StoryViewer startIndex={storyAt} onClose={() => setStoryAt(null)} />}
+      {commenting && <Comments post={commenting} onClose={() => setCommenting(null)} />}
+      <ReportDialog postId={reporting} onClose={() => setReporting(null)} />
     </Screen>
   );
 }
@@ -238,6 +557,146 @@ export default function Community() {
 /* -------------------------------------------------------------------------- */
 /* Posts                                                                      */
 /* -------------------------------------------------------------------------- */
+
+/**
+ * A post card you can tap anywhere on to open its thread.
+ *
+ * The owner asked for exactly this — "when you click on post it can then show
+ * you comments" — and `PostCard` is not this screen's file to change, so the
+ * gesture is added around it rather than inside it.
+ *
+ * THE WRAPPER IS NOT A BUTTON, and that is deliberate rather than lazy. The
+ * card already contains a like button, an options menu, sometimes a video with
+ * its own controls; a `role="button"` around all of that is a control
+ * containing controls, which screen readers and keyboards both read wrongly.
+ * So the tap is a convenience for the finger, the card's own labelled comment
+ * button stays the reachable, announced route into the same thread, and a tap
+ * that lands on any control — or that ends a text selection — is left alone.
+ *
+ * `likeCount` is 1 exactly while the reader has liked it, and absent otherwise.
+ * That is not a total: it is the single like this app can vouch for, and
+ * `LikeButton` prints no figure at all for the zero.
+ */
+function TappablePost({
+  post,
+  detail,
+  liked,
+  onOpenComments,
+  onReport,
+  onLike,
+}: {
+  post: Post;
+  detail?: PostDetail;
+  liked: boolean;
+  onOpenComments: (post: Post) => void;
+  onReport: (post: Post) => void;
+  onLike: (post: Post, next: boolean) => void;
+}) {
+  return (
+    <div
+      onClick={(e) => {
+        // `Element`, not `HTMLElement`: a tap that lands on a lucide icon hands
+        // back an SVGElement, and casting one of those to HTMLElement is a lie
+        // the compiler would have believed.
+        const el = e.target as Element;
+        if (el.closest("button, a, video, input, textarea, [role='menu']")) return;
+        if ((window.getSelection()?.toString().length ?? 0) > 0) return;
+        onOpenComments(post);
+      }}
+    >
+      <PostCard
+        /* The row's own like count is kept, not replaced. `PostCard` derives
+           the displayed figure from it plus this session's own mark, so a post
+           that arrived with 32 likes reads 33 when you like it — replacing the
+           count with 1 threw the real figure away. */
+        post={{ ...post, likedByMe: liked }}
+        detail={detail}
+        onOpenComments={onOpenComments}
+        onReport={onReport}
+        onLike={onLike}
+      />
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Promoted                                                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * THE ONE PAID CARD IN THE SCROLL, AND IT SAYS SO FIRST.
+ *
+ * The label is the first thing in the card and it is structural: this is the
+ * only component that can draw a `PromotedPlacement`, so the branch that
+ * renders an advertisement is the branch that renders the word "Promoted".
+ * Same reason `promoted_placements` is its own table and the story slide is its
+ * own arm of a union — a client that renders one got it from here and knows
+ * what it is. It cannot be mistaken for a post: no byline, no like, no comment
+ * count, nothing that would let it borrow the shape of something a person
+ * wrote.
+ *
+ * WHY THE READER IS SEEING IT is stated on the card. `audience_mode` is the
+ * schema's own column, and the two values mean genuinely different things to
+ * the person reading: 'general' means nothing about them was consulted, and
+ * 'targeted' means an objective they declared themselves named this. Neither
+ * sentence is inferred, because the migration forbids targeting on anything
+ * that would be.
+ */
+function PromotedCard({ placement }: { placement: PromotedPlacement }) {
+  const body = (
+    <>
+      <div className="flex items-center gap-2 border-b border-hairline px-4 py-2.5">
+        <span className="rounded-pill border border-hairline-strong bg-slate/70 px-2 py-[3px] text-[9.5px] uppercase tracking-[0.12em] text-mist">
+          Promoted
+        </span>
+        <span className="min-w-0 truncate text-[11.5px] text-mist-dim">
+          {placement.companyName}
+        </span>
+      </div>
+
+      {placement.creativePath && (
+        <div className="h-[150px] w-full overflow-hidden bg-slate/40">
+          <img
+            src={placement.creativePath}
+            alt=""
+            aria-hidden
+            loading="lazy"
+            className="h-full w-full object-cover"
+          />
+        </div>
+      )}
+
+      <p className="px-4 pt-3.5 text-[13px] leading-relaxed text-snow">{placement.headline}</p>
+
+      {placement.href && (
+        <p className="flex items-center gap-1 px-4 pt-2 text-[12px] text-azure">
+          View company
+          <ChevronRight size={14} strokeWidth={1.8} />
+        </p>
+      )}
+
+      <p className="mt-3 border-t border-hairline px-4 py-2.5 text-[10.5px] leading-relaxed text-mist-dim">
+        {placement.audienceMode === "targeted"
+          ? "You are seeing this because an objective you set names it. ICEFALL targets on the goals you declared yourself and on nothing it worked out about you."
+          : "A general placement — shown to everyone who is not on a paid plan. Nothing you have told ICEFALL decided that you saw it."}
+      </p>
+    </>
+  );
+
+  const shell = "block overflow-hidden rounded-card border border-hairline bg-graphite";
+
+  return placement.href ? (
+    <Link
+      to={placement.href}
+      aria-label={`Promoted by ${placement.companyName}`}
+      className={cn(shell, "transition-colors hover:border-hairline-strong")}
+    >
+      {body}
+    </Link>
+  ) : (
+    <div className={shell}>{body}</div>
+  );
+}
 
 /* -------------------------------------------------------------------------- */
 /* Search results                                                             */
@@ -255,9 +714,11 @@ export default function Community() {
 function SearchResults({
   query,
   results,
+  now,
 }: {
   query: string;
   results: ReturnType<typeof searchSocial>;
+  now: number;
 }) {
   const { people, posts } = results;
 
@@ -274,9 +735,9 @@ function SearchResults({
         <Rise className="pt-2.5">
           <Card>
             <p className="text-[12.5px] leading-relaxed text-mist">
-              There is nobody to find yet. Accounts exist, but no climber directory does, so none can
-              be looked up by name — this is an empty network rather than a search that came back
-              short.
+              There is nobody to find yet. Accounts exist, but no climber directory does, so none
+              can be looked up by name — this is an empty network rather than a search that came
+              back short.
             </p>
           </Card>
         </Rise>
@@ -314,15 +775,15 @@ function SearchResults({
       {posts.length === 0 ? (
         <Rise className="pt-2.5">
           <Card>
-            <p className="text-[12.5px] text-mist">
-              No posts mention “{query.trim()}”.
-            </p>
+            <p className="text-[12.5px] text-mist">No posts mention “{query.trim()}”.</p>
           </Card>
         </Rise>
       ) : (
+        /* There is no promoted placement in here: nobody paid to appear against
+           a query, so nothing may. A results list is not inventory. */
         posts.map((post) => (
           <Rise key={post.id} className="pt-3">
-            <PostCard post={post} />
+            <SearchPost post={feedPost(post, now)} />
           </Rise>
         ))
       )}
@@ -330,18 +791,31 @@ function SearchResults({
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* Posts                                                                      */
-/* -------------------------------------------------------------------------- */
+/**
+ * A search hit.
+ *
+ * It carries its OWN thread and report state rather than reaching back up to
+ * the feed's, because the feed's state is unmounted while a search is running —
+ * `SearchResults` replaces the whole scroll. Lifting them to `Community` would
+ * mean a sheet whose owner had gone, and closing it would drop the reader back
+ * onto results that had re-rendered underneath.
+ */
+function SearchPost({ post }: { post: Post }) {
+  const [thread, setThread] = useState<Post | null>(null);
+  const [report, setReport] = useState<string | null>(null);
 
-const KIND_TONE: Record<PostKind, string> = {
-  activity: "border-hairline-strong bg-obsidian/70 text-snow",
-  summit: "border-summit/50 bg-summit/[0.12] text-summit",
-  "route-report": "border-alert/50 bg-alert/[0.10] text-alert",
-  "looking-for-partners": "border-azure/50 bg-azure/[0.10] text-azure",
-  milestone: "border-azure/50 bg-azure/[0.10] text-azure",
-  group: "border-azure/50 bg-azure/[0.10] text-azure",
-};
+  return (
+    <>
+      <PostCard post={post} onOpenComments={setThread} onReport={(p) => setReport(p.id)} />
+      {thread && <Comments post={thread} onClose={() => setThread(null)} />}
+      <ReportDialog postId={report} onClose={() => setReport(null)} />
+    </>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Sheets                                                                     */
+/* -------------------------------------------------------------------------- */
 
 const KIND_ICON: Record<PostKind, typeof MountainIcon> = {
   activity: RouteIcon,
@@ -352,240 +826,46 @@ const KIND_ICON: Record<PostKind, typeof MountainIcon> = {
   group: Users,
 };
 
-function PostCard({ post }: { post: CommunityPost }) {
-  const [menu, setMenu] = useState(false);
-  const Icon = KIND_ICON[post.kind];
-
-  return (
-    <div className="overflow-hidden rounded-card border border-hairline bg-graphite">
-      {/* ---- Byline ----------------------------------------------------- */}
-      <div className="flex items-center gap-3 px-4 pt-4">
-        <Avatar name={post.author.name} src={post.author.avatar} />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-[13.5px] text-snow">{post.author.name}</p>
-          <p className="truncate text-[11.5px] text-mist-dim">
-            {post.objective.mountain} · {post.objective.when} · {post.author.region}
-          </p>
-        </div>
-        <span className="tnum shrink-0 text-[11px] text-mist-dim">{agoLabel(post.hoursAgo)}</span>
-        <button
-          type="button"
-          aria-label="Post options"
-          onClick={() => setMenu(true)}
-          className="shrink-0 text-mist-dim hover:text-snow"
-        >
-          <MoreHorizontal size={17} strokeWidth={1.7} />
-        </button>
-      </div>
-
-      <div className="px-4 pt-3">
-        <span
-          className={cn(
-            "inline-flex items-center gap-1.5 rounded-pill border px-2.5 py-1 text-[10px] uppercase tracking-[0.1em]",
-            KIND_TONE[post.kind],
-          )}
-        >
-          <Icon size={11} strokeWidth={1.9} />
-          {post.kind === "summit" && post.summit?.verified
-            ? "Summit verified"
-            : POST_KIND_LABEL[post.kind]}
-        </span>
-
-        <h3 className="mt-2.5 text-[17px] leading-snug text-snow">{post.title}</h3>
-
-        {post.summit && (
-          <p className="tnum mt-1 text-[12.5px] text-mist">
-            {post.summit.elevationM.toLocaleString()} m · {post.summit.range}
-          </p>
-        )}
-        {post.body && <p className="mt-1.5 text-[12.5px] leading-relaxed text-mist">{post.body}</p>}
-
-        {post.stats && (
-          <div className="mt-3 grid grid-cols-3 gap-2">
-            {post.stats.map((s) => (
-              <div key={s.label}>
-                <p className="tnum text-[15px] font-light text-snow">{s.value}</p>
-                <p className="mt-0.5 text-[10.5px] text-mist-dim">{s.label}</p>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {post.bullets && (
-          <ul className="mt-2.5 space-y-1">
-            {post.bullets.map((b) => (
-              <li key={b} className="flex items-start gap-2 text-[12.5px] text-mist">
-                <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-azure" />
-                {b}
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {post.report && <RouteReport report={post.report} />}
-        {post.milestone && <Milestone milestone={post.milestone} />}
-      </div>
-
-      {post.photo && (
-        <div className="relative mt-3.5 h-[190px]">
-          <img src={post.photo} alt="" aria-hidden loading="lazy" className="h-full w-full object-cover" />
-          <div className="absolute inset-0 bg-gradient-to-t from-graphite/80 to-transparent" />
-        </div>
-      )}
-
-      {post.tags && (
-        <div className="flex flex-wrap gap-2 px-4 pt-3">
-          {post.tags.map((t) => (
-            <span key={t} className="rounded-pill border border-hairline px-2.5 py-1 text-[10.5px] text-mist-dim">
-              {t}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {/* ---- Engagement -------------------------------------------------- */}
-      <div className="mt-3 flex items-center gap-5 border-t border-hairline px-4 py-3">
-        {/* Counts are STATED, not pressable. These posts are demo content
-            about people who do not exist; a like button that worked would be
-            the athlete applauding an invention, and the count climbing would
-            be the app manufacturing engagement. The research pass flagged this
-            as the one honesty breach on the screen — the notice below the feed
-            explains the content, but a control that responds must also be real. */}
-        <span className="flex items-center gap-1.5 text-[12.5px] text-mist">
-          <Heart size={15} strokeWidth={1.7} />
-          <span className="tnum">{post.likes}</span>
-        </span>
-        <span className="flex items-center gap-1.5 text-[12.5px] text-mist">
-          <MessageCircle size={15} strokeWidth={1.7} />
-          <span className="tnum">{post.comments}</span>
-        </span>
-        <span className="flex-1" />
-        {/* Only ever View Profile or View Group. There is no message button:
-            one-to-one messaging exists inside a group, not between strangers. */}
-        {post.group ? (
-          <Link
-            to="/explore/social?tab=groups"
-            className="flex items-center gap-1 text-[12.5px] text-azure"
-          >
-            View group
-            <ChevronRight size={14} strokeWidth={1.8} />
-          </Link>
-        ) : post.kind === "looking-for-partners" ? (
-          /* CONNECT on the mockup. The demo author cannot be connected to, so
-             the control goes where connecting will actually live — the partner
-             board — rather than pretending a handshake happened. */
-          <Link
-            to="/explore/social?tab=people"
-            className="flex items-center gap-1 rounded-pill border border-azure/50 px-3 py-1 text-[11.5px] uppercase tracking-[0.08em] text-azure transition-colors hover:bg-azure/[0.1]"
-          >
-            Connect
-          </Link>
-        ) : null}
-        {/* No "View profile" — there is no profile behind a demo author, and a
-            label styled like a control that goes nowhere is a lie in miniature. */}
-      </div>
-
-      {post.kind === "summit" && post.summit?.verified && (
-        <p className="border-t border-hairline px-4 py-2.5 text-[10.5px] leading-relaxed text-mist-dim">
-          {SUMMIT_VERIFIED_MEANING}
-        </p>
-      )}
-
-      {menu && <PostMenu author={post.author.name} onClose={() => setMenu(false)} />}
-    </div>
-  );
-}
-
-function RouteReport({ report }: { report: NonNullable<CommunityPost["report"]> }) {
-  return (
-    <div className="mt-3 rounded-tile border border-hairline bg-slate/50 p-3">
-      <div className="grid grid-cols-3 gap-2">
-        {[
-          { label: "Trail", value: report.condition },
-          { label: "Visibility", value: report.visibility },
-          { label: "Snow", value: report.snow },
-        ].map((r) => (
-          <div key={r.label}>
-            <p className="text-[10px] uppercase tracking-[0.1em] text-mist-dim">{r.label}</p>
-            <p className="mt-1 text-[12.5px] text-snow">{r.value}</p>
-          </div>
-        ))}
-      </div>
-      <p className="mt-2.5 text-[12.5px] leading-relaxed text-mist">{report.note}</p>
-      <p className="mt-2 text-[10.5px] leading-relaxed text-mist-dim">
-        User reported — community information, not an official mountain safety report. Conditions
-        change by the hour.
-      </p>
-    </div>
-  );
-}
-
-function Milestone({ milestone }: { milestone: NonNullable<CommunityPost["milestone"]> }) {
-  return (
-    <div className="mt-3 flex items-center gap-4">
-      <ProgressRing value={milestone.pct} size={64} stroke={2.5}>
-        <div className="text-center">
-          <p className="tnum text-[15px] font-extralight leading-none text-snow">{milestone.pct}%</p>
-          <p className="mt-0.5 text-[8px] uppercase tracking-[0.1em] text-azure/85">
-            {milestone.label}
-          </p>
-        </div>
-      </ProgressRing>
-      <p className="flex-1 text-[11.5px] leading-relaxed text-mist-dim">
-        Preparation is derived from training the athlete recorded. It is not a judgement that
-        anyone is ready for a mountain.
-      </p>
-    </div>
-  );
-}
-
-function Avatar({ name, src }: { name: string; src?: string }) {
-  const initials = name
-    .split(" ")
-    .slice(0, 2)
-    .map((w) => w[0])
-    .join("");
-  return (
-    <span className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full border border-hairline bg-slate text-[12px] text-mist">
-      {src ? <img src={src} alt="" aria-hidden className="h-full w-full object-cover" /> : initials}
-    </span>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* Sheets                                                                     */
-/* -------------------------------------------------------------------------- */
-
-function PostMenu({ author, onClose }: { author: string; onClose: () => void }) {
-  return (
-    <Sheet title={author} onClose={onClose}>
-      <SheetRow title="Report post" detail="Tell us what's wrong with it" onClick={onClose} />
-      <SheetRow title={`Mute ${author}`} detail="Stop seeing their posts" onClick={onClose} />
-      <SheetRow title={`Block ${author}`} detail="They can no longer see or contact you" onClick={onClose} />
-      <p className="py-3 text-[11px] leading-relaxed text-mist-dim">
-        Moderation needs an account and a backend, so these do not do anything yet.
-      </p>
-    </Sheet>
-  );
-}
-
 /**
- * The floating ＋ sheet — now the only way into a composer.
+ * The floating ＋ sheet — the only way into a composer.
  *
- * Every option used to be wired to `onClose` and nothing else, so choosing one
- * dismissed the sheet and opened nothing. That was survivable while the feed
- * carried its own two composer buttons; with those gone it would have left no
- * way to post at all, so each option now opens the composer it names.
+ * TWO WRITE PATHS SIT HERE, AND THEY ARE NOT THE SAME THING, so they are not
+ * presented as one. "Post to ICEFALL" is `components/social/Composer` — the
+ * only composer that writes to `public.posts`, which is why it also owns the
+ * story expiry and the identity gate on video. The five options below it are
+ * the demo taxonomy, and each one opens the device-local composer that has
+ * always been behind them: photos, an attached recording, a saved trail. Both
+ * say plainly what they can and cannot deliver; neither is dressed up as the
+ * other.
  */
 function CreateSheet({
   onClose,
+  onCompose,
   onPick,
 }: {
   onClose: () => void;
+  onCompose: () => void;
   onPick: (kind: PostKind) => void;
 }) {
   return (
     <Sheet title="Create post" onClose={onClose}>
+      <button
+        type="button"
+        onClick={onCompose}
+        className="flex w-full items-center gap-3.5 py-3.5 text-left"
+      >
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-azure/40 bg-azure/[0.1]">
+          <PenLine size={16} strokeWidth={1.7} className="text-azure" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[13.5px] text-snow">Post to ICEFALL</span>
+          <span className="mt-0.5 block truncate text-[11.5px] text-mist-dim">
+            Words, or a story that ends
+          </span>
+        </span>
+        <ChevronRight size={15} strokeWidth={1.8} className="shrink-0 text-mist-dim" />
+      </button>
+
       {CREATE_OPTIONS.map((o) => {
         const Icon = KIND_ICON[o.kind];
         return (
@@ -613,16 +893,20 @@ function CreateSheet({
             <ShieldCheck size={14} strokeWidth={1.7} className="shrink-0 text-azure" />
             Safety first
           </p>
+          {/* The under-18 claim removed here for the reason given at the other
+              occurrence above — nothing reads `ageBand` outside the screen that
+              sets it. What remains is advice ICEFALL can actually stand behind,
+              because it asks something of the reader rather than promising
+              something of the app. */}
           <p className="mt-1.5 text-[11.5px] leading-relaxed text-mist-dim">
-            Accounts under 18 have restricted discovery and no private messaging. Never post an
-            exact address or a live location. Be respectful.
+            Never post an exact address or a live location. Be respectful.
           </p>
         </div>
         <p className="mt-3 text-[11px] leading-relaxed text-mist-dim">
-          Posting needs an account, which ICEFALL does not have yet — nothing here will publish.
+          The five options above save to this device and publish nowhere. Posting to ICEFALL needs
+          an account, and says so if you do not have one.
         </p>
       </div>
     </Sheet>
   );
 }
-

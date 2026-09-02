@@ -886,14 +886,24 @@ function Safety() {
           value={settings.ageBand}
           onChange={(v) => patch({ ageBand: v })}
         />
-        {settings.ageBand === "under-18" && (
-          <InfoRow
-            title="Under-18 protections are on"
-            detail="No private messaging with adults, restricted people discovery, and location never shared."
-            value="Active"
-            tone="azure"
-          />
-        )}
+        {/*
+          REMOVED: an InfoRow reading "Under-18 protections are on / Active".
+
+          None of the three protections it named existed. `ageBand` is written
+          here and read nowhere else in the app — no messaging, discovery or
+          location path consults it — so the row asserted a live safety feature
+          that was not built, in the one place a parent or a young climber would
+          go to check.
+
+          It also cost more than it appeared to. The cheapest defensible
+          position under the Online Safety Act is a finding that ICEFALL is not
+          likely to be accessed by children; a screen stating that child
+          protections are ACTIVE is evidence to the contrary.
+
+          The age question itself is kept — it is honest to ask, and it is what
+          a future gate would read. Nothing may claim that gate exists until it
+          does.
+        */}
       </Group>
 
       <Group label="Report">
