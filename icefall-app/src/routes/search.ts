@@ -27,7 +27,13 @@ export interface ActivityOption {
 
 export const ACTIVITY_OPTIONS: ActivityOption[] = [
   { id: "mountaineering", label: "Mountaineering", detail: "Graded alpine lines and summit routes" },
-  { id: "hiking", label: "Hiking", detail: "Non-technical ground, walking pace" },
+  /* "Hiking/Trails", not "Hiking", at the owner's request (2026-09-03). The filter
+     always returned both named hiking routes and plain waymarked trails, and the
+     old label named only half of what came back — somebody after a trail had no
+     reason to think this pill was for them. The id stays `hiking`: it is the
+     stored value and the Overpass query key, and renaming it would break saved
+     searches to change a word on screen. */
+  { id: "hiking", label: "Hiking/Trails", detail: "Non-technical ground and waymarked trails, walking pace" },
   { id: "running", label: "Trail running", detail: "Shorter, runnable ground" },
 ];
 
