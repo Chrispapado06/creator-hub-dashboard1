@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Apple, ArrowLeft, Check, Eye, EyeOff, Mail } from "lucide-react";
+import { ArrowLeft, Check, Eye, EyeOff, Mail } from "lucide-react";
 import { Button } from "@/components/ui/primitives";
+import { AppleMark, GoogleMark, MicrosoftMark } from "@/components/ui/BrandMarks";
+import { useEnabledProviders } from "@/auth/providers";
 import { IcefallLockup } from "@/components/ui/IcefallMark";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/state/AppState";
@@ -30,9 +32,10 @@ import {
  * What changed:
  *   - sign-up and sign-in call Supabase; the password is transmitted and never
  *     stored by us
- *   - Apple, Google and Microsoft are live, and are enabled ONLY in the same
- *     change that made them work — a button that silently does nothing is worse
- *     than an honest disabled one
+ *   - Apple, Google and Microsoft are WIRED, and each button is rendered only
+ *     when the server says that provider is switched on (`useEnabledProviders`).
+ *     Today the project has only email enabled, so none of the three appears.
+ *     A button that silently does nothing is worse than no button at all
  *   - "send reset link" actually sends
  *
  * THE ORDER IS ACCOUNT FIRST, THEN HANDLE, THEN QUESTIONS, and that is forced
@@ -259,13 +262,21 @@ export function Welcome() {
         >
           Sign in
         </Button>
-        <button
-          type="button"
-          onClick={() => navigate("/onboarding")}
-          className="section-label mt-6 w-full text-center text-mist transition-colors hover:text-snow"
-        >
-          Explore without an account
-        </button>
+        {/*
+          THE GUEST DOOR IS GONE — the owner ruled on 2026-09-02 that ICEFALL
+          requires an account. There were TWO of these, here and on the
+          create-account screen, and both navigated straight to /onboarding,
+          which set the local `onboarded` flag and opened the whole app with no
+          account behind it. Nothing was gated, so the app was being built as
+          account-required AND as browse-freely at the same time, and every
+          screen was growing a signed-out branch nobody had asked for.
+
+          Do not restore this as a convenience. A way in without signing up is a
+          product decision with a shape — what a stranger may see and what they
+          may not — and it is not a button. To review screens without an
+          account, build with VITE_ICEFALL_DEMO=1: the gate in App.tsx exempts
+          DEMO builds, which is how the shared Vercel links work.
+        */}
       </motion.div>
     </div>
   );
@@ -307,16 +318,27 @@ function ProviderButton({
   );
 }
 
-export function CreateAccount() {
-  const navigate = useNavigate();
+/**
+ * The social doors, wherever they are offered.
+ *
+ * ONE component rather than a copy on each screen, because the two screens must
+ * never disagree about which providers exist. A create-account screen offering
+ * Google beside a sign-in screen that does not is a trap with a specific victim:
+ * somebody who signed up with Google has NO PASSWORD, so a sign-in screen with
+ * only an email field locks them out of their own account with no error message
+ * to explain it.
+ *
+ * It owns its own pending and error state because the failure is local — on
+ * success the browser leaves for the provider and never comes back to this
+ * render, so there is no success branch to write. Only a failure returns here,
+ * and it has to say something, or a tapped button that does nothing looks like a
+ * dead app.
+ */
+function SocialSignIn() {
   const [pending, setPending] = useState<ProviderKey | null>(null);
   const [providerError, setProviderError] = useState<string | null>(null);
+  const providers = useEnabledProviders();
 
-  /**
-   * Hands off to the provider. On success the browser LEAVES, so there is no
-   * success branch to write — only a failure returns here, and it has to say
-   * something, or a tapped button that does nothing looks like a dead app.
-   */
   async function go(key: ProviderKey) {
     setPending(key);
     setProviderError(null);
@@ -327,6 +349,71 @@ export function CreateAccount() {
     }
   }
 
+  /* Nothing enabled, or not yet known — render NOTHING, not an empty gap with a
+     divider under it. A "or continue with" rule above no buttons reads as a
+     broken screen. */
+  if (providers.keys.length === 0) return null;
+
+  return (
+    <div className="space-y-3">
+      {/*
+        ONLY THE DOORS THAT OPEN.
+        These three used to render unconditionally, and on this project NONE of
+        them is configured — /auth/v1/settings reports email enabled and every
+        other provider false. So all three were controls that could only ever
+        produce an error, on the FIRST screen of the app. Somebody who taps
+        Google and gets "Unsupported provider" does not conclude the button is
+        broken; they conclude the app is.
+
+        `useEnabledProviders` ASKS the server which are switched on, so the
+        moment one is enabled in the dashboard its button appears with no code
+        change — and, more importantly, switching one OFF cannot leave a dead
+        door behind. While the answer is unknown nothing is drawn: an
+        optimistic button that later vanishes is worse than one that arrives a
+        moment late, because the first invites a tap that fails.
+
+        The marks are the real ones (components/ui/BrandMarks.tsx). What was
+        here before was a lucide apple — the fruit, not the company — and the
+        bare letters "G" and "M". A wrong mark on a sign-in button reads as a
+        phishing page to anybody who has seen the real one, and Apple, Google
+        and Microsoft each forbid a redrawn or recoloured mark in their brand
+        terms, so this is a store-review question as well as a trust one.
+      */}
+      {providers.keys.includes("apple") && (
+        <ProviderButton
+          icon={<AppleMark />}
+          label="Continue with Apple"
+          onClick={() => go("apple")}
+          disabled={pending !== null}
+        />
+      )}
+      {providers.keys.includes("google") && (
+        <ProviderButton
+          icon={<GoogleMark />}
+          label="Continue with Google"
+          onClick={() => go("google")}
+          disabled={pending !== null}
+        />
+      )}
+      {providers.keys.includes("microsoft") && (
+        <ProviderButton
+          icon={<MicrosoftMark />}
+          label="Continue with Microsoft"
+          onClick={() => go("microsoft")}
+          disabled={pending !== null}
+        />
+      )}
+      {providerError && (
+        <p className="text-[11.5px] leading-relaxed text-[color:var(--danger,#F08A7C)]">
+          {providerError}
+        </p>
+      )}
+    </div>
+  );
+}
+
+export function CreateAccount() {
+  const navigate = useNavigate();
   return (
     <AuthScreen
       eyebrow="Create account"
@@ -337,35 +424,7 @@ export function CreateAccount() {
       footer={<AltLine text="Already have an account?" cta="Sign in" to="/auth/signin" />}
     >
       <div className="space-y-3">
-        {/*
-          ENABLED IN THE SAME CHANGE THAT MADE THEM WORK, never before. Each
-          navigates away to the provider and returns to /auth/callback.
-          A provider that is not switched on in the Supabase dashboard reports
-          it here rather than failing silently — see `providerError`.
-        */}
-        <ProviderButton
-          icon={<Apple size={17} strokeWidth={1.6} />}
-          label="Continue with Apple"
-          onClick={() => go("apple")}
-          disabled={pending !== null}
-        />
-        <ProviderButton
-          icon={<span className="text-[15px] font-medium leading-none">G</span>}
-          label="Continue with Google"
-          onClick={() => go("google")}
-          disabled={pending !== null}
-        />
-        <ProviderButton
-          icon={<span className="text-[15px] font-medium leading-none">M</span>}
-          label="Continue with Microsoft"
-          onClick={() => go("microsoft")}
-          disabled={pending !== null}
-        />
-        {providerError && (
-          <p className="text-[11.5px] leading-relaxed text-[color:var(--danger,#F08A7C)]">
-            {providerError}
-          </p>
-        )}
+        <SocialSignIn />
         <ProviderButton
           icon={<Mail size={17} strokeWidth={1.6} />}
           label="Continue with email"
@@ -373,15 +432,6 @@ export function CreateAccount() {
         />
       </div>
 
-      <div className="my-7 flex items-center gap-4">
-        <span className="h-px flex-1 bg-hairline" />
-        <span className="section-label text-mist-dim">or</span>
-        <span className="h-px flex-1 bg-hairline" />
-      </div>
-
-      <Button variant="secondary" className="w-full" onClick={() => navigate("/onboarding")}>
-        Explore without an account
-      </Button>
 
       <Note>{SERVER_NOTE}</Note>
     </AuthScreen>
@@ -612,8 +662,13 @@ export function SignIn() {
       back="/welcome"
       footer={<AltLine text="Don't have an account?" cta="Create one" to="/auth/create" />}
     >
+      {/* Above the password form, not below it: whoever signed up with a
+          provider has no password to type, and making them scroll past a field
+          they can never fill is how that person concludes they have no account. */}
+      <SocialSignIn />
+
       <form
-        className="space-y-4"
+        className="mt-4 space-y-4"
         onSubmit={(e) => {
           e.preventDefault();
           submit();
