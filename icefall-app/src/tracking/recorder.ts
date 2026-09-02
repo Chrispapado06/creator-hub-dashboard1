@@ -1,4 +1,12 @@
-import { GpsFilter, Rolling, gpsQualityFor, haversine } from "./filters";
+import { GpsFilter, Rolling, gpsQualityFor, haversine, type FilterResult } from "./filters";
+import {
+  MIN_DISPLAY_AVG_SPEED_MPS,
+  MIN_DISPLAY_SPEED_MPS,
+  SPEED_WINDOW_MS,
+  movementConfigFor,
+  type MovementConfig,
+} from "./config";
+import { MovementMachine, trustedDeviceSpeed, type MovementUpdate } from "./movement";
 import { activityById } from "./activities";
 import { energyModelFor, kcalFor, metFor } from "./energy";
 import type {
@@ -23,8 +31,6 @@ import type {
  */
 
 const SPLIT_DISTANCE_M = 1000;
-const AUTO_PAUSE_SPEED_MPS = 0.4;
-const AUTO_PAUSE_AFTER_MS = 8_000;
 const SIGNAL_LOST_AFTER_MS = 12_000;
 /**
  * The longest gap between position samples that may be costed as effort.
@@ -103,6 +109,9 @@ export class ActivityRecorder {
   private minAltitudeM: number | null = null;
 
   private points: TrackPointLive[] = [];
+  /** Handed-out copies of the two growing arrays. See `snapshot`. */
+  private pointsView: TrackPointLive[] | null = null;
+  private splitsView: LiveSplit[] | null = null;
   /** Kilocalories accumulated interval by interval. See `accrueEnergy`. */
   private kcalAccum = 0;
   /** When energy was last banked, so an interval is never counted twice. */
@@ -110,7 +119,9 @@ export class ActivityRecorder {
   private splits: LiveSplit[] = [];
   private splitAnchor = { distanceM: 0, t: 0, gain: 0, hrSum: 0, hrCount: 0 };
 
-  private speed = new Rolling(20_000);
+  private speed = new Rolling(SPEED_WINDOW_MS);
+  /** When a speed was last pushed into the window above. See `snapshot`. */
+  private lastSpeedAt = 0;
   private hrSamples: number[] = [];
   private heartRateBpm: number | null = null;
   private cadenceSpm: number | null = null;
@@ -119,9 +130,48 @@ export class ActivityRecorder {
 
   private gainHistory: { t: number; gain: number }[] = [];
   private lastFixAt = 0;
-  private lastMovementAt = 0;
-  private autoPaused = false;
   private gpsAccuracyM: number | null = null;
+
+  /**
+   * Whether the athlete is moving — decided by evidence, not by one boolean.
+   *
+   * This replaces `still && slow`, recomputed from scratch every second against
+   * the SAME threshold in both directions, which is what made the state rattle
+   * at every traffic light and gear stop. The machine holds four states with
+   * two candidate stages between the two real ones, and needs different
+   * thresholds, different dwells and different KINDS of evidence to enter a
+   * stop than to leave one. It is pure: no timers, no clock, no side effects.
+   */
+  private movement: MovementMachine;
+  /**
+   * The same thresholds the machine reasons with, so the number on the SCREEN
+   * and the number the machine votes on come from one rule. See
+   * `trustedDeviceSpeed` — they used to disagree.
+   */
+  private movementCfg: MovementConfig;
+  /** Timestamp of the previous fix handed to the machine, for its `dtSec`. */
+  private prevSampleT: number | null = null;
+  /** Newest position seen, so a stop can be anchored where it happened. */
+  private lastFixPos: { lat: number; lon: number } | null = null;
+  /**
+   * Where the athlete was when the current auto-pause was declared.
+   *
+   * The machine reasons in distances and never sees a position, so it cannot
+   * work out that a phone drifting on a rock keeps returning to the same spot.
+   * This is the one thing it needs a position for: straight-line displacement
+   * from the stop. See `netFromStopM` in movement.ts.
+   */
+  private stopAnchor: { lat: number; lon: number } | null = null;
+  /** Mirror of the machine's verdict, gated by the `autoPause` option. */
+  private autoPaused = false;
+  /**
+   * When `autoPaused` last CHANGED, epoch ms.
+   *
+   * Moving time is reconciled on that edge and only back to this instant, so a
+   * correction can never reach into a span that was already accounted for. See
+   * `applyMovement`.
+   */
+  private autoPauseEdgeAt = 0;
 
   private caps: Capabilities = {
     gps: false,
@@ -141,6 +191,11 @@ export class ActivityRecorder {
     };
     const type = activityById(activityTypeId);
     this.filter = new GpsFilter({ maxSpeedMps: type.maxSpeedMps });
+    // Thresholds come from the activity: a cyclist's slowest real movement is
+    // faster than a runner's, and a mountaineer stands still for minutes as
+    // part of the activity. See MOVEMENT_OVERRIDES in config.ts.
+    this.movement = new MovementMachine({ activityTypeId });
+    this.movementCfg = movementConfigFor(activityTypeId);
   }
 
   /* ---------------------------------------------------------------------- */
@@ -156,7 +211,7 @@ export class ActivityRecorder {
     }
     this.status = "recording";
     this.lastTickAt = now;
-    this.lastMovementAt = now;
+    this.clearMovementEvidence(now);
     this.startTicker();
     this.emit();
   }
@@ -165,16 +220,39 @@ export class ActivityRecorder {
     if (this.status !== "recording") return;
     this.accrue();
     this.status = "paused";
+    // A manual pause supersedes an auto-pause: the athlete has said they have
+    // stopped, so the machine's guess about it is no longer interesting, and
+    // leaving the flag set would keep the "Auto-paused" banner armed underneath
+    // a screen that already says Paused.
+    this.autoPaused = false;
+    this.autoPauseEdgeAt = Date.now();
     this.emit();
   }
 
   resume() {
     if (this.status !== "paused") return;
     this.status = "recording";
-    this.lastTickAt = Date.now();
-    this.lastMovementAt = Date.now();
-    this.autoPaused = false;
+    const now = Date.now();
+    this.lastTickAt = now;
+    this.clearMovementEvidence(now);
     this.emit();
+  }
+
+  /**
+   * Forget everything the movement machine believed.
+   *
+   * Called whenever the athlete themselves declares the state — pressing Start,
+   * or Resume after a manual pause. Without it the quiet run banked while they
+   * were parked at a hut is still in the window when they set off again, and
+   * they are auto-paused within a second of restarting: a stop confirmed from
+   * evidence gathered before they told us they had stopped.
+   */
+  private clearMovementEvidence(now: number) {
+    this.movement.reset("moving");
+    this.prevSampleT = null;
+    this.stopAnchor = null;
+    this.autoPaused = false;
+    this.autoPauseEdgeAt = now;
   }
 
   finish(): RecordedActivity {
@@ -246,9 +324,14 @@ export class ActivityRecorder {
     r.hrSamples = state.hrSamples.slice();
     r.caps = { ...state.caps };
     r.lastTickAt = Date.now();
-    // The rolling speed window, GPS filter and vertical-rate history are
-    // transient smoothing state — they rebuild from the next few fixes and
-    // never affect the recorded track, so they are intentionally not restored.
+    r.autoPauseEdgeAt = Date.now();
+    // The rolling speed window, GPS filter, vertical-rate history and movement
+    // machine are transient smoothing state — they rebuild from the next few
+    // fixes and never affect the recorded track, so they are intentionally not
+    // restored. The machine in particular MUST NOT be: it would otherwise wake
+    // holding a verdict about a moment that may be hours in the past. It starts
+    // from nothing and, until a fix arrives, holds `moving` and auto-pauses
+    // nobody, which is the honest position when you know nothing.
     return r;
   }
 
@@ -274,6 +357,15 @@ export class ActivityRecorder {
     if (sample.altitude !== null) this.caps.barometricAltitude = true;
 
     const res = this.filter.push(sample);
+
+    // The machine sees EVERY fix, including the ones the filter threw away.
+    // A rejected fix used to reach the auto-pause logic as `stepM: 0`, which is
+    // indistinguishable from stillness; the machine classifies it as inert, so
+    // it votes on nothing and extends no quiet run. Fed before the early return
+    // below for exactly that reason — silence from a broken sensor must not be
+    // read as a measurement of stillness.
+    if (this.status === "recording") this.observeMovement(sample, res);
+
     if (!res.accepted) {
       this.emit();
       return;
@@ -299,14 +391,24 @@ export class ActivityRecorder {
     const cutoff = sample.t - VERTICAL_WINDOW_MS;
     while (this.gainHistory.length && this.gainHistory[0].t < cutoff) this.gainHistory.shift();
 
-    if (res.stepM > 0) {
-      this.distanceM += res.stepM;
-      this.lastMovementAt = sample.t;
-      this.autoPaused = false;
-    }
+    // Banking distance is banking distance and nothing more. It used to also
+    // clear `autoPaused` on the spot, so ONE fix that happened to clear the
+    // noise floor resumed the recording — a single GPS wobble against a phone
+    // on a rock was enough. Resuming is the machine's decision now, and it
+    // wants independent fixes and integrated metres before it will make it.
+    if (res.stepM > 0) this.distanceM += res.stepM;
 
-    const derived = res.derivedSpeed ?? sample.speed;
-    if (derived !== null && Number.isFinite(derived)) this.speed.push(sample.t, derived);
+    // The filtered track first; the device's own figure only when the fix is
+    // good enough to believe it. That second clause used to be a bare `??`,
+    // which let a chipset's flat `speed: 0` placeholder into the rolling mean
+    // on every held frame — a measured 1.20 m/s walker was displayed at
+    // 0.17 m/s on a 32 m fix. `trustedDeviceSpeed` is the SAME rule the
+    // movement machine applies, imported rather than restated.
+    const derived = res.derivedSpeed ?? trustedDeviceSpeed(sample.speed, sample.accuracy, this.movementCfg);
+    if (derived !== null && Number.isFinite(derived)) {
+      this.speed.push(sample.t, derived);
+      this.lastSpeedAt = sample.t;
+    }
 
     this.points.push({
       ...sample,
@@ -314,6 +416,7 @@ export class ActivityRecorder {
       altitudeSmoothed: res.altitudeSmoothed,
       derivedSpeed: derived,
     });
+    this.pointsView = null;
 
     this.accrueEnergy(sample.t, derived);
 
@@ -366,6 +469,96 @@ export class ActivityRecorder {
   }
 
   /* ---------------------------------------------------------------------- */
+  /* Movement state                                                          */
+  /* ---------------------------------------------------------------------- */
+
+  /** Hand one fix to the movement machine and act on its verdict. */
+  private observeMovement(sample: GeoSample, res: FilterResult) {
+    if (!this.opts.autoPause) return;
+
+    const previousT = this.prevSampleT;
+    this.prevSampleT = sample.t;
+    const anchor = this.stopAnchor;
+    this.lastFixPos = { lat: sample.lat, lon: sample.lon };
+
+    this.applyMovement(
+      this.movement.push({
+        t: sample.t,
+        stepM: res.stepM,
+        // The machine uses this only to spot duplicates and reordering. The
+        // first fix of a recording has no predecessor, and an infinite interval
+        // says exactly that — inventing a plausible one would hand the machine
+        // a measurement nobody took.
+        dtSec: previousT === null ? Number.POSITIVE_INFINITY : (sample.t - previousT) / 1000,
+        accuracy: sample.accuracy,
+        // Both stay null when they are null. `GpsFilter` returns a null derived
+        // speed on a held frame ON PURPOSE — it means "unknown yet", not zero —
+        // and the old `(speed.mean ?? 0)` turned exactly that null into a
+        // stationary reading. Nothing here coerces either of them.
+        derivedSpeed: res.derivedSpeed,
+        reportedSpeed: sample.speed,
+        accepted: res.accepted,
+        // Measured from where the stop was DECLARED, not from the last fix.
+        // Drift accumulates path length indefinitely but cannot accumulate
+        // displacement, and that is the only difference between a phone on a
+        // rock and a slow walker over any span the machine can see.
+        netFromStopM: anchor === null ? null : haversine(anchor, sample),
+      }),
+      sample.t,
+    );
+  }
+
+  /**
+   * Reconcile moving time with a verdict from the movement machine.
+   *
+   * MOVING TIME ACCRUES IN `moving` AND IN `possibly-stopped`, and not in the
+   * two states the machine reports as auto-paused. That choice is deliberate:
+   * `possibly-stopped` is a SUSPICION, and withholding time on a suspicion
+   * means holding a debt to be repaid if the suspicion is wrong, which is the
+   * kind of bookkeeping that quietly loses minutes. Crediting it and settling
+   * up is exact, because the machine reports `quietSinceT` — the instant the
+   * quiet run began — so on a confirmed stop the over-credit is removed to the
+   * millisecond rather than estimated.
+   *
+   * The same argument runs the other way. A resume takes seconds to confirm,
+   * and those seconds were real movement; the machine reports `movingSinceT`,
+   * the earliest fix the resume rests on, and the time is credited back. Left
+   * uncorrected, every restart would shave a few seconds off moving time, and
+   * since pace is distance over MOVING time, that shortfall makes the athlete
+   * look faster than they were. Flattering is still wrong.
+   *
+   * Corrections only ever apply on an edge, and only back as far as that edge,
+   * so no span can be counted or removed twice. ELAPSED time is never touched
+   * by any of this: it is wall-clock from the moment Start was pressed and it
+   * keeps running through every stop.
+   */
+  private applyMovement(update: MovementUpdate, t: number) {
+    const paused = update.autoPaused;
+    if (paused === this.autoPaused) return;
+
+    if (paused) {
+      // The quiet span was credited as moving time while the stop was only
+      // suspected. Take it back — but never further back than the moment
+      // accrual began, and never below zero.
+      const from = Math.max(update.quietSinceT ?? t, this.autoPauseEdgeAt);
+      this.movingMs -= Math.max(0, Math.min(t - from, this.movingMs));
+    } else {
+      // Movement was proven to have started at `movingSinceT`; the confirmation
+      // latency after it was withheld. Give it back, capped by the elapsed time
+      // that is still unaccounted for so moving can never exceed elapsed.
+      const from = Math.max(update.movingSinceT ?? t, this.autoPauseEdgeAt);
+      this.movingMs += Math.max(0, Math.min(t - from, this.elapsedMs - this.movingMs));
+    }
+
+    // Anchor the stop where it happened, and drop the anchor on resume so the
+    // next stop measures from its own position rather than an old one.
+    this.stopAnchor = paused ? this.lastFixPos : null;
+
+    this.autoPaused = paused;
+    this.autoPauseEdgeAt = t;
+  }
+
+  /* ---------------------------------------------------------------------- */
   /* Derived values                                                          */
   /* ---------------------------------------------------------------------- */
 
@@ -381,6 +574,7 @@ export class ActivityRecorder {
           ? Math.round(this.splitAnchor.hrSum / this.splitAnchor.hrCount)
           : null,
       });
+      this.splitsView = null;
       this.splitAnchor = {
         distanceM: this.splitAnchor.distanceM + SPLIT_DISTANCE_M,
         t,
@@ -483,13 +677,17 @@ export class ActivityRecorder {
   private startTicker() {
     if (this.ticker) return;
     this.ticker = setInterval(() => {
+      const now = Date.now();
+      // Accrue FIRST, so any correction below applies to time already banked
+      // rather than to time that has not been counted yet.
       this.accrue();
 
-      // Auto-pause: no qualifying movement for a while.
+      // Let a dwell that is already satisfied on evidence complete on the
+      // clock. This can never CREATE evidence: with no usable fix inside its
+      // staleness bound the machine refuses to transition at all, so a phone
+      // that has lost the sky holds its state instead of pausing on silence.
       if (this.opts.autoPause && this.status === "recording") {
-        const still = Date.now() - this.lastMovementAt > AUTO_PAUSE_AFTER_MS;
-        const slow = (this.speed.mean ?? 0) < AUTO_PAUSE_SPEED_MPS;
-        this.autoPaused = still && slow;
+        this.applyMovement(this.movement.evaluateAt(now), now);
       }
 
       this.emit();
@@ -506,14 +704,34 @@ export class ActivityRecorder {
   /* ---------------------------------------------------------------------- */
 
   snapshot(): RecorderSnapshot {
+    const now = Date.now();
     const movingSec = this.movingMs / 1000;
-    const speedMps = this.speed.mean;
+
+    /**
+     * The live speed, or null when there is no measurement to report.
+     *
+     * Two ways it can be absent, and both used to publish a number anyway.
+     *
+     * Auto-paused: the machine has established that displacement is below the
+     * noise floor. That is a BOUND, not a speed of zero — we have not measured
+     * how fast the athlete is not moving — so the honest output is an em dash,
+     * which is what this app's null means. The rolling mean would otherwise
+     * keep showing the pace they were walking at before they stopped.
+     *
+     * Stale: a rolling window only prunes when something is pushed into it, so
+     * with no bankable steps arriving the mean never ages. Once the newest
+     * sample is older than the window, the figure is a memory of the past
+     * twenty seconds of a minute ago.
+     */
+    const speedFresh = this.lastSpeedAt > 0 && now - this.lastSpeedAt <= SPEED_WINDOW_MS;
+    const speedMps = this.autoPaused || !speedFresh ? null : this.speed.mean;
+
     const avgSpeedMps = movingSec > 0 && this.distanceM > 0 ? this.distanceM / movingSec : null;
     const signalLost =
       this.status === "recording" &&
       this.caps.gps &&
       this.lastFixAt > 0 &&
-      Date.now() - this.lastFixAt > SIGNAL_LOST_AFTER_MS;
+      now - this.lastFixAt > SIGNAL_LOST_AFTER_MS;
 
     return {
       status: this.status,
@@ -534,8 +752,13 @@ export class ActivityRecorder {
 
       speedMps,
       avgSpeedMps,
-      paceSecPerKm: speedMps && speedMps > 0.3 ? 1000 / speedMps : null,
-      avgPaceSecPerKm: avgSpeedMps && avgSpeedMps > 0.1 ? 1000 / avgSpeedMps : null,
+      // Pace is 1/speed, so with no trustworthy speed there is no pace. Null,
+      // never a fabricated figure and never a frozen one: the screen shows an
+      // em dash beside the "Auto-paused" badge, which together say exactly
+      // what is true — we are not moving, and we are not measuring a pace.
+      paceSecPerKm: speedMps && speedMps > MIN_DISPLAY_SPEED_MPS ? 1000 / speedMps : null,
+      avgPaceSecPerKm:
+        avgSpeedMps && avgSpeedMps > MIN_DISPLAY_AVG_SPEED_MPS ? 1000 / avgSpeedMps : null,
       verticalRateMPerH: this.verticalRate,
       gradePct: this.grade,
 
@@ -553,16 +776,24 @@ export class ActivityRecorder {
       signalLost,
 
       autoPaused: this.autoPaused,
-      // COPIES, not the live arrays.
+      // COPIES, not the live arrays — but the SAME copy until the contents
+      // change.
       //
       // `points` and `splits` are appended to in place, so handing out the
       // internal reference gave every snapshot the same array identity. Any
       // consumer memoising on it — the live map's route and athlete marker do
       // exactly that — compared identical references and never recomputed, so
       // the map stayed blank for the whole session while the numbers climbed.
-      // The snapshot is a value object everywhere it is used; these make it one.
-      points: this.points.slice(),
-      splits: this.splits.slice(),
+      //
+      // Slicing afresh on every snapshot fixed that and introduced the mirror
+      // image of it: a new identity on every fix and every tick even when
+      // nothing had been appended, so every memo downstream recomputed off a
+      // copy identical to the one it already held — and on a six-hour day out
+      // that is a copy of a several-thousand-point array, several times a
+      // second. Caching until the array is actually written to makes the
+      // contract exact: the identity changes if and only if the contents did.
+      points: (this.pointsView ??= this.points.slice()),
+      splits: (this.splitsView ??= this.splits.slice()),
       capabilities: this.caps,
     };
   }
@@ -575,6 +806,20 @@ export class ActivityRecorder {
     };
   }
 
+  /**
+   * Notify subscribers. Called at SENSOR rate, on purpose.
+   *
+   * The engine publishes every change it makes and does not decide how often
+   * anyone should look. Rate-limiting the display is a display concern and
+   * lives at the React boundary — `useRecorder` throttles `setSnapshot` to
+   * `DISPLAY_INTERVAL_MS` and lets transitions through immediately, with the
+   * reasoning in `display.ts`. Throttling here as well would put two limiters
+   * in series on one stream, and would also slow the crash-safety writes, which
+   * deliberately run at their own faster cadence off this same subscription.
+   *
+   * What this method does owe the display is cheapness, which is why the two
+   * growing arrays below are copied only when they change. See `snapshot`.
+   */
   private emit() {
     const snap = this.snapshot();
     this.listeners.forEach((fn) => fn(snap));

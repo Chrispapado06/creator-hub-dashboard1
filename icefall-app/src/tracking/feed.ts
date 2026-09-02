@@ -53,6 +53,19 @@ export const NO_SEEDED_TOTALS = {
 
 const SEEDED_TOTALS = import.meta.env.DEV ? USER.stats : NO_SEEDED_TOTALS;
 
+/**
+ * True when the career totals are standing on the DEV demo athlete rather than on
+ * anything the user recorded.
+ *
+ * This existed silently until the Stats tab grew a month-by-month chart: the chart
+ * reads recorded activities, the seed carries no dates, so the page said "nothing
+ * recorded in the last twelve months" directly above "128 activities, 1,245 km",
+ * under a caption claiming both were the user's own. A screen that contradicts
+ * itself is the honesty doctrine failing in public. Screens that show the totals
+ * can now say which of the two they are showing.
+ */
+export const TOTALS_ARE_SEEDED = SEEDED_TOTALS.activities > 0;
+
 let cachedRaw: RecordedActivity[] | null = null;
 const listeners = new Set<() => void>();
 
@@ -275,4 +288,54 @@ export function weeklyBuckets(list: Activity[], weeks = 8) {
     }
   }
   return buckets;
+}
+
+/**
+ * The last `months` calendar months of recorded volume, oldest first.
+ *
+ * Built from RECORDED activities only, which is the same set `useAthleteTotals`
+ * adds to its base — so the chart and the totals above it are counting the same
+ * thing. They can still disagree in DEV, where `SEEDED_TOTALS` starts from the
+ * demo athlete's career: that seed carries no dates, so it cannot be placed in a
+ * month and is deliberately absent here rather than smeared across the axis.
+ * In a real install the seed is zero and the two agree exactly.
+ *
+ * Simulated activities are excluded, matching `useAthleteTotals`.
+ */
+export function useMonthlyVolume(months = 12) {
+  const recorded = useRecordedActivities();
+  return useMemo(() => {
+    const now = new Date();
+    const buckets: {
+      date: Date;
+      distanceKm: number;
+      elevationM: number;
+      activities: number;
+    }[] = [];
+    const index = new Map<string, number>();
+
+    for (let i = months - 1; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      index.set(`${d.getFullYear()}-${d.getMonth()}`, buckets.length);
+      buckets.push({ date: d, distanceKm: 0, elevationM: 0, activities: 0 });
+    }
+
+    for (const r of recorded) {
+      if (r.simulated) continue;
+      /* `startedAt` is a full ISO timestamp, so `new Date` reads it as an
+         instant and converts to local time correctly. This is NOT the bare
+         calendar-date case that made `fmtDate` render a day early west of
+         Greenwich (PH-30) — that bug was `new Date("2027-05-01")` parsing as
+         UTC midnight. A timestamp with a zone is safe. */
+      const at = new Date(r.startedAt);
+      if (Number.isNaN(at.getTime())) continue;
+      const slot = index.get(`${at.getFullYear()}-${at.getMonth()}`);
+      if (slot === undefined) continue;
+      const b = buckets[slot];
+      b.distanceKm += r.distanceM / 1000;
+      b.elevationM += r.elevationGainM;
+      b.activities += 1;
+    }
+    return buckets;
+  }, [recorded, months]);
 }

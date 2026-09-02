@@ -5,6 +5,7 @@ import { GeolocationSource } from "./sources/geolocation";
 import { SimulatedGpsSource } from "./sources/simulator";
 import { BluetoothHeartRateSource } from "./sources/heartRate";
 import { buildLiveCue, type LiveCue } from "./insights";
+import { DISPLAY_INTERVAL_MS, PERSIST_INTERVAL_MS, transitionKey } from "./display";
 import type { ActivityTypeId, RecordedActivity, RecorderSnapshot, SourceState } from "./types";
 import { activityById } from "./activities";
 
@@ -14,6 +15,15 @@ import { activityById } from "./activities";
  * The engine owns all state; this hook only mirrors snapshots and wires
  * sources. Keeping it this thin is what makes the tracking logic testable and
  * portable to a native background service later.
+ *
+ * It is also the boundary between SENSOR RATE and DISPLAY RATE. The recorder
+ * emits on every GPS fix and again on its own 1 s ticker; this hook used to
+ * call `setSnapshot` on each of those, so the whole Activity screen — nine
+ * metric tiles, the coach, the map — re-rendered at whatever rate the chipset
+ * happened to produce fixes. See `./display.ts` for the thresholds and the
+ * failure they answer. Nothing below drops or alters a measurement: the engine
+ * underneath keeps full fidelity, and every snapshot handed to React is one the
+ * engine actually produced, never a smoothed or held-over stand-in.
  */
 
 export type GpsMode = "device" | "simulated";
@@ -64,23 +74,88 @@ export function useRecorder({
   const gpsRef = useRef<GeolocationSource | SimulatedGpsSource | null>(null);
   const hrRef = useRef<BluetoothHeartRateSource | null>(null);
 
-  // Mirror snapshots to React, and persist the in-progress activity (throttled)
-  // so it survives the app closing.
+  /* ------------------------------------------------------------------ */
+  /* Sensor rate in, display rate out                                    */
+  /* ------------------------------------------------------------------ */
+
+  /** The snapshot React is currently showing — the identity comparison basis. */
+  const shownRef = useRef<RecorderSnapshot>(snapshot);
+  /** The newest snapshot that has not been painted yet, if any. */
+  const pendingRef = useRef<RecorderSnapshot | null>(null);
+  const shownAtRef = useRef(0);
+  const keyRef = useRef(transitionKey(snapshot));
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastPersistRef = useRef(0);
-  useEffect(
-    () =>
-      recorder.subscribe((snap) => {
-        setSnapshot(snap);
-        if ((snap.status === "recording" || snap.status === "paused") && snap.startedAt) {
-          const now = Date.now();
-          if (now - lastPersistRef.current > 3000) {
-            lastPersistRef.current = now;
-            saveActiveSession({ mode, state: recorder.serialize() });
-          }
+
+  useEffect(() => {
+    const clearFlush = () => {
+      if (flushTimerRef.current !== null) {
+        clearTimeout(flushTimerRef.current);
+        flushTimerRef.current = null;
+      }
+    };
+
+    const paint = (snap: RecorderSnapshot) => {
+      clearFlush();
+      pendingRef.current = null;
+      shownAtRef.current = Date.now();
+      keyRef.current = transitionKey(snap);
+
+      const next = stabilise(shownRef.current, snap);
+      // `stabilise` returns the PREVIOUS object when nothing a consumer can
+      // observe has changed — while paused with no fixes, every field is
+      // identical and handing React a fresh object would re-render the screen
+      // to draw exactly what is already on it.
+      if (next === shownRef.current) return;
+      shownRef.current = next;
+      setSnapshot(next);
+    };
+
+    const unsubscribe = recorder.subscribe((snap) => {
+      // PERSISTENCE STAYS ON THE SENSOR SIDE.
+      //
+      // Crash safety must not inherit the display cadence: an activity killed
+      // by iOS should lose the same three seconds whether the screen is being
+      // repainted or not. This runs on every emit, throttled on its own clock.
+      if ((snap.status === "recording" || snap.status === "paused") && snap.startedAt) {
+        const at = Date.now();
+        if (at - lastPersistRef.current > PERSIST_INTERVAL_MS) {
+          lastPersistRef.current = at;
+          saveActiveSession({ mode, state: recorder.serialize() });
         }
-      }),
-    [recorder, mode],
-  );
+      }
+
+      const now = Date.now();
+      // A transition (pause, auto-pause, lost signal, a capability appearing)
+      // jumps the queue. Waiting up to a second to darken the screen after a
+      // tap is the difference between a calm app and a broken-feeling one.
+      const transition = transitionKey(snap) !== keyRef.current;
+      if (transition || now - shownAtRef.current >= DISPLAY_INTERVAL_MS) {
+        paint(snap);
+        return;
+      }
+
+      // Not this snapshot's slot yet. Keep the NEWEST one and paint it when the
+      // slot opens — a trailing edge, so the last reading of a burst is never
+      // the one that gets dropped, and the screen always settles on the truth.
+      pendingRef.current = snap;
+      if (flushTimerRef.current === null) {
+        flushTimerRef.current = setTimeout(
+          () => {
+            flushTimerRef.current = null;
+            const held = pendingRef.current;
+            if (held) paint(held);
+          },
+          Math.max(0, DISPLAY_INTERVAL_MS - (now - shownAtRef.current)),
+        );
+      }
+    });
+
+    return () => {
+      clearFlush();
+      unsubscribe();
+    };
+  }, [recorder, mode]);
 
   // Write the latest state the instant the app is backgrounded — iOS suspends a
   // hidden tab within seconds, and the throttle above might not have just fired.
@@ -267,4 +342,54 @@ export function useRecorder({
     disconnectHeartRate,
     bluetoothSupported: BluetoothHeartRateSource.supported,
   };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Snapshot identity                                                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * True when two append-only arrays hold the same elements.
+ *
+ * `points` and `splits` are only ever appended to, and every element is an
+ * object pushed once and never mutated. So equal length plus an identical last
+ * element is a complete test — cheap enough to run at display rate on a track
+ * with thousands of points, where a element-by-element comparison would not be.
+ */
+function sameTail<T>(a: readonly T[], b: readonly T[]): boolean {
+  return a.length === b.length && (a.length === 0 || a[a.length - 1] === b[b.length - 1]);
+}
+
+/** True when no field of the snapshot has changed identity. */
+function identical(a: RecorderSnapshot, b: RecorderSnapshot): boolean {
+  for (const key of Object.keys(a) as (keyof RecorderSnapshot)[]) {
+    if (a[key] !== b[key]) return false;
+  }
+  // Written as a loop over the live keys rather than a hand-listed set so a
+  // field added to RecorderSnapshot later is compared automatically. Missing
+  // one would mean a real change never reaching the screen, which is the one
+  // failure mode this whole file must not introduce.
+  return true;
+}
+
+/**
+ * Keep object identity stable across snapshots that carry the same values.
+ *
+ * `ActivityRecorder.snapshot()` builds a fresh object every emit, and copies
+ * `points` and `splits` (correctly — see the comment there; handing out the
+ * live arrays broke the live map). But that means the arrays change identity
+ * once a second even when no fix has landed, and every consumer memoising on
+ * them recomputes: `projectTrack(s.points)` walks the whole track, and the
+ * map's route/marker effect re-runs `setData` with the full coordinate list.
+ *
+ * Reusing the previous array when its contents are unchanged makes those memos
+ * do what they were written to do. No value is withheld: if a point landed, the
+ * new array is passed straight through.
+ */
+function stabilise(prev: RecorderSnapshot, next: RecorderSnapshot): RecorderSnapshot {
+  const points = sameTail(prev.points, next.points) ? prev.points : next.points;
+  const splits = sameTail(prev.splits, next.splits) ? prev.splits : next.splits;
+  const merged =
+    points === next.points && splits === next.splits ? next : { ...next, points, splits };
+  return identical(prev, merged) ? prev : merged;
 }

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  Bike, ChevronRight, Compass, Footprints, MoreHorizontal, Mountain, Play, Plus,
+  Bike, ChevronRight, Footprints, MoreHorizontal, Mountain, Play, Plus,
   Snowflake, Target, Thermometer, Timer, Weight, X, Zap,
 } from "lucide-react";
 import { Rise, Screen, Stagger } from "@/components/layout/chrome";
@@ -171,6 +171,7 @@ function DisciplinePicker({ onPick }: { onPick: (d: Discipline) => void }) {
           </button>
         </Rise>
       </Stagger>
+
     </Screen>
   );
 }
@@ -199,16 +200,18 @@ function ActivitySettings({
   const activity = useMemo(() => activityById(discipline.activity), [discipline.activity]);
   const objective = goals.find((g) => g.status === "active");
 
-  const gpsCapable = typeof navigator !== "undefined" && "geolocation" in navigator;
 
   const [goalOpen, setGoalOpen] = useState(false);
   /*
    * `window.prompt` was used here and it is not acceptable: it is blocked
    * outright in installed PWAs and some embedded webviews (the console said so
    * — "prompt() is not supported"), it cannot be styled, and it blocks the main
-   * thread. These two fields get a real sheet instead.
+   * thread. Pack weight gets a real sheet instead.
+   *
+   * It served Footwear too until the owner removed that row; the sheet is now
+   * single-purpose and the field-picking ternaries went with it.
    */
-  const [editing, setEditing] = useState<null | "pack" | "footwear">(null);
+  const [editing, setEditing] = useState<null | "pack">(null);
   // Chosen before the run, because on the hill nobody wants to hunt for it.
   const [mapStyle, setMapStyle] = useState<MapStyleId>(() => savedMapStyle());
   const [draft, setDraft] = useState("");
@@ -232,15 +235,6 @@ function ActivitySettings({
       onClick: () => {
         setDraft(settings.packWeightKg ? String(settings.packWeightKg) : "");
         setEditing("pack");
-      },
-    },
-    {
-      icon: Footprints,
-      title: "Footwear",
-      value: settings.footwear || "Not set",
-      onClick: () => {
-        setDraft(settings.footwear ?? "");
-        setEditing("footwear");
       },
     },
     {
@@ -274,13 +268,18 @@ function ActivitySettings({
           onClick={onClose}
           aria-label="Back"
           className="absolute left-5 grid h-10 w-10 place-items-center rounded-full bg-obsidian/65 text-snow backdrop-blur transition-colors hover:bg-obsidian/85"
-          style={{ top: "calc(var(--screen-safe-top) + 12px)" }}
+          /* The fallback is the point. `--screen-safe-top` is only set by the
+             layouts that own a header (see chrome.tsx); this screen has none,
+             so the bare var resolved to nothing, `calc()` became invalid, and
+             the browser dropped `top` altogether — dumping the back button and
+             the title below the hero image instead of on it. */
+          style={{ top: "calc(var(--screen-safe-top, env(safe-area-inset-top, 0px)) + 12px)" }}
         >
           <X size={17} strokeWidth={1.8} />
         </button>
         <div
           className="absolute inset-x-0 flex flex-col items-center"
-          style={{ top: "calc(var(--screen-safe-top) + 18px)" }}
+          style={{ top: "calc(var(--screen-safe-top, env(safe-area-inset-top, 0px)) + 18px)" }}
         >
           <discipline.icon size={26} strokeWidth={1.4} className="text-azure" />
           <h1 className="mt-2 text-[30px] font-light uppercase tracking-[0.04em] text-snow">
@@ -291,8 +290,96 @@ function ActivitySettings({
       </div>
 
       <Stagger className="-mt-6 px-5 pb-8">
+        {/* ---- Map ------------------------------------------------------- */}
+        {/* `pt-8` cancels the Stagger's `-mt-6`. That negative margin exists to
+            tuck the first CARD under the hero gradient; the first thing here is
+            now a section label, which the same offset simply hid. */}
+        <Rise className="pt-8">
+          <SectionLabel>Map</SectionLabel>
+          <div className="mt-3 flex gap-2">
+            {(Object.keys(MAP_STYLE_LABEL) as MapStyleId[]).map((id) => {
+              const tile = previewTile(id);
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => {
+                    setMapStyle(id);
+                    saveMapStyle(id);
+                  }}
+                  className={cn(
+                    "flex-1 overflow-hidden rounded-tile border text-left transition-colors",
+                    mapStyle === id
+                      ? "border-azure/55"
+                      : "border-hairline hover:border-hairline-strong",
+                  )}
+                >
+                  {/* A real tile of the same mountain in every card — the
+                      chooser shows the ground rather than describing it. */}
+                  <span className="relative block h-[62px] bg-slate">
+                    {tile ? (
+                      <img
+                        src={tile}
+                        alt=""
+                        aria-hidden
+                        loading="lazy"
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      /* ICEFALL's style is vector and has no raster endpoint,
+                         so this card is drawn from the style's own tokens: the
+                         obsidian ground, a hairline contour, the azure route. */
+                      <span className="block h-full w-full bg-obsidian">
+                        <svg viewBox="0 0 120 62" className="h-full w-full" aria-hidden>
+                          <path
+                            d="M0 46 L26 34 L44 40 L70 22 L92 30 L120 16"
+                            fill="none"
+                            stroke="var(--ice-hairline-strong, rgba(255,255,255,0.14))"
+                            strokeWidth="1"
+                          />
+                          <path
+                            d="M0 54 L30 44 L52 49 L78 33 L100 40 L120 28"
+                            fill="none"
+                            stroke="rgba(255,255,255,0.07)"
+                            strokeWidth="1"
+                          />
+                          <path
+                            d="M14 52 L38 41 L58 45 L84 27 L104 34"
+                            fill="none"
+                            stroke="var(--ice-azure)"
+                            strokeWidth="1.8"
+                            strokeLinecap="round"
+                          />
+                        </svg>
+                      </span>
+                    )}
+                    {mapStyle === id && (
+                      <span className="absolute inset-0 ring-1 ring-inset ring-azure/45" />
+                    )}
+                  </span>
+                  <span className="block px-3 py-2.5">
+                    <span
+                      className={cn(
+                        "block text-[12.5px]",
+                        mapStyle === id ? "text-azure" : "text-snow",
+                      )}
+                    >
+                      {MAP_STYLE_LABEL[id]}
+                    </span>
+                    <span className="mt-0.5 block text-[10.5px] leading-snug text-mist-dim">
+                      {MAP_STYLE_DETAIL[id]}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </Rise>
+
         {/* ---- Settings ------------------------------------------------- */}
-        <Rise>
+        {/* This used to be the first block, so it needed no top spacing. It
+            follows the map cards now and its label was sitting on top of them. */}
+        <Rise className="pt-6">
           <SectionLabel>Activity settings</SectionLabel>
           <div className="mt-3 overflow-hidden rounded-card border border-hairline bg-graphite">
             {rows.map((row, i) => {
@@ -382,131 +469,12 @@ function ActivitySettings({
           </Rise>
         )}
 
-        {/* ---- Map ------------------------------------------------------- */}
-        <Rise className="pt-5">
-          <SectionLabel>Map</SectionLabel>
-          <div className="mt-3 flex gap-2">
-            {(Object.keys(MAP_STYLE_LABEL) as MapStyleId[]).map((id) => {
-              const tile = previewTile(id);
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => {
-                    setMapStyle(id);
-                    saveMapStyle(id);
-                  }}
-                  className={cn(
-                    "flex-1 overflow-hidden rounded-tile border text-left transition-colors",
-                    mapStyle === id
-                      ? "border-azure/55"
-                      : "border-hairline hover:border-hairline-strong",
-                  )}
-                >
-                  {/* A real tile of the same mountain in every card — the
-                      chooser shows the ground rather than describing it. */}
-                  <span className="relative block h-[62px] bg-slate">
-                    {tile ? (
-                      <img
-                        src={tile}
-                        alt=""
-                        aria-hidden
-                        loading="lazy"
-                        className="h-full w-full object-cover"
-                      />
-                    ) : (
-                      /* ICEFALL's style is vector and has no raster endpoint,
-                         so this card is drawn from the style's own tokens: the
-                         obsidian ground, a hairline contour, the azure route. */
-                      <span className="block h-full w-full bg-obsidian">
-                        <svg viewBox="0 0 120 62" className="h-full w-full" aria-hidden>
-                          <path
-                            d="M0 46 L26 34 L44 40 L70 22 L92 30 L120 16"
-                            fill="none"
-                            stroke="var(--ice-hairline-strong, rgba(255,255,255,0.14))"
-                            strokeWidth="1"
-                          />
-                          <path
-                            d="M0 54 L30 44 L52 49 L78 33 L100 40 L120 28"
-                            fill="none"
-                            stroke="rgba(255,255,255,0.07)"
-                            strokeWidth="1"
-                          />
-                          <path
-                            d="M14 52 L38 41 L58 45 L84 27 L104 34"
-                            fill="none"
-                            stroke="var(--ice-azure)"
-                            strokeWidth="1.8"
-                            strokeLinecap="round"
-                          />
-                        </svg>
-                      </span>
-                    )}
-                    {mapStyle === id && (
-                      <span className="absolute inset-0 ring-1 ring-inset ring-azure/45" />
-                    )}
-                  </span>
-                  <span className="block px-3 py-2.5">
-                    <span
-                      className={cn(
-                        "block text-[12.5px]",
-                        mapStyle === id ? "text-azure" : "text-snow",
-                      )}
-                    >
-                      {MAP_STYLE_LABEL[id]}
-                    </span>
-                    <span className="mt-0.5 block text-[10.5px] leading-snug text-mist-dim">
-                      {MAP_STYLE_DETAIL[id]}
-                    </span>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-          <p className="mt-2 text-[10.5px] leading-relaxed text-mist-dim">
-            Real tiles of the Mont Blanc massif, so the comparison is the style and not the
-            mountain. All three draw over terrain in 3D — satellite shows the ground as it actually
-            looks, draped on its own shape. The ICEFALL card is a swatch of its own palette: that
-            style is vector and has no still image to show.
-          </p>
-        </Rise>
-
-        {/* ---- Live tracking -------------------------------------------- */}
-        <Rise className="pt-5">
-          <div className="rounded-card border border-hairline bg-graphite p-4">
-            <SectionLabel>Live tracking</SectionLabel>
-            <div className="mt-3.5 grid grid-cols-3 gap-3">
-              <Capability
-                icon={Compass}
-                label="GPS"
-                value={gpsCapable ? "Available" : "Unavailable"}
-                good={gpsCapable}
-              />
-              <Capability icon={Zap} label="HR monitor" value="Not connected" good={false} />
-              <Capability
-                icon={Timer}
-                label="Auto pause"
-                value={settings.autoPause === false ? "Off" : "On"}
-                good={settings.autoPause !== false}
-              />
-            </div>
-            <p className="mt-3.5 border-t border-hairline pt-3 text-[11.5px] leading-relaxed text-mist-dim">
-              Battery use rises while GPS is recording. ICEFALL has no heart-rate pairing yet, so
-              nothing is read from a strap or a watch.
-            </p>
-          </div>
-        </Rise>
 
         {/* ---- Start ------------------------------------------------------ */}
+        {/* The PRIMARY start is pinned below, outside this scroller — starting
+            the thing you came here to start should never need a scroll. What
+            stays here are the two secondary actions. */}
         <Rise className="pt-5">
-          <button
-            type="button"
-            onClick={() => navigate(`/activity/live/${activity.id}?go=1`)}
-            className="flex w-full items-center justify-center gap-2.5 rounded-card bg-azure py-4 text-[13.5px] uppercase tracking-[0.1em] text-obsidian transition-colors hover:bg-azure-bright"
-          >
-            Start {discipline.label}
-            <Play size={15} strokeWidth={2.2} fill="currentColor" />
-          </button>
           <button
             type="button"
             onClick={() => navigate(`/activity/live/${activity.id}?go=1&mode=simulated`)}
@@ -523,20 +491,36 @@ function ActivitySettings({
           </button>
         </Rise>
       </Stagger>
+      {/*
+       * PINNED START.
+       *
+       * Outside `Stagger` on purpose: `Rise` animates with a transform, and a
+       * transformed ancestor makes `position: sticky` resolve against that
+       * element instead of the scroller — the bar would scroll away with the
+       * content it is supposed to outlive.
+       *
+       * The gradient is not decoration; it keeps the text underneath legible as
+       * it passes behind the bar.
+       */}
+      <div className="sticky bottom-0 z-20 bg-gradient-to-t from-obsidian via-obsidian/95 to-transparent px-5 pb-[calc(env(safe-area-inset-bottom,0px)+16px)] pt-8">
+        <button
+          type="button"
+          onClick={() => navigate(`/activity/live/${activity.id}?go=1`)}
+          className="flex w-full items-center justify-center gap-2.5 rounded-card bg-azure py-4 text-[13.5px] uppercase tracking-[0.1em] text-obsidian transition-colors hover:bg-azure-bright"
+        >
+          Start {discipline.label}
+          <Play size={15} strokeWidth={2.2} fill="currentColor" />
+        </button>
+      </div>
 
       {editing && (
-        <Sheet
-          title={editing === "pack" ? "Pack weight" : "Footwear"}
-          onClose={() => setEditing(null)}
-        >
+        <Sheet title="Pack weight" onClose={() => setEditing(null)}>
           <div className="space-y-3 px-1 pb-2">
             <input
               value={draft}
-              onChange={(e) =>
-                setDraft(editing === "pack" ? e.target.value.replace(/[^0-9.,]/g, "") : e.target.value)
-              }
-              inputMode={editing === "pack" ? "decimal" : "text"}
-              placeholder={editing === "pack" ? "11.2" : "Trail shoes · B2 boots"}
+              onChange={(e) => setDraft(e.target.value.replace(/[^0-9.,]/g, ""))}
+              inputMode="decimal"
+              placeholder="11.2"
               autoFocus
               className="w-full rounded-tile border border-hairline bg-elevated/40 px-3.5 py-3 text-[15px] text-snow outline-none transition-colors placeholder:text-mist-dim focus:border-azure/50"
             />
@@ -544,7 +528,7 @@ function ActivitySettings({
               <button
                 type="button"
                 onClick={() => {
-                  patch(editing === "pack" ? { packWeightKg: undefined } : { footwear: undefined });
+                  patch({ packWeightKg: undefined });
                   setEditing(null);
                 }}
                 className="flex-1 rounded-card border border-hairline-strong py-3 text-[12.5px] text-mist transition-colors hover:text-snow"
@@ -554,12 +538,8 @@ function ActivitySettings({
               <button
                 type="button"
                 onClick={() => {
-                  if (editing === "pack") {
-                    const kg = Number(draft.replace(",", "."));
-                    patch({ packWeightKg: Number.isFinite(kg) && kg > 0 ? kg : undefined });
-                  } else {
-                    patch({ footwear: draft.trim() || undefined });
-                  }
+                  const kg = Number(draft.replace(",", "."));
+                  patch({ packWeightKg: Number.isFinite(kg) && kg > 0 ? kg : undefined });
                   setEditing(null);
                 }}
                 className="flex-1 rounded-card bg-azure py-3 text-[12.5px] uppercase tracking-[0.08em] text-obsidian transition-colors hover:bg-azure-bright"
@@ -591,22 +571,3 @@ function ActivitySettings({
   );
 }
 
-function Capability({
-  icon: Icon,
-  label,
-  value,
-  good,
-}: {
-  icon: typeof Compass;
-  label: string;
-  value: string;
-  good: boolean;
-}) {
-  return (
-    <div>
-      <Icon size={16} strokeWidth={1.5} className="text-mist" />
-      <p className="mt-1.5 text-[12.5px] text-snow">{label}</p>
-      <p className={cn("text-[11.5px]", good ? "text-summit" : "text-mist-dim")}>{value}</p>
-    </div>
-  );
-}

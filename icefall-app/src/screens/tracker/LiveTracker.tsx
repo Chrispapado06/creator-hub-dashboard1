@@ -4,7 +4,6 @@ import {
   Bluetooth,
   ChevronLeft,
   HeartPulse,
-  Lock,
   MapPin,
   Pause,
   Play,
@@ -73,7 +72,6 @@ export default function LiveTracker() {
    */
   const [armed, setArmed] = useState(params.get("go") === "1");
   const [confirming, setConfirming] = useState(false);
-  const [locked, setLocked] = useState(false);
 
   const mountain = goal?.mountainId ? sync.mountainById(goal.mountainId) : undefined;
 
@@ -108,8 +106,10 @@ export default function LiveTracker() {
   }, [type, mountain, s.altitudeM]);
 
   const projected = useMemo(() => projectTrack(s.points), [s.points]);
+  // `accuracy` rides along so the map's follow camera knows how much of the
+  // last fix's movement to believe. See followCameraFor in @/tracking/display.
   const geoTrack = useMemo(
-    () => s.points.map((p) => ({ lat: p.lat, lon: p.lon, heading: p.heading })),
+    () => s.points.map((p) => ({ lat: p.lat, lon: p.lon, heading: p.heading, accuracy: p.accuracy })),
     [s.points],
   );
 
@@ -268,6 +268,8 @@ export default function LiveTracker() {
         track={geoTrack}
         current={geoTrack[geoTrack.length - 1] ?? null}
         follow
+        // A bicycle and a belay want different cameras: see followCameraFor.
+        followActivityTypeId={type.id}
         interactive
         showControls
         start3D
@@ -381,22 +383,6 @@ export default function LiveTracker() {
 
           <button
             type="button"
-            onClick={() => setLocked((l) => !l)}
-            aria-pressed={locked}
-            aria-label={locked ? "Unlock controls" : "Lock controls"}
-            className={cn(
-              "grid h-12 w-12 place-items-center rounded-full border transition-colors",
-              locked
-                ? "border-azure/50 text-azure"
-                : "border-hairline-strong text-mist hover:text-snow",
-            )}
-          >
-            <Lock size={18} strokeWidth={1.5} />
-          </button>
-
-          <button
-            type="button"
-            disabled={locked}
             onClick={() => (paused ? rec.resume() : rec.pause())}
             aria-label={paused ? "Resume" : "Pause"}
             className="grid h-[76px] w-[76px] place-items-center rounded-full border-2 border-azure text-azure transition-all duration-200 hover:bg-azure hover:text-obsidian active:scale-95 disabled:opacity-40"
@@ -410,7 +396,6 @@ export default function LiveTracker() {
 
           <button
             type="button"
-            disabled={locked}
             onClick={() => setConfirming(true)}
             aria-label="Finish activity"
             className="grid h-12 w-12 place-items-center rounded-full border border-hairline-strong text-mist transition-colors hover:border-danger/50 hover:text-danger disabled:opacity-40"
