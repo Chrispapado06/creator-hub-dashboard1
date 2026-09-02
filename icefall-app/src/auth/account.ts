@@ -27,10 +27,25 @@ import { supabase } from "@/backend/client";
  * Getting this wrong produces a generic "provider is not enabled" that reads
  * like a dashboard misconfiguration and sends you looking in the wrong place.
  */
+/**
+ * `scopes` IS NOT OPTIONAL DECORATION FOR MICROSOFT.
+ *
+ * Supabase's Azure provider requests only `openid` by default, and Supabase Auth
+ * REFUSES a sign-in that comes back without an email address — the browser lands
+ * on /auth/callback showing "Error getting user email from external provider".
+ * Every portal step can be correct and Microsoft still fails on this one line,
+ * which is the worst kind of bug to hand somebody: the error points at the app
+ * and the cause is a missing four-letter string.
+ *
+ * Google and Apple are deliberately left without it. Both already return an
+ * email under Supabase's defaults, and naming scopes for a provider that does
+ * not need them is how a working sign-in acquires a consent screen asking for
+ * more than it uses.
+ */
 export const PROVIDERS = {
-  google: { id: "google", label: "Google" },
-  apple: { id: "apple", label: "Apple" },
-  microsoft: { id: "azure", label: "Microsoft" },
+  google: { id: "google", label: "Google", scopes: undefined },
+  apple: { id: "apple", label: "Apple", scopes: undefined },
+  microsoft: { id: "azure", label: "Microsoft", scopes: "email profile" },
 } as const;
 
 export type ProviderKey = keyof typeof PROVIDERS;
@@ -101,7 +116,7 @@ export async function signInWithProvider(key: ProviderKey): Promise<AuthOutcome>
 
   const { error } = await supabase.auth.signInWithOAuth({
     provider: PROVIDERS[key].id,
-    options: { redirectTo: callbackUrl() },
+    options: { redirectTo: callbackUrl(), scopes: PROVIDERS[key].scopes },
   });
   if (error) return { ok: false, message: friendly(error.message) };
   return { ok: true, needsEmailConfirmation: false };
