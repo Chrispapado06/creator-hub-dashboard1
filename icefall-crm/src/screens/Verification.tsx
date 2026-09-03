@@ -1,7 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { AlertTriangle, Clock } from "lucide-react";
-import { Avatar, Button, Card, PageHead, Pill, SectionLabel, Stat, StatusChip, TableCard } from "@/components/ui";
+import { AlertTriangle, CalendarClock, CircleSlash, Clock, FileCheck2, Hourglass } from "lucide-react";
+import { Avatar } from "@/components/ui";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Resolve } from "@/components/states";
 import {
   listCompanies, listDocuments, listIdentityChecks, listProfilesBasic,
@@ -40,8 +45,14 @@ import { Select } from "@/components/controls";
  * federation confirmed anything, and this screen must never let the first read
  * as the second.
  *
- * Nothing here writes. There is no audited function for deciding a document, so
- * the page flags and counts; a person acts, somewhere else.
+ * The document tables write nothing. There is no audited function for deciding a
+ * document, so that half of the page flags and counts; a person acts, somewhere
+ * else. The identity section below DOES write, through its own audited calls.
+ *
+ * LAYOUT: the reference theme — metric cards, a section heading with its
+ * standing sentence beneath it, and every table inside a card. The three marks
+ * stayed apart, every "Not recorded" stayed in those words, and the identity
+ * recorder and its revoke flow are untouched in what they do.
  */
 
 /** Inside this many days of a recorded expiry, a document raises a task. */
@@ -57,17 +68,73 @@ const KIND_LABEL: Record<VerificationDocument["kind"], string> = {
 };
 
 /**
- * The state column, drawn as the mockup's chip.
- *
- * The tick is only ever `checked`, because that is the one state a member of
- * ICEFALL staff actually decided — and it still means only that somebody read
- * the document, never that the issuing body confirmed it. `pending` waits.
- * `rejected` and `expired` share the refused glyph because neither is a document
- * anybody may rely on today; the word beside it says which of the two it is, so
- * nothing is collapsed that the reader needs kept apart.
+ * The theme's metric card, with ICEFALL's honesty contract intact: `value` of
+ * null prints the REASON there is no figure — never a dash, never a zero
+ * standing in for one. A measured zero prints as "0".
  */
-const stateChip = (s: VerificationDocument["state"]): "ok" | "pending" | "bad" | "neutral" =>
-  s === "checked" ? "ok" : s === "pending" ? "pending" : "bad";
+function Metric({
+  icon,
+  label,
+  value,
+  reason,
+  hint,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string | null;
+  reason?: string;
+  hint?: string;
+}) {
+  return (
+    <Card className="min-w-0">
+      <CardHeader>
+        <CardTitle>
+          <div className="flex size-7 items-center justify-center rounded-lg border bg-ui-muted text-muted-foreground">
+            {icon}
+          </div>
+        </CardTitle>
+        <CardDescription>{label}</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-1">
+        {value === null ? (
+          <p className="text-sm leading-relaxed text-muted-foreground">{reason ?? "Not recorded"}</p>
+        ) : (
+          <>
+            <div className="font-medium text-3xl leading-none tracking-tight tabular-nums">{value}</div>
+            {hint && <p className="text-sm text-muted-foreground">{hint}</p>}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * The state column, drawn as the theme's status badge.
+ *
+ * The green dot is only ever `checked`, because that is the one state a member
+ * of ICEFALL staff actually decided — and it still means only that somebody
+ * read the document, never that the issuing body confirmed it. `pending` waits.
+ * `rejected` and `expired` share the refused colour because neither is a
+ * document anybody may rely on today; the word beside it says which of the two
+ * it is, so nothing is collapsed that the reader needs kept apart.
+ */
+function StateBadge({ state }: { state: VerificationDocument["state"] }) {
+  const tone =
+    state === "checked"
+      ? "border-ok/20 bg-ok/10 text-ok"
+      : state === "pending"
+        ? "border-warn/20 bg-warn/10 text-warn"
+        : "border-bad/20 bg-bad/10 text-bad";
+  const dot =
+    state === "checked" ? "bg-ok" : state === "pending" ? "bg-warn" : "bg-bad";
+  return (
+    <Badge className={`gap-1.5 border px-2 py-1 font-medium ${tone}`} variant="outline">
+      <span className={`size-1.5 rounded-full ${dot}`} />
+      {state}
+    </Badge>
+  );
+}
 
 type Expiry =
   | { kind: "none" }
@@ -97,104 +164,119 @@ function ExpiryCell({ doc }: { doc: VerificationDocument }) {
   const expiry = expiryOf(doc);
   const day = formatDay(doc.expires_on);
 
-  if (expiry.kind === "none") return <span className="text-faint">Not recorded</span>;
-  if (expiry.kind === "unreadable" || day === null) return <span className="text-faint">Not readable</span>;
+  // Two different absences, kept apart: nobody told us, versus we cannot read
+  // what we were told. Neither is a dash and neither is "expired".
+  if (expiry.kind === "none") return <span className="text-muted-foreground">Not recorded</span>;
+  if (expiry.kind === "unreadable" || day === null)
+    return <span className="text-muted-foreground">Not readable</span>;
 
   return (
     <span className="inline-flex items-center gap-2 whitespace-nowrap">
       <span>{day}</span>
       {expiry.kind === "expired" && (
-        <Pill tone="red">
-          <AlertTriangle size={12} strokeWidth={1.8} />
+        <Badge
+          className="gap-1.5 border border-bad/20 bg-bad/10 px-2 py-1 font-medium text-bad"
+          variant="outline"
+        >
+          <AlertTriangle className="size-3" />
           {expiry.days === 1 ? "Expired yesterday" : `Expired ${expiry.days} days ago`}
-        </Pill>
+        </Badge>
       )}
       {expiry.kind === "soon" && (
-        <Pill tone="amber">
-          <Clock size={12} strokeWidth={1.8} />
+        <Badge
+          className="gap-1.5 border border-warn/20 bg-warn/10 px-2 py-1 font-medium text-warn"
+          variant="outline"
+        >
+          <Clock className="size-3" />
           {expiry.days === 0 ? "Expires today" : expiry.days === 1 ? "1 day left" : `${expiry.days} days left`}
-        </Pill>
+        </Badge>
       )}
     </span>
   );
 }
 
-const HEAD = "px-5 py-3.5 text-[12px] font-semibold text-faint";
+const TH = "py-4 font-normal";
+const TD = "py-4 align-middle";
 
 function DocumentTable({ docs, companyIds }: { docs: VerificationDocument[]; companyIds: Set<string> | null }) {
   return (
-    <TableCard>
-      <table className="w-full text-[13px]">
-        <thead>
-          <tr className="border-b border-line-soft text-left">
-            <th className={HEAD}>Subject</th>
-            <th className={HEAD}>Document</th>
-            <th className={HEAD}>Label</th>
-            <th className={HEAD}>Issued</th>
-            <th className={HEAD}>Expires</th>
-            <th className={HEAD}>State</th>
-            <th className={HEAD}>Checked on</th>
-            <th className={HEAD}>Checked by</th>
-          </tr>
-        </thead>
-        <tbody>
-          {docs.map((d) => (
-            <tr key={d.id} className="border-b border-line-soft last:border-0 hover:bg-raised">
-              <td className="px-5 py-3.5">
-                <div className="flex items-center gap-3 whitespace-nowrap">
-                  {/* The monogram is drawn from the subject name the document
-                      itself carries — nothing is looked up and nothing is
-                      guessed at when the name is all there is. */}
-                  <Avatar name={d.subject_name} size={34} />
-                  {/* Linked only where the record is genuinely readable — a link to a
-                      company the reader cannot open is a promise the screen breaks. */}
-                  {companyIds?.has(d.subject_id) ? (
-                    <Link to={`/admin/companies/${d.subject_id}`} className="font-medium text-ink hover:text-accent">
-                      {d.subject_name}
-                    </Link>
+    <Card className="min-w-0">
+      <CardContent className="px-0">
+        <Table className="**:data-[slot='table-cell']:px-4 **:data-[slot='table-head']:px-4">
+          <TableHeader>
+            <TableRow>
+              <TableHead className={TH}>Subject</TableHead>
+              <TableHead className={TH}>Document</TableHead>
+              <TableHead className={TH}>Label</TableHead>
+              <TableHead className={TH}>Issued</TableHead>
+              <TableHead className={TH}>Expires</TableHead>
+              <TableHead className={TH}>State</TableHead>
+              <TableHead className={TH}>Checked on</TableHead>
+              <TableHead className={TH}>Checked by</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {docs.map((d) => (
+              <TableRow key={d.id} className="border-border/60">
+                <TableCell className={TD}>
+                  <div className="flex items-center gap-3 whitespace-nowrap">
+                    {/* The monogram is drawn from the subject name the document
+                        itself carries — nothing is looked up and nothing is
+                        guessed at when the name is all there is. */}
+                    <Avatar name={d.subject_name} size={32} />
+                    {/* Linked only where the record is genuinely readable — a link to a
+                        company the reader cannot open is a promise the screen breaks. */}
+                    {companyIds?.has(d.subject_id) ? (
+                      <Link to={`/admin/companies/${d.subject_id}`} className="font-medium hover:underline">
+                        {d.subject_name}
+                      </Link>
+                    ) : (
+                      <span className="font-medium">{d.subject_name}</span>
+                    )}
+                  </div>
+                </TableCell>
+                <TableCell className={TD}>
+                  {/* Taxonomy, not status — a neutral badge, never a status one. */}
+                  <Badge className="rounded-sm" variant="outline">
+                    {KIND_LABEL[d.kind]}
+                  </Badge>
+                </TableCell>
+                <TableCell className={`${TD} whitespace-normal text-muted-foreground`}>
+                  {d.label}
+                  {d.note && <p className="mt-0.5 text-xs leading-snug text-muted-foreground">{d.note}</p>}
+                </TableCell>
+                <TableCell className={`${TD} tabular-nums text-muted-foreground`}>
+                  {formatDay(d.issued_on) ?? <span className="text-muted-foreground">Not recorded</span>}
+                </TableCell>
+                <TableCell className={`${TD} tabular-nums text-muted-foreground`}>
+                  <ExpiryCell doc={d} />
+                </TableCell>
+                <TableCell className={TD}>
+                  <StateBadge state={d.state} />
+                </TableCell>
+                <TableCell className={`${TD} tabular-nums text-muted-foreground`}>
+                  {/* No date, no check. There is no third rendering of this. */}
+                  {formatDay(d.checked_on) ?? <span className="text-muted-foreground">Not checked</span>}
+                </TableCell>
+                <TableCell className={`${TD} text-muted-foreground`}>
+                  {d.checked_by ? (
+                    <span className="flex items-center gap-2.5">
+                      {/* A filled monogram tells ICEFALL's own reader apart from
+                          the subject whose document it is, at the far end of the
+                          same row. */}
+                      <Avatar name={d.checked_by} size={24} tone="accent" />
+                      {d.checked_by}
+                    </span>
                   ) : (
-                    <span className="font-medium text-ink">{d.subject_name}</span>
+                    <span className="text-muted-foreground">Not recorded</span>
                   )}
-                </div>
-              </td>
-              <td className="px-5 py-3.5">
-                {/* Taxonomy, not status — a neutral pill, never a chip. */}
-                <Pill>{KIND_LABEL[d.kind]}</Pill>
-              </td>
-              <td className="px-5 py-3.5 text-muted">
-                {d.label}
-                {d.note && <p className="mt-0.5 text-[11.5px] leading-snug text-faint">{d.note}</p>}
-              </td>
-              <td className="tnum whitespace-nowrap px-5 py-3.5 text-muted">
-                {formatDay(d.issued_on) ?? <span className="text-faint">Not recorded</span>}
-              </td>
-              <td className="tnum px-5 py-3.5 text-muted">
-                <ExpiryCell doc={d} />
-              </td>
-              <td className="whitespace-nowrap px-5 py-3.5">
-                <StatusChip state={stateChip(d.state)} label={d.state} />
-              </td>
-              <td className="tnum whitespace-nowrap px-5 py-3.5 text-muted">
-                {/* No date, no check. There is no third rendering of this. */}
-                {formatDay(d.checked_on) ?? <span className="text-faint">Not checked</span>}
-              </td>
-              <td className="whitespace-nowrap px-5 py-3.5 text-muted">
-                {d.checked_by ? (
-                  <span className="flex items-center gap-2.5">
-                    {/* Accent tells ICEFALL's own reader apart from the subject
-                        whose document it is, at the far end of the same row. */}
-                    <Avatar name={d.checked_by} size={28} tone="accent" />
-                    {d.checked_by}
-                  </span>
-                ) : (
-                  <span className="text-faint">Not recorded</span>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </TableCard>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -277,135 +359,163 @@ function IdentitySection() {
   };
 
   return (
-    <div className="mt-6">
-      <SectionLabel>Identity checks — the grey mark</SectionLabel>
-      <p className="mt-1.5 max-w-3xl text-[12.5px] leading-relaxed text-muted">
+    <div className="flex min-w-0 flex-col gap-2">
+      <h2 className="font-heading text-base font-medium">Identity checks — the grey mark</h2>
+      <p className="max-w-4xl text-sm leading-relaxed text-muted-foreground">
         A separate claim from everything above: ICEFALL confirmed the person is who they say — nothing
         about qualifications, nothing about membership. The mark is derived from this record and dies
         with its revocation; it never expires, because identity is established or it is not. Recorded by
         the operations desk, in their own name, against a stated document reference.
       </p>
-      {err && <p className="mt-2 text-[12.5px] text-bad">{err}</p>}
+      {/* A refusal from the database, in its own words. It does not disappear. */}
+      {err && <p className="text-sm text-destructive">{err}</p>}
 
-      <div className="mt-2.5">
-        {checks.state === "loading" ? (
-          <Card><p className="text-[12.5px] text-faint">Reading identity checks…</p></Card>
-        ) : checks.state !== "ok" ? (
-          <Card>
-            <p className="text-[12.5px] leading-relaxed text-bad">
+      {checks.state === "loading" ? (
+        <Card className="min-w-0">
+          <CardContent>
+            <p className="text-sm text-muted-foreground">Reading identity checks…</p>
+          </CardContent>
+        </Card>
+      ) : checks.state !== "ok" ? (
+        <Card className="min-w-0">
+          <CardContent className="flex flex-col gap-1">
+            <p className="text-sm leading-relaxed text-destructive">
               Identity checks could not be read: {"reason" in checks ? checks.reason : ""}
             </p>
-            <p className="mt-1 text-[12px] text-faint">
+            <p className="text-sm text-muted-foreground">
               If this says the table does not exist, the identity migration has not been pushed yet.
             </p>
-          </Card>
-        ) : checks.value.length === 0 ? (
-          <Card>
-            <p className="text-[12.5px] text-faint">
+          </CardContent>
+        </Card>
+      ) : checks.value.length === 0 ? (
+        <Card className="min-w-0">
+          <CardContent>
+            <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
               No identity has been checked yet. The first record appears here the moment the operations
-              desk verifies one — and only then does anyone's grey mark exist.
+              desk verifies one — and only then does anyone&rsquo;s grey mark exist.
             </p>
-          </Card>
-        ) : (
-          <TableCard>
-            <table className="w-full text-[13px]">
-              <thead>
-                <tr className="border-b border-line-soft text-left">
-                  <th className={HEAD}>Person</th>
-                  <th className={HEAD}>Document reference</th>
-                  <th className={HEAD}>Checked by</th>
-                  <th className={HEAD}>On</th>
-                  <th className={HEAD}>Mark</th>
-                  <th className={HEAD}></th>
-                </tr>
-              </thead>
-              <tbody>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="min-w-0">
+          <CardContent className="px-0">
+            <Table className="**:data-[slot='table-cell']:px-4 **:data-[slot='table-head']:px-4">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className={TH}>Person</TableHead>
+                  <TableHead className={TH}>Document reference</TableHead>
+                  <TableHead className={TH}>Checked by</TableHead>
+                  <TableHead className={TH}>On</TableHead>
+                  <TableHead className={TH}>Mark</TableHead>
+                  <TableHead className={TH}></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {checks.value.map((c) => (
-                  <tr key={c.profile_id} className="border-b border-line-soft last:border-0">
-                    <td className="px-5 py-3.5">
-                      <span className="flex items-center gap-3"><Avatar name={nameOf(c.profile_id)} size={34} />
-                        <span className="font-medium text-ink">{nameOf(c.profile_id)}</span></span>
-                    </td>
-                    <td className="px-5 py-3.5 text-muted">{c.document_ref}</td>
-                    <td className="px-5 py-3.5 text-muted">{nameOf(c.checked_by)}</td>
-                    <td className="tnum whitespace-nowrap px-5 py-3.5 text-muted">{formatMoment(c.checked_at)}</td>
-                    <td className="px-5 py-3.5">
+                  <TableRow key={c.profile_id} className="border-border/60">
+                    <TableCell className={TD}>
+                      <span className="flex items-center gap-3">
+                        <Avatar name={nameOf(c.profile_id)} size={32} />
+                        <span className="font-medium">{nameOf(c.profile_id)}</span>
+                      </span>
+                    </TableCell>
+                    <TableCell className={`${TD} text-muted-foreground`}>{c.document_ref}</TableCell>
+                    <TableCell className={`${TD} text-muted-foreground`}>{nameOf(c.checked_by)}</TableCell>
+                    <TableCell className={`${TD} tabular-nums text-muted-foreground`}>
+                      {formatMoment(c.checked_at)}
+                    </TableCell>
+                    <TableCell className={`${TD} whitespace-normal`}>
                       {c.revoked_at === null ? (
                         // Grey, deliberately: this mark never borrows gold.
-                        <Pill tone="neutral">identity established</Pill>
+                        <Badge className="rounded-sm" variant="outline">
+                          identity established
+                        </Badge>
                       ) : (
-                        <span>
-                          <Pill tone="red">revoked</Pill>
-                          <span className="mt-0.5 block text-[11.5px] text-faint">{c.revoke_reason}</span>
+                        <span className="grid gap-0.5">
+                          <span className="flex">
+                            <Badge
+                              className="gap-1.5 border border-bad/20 bg-bad/10 px-2 py-1 font-medium text-bad"
+                              variant="outline"
+                            >
+                              <span className="size-1.5 rounded-full bg-bad" />
+                              revoked
+                            </Badge>
+                          </span>
+                          {/* The stated reason, verbatim, beside the mark it killed. */}
+                          <span className="block text-xs text-muted-foreground">{c.revoke_reason}</span>
                         </span>
                       )}
-                    </td>
-                    <td className="px-5 py-3.5 text-right">
+                    </TableCell>
+                    <TableCell className={`${TD} text-right`}>
                       {c.revoked_at === null && (
                         revoking === c.profile_id ? (
-                          <span className="flex items-center justify-end gap-2">
-                            <input
+                          <span className="flex flex-wrap items-center justify-end gap-2">
+                            <Input
                               value={reason}
                               onChange={(e) => setReason(e.target.value)}
                               placeholder="Why — required, audited"
-                              className="h-8 w-52 rounded-tile border border-line bg-surface px-2.5 text-[12px] outline-none focus:border-accent"
+                              className="w-52"
                             />
-                            <Button size="sm" variant="secondary" disabled={busy || reason.trim().length < 3}
+                            <Button size="sm" disabled={busy || reason.trim().length < 3}
                               onClick={() => void act(() => revokeIdentityCheck(c.profile_id, reason))}>
                               Confirm
                             </Button>
-                            <Button size="sm" variant="secondary" disabled={busy} onClick={() => { setRevoking(null); setReason(""); }}>
+                            <Button size="sm" variant="ghost" disabled={busy} onClick={() => { setRevoking(null); setReason(""); }}>
                               Cancel
                             </Button>
                           </span>
                         ) : (
-                          <Button size="sm" variant="secondary" disabled={busy} onClick={() => setRevoking(c.profile_id)}>
+                          <Button size="sm" variant="outline" disabled={busy} onClick={() => setRevoking(c.profile_id)}>
                             Revoke
                           </Button>
                         )
                       )}
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
-          </TableCard>
-        )}
-      </div>
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Recording — the operations desk's own act, in their own name. The
           database refuses anyone else, so this form failing for a non-ops
           reader is the system working, and the error says so in its words. */}
-      <Card className="mt-3">
-        <p className="text-[12.5px] font-semibold text-ink">Record an identity check</p>
-        <p className="mt-0.5 text-[12px] leading-relaxed text-faint">
-          State what was seen as a reference ("passport, CY, ending 483") — never store the document
-          itself. Re-checking a revoked or already-checked person replaces the record and clears any
-          revocation; the audit trail keeps the history.
-        </p>
-        <div className="mt-2.5 flex flex-wrap items-center gap-2">
-          <Select
-            value={who}
-            onChange={setWho}
-            ariaLabel="Person whose identity was checked"
-            placeholder="Choose a person…"
-            className="min-w-[240px]"
-            options={people.state === "ok" ? people.value.map((p) => ({ value: p.id, label: p.display_name, hint: p.role })) : []}
-          />
-          <input
-            value={docRef}
-            onChange={(e) => setDocRef(e.target.value)}
-            placeholder="Document reference"
-            className="h-10 min-w-[260px] flex-1 rounded-tile border border-line bg-surface px-3 text-[12.5px] text-ink outline-none placeholder:text-faint focus:border-accent"
-          />
-          <Button
-            variant="secondary"
-            disabled={busy || who === "" || docRef.trim().length < 3}
-            onClick={() => void act(() => recordIdentityCheck(who, docRef))}
-          >
-            Record check
-          </Button>
-        </div>
+      <Card className="min-w-0 mt-2">
+        <CardHeader>
+          <CardTitle>Record an identity check</CardTitle>
+          <CardDescription className="max-w-3xl">
+            State what was seen as a reference ("passport, CY, ending 483") — never store the document
+            itself. Re-checking a revoked or already-checked person replaces the record and clears any
+            revocation; the audit trail keeps the history.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              value={who}
+              onChange={setWho}
+              ariaLabel="Person whose identity was checked"
+              placeholder="Choose a person…"
+              className="min-w-[240px]"
+              options={people.state === "ok" ? people.value.map((p) => ({ value: p.id, label: p.display_name, hint: p.role })) : []}
+            />
+            <Input
+              value={docRef}
+              onChange={(e) => setDocRef(e.target.value)}
+              placeholder="Document reference"
+              className="min-w-[260px] flex-1"
+            />
+            <Button
+              variant="outline"
+              disabled={busy || who === "" || docRef.trim().length < 3}
+              onClick={() => void act(() => recordIdentityCheck(who, docRef))}
+            >
+              Record check
+            </Button>
+          </div>
+        </CardContent>
       </Card>
     </div>
   );
@@ -460,17 +570,29 @@ export default function Verification() {
         : `${silence.without} of ${silence.total} companies have sent no document at all and appear nowhere below. A company missing from this table has not been checked — it has been silent, which is not the same thing.`;
 
   return (
-    <>
-      <PageHead
-        title="Verification"
-        subtitle="Documents companies and guides have sent to ICEFALL, and what ICEFALL did with each one. Checked means a member of ICEFALL staff read the document on the date shown — no insurer, registrar or awarding association was contacted, so nothing on this page is a third party's confirmation."
-      />
+    /* `@container` is load-bearing, not decoration: it gives this box size
+       containment in the inline axis, so a wide table scrolls inside its own
+       card instead of pushing the whole page sideways and clipping its last
+       column. The reference theme gets the same result from an
+       `overflow-x-hidden` on its page container. */
+    <div className="@container/page flex min-w-0 flex-col gap-4">
+      <div className="flex flex-col items-start gap-4 sm:flex-row sm:justify-between">
+        <div className="flex flex-col gap-1">
+          <h1 className="font-heading text-3xl tracking-tight">Verification</h1>
+          <p className="max-w-4xl text-sm text-muted-foreground">
+            Documents companies and guides have sent to ICEFALL, and what ICEFALL did with each one.
+            Checked means a member of ICEFALL staff read the document on the date shown — no insurer,
+            registrar or awarding association was contacted, so nothing on this page is a third
+            party&rsquo;s confirmation.
+          </p>
+        </div>
+      </div>
 
-      {/* Pastel in the mockup's order. A tile that cannot be counted — because the
-          document list did not arrive — drops to plain surface on its own. */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat
-          tone="butter"
+      {/* A tile that cannot be counted — because the document list did not
+          arrive — carries the reason instead of a number. */}
+      <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-linear-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs sm:grid-cols-2 xl:grid-cols-4 dark:*:data-[slot=card]:bg-card">
+        <Metric
+          icon={<FileCheck2 className="size-4" />}
           label="Checked by ICEFALL"
           value={tally ? String(tally.checked) : null}
           reason={reason}
@@ -480,15 +602,15 @@ export default function Verification() {
               : "Documents a member of staff read on a recorded date, whatever they then decided."
           }
         />
-        <Stat
-          tone="sky"
+        <Metric
+          icon={<Hourglass className="size-4" />}
           label="Pending a check"
           value={tally ? String(tally.pending) : null}
           reason={reason}
           hint="Sent to ICEFALL and not yet read by anybody."
         />
-        <Stat
-          tone="lilac"
+        <Metric
+          icon={<CalendarClock className="size-4" />}
           label="Expiring within 30 days"
           value={tally ? String(tally.soon) : null}
           reason={reason}
@@ -498,8 +620,8 @@ export default function Verification() {
               : "Every document here carries an expiry date."
           }
         />
-        <Stat
-          tone="mint"
+        <Metric
+          icon={<CircleSlash className="size-4" />}
           label="Expired"
           value={tally ? String(tally.expired) : null}
           reason={reason}
@@ -507,48 +629,44 @@ export default function Verification() {
         />
       </div>
 
-      <p className="mt-3 max-w-3xl text-[12.5px] leading-relaxed text-muted">
+      <p className="max-w-4xl text-sm leading-relaxed text-muted-foreground">
         A document inside 30 days of its recorded expiry raises a task for somebody to chase the renewal.
         This screen flags and counts; it changes nothing on its own, and no expiry is inferred for a document
         that arrived without one.
       </p>
 
-      <div className="mt-6">
-        <SectionLabel>Company documents checked by ICEFALL</SectionLabel>
-        <p className="mt-1.5 max-w-3xl text-[12.5px] leading-relaxed text-muted">{companyNote}</p>
-        <div className="mt-2.5">
-          <DocumentSection
-            result={documents}
-            subject="company"
-            what="company documents"
-            empty="No company has sent a document yet. A row appears here when one is uploaded, and stays pending until a member of ICEFALL staff has read it."
-            companyIds={companyIds}
-          />
-        </div>
+      <div className="flex min-w-0 flex-col gap-2">
+        <h2 className="font-heading text-base font-medium">Company documents checked by ICEFALL</h2>
+        <p className="max-w-4xl text-sm leading-relaxed text-muted-foreground">{companyNote}</p>
+        <DocumentSection
+          result={documents}
+          subject="company"
+          what="company documents"
+          empty="No company has sent a document yet. A row appears here when one is uploaded, and stays pending until a member of ICEFALL staff has read it."
+          companyIds={companyIds}
+        />
       </div>
 
-      <div className="mt-6">
-        <SectionLabel>Guide documents checked by ICEFALL</SectionLabel>
-        <p className="mt-1.5 max-w-3xl text-[12.5px] leading-relaxed text-muted">
+      <div className="flex min-w-0 flex-col gap-2">
+        <h2 className="font-heading text-base font-medium">Guide documents checked by ICEFALL</h2>
+        <p className="max-w-4xl text-sm leading-relaxed text-muted-foreground">
           A checked carnet means a member of staff read it on a named date — not that the awarding
           association confirmed it holds good; ICEFALL has no channel to any association. Since
-          20260831120000 the guide's credential state is DERIVED from the check record and its expiry
+          20260831120000 the guide&rsquo;s credential state is DERIVED from the check record and its expiry
           (unchecked / checked / expired) — a stored "verified" that could outlive its evidence no longer
           exists anywhere. The two statements stay apart on purpose, and neither this page nor the guide
           record may collapse them into one.
         </p>
-        <div className="mt-2.5">
-          <DocumentSection
-            result={documents}
-            subject="guide"
-            what="guide documents"
-            empty="No guide has sent a document yet. Guides appear here only once they upload something; a guide absent from this list has had nothing checked."
-            companyIds={null}
-          />
-        </div>
+        <DocumentSection
+          result={documents}
+          subject="guide"
+          what="guide documents"
+          empty="No guide has sent a document yet. Guides appear here only once they upload something; a guide absent from this list has had nothing checked."
+          companyIds={null}
+        />
       </div>
 
       <IdentitySection />
-    </>
+    </div>
   );
 }

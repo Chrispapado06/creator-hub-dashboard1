@@ -62,7 +62,7 @@ export function Button({
         "outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
         "disabled:cursor-not-allowed disabled:opacity-45",
         size === "sm" ? "h-8 px-3.5 text-[12.5px]" : "h-10 px-5 text-[13px]",
-        variant === "primary" && "bg-solid text-white hover:opacity-90",
+        variant === "primary" && "bg-solid text-primary-foreground hover:opacity-90",
         variant === "secondary" && "border border-line bg-surface text-ink hover:bg-raised",
         variant === "ghost" && "text-muted hover:bg-raised hover:text-ink",
         variant === "danger" && "border border-line bg-surface text-bad hover:bg-raised",
@@ -92,7 +92,7 @@ export function Avatar({
       className={cn(
         "grid shrink-0 place-items-center rounded-full font-medium",
         tone === "accent" && "bg-accent-soft text-accent-ink",
-        tone === "solid" && "bg-solid text-white",
+        tone === "solid" && "bg-solid text-primary-foreground",
         tone === "neutral" && "bg-raised text-muted ring-1 ring-line",
       )}
     >
@@ -104,7 +104,7 @@ export function Avatar({
 /** A count in a black circle, as the mockup draws "+16". */
 export function CountBubble({ children }: { children: ReactNode }) {
   return (
-    <span className="tnum grid h-9 min-w-9 shrink-0 place-items-center rounded-full bg-solid px-2 text-[12.5px] font-medium text-white">
+    <span className="tnum grid h-9 min-w-9 shrink-0 place-items-center rounded-full bg-solid px-2 text-[12.5px] font-medium text-primary-foreground">
       {children}
     </span>
   );
@@ -125,9 +125,16 @@ export function Pill({
         "inline-flex items-center gap-1.5 rounded-pill px-2.5 py-[4px] text-[11.5px] font-medium",
         tone === "neutral" && "bg-raised text-muted ring-1 ring-line",
         tone === "accent" && "bg-accent-soft text-accent-ink",
-        tone === "green" && "bg-[oklch(0.955_0.045_150)] text-[oklch(0.44_0.12_150)]",
-        tone === "amber" && "bg-[oklch(0.962_0.055_84)] text-[oklch(0.48_0.11_70)]",
-        tone === "red" && "bg-[oklch(0.958_0.035_25)] text-[oklch(0.50_0.16_25)]",
+        // The theme's own status-badge recipe: the status colour at 10% for the
+        // fill and at full strength for the type. Measured on its analytics KPI
+        // strip (`bg-green-500/10 text-green-700`) and its destructive badge
+        // (`bg-destructive/10 text-destructive`). `ok` / `warn` / `bad` already
+        // hold exactly those three values — green-700, amber-600, destructive —
+        // so this is the theme's recipe written in this app's token names
+        // rather than three more colours typed into the markup.
+        tone === "green" && "bg-ok/10 text-ok",
+        tone === "amber" && "bg-warn/10 text-warn",
+        tone === "red" && "bg-bad/10 text-bad",
         className,
       )}
     >
@@ -158,10 +165,15 @@ export function StatusChip({
       <span
         className={cn(
           "grid h-5 w-5 place-items-center rounded-full text-white",
-          state === "ok" && "bg-[oklch(0.62_0.16_150)]",
-          state === "pending" && "bg-[oklch(0.74_0.145_66)]",
-          state === "bad" && "bg-[oklch(0.60_0.20_25)]",
-          state === "neutral" && "bg-[oklch(0.72_0.01_260)]",
+          // A FILL carrying a white glyph, so these take the status colours at
+          // full strength, not the 10% wash the Pill above uses. All four were
+          // hand-mixed oklch; all four now read the tokens. `ok` lands darker
+          // than the old 0.62 (green-700 is 0.527) and `bad` darker than 0.60,
+          // so the white check and cross gain contrast rather than lose it.
+          state === "ok" && "bg-ok",
+          state === "pending" && "bg-warn",
+          state === "bad" && "bg-bad",
+          state === "neutral" && "bg-muted-foreground",
         )}
       >
         {state === "neutral" ? null : <Icon size={12} strokeWidth={3} />}

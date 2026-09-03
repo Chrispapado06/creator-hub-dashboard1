@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Activity, BookMarked, Building2, CalendarDays, ChevronDown, Compass, SlidersHorizontal, TrendingUp, Users as UsersIcon } from "lucide-react";
-import { Card, PageHead, Pill, SectionLabel } from "@/components/ui";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   dashboardCounts,
   listCountryCodes,
@@ -44,6 +47,16 @@ import { RangeControl, rangeBounds, type RangeValue } from "@/components/control
  *
  * ALL TIMES UTC, as the mockup's footer demands — formatted with an explicit
  * UTC formatter, not the viewer's clock, so the footer line is true.
+ *
+ * ── RE-SKIN (theme match, Sep 2026) ────────────────────────────────────────
+ * The layout is now the reference theme's: metric cards across the top with a
+ * neutral icon square and a solid delta pill, cards as the only surface, tables
+ * inside cards. NOTHING WAS REMOVED. The date chip, the Filters chip, the range
+ * control, both View-all links and every honest empty state are the same
+ * controls and the same words as before — the tile TINTS went (butter, sky,
+ * lilac, mint were ICEFALL identity and the theme has no accent hue at all),
+ * and the country ramp went from a blue heat scale to the theme's neutral chart
+ * ramp so the legend still ranks without claiming a hue the theme does not own.
  */
 
 /** Range label for the chip beside the revenue card. */
@@ -67,33 +80,79 @@ const countryName = (code: string) => {
   }
 };
 
+/**
+ * The neutral rank ramp for the country list.
+ *
+ * The theme carries five greys and nothing else, so a ranked list reads by
+ * LIGHTNESS rather than by hue. Ninth place falls back to the muted text grey
+ * rather than wrapping round to first place's ink.
+ */
+const RANK_DOT = ["--chart-5", "--chart-4", "--chart-3", "--chart-2", "--chart-1"];
+const rankDot = (i: number) => `var(${RANK_DOT[i] ?? "--muted-foreground"})`;
+
+/**
+ * The theme's own status-badge idiom, lifted from its users table: an outline
+ * badge tinted at 10% with a solid dot. Used here for the drawn wait times,
+ * which are a traffic light in the mockup and must stay one.
+ */
+const WAIT_TONE = {
+  ok: "border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+  warn: "border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  bad: "border-destructive/20 bg-destructive/10 text-destructive",
+} as const;
+
 /* ── Tiles ─────────────────────────────────────────────────────────────── */
 
+/**
+ * The theme's metric card, with the honesty branch kept.
+ *
+ * `value === null` prints the reason and NOTHING ELSE — no number, no dash, no
+ * delta pill. A tile that cannot say what it means says why, and a big grey
+ * dash in the number slot would read across a room exactly like a measurement.
+ */
 function Kpi({
-  icon, iconCls, label, value, caption, reason, delta,
+  icon, label, value, caption, reason, delta,
 }: {
-  icon: React.ReactNode; iconCls: string; label: string;
+  icon: React.ReactNode; label: string;
   value: string | null; caption: string; reason?: string; delta?: string;
 }) {
+  // "12.4% vs May 17 – May 23" → pill "12.4%", line "vs May 17 – May 23".
+  const split = delta ? delta.split(/\s+vs\s+/) : null;
+  const deltaPart = split ? split[0] : null;
+  const againstPart = split && split.length > 1 ? `vs ${split.slice(1).join(" vs ")}` : null;
   return (
-    <Card className="flex items-start gap-3.5">
-      <span className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-[12px]", iconCls)}>{icon}</span>
-      <span className="min-w-0">
-        <span className="block text-[12.5px] font-medium text-muted">{label}</span>
+    <Card>
+      <CardHeader>
+        <CardTitle>
+          <div className="flex size-7 items-center justify-center rounded-lg border bg-ui-muted text-muted-foreground">
+            {icon}
+          </div>
+        </CardTitle>
+        <CardDescription>{label}</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-1">
         {value === null ? (
-          <span className="mt-1 block text-[12px] leading-snug text-faint">{reason}</span>
+          <p className="text-muted-foreground text-sm leading-snug">{reason}</p>
         ) : (
           <>
-            <span className="tnum block text-[24px] font-extrabold leading-tight text-ink">{value}</span>
-            <span className="block text-[11.5px] text-faint">{caption}</span>
-            {delta && (
-              <span className="mt-0.5 flex items-center gap-1 text-[11px] font-medium text-ok">
-                <TrendingUp size={11} strokeWidth={2.25} aria-hidden />{delta}
-              </span>
-            )}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="font-medium text-3xl tabular-nums leading-none tracking-tight">{value}</div>
+              {deltaPart && (
+                <Badge>
+                  <TrendingUp className="size-3" />
+                  {deltaPart}
+                </Badge>
+              )}
+            </div>
+            {/* The theme's pill holds the movement and the line under it holds
+                what the movement is against — so the comparison window is moved
+                down here rather than dropped. It is a second claim, and losing
+                it would leave a percentage with nothing to be a percentage of. */}
+            {caption && <p className="text-muted-foreground text-sm">{caption}</p>}
+            {againstPart && <p className="text-muted-foreground text-xs">{againstPart}</p>}
           </>
         )}
-      </span>
+      </CardContent>
     </Card>
   );
 }
@@ -184,45 +243,49 @@ export default function Dashboard() {
   };
 
   return (
-    <>
-      <PageHead
-        title="Dashboard"
-        subtitle={M
-          ? "Welcome back, Christos. Here's what's happening with ICEFALL today."
-          : `Welcome back${me ? `, ${me.displayName.split(" ")[0]}` : ""}. Here's what's happening with ICEFALL today.`}
-        actions={
-          <div className="flex items-center gap-2">
-            {M ? (
-              <span className="flex items-center gap-2 rounded-tile border border-line bg-surface px-3 py-2 text-[12.5px] font-medium text-ink">
-                <CalendarDays size={13} strokeWidth={2} className="text-faint" aria-hidden /> May 24 – May 30, 2026
-                <ChevronDown size={13} strokeWidth={2} className="text-faint" aria-hidden />
+    <div className="flex flex-col gap-4 md:gap-6">
+      {/* ── Page head ──────────────────────────────────────────────────── */}
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0 flex-1 space-y-1">
+          <h1 className="text-3xl tracking-tight">Dashboard</h1>
+          <p className="max-w-3xl text-muted-foreground text-sm">
+            {M
+              ? "Welcome back, Christos. Here's what's happening with ICEFALL today."
+              : `Welcome back${me ? `, ${me.displayName.split(" ")[0]}` : ""}. Here's what's happening with ICEFALL today.`}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {M ? (
+            <>
+              {/* Drawn, not wired — spans rather than buttons, exactly as before.
+                  The demo face copies the drawing; nothing here filters. */}
+              <span className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-sm font-medium">
+                <CalendarDays className="size-4 text-muted-foreground" aria-hidden /> May 24 – May 30, 2026
+                <ChevronDown className="size-4 text-muted-foreground" aria-hidden />
               </span>
-            ) : (
-              <RangeControl value={range} onChange={setRange} />
-            )}
-            {M && (
-              <span className="flex items-center gap-1.5 rounded-tile border border-line bg-surface px-3 py-2 text-[12.5px] font-medium text-ink">
-                <SlidersHorizontal size={13} strokeWidth={2} className="text-faint" aria-hidden /> Filters
+              <span className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-sm font-medium">
+                <SlidersHorizontal className="size-4 text-muted-foreground" aria-hidden /> Filters
               </span>
-            )}
-          </div>
-        }
-      />
+            </>
+          ) : (
+            <RangeControl value={range} onChange={setRange} />
+          )}
+        </div>
+      </div>
 
       {/* ── KPI tiles ───────────────────────────────────────────────────── */}
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-linear-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs md:grid-cols-2 xl:grid-cols-5 dark:*:data-[slot=card]:bg-card">
         {M ? (
           <>
             {[
-              { icon: <UsersIcon size={19} strokeWidth={2} />, cls: "bg-accent-soft text-accent" },
-              { icon: <Compass size={19} strokeWidth={2} />, cls: "bg-mint text-ok" },
-              { icon: <Building2 size={19} strokeWidth={2} />, cls: "bg-butter text-[oklch(0.55_0.12_75)]" },
-              { icon: <BookMarked size={19} strokeWidth={2} />, cls: "bg-lilac text-[oklch(0.51_0.19_295)]" },
-            ].map((ic, i) => (
+              <UsersIcon key="u" className="size-4" />,
+              <Compass key="g" className="size-4" />,
+              <Building2 key="c" className="size-4" />,
+              <BookMarked key="b" className="size-4" />,
+            ].map((icon, i) => (
               <Kpi
                 key={M.kpis[i].label}
-                icon={ic.icon}
-                iconCls={ic.cls}
+                icon={icon}
                 label={M.kpis[i].label}
                 value={M.kpis[i].value}
                 caption={M.kpis[i].caption}
@@ -231,8 +294,7 @@ export default function Dashboard() {
             ))}
             {/* The owner drew this tile's honesty themselves. It stays. */}
             <Kpi
-              icon={<Activity size={19} strokeWidth={2} />}
-              iconCls="bg-panel text-muted"
+              icon={<Activity className="size-4" />}
               label="Active Users"
               value={null}
               caption=""
@@ -241,404 +303,448 @@ export default function Dashboard() {
           </>
         ) : (
           <>
-        <Kpi
-          icon={<UsersIcon size={19} strokeWidth={2} />} iconCls="bg-accent-soft text-accent"
-          label="Total Users"
-          value={counts.state === "ok" ? counts.value.users.toLocaleString("en-GB") : null}
-          caption="Registered accounts"
-          reason={counts.state === "loading" ? "Counting…" : "reason" in counts ? counts.reason : undefined}
-        />
-        <Kpi
-          icon={<Compass size={19} strokeWidth={2} />} iconCls="bg-mint text-ok"
-          label="Total Guides"
-          value={counts.state === "ok" ? counts.value.guides.toLocaleString("en-GB") : null}
-          caption="Guide profiles"
-          reason={counts.state === "loading" ? "Counting…" : "reason" in counts ? counts.reason : undefined}
-        />
-        <Kpi
-          icon={<Building2 size={19} strokeWidth={2} />} iconCls="bg-butter text-[oklch(0.55_0.12_75)]"
-          label="Total Expedition Companies"
-          value={counts.state === "ok" ? counts.value.companies.toLocaleString("en-GB") : null}
-          caption="Registered companies"
-          reason={counts.state === "loading" ? "Counting…" : "reason" in counts ? counts.reason : undefined}
-        />
-        <Kpi
-          icon={<BookMarked size={19} strokeWidth={2} />} iconCls="bg-lilac text-[oklch(0.51_0.19_295)]"
-          label="Total Bookings"
-          value={counts.state === "ok" ? counts.value.bookings.toLocaleString("en-GB") : null}
-          caption="All time"
-          reason={counts.state === "loading" ? "Counting…" : "reason" in counts ? counts.reason : undefined}
-        />
-        {/* The owner drew this tile's honesty themselves. Keep their words. */}
-        <Kpi
-          icon={<Activity size={19} strokeWidth={2} />} iconCls="bg-panel text-muted"
-          label="Active Users"
-          value={null}
-          caption=""
-          reason="Not being measured yet. We're working on it."
-        />
+            <Kpi
+              icon={<UsersIcon className="size-4" />}
+              label="Total Users"
+              value={counts.state === "ok" ? counts.value.users.toLocaleString("en-GB") : null}
+              caption="Registered accounts"
+              reason={counts.state === "loading" ? "Counting…" : "reason" in counts ? counts.reason : undefined}
+            />
+            <Kpi
+              icon={<Compass className="size-4" />}
+              label="Total Guides"
+              value={counts.state === "ok" ? counts.value.guides.toLocaleString("en-GB") : null}
+              caption="Guide profiles"
+              reason={counts.state === "loading" ? "Counting…" : "reason" in counts ? counts.reason : undefined}
+            />
+            <Kpi
+              icon={<Building2 className="size-4" />}
+              label="Total Expedition Companies"
+              value={counts.state === "ok" ? counts.value.companies.toLocaleString("en-GB") : null}
+              caption="Registered companies"
+              reason={counts.state === "loading" ? "Counting…" : "reason" in counts ? counts.reason : undefined}
+            />
+            <Kpi
+              icon={<BookMarked className="size-4" />}
+              label="Total Bookings"
+              value={counts.state === "ok" ? counts.value.bookings.toLocaleString("en-GB") : null}
+              caption="All time"
+              reason={counts.state === "loading" ? "Counting…" : "reason" in counts ? counts.reason : undefined}
+            />
+            {/* The owner drew this tile's honesty themselves. Keep their words. */}
+            <Kpi
+              icon={<Activity className="size-4" />}
+              label="Active Users"
+              value={null}
+              caption=""
+              reason="Not being measured yet. We're working on it."
+            />
           </>
         )}
       </div>
 
       {/* ── Users by Country ───────────────────────────────────────────── */}
-      <Card className="mt-4">
-        <SectionLabel>Users by Country</SectionLabel>
-        {M ? (
-          <div className="mt-3 grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
-            <div className="space-y-2">
-              {M.countries.map((c, i) => (
-                <div key={c.name} className="flex items-center justify-between text-[12.5px]">
-                  <span className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full" style={{ background: `oklch(${0.75 - i * 0.045} 0.13 255)` }} aria-hidden />
-                    <span className="font-medium text-ink">{c.name}</span>
-                  </span>
-                  <span className="tnum text-muted">{c.n} <span className="text-faint">({c.pct})</span></span>
+      <Card>
+        <CardHeader>
+          <CardTitle>Users by Country</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {M ? (
+            <div className="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
+              <div className="space-y-2">
+                {M.countries.map((c, i) => (
+                  <div key={c.name} className="flex items-center justify-between text-sm">
+                    <span className="flex items-center gap-2">
+                      <span className="size-2 rounded-full" style={{ background: rankDot(i) }} aria-hidden />
+                      <span>{c.name}</span>
+                    </span>
+                    <span className="text-muted-foreground tabular-nums">
+                      {c.n} ({c.pct})
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="relative min-h-[180px]">
+                {/* The demo face draws the map (stylised dot-grid, hot markets in
+                    the chart ramp) — the drawing has one and the face copies the
+                    drawing. The LIVE branch below keeps its honest no-map gap. */}
+                <WorldDots className="max-h-[300px]" />
+                <div className="mt-1 flex items-center gap-2 text-muted-foreground text-xs">
+                  Low
+                  <span
+                    className="h-1.5 w-24 rounded-full"
+                    style={{ background: "linear-gradient(to right,var(--chart-1),var(--chart-5))" }}
+                    aria-hidden
+                  />
+                  High
                 </div>
-              ))}
-            </div>
-            <div className="relative min-h-[180px]">
-              {/* The demo face draws the map (stylised dot-grid, hot markets in
-                  blue) — the drawing has one and the face copies the drawing.
-                  The LIVE branch below keeps its honest no-map gap. */}
-              <WorldDots className="max-h-[300px]" />
-              <div className="mt-1 flex items-center gap-2 text-[10.5px] text-faint">
-                Low
-                <span className="h-1.5 w-24 rounded-full" style={{ background: "linear-gradient(to right,#E4ECF7,#5B8DEF)" }} aria-hidden />
-                High
               </div>
             </div>
-          </div>
-        ) : countryStats === null ? (
-          <p className="mt-3 text-[12.5px] text-faint">
-            {countries.state === "loading" ? "Reading profiles…" : "reason" in countries ? countries.reason : ""}
-          </p>
-        ) : countryStats.stated.length === 0 ? (
-          <p className="mt-3 max-w-2xl text-[12.5px] leading-relaxed text-faint">
-            No user has stated a country yet — location is set by people in the phone app, never
-            guessed from an IP.{countryStats.unstated > 0 && ` ${countryStats.unstated} account${countryStats.unstated === 1 ? " has" : "s have"} no location on file.`}
-          </p>
-        ) : (
-          <div className="mt-3 grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
-            <div className="space-y-2">
-              {countryStats.stated.slice(0, 9).map(([code, n], i) => (
-                <div key={code} className="flex items-center justify-between text-[12.5px]">
-                  <span className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full" style={{ background: `oklch(${0.75 - i * 0.05} 0.13 255)` }} aria-hidden />
-                    <span className="font-medium text-ink">{countryName(code)}</span>
-                  </span>
-                  <span className="tnum text-muted">
-                    {n.toLocaleString("en-GB")}{" "}
-                    <span className="text-faint">({((n / countryStats.total) * 100).toFixed(1)}%)</span>
-                  </span>
-                </div>
-              ))}
-              {countryStats.unstated > 0 && (
-                <p className="pt-1 text-[11.5px] text-faint">
-                  {countryStats.unstated} account{countryStats.unstated === 1 ? "" : "s"} with no stated location — counted nowhere rather than guessed.
+          ) : countryStats === null ? (
+            <p className="text-muted-foreground text-sm">
+              {countries.state === "loading" ? "Reading profiles…" : "reason" in countries ? countries.reason : ""}
+            </p>
+          ) : countryStats.stated.length === 0 ? (
+            <p className="max-w-2xl text-muted-foreground text-sm leading-relaxed">
+              No user has stated a country yet — location is set by people in the phone app, never
+              guessed from an IP.{countryStats.unstated > 0 && ` ${countryStats.unstated} account${countryStats.unstated === 1 ? " has" : "s have"} no location on file.`}
+            </p>
+          ) : (
+            <div className="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
+              <div className="space-y-2">
+                {countryStats.stated.slice(0, 9).map(([code, n], i) => (
+                  <div key={code} className="flex items-center justify-between text-sm">
+                    <span className="flex items-center gap-2">
+                      <span className="size-2 rounded-full" style={{ background: rankDot(i) }} aria-hidden />
+                      <span>{countryName(code)}</span>
+                    </span>
+                    <span className="text-muted-foreground tabular-nums">
+                      {n.toLocaleString("en-GB")} ({((n / countryStats.total) * 100).toFixed(1)}%)
+                    </span>
+                  </div>
+                ))}
+                {countryStats.unstated > 0 && (
+                  <p className="pt-1 text-muted-foreground text-xs">
+                    {countryStats.unstated} account{countryStats.unstated === 1 ? "" : "s"} with no stated location — counted nowhere rather than guessed.
+                  </p>
+                )}
+              </div>
+              <div className="grid min-h-[180px] place-items-center rounded-lg bg-ui-muted">
+                {/* Honest gap, stated: no map asset exists in this codebase and
+                    geography drawn from memory would be wrong somewhere. The
+                    numbers on the left are the live data the map would colour. */}
+                <p className="max-w-[300px] p-6 text-center text-muted-foreground text-sm leading-relaxed">
+                  The world map arrives with a licensed map asset — the figures beside this space are
+                  live, and the map will colour exactly them.
                 </p>
-              )}
+              </div>
             </div>
-            <div className="grid min-h-[180px] place-items-center rounded-tile bg-panel">
-              {/* Honest gap, stated: no map asset exists in this codebase and
-                  geography drawn from memory would be wrong somewhere. The
-                  numbers on the left are the live data the map would colour. */}
-              <p className="max-w-[300px] p-6 text-center text-[12px] leading-relaxed text-faint">
-                The world map arrives with a licensed map asset — the figures beside this space are
-                live, and the map will colour exactly them.
-              </p>
-            </div>
-          </div>
-        )}
+          )}
+        </CardContent>
       </Card>
 
       {/* ── Revenue ────────────────────────────────────────────────────── */}
-      <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+      <div className="grid gap-4 md:gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
         <Card>
-          <div className="flex items-center justify-between gap-3">
-            <SectionLabel>Revenue Overview</SectionLabel>
+          <CardHeader>
+            <CardTitle>Revenue Overview</CardTitle>
+            <CardAction>
+              {M ? (
+                <span className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-[0.8rem] font-medium">
+                  May 24 – May 30, 2026 <ChevronDown className="size-3.5 text-muted-foreground" aria-hidden />
+                </span>
+              ) : (
+                <Badge variant="outline">{rangeLabel(range)}</Badge>
+              )}
+            </CardAction>
+          </CardHeader>
+          <CardContent>
             {M ? (
-              <span className="flex items-center gap-1.5 rounded-tile border border-line bg-surface px-2.5 py-1.5 text-[11.5px] font-medium text-ink">
-                May 24 – May 30, 2026 <ChevronDown size={12} strokeWidth={2} className="text-faint" aria-hidden />
-              </span>
+              // Drawn arrangement: the total sits BESIDE the chart, not above it.
+              <div className="flex flex-wrap items-start gap-6">
+                <div className="shrink-0">
+                  <p className="text-muted-foreground text-sm">Total Revenue</p>
+                  <p className="mt-1 font-medium text-3xl tabular-nums leading-none tracking-tight">{M.revenue.total}</p>
+                  <Badge className="mt-2">
+                    <TrendingUp className="size-3" />
+                    {M.revenue.delta}
+                  </Badge>
+                </div>
+                <div className="min-w-[260px] flex-1">
+                  <LineChart series={[M.revenue.points]} labels={M.revenue.labels} />
+                </div>
+              </div>
+            ) : revRows === null ? (
+              <p className="text-muted-foreground text-sm">
+                {revenue.state === "loading" ? "Reading the ledger…" : "reason" in revenue ? revenue.reason : ""}
+              </p>
+            ) : revRows.length === 0 ? (
+              <p className="max-w-xl text-muted-foreground text-sm leading-relaxed">
+                No revenue recognised in this range. The ledger is real and currently empty — the
+                chart draws itself the day money is recorded.
+              </p>
             ) : (
-              <Pill tone="neutral">{rangeLabel(range)}</Pill>
+              <>
+                <p className="text-muted-foreground text-sm">Total in range</p>
+                <p className="mt-1 font-medium text-3xl tabular-nums leading-none tracking-tight">{eur(revTotal)}</p>
+                {chart && <LineChart series={[chart.points]} labels={chart.labels} />}
+              </>
             )}
-          </div>
-          {M ? (
-            // Drawn arrangement: the total sits BESIDE the chart, not above it.
-            <div className="mt-3 flex flex-wrap items-start gap-6">
-              <div className="shrink-0">
-                <p className="text-[12.5px] text-muted">Total Revenue</p>
-                <p className="tnum text-[28px] font-extrabold leading-tight text-ink">{M.revenue.total}</p>
-                <p className="mt-0.5 flex items-center gap-1 text-[11.5px] font-medium text-ok">
-                  <TrendingUp size={11} strokeWidth={2.25} aria-hidden />{M.revenue.delta}
-                </p>
-              </div>
-              <div className="min-w-[260px] flex-1">
-                <LineChart series={[M.revenue.points]} labels={M.revenue.labels} />
-              </div>
-            </div>
-          ) : revRows === null ? (
-            <p className="mt-3 text-[12.5px] text-faint">
-              {revenue.state === "loading" ? "Reading the ledger…" : "reason" in revenue ? revenue.reason : ""}
-            </p>
-          ) : revRows.length === 0 ? (
-            <p className="mt-3 max-w-xl text-[12.5px] leading-relaxed text-faint">
-              No revenue recognised in this range. The ledger is real and currently empty — the
-              chart draws itself the day money is recorded.
-            </p>
-          ) : (
-            <>
-              <p className="mt-2 text-[12.5px] text-muted">Total in range</p>
-              <p className="tnum text-[28px] font-extrabold leading-tight text-ink">{eur(revTotal)}</p>
-              {chart && <LineChart series={[chart.points]} labels={chart.labels} />}
-            </>
-          )}
+          </CardContent>
         </Card>
 
         <Card>
-          <SectionLabel>Revenue Breakdown</SectionLabel>
-          {M ? (
-            <div className="mt-3 flex flex-wrap items-center gap-5">
-              <Donut segments={M.breakdownValues.map((v) => ({ value: v }))} centre={M.breakdownCentre} />
-              <div className="min-w-0 flex-1 space-y-2.5">
-                {M.breakdown.map((b, i) => (
-                  <div key={b.label} className="flex items-center justify-between gap-3 text-[12.5px]">
-                    <span className="flex min-w-0 items-center gap-2">
-                      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: DONUT_COLORS[i % DONUT_COLORS.length] }} aria-hidden />
-                      <span className="min-w-0">
-                        <span className="block truncate font-medium text-ink">{b.label}</span>
-                        <span className="block truncate text-[11px] text-faint">{b.sub}</span>
+          <CardHeader>
+            <CardTitle>Revenue Breakdown</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {M ? (
+              <div className="flex flex-wrap items-center gap-5">
+                <Donut segments={M.breakdownValues.map((v) => ({ value: v }))} centre={M.breakdownCentre} />
+                <div className="min-w-0 flex-1 space-y-2.5">
+                  {M.breakdown.map((b, i) => (
+                    <div key={b.label} className="flex items-center justify-between gap-3 text-sm">
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className="size-2.5 shrink-0 rounded-full" style={{ background: DONUT_COLORS[i % DONUT_COLORS.length] }} aria-hidden />
+                        <span className="min-w-0">
+                          <span className="block truncate">{b.label}</span>
+                          <span className="block truncate text-muted-foreground text-xs">{b.sub}</span>
+                        </span>
                       </span>
-                    </span>
-                    <span className="tnum shrink-0 text-muted">{b.amount} <span className="text-faint">{b.pct}</span></span>
-                  </div>
-                ))}
+                      <span className="shrink-0 text-muted-foreground tabular-nums">{b.amount} {b.pct}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          ) : breakdown === null ? (
-            <p className="mt-3 text-[12.5px] text-faint">
-              {revenue.state === "loading" ? "Reading the ledger…" : "reason" in revenue ? revenue.reason : ""}
-            </p>
-          ) : breakdown.length === 0 ? (
-            <p className="mt-3 max-w-xl text-[12.5px] leading-relaxed text-faint">
-              Nothing to break down — no revenue is recognised in this range.
-            </p>
-          ) : (
-            <div className="mt-3 flex flex-wrap items-center gap-5">
-              <Donut segments={breakdown.map(([, v]) => ({ value: v }))} centre={eur(revTotal)} />
-              <div className="min-w-0 flex-1 space-y-2.5">
-                {breakdown.map(([stream, cents], i) => (
-                  <div key={stream} className="flex items-center justify-between gap-3 text-[12.5px]">
-                    <span className="flex items-center gap-2">
-                      <span className="h-2.5 w-2.5 rounded-full" style={{ background: DONUT_COLORS[i % DONUT_COLORS.length] }} aria-hidden />
-                      <span className="font-medium text-ink">{STREAM_LABEL[stream]}</span>
-                    </span>
-                    <span className="tnum text-muted">
-                      {eur(cents)} <span className="text-faint">({((cents / Math.max(revTotal, 1)) * 100).toFixed(1)}%)</span>
-                    </span>
-                  </div>
-                ))}
+            ) : breakdown === null ? (
+              <p className="text-muted-foreground text-sm">
+                {revenue.state === "loading" ? "Reading the ledger…" : "reason" in revenue ? revenue.reason : ""}
+              </p>
+            ) : breakdown.length === 0 ? (
+              <p className="max-w-xl text-muted-foreground text-sm leading-relaxed">
+                Nothing to break down — no revenue is recognised in this range.
+              </p>
+            ) : (
+              <div className="flex flex-wrap items-center gap-5">
+                <Donut segments={breakdown.map(([, v]) => ({ value: v }))} centre={eur(revTotal)} />
+                <div className="min-w-0 flex-1 space-y-2.5">
+                  {breakdown.map(([stream, cents], i) => (
+                    <div key={stream} className="flex items-center justify-between gap-3 text-sm">
+                      <span className="flex items-center gap-2">
+                        <span className="size-2.5 rounded-full" style={{ background: DONUT_COLORS[i % DONUT_COLORS.length] }} aria-hidden />
+                        <span>{STREAM_LABEL[stream]}</span>
+                      </span>
+                      <span className="text-muted-foreground tabular-nums">
+                        {eur(cents)} ({((cents / Math.max(revTotal, 1)) * 100).toFixed(1)}%)
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
-          {/* Subscriptions: named because the mockup names it; absent because
-              nothing exists to measure. Absence, not zero. */}
-          {!M && breakdown !== null && !breakdown.some(([s]) => s === "subscription") && (
-            <p className="mt-3 border-t border-line-soft pt-2.5 text-[11.5px] leading-relaxed text-faint">
-              Subscriptions — no subscription product exists yet, so there is nothing to measure here.
-            </p>
-          )}
+            )}
+            {/* Subscriptions: named because the mockup names it; absent because
+                nothing exists to measure. Absence, not zero. */}
+            {!M && breakdown !== null && !breakdown.some(([s]) => s === "subscription") && (
+              <p className="mt-3 border-t border-border pt-2.5 text-muted-foreground text-xs leading-relaxed">
+                Subscriptions — no subscription product exists yet, so there is nothing to measure here.
+              </p>
+            )}
+          </CardContent>
         </Card>
       </div>
 
       {/* ── Recent activity (drawn: three cards across, markets included) ── */}
-      <div className={cn("mt-4 grid gap-4", M ? "xl:grid-cols-3" : "xl:grid-cols-2")}>
+      <div className={cn("grid gap-4 md:gap-6", M ? "xl:grid-cols-3" : "xl:grid-cols-2")}>
         <Card>
-          <div className="flex items-center justify-between">
-            <SectionLabel>Recent Bookings</SectionLabel>
-            <Link to="/admin/bookings" className="text-[12px] font-medium text-accent-ink hover:underline">View all</Link>
-          </div>
-          {M ? (
-            <table className="mt-2 w-full text-[12px]">
-              <thead>
-                <tr className="text-left text-[10.5px] text-faint">
-                  <th className="py-1.5 pr-3 font-medium">Booking ID</th>
-                  <th className="py-1.5 pr-3 font-medium">Mountain / Trek</th>
-                  <th className="py-1.5 pr-3 font-medium">Company / Guide</th>
-                  <th className="py-1.5 pr-3 text-right font-medium">Amount</th>
-                  <th className="py-1.5 text-right font-medium">Date</th>
-                </tr>
-              </thead>
-              <tbody>
-                {M.recentBookings.map((b) => (
-                  <tr key={b.ref} className="border-t border-line-soft">
-                    <td className="tnum py-2.5 pr-3 font-medium text-accent-ink">{b.ref}</td>
-                    <td className="py-2.5 pr-3 text-ink">{b.trip}</td>
-                    <td className="py-2.5 pr-3 text-muted">{b.company}</td>
-                    <td className="tnum py-2.5 pr-3 text-right font-semibold text-ink">{b.amount}</td>
-                    <td className="tnum py-2.5 text-right text-faint">{b.date}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : bookings.state !== "ok" ? (
-            <p className="mt-3 text-[12.5px] text-faint">
-              {bookings.state === "loading" ? "Reading…" : "reason" in bookings ? bookings.reason : ""}
-            </p>
-          ) : bookings.value.length === 0 ? (
-            <p className="mt-3 text-[12.5px] leading-relaxed text-faint">
-              No bookings recorded yet — the first appears here the moment one is.
-            </p>
-          ) : (
-            <table className="mt-2 w-full text-[12.5px]">
-              <tbody>
-                {bookings.value.map((b) => (
-                  <tr key={b.id} className="border-t border-line-soft first:border-0">
-                    <td className="tnum py-2.5 pr-3 font-medium text-accent-ink">{b.id.slice(0, 8)}</td>
-                    <td className="py-2.5 pr-3 text-ink">{b.destination ?? "—"}</td>
-                    <td className="py-2.5 pr-3 text-muted">{b.company ?? ""}</td>
-                    <td className="tnum py-2.5 pr-3 text-right font-semibold text-ink">
-                      {b.value_cents !== null ? eur(b.value_cents) : <span className="font-normal text-faint">no value set</span>}
-                    </td>
-                    <td className="tnum py-2.5 text-right text-faint">{utc.format(new Date(b.booked_at))}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+          <CardHeader>
+            <CardTitle>Recent Bookings</CardTitle>
+            <CardAction>
+              <Button asChild variant="link" size="sm" className="px-0!">
+                <Link to="/admin/bookings">View all</Link>
+              </Button>
+            </CardAction>
+          </CardHeader>
+          <CardContent className="px-0">
+            {M ? (
+              <Table className="**:data-[slot=table-cell]:px-4 **:data-[slot=table-head]:px-4">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="font-normal text-muted-foreground">Booking ID</TableHead>
+                    <TableHead className="font-normal text-muted-foreground">Mountain / Trek</TableHead>
+                    <TableHead className="font-normal text-muted-foreground">Company / Guide</TableHead>
+                    <TableHead className="text-right font-normal text-muted-foreground">Amount</TableHead>
+                    <TableHead className="text-right font-normal text-muted-foreground">Date</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {M.recentBookings.map((b) => (
+                    <TableRow key={b.ref} className="border-border/60">
+                      <TableCell className="py-3 font-medium tabular-nums">{b.ref}</TableCell>
+                      <TableCell className="py-3">{b.trip}</TableCell>
+                      <TableCell className="py-3 text-muted-foreground">{b.company}</TableCell>
+                      <TableCell className="py-3 text-right font-medium tabular-nums">{b.amount}</TableCell>
+                      <TableCell className="py-3 text-right text-muted-foreground tabular-nums">{b.date}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            ) : bookings.state !== "ok" ? (
+              <p className="px-4 text-muted-foreground text-sm">
+                {bookings.state === "loading" ? "Reading…" : "reason" in bookings ? bookings.reason : ""}
+              </p>
+            ) : bookings.value.length === 0 ? (
+              <p className="px-4 text-muted-foreground text-sm leading-relaxed">
+                No bookings recorded yet — the first appears here the moment one is.
+              </p>
+            ) : (
+              <Table className="**:data-[slot=table-cell]:px-4">
+                <TableBody>
+                  {bookings.value.map((b) => (
+                    <TableRow key={b.id} className="border-border/60">
+                      <TableCell className="py-3 font-medium tabular-nums">{b.id.slice(0, 8)}</TableCell>
+                      {/* The em dash: this booking records no destination. */}
+                      <TableCell className="py-3">{b.destination ?? "—"}</TableCell>
+                      <TableCell className="py-3 text-muted-foreground">{b.company ?? ""}</TableCell>
+                      <TableCell className="py-3 text-right font-medium tabular-nums">
+                        {b.value_cents !== null ? eur(b.value_cents) : <span className="font-normal text-muted-foreground">no value set</span>}
+                      </TableCell>
+                      <TableCell className="py-3 text-right text-muted-foreground tabular-nums">{utc.format(new Date(b.booked_at))}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
         </Card>
 
         <Card>
-          <div className="flex items-center justify-between">
-            <SectionLabel>Recent Enquiries</SectionLabel>
-            <Link to="/admin/leads" className="text-[12px] font-medium text-accent-ink hover:underline">View all</Link>
-          </div>
-          {M ? (
-            <table className="mt-2 w-full text-[12px]">
-              <thead>
-                <tr className="text-left text-[10.5px] text-faint">
-                  <th className="py-1.5 pr-3 font-medium">Enquiry ID</th>
-                  <th className="py-1.5 pr-3 font-medium">Topic</th>
-                  <th className="py-1.5 pr-3 font-medium">Company / Guide</th>
-                  <th className="py-1.5 pr-3 text-right font-medium">Wait Time</th>
-                  <th className="py-1.5 text-right font-medium">Date</th>
-                </tr>
-              </thead>
-              <tbody>
-                {M.recentEnquiries.map((e) => (
-                  <tr key={e.ref} className="border-t border-line-soft">
-                    <td className="tnum py-2.5 pr-3 font-medium text-accent-ink">{e.ref}</td>
-                    <td className="py-2.5 pr-3 text-ink">{e.topic}</td>
-                    <td className="py-2.5 pr-3 text-muted">{e.who}</td>
-                    <td className="py-2.5 pr-3 text-right">
-                      {/* The drawing's traffic-light wait colours. */}
-                      <span className={cn("tnum font-semibold", e.tone === "ok" ? "text-ok" : e.tone === "warn" ? "text-[oklch(0.62_0.14_60)]" : "text-bad")}>{e.wait}</span>
-                    </td>
-                    <td className="tnum py-2.5 text-right text-faint">{e.date}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : waiting === null ? (
-            <p className="mt-3 text-[12.5px] text-faint">
-              {enquiries.state === "loading" ? "Reading…" : "reason" in enquiries ? enquiries.reason : ""}
-            </p>
-          ) : waiting.length === 0 ? (
-            <p className="mt-3 text-[12.5px] leading-relaxed text-faint">
-              Nobody is waiting. Enquiries from every app land here the moment they are sent.
-            </p>
-          ) : (
-            <table className="mt-2 w-full text-[12.5px]">
-              <tbody>
-                {waiting.slice(0, 5).map((e) => (
-                  <tr key={e.id} className="border-t border-line-soft first:border-0">
-                    <td className="py-2.5 pr-3 font-medium text-ink">{e.object_label}</td>
-                    <td className="py-2.5 pr-3 text-muted">{e.sender_name ?? e.sender_email ?? e.sender_kind}</td>
-                    <td className="py-2.5 pr-3 text-right">
-                      <span className="tnum rounded-pill bg-butter px-2 py-[2px] text-[11.5px] font-semibold text-[oklch(0.5_0.11_75)]">
-                        {waitedLabel(e.created_at)}
-                      </span>
-                    </td>
-                    <td className="tnum py-2.5 text-right text-faint">{utc.format(new Date(e.created_at))}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+          <CardHeader>
+            <CardTitle>Recent Enquiries</CardTitle>
+            <CardAction>
+              <Button asChild variant="link" size="sm" className="px-0!">
+                <Link to="/admin/leads">View all</Link>
+              </Button>
+            </CardAction>
+          </CardHeader>
+          <CardContent className="px-0">
+            {M ? (
+              <Table className="**:data-[slot=table-cell]:px-4 **:data-[slot=table-head]:px-4">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="font-normal text-muted-foreground">Enquiry ID</TableHead>
+                    <TableHead className="font-normal text-muted-foreground">Topic</TableHead>
+                    <TableHead className="font-normal text-muted-foreground">Company / Guide</TableHead>
+                    <TableHead className="text-right font-normal text-muted-foreground">Wait Time</TableHead>
+                    <TableHead className="text-right font-normal text-muted-foreground">Date</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {M.recentEnquiries.map((e) => (
+                    <TableRow key={e.ref} className="border-border/60">
+                      <TableCell className="py-3 font-medium tabular-nums">{e.ref}</TableCell>
+                      <TableCell className="py-3">{e.topic}</TableCell>
+                      <TableCell className="py-3 text-muted-foreground">{e.who}</TableCell>
+                      <TableCell className="py-3 text-right">
+                        {/* The drawing's traffic-light wait colours, in the
+                            theme's own status-badge idiom. */}
+                        <Badge variant="outline" className={cn("gap-1.5 border px-2 py-1 font-medium tabular-nums", WAIT_TONE[e.tone as keyof typeof WAIT_TONE] ?? WAIT_TONE.ok)}>
+                          {e.wait}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="py-3 text-right text-muted-foreground tabular-nums">{e.date}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            ) : waiting === null ? (
+              <p className="px-4 text-muted-foreground text-sm">
+                {enquiries.state === "loading" ? "Reading…" : "reason" in enquiries ? enquiries.reason : ""}
+              </p>
+            ) : waiting.length === 0 ? (
+              <p className="px-4 text-muted-foreground text-sm leading-relaxed">
+                Nobody is waiting. Enquiries from every app land here the moment they are sent.
+              </p>
+            ) : (
+              <Table className="**:data-[slot=table-cell]:px-4">
+                <TableBody>
+                  {waiting.slice(0, 5).map((e) => (
+                    <TableRow key={e.id} className="border-border/60">
+                      <TableCell className="py-3 font-medium">{e.object_label}</TableCell>
+                      <TableCell className="py-3 text-muted-foreground">{e.sender_name ?? e.sender_email ?? e.sender_kind}</TableCell>
+                      <TableCell className="py-3 text-right">
+                        <Badge variant="outline" className="gap-1.5 border-amber-500/20 bg-amber-500/10 px-2 py-1 font-medium text-amber-600 tabular-nums dark:text-amber-400">
+                          {waitedLabel(e.created_at)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="py-3 text-right text-muted-foreground tabular-nums">{utc.format(new Date(e.created_at))}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
         </Card>
 
         {M && (
           <Card>
-            <SectionLabel>Top Markets</SectionLabel>
-            <table className="mt-2 w-full text-[12px]">
-              <thead>
-                <tr className="text-left text-[10.5px] text-faint">
-                  <th className="py-1.5 font-medium">Country</th>
-                  <th className="py-1.5 text-right font-medium">Users</th>
-                  <th className="py-1.5 text-right font-medium">Bookings</th>
-                  <th className="py-1.5 text-right font-medium">Revenue</th>
-                </tr>
-              </thead>
-              <tbody>
-                {M.topMarkets.map((m) => (
-                  <tr key={m.name} className="border-t border-line-soft">
-                    <td className="py-2.5 font-medium text-ink">{m.name}</td>
-                    <td className="tnum py-2.5 text-right text-muted">{m.users}</td>
-                    <td className="tnum py-2.5 text-right text-muted">{m.bookings}</td>
-                    <td className="tnum py-2.5 text-right text-ink">{m.revenue}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <CardHeader>
+              <CardTitle>Top Markets</CardTitle>
+            </CardHeader>
+            <CardContent className="px-0">
+              <Table className="**:data-[slot=table-cell]:px-4 **:data-[slot=table-head]:px-4">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="font-normal text-muted-foreground">Country</TableHead>
+                    <TableHead className="text-right font-normal text-muted-foreground">Users</TableHead>
+                    <TableHead className="text-right font-normal text-muted-foreground">Bookings</TableHead>
+                    <TableHead className="text-right font-normal text-muted-foreground">Revenue</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {M.topMarkets.map((m) => (
+                    <TableRow key={m.name} className="border-border/60">
+                      <TableCell className="py-3 font-medium">{m.name}</TableCell>
+                      <TableCell className="py-3 text-right text-muted-foreground tabular-nums">{m.users}</TableCell>
+                      <TableCell className="py-3 text-right text-muted-foreground tabular-nums">{m.bookings}</TableCell>
+                      <TableCell className="py-3 text-right tabular-nums">{m.revenue}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
           </Card>
         )}
       </div>
 
       {/* ── Top markets (live layout: its own full-width card) ─────────── */}
       {!M && (
-      <Card className="mt-4">
-        <SectionLabel>Top Markets</SectionLabel>
-        {countryStats === null || countryStats.stated.length === 0 ? (
-          <p className="mt-3 text-[12.5px] leading-relaxed text-faint">
-            Markets appear when users state a country — none has yet.
-          </p>
-        ) : (
-          <>
-            <table className="mt-2 w-full text-[12.5px]">
-              <thead>
-                <tr className="text-left text-[11px] uppercase tracking-[0.06em] text-faint">
-                  <th className="py-2 font-medium">Country</th>
-                  <th className="py-2 text-right font-medium">Users</th>
-                  <th className="py-2 text-right font-medium">Bookings</th>
-                  <th className="py-2 text-right font-medium">Revenue</th>
-                </tr>
-              </thead>
-              <tbody>
-                {countryStats.stated.slice(0, 5).map(([code, n]) => (
-                  <tr key={code} className="border-t border-line-soft">
-                    <td className="py-2.5 font-medium text-ink">{countryName(code)}</td>
-                    <td className="tnum py-2.5 text-right text-muted">{n.toLocaleString("en-GB")}</td>
-                    <td className="py-2.5 text-right text-[11.5px] text-faint">not linked</td>
-                    <td className="py-2.5 text-right text-[11.5px] text-faint">not linked</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <p className="mt-2 text-[11.5px] leading-relaxed text-faint">
-              Bookings and revenue are not attributable to a customer's country yet — nothing links
-              a payment to a person's stated location, so those columns say so instead of guessing.
-            </p>
-          </>
-        )}
-      </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Top Markets</CardTitle>
+          </CardHeader>
+          <CardContent className="px-0">
+            {countryStats === null || countryStats.stated.length === 0 ? (
+              <p className="px-4 text-muted-foreground text-sm leading-relaxed">
+                Markets appear when users state a country — none has yet.
+              </p>
+            ) : (
+              <>
+                <Table className="**:data-[slot=table-cell]:px-4 **:data-[slot=table-head]:px-4">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="font-normal text-muted-foreground">Country</TableHead>
+                      <TableHead className="text-right font-normal text-muted-foreground">Users</TableHead>
+                      <TableHead className="text-right font-normal text-muted-foreground">Bookings</TableHead>
+                      <TableHead className="text-right font-normal text-muted-foreground">Revenue</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {countryStats.stated.slice(0, 5).map(([code, n]) => (
+                      <TableRow key={code} className="border-border/60">
+                        <TableCell className="py-3 font-medium">{countryName(code)}</TableCell>
+                        <TableCell className="py-3 text-right text-muted-foreground tabular-nums">{n.toLocaleString("en-GB")}</TableCell>
+                        {/* Not a dash and not a zero: nothing links a payment to
+                            a stated country, so the cell says which it is. */}
+                        <TableCell className="py-3 text-right text-muted-foreground">not linked</TableCell>
+                        <TableCell className="py-3 text-right text-muted-foreground">not linked</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                <p className="mt-3 px-4 text-muted-foreground text-xs leading-relaxed">
+                  Bookings and revenue are not attributable to a customer's country yet — nothing links
+                  a payment to a person's stated location, so those columns say so instead of guessing.
+                </p>
+              </>
+            )}
+          </CardContent>
+        </Card>
       )}
 
-      <div className="mt-4 flex items-center justify-between text-[11.5px] text-faint">
+      <div className="flex items-center justify-between text-muted-foreground text-xs">
         <span>All times shown in UTC</span>
-        {M ? <span>{M.updated}</span> : asOf && <span className="tnum">Data as of {utcTime.format(asOf)} UTC</span>}
+        {M ? <span>{M.updated}</span> : asOf && <span className="tabular-nums">Data as of {utcTime.format(asOf)} UTC</span>}
       </div>
-    </>
+    </div>
   );
 }

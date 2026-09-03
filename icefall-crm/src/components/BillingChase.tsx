@@ -111,7 +111,7 @@ export function BillingChase() {
           </p>
         </div>
         <Button
-          className="!bg-accent text-white hover:opacity-90"
+          className="!bg-accent text-primary-foreground hover:opacity-90"
           disabled={busy}
           onClick={() => void notify()}
         >
@@ -131,7 +131,7 @@ export function BillingChase() {
           ) : (
             <div className="mt-1.5 space-y-1.5">
               {owing.map((i) => (
-                <div key={i.id} className="flex items-center justify-between rounded-tile bg-[oklch(0.977_0.016_22)] px-3 py-2">
+                <div key={i.id} className="flex items-center justify-between rounded-tile bg-bad/10 px-3 py-2">
                   <span className="min-w-0 truncate text-[12.5px] font-medium text-ink">
                     <span className="tnum">{i.number}</span> · {nameOf(i.company_id)}
                   </span>

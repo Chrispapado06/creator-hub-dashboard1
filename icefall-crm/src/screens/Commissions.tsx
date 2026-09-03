@@ -1,6 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Building2, CalendarDays, Download, SlidersHorizontal, TrendingUp, User } from "lucide-react";
-import { Button, Card, PageHead, Pill, SectionLabel, TableCard } from "@/components/ui";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Resolve } from "@/components/states";
 import { listBookingsDetailed, type BookingDetailed } from "@/data/queries";
 import { loading, type Result } from "@/data/result";
@@ -23,6 +26,12 @@ import { RangeControl, rangeBounds, type RangeValue } from "@/components/control
  * The old parallel implementation went with the fork — two implementations of
  * one screen is drift with a countdown (§6u).
  *
+ * THE DRAWN GRID SURVIVES THE RE-SKIN; THE CHROME INSIDE IT DOES NOT. The owner
+ * then said of the theme "i dont see any change i want the designs 1:1", so
+ * every container on this page is now the theme's Card, every table the theme's
+ * Table, every pill the theme's Badge — but not one cell, figure or column has
+ * moved. The layout is still the drawing.
+ *
  * THE MOCKUP'S OWN COPY IS THE MODEL'S COPY. The owner drew: "Guide
  * Commissions — deducted from the amount the climber pays. No extra is added"
  * and "Expedition Placement Commissions — rate and basis VARY BY AGREEMENT."
@@ -40,6 +49,62 @@ const eur = (cents: number) => `€${(cents / 100).toLocaleString("en-GB")}`;
 const eur2 = (cents: number) =>
   `€${(cents / 100).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+/**
+ * THE PAGE HEADER, INLINE AND NOT `PageHead` — see the note in Finance.tsx.
+ * The theme draws page titles at `text-3xl tracking-tight` (30px / 400);
+ * `PageHead` draws 31px extrabold and accepts no className.
+ */
+function Head({ title, subtitle, actions }: { title: string; subtitle?: string; actions?: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+      <div className="space-y-1">
+        <h1 className="text-3xl tracking-tight">{title}</h1>
+        {subtitle && <p className="max-w-3xl text-muted-foreground text-sm">{subtitle}</p>}
+      </div>
+      {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
+    </div>
+  );
+}
+
+/**
+ * THE TWO SOURCES ARE TOLD APART BY THE CHART RAMP, AND ONLY BY IT.
+ *
+ * They used to be told apart by hue: guide in the ICEFALL azure, placements in
+ * a hardcoded `oklch(0.71 0.16 55)` orange. index.css removed every hue from
+ * the product, and the orange was left behind — so the legend swatch beside
+ * "Expedition Placements" was painting orange while the line it labelled was
+ * drawn in a neutral grey. You could not match a legend to its own series.
+ *
+ * Both now read from `DONUT_COLORS`, which IS the series palette every chart on
+ * this page draws with (charts.tsx passes it as the default `colors`), so a
+ * swatch is guaranteed to be the colour of the thing it names. Index 0 is the
+ * ramp's ink end, index 1 the mid grey — 0.269 against 0.556, far enough apart
+ * to separate two lines on one axis.
+ */
+const GUIDE_INK = DONUT_COLORS[0];
+const PLACEMENT_INK = DONUT_COLORS[1];
+
+/** The legend line the two time charts share. */
+function SeriesLegend() {
+  return (
+    <div className="flex flex-wrap gap-4 text-muted-foreground text-sm">
+      <span className="flex items-center gap-1.5">
+        <span className="size-2 rounded-full" style={{ background: GUIDE_INK }} aria-hidden />
+        Guide Commissions ({GUIDE_COMMISSION_PCT}%)
+      </span>
+      <span className="flex items-center gap-1.5">
+        <span className="size-2 rounded-full" style={{ background: PLACEMENT_INK }} aria-hidden />
+        Expedition Placements
+      </span>
+    </div>
+  );
+}
+
+/** The theme's compact column heading, verbatim from its own
+ * `pipeline-activity` card: `text-[11px] uppercase tracking-widest`. Used by
+ * the four narrow top-lists, which cannot carry a 44px table header. */
+const MINI_HEAD = "pb-1.5 text-[11px] text-muted-foreground uppercase tracking-widest";
+
 interface Row {
   booking: BookingDetailed;
   kind: "referral" | "guide";
@@ -47,8 +112,6 @@ interface Row {
   amount_cents: number;
   status: "accrued" | "invoiced" | "paid" | "disputed" | "waived";
 }
-
-
 
 /** Everything the drawn layout needs, from either source. */
 interface Slots {
@@ -218,6 +281,7 @@ export default function Commissions() {
         date: formatDay(r.booking.booked_at) ?? r.booking.booked_at.slice(0, 10),
         // An accrued commission HAS no due date — it has no invoice yet.
         due: r.status === "invoiced" ? "with its invoice" : "not invoiced yet",
+        // An em dash: the booking's value was never reported. Not €0.
         amount: r.booking.value_cents !== null ? eur2(r.booking.value_cents) : "—",
         commission: eur2(r.amount_cents), status: r.status.toUpperCase(), slug: r.booking.destination_id,
       })),
@@ -229,271 +293,415 @@ export default function Commissions() {
     };
   };
 
-  const orange = "text-[oklch(0.62_0.14_60)]";
-
   /** THE drawn layout — written once, fed by either source. */
   const render = (S: Slots, sample: boolean) => (
-    <>
+    <div className="flex flex-col gap-4">
       {/* ── One row: five tiles + the two-sources explainer, far right ── */}
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[repeat(5,minmax(0,1fr))_minmax(280px,1.8fr)]">
-        {S.tiles.map((t, i) => (
-          <Card key={t.label} className="py-4">
-            <p className="text-[10.5px] font-semibold uppercase tracking-[0.05em] text-faint">{t.label}</p>
-            <p className={cn("tnum mt-1.5 text-[19px] font-extrabold leading-tight", i === 2 || i === 4 ? orange : "text-ink")}>{t.value}</p>
-            <p className={cn("mt-1 flex items-center gap-1 text-[11px]", i === 3 ? "text-accent-ink" : i === 4 ? orange : "text-faint")}>
-              {t.delta && <span className="flex items-center gap-0.5 font-medium text-ok"><TrendingUp size={11} strokeWidth={2.25} aria-hidden />{t.delta}</span>}
-              {t.sub}
-            </p>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-[repeat(5,minmax(0,1fr))_minmax(300px,1.8fr)]">
+        {S.tiles.map((t) => (
+          <Card key={t.label} size="sm">
+            <CardHeader>
+              <CardDescription className="text-xs">{t.label}</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-1.5">
+              {/* All five figures are ink. They used to be split — two of them
+                  painted in a hardcoded orange — but that hue is gone from the
+                  product, and a colour that no longer means anything is worse
+                  than no colour. What the two placement figures ARE told apart
+                  by is the legend swatch, which now matches its own series. */}
+              <div className="font-medium text-xl leading-none tracking-tight tabular-nums">{t.value}</div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {/* A delta only ever renders on the drawing's sample figures.
+                    A real one needs a prior-period snapshot and ICEFALL keeps
+                    none, so live mode passes `delta: null` on all five and this
+                    Badge — the theme's signature element on a stat tile —
+                    simply does not appear. */}
+                {t.delta && (
+                  <Badge
+                    variant="outline"
+                    className="border-green-200 bg-green-500/10 text-green-700 dark:border-green-900/40 dark:bg-green-500/15 dark:text-green-300"
+                  >
+                    <TrendingUp />
+                    {t.delta}
+                  </Badge>
+                )}
+                <span className="text-muted-foreground text-xs">{t.sub}</span>
+              </div>
+            </CardContent>
           </Card>
         ))}
-        <Card className="py-4">
-          <SectionLabel>Two distinct sources</SectionLabel>
-          <div className="mt-2.5 space-y-3">
+        <Card size="sm">
+          <CardHeader>
+            <CardTitle className="text-sm leading-none">Two distinct sources</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
             <div className="flex gap-2.5">
-              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-accent-soft text-accent"><User size={13} strokeWidth={2.25} /></span>
-              <div>
-                <p className="text-[12px] font-semibold text-accent-ink">Guide Commissions ({GUIDE_COMMISSION_PCT}% of Guide Fee)</p>
-                <p className="mt-0.5 text-[11.5px] leading-relaxed text-muted">
-                  {GUIDE_COMMISSION_PCT}% of the guide's fee. Deducted from the amount the climber pays. No extra is added.
+              {/* The theme's icon square, tinted with the series colour so the
+                  two sources stay matched to their lines on the charts above. */}
+              <span
+                className="flex size-7 shrink-0 items-center justify-center rounded-lg border bg-ui-muted"
+                style={{ color: GUIDE_INK }}
+              >
+                <User className="size-4" />
+              </span>
+              <div className="min-w-0">
+                <p className="font-medium text-sm">
+                  Guide Commissions ({GUIDE_COMMISSION_PCT}% of Guide Fee)
+                </p>
+                <p className="mt-0.5 text-muted-foreground text-xs leading-relaxed">
+                  {GUIDE_COMMISSION_PCT}% of the guide&rsquo;s fee. Deducted from the amount the climber pays. No extra is added.
                 </p>
               </div>
             </div>
             <div className="flex gap-2.5">
-              <span className={cn("grid h-7 w-7 shrink-0 place-items-center rounded-full bg-butter", orange)}><Building2 size={13} strokeWidth={2.25} /></span>
-              <div>
-                <p className={cn("text-[12px] font-semibold", orange)}>Expedition Placement Commissions</p>
-                <p className="mt-0.5 text-[11.5px] leading-relaxed text-muted">
+              <span
+                className="flex size-7 shrink-0 items-center justify-center rounded-lg border bg-ui-muted"
+                style={{ color: PLACEMENT_INK }}
+              >
+                <Building2 className="size-4" />
+              </span>
+              <div className="min-w-0">
+                <p className="font-medium text-sm">Expedition Placement Commissions</p>
+                <p className="mt-0.5 text-muted-foreground text-xs leading-relaxed">
                   Referral commission on expedition or trek placements. Rate and basis vary by agreement.
                 </p>
-                <p className="mt-1 text-[11.5px] font-medium text-accent-ink">View rate details →</p>
+                {/* Inert in the drawing and inert here — nothing routes off it,
+                    so it stays a line of text rather than becoming a button
+                    that does nothing when pressed. */}
+                <p className="mt-1 font-medium text-xs">View rate details →</p>
               </div>
             </div>
-          </div>
+          </CardContent>
         </Card>
       </div>
 
       {/* ── Charts ──────────────────────────────────────────────────────── */}
-      <div className="mt-4 grid gap-4 xl:grid-cols-[1.4fr_1fr_1.3fr]">
+      <div className="grid gap-4 xl:grid-cols-[1.4fr_1fr_1.3fr]">
         <Card>
-          <SectionLabel>Commission over time (by source)</SectionLabel>
-          <div className="mt-2 flex gap-4 text-[11.5px] text-muted">
-            <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-accent" aria-hidden />Guide Commissions ({GUIDE_COMMISSION_PCT}%)</span>
-            <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-[oklch(0.71_0.16_55)]" aria-hidden />Expedition Placements</span>
-          </div>
-          {S.charts ? (
-            <LineChart series={[S.charts.guide, S.charts.referral]} labels={S.charts.labels} />
-          ) : (
-            <p className="mt-3 text-[12px] leading-relaxed text-faint">
-              The chart draws itself from the first commission in this range — none exists yet.
-            </p>
-          )}
+          <CardHeader>
+            <CardTitle className="leading-none">Commission over time (by source)</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <SeriesLegend />
+            {S.charts ? (
+              <LineChart series={[S.charts.guide, S.charts.referral]} labels={S.charts.labels} />
+            ) : (
+              <p className="text-muted-foreground text-sm leading-relaxed">
+                The chart draws itself from the first commission in this range — none exists yet.
+              </p>
+            )}
+          </CardContent>
         </Card>
         <Card>
-          <SectionLabel>Commission by source</SectionLabel>
-          <div className="mt-3 flex items-center gap-4">
-            <Donut segments={[{ value: S.donut.guide }, { value: S.donut.referral }]} centre={S.donut.centre} />
-            <div className="space-y-2 text-[12.5px]">
-              <p><span className="mr-1.5 inline-block h-2 w-2 rounded-full" style={{ background: DONUT_COLORS[0] }} aria-hidden />Guide Commissions ({GUIDE_COMMISSION_PCT}%)<span className="tnum block text-muted">{S.donut.guideLine}</span></p>
-              <p><span className="mr-1.5 inline-block h-2 w-2 rounded-full" style={{ background: DONUT_COLORS[1] }} aria-hidden />Expedition Placements<span className="tnum block text-muted">{S.donut.referralLine}</span></p>
+          <CardHeader>
+            <CardTitle className="leading-none">Commission by source</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-4">
+              <Donut segments={[{ value: S.donut.guide }, { value: S.donut.referral }]} centre={S.donut.centre} />
+              <div className="space-y-2 text-sm">
+                <p>
+                  <span className="mr-1.5 inline-block size-2 rounded-full" style={{ background: DONUT_COLORS[0] }} aria-hidden />
+                  Guide Commissions ({GUIDE_COMMISSION_PCT}%)
+                  <span className="block text-muted-foreground tabular-nums">{S.donut.guideLine}</span>
+                </p>
+                <p>
+                  <span className="mr-1.5 inline-block size-2 rounded-full" style={{ background: DONUT_COLORS[1] }} aria-hidden />
+                  Expedition Placements
+                  <span className="block text-muted-foreground tabular-nums">{S.donut.referralLine}</span>
+                </p>
+              </div>
             </div>
-          </div>
+          </CardContent>
         </Card>
         <Card>
-          <SectionLabel>Commission by day</SectionLabel>
-          <div className="mt-2 flex gap-4 text-[11.5px] text-muted">
-            <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-accent" aria-hidden />Guide Commissions ({GUIDE_COMMISSION_PCT}%)</span>
-            <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-[oklch(0.71_0.16_55)]" aria-hidden />Expedition Placements</span>
-          </div>
-          {S.charts ? (
-            <Bars series={[S.charts.guide, S.charts.referral]} labels={S.charts.labels} />
-          ) : (
-            <p className="mt-3 text-[12px] leading-relaxed text-faint">Nothing to bucket by day yet.</p>
-          )}
+          <CardHeader>
+            <CardTitle className="leading-none">Commission by day</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <SeriesLegend />
+            {S.charts ? (
+              <Bars series={[S.charts.guide, S.charts.referral]} labels={S.charts.labels} />
+            ) : (
+              <p className="text-muted-foreground text-sm leading-relaxed">Nothing to bucket by day yet.</p>
+            )}
+          </CardContent>
         </Card>
       </div>
 
       {/* ── Four top lists, tabs inside each card, photos on every row ── */}
-      <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Card>
-          <SectionLabel>Top companies by commission</SectionLabel>
-          <ListTabs value={sample ? undefined : topTab} onChange={sample ? undefined : setTopTab} />
-          {S.companies.length === 0 ? (
-            <p className="mt-1 text-[12px] text-faint">Nothing in this source yet.</p>
-          ) : (
-            <div className="grid grid-cols-[minmax(0,2fr)_auto_auto_auto] items-center gap-x-1.5 gap-y-0 text-[11px]">
-              <span className="pb-1.5 text-[10px] font-medium uppercase tracking-[0.05em] text-faint">Company</span>
-              <span className="pb-1.5 text-right text-[10px] font-medium uppercase tracking-[0.05em] text-faint">Total</span>
-              <span className="pb-1.5 text-right text-[10px] font-medium uppercase tracking-[0.05em] text-faint">Paid</span>
-              <span className="pb-1.5 text-right text-[10px] font-medium uppercase tracking-[0.05em] text-faint">Unpaid</span>
-              {S.companies.map((c) => (
-                <div key={c.name} className="col-span-4 grid grid-cols-subgrid items-center border-t border-line-soft py-1.5">
-                  <span className="flex min-w-0 items-center gap-2"><LogoDot name={c.name} /><span className="truncate font-medium text-ink">{c.name}</span></span>
-                  <span className="tnum text-right text-[10px] text-ink">{c.total}</span>
-                  <span className="tnum text-right text-[10px] text-muted">{c.paid}</span>
-                  <span className="tnum text-right text-[10px] text-muted">{c.unpaid}</span>
-                </div>
-              ))}
-            </div>
-          )}
-          <ViewAllLink>View all companies</ViewAllLink>
+          <CardHeader>
+            <CardTitle className="leading-none">Top companies by commission</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ListTabs value={sample ? undefined : topTab} onChange={sample ? undefined : setTopTab} />
+            {S.companies.length === 0 ? (
+              <p className="text-muted-foreground text-sm">Nothing in this source yet.</p>
+            ) : (
+              // FOUR COLUMNS IN A ~300px CARD. The three money columns are
+              // held at 11px — the theme's own smallest type, from its
+              // `pipeline-activity` card — because at 12px they take enough
+              // width to truncate the company name to nothing. Measured: the
+              // name column went to zero. Nothing is dropped; the numbers are
+              // one step smaller than the name they sit beside.
+              <div className="grid grid-cols-[minmax(0,2fr)_auto_auto_auto] items-center gap-x-1.5 text-[11px]">
+                <span className={MINI_HEAD}>Company</span>
+                <span className={cn(MINI_HEAD, "text-right")}>Total</span>
+                <span className={cn(MINI_HEAD, "text-right")}>Paid</span>
+                <span className={cn(MINI_HEAD, "text-right")}>Unpaid</span>
+                {S.companies.map((c) => (
+                  <div key={c.name} className="col-span-4 grid grid-cols-subgrid items-center border-border/50 border-t py-2">
+                    <span className="flex min-w-0 items-center gap-2">
+                      <LogoDot name={c.name} />
+                      <span className="truncate font-medium">{c.name}</span>
+                    </span>
+                    <span className="whitespace-nowrap text-right text-[10px] tabular-nums">{c.total}</span>
+                    <span className="whitespace-nowrap text-right text-[10px] text-muted-foreground tabular-nums">{c.paid}</span>
+                    <span className="whitespace-nowrap text-right text-[10px] text-muted-foreground tabular-nums">{c.unpaid}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <ViewAllLink>View all companies</ViewAllLink>
+          </CardContent>
         </Card>
         <Card>
-          <SectionLabel>Top products by commission</SectionLabel>
-          <ListTabs value={sample ? undefined : topTab} onChange={sample ? undefined : setTopTab} />
-          {S.products.length === 0 ? (
-            <p className="mt-1 text-[12px] text-faint">Nothing in this source yet.</p>
-          ) : (
-            <div className="grid grid-cols-[minmax(0,1.6fr)_minmax(0,0.9fr)_auto] items-center gap-x-1.5 text-[11px]">
-              <span className="pb-1.5 text-[10px] font-medium uppercase tracking-[0.05em] text-faint">Product</span>
-              <span className="pb-1.5 text-[10px] font-medium uppercase tracking-[0.05em] text-faint">Company</span>
-              <span className="pb-1.5 text-right text-[10px] font-medium uppercase tracking-[0.05em] text-faint">Commission</span>
-              {S.products.map((p) => (
-                <div key={p.name} className="col-span-3 grid grid-cols-subgrid items-center border-t border-line-soft py-1.5">
-                  <span className="flex min-w-0 items-center gap-2"><Thumb slug={p.slug} /><span className="truncate font-medium text-ink">{p.name}</span></span>
-                  <span className="truncate text-[10.5px] text-muted">{p.company}</span>
-                  <span className="tnum text-right text-[10.5px] text-ink">{p.total}</span>
-                </div>
-              ))}
-            </div>
-          )}
-          <ViewAllLink>View all products</ViewAllLink>
+          <CardHeader>
+            <CardTitle className="leading-none">Top products by commission</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ListTabs value={sample ? undefined : topTab} onChange={sample ? undefined : setTopTab} />
+            {S.products.length === 0 ? (
+              <p className="text-muted-foreground text-sm">Nothing in this source yet.</p>
+            ) : (
+              <div className="grid grid-cols-[minmax(0,1.6fr)_minmax(0,0.9fr)_auto] items-center gap-x-2 text-[11px]">
+                <span className={MINI_HEAD}>Product</span>
+                <span className={MINI_HEAD}>Company</span>
+                <span className={cn(MINI_HEAD, "text-right")}>Commission</span>
+                {S.products.map((p) => (
+                  <div key={p.name} className="col-span-3 grid grid-cols-subgrid items-center border-border/50 border-t py-2">
+                    <span className="flex min-w-0 items-center gap-2">
+                      <Thumb slug={p.slug} />
+                      <span className="truncate font-medium">{p.name}</span>
+                    </span>
+                    <span className="truncate text-[11px] text-muted-foreground">{p.company}</span>
+                    <span className="whitespace-nowrap text-right text-[11px] tabular-nums">{p.total}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <ViewAllLink>View all products</ViewAllLink>
+          </CardContent>
         </Card>
         <Card>
-          <SectionLabel>Top mountains / treks</SectionLabel>
-          <ListTabs value={sample ? undefined : topTab} onChange={sample ? undefined : setTopTab} />
-          {S.mountains.length === 0 ? (
-            <p className="mt-1 text-[12px] text-faint">Nothing in this source yet.</p>
-          ) : (
-            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-1.5 text-[11px]">
-              <span className="pb-1.5 text-[10px] font-medium uppercase tracking-[0.05em] text-faint">Mountain / Trek</span>
-              <span className="pb-1.5 text-right text-[10px] font-medium uppercase tracking-[0.05em] text-faint">Total Commission</span>
-              {S.mountains.map((m) => (
-                <div key={m.name} className="col-span-2 grid grid-cols-subgrid items-center border-t border-line-soft py-1.5">
-                  <span className="flex min-w-0 items-center gap-2"><Thumb slug={m.slug} /><span className="truncate font-medium text-ink">{m.name}</span></span>
-                  <span className="tnum text-right text-ink">{m.total}</span>
-                </div>
-              ))}
-            </div>
-          )}
-          <ViewAllLink>View all mountains / treks</ViewAllLink>
+          <CardHeader>
+            <CardTitle className="leading-none">Top mountains / treks</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ListTabs value={sample ? undefined : topTab} onChange={sample ? undefined : setTopTab} />
+            {S.mountains.length === 0 ? (
+              <p className="text-muted-foreground text-sm">Nothing in this source yet.</p>
+            ) : (
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 text-xs">
+                <span className={MINI_HEAD}>Mountain / Trek</span>
+                <span className={cn(MINI_HEAD, "text-right")}>Total Commission</span>
+                {S.mountains.map((m) => (
+                  <div key={m.name} className="col-span-2 grid grid-cols-subgrid items-center border-border/50 border-t py-2">
+                    <span className="flex min-w-0 items-center gap-2">
+                      <Thumb slug={m.slug} />
+                      <span className="truncate font-medium">{m.name}</span>
+                    </span>
+                    <span className="text-right tabular-nums">{m.total}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <ViewAllLink>View all mountains / treks</ViewAllLink>
+          </CardContent>
         </Card>
         <Card>
-          <SectionLabel>Largest individual commissions</SectionLabel>
-          {S.largest.length === 0 ? (
-            <p className="mt-2 text-[12px] text-faint">No commission rows yet.</p>
-          ) : (
-            <div className="mt-2 grid grid-cols-[minmax(0,2fr)_auto_auto] items-center gap-x-1.5 text-[11px]">
-              <span className="pb-1.5 text-[10px] font-medium uppercase tracking-[0.05em] text-faint">Booking / Placement</span>
-              <span className="pb-1.5 text-[10px] font-medium uppercase tracking-[0.05em] text-faint">Source</span>
-              <span className="pb-1.5 text-right text-[10px] font-medium uppercase tracking-[0.05em] text-faint">Commission</span>
-              {S.largest.map((l, i) => (
-                <div key={l.name + i} className="col-span-3 grid grid-cols-subgrid items-center border-t border-line-soft py-1.5">
-                  <span className="flex min-w-0 items-center gap-2">
-                    <Thumb slug={l.slug} />
-                    <span className="min-w-0"><span className="block truncate font-medium text-ink">{l.name}</span><span className="block truncate text-[10.5px] text-faint">{l.sub}</span></span>
-                  </span>
-                  <span className="text-[10.5px] text-muted">{l.source}</span>
-                  <span className="tnum text-right text-[10.5px] font-semibold text-ink">{l.amount}</span>
-                </div>
-              ))}
-            </div>
-          )}
-          <ViewAllLink>View all</ViewAllLink>
+          <CardHeader>
+            <CardTitle className="leading-none">Largest individual commissions</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {S.largest.length === 0 ? (
+              <p className="text-muted-foreground text-sm">No commission rows yet.</p>
+            ) : (
+              <div className="grid grid-cols-[minmax(0,2fr)_auto_auto] items-center gap-x-2 text-[11px]">
+                <span className={MINI_HEAD}>Booking / Placement</span>
+                <span className={MINI_HEAD}>Source</span>
+                <span className={cn(MINI_HEAD, "text-right")}>Commission</span>
+                {S.largest.map((l, i) => (
+                  <div key={l.name + i} className="col-span-3 grid grid-cols-subgrid items-center border-border/50 border-t py-2">
+                    <span className="flex min-w-0 items-center gap-2">
+                      <Thumb slug={l.slug} />
+                      <span className="min-w-0">
+                        <span className="block truncate font-medium">{l.name}</span>
+                        <span className="block truncate text-[11px] text-muted-foreground">{l.sub}</span>
+                      </span>
+                    </span>
+                    <span className="text-[11px] text-muted-foreground">{l.source}</span>
+                    <span className="whitespace-nowrap text-right text-[11px] font-medium tabular-nums">{l.amount}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <ViewAllLink>View all</ViewAllLink>
+          </CardContent>
         </Card>
       </div>
 
       {/* ── Unpaid table + summary ──────────────────────────────────────── */}
-      <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
-        <TableCard>
-          <div className="px-4 pb-1 pt-4"><SectionLabel>Unpaid / Pending Commissions</SectionLabel></div>
-          {S.unpaid.length === 0 ? (
-            <p className="px-4 pb-4 text-[12.5px] text-faint">Nothing outstanding.</p>
-          ) : (
-            <table className="w-full text-[12.5px]">
-              <thead>
-                <tr className="text-left text-[11px] uppercase tracking-[0.06em] text-faint">
-                  <th className="px-4 py-2 font-medium">Booking / Placement</th>
-                  <th className="px-3 py-2 font-medium">Company</th>
-                  <th className="px-3 py-2 font-medium">Source</th>
-                  <th className="px-3 py-2 font-medium">Date</th>
-                  <th className="px-3 py-2 font-medium">Due Date</th>
-                  <th className="px-3 py-2 text-right font-medium">Amount</th>
-                  <th className="px-3 py-2 text-right font-medium">Commission ({GUIDE_COMMISSION_PCT}%)</th>
-                  <th className="px-3 py-2 font-medium">Status</th>
-                  <th className="px-3 py-2 font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {S.unpaid.map((u, i) => (
-                  <tr key={u.name + i} className="border-t border-line-soft">
-                    <td className="px-4 py-2.5 font-medium text-ink">
-                      <span className="flex items-center gap-2.5"><Thumb slug={u.slug} className="h-8 w-8" />{u.name}</span>
-                    </td>
-                    <td className="px-3 py-2.5 text-muted">{u.company}</td>
-                    <td className="px-3 py-2.5 text-muted">{u.source}</td>
-                    <td className="tnum whitespace-nowrap px-3 py-2.5 text-muted">{u.date}</td>
-                    <td className="tnum whitespace-nowrap px-3 py-2.5 text-muted">{u.due}</td>
-                    <td className="tnum px-3 py-2.5 text-right text-ink">{u.amount}</td>
-                    <td className="tnum px-3 py-2.5 text-right font-semibold text-ink">{u.commission}</td>
-                    <td className="px-3 py-2.5"><Pill tone={u.status === "OVERDUE" || u.status === "DISPUTED" ? "red" : "amber"}>{u.status}</Pill></td>
-                    <td className="px-3 py-2.5 text-[12px] font-medium text-accent-ink">View</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-          <p className="px-4 py-2.5 text-[12px] font-medium text-accent-ink">View all unpaid →</p>
-        </TableCard>
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
         <Card>
-          <SectionLabel>Commission summary by source</SectionLabel>
-          <table className="mt-2 w-full text-[12.5px]">
-            <thead>
-              <tr className="text-left text-[11px] uppercase tracking-[0.06em] text-faint">
-                <th className="py-2 font-medium">Source</th>
-                <th className="py-2 text-right font-medium">Total Commission</th>
-                <th className="py-2 text-right font-medium">Paid</th>
-                <th className="py-2 text-right font-medium">Unpaid</th>
-                <th className="py-2 text-right font-medium">% of Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {S.summary.map(([src, total, paid, unpaid, pct], i) => (
-                <tr key={src} className={cn("border-t", i === S.summary.length - 1 ? "border-line font-bold" : "border-line-soft")}>
-                  <td className="py-2.5 font-medium text-ink">{src}</td>
-                  <td className="tnum py-2.5 text-right text-ink">{total}</td>
-                  <td className="tnum py-2.5 text-right text-muted">{paid}</td>
-                  <td className="tnum py-2.5 text-right text-muted">{unpaid}</td>
-                  <td className="tnum py-2.5 text-right text-muted">{pct}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <p className="mt-2.5 text-[11px] leading-relaxed text-faint">
-            Guide commissions are {GUIDE_COMMISSION_PCT}% of the guide fee (deducted from customer payment).
-            Placement commissions are per agreement.
-          </p>
+          <CardHeader>
+            <CardTitle className="leading-none">Unpaid / Pending Commissions</CardTitle>
+          </CardHeader>
+          {S.unpaid.length === 0 ? (
+            <CardContent>
+              <p className="text-muted-foreground text-sm">Nothing outstanding.</p>
+            </CardContent>
+          ) : (
+            <CardContent className="px-0">
+              {/* NINE COLUMNS, so this table takes px-3 / py-3 rather than the
+                  px-4 / py-4 the theme applies to its own five-column
+                  Opportunities table. Everything else — 44px heads at `text-sm
+                  font-medium text-foreground`, rows at border/50 — is the
+                  theme's, unchanged. */}
+              <Table className="**:data-[slot='table-cell']:px-3 **:data-[slot='table-head']:px-3 **:data-[slot='table-cell']:py-3">
+                <TableHeader className="border-t **:data-[slot='table-head']:h-11 **:data-[slot='table-head']:font-medium **:data-[slot='table-head']:text-foreground **:data-[slot='table-head']:text-sm">
+                  <TableRow>
+                    <TableHead>Booking / Placement</TableHead>
+                    <TableHead>Company</TableHead>
+                    <TableHead>Source</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Due Date</TableHead>
+                    <TableHead className="text-right">Amount</TableHead>
+                    <TableHead className="text-right">Commission ({GUIDE_COMMISSION_PCT}%)</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody className="**:data-[slot='table-row']:border-border/50">
+                  {S.unpaid.map((u, i) => (
+                    <TableRow key={u.name + i}>
+                      <TableCell className="font-medium">
+                        <span className="flex items-center gap-2.5">
+                          <Thumb slug={u.slug} className="size-8" />
+                          {u.name}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">{u.company}</TableCell>
+                      <TableCell className="text-muted-foreground">{u.source}</TableCell>
+                      <TableCell className="text-muted-foreground tabular-nums">{u.date}</TableCell>
+                      {/* "not invoiced yet" / "with its invoice" — an accrued
+                          commission HAS no due date, and inventing one here is
+                          exactly the kind of tidy-looking lie this table refuses. */}
+                      <TableCell className="text-muted-foreground tabular-nums">{u.due}</TableCell>
+                      <TableCell className="text-right tabular-nums">{u.amount}</TableCell>
+                      <TableCell className="text-right font-medium tabular-nums">{u.commission}</TableCell>
+                      <TableCell>
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "font-medium",
+                            u.status === "OVERDUE" || u.status === "DISPUTED"
+                              ? "border-destructive/20 bg-destructive/10 text-destructive"
+                              : "border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+                          )}
+                        >
+                          {u.status}
+                        </Badge>
+                      </TableCell>
+                      {/* Inert in the drawing, inert here. Kept as plain text
+                          rather than promoted to a button: nothing routes off
+                          it yet, and a control that looks like it acts and does
+                          not is the same class of problem as a figure that
+                          looks measured and is not. */}
+                      <TableCell className="font-medium">View</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          )}
+          <CardFooter>
+            <p className="font-medium text-sm">View all unpaid →</p>
+          </CardFooter>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="leading-none">Commission summary by source</CardTitle>
+          </CardHeader>
+          <CardContent className="px-0">
+            {/* FIVE MONEY COLUMNS IN THE NARROW HALF of a [1.5fr 1fr] split.
+                At the theme's px-4 / text-sm this table has to be scrolled
+                sideways to reach "% of Total", which is the one column the
+                summary exists for. It takes px-2 / text-xs instead — the
+                Table component's OWN default padding, and one step down the
+                theme's type scale — and fits. The chrome is otherwise
+                identical to the tables above. */}
+            <Table className="**:data-[slot='table-cell']:px-2 **:data-[slot='table-head']:px-2 **:data-[slot='table-cell']:py-2.5 text-xs">
+              <TableHeader className="border-t **:data-[slot='table-head']:h-11 **:data-[slot='table-head']:font-medium **:data-[slot='table-head']:text-foreground **:data-[slot='table-head']:text-xs">
+                <TableRow>
+                  <TableHead>Source</TableHead>
+                  <TableHead className="text-right">Total Commission</TableHead>
+                  <TableHead className="text-right">Paid</TableHead>
+                  <TableHead className="text-right">Unpaid</TableHead>
+                  <TableHead className="text-right">% of Total</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody className="**:data-[slot='table-row']:border-border/50">
+                {S.summary.map(([src, total, paid, unpaid, pct], i) => (
+                  <TableRow key={src} className={cn(i === S.summary.length - 1 && "font-medium")}>
+                    <TableCell className="font-medium">{src}</TableCell>
+                    <TableCell className="text-right tabular-nums">{total}</TableCell>
+                    <TableCell className="text-right text-muted-foreground tabular-nums">{paid}</TableCell>
+                    <TableCell className="text-right text-muted-foreground tabular-nums">{unpaid}</TableCell>
+                    <TableCell className="text-right text-muted-foreground tabular-nums">{pct}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+          <CardFooter>
+            <p className="text-muted-foreground text-xs leading-relaxed">
+              Guide commissions are {GUIDE_COMMISSION_PCT}% of the guide fee (deducted from customer payment).
+              Placement commissions are per agreement.
+            </p>
+          </CardFooter>
         </Card>
       </div>
-    </>
+    </div>
   );
 
   return (
-    <>
-      <PageHead
+    <div className="flex flex-col gap-4 md:gap-6">
+      <Head
         title="Commissions"
         subtitle="Track and analyse all ICEFALL commission earnings."
         actions={
-          <div className="flex items-center gap-2">
+          <>
             {M ? (
-              <span className="flex items-center gap-2 rounded-tile border border-line bg-surface px-3 py-2 text-[12.5px] font-medium text-ink">
-                {M.range} <CalendarDays size={13} strokeWidth={2} className="text-faint" aria-hidden />
+              // The drawing prints a fixed range rather than offering the
+              // picker, because its figures are fixed. Drawn as the theme's
+              // outline Button chrome, but as a span: it is not pressable.
+              <span className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-sm">
+                {M.range}
+                <CalendarDays className="size-4 text-muted-foreground" aria-hidden />
               </span>
             ) : (
               <RangeControl value={range} onChange={setRange} presets={[30, 90]} />
             )}
-            <Button variant="secondary"><SlidersHorizontal size={13} strokeWidth={2} /> Filters</Button>
-            <Button variant="secondary" onClick={exportCsv}><Download size={14} strokeWidth={2} /> Export</Button>
-          </div>
+            <Button variant="outline">
+              <SlidersHorizontal data-icon="inline-start" /> Filters
+            </Button>
+            <Button variant="outline" onClick={exportCsv}>
+              <Download data-icon="inline-start" /> Export
+            </Button>
+          </>
         }
       />
       {M ? (
@@ -508,6 +716,6 @@ export default function Commissions() {
           {() => (agg ? render(liveSlots(), false) : null)}
         </Resolve>
       )}
-    </>
+    </div>
   );
 }

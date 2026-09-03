@@ -27,12 +27,17 @@ export function DemoBanner() {
   // ONE slim marker, not a boxed callout: the owner's drawings start at the
   // page title, and two disclosures are clutter where one is honest.
   return (
+    // Three hand-mixed ambers became the `warn` token, at the theme's own badge
+    // strength: the colour at 10% behind, the colour itself in front. This
+    // banner is a disclosure, so it keeps its amber identity rather than going
+    // neutral with the rest of the palette — the theme tints its own status
+    // badges for exactly the same reason.
     <div
-      className="mb-4 flex items-center justify-center gap-2 rounded-pill bg-[oklch(0.97_0.02_84)] px-4 py-1.5"
+      className="mb-4 flex items-center justify-center gap-2 rounded-pill bg-warn/10 px-4 py-1.5"
       title={DEMO_NOTICE}
     >
-      <TriangleAlert size={12} strokeWidth={2} className="shrink-0 text-[oklch(0.58_0.12_70)]" />
-      <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[oklch(0.45_0.08_70)]">
+      <TriangleAlert size={12} strokeWidth={2} className="shrink-0 text-warn" />
+      <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-warn">
         Demo · sample data, not real
       </p>
     </div>

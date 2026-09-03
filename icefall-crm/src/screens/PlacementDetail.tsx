@@ -1,7 +1,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
-import { AlertTriangle, ArrowLeft } from "lucide-react";
-import { Avatar, Card, PageHead, Pill, SectionLabel, Stat, StatusChip } from "@/components/ui";
+import { AlertTriangle, ArrowLeft, BadgeEuro, CalendarClock, Trophy } from "lucide-react";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Empty, Resolve } from "@/components/states";
 import { listAuditEvents, listCompanies, listDestinations, listPlacements } from "@/data/queries";
 import { formatCents, loading, type Result } from "@/data/result";
@@ -12,7 +15,7 @@ import type {
   PlacementEffectiveStatus,
   PlacementView,
 } from "@/data/types";
-import { formatDay, formatMoment } from "@/lib/utils";
+import { cn, formatDay, formatMoment, initials } from "@/lib/utils";
 import { slotLabel } from "@/components/placement";
 
 /**
@@ -43,7 +46,7 @@ import { slotLabel } from "@/components/placement";
 const HISTORY_WINDOW = 200;
 
 /**
- * The effective status in the mockup's status control, carrying exactly the
+ * The effective status in the theme's status badge, carrying exactly the
  * meanings the pill carried on the list: active is settled, cancelled is a
  * refusal, an expired term is the one thing here waiting on a person, and a
  * position that has been reserved but has not started is neither.
@@ -53,6 +56,64 @@ const HISTORY_WINDOW = 200;
  */
 const effectiveState = (s: PlacementEffectiveStatus): "ok" | "pending" | "bad" | "neutral" =>
   s === "active" ? "ok" : s === "cancelled" ? "bad" : s === "expired" ? "pending" : "neutral";
+
+const DOT: Record<"ok" | "pending" | "bad" | "neutral", { badge: string; dot: string }> = {
+  ok: { badge: "border-emerald-500/20 bg-emerald-500/10 text-emerald-600", dot: "bg-emerald-500" },
+  pending: { badge: "border-amber-500/20 bg-amber-500/10 text-amber-600", dot: "bg-amber-500" },
+  bad: { badge: "border-destructive/20 bg-destructive/10 text-destructive", dot: "bg-destructive" },
+  neutral: { badge: "border-border bg-ui-muted/50 text-muted-foreground", dot: "bg-muted-foreground" },
+};
+
+function StatusBadge({ state, label }: { state: "ok" | "pending" | "bad" | "neutral"; label: string }) {
+  const m = DOT[state];
+  return (
+    <Badge variant="outline" className={cn("gap-1.5 border px-2 py-1 font-medium capitalize", m.badge)}>
+      <span className={cn("size-1.5 rounded-full", m.dot)} />
+      {label}
+    </Badge>
+  );
+}
+
+/**
+ * A figure, or the reason there is not one.
+ *
+ * `value` of `null` renders the reason in muted text — never a dash and never a
+ * zero — and the hint that belongs to the figure goes with the figure.
+ */
+function Metric({
+  icon,
+  label,
+  value,
+  reason,
+  hint,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string | null;
+  reason?: string;
+  hint?: string;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>
+          <div className="flex size-7 items-center justify-center rounded-lg border bg-ui-muted text-muted-foreground">
+            {icon}
+          </div>
+        </CardTitle>
+        <CardDescription>{label}</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-1">
+        {value === null ? (
+          <p className="text-[13px] leading-relaxed text-faint">{reason ?? "Not recorded"}</p>
+        ) : (
+          <div className="font-medium text-3xl tabular-nums leading-none tracking-tight">{value}</div>
+        )}
+        {hint && value !== null && <p className="text-muted-foreground text-sm">{hint}</p>}
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function PlacementDetail() {
   const { id } = useParams<{ id: string }>();
@@ -78,124 +139,127 @@ export default function PlacementDetail() {
         : null;
 
   return (
-    <>
-      <div className="mb-4">
-        <Link
-          to="/admin/placements"
-          className="inline-flex items-center gap-1.5 rounded-pill bg-surface px-3.5 py-2 text-[12.5px] font-medium text-muted shadow-soft transition-colors hover:text-ink"
-        >
-          <ArrowLeft size={14} strokeWidth={1.8} />
-          All placements
-        </Link>
-      </div>
-
-      <Resolve result={placements} what="this placement">
-        {(all) => {
-          const p = all.find((x) => x.id === id);
-          if (!p) {
-            return (
+    <Resolve result={placements} what="this placement">
+      {(all) => {
+        const p = all.find((x) => x.id === id);
+        if (!p) {
+          return (
+            <div className="flex flex-col gap-4 md:gap-6">
+              <Button variant="outline" size="sm" asChild className="w-fit">
+                <Link to="/admin/placements">
+                  <ArrowLeft /> All placements
+                </Link>
+              </Button>
               <Empty
                 what="No placement with that reference"
                 body="Nothing in the placement list carries this id. The link may be out of date, or the placement may have been created since this page was loaded."
               />
-            );
-          }
+            </div>
+          );
+        }
 
-          const company =
-            companies.state === "ok" ? (companies.value.find((c) => c.id === p.company_id) ?? null) : null;
-          const mountain =
-            mountains.state === "ok" ? (mountains.value.find((m) => m.id === p.destination_id) ?? null) : null;
+        const company =
+          companies.state === "ok" ? (companies.value.find((c) => c.id === p.company_id) ?? null) : null;
+        const mountain =
+          mountains.state === "ok" ? (mountains.value.find((m) => m.id === p.destination_id) ?? null) : null;
 
-          // The company id is a uuid and the mountain id is its slug. Falling back
-          // to either is falling back to a real identifier, not to a placeholder.
-          const companyLabel = company?.name ?? `Company ${p.company_id.slice(0, 8)}…`;
-          const mountainLabel = mountain?.name ?? p.destination_id;
+        // The company id is a uuid and the mountain id is its slug. Falling back
+        // to either is falling back to a real identifier, not to a placeholder.
+        const companyLabel = company?.name ?? `Company ${p.company_id.slice(0, 8)}…`;
+        const mountainLabel = mountain?.name ?? p.destination_id;
 
-          const mine = (e: AuditEvent) => e.entity_type === "placement" && e.entity_id === p.id;
-          const events = audit.state === "ok" ? audit.value.filter(mine) : [];
+        const mine = (e: AuditEvent) => e.entity_type === "placement" && e.entity_id === p.id;
+        const events = audit.state === "ok" ? audit.value.filter(mine) : [];
 
-          // `placements` has no `created_by` column — creation is recorded once, by
-          // the audit event the creating statement wrote. Events arrive newest
-          // first, so the earliest creation event is the last one in the list.
-          const creations = events.filter((e) => e.action.endsWith("created"));
-          const created = creations.length > 0 ? creations[creations.length - 1] : null;
+        // `placements` has no `created_by` column — creation is recorded once, by
+        // the audit event the creating statement wrote. Events arrive newest
+        // first, so the earliest creation event is the last one in the list.
+        const creations = events.filter((e) => e.action.endsWith("created"));
+        const created = creations.length > 0 ? creations[creations.length - 1] : null;
 
-          const expired = p.effective_status === "expired";
-          const cancelled = p.effective_status === "cancelled";
+        const expired = p.effective_status === "expired";
+        const cancelled = p.effective_status === "cancelled";
 
-          return (
-            <>
-              <div className="flex items-start gap-4">
+        return (
+          <div className="flex flex-col gap-4 md:gap-6">
+            <Button variant="outline" size="sm" asChild className="w-fit">
+              <Link to="/admin/placements">
+                <ArrowLeft /> All placements
+              </Link>
+            </Button>
+
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="flex min-w-0 items-start gap-3">
                 {/* Only when the directory actually named the company. Initials
                     struck from "Company 1a2b3c…" would be initials of an id. */}
                 {company && (
-                  <div className="pt-1">
-                    <Avatar name={company.name} size={52} />
-                  </div>
+                  <Avatar size="lg" className="mt-1">
+                    <AvatarFallback>{initials(company.name)}</AvatarFallback>
+                  </Avatar>
                 )}
-                <div className="min-w-0 flex-1">
-                  <PageHead
-                    title={`${companyLabel} — ${mountainLabel} #${p.slot_position}`}
-                    subtitle="A paid position on a mountain listing. Everything below is what was recorded — this page reports the placement, it does not compute anything about it."
-                    actions={
-                      <StatusChip
-                        state={effectiveState(p.effective_status)}
-                        label={p.effective_status}
-                      />
-                    }
-                  />
+                <div className="min-w-0 space-y-1">
+                  <h2 className="text-3xl tracking-tight">
+                    {companyLabel} — {mountainLabel} #{p.slot_position}
+                  </h2>
+                  <p className="max-w-3xl text-muted-foreground text-sm">
+                    A paid position on a mountain listing. Everything below is what was recorded — this
+                    page reports the placement, it does not compute anything about it.
+                  </p>
                 </div>
               </div>
+              <StatusBadge state={effectiveState(p.effective_status)} label={p.effective_status} />
+            </div>
 
-              {expired && (
-                <Card className="mb-4 flex items-start gap-4 p-6">
-                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[oklch(0.962_0.055_84)] text-[oklch(0.48_0.11_70)]">
-                    <AlertTriangle size={19} strokeWidth={2} />
+            {expired && (
+              <Card>
+                <CardContent className="flex items-start gap-3">
+                  <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg border bg-ui-muted text-warn">
+                    <AlertTriangle className="size-4" />
                   </span>
                   <div className="min-w-0">
-                    <p className="text-[15px] font-bold tracking-[-0.015em] text-ink">
+                    <p className="font-medium">
                       The term ended {formatDay(p.ends_on) ?? "on an unrecorded date"} — this position is
                       still held.
                     </p>
-                    <p className="mt-1.5 max-w-2xl text-[13px] leading-relaxed text-muted">
+                    <p className="mt-1.5 max-w-3xl text-muted-foreground text-sm leading-relaxed">
                       {companyLabel} keeps position #{p.slot_position} on {mountainLabel}. Expiry is
                       worked out when the row is read and is never written back, so nothing releases,
                       reassigns or downgrades this position on a timer. It will not change until an
                       administrator moves or cancels it, and that action will appear in the history below.
                     </p>
                   </div>
-                </Card>
-              )}
+                </CardContent>
+              </Card>
+            )}
 
-              {/* The three things anybody opens this page to read, set large.
-                  Price is toned only while it carries a figure — a butter tile
-                  holding the sentence about nobody having entered a price would
-                  read, across a room, exactly like a tile holding one. */}
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                <Stat tone="butter" label="Position" value={slotLabel(p.slot_position)} />
-                <Stat
-                  tone="sky"
-                  label="Price"
-                  value={formatCents(p.price_cents, p.currency)}
-                  reason="No price is recorded against this placement. It is not free — nobody has entered what was agreed."
-                />
-                <Stat
-                  tone="lilac"
-                  label="Expires"
-                  value={formatDay(p.ends_on)}
-                  reason="The term has no recorded end date."
-                  hint={
-                    cancelled ? "Cancelled — the term no longer applies." : remaining(p.days_remaining)
-                  }
-                />
-              </div>
+            {/* The three things anybody opens this page to read, set large. */}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              <Metric icon={<Trophy className="size-4" />} label="Position" value={slotLabel(p.slot_position)} />
+              <Metric
+                icon={<BadgeEuro className="size-4" />}
+                label="Price"
+                value={formatCents(p.price_cents, p.currency)}
+                reason="No price is recorded against this placement. It is not free — nobody has entered what was agreed."
+              />
+              <Metric
+                icon={<CalendarClock className="size-4" />}
+                label="Expires"
+                value={formatDay(p.ends_on)}
+                reason="The term has no recorded end date."
+                hint={cancelled ? "Cancelled — the term no longer applies." : remaining(p.days_remaining)}
+              />
+            </div>
 
-              <Card className="mt-4 p-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>What was recorded</CardTitle>
+              </CardHeader>
+              <CardContent>
                 <div className="grid grid-cols-1 gap-x-10 gap-y-6 sm:grid-cols-2 lg:grid-cols-3">
                   <Field
                     label="Mountain"
                     value={
-                      <Link to={`/admin/mountains/${p.destination_id}`} className="text-ink hover:text-accent">
+                      <Link to={`/admin/mountains/${p.destination_id}`} className="hover:underline">
                         {mountainLabel}
                       </Link>
                     }
@@ -205,11 +269,12 @@ export default function PlacementDetail() {
                     label="Company"
                     value={
                       <span className="flex min-w-0 items-center gap-2.5">
-                        {company && <Avatar name={company.name} size={28} />}
-                        <Link
-                          to={`/admin/companies/${p.company_id}`}
-                          className="truncate text-ink hover:text-accent"
-                        >
+                        {company && (
+                          <Avatar size="sm">
+                            <AvatarFallback>{initials(company.name)}</AvatarFallback>
+                          </Avatar>
+                        )}
+                        <Link to={`/admin/companies/${p.company_id}`} className="truncate hover:underline">
                           {companyLabel}
                         </Link>
                       </span>
@@ -226,7 +291,11 @@ export default function PlacementDetail() {
                     label="Payment status"
                     value={null}
                     absent="Not recorded. Nothing links invoices to a placement yet, so this page cannot say whether the fee was billed or paid."
-                    note={<Link to="/admin/billing" className="hover:text-accent">Invoices and payments →</Link>}
+                    note={
+                      <Link to="/admin/billing" className="hover:underline">
+                        Invoices and payments →
+                      </Link>
+                    }
                   />
 
                   <Field
@@ -250,65 +319,67 @@ export default function PlacementDetail() {
                     }
                   />
                 </div>
-              </Card>
+              </CardContent>
+            </Card>
 
-              <div className="mt-7">
-                <h2 className="text-[19px] font-bold tracking-[-0.02em] text-ink">
-                  Placement history
-                </h2>
-                <p className="mt-1.5 max-w-2xl text-[13px] leading-relaxed text-muted">
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <h3 className="text-xl tracking-tight">Placement history</h3>
+                <p className="max-w-3xl text-muted-foreground text-sm">
                   The audit log, filtered to this placement — not a separate record. Newest first, and
                   read from the {HISTORY_WINDOW} most recent events across the CRM, so a change older than
                   that window is still in the log but is not shown here.
                 </p>
-                <div className="mt-2.5">
-                  <Resolve
-                    result={audit}
-                    what="history for this placement"
-                    isEmpty={(v) => v.filter(mine).length === 0}
-                    empty={`No change to this placement is among the ${HISTORY_WINDOW} most recent audit events. Every move, cancellation and price change is written by the same statement that makes it, so this means either nothing has been done to it recently or its events are older than that window.`}
-                  >
-                    {() => (
-                      <ol className="space-y-3">
-                        {events.map((e) => (
-                          <li key={e.id}>
-                            <Card className="p-5">
-                              <div className="flex items-start gap-3.5">
-                                {/* The log records the desk that acted, not a
-                                    display name, so the initials are the role's
-                                    — and "··" where even that was not recorded. */}
-                                <Avatar name={(e.actor_role ?? "").replace(/_/g, " ")} size={34} />
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5">
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      <Pill tone="neutral">{e.action}</Pill>
-                                      <span className="text-[12.5px] text-muted">{actorLine(e)}</span>
-                                    </div>
-                                    <span className="tnum whitespace-nowrap text-[12.5px] text-faint">
-                                      {formatMoment(e.created_at) ?? "At an unrecorded time"}
-                                    </span>
-                                  </div>
-                                  <div className="mt-2.5">
-                                    <Change event={e} currency={p.currency} />
-                                  </div>
-                                  <p className="mt-2 text-[12.5px] leading-relaxed text-muted">
-                                    {e.reason ?? <span className="text-faint">No reason given</span>}
-                                  </p>
-                                </div>
-                              </div>
-                            </Card>
-                          </li>
-                        ))}
-                      </ol>
-                    )}
-                  </Resolve>
-                </div>
               </div>
-            </>
-          );
-        }}
-      </Resolve>
-    </>
+              <Resolve
+                result={audit}
+                what="history for this placement"
+                isEmpty={(v) => v.filter(mine).length === 0}
+                empty={`No change to this placement is among the ${HISTORY_WINDOW} most recent audit events. Every move, cancellation and price change is written by the same statement that makes it, so this means either nothing has been done to it recently or its events are older than that window.`}
+              >
+                {() => (
+                  <ol className="flex flex-col gap-4">
+                    {events.map((e) => (
+                      <li key={e.id}>
+                        <Card>
+                          <CardContent className="flex items-start gap-3">
+                            {/* The log records the desk that acted, not a
+                                display name, so the initials are the role's
+                                — and "··" where even that was not recorded. */}
+                            <Avatar>
+                              <AvatarFallback>
+                                {initials((e.actor_role ?? "").replace(/_/g, " "))}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Badge variant="outline">{e.action}</Badge>
+                                  <span className="text-muted-foreground text-sm">{actorLine(e)}</span>
+                                </div>
+                                <span className="whitespace-nowrap text-muted-foreground text-xs tabular-nums">
+                                  {formatMoment(e.created_at) ?? "At an unrecorded time"}
+                                </span>
+                              </div>
+                              <div className="mt-2.5">
+                                <Change event={e} currency={p.currency} />
+                              </div>
+                              <p className="mt-2 text-muted-foreground text-sm leading-relaxed">
+                                {e.reason ?? <span className="text-faint">No reason given</span>}
+                              </p>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </Resolve>
+            </div>
+          </div>
+        );
+      }}
+    </Resolve>
   );
 }
 
@@ -327,13 +398,13 @@ function Field({
   const missing = value === null || value === undefined || value === "";
   return (
     <div className="min-w-0">
-      <SectionLabel>{label}</SectionLabel>
+      <p className="font-medium text-muted-foreground text-xs">{label}</p>
       {missing ? (
-        <p className="mt-1.5 text-[12.5px] leading-relaxed text-faint">{absent ?? "Not recorded"}</p>
+        <p className="mt-1.5 text-[13px] leading-relaxed text-faint">{absent ?? "Not recorded"}</p>
       ) : (
-        <div className="mt-1.5 text-[13.5px] font-medium text-ink">{value}</div>
+        <div className="mt-1.5 font-medium text-sm">{value}</div>
       )}
-      {note && <p className="mt-1.5 text-[12px] leading-relaxed text-faint">{note}</p>}
+      {note && <p className="mt-1.5 text-xs leading-relaxed text-faint">{note}</p>}
     </div>
   );
 }
@@ -407,17 +478,15 @@ function Change({ event, currency }: { event: AuditEvent; currency: string }) {
   const keys = Array.from(new Set([...Object.keys(previous ?? {}), ...Object.keys(next ?? {})]));
   if (keys.length === 0) {
     return (
-      <p className="text-[12.5px] text-faint">
+      <p className="text-[13px] text-faint">
         The event records no field values — only that the action was taken.
       </p>
     );
   }
 
   return (
-    <div className="space-y-0.5 text-[13px]">
-      {!previous && (
-        <p className="text-[12.5px] text-faint">Created with these values:</p>
-      )}
+    <div className="space-y-0.5 text-sm">
+      {!previous && <p className="text-[13px] text-faint">Created with these values:</p>}
       {keys.map((k) => {
         const had = previous ? k in previous : false;
         const has = next ? k in next : false;
@@ -425,10 +494,12 @@ function Change({ event, currency }: { event: AuditEvent; currency: string }) {
           <p key={k}>
             <span className="text-faint">{FIELD_LABEL[k] ?? k}: </span>
             {had && (
-              <span className="text-muted line-through">{fieldValue(k, previous?.[k], payloadCurrency)}</span>
+              <span className="text-muted-foreground line-through">
+                {fieldValue(k, previous?.[k], payloadCurrency)}
+              </span>
             )}
             {had && has && <span className="text-faint"> → </span>}
-            {has && <span className="text-ink">{fieldValue(k, next?.[k], payloadCurrency)}</span>}
+            {has && <span>{fieldValue(k, next?.[k], payloadCurrency)}</span>}
           </p>
         );
       })}

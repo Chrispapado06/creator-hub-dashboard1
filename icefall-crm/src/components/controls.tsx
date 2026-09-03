@@ -1,10 +1,9 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Calendar as CalendarIcon, Check, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn, formatDay } from "@/lib/utils";
-import { GOLD } from "@/components/drawn";
 
 /**
- * The CRM's control kit — 11-CONTROLS-CONTRACT, light/gold palette reference.
+ * The CRM's control kit — 11-CONTROLS-CONTRACT.
  *
  * Owner instruction: "replace old select dates or buttons and modernising it
  * through the entire apps we have." Native selects and dd/mm/yyyy date inputs
@@ -21,6 +20,38 @@ import { GOLD } from "@/components/drawn";
  *   - ISO underneath, always (§6af): these components SPEAK "31 Aug 2026" and
  *     TRADE in "2026-08-31". Display formats never travel into storage, and
  *     all day arithmetic is UTC so no timezone can shift a date by one.
+ *
+ * ── THE RE-SKIN ─────────────────────────────────────────────────────────────
+ * The owner ruled "i dont see any change i want the designs 1:1", so the SHAPES
+ * below are no longer the old light/gold reference. Each was read out of the
+ * theme's own primitive and checked against it running on localhost:3100:
+ *
+ *   FIELD      = theme-ref/src/components/ui/select.tsx SelectTrigger:
+ *                h-8, rounded-lg, `border border-input`, TRANSPARENT ground,
+ *                pl-2.5 pr-2, text-sm, chevron size-4 in muted-foreground.
+ *   POPOVER    = theme-ref/src/components/ui/popover.tsx PopoverContent:
+ *                rounded-lg, bg-popover, shadow-md + `ring-1 ring-foreground/10`
+ *                — which is exactly what --shadow-lift resolves to.
+ *   option row = SelectItem: rounded-md, py-1, text-sm, and the highlighted row
+ *                is `bg-accent text-accent-foreground` — a pale NEUTRAL, where
+ *                this file used to paint butter-yellow.
+ *   calendar   = theme-ref/src/components/ui/calendar.tsx: 28px cells at
+ *                rounded-md, weekday headings `text-[0.8rem] font-normal
+ *                text-muted-foreground` (NOT small-caps), the selected day
+ *                `bg-primary text-primary-foreground` (near-black, white type,
+ *                NOT gold), today and the in-range days `bg-muted`.
+ *   range pills= theme-ref/src/components/ui/toggle.tsx, outline variant:
+ *                h-8 rounded-lg bordered, and the SELECTED one is filled
+ *                oklch(0.97) — measured #f5f5f5 on the theme's own file-manager
+ *                view switcher. The theme marks a chosen toggle with a pale
+ *                grey fill and nothing else; that is reproduced rather than
+ *                improved, and `aria-pressed` is added so the state is also
+ *                announced rather than only shown.
+ *
+ * `data-slot` on the interactive elements is deliberate: index.css draws the
+ * app's own focus outline with `:focus-visible:not([data-slot])`, so a control
+ * that carries the attribute opts out of it and shows the theme's own
+ * `ring-[3px] ring-ring/50` instead of stacking two rings in two colours.
  */
 
 /* ── Shared popover plumbing ─────────────────────────────────────────────── */
@@ -46,11 +77,16 @@ function useDismiss(open: boolean, close: () => void) {
   return ref;
 }
 
+/** The theme's focus treatment, shared by every control in this file. */
+const FOCUS =
+  "outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
+
 const FIELD =
-  "inline-flex h-10 items-center gap-2 rounded-tile border border-line bg-surface px-3 text-[12.5px] text-ink outline-none " +
-  "focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-50";
-const POPOVER =
-  "absolute z-40 mt-1.5 rounded-tile border border-line-soft bg-surface p-1 shadow-lift";
+  "inline-flex h-8 items-center gap-1.5 rounded-lg border border-line bg-transparent py-1 pl-2.5 pr-2 " +
+  "text-sm text-ink transition-colors disabled:cursor-not-allowed disabled:opacity-50 " +
+  FOCUS;
+
+const POPOVER = "absolute z-40 mt-1 rounded-lg bg-surface p-1 text-sm text-ink shadow-lift";
 
 /* ── Select — the listbox that replaces every <select> ───────────────────── */
 
@@ -125,6 +161,7 @@ export function Select({
     <div ref={root} className={cn("relative", className)}>
       <button
         type="button"
+        data-slot="crm-select-trigger"
         disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -135,8 +172,9 @@ export function Select({
         onKeyDown={onKeyDown}
         className={cn(FIELD, "w-full justify-between text-left")}
       >
-        <span className={cn("truncate", !selected && "text-faint")}>{selected?.label ?? placeholder}</span>
-        <ChevronDown size={14} strokeWidth={2} className={cn("shrink-0 text-faint transition-transform", open && "rotate-180")} aria-hidden />
+        {/* The theme's `data-placeholder:text-muted-foreground`. */}
+        <span className={cn("truncate", !selected && "text-muted")}>{selected?.label ?? placeholder}</span>
+        <ChevronDown size={16} strokeWidth={2} className={cn("shrink-0 text-muted transition-transform", open && "rotate-180")} aria-hidden />
       </button>
       {open && (
         <div
@@ -146,7 +184,8 @@ export function Select({
           className={cn(POPOVER, "max-h-64 w-full min-w-[220px] overflow-y-auto")}
         >
           {options.length === 0 ? (
-            <p className="px-3 py-2 text-[12px] text-faint">Nothing to choose from.</p>
+            /* A reason, not a placeholder. The wording is unchanged. */
+            <p className="px-1.5 py-1.5 text-sm text-muted">Nothing to choose from.</p>
           ) : (
             options.map((o, i) => (
               <div
@@ -158,15 +197,15 @@ export function Select({
                 onMouseEnter={() => setActive(i)}
                 onMouseDown={(e) => { e.preventDefault(); pick(i); }}
                 className={cn(
-                  "flex cursor-pointer items-center justify-between gap-2 rounded-[8px] px-3 py-2 text-[12.5px]",
-                  i === active ? "bg-butter/40 text-ink" : "text-ink",
+                  "flex cursor-default items-center justify-between gap-1.5 rounded-md py-1.5 pl-1.5 pr-2 text-sm",
+                  i === active ? "bg-ui-accent text-accent-foreground" : "text-ink",
                 )}
               >
                 <span className="min-w-0">
                   <span className="block truncate">{o.label}</span>
-                  {o.hint && <span className="block truncate text-[10.5px] text-faint">{o.hint}</span>}
+                  {o.hint && <span className="block truncate text-[12px] text-muted">{o.hint}</span>}
                 </span>
-                {o.value === value && <Check size={13} strokeWidth={2.5} className="shrink-0" style={{ color: GOLD }} aria-hidden />}
+                {o.value === value && <Check size={16} strokeWidth={2} className="shrink-0" aria-hidden />}
               </div>
             ))
           )}
@@ -215,25 +254,29 @@ function MonthGrid({
     ...Array.from({ length: lead }, () => null),
     ...Array.from({ length: daysIn }, (_, i) => isoOf(view.y, view.m, i + 1)),
   ];
+  // The theme's `button_previous` / `button_next`: a ghost Button at --cell-size.
+  const nav =
+    "grid h-7 w-7 place-items-center rounded-lg text-muted transition-colors hover:bg-raised hover:text-ink " + FOCUS;
   return (
     <div className="w-[252px] select-none p-2">
-      <div className="mb-1 flex items-center justify-between px-1">
-        <button type="button" aria-label="Previous month"
+      <div className="mb-2 flex items-center justify-between px-1">
+        <button type="button" data-slot="crm-cal-nav" aria-label="Previous month"
           onClick={() => onView(view.m === 0 ? { y: view.y - 1, m: 11 } : { y: view.y, m: view.m - 1 })}
-          className="grid h-7 w-7 place-items-center rounded-[8px] text-muted hover:bg-raised hover:text-ink focus-visible:ring-2 focus-visible:ring-accent/40">
-          <ChevronLeft size={14} strokeWidth={2} />
+          className={nav}>
+          <ChevronLeft size={16} strokeWidth={2} />
         </button>
-        <p className="text-[12.5px] font-semibold text-ink">{MONTHS[view.m]} {view.y}</p>
-        <button type="button" aria-label="Next month"
+        {/* The theme's `caption_label`: text-sm font-medium. */}
+        <p className="text-sm font-medium text-ink">{MONTHS[view.m]} {view.y}</p>
+        <button type="button" data-slot="crm-cal-nav" aria-label="Next month"
           onClick={() => onView(view.m === 11 ? { y: view.y + 1, m: 0 } : { y: view.y, m: view.m + 1 })}
-          className="grid h-7 w-7 place-items-center rounded-[8px] text-muted hover:bg-raised hover:text-ink focus-visible:ring-2 focus-visible:ring-accent/40">
-          <ChevronRight size={14} strokeWidth={2} />
+          className={nav}>
+          <ChevronRight size={16} strokeWidth={2} />
         </button>
       </div>
       <div role="grid" aria-label={`${MONTHS[view.m]} ${view.y}`}>
         <div role="row" className="grid grid-cols-7">
           {DOW.map((d) => (
-            <span key={d} role="columnheader" className="py-1 text-center text-[10px] font-semibold uppercase text-faint">{d}</span>
+            <span key={d} role="columnheader" className="py-1 text-center text-[0.8rem] font-normal text-muted">{d}</span>
           ))}
         </div>
         <div className="grid grid-cols-7">
@@ -245,14 +288,20 @@ function MonthGrid({
                 key={iso}
                 type="button"
                 role="gridcell"
+                data-slot="crm-cal-day"
                 aria-selected={isSelected(iso)}
                 onClick={() => onPick(iso)}
                 className={cn(
-                  "tnum m-[1px] grid h-8 place-items-center rounded-[8px] text-[12px] focus-visible:ring-2 focus-visible:ring-accent/40",
-                  isSelected(iso) ? "font-bold text-white" : inRange?.(iso) ? "bg-butter/40 text-ink" : "text-ink hover:bg-raised",
-                  iso === today && !isSelected(iso) && "ring-1 ring-line",
+                  "tnum m-[1px] grid h-7 place-items-center rounded-md text-sm font-normal transition-colors",
+                  FOCUS,
+                  isSelected(iso)
+                    ? "bg-primary text-primary-foreground"
+                    : inRange?.(iso)
+                      ? "bg-ui-muted text-ink"
+                      : iso === today
+                        ? "bg-ui-muted text-ink"
+                        : "text-ink hover:bg-raised",
                 )}
-                style={isSelected(iso) ? { background: GOLD } : undefined}
               >
                 {partsOf(iso).d}
               </button>
@@ -285,6 +334,7 @@ export function DateButton({
     <div ref={root} className={cn("relative", className)}>
       <button
         type="button"
+        data-slot="crm-date-trigger"
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-label={ariaLabel ?? "Choose a date"}
@@ -294,8 +344,10 @@ export function DateButton({
         }}
         className={cn(FIELD)}
       >
-        <CalendarIcon size={13} strokeWidth={2} className="shrink-0 text-faint" aria-hidden />
-        <span className={cn(!value && "text-faint")}>{value ? formatDay(value) : placeholder}</span>
+        <CalendarIcon size={16} strokeWidth={2} className="shrink-0 text-muted" aria-hidden />
+        {/* No value is not a date and is not blank: the prompt stands in for it,
+            in the theme's placeholder grey. */}
+        <span className={cn(!value && "text-muted")}>{value ? formatDay(value) : placeholder}</span>
       </button>
       {open && (
         <div role="dialog" aria-label="Calendar" className={POPOVER}>
@@ -343,35 +395,42 @@ export function RangeControl({
   const customLabel =
     value.kind === "custom" ? `${formatDay(value.start)} – ${formatDay(value.end)}` : "Custom";
 
+  /** The theme's outline Toggle. Chosen = a pale grey fill, measured #f5f5f5. */
   const pill = (on: boolean) =>
     cn(
-      "rounded-pill border px-3 py-1.5 text-[12px] font-medium focus-visible:ring-2 focus-visible:ring-accent/40 outline-none",
-      on ? "border-[#C79049] bg-butter/40 text-ink" : "border-line-soft bg-surface text-muted hover:text-ink",
+      "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-line px-2.5 text-sm font-medium text-ink",
+      "transition-colors hover:bg-raised",
+      FOCUS,
+      on ? "bg-raised" : "bg-transparent",
     );
 
   const bounds = useMemo(() => (value.kind === "custom" ? value : null), [value]);
 
   return (
-    <div ref={root} className={cn("relative flex flex-wrap items-center gap-1.5", className)}>
+    <div ref={root} className={cn("relative flex flex-wrap items-center gap-2", className)}>
       {presets.map((d) => (
-        <button key={d} type="button" className={pill(value.kind === "days" && value.days === d)}
+        <button key={d} type="button" data-slot="crm-range-pill"
+          aria-pressed={value.kind === "days" && value.days === d}
+          className={pill(value.kind === "days" && value.days === d)}
           onClick={() => onChange({ kind: "days", days: d })}>
           {d} days
         </button>
       ))}
       {allowAll && (
-        <button type="button" className={pill(value.kind === "all")} onClick={() => onChange({ kind: "all" })}>
+        <button type="button" data-slot="crm-range-pill" aria-pressed={value.kind === "all"}
+          className={pill(value.kind === "all")} onClick={() => onChange({ kind: "all" })}>
           All time
         </button>
       )}
-      <button type="button" aria-haspopup="dialog" aria-expanded={open}
-        className={cn(pill(value.kind === "custom"), "flex items-center gap-1.5")}
+      <button type="button" data-slot="crm-range-pill" aria-haspopup="dialog" aria-expanded={open}
+        aria-pressed={value.kind === "custom"}
+        className={pill(value.kind === "custom")}
         onClick={() => { setDraftStart(null); setOpen((o) => !o); }}>
-        <CalendarIcon size={12} strokeWidth={2} aria-hidden /> {customLabel}
+        <CalendarIcon size={16} strokeWidth={2} aria-hidden /> {customLabel}
       </button>
       {open && (
         <div role="dialog" aria-label="Choose a date range" className={cn(POPOVER, "right-0 top-full")}>
-          <p className="px-3 pt-2 text-[11.5px] text-faint">
+          <p className="px-2 pt-1.5 text-sm text-muted">
             {draftStart ? `From ${formatDay(draftStart)} — now pick the end day.` : "Pick the first day of the range."}
           </p>
           <MonthGrid

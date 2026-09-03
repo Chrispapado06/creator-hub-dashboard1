@@ -88,7 +88,11 @@ export function CompanyAccess({ companyId }: { companyId: string }) {
         <p
           className={cn(
             "mt-3 rounded-tile px-3.5 py-2.5 text-[12.5px] leading-relaxed",
-            notice.tone === "ok" ? "bg-mint text-[oklch(0.4_0.08_155)]" : "bg-[oklch(0.955_0.03_25)] text-bad",
+            // Was `bg-mint` (now a flat neutral) with a hand-mixed green, against a
+            // hand-mixed pink with the `bad` token. Both halves now use the same
+            // recipe, so the two notices are symmetrical instead of one being a
+            // token and the other a typed-in colour.
+            notice.tone === "ok" ? "bg-ok/10 text-ok" : "bg-bad/10 text-bad",
           )}
         >
           {notice.text}
@@ -152,7 +156,7 @@ export function CompanyAccess({ companyId }: { companyId: string }) {
                           value={revokeReason}
                           onChange={(e) => setRevokeReason(e.target.value)}
                           placeholder="Why — required to revoke"
-                          className="h-8 min-w-0 flex-1 rounded-[8px] border border-line bg-surface px-2.5 text-[12px] text-ink outline-none placeholder:text-faint focus:border-accent"
+                          className="h-8 min-w-0 flex-1 rounded-md border border-line bg-surface px-2.5 text-[12px] text-ink outline-none placeholder:text-faint focus:border-accent"
                         />
                         <Button
                           size="sm"
@@ -197,7 +201,7 @@ export function CompanyAccess({ companyId }: { companyId: string }) {
               />
             </label>
             <Button
-              className="!bg-accent text-white hover:opacity-90"
+              className="!bg-accent text-primary-foreground hover:opacity-90"
               disabled={busy || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())}
               onClick={() => void invite()}
             >

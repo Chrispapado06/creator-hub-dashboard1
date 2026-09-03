@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Megaphone } from "lucide-react";
-import { Button, Card, PageHead, Pill, SectionLabel, TableCard } from "@/components/ui";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { GoldButton, Thumb } from "@/components/drawn";
 import { DateButton, Select } from "@/components/controls";
 import {
@@ -19,8 +25,9 @@ import { cn, formatDay } from "@/lib/utils";
  * that's promoted or general, so targeted or general, what image, etc."
  *
  * So: a stepped builder down the page — WHO → CREATIVE → AUDIENCE → REACH →
- * SCHEDULE & BUDGET → REVIEW — with a live summary beside it, in the drawn
- * language (white canvas, gold primary, generous cards).
+ * SCHEDULE & BUDGET → REVIEW — with a live summary beside it, now drawn in the
+ * reference theme's language: white cards, neutral ink, one dark primary
+ * button, and selection shown by an ink outline rather than a gold one.
  *
  * The three standing rules did not move, they just stopped shouting (quiet
  * footer): DECLARED GOALS ONLY for targeting, PREMIUM EXCLUDED from delivery,
@@ -38,8 +45,11 @@ import { cn, formatDay } from "@/lib/utils";
  *   the view-counts lie wearing a media plan.
  */
 
-const STATUS_TONE: Record<PromotedPlacement["status"], "neutral" | "green" | "amber" | "red"> = {
-  draft: "neutral", active: "green", suspended: "amber", ended: "red",
+const STATUS_TONE: Record<PromotedPlacement["status"], string> = {
+  draft: "border-border bg-ui-muted/50 text-muted-foreground",
+  active: "border-emerald-500/20 bg-emerald-500/10 text-emerald-600",
+  suspended: "border-amber-500/20 bg-amber-500/10 text-amber-600",
+  ended: "border-destructive/20 bg-destructive/10 text-destructive",
 };
 
 /** "CY" → 🇨🇾, via regional-indicator codepoints. */
@@ -56,14 +66,36 @@ const countryName = (code: string) => {
 
 const eurWhole = (cents: number) => `€${(cents / 100).toLocaleString("en-GB")}`;
 
-function StepCard({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
+/** The theme has one selected state: an ink outline over the pale accent fill. */
+const CHOSEN = "border-foreground bg-ui-accent";
+const UNCHOSEN = "border-border bg-card hover:bg-ui-muted/60";
+
+function StepCard({
+  n,
+  title,
+  description,
+  action,
+  children,
+}: {
+  n: number;
+  title: string;
+  description?: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
     <Card>
-      <p className="flex items-center gap-2.5">
-        <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-ink text-[11.5px] font-bold text-white">{n}</span>
-        <span className="text-[13px] font-semibold text-ink">{title}</span>
-      </p>
-      <div className="mt-3">{children}</div>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2.5">
+          <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-medium tabular-nums">
+            {n}
+          </span>
+          {title}
+        </CardTitle>
+        {description && <CardDescription>{description}</CardDescription>}
+        {action && <CardAction>{action}</CardAction>}
+      </CardHeader>
+      <CardContent>{children}</CardContent>
     </Card>
   );
 }
@@ -185,17 +217,25 @@ export default function Promotions() {
   };
 
   return (
-    <>
-      <PageHead
-        title="Promotions"
-        subtitle="Build a campaign step by step: who is promoted, with what image, to whom, at what budget. A promoted row is always labelled in the feed."
-      />
-      {err && <p className="mb-3 text-[12.5px] text-bad">{err}</p>}
-      {done && <p className="mb-3 text-[12.5px] font-medium text-ok">Draft created — it is in the campaigns list below, ready to activate.</p>}
+    <div className="flex flex-col gap-4 md:gap-6">
+      <div className="space-y-1">
+        <h2 className="text-3xl tracking-tight">Promotions</h2>
+        <p className="max-w-3xl text-muted-foreground text-sm">
+          Build a campaign step by step: who is promoted, with what image, to whom, at what budget. A
+          promoted row is always labelled in the feed.
+        </p>
+      </div>
 
-      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+      {err && <p className="text-destructive text-sm">{err}</p>}
+      {done && (
+        <p className="font-medium text-ok text-sm">
+          Draft created — it is in the campaigns list below, ready to activate.
+        </p>
+      )}
+
+      <div className="grid items-start gap-4 md:gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
         {/* ── The steps ─────────────────────────────────────────────────── */}
-        <div className="space-y-4">
+        <div className="flex flex-col gap-4 md:gap-6">
           <StepCard n={1} title="Who is being promoted">
             <Select
               value={companyId}
@@ -206,29 +246,29 @@ export default function Promotions() {
               options={companies.state === "ok" ? companies.value.map((c) => ({ value: c.id, label: c.name })) : []}
             />
             {companyId && (
-              <div className="mt-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.05em] text-faint">What of theirs runs</p>
-                <div className="mt-1.5 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="mt-4">
+                <p className="font-medium text-muted-foreground text-xs">What of theirs runs</p>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                   {companyProducts.map((p) => (
                     <button key={p.id} type="button" onClick={() => setTarget(`product:${p.id}`)}
-                      className={cn("rounded-tile border px-3 py-2.5 text-left",
-                        target === `product:${p.id}` ? "border-[#C79049] bg-butter/30" : "border-line-soft bg-surface hover:bg-raised")}>
-                      <span className="block truncate text-[12.5px] font-semibold text-ink">{p.name}</span>
-                      <span className="block text-[11px] text-faint">
+                      className={cn("rounded-lg border px-3 py-2.5 text-left transition-colors",
+                        target === `product:${p.id}` ? CHOSEN : UNCHOSEN)}>
+                      <span className="block truncate font-medium text-sm">{p.name}</span>
+                      <span className="block text-muted-foreground text-xs">
                         {p.price_state === "known" && p.price_from_cents !== null ? `from ${eurWhole(p.price_from_cents)}` : "price on request"} · {p.kind}
                       </span>
                     </button>
                   ))}
                   {posts.map((p) => (
                     <button key={p.id} type="button" onClick={() => setTarget(`post:${p.id}`)}
-                      className={cn("rounded-tile border px-3 py-2.5 text-left",
-                        target === `post:${p.id}` ? "border-[#C79049] bg-butter/30" : "border-line-soft bg-surface hover:bg-raised")}>
-                      <span className="block truncate text-[12.5px] font-semibold text-ink">Post: {p.body.slice(0, 44)}</span>
-                      <span className="block text-[11px] text-faint">promotes the post itself</span>
+                      className={cn("rounded-lg border px-3 py-2.5 text-left transition-colors",
+                        target === `post:${p.id}` ? CHOSEN : UNCHOSEN)}>
+                      <span className="block truncate font-medium text-sm">Post: {p.body.slice(0, 44)}</span>
+                      <span className="block text-muted-foreground text-xs">promotes the post itself</span>
                     </button>
                   ))}
                   {companyProducts.length === 0 && posts.length === 0 && (
-                    <p className="col-span-full text-[12px] text-faint">
+                    <p className="col-span-full text-[13px] text-faint">
                       This company has no products or posts to promote yet.
                     </p>
                   )}
@@ -249,22 +289,22 @@ export default function Promotions() {
                     ? destinations.value.map((d) => ({ value: d.id, label: d.name, hint: d.kind }))
                     : []}
                 />
-                <p className="mt-2 text-[11.5px] leading-relaxed text-faint">
+                <p className="mt-2 text-[13px] leading-relaxed text-faint">
                   Photos come from the licensed destination set. Company uploads join in when the
                   media store is wired to this screen.
                 </p>
               </div>
               {/* The preview IS the promise: this is how the promotion renders. */}
-              <div className="max-w-[360px] overflow-hidden rounded-card border border-line-soft bg-surface shadow-soft">
+              <div className="max-w-[360px] overflow-hidden rounded-xl bg-card ring-1 ring-foreground/10">
                 {creative ? (
-                  <Thumb slug={creative} className="h-40 w-full rounded-none" />
+                  <Thumb slug={creative} className="h-40 w-full rounded-none border-0" />
                 ) : (
-                  <div className="grid h-40 w-full place-items-center bg-panel text-[12px] text-faint">no image chosen</div>
+                  <div className="grid h-40 w-full place-items-center bg-ui-muted text-[13px] text-faint">no image chosen</div>
                 )}
                 <div className="px-3.5 py-2.5">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-faint">Promoted</p>
-                  <p className="truncate text-[13px] font-semibold text-ink">{targetLabel ?? "— pick what runs in step 1"}</p>
-                  <p className="text-[11.5px] text-muted">{companyId ? companyName(companyId) : ""}</p>
+                  <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide">Promoted</p>
+                  <p className="truncate font-medium text-sm">{targetLabel ?? "— pick what runs in step 1"}</p>
+                  <p className="text-muted-foreground text-xs">{companyId ? companyName(companyId) : ""}</p>
                 </div>
               </div>
             </div>
@@ -273,40 +313,42 @@ export default function Promotions() {
           <StepCard n={3} title="Audience — targeted or general">
             <div className="grid gap-2.5 sm:grid-cols-2">
               <button type="button" onClick={() => setMode("targeted")}
-                className={cn("rounded-tile border px-4 py-3 text-left",
-                  mode === "targeted" ? "border-[#C79049] bg-butter/30" : "border-line-soft bg-surface hover:bg-raised")}>
-                <p className="text-[12.5px] font-semibold text-ink">Targeted</p>
-                <p className="mt-0.5 text-[11.5px] leading-relaxed text-muted">
+                className={cn("rounded-lg border px-4 py-3 text-left transition-colors",
+                  mode === "targeted" ? CHOSEN : UNCHOSEN)}>
+                <p className="font-medium text-sm">Targeted</p>
+                <p className="mt-0.5 text-muted-foreground text-xs leading-relaxed">
                   People whose declared goals name the promoted mountain or trek. Their own words, never
                   an inference.
                 </p>
               </button>
               <button type="button" onClick={() => setMode("general")}
-                className={cn("rounded-tile border px-4 py-3 text-left",
-                  mode === "general" ? "border-[#C79049] bg-butter/30" : "border-line-soft bg-surface hover:bg-raised")}>
-                <p className="text-[12.5px] font-semibold text-ink">General</p>
-                <p className="mt-0.5 text-[11.5px] leading-relaxed text-muted">
+                className={cn("rounded-lg border px-4 py-3 text-left transition-colors",
+                  mode === "general" ? CHOSEN : UNCHOSEN)}>
+                <p className="font-medium text-sm">General</p>
+                <p className="mt-0.5 text-muted-foreground text-xs leading-relaxed">
                   Everyone in the feed. Premium members are excluded either way — that is part of what
                   membership buys.
                 </p>
               </button>
             </div>
 
-            <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.05em] text-faint">Focus countries</p>
-            <p className="mt-0.5 text-[11.5px] text-faint">Pick none for worldwide. Countries appear here as real accounts exist in them.</p>
+            <Separator className="my-4" />
+
+            <p className="font-medium text-muted-foreground text-xs">Focus countries</p>
+            <p className="mt-0.5 text-xs text-faint">Pick none for worldwide. Countries appear here as real accounts exist in them.</p>
             <div className="mt-2 flex flex-wrap gap-1.5">
               {countryRows === null ? (
-                <p className="text-[12px] text-faint">Reading who is out there…</p>
+                <p className="text-[13px] text-faint">Reading who is out there…</p>
               ) : countryRows.length === 0 ? (
-                <p className="text-[12px] text-faint">No account has stated a country yet — worldwide is the only honest choice today.</p>
+                <p className="text-[13px] text-faint">No account has stated a country yet — worldwide is the only honest choice today.</p>
               ) : (
                 countryRows.map(([code, n]) => (
                   <button key={code} type="button"
                     onClick={() => setPicked((p) => (p.includes(code) ? p.filter((c) => c !== code) : [...p, code]))}
-                    className={cn("flex items-center gap-1.5 rounded-pill border px-3 py-1.5 text-[12px] font-medium",
-                      picked.includes(code) ? "border-[#C79049] bg-butter/40 text-ink" : "border-line-soft bg-surface text-muted hover:text-ink")}>
+                    className={cn("flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-[0.8rem] font-medium transition-colors",
+                      picked.includes(code) ? CHOSEN : "border-border bg-card text-muted-foreground hover:bg-ui-muted/60 hover:text-foreground")}>
                     <span aria-hidden>{flagOf(code)}</span> {countryName(code)}
-                    <span className="tnum text-[10.5px] text-faint">{n}</span>
+                    <span className="text-xs text-faint tabular-nums">{n}</span>
                   </button>
                 ))
               )}
@@ -316,18 +358,18 @@ export default function Promotions() {
           <StepCard n={4} title="Reach — counted, never forecast">
             {mode === "general" ? (
               <>
-                <p className="tnum text-[34px] font-extrabold leading-none text-ink">
+                <p className="font-medium text-4xl tabular-nums leading-none tracking-tight">
                   {reach === null ? "…" : reach.toLocaleString("en-GB")}
                 </p>
-                <p className="mt-1.5 text-[12.5px] leading-relaxed text-muted">
-                  climber account{reach === 1 ? "" : "s"} match this audience <span className="font-semibold text-ink">today</span>
+                <p className="mt-2 max-w-2xl text-muted-foreground text-sm leading-relaxed">
+                  climber account{reach === 1 ? "" : "s"} match this audience <span className="font-medium text-foreground">today</span>
                   {picked.length > 0 ? ` across ${picked.map(flagOf).join(" ")}` : ", worldwide"} — counted from the
                   live accounts table this second, not projected. It moves when the accounts do.
                 </p>
               </>
             ) : (
-              <p className="max-w-2xl text-[12.5px] leading-relaxed text-muted">
-                <span className="font-semibold text-ink">Targeted reach cannot be counted yet, and this screen
+              <p className="max-w-2xl text-muted-foreground text-sm leading-relaxed">
+                <span className="font-medium text-foreground">Targeted reach cannot be counted yet, and this screen
                 will not invent it.</span> Goals live on people's own devices and no server table holds them, so
                 no honest number exists. The targeting still works — each person's app knows their goals and
                 applies the rule at delivery — and the moment goals sync to the server, the real count appears
@@ -338,27 +380,31 @@ export default function Promotions() {
 
           <StepCard n={5} title="Schedule &amp; budget">
             <div className="flex flex-wrap items-end gap-3">
-              <label className="block">
-                <span className="text-[11px] font-semibold uppercase tracking-[0.05em] text-faint">Starts</span>
-                <DateButton value={startsOn} onChange={setStartsOn} className="mt-1 block" ariaLabel="Campaign start date" />
-              </label>
-              <label className="block">
-                <span className="text-[11px] font-semibold uppercase tracking-[0.05em] text-faint">Days</span>
-                <input type="number" min={1} max={365} value={days} onChange={(e) => setDays(e.target.value)}
-                  className="mt-1 block h-10 w-24 rounded-tile border border-line bg-surface px-3 text-[12.5px] text-ink outline-none" />
-              </label>
-              <label className="block">
-                <span className="text-[11px] font-semibold uppercase tracking-[0.05em] text-faint">Daily budget (€)</span>
-                <input type="number" min={1} step="1" value={dailyEur} onChange={(e) => setDailyEur(e.target.value)}
-                  placeholder="e.g. 40"
-                  className="mt-1 block h-10 w-32 rounded-tile border border-line bg-surface px-3 text-[12.5px] text-ink outline-none placeholder:text-faint" />
-              </label>
-              <div className="min-w-[160px] rounded-tile bg-panel px-3.5 py-2">
-                <p className="text-[10.5px] font-semibold uppercase tracking-[0.05em] text-faint">Campaign total</p>
-                <p className="tnum text-[18px] font-extrabold text-ink">
+              <div className="space-y-1.5">
+                <Label htmlFor="promo-starts">Starts</Label>
+                <DateButton
+                  value={startsOn}
+                  onChange={setStartsOn}
+                  className="block"
+                  ariaLabel="Campaign start date"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="promo-days">Days</Label>
+                <Input id="promo-days" type="number" min={1} max={365} value={days}
+                  onChange={(e) => setDays(e.target.value)} className="w-24" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="promo-daily">Daily budget (€)</Label>
+                <Input id="promo-daily" type="number" min={1} step="1" value={dailyEur}
+                  onChange={(e) => setDailyEur(e.target.value)} placeholder="e.g. 40" className="w-32" />
+              </div>
+              <div className="min-w-[180px] rounded-lg border bg-ui-muted/50 px-3.5 py-2">
+                <p className="font-medium text-muted-foreground text-xs">Campaign total</p>
+                <p className="font-medium text-xl tabular-nums">
                   {totalCents > 0 ? eurWhole(totalCents) : "—"}
                 </p>
-                <p className="text-[10.5px] text-faint">
+                <p className="text-xs text-faint">
                   {dayCount >= 1 && dailyCents > 0
                     ? `${dayCount} day${dayCount === 1 ? "" : "s"} × ${eurWhole(dailyCents)}${endsOn ? `, ends ${formatDay(endsOn)}` : ""}`
                     : "days × daily budget"}
@@ -369,10 +415,10 @@ export default function Promotions() {
 
           <StepCard n={6} title="Review &amp; create">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="max-w-xl text-[12.5px] leading-relaxed text-muted">
+              <p className="max-w-xl text-muted-foreground text-sm leading-relaxed">
                 {ready ? (
-                  <>Promote <span className="font-semibold text-ink">{targetLabel}</span> for{" "}
-                  <span className="font-semibold text-ink">{companyName(companyId)}</span>, {mode},{" "}
+                  <>Promote <span className="font-medium text-foreground">{targetLabel}</span> for{" "}
+                  <span className="font-medium text-foreground">{companyName(companyId)}</span>, {mode},{" "}
                   {picked.length > 0 ? picked.map(flagOf).join(" ") : "worldwide"}, {dayCount} days at{" "}
                   {eurWhole(dailyCents)}/day — {eurWhole(totalCents)} total. Born a draft; it reaches no feed
                   until you activate it below.</>
@@ -388,118 +434,130 @@ export default function Promotions() {
         </div>
 
         {/* ── Live summary ──────────────────────────────────────────────── */}
-        <Card className="xl:sticky xl:top-4">
-          <SectionLabel>This campaign</SectionLabel>
-          <dl className="mt-2 space-y-1.5 text-[12.5px]">
-            <div className="flex justify-between gap-3"><dt className="text-muted">Company</dt><dd className="text-right font-medium text-ink">{companyId ? companyName(companyId) : "—"}</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-muted">Promotes</dt><dd className="text-right font-medium text-ink">{targetLabel ?? "—"}</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-muted">Image</dt><dd className="text-right font-medium text-ink">{creative || "—"}</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-muted">Audience</dt><dd className="text-right font-medium capitalize text-ink">{mode}</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-muted">Countries</dt><dd className="text-right font-medium text-ink">{picked.length > 0 ? picked.map(flagOf).join(" ") : "worldwide"}</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-muted">Reach today</dt><dd className="tnum text-right font-medium text-ink">{mode === "general" ? (reach ?? "…") : "not countable"}</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-muted">Runs</dt><dd className="tnum text-right font-medium text-ink">{startsOn && endsOn ? `${formatDay(startsOn)} – ${formatDay(endsOn)}` : "—"}</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-muted">Daily</dt><dd className="tnum text-right font-medium text-ink">{dailyCents > 0 ? eurWhole(dailyCents) : "—"}</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-muted">Total</dt><dd className="tnum text-right font-extrabold text-ink">{totalCents > 0 ? eurWhole(totalCents) : "—"}</dd></div>
-          </dl>
-          <p className="mt-3 border-t border-line-soft pt-2.5 text-[10.5px] leading-relaxed text-faint">
-            Targeting uses declared goals only. Premium members never see promotions. Nothing here
-            forecasts impressions or clicks — counts are real or absent.
-          </p>
+        <Card className="xl:sticky xl:top-16">
+          <CardHeader>
+            <CardTitle>This campaign</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <dl className="space-y-1.5 text-sm">
+              <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Company</dt><dd className="text-right font-medium">{companyId ? companyName(companyId) : "—"}</dd></div>
+              <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Promotes</dt><dd className="text-right font-medium">{targetLabel ?? "—"}</dd></div>
+              <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Image</dt><dd className="text-right font-medium">{creative || "—"}</dd></div>
+              <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Audience</dt><dd className="text-right font-medium capitalize">{mode}</dd></div>
+              <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Countries</dt><dd className="text-right font-medium">{picked.length > 0 ? picked.map(flagOf).join(" ") : "worldwide"}</dd></div>
+              <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Reach today</dt><dd className="text-right font-medium tabular-nums">{mode === "general" ? (reach ?? "…") : "not countable"}</dd></div>
+              <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Runs</dt><dd className="text-right font-medium tabular-nums">{startsOn && endsOn ? `${formatDay(startsOn)} – ${formatDay(endsOn)}` : "—"}</dd></div>
+              <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Daily</dt><dd className="text-right font-medium tabular-nums">{dailyCents > 0 ? eurWhole(dailyCents) : "—"}</dd></div>
+              <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Total</dt><dd className="text-right font-semibold tabular-nums">{totalCents > 0 ? eurWhole(totalCents) : "—"}</dd></div>
+            </dl>
+            <Separator className="my-3" />
+            <p className="text-xs leading-relaxed text-faint">
+              Targeting uses declared goals only. Premium members never see promotions. Nothing here
+              forecasts impressions or clicks — counts are real or absent.
+            </p>
+          </CardContent>
         </Card>
       </div>
 
       {/* ── Campaigns ─────────────────────────────────────────────────────── */}
-      <div className="mt-6">
-        <SectionLabel>Campaigns</SectionLabel>
-        {promos.state === "loading" ? (
-          <Card className="mt-2"><p className="text-[12.5px] text-faint">Reading campaigns…</p></Card>
-        ) : promos.state !== "ok" ? (
-          <Card className="mt-2">
-            <p className="text-[12.5px] leading-relaxed text-bad">
-              Campaigns could not be read: {"reason" in promos ? promos.reason : ""}
+      <Card>
+        <CardHeader className="border-b">
+          <CardTitle className="text-xl leading-none">Campaigns</CardTitle>
+          <CardDescription className="leading-snug">
+            Every campaign that has been built, and what it is doing now.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className={cn(promos.state === "ok" && promos.value.length > 0 && "px-0")}>
+          {promos.state === "loading" ? (
+            <p className="text-[13px] text-faint">Reading campaigns…</p>
+          ) : promos.state !== "ok" ? (
+            <>
+              <p className="text-destructive text-sm leading-relaxed">
+                Campaigns could not be read: {"reason" in promos ? promos.reason : ""}
+              </p>
+              <p className="mt-1 text-[13px] text-faint">
+                If this says the table does not exist, the S2 social migration has not been pushed yet.
+              </p>
+            </>
+          ) : promos.value.length === 0 ? (
+            <p className="flex items-center gap-2 text-[13px] text-faint">
+              <Megaphone className="size-3.5" /> No campaigns yet — the first draft appears here.
             </p>
-            <p className="mt-1 text-[12px] text-faint">
-              If this says the table does not exist, the S2 social migration has not been pushed yet.
-            </p>
-          </Card>
-        ) : promos.value.length === 0 ? (
-          <Card className="mt-2">
-            <p className="flex items-center gap-2 text-[12.5px] text-faint">
-              <Megaphone size={14} strokeWidth={2} /> No campaigns yet — the first draft appears here.
-            </p>
-          </Card>
-        ) : (
-          <TableCard className="mt-2">
-            <table className="w-full text-[12.5px]">
-              <thead>
-                <tr className="text-left text-[11px] uppercase tracking-[0.06em] text-faint">
-                  <th className="px-4 py-3 font-medium">Campaign</th>
-                  <th className="px-3 py-3 font-medium">Audience</th>
-                  <th className="px-3 py-3 font-medium">Runs</th>
-                  <th className="px-3 py-3 text-right font-medium">Daily</th>
-                  <th className="px-3 py-3 text-right font-medium">Total</th>
-                  <th className="px-3 py-3 font-medium">Status</th>
-                  <th className="px-3 py-3 text-right font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
+          ) : (
+            <Table className="**:data-[slot='table-cell']:px-3 **:data-[slot='table-head']:px-3">
+              <TableHeader className="[&_tr]:border-t">
+                <TableRow>
+                  <TableHead className="py-3 font-normal">Campaign</TableHead>
+                  <TableHead className="py-3 font-normal">Audience</TableHead>
+                  <TableHead className="py-3 font-normal">Runs</TableHead>
+                  <TableHead className="py-3 text-right font-normal">Daily</TableHead>
+                  <TableHead className="py-3 text-right font-normal">Total</TableHead>
+                  <TableHead className="py-3 font-normal">Status</TableHead>
+                  <TableHead className="py-3 text-right font-normal">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {promos.value.map((p) => {
                   const pDays = Math.round((new Date(p.ends_on).getTime() - new Date(p.starts_on).getTime()) / 86_400_000) + 1;
                   return (
-                    <tr key={p.id} className="border-t border-line-soft">
-                      <td className="px-4 py-3">
+                    <TableRow key={p.id} className="border-border/60">
+                      <TableCell className="py-3 align-middle">
                         <span className="flex items-center gap-2.5">
                           {p.creative_path ? (
-                            <img src={p.creative_path} alt="" className="h-9 w-12 shrink-0 rounded-[6px] object-cover" />
+                            <img src={p.creative_path} alt="" className="h-9 w-12 shrink-0 rounded-md object-cover" />
                           ) : (
-                            <span className="h-9 w-12 shrink-0 rounded-[6px] bg-panel" aria-hidden />
+                            <span className="h-9 w-12 shrink-0 rounded-md bg-ui-muted" aria-hidden />
                           )}
                           <span className="min-w-0">
-                            <span className="block truncate font-medium text-ink">
+                            <span className="block truncate font-medium">
                               {p.product_id ? (productName(p.product_id) ?? "a product") : "a company post"}
                             </span>
-                            <span className="block truncate text-[11px] text-faint">{companyName(p.company_id)}</span>
+                            <span className="block truncate text-muted-foreground text-xs">{companyName(p.company_id)}</span>
                           </span>
                         </span>
-                      </td>
-                      <td className="px-3 py-3 text-muted">
+                      </TableCell>
+                      <TableCell className="py-3 align-middle text-muted-foreground">
                         <span className="capitalize">{p.audience_mode}</span>
                         {p.countries.length > 0 && <span className="ml-1.5">{p.countries.map(flagOf).join(" ")}</span>}
-                      </td>
-                      <td className="tnum whitespace-nowrap px-3 py-3 text-muted">
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap py-3 align-middle text-muted-foreground tabular-nums">
                         {formatDay(p.starts_on)} – {formatDay(p.ends_on)}
-                      </td>
-                      <td className="tnum px-3 py-3 text-right text-ink">
+                      </TableCell>
+                      <TableCell className="py-3 text-right align-middle tabular-nums">
                         {p.daily_budget_cents !== null ? eurWhole(p.daily_budget_cents) : <span className="text-faint">not set</span>}
-                      </td>
-                      <td className="tnum px-3 py-3 text-right font-semibold text-ink">
+                      </TableCell>
+                      <TableCell className="py-3 text-right align-middle font-medium tabular-nums">
                         {p.daily_budget_cents !== null ? eurWhole(p.daily_budget_cents * pDays) : <span className="font-normal text-faint">—</span>}
-                      </td>
-                      <td className="px-3 py-3"><Pill tone={STATUS_TONE[p.status]}>{p.status}</Pill></td>
-                      <td className="px-3 py-3 text-right">
+                      </TableCell>
+                      <TableCell className="py-3 align-middle">
+                        <Badge variant="outline" className={cn("border px-2 py-1 font-medium capitalize", STATUS_TONE[p.status])}>
+                          {p.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="py-3 text-right align-middle">
                         <span className="flex justify-end gap-1.5">
                           {p.status === "draft" && (
-                            <Button size="sm" variant="secondary" disabled={busy} onClick={() => void move(p.id, "active")}>Activate</Button>
+                            <Button size="sm" variant="outline" disabled={busy} onClick={() => void move(p.id, "active")}>Activate</Button>
                           )}
                           {p.status === "active" && (
-                            <Button size="sm" variant="secondary" disabled={busy} onClick={() => void move(p.id, "suspended")}>Suspend</Button>
+                            <Button size="sm" variant="outline" disabled={busy} onClick={() => void move(p.id, "suspended")}>Suspend</Button>
                           )}
                           {p.status === "suspended" && (
-                            <Button size="sm" variant="secondary" disabled={busy} onClick={() => void move(p.id, "active")}>Resume</Button>
+                            <Button size="sm" variant="outline" disabled={busy} onClick={() => void move(p.id, "active")}>Resume</Button>
                           )}
                           {p.status !== "ended" && (
-                            <Button size="sm" variant="secondary" disabled={busy} onClick={() => void move(p.id, "ended")}>End</Button>
+                            <Button size="sm" variant="outline" disabled={busy} onClick={() => void move(p.id, "ended")}>End</Button>
                           )}
                         </span>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   );
                 })}
-              </tbody>
-            </table>
-          </TableCard>
-        )}
-      </div>
-    </>
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }

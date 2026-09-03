@@ -6,8 +6,34 @@
     <meta name="robots" content="noindex, nofollow" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!--
+      THE TYPE FACE, MATCHED TO THE THEME.
+
+      The theme registers eighteen families and picks one by default: its
+      `PREFERENCE_DEFAULTS.font` is "geist", which sets `data-font="geist"` on
+      <html>, which resolves `--font-sans` to `var(--font-geist)`. Measured on
+      the running theme at localhost:3100, body and every heading compute to
+      `Geist, "Geist Fallback", system-ui, sans-serif`. Its mono is Geist Mono.
+
+      This app used to load Plus Jakarta Sans and Instrument Serif. `index.css`
+      already listed "Geist" FIRST in the stack, so the family name was being
+      asked for and nothing was ever answering: the browser fell straight
+      through to Plus Jakarta Sans. Measured before this change,
+      `document.fonts` held exactly one loaded family — "Plus Jakarta Sans".
+      That is why the previous re-skin "looked unchanged": the colours moved,
+      the letterforms did not.
+
+      Instrument Serif is dropped rather than kept: nothing in `src/` references
+      a serif face or `font-serif`, so it was two network requests for a family
+      the app never set.
+
+      Loaded as a <link> and NOT as an `@import` inside index.css on purpose —
+      `vite.config.ts` strips exactly these tags for VITE_ICEFALL_OFFLINE=1
+      builds, and a CSS @import would slip past that regex and put a live
+      Google Fonts request back into the offline bundle.
+    -->
     <link
-      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Instrument+Serif:ital@0;1&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Geist+Mono:wght@100..900&display=swap"
       rel="stylesheet"
     />
     <title>ICEFALL Business</title>

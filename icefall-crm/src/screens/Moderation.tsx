@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, EyeOff, Flag, Image as ImageIcon, MessageSquare, Trash2 } from "lucide-react";
-import { Avatar, Button, Card, PageHead, Pill, SectionLabel, Stat } from "@/components/ui";
+import {
+  AlertTriangle, Clock, EyeOff, Flag, Image as ImageIcon, MessageSquare, ShieldOff, Trash2,
+} from "lucide-react";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle,
+} from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
 import { Failed, Forbidden, Loading, Unavailable } from "@/components/states";
 import {
   claimReportCase, contentKey, deskCanRemove, dismissReportCase, listProfilesBasic, listReports,
@@ -9,7 +17,7 @@ import {
   type ReportedContent, type ReportsRead, type ReportsSchema, type ReportSubjectKind,
 } from "@/data/queries";
 import { loading, type Result } from "@/data/result";
-import { formatMoment } from "@/lib/utils";
+import { cn, formatMoment, initials } from "@/lib/utils";
 
 /**
  * The moderation queue — and, since today, a queue that can ACT.
@@ -78,8 +86,56 @@ const REASON_LABEL: Record<ModerationReport["reason"], string> = {
  * terms and no record of what was agreed; safety means somebody may be about to
  * go up a mountain with the wrong person.
  */
-const reasonTone = (r: ModerationReport["reason"]): "red" | "amber" | "neutral" =>
-  r === "off_platform_payment" || r === "safety" ? "red" : r === "other" || r === "spam" ? "neutral" : "amber";
+const reasonTone = (r: ModerationReport["reason"]): string =>
+  r === "off_platform_payment" || r === "safety"
+    ? "border-destructive/20 bg-destructive/10 text-destructive"
+    : r === "other" || r === "spam"
+      ? "border-border bg-ui-muted/50 text-muted-foreground"
+      : "border-amber-500/20 bg-amber-500/10 text-amber-600";
+
+/** The queue's three working states, in the theme's outline-plus-dot badge. */
+const CASE_TONE: Record<"open" | "reviewing" | "closed", { badge: string; dot: string }> = {
+  open: { badge: "border-amber-500/20 bg-amber-500/10 text-amber-600", dot: "bg-amber-500" },
+  reviewing: { badge: "border-border bg-ui-accent text-foreground", dot: "bg-foreground" },
+  closed: { badge: "border-border bg-ui-muted/50 text-muted-foreground", dot: "bg-muted-foreground" },
+};
+
+/**
+ * A figure, or the reason there is not one.
+ *
+ * `value` of `null` renders the reason in muted text — never a dash and never a
+ * zero, and the hint that belongs to a figure disappears with the figure.
+ */
+function Metric({
+  icon, label, value, reason, hint,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string | null;
+  reason?: string;
+  hint?: string;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>
+          <div className="flex size-7 items-center justify-center rounded-lg border bg-ui-muted text-muted-foreground">
+            {icon}
+          </div>
+        </CardTitle>
+        <CardDescription>{label}</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-1">
+        {value === null ? (
+          <p className="text-[13px] leading-relaxed text-faint">{reason ?? "Not recorded"}</p>
+        ) : (
+          <div className="font-medium text-3xl tabular-nums leading-none tracking-tight">{value}</div>
+        )}
+        {hint && value !== null && <p className="text-muted-foreground text-sm">{hint}</p>}
+      </CardContent>
+    </Card>
+  );
+}
 
 const KIND_LABEL: Record<ReportSubjectKind, string> = {
   profile: "A person",
@@ -101,10 +157,6 @@ const KIND_NOUN: Record<ReportSubjectKind, string> = {
   channel_message: "message",
   message: "message",
 };
-
-const FIELD =
-  "mt-2 w-full rounded-tile border border-line bg-surface px-3 py-2.5 text-[12.5px] leading-relaxed " +
-  "text-ink outline-none placeholder:text-faint focus:border-accent";
 
 /* -------------------------------------------------------------------------- */
 /* Grouping: a case is the thing reported, not the report                     */
@@ -266,12 +318,12 @@ const shownContent = (k: QueueCase, content: Result<ContentIndex>): Shown => {
 function Words({ body }: { body: string | null }) {
   if (body === null || body.trim().length === 0)
     return (
-      <p className="mt-2 text-[12.5px] text-faint">
+      <p className="mt-2 text-[13px] text-faint">
         No words — this was sent as a file or an image only.
       </p>
     );
   return (
-    <p className="mt-2 max-h-64 overflow-y-auto whitespace-pre-wrap break-words text-[13px] leading-relaxed text-ink">
+    <p className="mt-2 max-h-64 overflow-y-auto whitespace-pre-wrap break-words text-sm leading-relaxed">
       {body}
     </p>
   );
@@ -280,8 +332,8 @@ function Words({ body }: { body: string | null }) {
 function MediaNote({ path }: { path: string | null }) {
   if (!path) return null;
   return (
-    <p className="mt-2 flex items-start gap-2 text-[12px] leading-relaxed text-warn">
-      <ImageIcon size={13} strokeWidth={2} className="mt-0.5 shrink-0" />
+    <p className="mt-2 flex items-start gap-2 text-[13px] leading-relaxed text-warn">
+      <ImageIcon className="mt-0.5 size-3.5 shrink-0" />
       This carries a file as well as the words above. It sits in a private bucket and this screen cannot
       display it — if the report is about the image, it has not been seen here.
     </p>
@@ -306,20 +358,16 @@ function Conversation({ threadId, nameOf }: { threadId: string; nameOf: (id: str
 
   if (!open)
     return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="mt-2.5 inline-flex items-center gap-1.5 text-[12px] font-medium text-accent-ink hover:underline"
-      >
-        <MessageSquare size={13} strokeWidth={2} /> Read the recent messages
-      </button>
+      <Button variant="outline" size="sm" className="mt-2.5" onClick={() => setOpen(true)}>
+        <MessageSquare /> Read the recent messages
+      </Button>
     );
 
   if (read.state === "loading")
-    return <p className="mt-2.5 text-[12px] text-faint">Reading the conversation…</p>;
+    return <p className="mt-2.5 text-[13px] text-faint">Reading the conversation…</p>;
   if (read.state !== "ok")
     return (
-      <p className="mt-2.5 text-[12px] leading-relaxed text-bad">
+      <p className="mt-2.5 text-destructive text-sm leading-relaxed">
         The conversation could not be read: {"reason" in read ? read.reason : ""}
       </p>
     );
@@ -327,7 +375,7 @@ function Conversation({ threadId, nameOf }: { threadId: string; nameOf: (id: str
   const { messages, total } = read.value;
   return (
     <div className="mt-2.5">
-      <p className="text-[11.5px] leading-relaxed text-faint">
+      <p className="text-xs leading-relaxed text-faint">
         {total === null
           ? `The ${messages.length} most recent messages. How many there are in total could not be counted.`
           : total <= messages.length
@@ -336,18 +384,18 @@ function Conversation({ threadId, nameOf }: { threadId: string; nameOf: (id: str
       </p>
       <div className="mt-1.5 space-y-1.5">
         {messages.map((m) => (
-          <div key={m.id} className="rounded-tile bg-surface px-3 py-2">
-            <p className="text-[11.5px] text-faint">
+          <div key={m.id} className="rounded-lg border bg-card px-3 py-2">
+            <p className="text-muted-foreground text-xs">
               {nameOf(m.author_id)} · {formatMoment(m.created_at) ?? "time not readable"}
               {m.message_kind !== "text" && ` · ${m.message_kind}`}
             </p>
-            <p className="mt-0.5 whitespace-pre-wrap break-words text-[12.5px] leading-relaxed text-ink">
+            <p className="mt-0.5 whitespace-pre-wrap break-words text-sm leading-relaxed">
               {m.body ?? "An attachment with no words."}
             </p>
           </div>
         ))}
         {messages.length === 0 && (
-          <p className="text-[12px] text-faint">This conversation holds no messages at all.</p>
+          <p className="text-[13px] text-faint">This conversation holds no messages at all.</p>
         )}
       </div>
     </div>
@@ -366,14 +414,14 @@ function ContentPanel({
   const noun = kase.kind ? KIND_NOUN[kase.kind] : "thing";
 
   const frame = (children: React.ReactNode) => (
-    <div className="mt-3 rounded-tile bg-panel px-3.5 py-3">{children}</div>
+    <div className="rounded-lg border bg-ui-muted/50 px-3.5 py-3">{children}</div>
   );
 
-  if (shown.state === "loading") return frame(<p className="text-[12.5px] text-faint">Fetching what was reported…</p>);
+  if (shown.state === "loading") return frame(<p className="text-[13px] text-faint">Fetching what was reported…</p>);
 
   if (shown.state === "never_named")
     return frame(
-      <p className="text-[12.5px] leading-relaxed text-muted">
+      <p className="text-muted-foreground text-sm leading-relaxed">
         This report names nothing — no person, no conversation, no post. It was filed against the old
         table, which had no rule requiring a subject. There is nothing here to look at and nothing to
         remove; all the desk can do is close it.
@@ -382,7 +430,7 @@ function ContentPanel({
 
   if (shown.state === "reference_cleared")
     return frame(
-      <p className="text-[12.5px] leading-relaxed text-muted">
+      <p className="text-muted-foreground text-sm leading-relaxed">
         The {noun} this report named has been deleted. The report survives on purpose — deleting your
         posts must not clear your record — and it still names {nameOf(kase.subjectId)}. What was
         actually said is in the audit log, filed under the deletion.
@@ -391,7 +439,7 @@ function ContentPanel({
 
   if (shown.state === "missing")
     return frame(
-      <p className="text-[12.5px] leading-relaxed text-muted">
+      <p className="text-muted-foreground text-sm leading-relaxed">
         This {noun} is no longer in the database — somebody has already removed it. The report is still
         open, so the decision left to make is about the person, not the words.
       </p>,
@@ -399,15 +447,15 @@ function ContentPanel({
 
   if (shown.state === "withheld")
     return frame(
-      <p className="flex items-start gap-2 text-[12.5px] leading-relaxed text-warn">
-        <EyeOff size={14} strokeWidth={2} className="mt-0.5 shrink-0" />
+      <p className="flex items-start gap-2 text-sm leading-relaxed text-warn">
+        <EyeOff className="mt-0.5 size-3.5 shrink-0" />
         {shown.why}
       </p>,
     );
 
   if (shown.state === "failed")
     return frame(
-      <p className="text-[12.5px] leading-relaxed text-bad">
+      <p className="text-destructive text-sm leading-relaxed">
         What was reported could not be read: {shown.why} Nothing below has been checked against it.
       </p>,
     );
@@ -419,7 +467,7 @@ function ContentPanel({
     <>
       {c.kind === "post" && (
         <>
-          <p className="text-[12px] text-faint">
+          <p className="text-muted-foreground text-xs">
             Post by {nameOf(c.author_id)} · {when}
             {c.author_kind === "company" && " · posted for a company"}
             {c.expires_at && " · a story, which expires"}
@@ -431,7 +479,7 @@ function ContentPanel({
 
       {c.kind === "comment" && (
         <>
-          <p className="tnum text-[12px] text-faint">
+          <p className="text-muted-foreground text-xs tabular-nums">
             Comment by {nameOf(c.author_id)} · {when} · under post {c.post_id.slice(0, 8)}
           </p>
           <Words body={c.body} />
@@ -440,7 +488,7 @@ function ContentPanel({
 
       {c.kind === "group_message" && (
         <>
-          <p className="text-[12px] text-faint">
+          <p className="text-muted-foreground text-xs">
             {nameOf(c.author_id)} · {when} · in the group{" "}
             {c.group_name ?? "whose name could not be read"}
           </p>
@@ -451,7 +499,7 @@ function ContentPanel({
 
       {c.kind === "channel_message" && (
         <>
-          <p className="text-[12px] text-faint">
+          <p className="text-muted-foreground text-xs">
             {nameOf(c.author_id)} · {when} · in the company channel{" "}
             {c.channel_name ?? "whose name could not be read"}
           </p>
@@ -462,7 +510,7 @@ function ContentPanel({
 
       {c.kind === "message" && (
         <>
-          <p className="text-[12px] text-faint">
+          <p className="text-muted-foreground text-xs">
             Direct message from {nameOf(c.author_id)} · {when}
             {c.message_kind !== "text" && ` · sent as ${c.message_kind}`}
           </p>
@@ -473,10 +521,10 @@ function ContentPanel({
 
       {c.kind === "thread" && (
         <>
-          <p className="text-[12px] text-faint">
+          <p className="text-muted-foreground text-xs">
             A conversation{c.thread_kind ? ` (${c.thread_kind})` : ""} · opened {when}
           </p>
-          <p className="mt-1 text-[13px] font-medium text-ink">
+          <p className="mt-1 font-medium text-sm">
             {c.title ?? c.peak_name ?? "This conversation carries no title."}
           </p>
           <Conversation threadId={c.id} nameOf={nameOf} />
@@ -485,17 +533,19 @@ function ContentPanel({
 
       {c.kind === "profile" && (
         <>
-          <p className="flex items-center gap-2.5">
-            <Avatar name={c.display_name} size={32} />
+          <span className="flex items-center gap-2.5">
+            <Avatar>
+              <AvatarFallback>{initials(c.display_name)}</AvatarFallback>
+            </Avatar>
             <span>
-              <span className="block text-[13px] font-medium text-ink">{c.display_name}</span>
-              <span className="block text-[11.5px] text-faint">
+              <span className="block font-medium text-sm">{c.display_name}</span>
+              <span className="block text-muted-foreground text-xs">
                 {c.username ? `@${c.username} · ` : ""}
                 {c.role} · joined {formatMoment(c.created_at) ?? "on a date that will not read"}
               </span>
             </span>
-          </p>
-          <p className="mt-2 text-[12px] leading-relaxed text-muted">
+          </span>
+          <p className="mt-2 text-muted-foreground text-[13px] leading-relaxed">
             The report is about the person rather than one thing they wrote. Anything of theirs that was
             reported separately is its own case in this queue.
           </p>
@@ -544,38 +594,40 @@ function CaseCard({
     onAct(run, done);
   };
 
-  return (
-    <Card className="mb-3">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="flex flex-wrap items-center gap-2">
-            <span className="text-[13.5px] font-bold text-ink">
-              {kase.kind ? KIND_LABEL[kase.kind] : "A report naming nothing"}
-            </span>
-            {reasons.map((r) => (
-              <Pill key={r} tone={reasonTone(r)}>
-                {REASON_LABEL[r]}
-              </Pill>
-            ))}
-          </p>
-          <p className="mt-1 text-[12px] text-muted">
-            {kase.reports.length === 1
-              ? "1 report"
-              : `${kase.reports.length} reports, one decision`}{" "}
-            · {waitPhrase(kase.firstAt)}
-            {kase.subjectId && ` · about ${nameOf(kase.subjectId)}`}
-          </p>
-        </div>
-        <Pill tone={kase.status === "open" ? "amber" : kase.status === "reviewing" ? "accent" : "neutral"}>
-          {kase.status}
-        </Pill>
-      </div>
+  const tone = CASE_TONE[kase.status];
 
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex flex-wrap items-center gap-2">
+          {kase.kind ? KIND_LABEL[kase.kind] : "A report naming nothing"}
+          {reasons.map((r) => (
+            <Badge key={r} variant="outline" className={cn("border px-2 py-1 font-medium", reasonTone(r))}>
+              {REASON_LABEL[r]}
+            </Badge>
+          ))}
+        </CardTitle>
+        <CardDescription>
+          {kase.reports.length === 1
+            ? "1 report"
+            : `${kase.reports.length} reports, one decision`}{" "}
+          · {waitPhrase(kase.firstAt)}
+          {kase.subjectId && ` · about ${nameOf(kase.subjectId)}`}
+        </CardDescription>
+        <CardAction>
+          <Badge variant="outline" className={cn("gap-1.5 border px-2 py-1 font-medium", tone.badge)}>
+            <span className={cn("size-1.5 rounded-full", tone.dot)} />
+            {kase.status}
+          </Badge>
+        </CardAction>
+      </CardHeader>
+
+      <CardContent className="flex flex-col gap-3">
       <ContentPanel kase={kase} shown={shown} nameOf={nameOf} />
 
       {alsoNamed.length > 0 && (
-        <p className="mt-2.5 flex items-start gap-2 text-[12px] leading-relaxed text-warn">
-          <AlertTriangle size={13} strokeWidth={2} className="mt-0.5 shrink-0" />
+        <p className="flex items-start gap-2 text-[13px] leading-relaxed text-warn">
+          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
           The same person is named in {alsoNamed.length} other unresolved{" "}
           {alsoNamed.length === 1 ? "case" : "cases"} in this queue:{" "}
           {alsoNamed
@@ -586,23 +638,25 @@ function CaseCard({
       )}
 
       {/* The reports themselves — who said what, in their words. */}
-      <div className="mt-3">
-        <SectionLabel>What was said about it</SectionLabel>
+      <div>
+        <p className="font-medium text-muted-foreground text-xs">What was said about it</p>
         <div className="mt-1.5 space-y-1.5">
           {kase.reports.map((r) => (
-            <div key={r.id} className="rounded-tile bg-raised px-3 py-2">
-              <p className="flex flex-wrap items-center gap-2 text-[11.5px] text-faint">
-                <Avatar name={nameOf(r.reporter_id)} size={22} />
-                <span className="text-muted">{nameOf(r.reporter_id)}</span>
+            <div key={r.id} className="rounded-lg border bg-ui-muted/50 px-3 py-2">
+              <span className="flex flex-wrap items-center gap-2 text-muted-foreground text-xs">
+                <Avatar size="sm">
+                  <AvatarFallback>{initials(nameOf(r.reporter_id))}</AvatarFallback>
+                </Avatar>
+                <span>{nameOf(r.reporter_id)}</span>
                 <span>· {REASON_LABEL[r.reason]}</span>
                 <span>· {formatMoment(r.created_at) ?? "time not readable"}</span>
-                {r.status === "closed" && <Pill tone="neutral">closed</Pill>}
-              </p>
-              <p className="mt-1 whitespace-pre-wrap break-words text-[12.5px] leading-relaxed text-ink">
+                {r.status === "closed" && <Badge variant="outline">closed</Badge>}
+              </span>
+              <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed">
                 {r.detail ?? <span className="text-faint">They wrote nothing beyond the reason.</span>}
               </p>
               {r.status === "closed" && (
-                <p className="mt-1 text-[11.5px] leading-relaxed text-faint">
+                <p className="mt-1 text-xs leading-relaxed text-faint">
                   {r.resolution
                     ? `Closed: ${r.resolution}${r.handled_at ? ` — ${formatMoment(r.handled_at)}` : ""}`
                     : "Closed. The words behind the decision are in the audit log, not on this row."}
@@ -616,23 +670,23 @@ function CaseCard({
       {/* Acting. Confirmations are inline: nothing in ICEFALL opens over the
           thing a person is deciding about. */}
       {kase.openReports.length > 0 && mode === "idle" && (
-        <div className="mt-3.5 flex flex-wrap justify-end gap-1.5">
+        <div className="flex flex-wrap justify-end gap-1.5">
           {kase.status === "open" && (
             <Button
               size="sm"
-              variant="secondary"
+              variant="outline"
               disabled={busy}
               onClick={() => act(() => claimReportCase(caseRef(kase), schema), "Marked as being reviewed.")}
             >
               Start review
             </Button>
           )}
-          <Button size="sm" variant="secondary" disabled={busy} onClick={() => setMode("dismiss")}>
+          <Button size="sm" variant="outline" disabled={busy} onClick={() => setMode("dismiss")}>
             Dismiss…
           </Button>
           {removable && (
-            <Button size="sm" variant="danger" disabled={busy} onClick={() => setMode("remove")}>
-              <Trash2 size={13} strokeWidth={2} /> Remove this {noun}…
+            <Button size="sm" variant="destructive" disabled={busy} onClick={() => setMode("remove")}>
+              <Trash2 /> Remove this {noun}…
             </Button>
           )}
         </div>
@@ -641,7 +695,7 @@ function CaseCard({
       {/* Why the removal button is not there. An absent control with no
           explanation reads as a bug; this one is the database's answer. */}
       {kase.openReports.length > 0 && mode === "idle" && !removable && (
-        <p className="mt-2 text-right text-[11.5px] leading-relaxed text-faint">
+        <p className="text-right text-xs leading-relaxed text-faint">
           {shown.state !== "read"
             ? "Nothing can be removed from here until the thing itself can be read."
             : kase.kind === "message"
@@ -653,31 +707,30 @@ function CaseCard({
       )}
 
       {mode === "dismiss" && (
-        <div className="mt-3 rounded-tile bg-raised p-3.5">
-          <p className="text-[12.5px] font-semibold text-ink">
+        <div className="rounded-lg border bg-ui-muted/50 p-3.5">
+          <p className="font-medium text-sm">
             Close {kase.reports.length === 1 ? "this report" : `all ${kase.openReports.length} open reports here`}{" "}
             without removing anything
           </p>
-          <p className="mt-1 max-w-2xl text-[12.5px] leading-relaxed text-muted">
+          <p className="mt-1 max-w-2xl text-muted-foreground text-sm leading-relaxed">
             Write what you decided. It is recorded against your name in the audit log
             {schema === "content_aware" ? " and kept on the report itself" : ""}, and it is the only
             account of why this was let stand.
           </p>
-          <textarea
+          <Textarea
             rows={2}
             value={note}
             maxLength={1800}
             onChange={(e) => setNote(e.target.value)}
             placeholder="What you decided, and why — required"
-            className={FIELD}
+            className="mt-2 bg-card"
           />
           <div className="mt-2 flex justify-end gap-2">
-            <Button size="sm" variant="secondary" disabled={busy} onClick={reset}>
+            <Button size="sm" variant="ghost" disabled={busy} onClick={reset}>
               Cancel
             </Button>
             <Button
               size="sm"
-              variant="secondary"
               disabled={busy || note.trim().length < 4}
               onClick={() =>
                 act(() => dismissReportCase(caseRef(kase), note, schema), "Closed, with your reason recorded.")
@@ -690,11 +743,11 @@ function CaseCard({
       )}
 
       {mode === "remove" && shown.state === "read" && (
-        <div className="mt-3 rounded-tile bg-raised p-3.5">
-          <p className="flex items-center gap-2 text-[12.5px] font-semibold text-bad">
-            <AlertTriangle size={14} strokeWidth={2.2} /> This cannot be undone
+        <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-3.5">
+          <p className="flex items-center gap-2 font-medium text-destructive text-sm">
+            <AlertTriangle className="size-3.5" /> This cannot be undone
           </p>
-          <p className="mt-1 max-w-2xl text-[12.5px] leading-relaxed text-muted">
+          <p className="mt-1 max-w-2xl text-muted-foreground text-sm leading-relaxed">
             The {noun} disappears from ICEFALL for everyone, including whoever wrote it. There is no bin,
             no restore and no undo anywhere in this product. Its words are written into the audit log
             with your name and your reason — and if that record cannot be written, this screen tells you
@@ -702,21 +755,21 @@ function CaseCard({
             {kase.openReports.length > 1 &&
               ` All ${kase.openReports.length} open reports about it close together.`}
           </p>
-          <textarea
+          <Textarea
             rows={2}
             value={note}
             maxLength={1800}
             onChange={(e) => setNote(e.target.value)}
             placeholder="Why it is being removed — required, recorded, permanent"
-            className={FIELD}
+            className="mt-2 bg-card"
           />
           <div className="mt-2 flex justify-end gap-2">
-            <Button size="sm" variant="secondary" disabled={busy} onClick={reset}>
+            <Button size="sm" variant="ghost" disabled={busy} onClick={reset}>
               Cancel
             </Button>
             <Button
               size="sm"
-              variant="danger"
+              variant="destructive"
               disabled={busy || note.trim().length < 4}
               onClick={() =>
                 act(
@@ -731,17 +784,17 @@ function CaseCard({
                 )
               }
             >
-              <Trash2 size={13} strokeWidth={2} /> Remove permanently
+              <Trash2 /> Remove permanently
             </Button>
           </div>
         </div>
       )}
 
       {kase.openReports.length === 0 && (
-        <div className="mt-3.5 flex justify-end">
+        <div className="flex justify-end">
           <Button
             size="sm"
-            variant="secondary"
+            variant="outline"
             disabled={busy}
             onClick={() => onAct(() => reopenReportCase(caseRef(kase, true), schema), "Reopened for a second look.")}
           >
@@ -749,6 +802,7 @@ function CaseCard({
           </Button>
         </div>
       )}
+      </CardContent>
     </Card>
   );
 }
@@ -818,14 +872,18 @@ export default function Moderation() {
   };
 
   return (
-    <>
-      <PageHead
-        title="Moderation"
-        subtitle="Everything users have reported, grouped by the thing they reported so several complaints about one post are one decision. Each case shows what was actually said, and the desk can remove it or close it with a reason — both recorded in the audit log."
-      />
+    <div className="flex flex-col gap-4 md:gap-6">
+      <div className="space-y-1">
+        <h2 className="text-3xl tracking-tight">Moderation</h2>
+        <p className="max-w-3xl text-muted-foreground text-sm">
+          Everything users have reported, grouped by the thing they reported so several complaints about
+          one post are one decision. Each case shows what was actually said, and the desk can remove it
+          or close it with a reason — both recorded in the audit log.
+        </p>
+      </div>
 
-      {err && <p className="mb-3 text-[12.5px] leading-relaxed text-bad">{err}</p>}
-      {done && <p className="mb-3 text-[12.5px] text-muted">{done}</p>}
+      {err && <p className="text-destructive text-sm leading-relaxed">{err}</p>}
+      {done && <p className="text-muted-foreground text-sm">{done}</p>}
 
       {reports.state === "loading" ? (
         <Loading what="the moderation queue" />
@@ -846,7 +904,7 @@ export default function Moderation() {
           setShowClosed={setShowClosed}
         />
       )}
-    </>
+    </div>
   );
 }
 
@@ -884,40 +942,44 @@ function Queue({
   return (
     <>
       {read.schema === "legacy" && (
-        <Card className="mb-4">
-          <p className="flex items-center gap-2 text-[13.5px] font-bold text-ink">
-            <AlertTriangle size={15} strokeWidth={2.2} className="text-warn" />
-            This queue is reading the older reports table
-          </p>
-          <p className="mt-1.5 max-w-3xl text-[12.5px] leading-relaxed text-muted">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <AlertTriangle className="size-4 text-warn" />
+              This queue is reading the older reports table
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-1.5">
+          <p className="max-w-3xl text-muted-foreground text-sm leading-relaxed">
             Measured just now by asking the database for the columns, not assumed: a report here can name
             a person or a conversation and nothing else. There is no column for a post, a comment or a
             message, so{" "}
-            <span className="font-semibold text-ink">
+            <span className="font-medium text-foreground">
               no report about a post, a comment or a message can reach ICEFALL at all
             </span>{" "}
             — the phone app sends one, the database refuses it, and the person who reported it is told it
             stayed on their phone. An empty queue below is therefore not evidence that nothing has been
             reported.
           </p>
-          <p className="mt-1.5 max-w-3xl text-[12.5px] leading-relaxed text-muted">
-            Applying <span className="tnum text-ink">20260903010000_block_and_report.sql</span> changes
+          <p className="max-w-3xl text-muted-foreground text-sm leading-relaxed">
+            Applying <span className="text-foreground tabular-nums">20260903010000_block_and_report.sql</span> changes
             three things here: those reports start arriving, the desk gains a read on group messages and
             a delete on both message tables, and a closed report carries the sentence the moderator wrote.
             Until then that sentence is recorded in the audit log only.
           </p>
+          </CardContent>
         </Card>
       )}
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat
-          tone="butter"
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <Metric
+          icon={<Flag className="size-4" />}
           label="Cases waiting"
           value={String(waiting.length)}
           hint="One case is one thing reported, however many people reported it."
         />
-        <Stat
-          tone="sky"
+        <Metric
+          icon={<AlertTriangle className="size-4" />}
           label="Reports waiting"
           value={String(openReportCount)}
           hint={
@@ -926,32 +988,34 @@ function Queue({
               : `Across ${waiting.length} case${waiting.length === 1 ? "" : "s"}.`
           }
         />
-        <Stat
-          tone="lilac"
+        <Metric
+          icon={<Clock className="size-4" />}
           label="Longest wait"
           value={oldest === null ? null : oldest === 0 ? "Today" : `${oldest}d`}
           reason="Nothing is waiting, so there is no wait to measure."
           hint="Since the oldest unresolved report was filed."
         />
-        <Stat
-          tone="mint"
+        <Metric
+          icon={<ShieldOff className="size-4" />}
           label="Nothing to remove"
           value={String(unremovable)}
           hint="Cases about a person, a conversation, a direct message, or content this database will not let the desk delete. They can still be closed with a reason."
         />
       </div>
 
-      <div className="mt-6">
-        <SectionLabel>Waiting on a decision</SectionLabel>
-        <div className="mt-2">
+      <div className="space-y-3">
+        <h3 className="text-xl tracking-tight">Waiting on a decision</h3>
+        <div className="flex flex-col gap-4">
           {waiting.length === 0 ? (
             <Card>
-              <p className="flex items-start gap-2 text-[12.5px] leading-relaxed text-faint">
-                <Flag size={14} strokeWidth={2} className="mt-0.5 shrink-0" />
+              <CardContent>
+              <p className="flex items-start gap-2 text-[13px] leading-relaxed text-faint">
+                <Flag className="mt-0.5 size-3.5 shrink-0" />
                 {read.schema === "legacy"
                   ? "Nothing is waiting — but read the notice above before taking that as good news. On this database only a report about a person or a conversation can arrive at all."
                   : "Nothing is waiting. A case appears here the moment anyone reports anything, from any app."}
               </p>
+              </CardContent>
             </Card>
           ) : (
             waiting.map((c) => (
@@ -970,15 +1034,16 @@ function Queue({
         </div>
       </div>
 
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="sm"
+        className="w-fit"
         onClick={() => setShowClosed(!showClosed)}
-        className="mt-3 text-[12px] font-medium text-muted hover:text-ink"
       >
         {showClosed ? "Hide" : "Show"} decided cases ({closed.length})
-      </button>
+      </Button>
       {showClosed && closed.length > 0 && (
-        <div className="mt-2">
+        <div className="flex flex-col gap-4">
           {closed.map((c) => (
             <CaseCard
               key={c.key}
@@ -994,7 +1059,7 @@ function Queue({
         </div>
       )}
 
-      <p className="mt-5 max-w-3xl text-[12px] leading-relaxed text-faint">
+      <p className="max-w-3xl text-xs leading-relaxed text-faint">
         Removal is a real delete: ICEFALL has no soft delete, so a removed post is gone from the product
         and survives only as its words in the audit log. A direct message can never be removed here — the
         database gives nobody, staff included, that power, because both people in a conversation hold that

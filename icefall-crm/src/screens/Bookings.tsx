@@ -1,24 +1,40 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, Bell, Check, Compass, Download, Mountain as MountainIcon, Route, SlidersHorizontal, X } from "lucide-react";
-import { Button, Card, PageHead, Pill, SectionLabel } from "@/components/ui";
+import {
+  ArrowLeft,
+  Bell,
+  Check,
+  ChevronDown,
+  Compass,
+  Download,
+  Info,
+  Mountain as MountainIcon,
+  Route,
+  SlidersHorizontal,
+  X,
+} from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Separator } from "@/components/ui/separator";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Resolve } from "@/components/states";
 import { getBookingAgreement, listAuditEvents, listBookingsDetailed, type BookingDetailed } from "@/data/queries";
 import { loading, type Result } from "@/data/result";
 import type { AuditEvent, BookingAgreement } from "@/data/types";
 import { cn, formatDay, formatMoment } from "@/lib/utils";
 import { BOOKINGS_MOCKUP, type MockBookingRow } from "@/demo/mockupScreens";
-import { GOLD, GOLD_HOVER } from "@/components/drawn";
 
 /**
- * Bookings — ONE screen, the owner's drawn layout, two data sources (their 31
- * Aug ruling: the mockups ARE the production design). Master list of spaced
- * card rows on the left, the selected booking's detail on the right, exactly
- * as drawn. SHOW_DEMO_DATA fills the drawing's sample figures; flag off, every
- * number comes from a stored row and the honest states render inside the same
- * layout. The old parallel demo face was deleted with the fork (§6u).
+ * Bookings — ONE screen, two data sources (the owner's 31 Aug ruling). Master
+ * list on the left, the selected booking's detail on the right.
+ * SHOW_DEMO_DATA fills the sample figures; flag off, every number comes from a
+ * stored row and the honest states render inside the same layout. The old
+ * parallel demo face was deleted with the fork (§6u).
  *
- * THE RATE IS NEVER A CONSTANT in live mode. The mockup prints "(15%)" on
+ * THE RATE IS NEVER A CONSTANT in live mode. The sample set prints "(15%)" on
  * every line; the guide rate genuinely is 15% today — and it was 10% this
  * morning, which is exactly why live percentages come from the COMMISSION
  * ROW's `rate_bps`, copied at conversion and frozen. A booking with no
@@ -27,20 +43,34 @@ import { GOLD, GOLD_HOVER } from "@/components/drawn";
  * THE AGREEMENT TAB: a booking WITH a booking_agreements row shows exactly
  * what the customer saw (pinned text, immutable including to staff); one
  * WITHOUT shows the absence honestly — a fabricated agreement record is worse
- * than a missing one. The drawn checklist renders on sample figures only.
+ * than a missing one. The sample checklist renders on sample figures only.
  *
  * Other honest rows, live: customer payments are not recorded (no processor —
  * `value_status` is what is known about the value, never a payment claim);
  * party size is not in the schema ("—", not a number); ids are real and
  * shortened.
+ *
+ * ── THE RE-SKIN ───────────────────────────────────────────────────────────
+ * Laid out against the reference theme. Three things MOVED rather than went:
+ *   1. The three section counts were three big tiles that also acted as a
+ *      selector. They are now the theme's line tabs with the count in a badge
+ *      on each — same three sections, same three live figures, one control.
+ *   2. The master list was a column-label strip above spaced card rows. It is
+ *      now a table inside the panel, which is how the theme draws a list with
+ *      seven columns. Selection is the theme's `data-state="selected"` row.
+ *   3. The detail panel's four inner tabs were hand-drawn underlines; they are
+ *      the theme's line tabs now, with the same four panes behind them.
+ * Nothing was dropped: the fake "More actions" affordance and the notification
+ * bell are both still drawn, still inert, and both are flagged in the handover
+ * as controls that look live and are not.
  */
 
 type Tab = "guide" | "mountain" | "trek";
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
-  { id: "guide", label: "Guide Bookings", icon: <Compass size={16} strokeWidth={2} /> },
-  { id: "mountain", label: "Expedition Mountains", icon: <MountainIcon size={16} strokeWidth={2} /> },
-  { id: "trek", label: "Expedition Treks", icon: <Route size={16} strokeWidth={2} /> },
+  { id: "guide", label: "Guide Bookings", icon: <Compass className="size-4" /> },
+  { id: "mountain", label: "Expedition Mountains", icon: <MountainIcon className="size-4" /> },
+  { id: "trek", label: "Expedition Treks", icon: <Route className="size-4" /> },
 ];
 
 const inTab = (b: BookingDetailed, t: Tab) =>
@@ -49,8 +79,40 @@ const inTab = (b: BookingDetailed, t: Tab) =>
 const eur = (cents: number) => `€${(cents / 100).toLocaleString("en-GB")}`;
 const bps = (n: number) => `${(n / 100).toFixed(n % 100 === 0 ? 0 : 1)}%`;
 
-const statusTone = (s: string): "green" | "amber" | "red" | "neutral" =>
+type Tone = "green" | "amber" | "red" | "neutral";
+
+const statusTone = (s: string): Tone =>
   /cancel|refus|lost/.test(s) ? "red" : /complete|confirm|paid/.test(s) ? "green" : "amber";
+
+/**
+ * The reference theme's own badge treatments, one per tone. `outline` is what a
+ * badge looks like in a table; `solid` is what it looks like on a photograph,
+ * where an outline badge would disappear. Both class sets were taken off the
+ * theme's users table and profile header rather than invented.
+ */
+const OUTLINE_BADGE: Record<Tone, { badge: string; dot: string }> = {
+  green: { badge: "border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400", dot: "bg-emerald-500" },
+  amber: { badge: "border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-400", dot: "bg-amber-500" },
+  red: { badge: "border-destructive/20 bg-destructive/10 text-destructive", dot: "bg-destructive" },
+  neutral: { badge: "border-border bg-ui-muted/50 text-muted-foreground", dot: "bg-muted-foreground" },
+};
+
+const SOLID_BADGE: Record<Tone, string> = {
+  green: "bg-emerald-600 text-white",
+  amber: "bg-amber-500 text-amber-950",
+  red: "bg-destructive text-white",
+  neutral: "bg-background text-foreground",
+};
+
+function StatusBadge({ tone, label }: { tone: Tone; label: string }) {
+  const t = OUTLINE_BADGE[tone];
+  return (
+    <Badge variant="outline" className={cn("gap-1.5 border px-2 py-1 font-medium", t.badge)}>
+      <span className={cn("size-1.5 rounded-full", t.dot)} />
+      {label}
+    </Badge>
+  );
+}
 
 /** What is KNOWN about the money, never a payment claim. */
 function valueLabel(b: BookingDetailed): { main: string; sub: string } {
@@ -67,29 +129,72 @@ function commissionOf(b: BookingDetailed): { cents: number; rate: string | null 
 
 function Photo({ id, size }: { id: string | null; size: string }) {
   const [gone, setGone] = useState(false);
-  if (!id || gone) return <span className={cn(size, "shrink-0 rounded-[10px] bg-panel")} aria-hidden />;
+  if (!id || gone) return <span className={cn(size, "shrink-0 rounded-md bg-ui-muted")} aria-hidden />;
   return (
     <img
       src={`/img/destinations/${id}.jpg`}
       alt=""
-      className={cn(size, "shrink-0 rounded-[10px] object-cover")}
+      className={cn(size, "shrink-0 rounded-md object-cover")}
       onError={() => setGone(true)}
     />
   );
 }
 
+/**
+ * One money figure, or the reason there isn't one.
+ *
+ * A `null` value prints `sub` as the whole tile — never a dash, never a zero.
+ * "No value has been reported" and "€0" are opposite facts about a booking and
+ * they must not share a rendering.
+ */
 function MoneyTile({ label, value, sub }: { label: string; value: string | null; sub?: string }) {
   return (
     <div className="min-w-0">
-      <p className="text-[11.5px] font-medium text-muted">{label}</p>
+      <p className="text-xs text-muted-foreground">{label}</p>
       {value === null ? (
-        <p className="mt-0.5 text-[12px] leading-snug text-faint">{sub}</p>
+        <p className="mt-1 text-sm leading-snug text-muted-foreground">{sub}</p>
       ) : (
         <>
-          <p className="tnum truncate text-[17px] font-extrabold text-ink">{value}</p>
-          {sub && <p className="text-[10.5px] text-faint">{sub}</p>}
+          <p className="mt-1 truncate font-medium text-lg leading-tight tracking-tight tabular-nums">{value}</p>
+          {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
         </>
       )}
+    </div>
+  );
+}
+
+/**
+ * THE LINE TAB, MADE TO WORK IN THIS BUILD — read this before "simplifying" it.
+ *
+ * `components/ui/tabs.tsx` is a verbatim port of the reference theme's Tabs, and
+ * the theme expresses EVERY tab state through custom Tailwind variants that ship
+ * in `shadcn/tailwind.css`: `data-active`, `data-horizontal`, `data-vertical`.
+ * This app never imports that stylesheet — `shadcn` is not even a dependency —
+ * so in the compiled CSS `data-horizontal` degrades to the literal attribute
+ * `[data-horizontal]`, which nothing sets, and `data-active` is dropped
+ * entirely. Two consequences, both verified on screen:
+ *   · the Tabs root keeps `flex-direction: row`, so the list and the pane sit
+ *     SIDE BY SIDE and the pane is squeezed to its minimum width;
+ *   · an ACTIVE tab renders identically to an inactive one — no underline, no
+ *     ink — because the whole active treatment hangs off `data-active`.
+ * `flex-col` on the root and the classes below restate exactly what the theme's
+ * variants would, against the `data-state` attribute Radix actually sets. They
+ * are harmless once the import lands: same selectors, same values.
+ */
+const LINE_TAB =
+  "after:inset-x-0 after:-bottom-[5px] after:h-0.5 data-[state=active]:text-foreground data-[state=active]:after:opacity-100";
+
+/** A section heading inside a card, in the theme's own weight and size. */
+function Head({ children }: { children: React.ReactNode }) {
+  return <h2 className="font-heading font-medium text-base">{children}</h2>;
+}
+
+/** One key/value line in a detail card. */
+function Row({ k, v }: { k: React.ReactNode; v: React.ReactNode }) {
+  return (
+    <div className="flex justify-between gap-3 text-sm">
+      <dt className="text-muted-foreground">{k}</dt>
+      <dd className="text-right">{v}</dd>
     </div>
   );
 }
@@ -110,14 +215,14 @@ interface ListRow {
   commMain: string;
   commSub: string;
   status: string;
-  tone: "green" | "amber" | "red" | "neutral";
+  tone: Tone;
 }
 
 /**
  * THE detail panel — one component, two data sources. `sample` carries the
- * drawing's fixture; with it set, no reads fire and the drawn checklist pane
- * renders. Without it, everything derives from the stored row, agreement
- * record included.
+ * fixture; with it set, no reads fire and the sample checklist pane renders.
+ * Without it, everything derives from the stored row, agreement record
+ * included.
  */
 function DetailPanel({ b, sample, onClose }: {
   b: BookingDetailed | null;
@@ -138,7 +243,7 @@ function DetailPanel({ b, sample, onClose }: {
   const title = sample ? sample.row.trip : (b!.product_name ?? b!.destination_name ?? "Booking");
   const photoId = sample ? sample.row.destination_id : b!.destination_id;
   const statusText = sample ? sample.row.status : b!.status;
-  const tone = sample
+  const tone: Tone = sample
     ? sample.row.status === "CONFIRMED" ? "green" : sample.row.status === "PENDING" ? "amber" : "red"
     : statusTone(b!.status);
   // Company earnings are DERIVED and say so: value minus ICEFALL's stored
@@ -150,29 +255,38 @@ function DetailPanel({ b, sample, onClose }: {
   const sd = sample?.d ?? null;
 
   return (
-    <Card pad={false} className="overflow-hidden">
+    <Card className="@container/detail w-0 min-w-full gap-0 py-0">
       <div className="relative">
         <Photo id={photoId} size="h-44 w-full !rounded-none" />
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-black/30" aria-hidden />
         <button
           type="button"
           onClick={onClose}
-          className="absolute left-4 top-3 flex items-center gap-1.5 text-[12.5px] font-medium text-white/90 hover:text-white"
+          className="absolute top-3 left-4 flex items-center gap-1.5 text-sm font-medium text-white/90 hover:text-white"
         >
-          <ArrowLeft size={14} strokeWidth={2.25} /> Back to bookings
+          <ArrowLeft className="size-3.5" /> Back to bookings
         </button>
-        <div className="absolute right-3 top-3 flex items-center gap-2">
-          <span className="rounded-[9px] bg-black/45 px-3 py-1.5 text-[12px] font-medium text-white">More actions ▾</span>
-          <button type="button" onClick={onClose} aria-label="Close" className="grid h-8 w-8 place-items-center rounded-full bg-black/35 text-white hover:bg-black/50">
-            <X size={14} strokeWidth={2.25} />
+        <div className="absolute top-3 right-3 flex items-center gap-2">
+          {/* Drawn, and inert — nothing behind it yet. Kept rather than deleted
+              so the missing menu stays visible as missing. */}
+          <span className="inline-flex h-7 items-center gap-1 rounded-[min(var(--radius-md),12px)] bg-black/45 px-2.5 text-[0.8rem] font-medium text-white">
+            More actions <ChevronDown className="size-3.5" aria-hidden />
+          </span>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="grid size-7 place-items-center rounded-full bg-black/35 text-white hover:bg-black/50"
+          >
+            <X className="size-3.5" />
           </button>
         </div>
-        <div className="absolute bottom-3 left-4 right-4">
-          <p className="flex items-center gap-2 text-[20px] font-extrabold text-white">
+        <div className="absolute right-4 bottom-3 left-4">
+          <p className="flex flex-wrap items-center gap-2 font-heading font-semibold text-xl tracking-tight text-white">
             {title}
-            <Pill tone={tone}>{statusText}</Pill>
+            <Badge className={cn("rounded-sm", SOLID_BADGE[tone])}>{statusText}</Badge>
           </p>
-          <p className="text-[12px] font-medium text-white/85">
+          <p className="text-sm text-white/85">
             {sample
               ? "Guide Booking"
               : `${b!.kind === "guide" ? "Guide booking" : "Expedition booking"}${b!.company_name ? ` · ${b!.company_name}` : ""}`}
@@ -180,12 +294,12 @@ function DetailPanel({ b, sample, onClose }: {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 border-b border-line-soft px-5 py-4 sm:grid-cols-5">
+      <div className="grid grid-cols-2 gap-4 border-b px-4 py-4 @xl/detail:grid-cols-3 @3xl/detail:grid-cols-5">
         {sd ? (
           sd.tiles.map(([label, v]) => (
             <div key={label} className="min-w-0">
-              <p className="text-[11.5px] font-medium text-muted">{label}</p>
-              <p className="tnum truncate text-[17px] font-extrabold text-ink">{v}</p>
+              <p className="text-xs text-muted-foreground">{label}</p>
+              <p className="mt-1 truncate font-medium text-lg leading-tight tracking-tight tabular-nums">{v}</p>
             </div>
           ))
         ) : b ? (
@@ -215,237 +329,248 @@ function DetailPanel({ b, sample, onClose }: {
             <MoneyTile label="Total recorded" value={value!.main === "no value yet" ? null : value!.main} sub="the booking's stored value" />
           </>
         ) : (
-          <p className="col-span-full text-[12px] text-faint">Sample booking — money tiles fill from the drawn primary booking only.</p>
+          <p className="col-span-full text-sm text-muted-foreground">
+            Sample booking — money tiles fill from the drawn primary booking only.
+          </p>
         )}
       </div>
 
-      <div className="grid gap-4 px-5 py-4 lg:grid-cols-3">
-        <div>
-          <SectionLabel>Customer</SectionLabel>
+      <div className="grid gap-6 px-4 py-4 @xl/detail:grid-cols-2 @3xl/detail:grid-cols-3">
+        <div className="flex flex-col gap-2">
+          <Head>Customer</Head>
           {sd ? (
             <>
-              <p className="mt-2 text-[13.5px] font-semibold text-ink">{sd.customer.name}</p>
-              <p className="text-[12px] text-muted">{sd.customer.email}</p>
-              <p className="text-[12px] text-muted">{sd.customer.phone}</p>
-              <span className="mt-2 inline-block rounded-pill border border-line px-3.5 py-1.5 text-[12px] font-medium text-ink">View customer</span>
+              <p className="font-medium text-sm">{sd.customer.name}</p>
+              <p className="text-sm text-muted-foreground">{sd.customer.email}</p>
+              <p className="text-sm text-muted-foreground">{sd.customer.phone}</p>
+              <Button variant="outline" size="sm" className="mt-1 self-start">View customer</Button>
             </>
           ) : sample ? (
             <>
-              <p className="mt-2 text-[13.5px] font-semibold text-ink">{sample.row.customer}</p>
-              <p className="text-[12px] text-muted">{sample.row.email}</p>
-              <span className="mt-2 inline-block rounded-pill border border-line px-3.5 py-1.5 text-[12px] font-medium text-ink">View customer</span>
+              <p className="font-medium text-sm">{sample.row.customer}</p>
+              <p className="text-sm text-muted-foreground">{sample.row.email}</p>
+              <Button variant="outline" size="sm" className="mt-1 self-start">View customer</Button>
             </>
           ) : (
             <>
-              <p className="mt-2 text-[13.5px] font-semibold text-ink">{b!.customer_name ?? "No account linked"}</p>
-              <p className="text-[11.5px] text-faint">email lives in the auth system, not on this record</p>
+              <p className="font-medium text-sm">{b!.customer_name ?? "No account linked"}</p>
+              <p className="text-sm text-muted-foreground">
+                email lives in the auth system, not on this record
+              </p>
               {b!.customer_id && (
-                <Link to="/admin/users" className="mt-2 inline-block text-[12px] font-medium text-accent-ink hover:underline">
-                  View customer
-                </Link>
+                <Button variant="outline" size="sm" className="mt-1 self-start" asChild>
+                  <Link to="/admin/users">View customer</Link>
+                </Button>
               )}
             </>
           )}
         </div>
-        <div>
-          <SectionLabel>Booking details</SectionLabel>
-          <dl className="mt-2 space-y-1.5 text-[12.5px]">
+        <div className="flex flex-col gap-2">
+          <Head>Booking details</Head>
+          <dl className="flex flex-col gap-1.5">
             {sd ? (
-              sd.details.map(([k, v]) => (
-                <div key={k} className="flex justify-between gap-3"><dt className="text-muted">{k}</dt><dd className="tnum text-right font-medium text-ink">{v}</dd></div>
-              ))
+              sd.details.map(([k, v]) => <Row key={k} k={k} v={<span className="font-medium tabular-nums">{v}</span>} />)
             ) : sample ? (
               <>
-                <div className="flex justify-between gap-3"><dt className="text-muted">Trip</dt><dd className="text-right font-medium text-ink">{sample.row.trip}</dd></div>
-                <div className="flex justify-between gap-3"><dt className="text-muted">Guide</dt><dd className="text-ink">{sample.row.guide}</dd></div>
-                <div className="flex justify-between gap-3"><dt className="text-muted">Where</dt><dd className="text-ink">{sample.row.place}</dd></div>
-                <div className="flex justify-between gap-3"><dt className="text-muted">Party size</dt><dd className="tnum text-ink">{sample.row.party} climbers</dd></div>
+                <Row k="Trip" v={<span className="font-medium">{sample.row.trip}</span>} />
+                <Row k="Guide" v={sample.row.guide} />
+                <Row k="Where" v={sample.row.place} />
+                <Row k="Party size" v={<span className="tabular-nums">{sample.row.party} climbers</span>} />
               </>
             ) : (
               <>
-                <div className="flex justify-between gap-3"><dt className="text-muted">Booking ID</dt><dd className="tnum font-medium text-ink">{b!.id.slice(0, 8)}</dd></div>
-                <div className="flex justify-between gap-3"><dt className="text-muted">Booked on</dt><dd className="tnum text-ink">{formatDay(b!.booked_at)}</dd></div>
-                <div className="flex justify-between gap-3"><dt className="text-muted">Trip</dt><dd className="text-right text-ink">{b!.product_name ?? "not linked"}</dd></div>
-                <div className="flex justify-between gap-3"><dt className="text-muted">{b!.destination_kind === "trek" ? "Trek" : "Mountain"}</dt><dd className="text-ink">{b!.destination_name ?? "not linked"}</dd></div>
-                <div className="flex justify-between gap-3"><dt className="text-muted">{b!.kind === "guide" ? "Guide" : "Company"}</dt><dd className="text-ink">{b!.kind === "guide" ? (b!.guide_name ?? "not linked") : (b!.company_name ?? "not linked")}</dd></div>
-                <div className="flex justify-between gap-3"><dt className="text-muted">Party size</dt><dd className="text-faint">not recorded — the schema has no such field yet</dd></div>
+                <Row k="Booking ID" v={<span className="font-medium tabular-nums">{b!.id.slice(0, 8)}</span>} />
+                <Row k="Booked on" v={<span className="tabular-nums">{formatDay(b!.booked_at)}</span>} />
+                <Row k="Trip" v={b!.product_name ?? "not linked"} />
+                <Row k={b!.destination_kind === "trek" ? "Trek" : "Mountain"} v={b!.destination_name ?? "not linked"} />
+                <Row
+                  k={b!.kind === "guide" ? "Guide" : "Company"}
+                  v={b!.kind === "guide" ? (b!.guide_name ?? "not linked") : (b!.company_name ?? "not linked")}
+                />
+                {/* Not "0" and not a dash: the schema has no such column. */}
+                <Row k="Party size" v={<span className="text-muted-foreground">not recorded — the schema has no such field yet</span>} />
               </>
             )}
           </dl>
         </div>
-        <div>
-          <SectionLabel>Dates</SectionLabel>
-          <dl className="mt-2 space-y-1.5 text-[12.5px]">
+        <div className="flex flex-col gap-2">
+          <Head>Dates</Head>
+          <dl className="flex flex-col gap-1.5">
             {sd ? (
-              sd.dates.map(([k, v]) => (
-                <div key={k} className="flex justify-between gap-3"><dt className="text-muted">{k}</dt><dd className="tnum text-right font-medium text-ink">{v}</dd></div>
-              ))
+              sd.dates.map(([k, v]) => <Row key={k} k={k} v={<span className="font-medium tabular-nums">{v}</span>} />)
             ) : sample ? (
-              <div className="flex justify-between gap-3"><dt className="text-muted">Dates</dt><dd className="tnum text-ink">{sample.row.dates}</dd></div>
+              <Row k="Dates" v={<span className="tabular-nums">{sample.row.dates}</span>} />
             ) : (
               <>
-                <div className="flex justify-between gap-3"><dt className="text-muted">Start date</dt><dd className="tnum text-ink">{formatDay(b!.starts_on) ?? "not set"}</dd></div>
-                <div className="flex justify-between gap-3"><dt className="text-muted">Completed</dt><dd className="tnum text-ink">{formatDay(b!.completed_at) ?? "not yet"}</dd></div>
-                <div className="flex justify-between gap-3"><dt className="text-muted">End date</dt><dd className="text-faint">not recorded</dd></div>
+                <Row k="Start date" v={<span className="tabular-nums">{formatDay(b!.starts_on) ?? "not set"}</span>} />
+                <Row k="Completed" v={<span className="tabular-nums">{formatDay(b!.completed_at) ?? "not yet"}</span>} />
+                <Row k="End date" v={<span className="text-muted-foreground">not recorded</span>} />
               </>
             )}
-            <div className="flex justify-between gap-3"><dt className="text-muted">Status</dt><dd><Pill tone={tone}>{statusText}</Pill></dd></div>
+            <Row k="Status" v={<StatusBadge tone={tone} label={statusText} />} />
           </dl>
         </div>
       </div>
 
-      <div className="border-t border-line-soft px-5 pt-2">
-        <div className="flex gap-1">
-          {(["agreement", "payments", "messages", "activity"] as const).map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setTab(t)}
-              className={cn(
-                "border-b-2 px-3 py-2 text-[12.5px] font-semibold capitalize",
-                tab === t ? "" : "border-transparent text-muted hover:text-ink",
-              )}
-              style={tab === t ? { color: GOLD_HOVER, borderColor: GOLD } : undefined}
-            >
-              {t === "activity" ? "Activity log" : t}
-            </button>
-          ))}
-        </div>
-      </div>
+      <Separator />
 
-      <div className="px-5 py-4">
-        {tab === "agreement" && (
-          sd ? (
+      <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)} className="flex-col gap-0">
+        <div className="no-scrollbar touch-pan-x overflow-x-auto overscroll-x-contain border-b px-4">
+          <TabsList variant="line" className="h-8 w-max min-w-full justify-start gap-4 *:data-[slot=tabs-trigger]:flex-none">
+            <TabsTrigger value="agreement" className={LINE_TAB}>Agreement</TabsTrigger>
+            <TabsTrigger value="payments" className={LINE_TAB}>Payments</TabsTrigger>
+            <TabsTrigger value="messages" className={LINE_TAB}>Messages</TabsTrigger>
+            <TabsTrigger value="activity" className={LINE_TAB}>Activity log</TabsTrigger>
+          </TabsList>
+        </div>
+
+        <TabsContent value="agreement" className="px-4 py-4">
+          {sd ? (
             /* The drawn pane, on sample figures: checklist + policy + disclosures. */
-            <div className="grid gap-5 lg:grid-cols-3">
-              <div>
-                <p className="text-[13px] font-semibold text-ink">Terms Accepted</p>
-                <div className="mt-2 space-y-2">
+            <div className="grid gap-6 @xl/detail:grid-cols-2 @3xl/detail:grid-cols-3">
+              <div className="flex flex-col gap-2">
+                <Head>Terms Accepted</Head>
+                <div className="flex flex-col gap-2">
                   {sd.agreement.accepted.map((a) => (
-                    <div key={a.label} className="flex items-start gap-2 text-[12.5px]">
-                      <Check size={14} strokeWidth={2.5} className="mt-0.5 shrink-0 text-ok" aria-hidden />
-                      <span><span className="font-medium text-ink">{a.label}</span><span className="block text-[11px] text-faint">{a.on}</span></span>
+                    <div key={a.label} className="flex items-start gap-2 text-sm">
+                      <Check className="mt-0.5 size-3.5 shrink-0 text-emerald-600" aria-hidden />
+                      <span>
+                        <span className="font-medium">{a.label}</span>
+                        <span className="block text-xs text-muted-foreground">{a.on}</span>
+                      </span>
                     </div>
                   ))}
                 </div>
-                <span className="mt-3 inline-block rounded-pill border border-line px-3.5 py-1.5 text-[12px] font-medium text-ink">Download all documents</span>
+                <Button variant="outline" size="sm" className="mt-1 self-start">Download all documents</Button>
               </div>
-              <div>
-                <p className="text-[13px] font-semibold text-ink">Cancellation Policy <span className="font-normal text-muted">(Agreed at time of booking)</span></p>
-                <ul className="mt-2 space-y-1.5 text-[12.5px] leading-relaxed text-ink">
-                  {sd.agreement.policy.map((li) => <li key={li} className="flex gap-2"><span className="text-faint">·</span>{li}</li>)}
+              <div className="flex flex-col gap-2">
+                <Head>
+                  Cancellation Policy <span className="font-normal text-muted-foreground">(Agreed at time of booking)</span>
+                </Head>
+                <ul className="flex flex-col gap-1.5 text-sm leading-relaxed">
+                  {sd.agreement.policy.map((li) => (
+                    <li key={li} className="flex gap-2"><span className="text-muted-foreground">·</span>{li}</li>
+                  ))}
                 </ul>
               </div>
-              <div>
-                <p className="text-[13px] font-semibold text-ink">What Was Disclosed</p>
-                <ul className="mt-2 space-y-1.5 text-[12.5px] leading-relaxed text-ink">
-                  {sd.agreement.disclosures.map((li) => <li key={li} className="flex gap-2"><span className="text-faint">·</span>{li}</li>)}
+              <div className="flex flex-col gap-2">
+                <Head>What Was Disclosed</Head>
+                <ul className="flex flex-col gap-1.5 text-sm leading-relaxed">
+                  {sd.agreement.disclosures.map((li) => (
+                    <li key={li} className="flex gap-2"><span className="text-muted-foreground">·</span>{li}</li>
+                  ))}
                 </ul>
               </div>
             </div>
           ) : sample ? (
-            <p className="text-[12.5px] text-faint">Sample booking — the drawn agreement fills on the primary sample only.</p>
+            <p className="text-sm text-muted-foreground">
+              Sample booking — the drawn agreement fills on the primary sample only.
+            </p>
           ) : agreement.state === "loading" ? (
-            <p className="text-[12.5px] text-faint">Reading the agreement record…</p>
+            <p className="text-sm text-muted-foreground">Reading the agreement record…</p>
           ) : agreement.state === "ok" && agreement.value !== null ? (
-            <div className="grid max-w-4xl gap-5 lg:grid-cols-3">
-              <div>
-                <p className="text-[13px] font-semibold text-ink">Terms accepted</p>
-                <p className="mt-1.5 text-[12.5px] leading-relaxed text-muted">
-                  Version <span className="tnum font-medium text-ink">{agreement.value.terms_version}</span>,
+            <div className="grid max-w-4xl gap-6 @xl/detail:grid-cols-2 @3xl/detail:grid-cols-3">
+              <div className="flex flex-col gap-2">
+                <Head>Terms accepted</Head>
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  Version <span className="font-medium text-foreground tabular-nums">{agreement.value.terms_version}</span>,
                   accepted {formatMoment(agreement.value.accepted_at)} via {agreement.value.origin_app.replaceAll("_", " ")}.
                 </p>
-                <p className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap rounded-tile bg-panel p-3 text-[12px] leading-relaxed text-ink">
+                <p className="max-h-40 overflow-y-auto rounded-lg border bg-ui-muted/50 p-3 text-sm leading-relaxed whitespace-pre-wrap">
                   {agreement.value.terms_text}
                 </p>
               </div>
-              <div>
+              <div className="flex flex-col gap-2">
                 {/* The owner's own heading, verbatim — rate preservation. */}
-                <p className="text-[13px] font-semibold text-ink">
-                  Cancellation policy <span className="font-normal text-muted">(Agreed at time of booking)</span>
-                </p>
-                <p className="mt-1.5 whitespace-pre-wrap text-[12.5px] leading-relaxed text-ink">
-                  {agreement.value.cancellation_policy}
-                </p>
+                <Head>
+                  Cancellation policy <span className="font-normal text-muted-foreground">(Agreed at time of booking)</span>
+                </Head>
+                <p className="text-sm leading-relaxed whitespace-pre-wrap">{agreement.value.cancellation_policy}</p>
               </div>
-              <div>
-                <p className="text-[13px] font-semibold text-ink">What was disclosed</p>
+              <div className="flex flex-col gap-2">
+                <Head>What was disclosed</Head>
                 {agreement.value.disclosures.length === 0 ? (
-                  <p className="mt-1.5 text-[12.5px] text-faint">No disclosures were shown.</p>
+                  <p className="text-sm text-muted-foreground">No disclosures were shown.</p>
                 ) : (
-                  <ul className="mt-1.5 space-y-1 text-[12.5px] leading-relaxed text-ink">
+                  <ul className="flex flex-col gap-1 text-sm leading-relaxed">
                     {agreement.value.disclosures.map((d, i) => (
-                      <li key={i} className="flex gap-2"><span className="text-faint">·</span>{d}</li>
+                      <li key={i} className="flex gap-2"><span className="text-muted-foreground">·</span>{d}</li>
                     ))}
                   </ul>
                 )}
               </div>
             </div>
           ) : (
-            <div className="max-w-2xl">
-              <p className="text-[13px] font-semibold text-ink">Not recorded</p>
-              <p className="mt-1.5 text-[12.5px] leading-relaxed text-muted">
+            <div className="flex max-w-2xl flex-col gap-1.5">
+              <Head>Not recorded</Head>
+              <p className="text-sm leading-relaxed text-muted-foreground">
                 No acceptance record exists for this booking — it was made before acceptance
                 capture existed{agreement.state !== "ok" ? ", or the record could not be read" : ""}.
                 Nothing here assumes today's terms applied: a fabricated agreement record is worse
                 than a missing one.
               </p>
             </div>
-          )
-        )}
-        {tab === "payments" && (
-          sample ? (
-            <p className="text-[12.5px] text-faint">Sample booking — this pane fills from the live record.</p>
+          )}
+        </TabsContent>
+
+        <TabsContent value="payments" className="px-4 py-4">
+          {sample ? (
+            <p className="text-sm text-muted-foreground">Sample booking — this pane fills from the live record.</p>
           ) : (
-            <p className="max-w-2xl text-[12.5px] leading-relaxed text-muted">
+            <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
               Customer payments are not recorded — ICEFALL has no payment processor, and the payments
               ledger holds company invoice money only. What is known about this booking's value is on
               the tiles above, stated as "{b!.value_status}", never as a payment claim.
             </p>
-          )
-        )}
-        {tab === "messages" && (
-          sample ? (
-            <p className="text-[12.5px] text-faint">Sample booking — this pane fills from the live record.</p>
+          )}
+        </TabsContent>
+
+        <TabsContent value="messages" className="px-4 py-4">
+          {sample ? (
+            <p className="text-sm text-muted-foreground">Sample booking — this pane fills from the live record.</p>
           ) : b!.thread_id ? (
-            <p className="text-[12.5px] text-muted">
+            <p className="text-sm text-muted-foreground">
               This booking is linked to a conversation thread. Thread reading arrives with the
-              messaging surface; the link is real: <span className="tnum">{b!.thread_id.slice(0, 8)}</span>.
+              messaging surface; the link is real: <span className="tabular-nums">{b!.thread_id.slice(0, 8)}</span>.
             </p>
           ) : (
-            <p className="text-[12.5px] text-muted">No conversation thread is linked to this booking.</p>
-          )
-        )}
-        {tab === "activity" && (
-          sample ? (
-            <p className="text-[12.5px] text-faint">Sample booking — this pane fills from the live record.</p>
+            <p className="text-sm text-muted-foreground">No conversation thread is linked to this booking.</p>
+          )}
+        </TabsContent>
+
+        <TabsContent value="activity" className="px-4 py-4">
+          {sample ? (
+            <p className="text-sm text-muted-foreground">Sample booking — this pane fills from the live record.</p>
           ) : events === null ? (
-            <p className="text-[12.5px] text-faint">Reading the audit log…</p>
+            <p className="text-sm text-muted-foreground">Reading the audit log…</p>
           ) : events.length === 0 ? (
-            <p className="text-[12.5px] text-muted">
+            <p className="text-sm text-muted-foreground">
               No audit events name this booking. The log records placement moves, approvals and
               commission decisions; routine reads leave no trace.
             </p>
           ) : (
-            <div className="space-y-2">
+            <div className="flex flex-col gap-2">
               {events.map((e) => (
-                <p key={e.id} className="text-[12.5px] text-ink">
+                <p key={e.id} className="text-sm">
                   <span className="font-medium">{e.action}</span>
-                  <span className="text-faint"> · {formatMoment(e.created_at)}</span>
+                  <span className="text-muted-foreground"> · {formatMoment(e.created_at)}</span>
                 </p>
               ))}
             </div>
-          )
-        )}
-      </div>
+          )}
+        </TabsContent>
+      </Tabs>
 
       {/* The owner's own words, verbatim — drawn by them on two mockups running. */}
-      <div className="mx-5 mb-5 rounded-tile bg-accent-soft/60 px-4 py-3">
-        <p className="text-[12px] font-semibold text-accent-ink">About views</p>
-        <p className="mt-0.5 text-[12px] leading-relaxed text-accent-ink/80">
-          We do not currently track views, impressions or click-through data. This metric is not
-          available.
-        </p>
+      <div className="mx-4 mb-4 flex items-start gap-3 rounded-lg border bg-ui-muted/50 p-4">
+        <Info className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+        <div>
+          <p className="font-medium text-sm">About views</p>
+          <p className="mt-0.5 text-sm leading-relaxed text-muted-foreground">
+            We do not currently track views, impressions or click-through data. This metric is not
+            available.
+          </p>
+        </div>
       </div>
     </Card>
   );
@@ -491,7 +616,7 @@ export default function Bookings() {
       );
   }, [rows, tab, query, M]);
 
-  /** Both sources shaped into the drawn row. */
+  /** Both sources shaped into the same row. */
   const listRows: ListRow[] = useMemo(() => {
     if (M)
       return M.rows.map((r) => ({
@@ -522,134 +647,178 @@ export default function Bookings() {
   const selSample = M ? (M.rows.find((r) => r.id === selected) ?? null) : null;
   const detailOpen = Boolean(selLive || selSample);
 
-  const list = (
-    <div className={cn(detailOpen && "hidden xl:block")}>
-      <div className="mb-4 grid grid-cols-3 gap-2.5">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setTab(t.id)}
-            className={cn(
-              "flex items-center gap-2.5 rounded-card border px-4 py-3 text-left",
-              tab === t.id ? "border-[oklch(0.72_0.13_60)] bg-butter/40" : "border-line bg-surface hover:bg-raised",
-            )}
-          >
-            <span className={cn("shrink-0", tab === t.id ? "text-[oklch(0.55_0.12_60)]" : "text-faint")}>{t.icon}</span>
-            <span className="min-w-0">
-              <span className="block truncate text-[12px] font-medium text-muted">{t.label}</span>
-              <span className="tnum block text-[16px] font-extrabold text-ink">{counts ? counts[t.id] : "…"}</span>
-            </span>
-          </button>
-        ))}
-      </div>
+  /* The list's table and its footer. Column labels are the table's own head
+     now; the live commission column carries no typed rate, the stored one
+     renders per row. */
+  const listTable = (
+    <>
+      <Table className="**:data-[slot=table-cell]:px-4 **:data-[slot=table-head]:px-4">
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead className="h-11 font-medium text-muted-foreground">Booking</TableHead>
+            <TableHead className="h-11 font-medium text-muted-foreground">Customer</TableHead>
+            <TableHead className="h-11 font-medium text-muted-foreground">Dates</TableHead>
+            <TableHead className="h-11 font-medium text-muted-foreground">Party</TableHead>
+            <TableHead className="h-11 text-right font-medium text-muted-foreground">Amount Paid</TableHead>
+            <TableHead className="h-11 text-right font-medium text-muted-foreground">Commission</TableHead>
+            <TableHead className="h-11 text-right font-medium text-muted-foreground">Status</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {listRows.map((r) => (
+            <TableRow
+              key={r.id}
+              onClick={() => setSelected(r.id)}
+              data-state={selected === r.id ? "selected" : undefined}
+              className="cursor-pointer border-border/60 hover:bg-ui-muted/40"
+            >
+              <TableCell className="py-3">
+                <span className="flex min-w-0 items-center gap-3">
+                  <Photo id={r.photo} size="h-10 w-12" />
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium text-sm">{r.trip}</span>
+                    <span className="block truncate text-xs text-muted-foreground">{r.line2}</span>
+                    <span className="block truncate text-xs text-muted-foreground">{r.line3}</span>
+                  </span>
+                </span>
+              </TableCell>
+              <TableCell className="py-3">
+                <span className="block truncate text-sm">{r.customer}</span>
+                <span className="block truncate text-xs text-muted-foreground">{r.customerSub}</span>
+              </TableCell>
+              <TableCell className="py-3 text-sm leading-snug whitespace-pre-line text-muted-foreground tabular-nums">
+                {r.dates.replace(" – ", " –\n")}
+              </TableCell>
+              <TableCell className="py-3 text-sm tabular-nums">{r.party}</TableCell>
+              <TableCell className="py-3 text-right">
+                <span className="block font-medium text-sm tabular-nums">{r.amountMain}</span>
+                <span className="block text-xs text-muted-foreground">{r.amountSub}</span>
+              </TableCell>
+              <TableCell className="py-3 text-right">
+                <span className="block font-medium text-sm tabular-nums">{r.commMain}</span>
+                <span className="block text-xs text-muted-foreground">{r.commSub}</span>
+              </TableCell>
+              <TableCell className="py-3 text-right">
+                <span className="inline-flex justify-end"><StatusBadge tone={r.tone} label={r.status} /></span>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
 
-      <div className="mb-3 flex items-center gap-2">
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder={`Search ${TABS.find((t) => t.id === tab)!.label.toLowerCase()}…`}
-          className="h-10 min-w-0 flex-1 rounded-tile border border-line bg-surface px-3.5 text-[13px] text-ink outline-none placeholder:text-faint focus:border-accent"
-        />
-        <Button variant="secondary"><SlidersHorizontal size={13} strokeWidth={2} /> Filters</Button>
-      </div>
-
-      {/* Column labels above SPACED CARD rows — the drawing's list is separate
-          rounded cards, not a flush table. Live commission column carries no
-          typed rate; the stored one renders per row. */}
-      <div className="grid grid-cols-[minmax(0,1.7fr)_minmax(0,1.15fr)_0.9fr_0.4fr_0.7fr_0.9fr_86px] items-center gap-2 px-4 pb-1.5 text-[10.5px] font-medium uppercase tracking-[0.05em] text-faint">
-        <span>Booking</span><span>Customer</span><span>Dates</span><span>Party</span>
-        <span className="text-right">Amount Paid</span><span className="text-right">Commission</span><span className="text-right">Status</span>
-      </div>
-      <div className="space-y-2.5">
-        {listRows.map((r) => (
-          <button key={r.id} type="button" onClick={() => setSelected(r.id)}
-            className={cn("grid w-full grid-cols-[minmax(0,1.7fr)_minmax(0,1.15fr)_0.9fr_0.4fr_0.7fr_0.9fr_86px] items-center gap-2 rounded-tile border px-4 py-2.5 text-left",
-              selected === r.id ? "border-accent/40 bg-accent-soft/30" : "border-line-soft bg-raised/60 hover:bg-raised")}>
-            <span className="flex min-w-0 items-center gap-3">
-              <Photo id={r.photo} size="h-12 w-14" />
-              <span className="min-w-0">
-                <span className="block truncate text-[12.5px] font-semibold text-ink">{r.trip}</span>
-                <span className="block truncate text-[11px] text-muted">{r.line2}</span>
-                <span className="block truncate text-[10.5px] text-faint">{r.line3}</span>
-              </span>
-            </span>
-            <span className="min-w-0">
-              <span className="block truncate text-[12px] text-ink">{r.customer}</span>
-              <span className="block truncate text-[10.5px] text-faint">{r.customerSub}</span>
-            </span>
-            <span className="tnum block text-[11px] leading-snug text-muted">{r.dates.replace(" – ", " –\n")}</span>
-            <span className="tnum text-[12px] text-ink">{r.party}</span>
-            <span className="text-right">
-              <span className="tnum block text-[12.5px] font-semibold text-ink">{r.amountMain}</span>
-              <span className="block text-[10.5px] text-faint">{r.amountSub}</span>
-            </span>
-            <span className="text-right">
-              <span className="tnum block text-[12.5px] font-semibold text-ink">{r.commMain}</span>
-              <span className="block text-[10.5px] text-faint">{r.commSub}</span>
-            </span>
-            <span className="justify-self-end"><Pill tone={r.tone}>{r.status}</Pill></span>
-          </button>
-        ))}
-      </div>
       {M ? (
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 px-1">
-          <p className="text-[11.5px] text-faint">Showing 1 to 8 of 126 bookings</p>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-4">
+          <p className="text-sm text-muted-foreground">Showing 1 to 8 of 126 bookings</p>
           <div className="flex items-center gap-1.5">
-            <span className="px-1 text-[12.5px] text-faint">‹</span>
+            <span className="px-1 text-sm text-muted-foreground">‹</span>
             {[1, 2, 3, 4, 5, "…", 16].map((pg, i) =>
               pg === "…" ? (
-                <span key={`e${i}`} className="px-1 text-[12.5px] text-faint">…</span>
+                <span key={`e${i}`} className="px-1 text-sm text-muted-foreground">…</span>
               ) : (
-                <span key={pg} className={pg === 1 ? "grid h-8 w-8 place-items-center rounded-[8px] bg-[oklch(0.72_0.13_60)] text-[12.5px] font-semibold text-white" : "grid h-8 w-8 place-items-center rounded-[8px] text-[12.5px] font-medium text-muted"}>{pg}</span>
+                <span
+                  key={pg}
+                  className={cn(
+                    "grid size-7 place-items-center rounded-[min(var(--radius-md),12px)] text-sm",
+                    pg === 1 ? "border border-border bg-background font-medium" : "text-muted-foreground",
+                  )}
+                >
+                  {pg}
+                </span>
               ),
             )}
-            <span className="px-1 text-[12.5px] text-faint">›</span>
+            <span className="px-1 text-sm text-muted-foreground">›</span>
           </div>
-          <span className="text-[12px] text-faint">10 / page</span>
+          <span className="text-sm text-muted-foreground">10 / page</span>
         </div>
       ) : (
         // No invented pagination: every stored row is on this list.
-        <p className="mt-3 px-1 text-[11.5px] text-faint">
+        <p className="border-t px-4 py-4 text-sm text-muted-foreground">
           Showing all {listRows.length} booking{listRows.length === 1 ? "" : "s"} in this section.
         </p>
       )}
-    </div>
+    </>
   );
 
-  return (
-    <>
-      <PageHead
-        title="Bookings"
-        subtitle="All bookings across guides, expeditions and treks."
-        actions={
-          <div className="flex items-center gap-2.5">
-            <Button variant="secondary"><Download size={14} strokeWidth={2} /> Export</Button>
-            <span className="relative grid h-10 w-10 place-items-center rounded-full border border-line bg-surface text-muted">
-              <Bell size={16} strokeWidth={1.9} />
-              {/* The count is a figure; only the sample set carries one. */}
-              {M && <span className="absolute -right-0.5 -top-0.5 grid h-4 w-4 place-items-center rounded-full bg-bad text-[9px] font-bold text-white">8</span>}
-            </span>
-          </div>
-        }
-      />
+  const list = (
+    <div className={cn("flex flex-col gap-4", detailOpen && "hidden xl:flex")}>
+      {/* The three sections, and how many bookings each holds. This was three
+          large tiles that doubled as the selector; it is one control now, and
+          all three counts are still on screen at once. */}
+      <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="flex-col gap-0">
+        <div className="no-scrollbar touch-pan-x overflow-x-auto overscroll-x-contain border-b">
+          <TabsList variant="line" className="h-8 w-max min-w-full justify-start gap-4 *:data-[slot=tabs-trigger]:flex-none">
+            {TABS.map((t) => (
+              <TabsTrigger key={t.id} value={t.id} className={LINE_TAB}>
+                {t.icon}
+                {t.label}
+                <Badge variant="secondary" className="tabular-nums">{counts ? counts[t.id] : "…"}</Badge>
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
+      </Tabs>
 
-      <div className={cn("grid items-start gap-5", detailOpen && "xl:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]")}>
+      <div className="w-0 min-w-full overflow-hidden rounded-xl border border-border/70 bg-background">
+        <div className="flex items-center gap-2 border-b px-4 py-4">
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={`Search ${TABS.find((t) => t.id === tab)!.label.toLowerCase()}…`}
+            className="min-w-0 flex-1"
+          />
+          <Button variant="outline" size="sm">
+            <SlidersHorizontal data-icon="inline-start" /> Filters
+          </Button>
+        </div>
+
         {M ? (
-          list
+          listTable
         ) : (
-          <div className={cn(detailOpen && "hidden xl:block")}>
+          // The states render INSIDE the panel, under the search, so a failed
+          // or empty read never takes the search box away with it.
+          <div className={rows && rows.length > 0 ? undefined : "p-4"}>
             <Resolve
               result={result}
               what="bookings"
               isEmpty={(v) => v.length === 0}
               empty="No bookings recorded yet. The first appears here the moment one is — and its commission will carry the rate stored on that day."
             >
-              {() => list}
+              {() => listTable}
             </Resolve>
           </div>
         )}
+      </div>
+    </div>
+  );
 
+  return (
+    <div className="flex flex-col gap-4 md:gap-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="space-y-1">
+          <h1 className="text-3xl tracking-tight">Bookings</h1>
+          <p className="max-w-3xl text-sm text-muted-foreground">
+            All bookings across guides, expeditions and treks.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm">
+            <Download data-icon="inline-start" /> Export
+          </Button>
+          {/* Drawn, and inert. A span rather than a button so nothing claims to
+              be clickable; the count is a figure and only the sample set has one. */}
+          <span className="relative grid size-8 place-items-center rounded-lg border border-border bg-background text-muted-foreground">
+            <Bell className="size-4" />
+            {M && (
+              <span className="absolute -top-1 -right-1 grid size-4 place-items-center rounded-full bg-destructive text-[9px] font-bold text-white">
+                8
+              </span>
+            )}
+          </span>
+        </div>
+      </div>
+
+      <div className={cn("grid items-start gap-4 md:gap-6", detailOpen && "xl:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]")}>
+        {list}
         {selSample && M && (
           <DetailPanel
             b={null}
@@ -659,6 +828,6 @@ export default function Bookings() {
         )}
         {selLive && <DetailPanel b={selLive} sample={null} onClose={() => setSelected(null)} />}
       </div>
-    </>
+    </div>
   );
 }

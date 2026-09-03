@@ -136,7 +136,11 @@ export function EnquiryQueue() {
                           <span
                             className={cn(
                               "tnum rounded-pill px-2 py-[3px] text-[11.5px] font-semibold",
-                              e.seen_at ? "bg-raised text-muted ring-1 ring-line" : "bg-butter text-[oklch(0.5_0.11_75)]",
+                              // Unseen = the warn wash; seen = the neutral raised chip. `butter` still
+                              // resolves to the theme's flat neutral, which left this pair telling
+                              // itself apart by TEXT colour only — an amber word on grey. The wash
+                              // restores the distinction the way the theme does it.
+                              e.seen_at ? "bg-raised text-muted ring-1 ring-line" : "bg-warn/10 text-warn",
                             )}
                           >
                             waiting {waited(e.created_at)}
@@ -150,7 +154,7 @@ export function EnquiryQueue() {
                         <div className="mt-3 border-t border-line-soft pt-3">
                           <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-ink">{e.body}</p>
                           {e.sender_kind === "visitor" && e.sender_email && (
-                            <p className="mt-2 rounded-tile bg-butter/70 px-3 py-2 text-[12px] leading-relaxed text-[oklch(0.45_0.1_75)]">
+                            <p className="mt-2 rounded-tile bg-warn/10 px-3 py-2 text-[12px] leading-relaxed text-warn">
                               No account behind this one — the recorded answer is the case record;
                               send the actual reply to <span className="font-semibold">{e.sender_email}</span>.
                             </p>
@@ -184,7 +188,7 @@ export function EnquiryQueue() {
                             />
                             <Button
                               size="sm"
-                              className="!bg-accent text-white hover:opacity-90"
+                              className="!bg-accent text-primary-foreground hover:opacity-90"
                               disabled={busy || draft.trim().length === 0}
                               onClick={() => void answer(e.id)}
                             >

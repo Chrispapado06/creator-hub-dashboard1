@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Download } from "lucide-react";
-import { Button, Card, PageHead, Pill, TableCard } from "@/components/ui";
+import { CalendarCheck, Download, Euro, MessageSquare, Package, Percent, Plus } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Resolve } from "@/components/states";
 import {
   listBookingsDetailed,
@@ -13,15 +17,14 @@ import {
 } from "@/data/queries";
 import { loading, type Result } from "@/data/result";
 import { PRODUCTS_MOCKUP } from "@/demo/mockupScreens";
-import { GoldButton } from "@/components/drawn";
 import { Select } from "@/components/controls";
+import { cn } from "@/lib/utils";
 import type { Company, Enquiry, Product } from "@/data/types";
 
 /**
- * Products — ONE screen, the owner's drawn layout, two data sources (their 31
- * Aug ruling: the mockups ARE the production design; the demo-face fork was
- * deleted, §6u). SHOW_DEMO_DATA fills the drawing's sample rows; flag off,
- * every figure aggregates from real rows at read time — bookings and their
+ * Products — ONE screen, two data sources (the owner's 31 Aug ruling; the
+ * demo-face fork was deleted, §6u). SHOW_DEMO_DATA fills the sample rows; flag
+ * off, every figure aggregates from real rows at read time — bookings and their
  * STORED commissions (rate frozen at conversion), enquiries by product,
  * placements by product.
  *
@@ -31,15 +34,34 @@ import type { Company, Enquiry, Product } from "@/data/types";
  * Honest cells, live mode: Mountain reads "—" because products do not yet
  * link a destination (schema fact, not laziness); "Enq → Booking" prints the
  * real ratio of the two counted figures; a product with no live/reserved slot
- * shows a dash, with non-live status pills standing in where the drawing
- * badges Draft. "+ Add Product" is the drawing's primary action; the creation
- * flow itself still lives in the operator portal (products arrive via
- * approval), so the button waits on that link-up.
+ * shows a dash, with non-live status badges standing in where the sample set
+ * badges Draft. "Add Product" is the primary action; the creation flow itself
+ * still lives in the operator portal (products arrive via approval), so the
+ * button waits on that link-up.
  *
  * CSV export is real and exports exactly the rows on screen.
+ *
+ * ── THE RE-SKIN ───────────────────────────────────────────────────────────
+ * Laid out against the reference theme's own data-table page: a page header
+ * with the two actions on the right, a row of stat tiles, and then ONE bordered
+ * panel holding a toolbar strip, the table and a footer strip. The toolbar sits
+ * INSIDE that panel and outside the `Resolve`, so the search and the three
+ * filters keep rendering whatever the read returns — losing a control to a
+ * loading state is the kind of regression a re-skin is not allowed to make.
  */
 
 const eur = (cents: number) => `€${(cents / 100).toLocaleString("en-GB")}`;
+
+/** The theme's own badge treatments, one per meaning. Nothing is ICEFALL gold. */
+const BADGE_CLASS = {
+  /** A held slot. The theme paints a stage this way: outline, no fill. */
+  slot: "rounded-full px-2.5",
+  /** Submitted and waiting on approval — the same "good news" tone the old
+      pill carried for `pending_review`, in the theme's own emerald. */
+  review: "rounded-full border-emerald-500/20 bg-emerald-500/10 px-2.5 text-emerald-600 dark:text-emerald-400",
+  /** Neither good nor bad — draft, archived. */
+  quiet: "rounded-full border-border bg-ui-muted/50 px-2.5 text-muted-foreground",
+} as const;
 
 export interface ProductStats {
   bookings: number;
@@ -90,7 +112,37 @@ interface PRow {
   commission: string;
   enquiries: string;
   conv: string;
-  badge: { text: string; tone: "amber" | "accent" | "neutral" | "green" } | null;
+  badge: { text: string; tone: keyof typeof BADGE_CLASS } | null;
+}
+
+/**
+ * One headline figure in the theme's stat-tile shape: outlined icon square,
+ * quiet label, large tabular number.
+ *
+ * A `null` value is a figure that has NOT ARRIVED YET, and it prints the
+ * ellipsis the old tile printed — never a zero standing in for a read that has
+ * not come back. Nothing in this file may turn an absent aggregate into "0".
+ */
+function StatTile({ icon, label, value }: { icon: React.ReactNode; label: string; value: string | null }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>
+          <div className="flex size-7 items-center justify-center rounded-lg border bg-ui-muted text-muted-foreground">
+            {icon}
+          </div>
+        </CardTitle>
+        <CardDescription>{label}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {value === null ? (
+          <p className="text-sm text-muted-foreground">…</p>
+        ) : (
+          <div className="font-medium text-3xl leading-none tracking-tight tabular-nums">{value}</div>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 export default function Products() {
@@ -171,7 +223,7 @@ export default function Products() {
     URL.revokeObjectURL(a.href);
   };
 
-  /** Both sources shaped into the drawn columns. */
+  /** Both sources shaped into the same columns. */
   const tableRows: PRow[] = useMemo(() => {
     if (M)
       return M.rows.map((r) => ({
@@ -179,10 +231,9 @@ export default function Products() {
         price: r.price, priceKnown: true,
         bookings: String(r.bookings), revenue: r.revenue, revenueNote: null,
         commission: r.commission, enquiries: String(r.enquiries), conv: r.conv,
-        // Drawn tints: #1 Premium gold, Featured pale blue, Draft grey.
         badge: r.placement === null
           ? null
-          : { text: r.placement, tone: r.placement === "Draft" ? "neutral" : r.placement.includes("#1") ? "amber" : "accent" },
+          : { text: r.placement, tone: r.placement === "Draft" ? "quiet" : "slot" },
       }));
     return shown.map((p) => {
       const s = stats.get(p.id);
@@ -198,174 +249,212 @@ export default function Products() {
         enquiries: commercialReady ? String(s?.enquiries ?? 0) : "…",
         conv: commercialReady ? `${s?.bookings ?? 0} / ${s?.enquiries ?? 0}` : "…",
         badge: s?.placement
-          ? { text: `#${s.placement.slot} ${s.placement.status}`, tone: s.placement.slot === 1 ? "amber" : "accent" }
+          ? { text: `#${s.placement.slot} ${s.placement.status}`, tone: "slot" }
           : p.status !== "live"
-            ? { text: p.status.replaceAll("_", " "), tone: p.status === "pending_review" ? "green" : "neutral" }
+            ? { text: p.status.replaceAll("_", " "), tone: p.status === "pending_review" ? "review" : "quiet" }
             : null,
       };
     });
   }, [M, shown, stats, commercialReady, companyName]);
 
   const table = (
-    <TableCard>
-      <table className="w-full text-[12.5px]">
-        <thead>
-          <tr className="text-left text-[11px] uppercase tracking-[0.06em] text-faint">
-            <th className="px-4 py-3 font-medium">Product</th>
-            <th className="px-3 py-3 font-medium">Company</th>
-            <th className="px-3 py-3 font-medium">Mountain</th>
-            <th className="px-3 py-3 text-right font-medium">Price</th>
-            <th className="px-3 py-3 text-right font-medium">Bookings</th>
-            <th className="px-3 py-3 text-right font-medium">Revenue</th>
-            <th className="px-3 py-3 text-right font-medium">ICEFALL Comm.</th>
-            <th className="px-3 py-3 text-right font-medium">Enquiries</th>
-            <th className="px-3 py-3 text-right font-medium">Enq. → Booking</th>
-            <th className="px-3 py-3 text-right font-medium">Placement</th>
-          </tr>
-        </thead>
-        <tbody>
+    <>
+      <Table className="**:data-[slot=table-cell]:px-4 **:data-[slot=table-head]:px-4">
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead className="h-11 font-medium text-muted-foreground">Product</TableHead>
+            <TableHead className="h-11 font-medium text-muted-foreground">Company</TableHead>
+            <TableHead className="h-11 font-medium text-muted-foreground">Mountain</TableHead>
+            <TableHead className="h-11 text-right font-medium text-muted-foreground">Price</TableHead>
+            <TableHead className="h-11 text-right font-medium text-muted-foreground">Bookings</TableHead>
+            <TableHead className="h-11 text-right font-medium text-muted-foreground">Revenue</TableHead>
+            <TableHead className="h-11 text-right font-medium text-muted-foreground">ICEFALL Comm.</TableHead>
+            <TableHead className="h-11 text-right font-medium text-muted-foreground">Enquiries</TableHead>
+            <TableHead className="h-11 text-right font-medium text-muted-foreground">Enq. → Booking</TableHead>
+            <TableHead className="h-11 text-right font-medium text-muted-foreground">Placement</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {tableRows.map((r) => (
-            <tr key={r.id} onClick={() => navigate(`/admin/products/${r.id}`)} className="cursor-pointer border-t border-line-soft hover:bg-raised/60">
-              <td className="px-4 py-3 font-semibold text-accent-ink">{r.name}</td>
-              <td className="px-3 py-3 text-muted">{r.company}</td>
-              <td className="px-3 py-3 text-muted">{r.mountain}</td>
-              <td className={`tnum px-3 py-3 text-right ${r.priceKnown ? "text-ink" : "text-faint"}`}>{r.price}</td>
-              <td className="tnum px-3 py-3 text-right text-ink">{r.bookings}</td>
-              <td className="tnum px-3 py-3 text-right text-ink">
+            <TableRow
+              key={r.id}
+              onClick={() => navigate(`/admin/products/${r.id}`)}
+              className="cursor-pointer border-border/60 hover:bg-ui-muted/40"
+            >
+              <TableCell className="py-3 font-medium">{r.name}</TableCell>
+              <TableCell className="py-3 text-muted-foreground">{r.company}</TableCell>
+              <TableCell className="py-3 text-muted-foreground">{r.mountain}</TableCell>
+              <TableCell className={cn("py-3 text-right tabular-nums", !r.priceKnown && "text-muted-foreground")}>
+                {r.price}
+              </TableCell>
+              <TableCell className="py-3 text-right tabular-nums">{r.bookings}</TableCell>
+              <TableCell className="py-3 text-right tabular-nums">
                 {r.revenue}
-                {r.revenueNote && <span className="block text-[10px] font-normal text-faint">{r.revenueNote}</span>}
-              </td>
-              <td className="tnum px-3 py-3 text-right font-semibold text-ink">{r.commission}</td>
-              <td className="tnum px-3 py-3 text-right text-ink">{r.enquiries}</td>
-              <td className="tnum px-3 py-3 text-right text-muted">{r.conv}</td>
-              <td className="px-3 py-3 text-right">
-                {r.badge === null ? (
-                  <span className="text-[11px] text-faint">—</span>
-                ) : (
-                  <Pill tone={r.badge.tone}>{r.badge.text}</Pill>
+                {r.revenueNote && (
+                  <span className="block text-xs font-normal text-muted-foreground">{r.revenueNote}</span>
                 )}
-              </td>
-            </tr>
+              </TableCell>
+              <TableCell className="py-3 text-right font-medium tabular-nums">{r.commission}</TableCell>
+              <TableCell className="py-3 text-right tabular-nums">{r.enquiries}</TableCell>
+              <TableCell className="py-3 text-right text-muted-foreground tabular-nums">{r.conv}</TableCell>
+              <TableCell className="py-3 text-right">
+                {r.badge === null ? (
+                  // No live or reserved slot names this product. An em dash, not
+                  // "None" and not a zero.
+                  <span className="text-muted-foreground">—</span>
+                ) : (
+                  <Badge variant="outline" className={BADGE_CLASS[r.badge.tone]}>
+                    {r.badge.text}
+                  </Badge>
+                )}
+              </TableCell>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
+
       {M ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line-soft px-4 py-2.5">
-          <p className="text-[11.5px] text-faint">{M.showing}</p>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-4">
+          <p className="text-sm text-muted-foreground">{M.showing}</p>
           <div className="flex items-center gap-1.5">
             {M.pages.map((pg, i) =>
               pg === "…" ? (
-                <span key={`e${i}`} className="px-1 text-[12.5px] text-faint">…</span>
+                <span key={`e${i}`} className="px-1 text-sm text-muted-foreground">…</span>
               ) : (
-                <span key={pg} className={pg === 1 ? "grid h-8 w-8 place-items-center rounded-[8px] bg-[oklch(0.72_0.13_60)] text-[12.5px] font-semibold text-white" : "grid h-8 w-8 place-items-center rounded-[8px] text-[12.5px] font-medium text-muted"}>{pg}</span>
+                <span
+                  key={pg}
+                  className={cn(
+                    "grid size-7 place-items-center rounded-[min(var(--radius-md),12px)] text-sm",
+                    pg === 1
+                      ? "border border-border bg-background font-medium text-foreground"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  {pg}
+                </span>
               ),
             )}
           </div>
-          <span className="text-[12px] text-faint">15 / page</span>
+          <span className="text-sm text-muted-foreground">15 / page</span>
         </div>
       ) : (
         // No invented pagination: every matching row is on this table.
-        <p className="border-t border-line-soft px-4 py-2.5 text-[11.5px] text-faint">
+        <p className="border-t px-4 py-4 text-sm text-muted-foreground">
           Showing {tableRows.length} of {products.state === "ok" ? products.value.length : "…"} products.
           A dash in Placement means no live or reserved slot names this product; Mountain fills when
           products link a destination.
         </p>
       )}
-    </TableCard>
+    </>
   );
 
   return (
-    <>
-      <PageHead
-        title="Products"
-        subtitle="All expeditions and treks sold on the platform."
-        actions={
-          <div className="flex items-center gap-2">
-            <Button variant="secondary" onClick={exportCsv}><Download size={14} strokeWidth={2} /> CSV Export</Button>
-            <GoldButton>+ Add Product</GoldButton>
-          </div>
-        }
-      />
+    <div className="flex flex-col gap-4 md:gap-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="space-y-1">
+          <h1 className="text-3xl tracking-tight">Products</h1>
+          <p className="max-w-3xl text-sm text-muted-foreground">
+            All expeditions and treks sold on the platform.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={exportCsv}>
+            <Download data-icon="inline-start" /> CSV Export
+          </Button>
+          <Button size="sm">
+            <Plus data-icon="inline-start" /> Add Product
+          </Button>
+        </div>
+      </div>
 
       {/* Totals — sample figures or real aggregates; absent parts show "…". */}
-      <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
         {(
           M
             ? ([
-                ["Total products", M.totals.products], ["Total bookings", M.totals.bookings],
-                ["Total revenue", M.totals.revenue], ["ICEFALL commission (15%)", M.totals.commission],
-                ["Total enquiries", M.totals.enquiries],
-              ] as [string, string | null][])
+                ["Total products", M.totals.products, <Package className="size-4" />],
+                ["Total bookings", M.totals.bookings, <CalendarCheck className="size-4" />],
+                ["Total revenue", M.totals.revenue, <Euro className="size-4" />],
+                ["ICEFALL commission (15%)", M.totals.commission, <Percent className="size-4" />],
+                ["Total enquiries", M.totals.enquiries, <MessageSquare className="size-4" />],
+              ] as [string, string | null, React.ReactNode][])
             : ([
-                ["Total products", products.state === "ok" ? String(products.value.length) : null],
-                ["Total bookings", totals ? String(totals.bookings) : null],
-                ["Total revenue", totals ? eur(totals.revenue) : null],
-                ["ICEFALL commission", totals ? eur(totals.commission) : null],
-                ["Total enquiries", totals ? String(totals.enquiries) : null],
-              ] as [string, string | null][])
-        ).map(([label, value]) => (
-          <Card key={label} className="py-4">
-            <p className="text-[11.5px] font-semibold uppercase tracking-[0.05em] text-faint">{label}</p>
-            {value === null ? (
-              <p className="mt-1 text-[12px] text-faint">…</p>
-            ) : (
-              <p className="tnum mt-1 text-[22px] font-extrabold leading-tight text-ink">{value}</p>
-            )}
-          </Card>
+                ["Total products", products.state === "ok" ? String(products.value.length) : null, <Package className="size-4" />],
+                ["Total bookings", totals ? String(totals.bookings) : null, <CalendarCheck className="size-4" />],
+                ["Total revenue", totals ? eur(totals.revenue) : null, <Euro className="size-4" />],
+                ["ICEFALL commission", totals ? eur(totals.commission) : null, <Percent className="size-4" />],
+                ["Total enquiries", totals ? String(totals.enquiries) : null, <MessageSquare className="size-4" />],
+              ] as [string, string | null, React.ReactNode][])
+        ).map(([label, value, icon]) => (
+          <StatTile key={label} icon={icon} label={label} value={value} />
         ))}
       </div>
 
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search products, companies or mountains…"
-          className="h-10 min-w-[240px] flex-1 rounded-tile border border-line bg-surface px-3.5 text-[13px] text-ink outline-none placeholder:text-faint focus:border-accent"
-        />
-        <Select
-          value={companyFilter}
-          onChange={setCompanyFilter}
-          ariaLabel="Filter by company"
-          className="min-w-[170px]"
-          options={[
-            { value: "all", label: "All Companies" },
-            ...(companies.state === "ok" ? companies.value.map((c) => ({ value: c.id, label: c.name })) : []),
-          ]}
-        />
-        <Select
-          value="all"
-          onChange={() => undefined}
-          ariaLabel="Filter by mountain"
-          className="min-w-[150px]"
-          options={[{ value: "all", label: "All Mountains", hint: "fills when products link a destination" }]}
-        />
-        <Select
-          value={statusFilter}
-          onChange={setStatusFilter}
-          ariaLabel="Filter by status"
-          className="min-w-[150px]"
-          options={[
-            { value: "all", label: "All Statuses" },
-            { value: "draft", label: "Draft" },
-            { value: "pending_review", label: "Pending review" },
-            { value: "live", label: "Live" },
-            { value: "archived", label: "Archived" },
-          ]}
-        />
-      </div>
+      {/* `w-0 min-w-full` is load-bearing, not decoration. Ten nowrap columns
+          are wider than the viewport; without it this panel reports its
+          max-content width up through the shell's flex column and drags the
+          whole page — sidebar included — into a horizontal scroll. Pinned to
+          the available width, the table scrolls inside its own container the
+          way the reference theme's tables do. */}
+      <div className="w-0 min-w-full overflow-hidden rounded-xl border border-border/70 bg-background">
+        <div className="flex flex-wrap items-center gap-2 border-b px-4 py-4">
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search products, companies or mountains…"
+            className="w-full min-w-[240px] flex-1 sm:w-64"
+          />
+          <Select
+            value={companyFilter}
+            onChange={setCompanyFilter}
+            ariaLabel="Filter by company"
+            className="min-w-[170px]"
+            options={[
+              { value: "all", label: "All Companies" },
+              ...(companies.state === "ok" ? companies.value.map((c) => ({ value: c.id, label: c.name })) : []),
+            ]}
+          />
+          <Select
+            value="all"
+            onChange={() => undefined}
+            ariaLabel="Filter by mountain"
+            className="min-w-[150px]"
+            options={[{ value: "all", label: "All Mountains", hint: "fills when products link a destination" }]}
+          />
+          <Select
+            value={statusFilter}
+            onChange={setStatusFilter}
+            ariaLabel="Filter by status"
+            className="min-w-[150px]"
+            options={[
+              { value: "all", label: "All Statuses" },
+              { value: "draft", label: "Draft" },
+              { value: "pending_review", label: "Pending review" },
+              { value: "live", label: "Live" },
+              { value: "archived", label: "Archived" },
+            ]}
+          />
+        </div>
 
-      {M ? (
-        table
-      ) : (
-        <Resolve
-          result={products}
-          what="products"
-          isEmpty={(v) => v.length === 0}
-          empty="No products yet. Operators create them in the portal; each arrives here for approval and then appears in this catalogue."
-        >
-          {() => table}
-        </Resolve>
-      )}
-    </>
+        {M ? (
+          table
+        ) : (
+          // The five states render INSIDE the panel, under the toolbar, so a
+          // failed or empty read never takes the search and the three filters
+          // off the screen with it. Padding only when a state frame is showing;
+          // the table itself is flush, as the theme draws it.
+          <div className={products.state === "ok" && products.value.length > 0 ? undefined : "p-4"}>
+            <Resolve
+              result={products}
+              what="products"
+              isEmpty={(v) => v.length === 0}
+              empty="No products yet. Operators create them in the portal; each arrives here for approval and then appears in this catalogue."
+            >
+              {() => table}
+            </Resolve>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

@@ -39,7 +39,7 @@ export function CompanyLogo({
       <span
         style={{ width: size, height: size, fontSize: Math.round(size * 0.34) }}
         className={cn(
-          "grid shrink-0 place-items-center rounded-[8px] bg-panel font-bold text-muted",
+          "grid shrink-0 place-items-center rounded-md bg-panel font-bold text-muted",
           className,
         )}
       >
@@ -59,7 +59,7 @@ export function CompanyLogo({
       alt={`${name} logo`}
       style={{ width: size, height: size }}
       className={cn(
-        "shrink-0 rounded-[8px] border border-line-soft bg-white object-contain p-[3px]",
+        "shrink-0 rounded-md border border-line-soft bg-card object-contain p-[3px]",
         className,
       )}
       onError={() => setStage((s) => s + 1)}

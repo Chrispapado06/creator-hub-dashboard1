@@ -1,13 +1,17 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangle, Banknote, FileText, Landmark, Wallet } from "lucide-react";
-import { Avatar, Card, PageHead, Pill, Stat, StatusChip, TableCard } from "@/components/ui";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Item, ItemContent, ItemDescription, ItemMedia, ItemTitle } from "@/components/ui/item";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Resolve, Unavailable } from "@/components/states";
 import { listCompanies, listInvoices, listPayments } from "@/data/queries";
 import { BillingChase } from "@/components/BillingChase";
 import { formatCents, formatCentsShort, loading, type Result } from "@/data/result";
 import type { Company, Invoice, InvoiceStatus, Payment } from "@/data/types";
-import { daysUntil, formatDay } from "@/lib/utils";
+import { cn, daysUntil, formatDay, initials } from "@/lib/utils";
 
 /**
  * Invoices & Payments — what ICEFALL has billed, and what has actually arrived.
@@ -33,6 +37,77 @@ import { daysUntil, formatDay } from "@/lib/utils";
  * precise and meaningless. Where the rows disagree the tile says so instead.
  */
 
+/**
+ * THE PAGE HEADER, INLINE AND NOT `PageHead` — see the note in Finance.tsx.
+ * The theme's title is `text-3xl tracking-tight`: 30px at weight 400, measured
+ * on localhost:3100. `PageHead` draws 31px extrabold and takes no className, so
+ * it cannot be corrected from a screen. One edit to `PageHead` would carry all
+ * 32 screens; this pass may not make it.
+ */
+function Head({ title, subtitle, actions }: { title: string; subtitle?: string; actions?: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+      <div className="space-y-1">
+        <h1 className="text-3xl tracking-tight">{title}</h1>
+        {subtitle && <p className="max-w-3xl text-muted-foreground text-sm">{subtitle}</p>}
+      </div>
+      {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
+    </div>
+  );
+}
+
+/**
+ * The theme's stat tile — icon square, label, figure, caption.
+ *
+ * THE HONESTY CONTRACT IS UNCHANGED: `value === null` prints the REASON, in
+ * prose. Never a dash, never a zero, never "N/A". A dashboard is read as fact
+ * by default, so a tile that cannot say what it means has to say why.
+ *
+ * NOTE WHAT NO LONGER HAPPENS TO THE COLOUR. The tile this replaces went
+ * butter / sky / lilac / mint when it had a figure and dropped to plain white
+ * when it did not, so the pastel itself signalled "there is a number here".
+ * The theme has no pastels — all four rebind to the same neutral in index.css —
+ * so that signal is gone and the DISTINCTION IS CARRIED BY THE TYPE INSTEAD: a
+ * figure is 30px tabular ink, a reason is 14px muted prose. They are not
+ * mistakable for one another at a glance, which was the point of the colour.
+ */
+function Tile({
+  label,
+  value,
+  reason,
+  hint,
+  icon,
+}: {
+  label: string;
+  value: string | null;
+  reason?: string;
+  hint?: string;
+  icon: ReactNode;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>
+          <div className="flex size-7 items-center justify-center rounded-lg border bg-ui-muted text-muted-foreground">
+            {icon}
+          </div>
+        </CardTitle>
+        <CardDescription>{label}</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-1">
+        {value === null ? (
+          <p className="text-muted-foreground text-sm leading-relaxed">{reason ?? "Not recorded"}</p>
+        ) : (
+          <>
+            <div className="font-medium text-3xl tabular-nums leading-none tracking-tight">{value}</div>
+            {hint && <p className="text-muted-foreground text-sm leading-relaxed">{hint}</p>}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 const KIND_LABEL: Record<Invoice["kind"], string> = {
   placement: "Placement fee",
   referral: "Referral fee",
@@ -53,9 +128,32 @@ const METHOD_LABEL: Record<Payment["method"], string> = {
  * is settled; overdue and refunded are the two that still want somebody's
  * attention; a void invoice was withdrawn; a draft or a sent invoice is simply
  * where it is and is not a problem yet.
+ *
+ * The classes are the theme's own `statusMeta`, verbatim from
+ * dashboard/users/_components/data.tsx. The chip they replace drew a filled
+ * glyph and a chevron; the chevron was `aria-hidden` and inert by design
+ * ("nothing in this build can change a status from a list row yet"), so it is
+ * gone and no capability goes with it — dot, word and meaning all stay.
  */
+const STATUS_TONE: Record<"ok" | "pending" | "bad" | "neutral", { badge: string; dot: string }> = {
+  ok: { badge: "border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400", dot: "bg-emerald-500" },
+  pending: { badge: "border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-400", dot: "bg-amber-500" },
+  bad: { badge: "border-destructive/20 bg-destructive/10 text-destructive", dot: "bg-destructive" },
+  neutral: { badge: "border-border bg-ui-muted/50 text-muted-foreground", dot: "bg-muted-foreground" },
+};
+
 const statusState = (s: InvoiceStatus): "ok" | "pending" | "bad" | "neutral" =>
   s === "paid" ? "ok" : s === "overdue" || s === "refunded" ? "pending" : s === "void" ? "bad" : "neutral";
+
+function StatusBadge({ status }: { status: InvoiceStatus }) {
+  const tone = STATUS_TONE[statusState(status)];
+  return (
+    <Badge variant="outline" className={cn("gap-1.5 border px-2 py-1 font-medium", tone.badge)}>
+      <span className={cn("size-1.5 rounded-full", tone.dot)} aria-hidden />
+      {status}
+    </Badge>
+  );
+}
 
 /** Billed. A draft was never sent and a void was withdrawn — neither is owed. */
 const isIssued = (i: Invoice) => i.status !== "draft" && i.status !== "void";
@@ -120,7 +218,7 @@ function trio<A, B, C>(a: Result<A>, b: Result<B>, c: Result<C>): Result<[A, B, 
 }
 
 /**
- * Turn a read into the two props `Stat` needs.
+ * Turn a read into the two props `Tile` needs.
  *
  * Every path that ends without a figure ends with a sentence explaining which of
  * the three reasons applies: still reading, could not be read, or genuinely
@@ -138,21 +236,12 @@ function tile<T>(r: Result<T>, compute: (value: T) => Total, none: string): { va
   };
 }
 
-/** The heading above a table. Heavier than a label, because the mockup's are. */
-function Heading({ children }: { children: ReactNode }) {
-  return <h2 className="text-[15px] font-bold tracking-[-0.015em] text-ink">{children}</h2>;
-}
-
 /** A figure inside a table cell, or the phrase that replaces it. */
 function Money({ t, none }: { t: Total; none: string }) {
   if (t.kind === "sum")
-    return (
-      <span className="text-[14.5px] font-bold tracking-[-0.015em] text-ink">
-        {formatCents(t.cents, t.currency)}
-      </span>
-    );
-  if (t.kind === "none") return <span className="text-[12.5px] text-faint">{none}</span>;
-  return <span className="text-[12.5px] text-faint">Mixed currencies</span>;
+    return <span className="font-medium text-sm tabular-nums">{formatCents(t.cents, t.currency)}</span>;
+  if (t.kind === "none") return <span className="text-muted-foreground text-sm">{none}</span>;
+  return <span className="text-muted-foreground text-sm">Mixed currencies</span>;
 }
 
 /**
@@ -161,6 +250,10 @@ function Money({ t, none }: { t: Total; none: string }) {
  * The avatar is drawn either way so the column keeps its rhythm, but with no
  * name to take initials from it falls back to the neutral placeholder rather
  * than inventing letters for a company nobody could look up.
+ *
+ * `Avatar` here is the theme's own primitive (components/ui/avatar.tsx):
+ * size-8, `bg-muted text-muted-foreground` fallback with a hairline `after:`
+ * ring — the same mark the theme draws beside a person in its users table.
  */
 function CompanyCell({ id, companies }: { id: string; companies: Result<Company[]> }) {
   const name = companies.state === "ok" ? (companies.value.find((c) => c.id === id)?.name ?? null) : null;
@@ -172,11 +265,13 @@ function CompanyCell({ id, companies }: { id: string; companies: Result<Company[
         : "Unknown company";
   return (
     <div className="flex items-center gap-3">
-      <Avatar name={name ?? ""} size={34} />
+      <Avatar>
+        <AvatarFallback className="text-xs">{name ? initials(name) : "··"}</AvatarFallback>
+      </Avatar>
       {name === null ? (
-        <span className="text-faint">{absence}</span>
+        <span className="text-muted-foreground text-sm">{absence}</span>
       ) : (
-        <Link to={`/admin/companies/${id}`} className="font-medium text-ink hover:text-accent">
+        <Link to={`/admin/companies/${id}`} className="font-medium text-sm hover:underline">
           {name}
         </Link>
       )}
@@ -186,15 +281,21 @@ function CompanyCell({ id, companies }: { id: string; companies: Result<Company[
 
 /** The invoice a payment was entered against. */
 function InvoiceCell({ id, invoices }: { id: string; invoices: Result<Invoice[]> }) {
-  if (invoices.state === "loading") return <span className="text-faint">Reading…</span>;
-  if (invoices.state !== "ok") return <span className="text-faint">Unavailable</span>;
+  if (invoices.state === "loading") return <span className="text-muted-foreground text-sm">Reading…</span>;
+  if (invoices.state !== "ok") return <span className="text-muted-foreground text-sm">Unavailable</span>;
   const number = invoices.value.find((i) => i.id === id)?.number;
   return number ? (
-    <span className="font-semibold text-ink">{number}</span>
+    <span className="font-medium text-sm tabular-nums">{number}</span>
   ) : (
-    <span className="text-faint">Unknown invoice</span>
+    <span className="text-muted-foreground text-sm">Unknown invoice</span>
   );
 }
+
+/** The theme's in-card table chrome, written once because three tables use it. */
+const TABLE_CLS = "**:data-[slot='table-cell']:px-4 **:data-[slot='table-head']:px-4 **:data-[slot='table-cell']:py-4";
+const THEAD_CLS =
+  "border-t **:data-[slot='table-head']:h-11 **:data-[slot='table-head']:font-medium **:data-[slot='table-head']:text-foreground **:data-[slot='table-head']:text-sm";
+const TBODY_CLS = "**:data-[slot='table-row']:border-border/50";
 
 export default function Billing() {
   const [invoices, setInvoices] = useState<Result<Invoice[]>>(loading);
@@ -267,53 +368,47 @@ export default function Billing() {
   const paymentCount = payments.state === "ok" ? payments.value.length : null;
 
   return (
-    <>
-      <PageHead
+    <div className="flex flex-col gap-4 md:gap-6">
+      <Head
         title="Invoices & Payments"
         subtitle="What ICEFALL has billed its operator companies, and what has been received against it. Placement fees and referral fees are billed separately because they are collected differently."
       />
 
+      {/* CR-18's chase list — who owes and whose slot deal is ending, with the
+          NOTIFY button that raises real tasks. Untouched by the re-skin. */}
       <BillingChase />
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat
-          tone="butter"
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <Tile
           label="Invoiced"
           value={invoiced.value}
           reason={invoiced.reason}
-          icon={<FileText size={17} strokeWidth={1.8} />}
-          hint={
-            counts
-              ? `${counts.issued} issued${excluded ? `, excluding ${excluded}` : ""}.`
-              : undefined
-          }
+          icon={<FileText className="size-4" />}
+          hint={counts ? `${counts.issued} issued${excluded ? `, excluding ${excluded}` : ""}.` : undefined}
         />
-        <Stat
-          tone="sky"
+        <Tile
           label="Collected"
           value={collected.value}
           reason={collected.reason}
-          icon={<Banknote size={17} strokeWidth={1.8} />}
+          icon={<Banknote className="size-4" />}
           hint={
             paymentCount === null
               ? undefined
               : `${paymentCount} payment${paymentCount === 1 ? "" : "s"} entered by hand from bank confirmations.`
           }
         />
-        <Stat
-          tone="lilac"
+        <Tile
           label="Outstanding"
           value={outstanding.value}
           reason={outstanding.reason}
-          icon={<Wallet size={17} strokeWidth={1.8} />}
+          icon={<Wallet className="size-4" />}
           hint="Issued invoices minus the payments recorded against them, worked out as this page loads. No table holds this figure."
         />
-        <Stat
-          tone="mint"
+        <Tile
           label="Past due"
           value={pastDue.value}
           reason={pastDue.reason}
-          icon={<AlertTriangle size={17} strokeWidth={1.8} />}
+          icon={<AlertTriangle className="size-4" />}
           hint={
             counts
               ? `${counts.late} issued invoice${counts.late === 1 ? "" : "s"} past the due date and not settled.`
@@ -322,242 +417,259 @@ export default function Billing() {
         />
       </div>
 
-      <Card className="mt-3 flex items-start gap-4">
-        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-tile bg-raised text-muted ring-1 ring-line">
-          <Landmark size={18} strokeWidth={1.8} />
-        </span>
-        <div className="min-w-0">
-          <p className="text-[14px] font-semibold text-ink">Payments here are recorded by hand</p>
-          <p className="mt-1.5 max-w-2xl text-[12.5px] leading-relaxed text-muted">
+      {/* The theme's own inline notice shape (finance/_components/
+          finance-notification.tsx): an outlined `Item` with an icon medium, a
+          title and a description. The sentence is unchanged. */}
+      <Item variant="outline" className="items-start rounded-xl">
+        <ItemMedia variant="icon" className="mt-0.5">
+          <Landmark />
+        </ItemMedia>
+        <ItemContent>
+          <ItemTitle>Payments here are recorded by hand</ItemTitle>
+          <ItemDescription className="max-w-3xl text-wrap leading-relaxed">
             ICEFALL has no payment processor. Every payment below was entered by a member of finance staff
             from a bank confirmation, so a row on this page is somebody&rsquo;s reading of a bank statement
             and not a gateway&rsquo;s confirmation. An invoice marked paid with no payment recorded against
             it is flagged rather than assumed settled.
-          </p>
-        </div>
-      </Card>
+          </ItemDescription>
+        </ItemContent>
+      </Item>
 
-      <div className="mt-7">
-        <Heading>Invoices</Heading>
-        <div className="mt-2.5">
-          <Resolve
-            result={invoices}
-            what="invoices"
-            isEmpty={(v) => v.length === 0}
-            empty="No invoice has been raised. One is created when a placement term is agreed or a referral fee falls due."
-          >
-            {(rows) => (
-              <TableCard>
-                <table className="w-full min-w-[60rem] text-[13px]">
-                  <thead>
-                    <tr className="border-b border-line-soft text-left">
-                      <th className="whitespace-nowrap px-5 py-3.5 text-[12px] font-semibold text-faint">Number</th>
-                      <th className="whitespace-nowrap px-5 py-3.5 text-[12px] font-semibold text-faint">Company</th>
-                      <th className="whitespace-nowrap px-5 py-3.5 text-[12px] font-semibold text-faint">For</th>
-                      <th className="whitespace-nowrap px-5 py-3.5 text-[12px] font-semibold text-faint">Amount</th>
-                      <th className="whitespace-nowrap px-5 py-3.5 text-[12px] font-semibold text-faint">Issued</th>
-                      <th className="whitespace-nowrap px-5 py-3.5 text-[12px] font-semibold text-faint">Due</th>
-                      <th className="whitespace-nowrap px-5 py-3.5 text-[12px] font-semibold text-faint">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((i) => {
-                      // Computed at read time, the way `placement_status` computes
-                      // expiry: the due date is a fact already in the row, and
-                      // nothing writes the lateness back.
-                      const days = daysUntil(i.due_on);
-                      const late = isOpen(i) && days < 0;
-                      const unmatched =
-                        i.status === "paid" &&
-                        payments.state === "ok" &&
-                        !payments.value.some((p) => p.invoice_id === i.id);
-                      return (
-                        <tr
-                          key={i.id}
-                          className={
-                            late
-                              ? "border-b border-line-soft bg-[oklch(0.983_0.018_84)] last:border-0 hover:bg-raised"
-                              : "border-b border-line-soft last:border-0 hover:bg-raised"
-                          }
-                        >
-                          <td className="tnum whitespace-nowrap px-5 py-3.5 font-semibold text-ink">{i.number}</td>
-                          <td className="px-5 py-3.5">
-                            <CompanyCell id={i.company_id} companies={companies} />
-                          </td>
-                          <td className="whitespace-nowrap px-5 py-3.5">
-                            <Pill>{KIND_LABEL[i.kind]}</Pill>
-                          </td>
-                          <td className="tnum whitespace-nowrap px-5 py-3.5 text-[14.5px] font-bold tracking-[-0.015em] text-ink">
-                            {formatCents(i.amount_cents, i.currency)}
-                          </td>
-                          <td className="tnum whitespace-nowrap px-5 py-3.5 text-muted">
-                            {formatDay(i.issued_on) ?? <span className="text-faint">Not recorded</span>}
-                          </td>
-                          <td className="tnum whitespace-nowrap px-5 py-3.5 text-muted">
-                            {formatDay(i.due_on) ?? <span className="text-faint">Not recorded</span>}
-                            {late && (
-                              <span className="mt-0.5 block text-[11.5px] font-medium text-warn">
-                                {-days} day{days === -1 ? "" : "s"} past due
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-5 py-3.5">
-                            <StatusChip state={statusState(i.status)} label={i.status} />
-                            {unmatched && (
-                              <span className="mt-1.5 block max-w-[15rem] text-[11.5px] leading-snug text-warn">
-                                Marked paid, but no payment has been recorded against it.
-                              </span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </TableCard>
-            )}
-          </Resolve>
-        </div>
-      </div>
-
-      <div className="mt-7">
-        <Heading>Payments recorded</Heading>
-        <div className="mt-2.5">
-          <Resolve
-            result={payments}
-            what="recorded payments"
-            isEmpty={(v) => v.length === 0}
-            empty="Nothing has been entered. Payments do not appear on their own — a member of finance staff records each one after a bank confirmation."
-          >
-            {(rows) => (
-              <TableCard>
-                <table className="w-full min-w-[58rem] text-[13px]">
-                  <thead>
-                    <tr className="border-b border-line-soft text-left">
-                      <th className="whitespace-nowrap px-5 py-3.5 text-[12px] font-semibold text-faint">Received</th>
-                      <th className="whitespace-nowrap px-5 py-3.5 text-[12px] font-semibold text-faint">Invoice</th>
-                      <th className="whitespace-nowrap px-5 py-3.5 text-[12px] font-semibold text-faint">Company</th>
-                      <th className="whitespace-nowrap px-5 py-3.5 text-[12px] font-semibold text-faint">Amount</th>
-                      <th className="whitespace-nowrap px-5 py-3.5 text-[12px] font-semibold text-faint">Told to us as</th>
-                      <th className="whitespace-nowrap px-5 py-3.5 text-[12px] font-semibold text-faint">Reference</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((p) => (
-                      <tr key={p.id} className="border-b border-line-soft last:border-0 hover:bg-raised">
-                        <td className="tnum whitespace-nowrap px-5 py-3.5 text-muted">
-                          {formatDay(p.received_on) ?? <span className="text-faint">Not recorded</span>}
-                        </td>
-                        <td className="tnum whitespace-nowrap px-5 py-3.5">
-                          <InvoiceCell id={p.invoice_id} invoices={invoices} />
-                        </td>
-                        <td className="px-5 py-3.5">
-                          <CompanyCell id={p.company_id} companies={companies} />
-                        </td>
-                        <td className="tnum whitespace-nowrap px-5 py-3.5 text-[14.5px] font-bold tracking-[-0.015em] text-ink">
-                          {formatCents(p.amount_cents, p.currency)}
-                        </td>
-                        <td className="whitespace-nowrap px-5 py-3.5">
-                          <Pill>{METHOD_LABEL[p.method]}</Pill>
-                        </td>
-                        <td className="px-5 py-3.5 text-muted">
-                          {p.reference ?? <span className="text-faint">None given</span>}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </TableCard>
-            )}
-          </Resolve>
-        </div>
-      </div>
-
-      <div className="mt-7">
-        <Heading>Balance by company</Heading>
-        <div className="mt-2.5">
-          <Resolve
-            result={trio(companies, invoices, payments)}
-            what="company balances"
-            isEmpty={(v) => v[0].length === 0}
-            empty="No companies are on file, so there is nobody to bill."
-          >
-            {([cs, inv, pay]) => (
-              <TableCard>
-                <table className="w-full min-w-[46rem] text-[13px]">
-                  <thead>
-                    <tr className="border-b border-line-soft text-left">
-                      <th className="whitespace-nowrap px-5 py-3.5 text-[12px] font-semibold text-faint">Company</th>
-                      <th className="whitespace-nowrap px-5 py-3.5 text-[12px] font-semibold text-faint">Invoiced</th>
-                      <th className="whitespace-nowrap px-5 py-3.5 text-[12px] font-semibold text-faint">Payments recorded</th>
-                      <th className="whitespace-nowrap px-5 py-3.5 text-[12px] font-semibold text-faint">Outstanding</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {cs.map((c) => {
-                      const issued = inv.filter((i) => i.company_id === c.id && isIssued(i));
-                      const ids = new Set(issued.map((i) => i.id));
-                      const against = pay.filter((p) => ids.has(p.invoice_id));
-                      return (
-                        <tr key={c.id} className="border-b border-line-soft last:border-0 hover:bg-raised">
-                          <td className="px-5 py-3.5">
-                            <div className="flex items-center gap-3">
-                              <Avatar name={c.name} size={34} />
-                              <Link
-                                to={`/admin/companies/${c.id}`}
-                                className="font-medium text-ink hover:text-accent"
-                              >
-                                {c.name}
-                              </Link>
-                            </div>
-                          </td>
-                          {issued.length === 0 ? (
-                            // Never a zero balance. Nothing was billed, so nothing
-                            // is owed and nothing has been collected — three empty
-                            // cells reading "€0" would send finance chasing a
-                            // company ICEFALL has never invoiced.
-                            <td className="px-5 py-3.5 text-[12.5px] text-faint" colSpan={3}>
-                              No invoices issued
-                            </td>
-                          ) : (
-                            <>
-                              <td className="tnum whitespace-nowrap px-5 py-3.5">
-                                <Money t={total(issued.map(amount))} none="Nothing issued" />
-                              </td>
-                              <td className="tnum whitespace-nowrap px-5 py-3.5">
-                                <Money t={total(against.map(amount))} none="No payment recorded" />
-                              </td>
-                              <td className="tnum whitespace-nowrap px-5 py-3.5">
-                                <Money
-                                  t={total([...issued.map(amount), ...against.map(applied)])}
-                                  none="Nothing issued"
-                                />
-                              </td>
-                            </>
+      <Resolve
+        result={invoices}
+        what="invoices"
+        isEmpty={(v) => v.length === 0}
+        empty="No invoice has been raised. One is created when a placement term is agreed or a referral fee falls due."
+      >
+        {(rows) => (
+          <Card>
+            <CardHeader>
+              <CardTitle className="leading-none">Invoices</CardTitle>
+              <CardDescription>Everything billed, and how far past its due date it is.</CardDescription>
+            </CardHeader>
+            <CardContent className="px-0">
+              <Table className={TABLE_CLS}>
+                <TableHeader className={THEAD_CLS}>
+                  <TableRow>
+                    <TableHead>Number</TableHead>
+                    <TableHead>Company</TableHead>
+                    <TableHead>For</TableHead>
+                    <TableHead>Amount</TableHead>
+                    <TableHead>Issued</TableHead>
+                    <TableHead>Due</TableHead>
+                    <TableHead>Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody className={TBODY_CLS}>
+                  {rows.map((i) => {
+                    // Computed at read time, the way `placement_status` computes
+                    // expiry: the due date is a fact already in the row, and
+                    // nothing writes the lateness back.
+                    const days = daysUntil(i.due_on);
+                    const late = isOpen(i) && days < 0;
+                    const unmatched =
+                      i.status === "paid" &&
+                      payments.state === "ok" &&
+                      !payments.value.some((p) => p.invoice_id === i.id);
+                    return (
+                      // The late-row tint stays — it is the only thing that
+                      // finds an overdue invoice by scanning the column rather
+                      // than reading every Due cell. Moved off the hardcoded
+                      // oklch it used to carry and onto the theme's own amber
+                      // register (`bg-amber-500/…`, the tone the theme uses for
+                      // "needs attention" on its own status badges).
+                      <TableRow key={i.id} className={cn(late && "bg-amber-500/5")}>
+                        <TableCell className="font-medium text-sm tabular-nums">{i.number}</TableCell>
+                        <TableCell>
+                          <CompanyCell id={i.company_id} companies={companies} />
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="rounded-full px-2.5">
+                            {KIND_LABEL[i.kind]}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="font-medium text-sm tabular-nums">
+                          {formatCents(i.amount_cents, i.currency)}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground tabular-nums">
+                          {formatDay(i.issued_on) ?? <span className="text-muted-foreground">Not recorded</span>}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground tabular-nums">
+                          {formatDay(i.due_on) ?? <span className="text-muted-foreground">Not recorded</span>}
+                          {late && (
+                            <span className="mt-0.5 block font-medium text-amber-600 text-xs dark:text-amber-400">
+                              {-days} day{days === -1 ? "" : "s"} past due
+                            </span>
                           )}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </TableCard>
-            )}
-          </Resolve>
-        </div>
-      </div>
+                        </TableCell>
+                        <TableCell>
+                          <StatusBadge status={i.status} />
+                          {unmatched && (
+                            <span className="mt-1.5 block max-w-60 text-wrap text-amber-600 text-xs leading-snug dark:text-amber-400">
+                              Marked paid, but no payment has been recorded against it.
+                            </span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        )}
+      </Resolve>
 
-      <div className="mt-6">
-        <Unavailable
-          reason={
-            "No collection rate, no average days-to-payment and no change against a previous period are shown. " +
-            "Each would need either a settlement timestamp from a payment provider or an earlier period stored to " +
-            "compare against, and ICEFALL has neither — the dates on this page are the days a person entered a row, " +
-            "not the days a processor settled one. Refunds have no table of their own yet, so a refunded invoice " +
-            "still carries the payment recorded against it: the status says what happened and the arithmetic is left " +
-            "alone rather than adjusted by a figure nobody stored."
-          }
-        />
-      </div>
-    </>
+      <Resolve
+        result={payments}
+        what="recorded payments"
+        isEmpty={(v) => v.length === 0}
+        empty="Nothing has been entered. Payments do not appear on their own — a member of finance staff records each one after a bank confirmation."
+      >
+        {(rows) => (
+          <Card>
+            <CardHeader>
+              <CardTitle className="leading-none">Payments recorded</CardTitle>
+              <CardDescription>
+                Each line is a person&rsquo;s reading of a bank confirmation, not a gateway&rsquo;s.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="px-0">
+              <Table className={TABLE_CLS}>
+                <TableHeader className={THEAD_CLS}>
+                  <TableRow>
+                    <TableHead>Received</TableHead>
+                    <TableHead>Invoice</TableHead>
+                    <TableHead>Company</TableHead>
+                    <TableHead>Amount</TableHead>
+                    <TableHead>Told to us as</TableHead>
+                    <TableHead>Reference</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody className={TBODY_CLS}>
+                  {rows.map((p) => (
+                    <TableRow key={p.id}>
+                      <TableCell className="text-muted-foreground tabular-nums">
+                        {formatDay(p.received_on) ?? <span className="text-muted-foreground">Not recorded</span>}
+                      </TableCell>
+                      <TableCell>
+                        <InvoiceCell id={p.invoice_id} invoices={invoices} />
+                      </TableCell>
+                      <TableCell>
+                        <CompanyCell id={p.company_id} companies={companies} />
+                      </TableCell>
+                      <TableCell className="font-medium text-sm tabular-nums">
+                        {formatCents(p.amount_cents, p.currency)}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="rounded-full px-2.5">
+                          {METHOD_LABEL[p.method]}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {p.reference ?? <span className="text-muted-foreground">None given</span>}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        )}
+      </Resolve>
+
+      <Resolve
+        result={trio(companies, invoices, payments)}
+        what="company balances"
+        isEmpty={(v) => v[0].length === 0}
+        empty="No companies are on file, so there is nobody to bill."
+      >
+        {([cs, inv, pay]) => (
+          <Card>
+            <CardHeader>
+              <CardTitle className="leading-none">Balance by company</CardTitle>
+              <CardDescription>
+                Issued minus applied, per operator. Nothing here is stored — it is worked out as the page
+                loads.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="px-0">
+              <Table className={TABLE_CLS}>
+                <TableHeader className={THEAD_CLS}>
+                  <TableRow>
+                    <TableHead>Company</TableHead>
+                    <TableHead>Invoiced</TableHead>
+                    <TableHead>Payments recorded</TableHead>
+                    <TableHead>Outstanding</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody className={TBODY_CLS}>
+                  {cs.map((c) => {
+                    const issued = inv.filter((i) => i.company_id === c.id && isIssued(i));
+                    const ids = new Set(issued.map((i) => i.id));
+                    const against = pay.filter((p) => ids.has(p.invoice_id));
+                    return (
+                      <TableRow key={c.id}>
+                        <TableCell>
+                          <div className="flex items-center gap-3">
+                            <Avatar>
+                              <AvatarFallback className="text-xs">{initials(c.name)}</AvatarFallback>
+                            </Avatar>
+                            <Link
+                              to={`/admin/companies/${c.id}`}
+                              className="font-medium text-sm hover:underline"
+                            >
+                              {c.name}
+                            </Link>
+                          </div>
+                        </TableCell>
+                        {issued.length === 0 ? (
+                          // Never a zero balance. Nothing was billed, so nothing
+                          // is owed and nothing has been collected — three empty
+                          // cells reading "€0" would send finance chasing a
+                          // company ICEFALL has never invoiced.
+                          <TableCell className="text-muted-foreground text-sm" colSpan={3}>
+                            No invoices issued
+                          </TableCell>
+                        ) : (
+                          <>
+                            <TableCell>
+                              <Money t={total(issued.map(amount))} none="Nothing issued" />
+                            </TableCell>
+                            <TableCell>
+                              <Money t={total(against.map(amount))} none="No payment recorded" />
+                            </TableCell>
+                            <TableCell>
+                              <Money
+                                t={total([...issued.map(amount), ...against.map(applied)])}
+                                none="Nothing issued"
+                              />
+                            </TableCell>
+                          </>
+                        )}
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        )}
+      </Resolve>
+
+      {/* The refusal, verbatim. Deliberately NOT restyled into the theme's
+          Empty component: "No data" would erase the difference between a
+          figure nobody measured and a measured zero. */}
+      <Unavailable
+        reason={
+          "No collection rate, no average days-to-payment and no change against a previous period are shown. " +
+          "Each would need either a settlement timestamp from a payment provider or an earlier period stored to " +
+          "compare against, and ICEFALL has neither — the dates on this page are the days a person entered a row, " +
+          "not the days a processor settled one. Refunds have no table of their own yet, so a refunded invoice " +
+          "still carries the payment recorded against it: the status says what happened and the arithmetic is left " +
+          "alone rather than adjusted by a figure nobody stored."
+        }
+      />
+    </div>
   );
 }

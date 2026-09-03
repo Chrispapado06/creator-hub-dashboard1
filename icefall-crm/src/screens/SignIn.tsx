@@ -1,17 +1,13 @@
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { ArrowRight, Eye, EyeOff, Globe, Headset, Lock, Mail, Mountain, Quote, Users } from "lucide-react";
+import { ArrowRight, Eye, EyeOff, Globe, Headset, Mountain, Quote, Users } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Field, FieldLabel } from "@/components/ui/field";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 import { SHOW_DEMO_DATA } from "@/lib/demoFlag";
 
 /**
  * ICEFALL CRM — sign in.
- *
- * ⚠ WRITTEN WITHOUT BEING ABLE TO READ THE REST OF THE PROJECT. File reads
- * across the ICEFALL tree were returning EPERM when this was written, so it is
- * deliberately SELF-CONTAINED: no imports from `@/components/ui`, no reliance on
- * a CSS custom property it could not verify exists, nothing but Tailwind
- * utilities and literal colours. It has not been typechecked, rendered or wired
- * into any route. Verify before trusting it.
  *
  * ── THREE THINGS IN THE MOCKUP THAT ARE NOT BUILT AS DRAWN ──────────────────
  *
@@ -41,17 +37,28 @@ import { SHOW_DEMO_DATA } from "@/lib/demoFlag";
  *    the same failure as a figure that looks measured and is not — and on a login
  *    screen it is the one a locked-out administrator will click first.
  *
- * ── AND ONE THING TO SETTLE ────────────────────────────────────────────────
+ * ── THE ACCENT QUESTION IS SETTLED ─────────────────────────────────────────
  *
- * THE MOCKUP IS GOLD. The accent here follows it, because the instruction was
- * to match the design exactly. But the product owner settled on alpine azure and
- * the rest of this CRM is built in it, so these two cannot both be right. The
- * gold is held in ONE constant below so reversing it is a one-line change.
+ * This file used to hold a single GOLD constant with a note saying the mockup's
+ * gold and the product's azure could not both be right. Neither survived: the
+ * owner's Sep 2026 ruling was to match the reference theme 1:1, and the theme has
+ * NO accent hue at all — every colour token in it is chroma 0. So the submit
+ * button, the links and the proof icons all read `--primary`, and there is no
+ * literal colour left in this file outside the two provider marks, which are
+ * other companies' trademarks and are drawn in their own colours or not at all.
+ *
+ * ── RE-SKIN: WHAT MOVED, AND WHAT DID NOT ──────────────────────────────────
+ *
+ * The page is now the theme's own login: full-bleed `h-dvh`, a one-third panel
+ * beside a two-thirds form column, the theme's Field/InputGroup/Button
+ * primitives, and the theme's light `text-5xl` headline in the sans face rather
+ * than the mockup's serif. NOTHING WAS DROPPED. The photograph, the wordmark,
+ * the headline, the proof panel and its honest "None yet", Contact Support,
+ * Forgot password, both provider buttons, Request access and the footer links
+ * are all still here; Contact Support moved from a right-aligned row above the
+ * form to the top of the form column, which is where the theme puts its own
+ * top-right auth link.
  */
-
-/** The mockup's accent. See the note above — this is the only place it lives. */
-const GOLD = "#C79049";
-const GOLD_HOVER = "#B27F3D";
 
 export default function SignIn() {
   const [showPassword, setShowPassword] = useState(false);
@@ -61,231 +68,203 @@ export default function SignIn() {
   const [error, setError] = useState<string | null>(null);
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#F2F2F0] px-4 py-4 sm:px-8 sm:py-7">
-      <div className="mx-auto flex w-full max-w-[1420px] flex-1 overflow-hidden rounded-[20px] bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04),0_18px_44px_rgba(0,0,0,0.07)]">
-        {/* ---- Left: the photograph and the proof panel ------------------- */}
-        <section className="relative hidden w-[52%] shrink-0 flex-col justify-between overflow-hidden p-11 lg:flex">
-          <Photograph />
+    <div className="flex h-dvh bg-background">
+      {/* ---- Left: the photograph and the proof panel ------------------- */}
+      {/* The theme's login puts a solid `bg-primary` panel beside the form and
+          sets its type in `primary-foreground`. This is that panel, with the
+          photograph underneath the veil rather than instead of it — which is
+          also the only arrangement in which the headline and the paragraph are
+          legible at a third of the page. */}
+      <section className="relative hidden shrink-0 flex-col justify-between overflow-hidden bg-primary p-10 text-primary-foreground lg:flex lg:w-2/5 xl:w-1/3">
+        <Photograph />
 
-          <div className="relative">
-            <Wordmark />
-            <h1
-              className="mt-16 text-[52px] leading-[1.06] tracking-[-0.015em] text-[#12100E]"
-              style={{ fontFamily: '"Instrument Serif", Georgia, serif' }}
-            >
-              Manage. Connect.
-              <br />
-              <span style={{ color: GOLD }}>Grow.</span>
-            </h1>
-            <p className="mt-5 max-w-[380px] text-[15px] leading-relaxed text-[#4B4A47]">
-              ICEFALL CRM gives your expedition business the tools to build relationships, manage
-              leads, and grow your adventures worldwide.
-            </p>
+        <div className="relative">
+          <Wordmark />
+          <h1 className="mt-12 font-light text-5xl leading-[1.06] tracking-tight">
+            Manage. Connect.
+            <br />
+            Grow.
+          </h1>
+          <p className="mt-5 max-w-[380px] text-primary-foreground/80 leading-relaxed">
+            ICEFALL CRM gives your expedition business the tools to build relationships, manage
+            leads, and grow your adventures worldwide.
+          </p>
+        </div>
+
+        <ProofPanel />
+      </section>
+
+      {/* ---- Right: the form ------------------------------------------- */}
+      <section className="flex min-w-0 flex-1 flex-col bg-background px-6 py-8 sm:px-12 lg:w-2/3">
+        <div className="flex items-center justify-end gap-3">
+          <span className="text-muted-foreground text-sm">Need help?</span>
+          {/* Drawn as the mockup draws it, but NOT a mailto: there is no
+              support mailbox — support contract correction, 30 Aug 2026.
+              A link to a dead address is a reply nobody will ever read.
+              Points at the real desk instead; staff sign in to reach it. */}
+          <span
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 font-medium text-sm"
+            title="Support is handled inside the CRM — sign in to reach the desk."
+          >
+            <Headset className="size-4 text-muted-foreground" />
+            Contact Support
+          </span>
+        </div>
+
+        <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center py-10">
+          <div className="space-y-2">
+            <h2 className="font-medium text-3xl tracking-tight">Welcome back</h2>
+            <p className="text-muted-foreground text-sm">Sign in to access your ICEFALL CRM dashboard.</p>
           </div>
 
-          <ProofPanel />
-        </section>
+          {/*
+            THIS FORM USED TO DO NOTHING. `onSubmit={(e) => e.preventDefault()}`
+            and no handler — so the CRM rendered a complete, convincing sign-in
+            that could not sign anybody in. It was survivable only while a demo
+            fallback granted access when Supabase was unconfigured; the day real
+            credentials landed in `.env.local` that fallback became dead code
+            and the CRM became a locked door with no key.
 
-        {/* ---- Right: the form ------------------------------------------- */}
-        <section className="flex min-w-0 flex-1 flex-col px-6 py-9 sm:px-14">
-          <div className="flex items-center justify-end gap-3">
-            <span className="text-[13.5px] text-[#6B6A66]">Need help?</span>
-            {/* Drawn as the mockup draws it, but NOT a mailto: there is no
-                support mailbox — support contract correction, 30 Aug 2026.
-                A link to a dead address is a reply nobody will ever read.
-                Points at the real desk instead; staff sign in to reach it. */}
-            <span
-              className="inline-flex h-10 items-center gap-2 rounded-[10px] border border-[#E4E3DF] px-4 text-[13.5px] font-medium text-[#12100E]"
-              title="Support is handled inside the CRM — sign in to reach the desk."
-            >
-              <Headset size={16} strokeWidth={1.9} />
-              Contact Support
-            </span>
-          </div>
-
-          <div className="mx-auto flex w-full max-w-[420px] flex-1 flex-col justify-center py-10">
-            <h2 className="text-[34px] font-bold leading-tight tracking-[-0.025em] text-[#12100E]">
-              Welcome back
-            </h2>
-            <p className="mt-2 text-[14.5px] text-[#6B6A66]">
-              Sign in to access your ICEFALL CRM dashboard.
-            </p>
-
-            {/*
-              THIS FORM USED TO DO NOTHING. `onSubmit={(e) => e.preventDefault()}`
-              and no handler — so the CRM rendered a complete, convincing sign-in
-              that could not sign anybody in. It was survivable only while a demo
-              fallback granted access when Supabase was unconfigured; the day real
-              credentials landed in `.env.local` that fallback became dead code
-              and the CRM became a locked door with no key.
-
-              Access still requires BOTH halves of the staff check in
-              `auth/session.tsx` — `profiles.role = 'admin'` AND an active
-              `staff_members` row. Signing in is not the same as being staff, and
-              a climber's account signing in here correctly lands on "not staff".
-            */}
-            <form
-              className="mt-8 space-y-5"
-              onSubmit={async (e) => {
-                e.preventDefault();
-                if (busy) return;
-                setBusy(true);
-                setError(null);
-                if (!supabase) {
-                  setError("The CRM isn't connected to the database.");
-                  setBusy(false);
-                  return;
-                }
-                const { error: err } = await supabase.auth.signInWithPassword({
-                  email: email.trim().toLowerCase(),
-                  password,
-                });
+            Access still requires BOTH halves of the staff check in
+            `auth/session.tsx` — `profiles.role = 'admin'` AND an active
+            `staff_members` row. Signing in is not the same as being staff, and
+            a climber's account signing in here correctly lands on "not staff".
+          */}
+          <form
+            className="mt-8 flex flex-col gap-4"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (busy) return;
+              setBusy(true);
+              setError(null);
+              if (!supabase) {
+                setError("The CRM isn't connected to the database.");
                 setBusy(false);
-                if (err) {
-                  setError(
-                    /invalid login credentials/i.test(err.message)
-                      ? "That email and password don't match an account."
-                      : err.message,
-                  );
-                }
-                // On success the session listener in `auth/session.tsx` takes
-                // over and re-renders; there is nothing to navigate to here.
-              }}
-            >
-              <Field label="Email address" htmlFor="email">
-                <Mail size={17} strokeWidth={1.8} className="text-[#9B9A95]" />
-                <input
+                return;
+              }
+              const { error: err } = await supabase.auth.signInWithPassword({
+                email: email.trim().toLowerCase(),
+                password,
+              });
+              setBusy(false);
+              if (err) {
+                setError(
+                  /invalid login credentials/i.test(err.message)
+                    ? "That email and password don't match an account."
+                    : err.message,
+                );
+              }
+              // On success the session listener in `auth/session.tsx` takes
+              // over and re-renders; there is nothing to navigate to here.
+            }}
+          >
+            <Field className="gap-1.5">
+              <FieldLabel htmlFor="email">Email address</FieldLabel>
+              <InputGroup>
+                <InputGroupInput
                   id="email"
                   type="email"
                   autoComplete="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@example.com"
-                  className="w-full bg-transparent text-[14.5px] text-[#12100E] outline-none placeholder:text-[#A9A8A3]"
                 />
-              </Field>
+              </InputGroup>
+            </Field>
 
-              <div>
-                <Field label="Password" htmlFor="password">
-                  <Lock size={17} strokeWidth={1.8} className="text-[#9B9A95]" />
-                  <input
-                    id="password"
-                    type={showPassword ? "text" : "password"}
-                    autoComplete="current-password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Enter your password"
-                    className="w-full bg-transparent text-[14.5px] text-[#12100E] outline-none placeholder:text-[#A9A8A3]"
-                  />
-                  <button
+            <Field className="gap-1.5">
+              <FieldLabel htmlFor="password">Password</FieldLabel>
+              <InputGroup>
+                <InputGroupInput
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Enter your password"
+                />
+                <InputGroupAddon align="inline-end">
+                  <InputGroupButton
                     type="button"
+                    variant="ghost"
+                    size="icon-xs"
                     onClick={() => setShowPassword((v) => !v)}
                     aria-label={showPassword ? "Hide password" : "Show password"}
-                    className="text-[#9B9A95] transition-colors hover:text-[#12100E]"
                   >
-                    {showPassword ? <Eye size={17} strokeWidth={1.8} /> : <EyeOff size={17} strokeWidth={1.8} />}
-                  </button>
-                </Field>
-                <div className="mt-2 flex justify-end">
-                  <a href="#" className="text-[13px] font-medium" style={{ color: GOLD }}>
-                    Forgot password?
-                  </a>
-                </div>
+                    {showPassword ? <Eye /> : <EyeOff />}
+                  </InputGroupButton>
+                </InputGroupAddon>
+              </InputGroup>
+              <div className="flex justify-end">
+                <a href="#" className="font-medium text-primary text-sm">
+                  Forgot password?
+                </a>
               </div>
+            </Field>
 
-              {/* Render the failure. A form that refuses silently is the same
-                  defect as one that does nothing. */}
-              {error && (
-                <p className="text-[13px] leading-relaxed text-[#B23A2E]">{error}</p>
-              )}
-              <button
-                type="submit"
-                disabled={busy}
-                className="flex h-[52px] w-full items-center justify-center gap-2 rounded-[10px] text-[15px] font-semibold text-white transition-colors"
-                style={{ backgroundColor: GOLD }}
-                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = GOLD_HOVER)}
-                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = GOLD)}
-              >
-                {busy ? "Signing in…" : "Sign in"}
-                <ArrowRight size={17} strokeWidth={2.1} />
-              </button>
-            </form>
+            {/* Render the failure. A form that refuses silently is the same
+                defect as one that does nothing. */}
+            {error && <p className="text-destructive text-sm leading-relaxed">{error}</p>}
 
-            <div className="my-7 flex items-center gap-4">
-              <span className="h-px flex-1 bg-[#E8E7E3]" />
-              <span className="text-[13px] text-[#8A8985]">or continue with</span>
-              <span className="h-px flex-1 bg-[#E8E7E3]" />
-            </div>
+            <Button type="submit" className="w-full" disabled={busy}>
+              {busy ? "Signing in…" : "Sign in"}
+              <ArrowRight data-icon="inline-end" />
+            </Button>
+          </form>
 
-            {/*
-              DISABLED, NOT DECORATIVE. No OAuth provider is configured on this
-              project, so these cannot sign anybody in. Rendering them as working
-              buttons would leave a locked-out administrator clicking the thing
-              that was never going to work, which is the worst moment to discover
-              a control is a picture of a control.
-            */}
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <ProviderButton label="Sign in with Google" mark={<GoogleMark />} />
-              <ProviderButton label="Sign in with Microsoft" mark={<MicrosoftMark />} />
-            </div>
-
-            <p className="mt-8 text-center text-[13.5px] text-[#6B6A66]">
-              Don&rsquo;t have an account?{" "}
-              <a href="#" className="inline-flex items-center gap-1 font-semibold" style={{ color: GOLD }}>
-                Request access
-                <ArrowRight size={14} strokeWidth={2.2} />
-              </a>
-            </p>
+          <div className="relative my-7 text-center text-sm after:absolute after:inset-0 after:top-1/2 after:z-0 after:flex after:items-center after:border-border after:border-t">
+            <span className="relative z-10 bg-background px-2 text-muted-foreground">or continue with</span>
           </div>
-        </section>
-      </div>
 
-      <footer className="mx-auto mt-5 flex w-full max-w-[1420px] items-center justify-between px-2 text-[13px] text-[#8A8985]">
-        <span className="flex items-center gap-2.5">
-          <MountainMark className="text-[#B8B7B2]" size={20} />
-          © {new Date().getFullYear()} ICEFALL. All rights reserved.
-        </span>
-        <span className="flex items-center gap-7">
-          <a href="#" className="transition-colors hover:text-[#12100E]">Privacy Policy</a>
-          <a href="#" className="transition-colors hover:text-[#12100E]">Terms of Service</a>
-        </span>
-      </footer>
+          {/*
+            DISABLED, NOT DECORATIVE. No OAuth provider is configured on this
+            project, so these cannot sign anybody in. Rendering them as working
+            buttons would leave a locked-out administrator clicking the thing
+            that was never going to work, which is the worst moment to discover
+            a control is a picture of a control.
+          */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <ProviderButton label="Sign in with Google" mark={<GoogleMark />} />
+            <ProviderButton label="Sign in with Microsoft" mark={<MicrosoftMark />} />
+          </div>
+
+          <p className="mt-8 text-center text-muted-foreground text-sm">
+            Don&rsquo;t have an account?{" "}
+            <a href="#" className="inline-flex items-center gap-1 font-medium text-primary">
+              Request access
+              <ArrowRight className="size-3.5" />
+            </a>
+          </p>
+        </div>
+
+        <footer className="flex flex-wrap items-center justify-between gap-3 text-muted-foreground text-sm">
+          <span className="flex items-center gap-2.5">
+            <MountainMark size={20} />© {new Date().getFullYear()} ICEFALL. All rights reserved.
+          </span>
+          <span className="flex items-center gap-7">
+            <a href="#" className="transition-colors hover:text-foreground">Privacy Policy</a>
+            <a href="#" className="transition-colors hover:text-foreground">Terms of Service</a>
+          </span>
+        </footer>
+      </section>
     </div>
   );
 }
 
 /* -------------------------------------------------------------------------- */
 
-function Field({
-  label,
-  htmlFor,
-  children,
-}: {
-  label: string;
-  htmlFor: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <label htmlFor={htmlFor} className="mb-2 block text-[13.5px] font-semibold text-[#12100E]">
-        {label}
-      </label>
-      <div className="flex h-[52px] items-center gap-3 rounded-[10px] border border-[#E4E3DF] bg-white px-4 focus-within:border-[#C79049]">
-        {children}
-      </div>
-    </div>
-  );
-}
-
 function ProviderButton({ label, mark }: { label: string; mark: React.ReactNode }) {
   return (
-    <button
+    <Button
       type="button"
-      className="flex h-[52px] items-center justify-center gap-2.5 rounded-[10px] border border-[#E4E3DF] bg-white text-[14px] font-medium text-[#12100E] transition-colors hover:bg-[#FAFAF8]"
+      variant="outline"
+      disabled
+      title="No OAuth provider is configured on this project, so this cannot sign anybody in."
+      className="w-full"
     >
       {mark}
       {label}
-    </button>
+    </Button>
   );
 }
 
@@ -304,12 +283,14 @@ function ProviderButton({ label, mark }: { label: string; mark: React.ReactNode 
  */
 function ProofPanel() {
   return (
-    <div className="relative rounded-[14px] bg-[rgba(20,19,17,0.82)] px-7 py-6 backdrop-blur-[2px]">
+    <div className="relative rounded-xl bg-primary-foreground/10 px-6 py-5 ring-1 ring-primary-foreground/15 backdrop-blur-[2px]">
       {SHOW_DEMO_DATA ? (
-        <div className="flex items-center gap-7">
-          <div className="max-w-[210px]">
-            <Quote size={20} strokeWidth={0} fill="currentColor" className="mb-1.5 text-white/35" />
-            <p className="text-[13px] leading-[1.5] text-white/90">
+        // Stacked rather than side by side: at a third of the page the two
+        // halves cannot sit in a row without the figures colliding.
+        <div className="flex flex-col gap-5">
+          <div>
+            <Quote size={20} strokeWidth={0} fill="currentColor" className="mb-1.5 text-primary-foreground/35" />
+            <p className="text-primary-foreground/90 text-sm leading-[1.5]">
               ICEFALL CRM has transformed how we manage our expeditions and our clients.
             </p>
             <div className="mt-4 flex items-center gap-2.5">
@@ -317,25 +298,25 @@ function ProofPanel() {
                 src="/img/destinations/ama-dablam.jpg"
                 alt=""
                 aria-hidden
-                className="h-9 w-9 shrink-0 rounded-full object-cover"
+                className="size-9 shrink-0 rounded-full object-cover"
               />
               <span className="leading-tight">
-                <span className="block text-[12.5px] font-semibold text-white">Ang Temba Sherpa</span>
-                <span className="block text-[11.5px] text-white/55">7 Summits Treks</span>
+                <span className="block font-medium text-primary-foreground text-xs">Ang Temba Sherpa</span>
+                <span className="block text-[11.5px] text-primary-foreground/55">7 Summits Treks</span>
               </span>
             </div>
           </div>
 
-          <span className="h-[86px] w-px shrink-0 bg-white/15" />
+          <span className="h-px w-full bg-primary-foreground/15" />
 
-          <div className="flex flex-1 items-start justify-around">
+          <div className="flex items-start justify-between gap-3">
             <Stat icon={<Users size={21} strokeWidth={1.6} />} value="500+" label="Companies" />
             <Stat icon={<Mountain size={21} strokeWidth={1.6} />} value="1,250+" label="Expeditions" />
             <Stat icon={<Globe size={21} strokeWidth={1.6} />} value="25+" label="Countries" />
           </div>
         </div>
       ) : (
-        <div className="flex items-center justify-around">
+        <div className="flex items-start justify-between gap-3">
           <Stat icon={<Users size={21} strokeWidth={1.6} />} value={null} label="Companies" />
           <Stat icon={<Mountain size={21} strokeWidth={1.6} />} value={null} label="Expeditions" />
           <Stat icon={<Globe size={21} strokeWidth={1.6} />} value={null} label="Countries" />
@@ -348,15 +329,14 @@ function ProofPanel() {
 function Stat({ icon, value, label }: { icon: React.ReactNode; value: string | null; label: string }) {
   return (
     <div className="text-center">
-      <span className="mx-auto mb-2 grid h-8 w-8 place-items-center" style={{ color: GOLD }}>
-        {icon}
-      </span>
+      <span className="mx-auto mb-2 grid size-8 place-items-center text-primary-foreground">{icon}</span>
+      {/* No figure, and the reason in its place: never a zero, never a dash. */}
       {value === null ? (
-        <p className="text-[13px] font-medium leading-none text-white/45">None yet</p>
+        <p className="font-medium text-primary-foreground/45 text-sm leading-none">None yet</p>
       ) : (
-        <p className="text-[22px] font-bold leading-none text-white">{value}</p>
+        <p className="font-medium text-2xl text-primary-foreground leading-none">{value}</p>
       )}
-      <p className="mt-1.5 text-[12px] text-white/60">{label}</p>
+      <p className="mt-1.5 text-primary-foreground/60 text-xs">{label}</p>
     </div>
   );
 }
@@ -373,9 +353,9 @@ function MountainMark({ className, size = 30 }: { className?: string; size?: num
 
 function Wordmark() {
   return (
-    <span className="flex items-center gap-3 text-[#12100E]">
+    <span className="flex items-center gap-3">
       <MountainMark />
-      <span className="text-[20px] font-semibold tracking-[0.26em]">ICEFALL</span>
+      <span className="font-medium text-xl tracking-[0.26em]">ICEFALL</span>
     </span>
   );
 }
@@ -388,9 +368,11 @@ function Wordmark() {
  * licence and author recorded in `public/img/destinations/CREDITS.md`, because a
  * picture whose licence nobody tracked is one that cannot ship.
  *
- * The white scrim at the top is what keeps the black headline legible over the
- * sky, which is how the design gets away with putting text on a photograph at
- * all.
+ * The scrim is what keeps the headline legible over the sky, which is how the
+ * design gets away with putting text on a photograph at all. It is drawn from
+ * `--primary` rather than from a literal colour, so the panel is the theme's own
+ * dark login panel with the mountain showing through it rather than a separate
+ * palette parked beside the theme.
  */
 function Photograph() {
   return (
@@ -399,14 +381,14 @@ function Photograph() {
         src="/img/destinations/everest.jpg"
         alt=""
         aria-hidden
-        className="absolute inset-0 h-full w-full object-cover"
+        className="absolute inset-0 size-full object-cover"
       />
       <div
         aria-hidden
         className="absolute inset-0"
         style={{
           background:
-            "linear-gradient(180deg,rgba(255,255,255,0.99) 0%,rgba(255,255,255,0.97) 14%,rgba(255,255,255,0.80) 27%,rgba(255,255,255,0.34) 40%,rgba(255,255,255,0.04) 52%,rgba(0,0,0,0.12) 76%,rgba(0,0,0,0.40) 100%)",
+            "linear-gradient(180deg,color-mix(in oklch,var(--primary) 88%,transparent) 0%,color-mix(in oklch,var(--primary) 62%,transparent) 42%,color-mix(in oklch,var(--primary) 80%,transparent) 72%,color-mix(in oklch,var(--primary) 94%,transparent) 100%)",
         }}
       />
     </>

@@ -1,15 +1,11 @@
-import { useEffect, useState } from "react";
-import {
-  Avatar,
-  Button,
-  Card,
-  PageHead,
-  Pill,
-  SectionLabel,
-  Stat,
-  StatusChip,
-  TableCard,
-} from "@/components/ui";
+import { useEffect, useState, type ReactNode } from "react";
+import { AlertTriangle, ShieldCheck, ShieldOff, SquareStack } from "lucide-react";
+import { Avatar } from "@/components/ui";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Resolve, Unavailable } from "@/components/states";
 import { DESK_LABEL, useStaff } from "@/auth/session";
 import { listStaff, setSupportScopes } from "@/data/queries";
@@ -42,6 +38,10 @@ import { formatDay } from "@/lib/utils";
  * The role is the section heading rather than a repeated column: five desks
  * printed down one column is a column nobody reads, and grouping is the only
  * layout in which a desk with NOBODY in it is visible at all.
+ *
+ * LAYOUT: the reference theme — metric cards, then one card per desk carrying
+ * its own table. The grouping, the scope editor and both warnings survived it;
+ * the warnings are now the theme's amber alert instead of a line of amber text.
  */
 
 /**
@@ -77,17 +77,73 @@ const DESKS: { id: StaffRole; gates: string }[] = [
 ];
 
 /**
- * Access maps to the mockup's status control. Revoked is NEUTRAL rather than
+ * The theme's metric card, with ICEFALL's honesty contract intact: `value` of
+ * null prints the REASON there is no figure — never a dash, never a zero
+ * standing in for one. A measured zero prints as "0".
+ */
+function Metric({
+  icon,
+  label,
+  value,
+  reason,
+  hint,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string | null;
+  reason?: string;
+  hint?: string;
+}) {
+  return (
+    <Card className="min-w-0">
+      <CardHeader>
+        <CardTitle>
+          <div className="flex size-7 items-center justify-center rounded-lg border bg-ui-muted text-muted-foreground">
+            {icon}
+          </div>
+        </CardTitle>
+        <CardDescription>{label}</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-1">
+        {value === null ? (
+          <p className="text-sm leading-relaxed text-muted-foreground">{reason ?? "Not recorded"}</p>
+        ) : (
+          <>
+            <div className="font-medium text-3xl leading-none tracking-tight tabular-nums">{value}</div>
+            {hint && <p className="text-sm text-muted-foreground">{hint}</p>}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Access, drawn as the theme's status badge. Revoked is NEUTRAL rather than
  * red: a red cross reads as a refusal somebody should look into, and a revoked
  * account is an ordinary, deliberate end state that the note below the table
  * already explains. The colour is spent on the thing that is true — this person
  * currently has access — and withheld from the thing that is merely over.
  */
-const accessState = (active: boolean): "ok" | "neutral" => (active ? "ok" : "neutral");
-
-/** The mockup's table metrics: roomy gutters, a tall row, a quiet header. */
-const TH = "px-5 py-3.5 text-[12px] font-semibold text-faint";
-const TD = "px-5 py-3.5";
+function AccessBadge({ active }: { active: boolean }) {
+  return active ? (
+    <Badge
+      className="gap-1.5 border border-ok/20 bg-ok/10 px-2 py-1 font-medium text-ok"
+      variant="outline"
+    >
+      <span className="size-1.5 rounded-full bg-ok" />
+      Access active
+    </Badge>
+  ) : (
+    <Badge
+      className="gap-1.5 border border-border bg-ui-muted/50 px-2 py-1 font-medium text-muted-foreground"
+      variant="outline"
+    >
+      <span className="size-1.5 rounded-full bg-muted-foreground" />
+      Access revoked
+    </Badge>
+  );
+}
 
 /**
  * CR-14: who this person handles on the support desk. The chips are visible to
@@ -121,22 +177,21 @@ function ScopeCell({ staff, canEdit }: { staff: StaffRecord; canEdit: boolean })
 
   if (!editing) {
     return (
-      <span className="flex flex-wrap items-center gap-1">
+      <span className="flex flex-wrap items-center gap-1.5">
         {saved.length === 0 ? (
-          <span className="text-[12px] text-faint">Everyone</span>
+          // Unscoped. "Everyone" is the fact, not a placeholder for one.
+          <span className="text-muted-foreground">Everyone</span>
         ) : (
           saved.map((k) => (
-            <Pill key={k} tone="neutral">{KINDS.find((x) => x.id === k)?.label ?? k}</Pill>
+            <Badge key={k} className="rounded-sm" variant="outline">
+              {KINDS.find((x) => x.id === k)?.label ?? k}
+            </Badge>
           ))
         )}
         {canEdit && (
-          <button
-            type="button"
-            onClick={() => setEditing(true)}
-            className="ml-1 text-[11.5px] font-medium text-muted hover:text-ink"
-          >
+          <Button size="xs" variant="ghost" onClick={() => setEditing(true)}>
             Change
-          </button>
+          </Button>
         )}
       </span>
     );
@@ -144,28 +199,33 @@ function ScopeCell({ staff, canEdit }: { staff: StaffRecord; canEdit: boolean })
   return (
     <span className="flex flex-wrap items-center gap-1.5">
       {KINDS.map((k) => (
-        <button
+        <Button
           key={k.id}
-          type="button"
+          size="xs"
+          variant={scopes.includes(k.id) ? "secondary" : "outline"}
+          aria-pressed={scopes.includes(k.id)}
           onClick={() =>
             setScopes((cur) => (cur.includes(k.id) ? cur.filter((x) => x !== k.id) : [...cur, k.id]))
           }
-          className={
-            scopes.includes(k.id)
-              ? "rounded-pill bg-accent-soft px-2 py-[3px] text-[11.5px] font-medium text-accent-ink ring-1 ring-accent/40"
-              : "rounded-pill bg-raised px-2 py-[3px] text-[11.5px] font-medium text-muted ring-1 ring-line"
-          }
         >
           {k.label}
-        </button>
+        </Button>
       ))}
-      <Button size="sm" variant="secondary" disabled={busy} onClick={() => void save()}>
+      <Button size="xs" disabled={busy} onClick={() => void save()}>
         Save
       </Button>
-      <Button size="sm" variant="ghost" onClick={() => { setScopes(saved); setEditing(false); }}>
+      <Button
+        size="xs"
+        variant="ghost"
+        onClick={() => {
+          setScopes(saved);
+          setEditing(false);
+        }}
+      >
         Cancel
       </Button>
-      {err && <span className="text-[11.5px] text-bad">{err}</span>}
+      {/* A refusal from the database is printed in its own words, in place. */}
+      {err && <span className="text-xs text-destructive">{err}</span>}
     </span>
   );
 }
@@ -198,15 +258,25 @@ export default function Team() {
     : [];
 
   return (
-    <>
-      <PageHead
-        title="Admin Team"
-        subtitle="ICEFALL's own staff. The desk beside a name is not a job title — it is what the database will and will not let that person do."
-      />
+    /* `@container` is load-bearing, not decoration: it gives this box size
+       containment in the inline axis, so a wide table scrolls inside its own
+       card instead of pushing the whole page sideways and clipping its last
+       column. The reference theme gets the same result from an
+       `overflow-x-hidden` on its page container. */
+    <div className="@container/page flex min-w-0 flex-col gap-4">
+      <div className="flex flex-col items-start gap-4 sm:flex-row sm:justify-between">
+        <div className="flex flex-col gap-1">
+          <h1 className="font-heading text-3xl tracking-tight">Admin Team</h1>
+          <p className="max-w-3xl text-sm text-muted-foreground">
+            ICEFALL&rsquo;s own staff. The desk beside a name is not a job title — it is what the
+            database will and will not let that person do.
+          </p>
+        </div>
+      </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <Stat
-          tone="butter"
+      <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-linear-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs sm:grid-cols-3 dark:*:data-[slot=card]:bg-card">
+        <Metric
+          icon={<ShieldCheck className="size-4" />}
           label="Staff with access"
           value={withAccess ? String(withAccess.length) : null}
           reason={reason}
@@ -216,15 +286,15 @@ export default function Team() {
               : "No department is recorded against any of them."
           }
         />
-        <Stat
-          tone="sky"
+        <Metric
+          icon={<ShieldOff className="size-4" />}
           label="Access revoked"
           value={revoked === null ? null : String(revoked)}
           reason={reason}
           hint="Still listed. Audit events name the person who made each change, and a deleted row would leave that history pointing at nobody."
         />
-        <Stat
-          tone="lilac"
+        <Metric
+          icon={<SquareStack className="size-4" />}
           label="Desks covered"
           value={rows ? `${DESKS.length - uncovered.length} of ${DESKS.length}` : null}
           reason={reason}
@@ -236,157 +306,165 @@ export default function Team() {
         />
       </div>
 
-      <div className="mt-6">
-        <SectionLabel>What each desk gates</SectionLabel>
-        <Card className="mt-1.5" pad={false}>
-          <ul>
+      <Card className="min-w-0">
+        <CardHeader className="border-b">
+          <CardTitle className="text-xl leading-none">What each desk gates</CardTitle>
+          <CardDescription className="max-w-3xl leading-snug">
+            The same rule the database holds, written down so nobody has to discover it by being
+            refused.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="px-0">
+          <ul className="border-t">
             {DESKS.map((d) => (
               <li
                 key={d.id}
-                className="flex flex-col gap-2 border-b border-line-soft px-5 py-3.5 last:border-0 sm:flex-row sm:items-start sm:gap-5"
+                className="flex flex-col gap-2 border-b border-border/60 px-4 py-4 last:border-0 sm:flex-row sm:items-start sm:gap-5"
               >
                 <div className="sm:w-40 sm:shrink-0">
-                  <Pill tone={d.id === "super_admin" ? "accent" : "neutral"}>{DESK_LABEL[d.id]}</Pill>
+                  <Badge className="rounded-sm" variant={d.id === "super_admin" ? "secondary" : "outline"}>
+                    {DESK_LABEL[d.id]}
+                  </Badge>
                 </div>
-                <p className="text-[12.5px] leading-relaxed text-muted">{d.gates}</p>
+                <p className="text-sm leading-relaxed text-muted-foreground">{d.gates}</p>
               </li>
             ))}
           </ul>
-          <p className="border-t border-line-soft px-5 py-4 text-[12.5px] leading-relaxed text-faint">
+        </CardContent>
+        <CardFooter>
+          <p className="max-w-4xl text-sm leading-relaxed text-muted-foreground">
             These rules live in the database, not on this page. Hiding a control a policy would
             refuse is a courtesy; the write is refused either way, and a desk you were not given is
-            not something a screen can hand you. Appointing staff, changing someone's desk and
+            not something a screen can hand you. Appointing staff, changing someone&rsquo;s desk and
             revoking access are not done from here.
           </p>
-        </Card>
-      </div>
+        </CardFooter>
+      </Card>
 
-      <div className="mt-6">
-        <Resolve
-          result={result}
-          what="staff"
-          isEmpty={(v) => v.length === 0}
-          empty="Nobody has been appointed yet. A person appears here once a Super Admin gives them a desk; there is no self-registration."
-        >
-          {(staff) => (
-            <div className="space-y-8">
-              {DESKS.map((d) => {
-                const desk = staff.filter((s) => s.staff_role === d.id);
-                const live = desk.filter((s) => s.active).length;
-                return (
-                  <div key={d.id}>
-                    <div className="flex flex-wrap items-baseline justify-between gap-2">
-                      <h2 className="text-[17px] font-bold tracking-[-0.02em] text-ink">
-                        {DESK_LABEL[d.id]}
-                      </h2>
-                      {desk.length > 0 && (
-                        <p className="tnum text-[12px] font-medium text-faint">
+      <Resolve
+        result={result}
+        what="staff"
+        isEmpty={(v) => v.length === 0}
+        empty="Nobody has been appointed yet. A person appears here once a Super Admin gives them a desk; there is no self-registration."
+      >
+        {(staff) => (
+          <div className="flex min-w-0 flex-col gap-4">
+            {DESKS.map((d) => {
+              const desk = staff.filter((s) => s.staff_role === d.id);
+              const live = desk.filter((s) => s.active).length;
+              return (
+                <Card className="min-w-0" key={d.id}>
+                  <CardHeader className="border-b has-data-[slot=card-action]:grid-cols-1 md:has-data-[slot=card-action]:grid-cols-[1fr_auto]">
+                    <CardTitle className="text-xl leading-none">{DESK_LABEL[d.id]}</CardTitle>
+                    <CardDescription className="leading-snug">
+                      {desk.length > 0 ? (
+                        <span className="tabular-nums">
                           {live} with access
                           {desk.length - live > 0 && ` · ${desk.length - live} revoked`}
-                        </p>
+                        </span>
+                      ) : (
+                        // A desk with nobody on it is the whole reason this page
+                        // groups by desk. It is said, not left blank.
+                        "Nobody holds this desk."
                       )}
-                    </div>
+                    </CardDescription>
+                  </CardHeader>
 
-                    {desk.length === 0 ? (
-                      <Card className="mt-2">
-                        <p className="text-[12.5px] leading-relaxed text-muted">
-                          Nobody holds this desk.
-                        </p>
-                        <p className="mt-1 text-[11.5px] leading-relaxed text-warn">
-                          Until someone is appointed, only a Super Admin can do this desk's work.
-                        </p>
-                      </Card>
-                    ) : (
-                      <>
-                        <TableCard className="mt-2">
-                          <table className="w-full min-w-[760px] text-[13px]">
-                            <thead>
-                              <tr className="border-b border-line-soft text-left">
-                                <th className={TH}>Name</th>
-                                <th className={TH}>Department</th>
-                                <th className={TH}>Email</th>
-                                <th className={TH}>Status</th>
-                                <th className={TH}>Handles support for</th>
-                                <th className={TH}>Joined</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {desk.map((s) => {
-                                const isMe = me !== null && me.profileId === s.profile_id;
-                                return (
-                                  <tr
-                                    key={s.profile_id}
-                                    className="border-b border-line-soft last:border-0 hover:bg-raised"
-                                  >
-                                    <td className={TD}>
-                                      <div className="flex items-center gap-3">
-                                        <Avatar
-                                          name={s.name}
-                                          size={34}
-                                          tone={isMe ? "accent" : "neutral"}
-                                        />
-                                        <span className="font-medium text-ink">{s.name}</span>
-                                        {isMe && <Pill tone="accent">You</Pill>}
-                                      </div>
-                                    </td>
-                                    <td className={`${TD} text-muted`}>
-                                      {s.department.trim() || (
-                                        <span className="text-faint">Not recorded</span>
+                  {desk.length === 0 ? (
+                    <CardContent>
+                      <Alert className="border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-50">
+                        <AlertTriangle className="size-4" />
+                        <AlertTitle>Nobody holds this desk</AlertTitle>
+                        <AlertDescription className="text-amber-900/80 dark:text-amber-50/80">
+                          Until someone is appointed, only a Super Admin can do this desk&rsquo;s work.
+                        </AlertDescription>
+                      </Alert>
+                    </CardContent>
+                  ) : (
+                    <>
+                      <CardContent className="px-0">
+                        <Table className="**:data-[slot='table-cell']:px-4 **:data-[slot='table-head']:px-4">
+                          <TableHeader className="[&_tr]:border-t">
+                            <TableRow>
+                              <TableHead className="py-4 font-normal">Name</TableHead>
+                              <TableHead className="py-4 font-normal">Department</TableHead>
+                              <TableHead className="py-4 font-normal">Email</TableHead>
+                              <TableHead className="py-4 font-normal">Status</TableHead>
+                              <TableHead className="py-4 font-normal">Handles support for</TableHead>
+                              <TableHead className="py-4 font-normal">Joined</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {desk.map((s) => {
+                              const isMe = me !== null && me.profileId === s.profile_id;
+                              return (
+                                <TableRow key={s.profile_id} className="border-border/60">
+                                  <TableCell className="py-4 align-middle">
+                                    <div className="flex items-center gap-3">
+                                      <Avatar name={s.name} size={32} tone={isMe ? "accent" : "neutral"} />
+                                      <span className="font-medium">{s.name}</span>
+                                      {isMe && (
+                                        <Badge className="rounded-sm" variant="secondary">
+                                          You
+                                        </Badge>
                                       )}
-                                    </td>
-                                    <td className={`${TD} text-muted`}>
-                                      {s.email.trim() || (
-                                        <span className="text-faint">Not recorded</span>
-                                      )}
-                                    </td>
-                                    <td className={TD}>
-                                      <StatusChip
-                                        state={accessState(s.active)}
-                                        label={s.active ? "Access active" : "Access revoked"}
-                                      />
-                                    </td>
-                                    <td className={TD}>
-                                      <ScopeCell staff={s} canEdit={me?.role === "super_admin"} />
-                                    </td>
-                                    <td className={`tnum whitespace-nowrap ${TD} text-muted`}>
-                                      {formatDay(s.joined_on) ?? (
-                                        <span className="text-faint">Not recorded</span>
-                                      )}
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </TableCard>
-                        {live === 0 && (
-                          <p className="mt-2 text-[11.5px] leading-relaxed text-warn">
-                            Everyone at this desk has had their access revoked. They stay listed
-                            because the audit log still names them, but nobody can currently do this
-                            desk's work except a Super Admin.
-                          </p>
-                        )}
-                      </>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </Resolve>
-      </div>
+                                    </div>
+                                  </TableCell>
+                                  <TableCell className="py-4 align-middle text-muted-foreground">
+                                    {s.department.trim() || (
+                                      <span className="text-muted-foreground">Not recorded</span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="py-4 align-middle text-muted-foreground">
+                                    {s.email.trim() || <span className="text-muted-foreground">Not recorded</span>}
+                                  </TableCell>
+                                  <TableCell className="py-4 align-middle">
+                                    <AccessBadge active={s.active} />
+                                  </TableCell>
+                                  <TableCell className="py-4 align-middle whitespace-normal">
+                                    <ScopeCell staff={s} canEdit={me?.role === "super_admin"} />
+                                  </TableCell>
+                                  <TableCell className="py-4 align-middle tabular-nums text-muted-foreground">
+                                    {formatDay(s.joined_on) ?? (
+                                      <span className="text-muted-foreground">Not recorded</span>
+                                    )}
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
+                      </CardContent>
+                      {live === 0 && (
+                        <CardContent>
+                          <Alert className="border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-50">
+                            <AlertTriangle className="size-4" />
+                            <AlertTitle>Everyone at this desk has had their access revoked</AlertTitle>
+                            <AlertDescription className="text-amber-900/80 dark:text-amber-50/80">
+                              They stay listed because the audit log still names them, but nobody can
+                              currently do this desk&rsquo;s work except a Super Admin.
+                            </AlertDescription>
+                          </Alert>
+                        </CardContent>
+                      )}
+                    </>
+                  )}
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </Resolve>
 
-      <div className="mt-6">
-        <Unavailable
-          reason={
-            "Last sign-in, actions taken and anything resembling a per-person performance figure " +
-            "are not shown. ICEFALL records no session times at all, and while the audit log names " +
-            "who made each change, it is read newest-first and capped — a count drawn from it would " +
-            "be the size of a recent window presented as somebody's total. Neither is a gap in this " +
-            "screen; there is simply nothing measured to put here."
-          }
-        />
-      </div>
-    </>
+      <Unavailable
+        reason={
+          "Last sign-in, actions taken and anything resembling a per-person performance figure " +
+          "are not shown. ICEFALL records no session times at all, and while the audit log names " +
+          "who made each change, it is read newest-first and capped — a count drawn from it would " +
+          "be the size of a recent window presented as somebody's total. Neither is a gap in this " +
+          "screen; there is simply nothing measured to put here."
+        }
+      />
+    </div>
   );
 }

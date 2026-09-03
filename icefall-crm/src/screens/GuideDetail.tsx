@@ -1,7 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
-import { Avatar, Card, PageHead, Pill, SectionLabel, Stat } from "@/components/ui";
+import { ArrowLeft, Coins, MessagesSquare, Mountain } from "lucide-react";
+import { Avatar } from "@/components/ui";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Resolve } from "@/components/states";
 import {
   listGuideBookings,
@@ -20,7 +23,66 @@ import { formatDay, formatMoment } from "@/lib/utils";
  * mostly means honest zeros and reasons. The chats section is their support
  * threads — the only recorded conversations ICEFALL holds with a guide; each
  * row opens the same conversation view the desk uses.
+ *
+ * LAYOUT: the reference theme's profile page — an identity header with the
+ * badges on it and the actions to its right, a metric row, then the detail in
+ * cards. The back link, the derived credential claim and every ticket
+ * click-through survived the move.
  */
+
+/**
+ * The theme's metric card, with ICEFALL's honesty contract intact: `value` of
+ * null prints the REASON there is no figure — never a dash, never a zero
+ * standing in for one. A measured zero prints as "0".
+ */
+function Metric({
+  icon,
+  label,
+  value,
+  reason,
+  hint,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string | null;
+  reason?: string;
+  hint?: string;
+}) {
+  return (
+    <Card className="min-w-0">
+      <CardHeader>
+        <CardTitle>
+          <div className="flex size-7 items-center justify-center rounded-lg border bg-ui-muted text-muted-foreground">
+            {icon}
+          </div>
+        </CardTitle>
+        <CardDescription>{label}</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-1">
+        {value === null ? (
+          <p className="text-sm leading-relaxed text-muted-foreground">{reason ?? "Not recorded"}</p>
+        ) : (
+          <>
+            <div className="font-medium text-3xl leading-none tracking-tight tabular-nums">{value}</div>
+            {hint && <p className="text-sm text-muted-foreground">{hint}</p>}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** One field of the guide's own claim — label above, value below, as the
+ *  theme's profile details are drawn. An unfilled field says so in words. */
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="text-sm">{children}</dd>
+    </div>
+  );
+}
+
 export default function GuideDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -57,32 +119,66 @@ export default function GuideDetail() {
             : null;
         const myTickets = tickets.state === "ok" ? tickets.value.filter((t) => t.customer_id === g.id) : [];
         return (
-          <>
-            <div className="mb-5 flex items-start gap-3">
-              <Link to="/admin/guides" className="grid h-9 w-9 shrink-0 place-items-center rounded-tile border border-line bg-surface text-muted hover:text-ink" aria-label="Back to guides">
-                <ArrowLeft size={16} strokeWidth={2} />
-              </Link>
-              <div className="flex min-w-0 items-center gap-3">
-                <Avatar name={g.name} size={44} />
-                <div className="min-w-0">
-                  <PageHead title={g.name} />
-                  <div className="-mt-4 flex flex-wrap items-center gap-2">
-                    {g.listed ? <Pill tone="green">Listed</Pill> : <Pill tone="amber">Not listed</Pill>}
+          /* `@container` is load-bearing, not decoration: size containment in
+             the inline axis, so a wide card scrolls inside itself instead of
+             pushing the page sideways. The reference theme gets the same
+             result from an `overflow-x-hidden` on its page container. */
+          <div className="@container/page flex min-w-0 flex-col gap-4">
+            <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+              <div className="flex min-w-0 items-center gap-4">
+                <Avatar name={g.name} size={64} />
+                <div className="flex min-w-0 flex-col gap-2">
+                  <div className="flex flex-col gap-0.5">
+                    <h1 className="truncate font-heading text-2xl leading-7 tracking-tight">{g.name}</h1>
+                    <p className="truncate text-sm leading-5 text-muted-foreground">
+                      profile created {formatDay(g.created_at)}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {g.listed ? (
+                      <Badge
+                        className="rounded-sm border-ok/20 bg-ok/10 text-ok"
+                        variant="outline"
+                      >
+                        Listed
+                      </Badge>
+                    ) : (
+                      <Badge
+                        className="rounded-sm border-warn/20 bg-warn/10 text-warn"
+                        variant="outline"
+                      >
+                        Not listed
+                      </Badge>
+                    )}
                     {/* The claim is derived — an expired document revokes it
                         automatically. And it never says "Verified guide": the
                         gap between "we read the papers" and "the federation
                         confirmed them" is ICEFALL's whole exposure. */}
                     {g.credentials_state === "checked" ? (
-                      <Pill tone="green">Documents checked{g.credentials_checked_at ? ` ${formatDay(g.credentials_checked_at)}` : ""}</Pill>
+                      <Badge
+                        className="rounded-sm border-ok/20 bg-ok/10 text-ok"
+                        variant="outline"
+                      >
+                        Documents checked{g.credentials_checked_at ? ` ${formatDay(g.credentials_checked_at)}` : ""}
+                      </Badge>
                     ) : g.credentials_state === "expired" ? (
-                      <Pill tone="red">Certificate expired {formatDay(g.credentials_expire_at)}</Pill>
+                      <Badge
+                        className="rounded-sm border-bad/20 bg-bad/10 text-bad"
+                        variant="outline"
+                      >
+                        Certificate expired {formatDay(g.credentials_expire_at)}
+                      </Badge>
                     ) : (
-                      <Pill tone="amber">Documents not checked</Pill>
+                      <Badge
+                        className="rounded-sm border-warn/20 bg-warn/10 text-warn"
+                        variant="outline"
+                      >
+                        Documents not checked
+                      </Badge>
                     )}
-                    <span className="text-[11.5px] text-faint">profile created {formatDay(g.created_at)}</span>
                   </div>
                   {g.credentials_state === "checked" && (
-                    <p className="mt-1 text-[11.5px] text-faint">
+                    <p className="max-w-2xl text-xs leading-relaxed text-muted-foreground">
                       Documents checked by ICEFALL{g.credentials_checked_at ? ` on ${formatDay(g.credentials_checked_at)}` : ""}
                       {g.credentials_document_ref ? ` (${g.credentials_document_ref})` : ""}. We have
                       not contacted the issuing association.
@@ -90,22 +186,34 @@ export default function GuideDetail() {
                   )}
                 </div>
               </div>
+
+              <div className="flex items-center gap-2">
+                <Button asChild size="sm" variant="outline">
+                  <Link to="/admin/guides" aria-label="Back to guides">
+                    <ArrowLeft data-icon="inline-start" />
+                    All guides
+                  </Link>
+                </Button>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <Stat
+            <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-linear-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs sm:grid-cols-3 dark:*:data-[slot=card]:bg-card">
+              <Metric
+                icon={<Mountain className="size-4" />}
                 label="Bookings guided"
                 value={myBookings !== null ? String(myBookings) : null}
                 reason="The bookings table could not be read."
                 hint="Bookings carrying this guide. A zero is a real zero."
               />
-              <Stat
+              <Metric
+                icon={<Coins className="size-4" />}
                 label="Commission generated"
                 value={myCommission !== null && myCommission > 0 ? `€${(myCommission / 100).toLocaleString("en-GB")}` : null}
                 reason={myCommission !== null ? "No guide booking of theirs has converted yet." : "The ledger could not be read."}
                 hint="Recorded guide-stream commissions, waived excluded."
               />
-              <Stat
+              <Metric
+                icon={<MessagesSquare className="size-4" />}
                 label="Support threads"
                 value={tickets.state === "ok" ? String(myTickets.length) : null}
                 reason="The ticket list could not be read."
@@ -113,71 +221,102 @@ export default function GuideDetail() {
               />
             </div>
 
-            <div className="mt-5 grid items-start gap-4 xl:grid-cols-2">
-              <Card>
-                <SectionLabel>Profile — written by the guide</SectionLabel>
-                <dl className="mt-3 space-y-3 text-[13px]">
-                  {(
-                    [
-                      ["Headline", g.headline],
-                      ["Based in", g.based_in],
-                      ["Years guiding", g.years_guiding !== null ? String(g.years_guiding) : null],
-                    ] as const
-                  ).map(([k, v]) => (
-                    <div key={k}>
-                      <dt className="text-[11.5px] font-semibold uppercase tracking-[0.06em] text-faint">{k}</dt>
-                      <dd className={v ? "mt-0.5 text-ink" : "mt-0.5 text-faint"}>{v ?? "Not filled in"}</dd>
-                    </div>
-                  ))}
-                  <div>
-                    <dt className="text-[11.5px] font-semibold uppercase tracking-[0.06em] text-faint">Mountains claimed</dt>
-                    <dd className="mt-1 flex flex-wrap gap-1">
-                      {g.mountains.length > 0 ? g.mountains.map((m) => <Pill key={m} tone="neutral">{m}</Pill>) : <span className="text-faint">None yet</span>}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-[11.5px] font-semibold uppercase tracking-[0.06em] text-faint">Specialities</dt>
-                    <dd className="mt-1 flex flex-wrap gap-1">
-                      {g.specialities.length > 0 ? g.specialities.map((m) => <Pill key={m} tone="neutral">{m}</Pill>) : <span className="text-faint">None yet</span>}
-                    </dd>
-                  </div>
-                </dl>
-                <p className="mt-3 text-[11.5px] leading-relaxed text-faint">
-                  These are the guide's own claims. Nothing here is a statement by ICEFALL until
-                  their documents pass a real check.
-                </p>
+            <div className="grid min-w-0 items-start gap-4 xl:grid-cols-2">
+              <Card className="min-w-0">
+                <CardHeader className="border-b">
+                  <CardTitle className="text-xl leading-none">Profile — written by the guide</CardTitle>
+                  <CardDescription className="leading-snug">
+                    These are the guide&rsquo;s own claims. Nothing here is a statement by ICEFALL until
+                    their documents pass a real check.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <dl className="grid gap-5">
+                    {(
+                      [
+                        ["Headline", g.headline],
+                        ["Based in", g.based_in],
+                        ["Years guiding", g.years_guiding !== null ? String(g.years_guiding) : null],
+                      ] as const
+                    ).map(([k, v]) => (
+                      <Field key={k} label={k}>
+                        {/* "Not filled in" is the guide's silence, said as such —
+                            never a dash and never an invented value. */}
+                        {v ?? <span className="text-muted-foreground">Not filled in</span>}
+                      </Field>
+                    ))}
+                    <Field label="Mountains claimed">
+                      {g.mountains.length > 0 ? (
+                        <span className="flex flex-wrap gap-1.5">
+                          {g.mountains.map((m) => (
+                            <Badge key={m} className="rounded-sm" variant="outline">
+                              {m}
+                            </Badge>
+                          ))}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">None yet</span>
+                      )}
+                    </Field>
+                    <Field label="Specialities">
+                      {g.specialities.length > 0 ? (
+                        <span className="flex flex-wrap gap-1.5">
+                          {g.specialities.map((m) => (
+                            <Badge key={m} className="rounded-sm" variant="outline">
+                              {m}
+                            </Badge>
+                          ))}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">None yet</span>
+                      )}
+                    </Field>
+                  </dl>
+                </CardContent>
               </Card>
 
-              <Card>
-                <SectionLabel>Chats</SectionLabel>
-                {tickets.state !== "ok" ? (
-                  <p className="mt-2 text-[12.5px] text-faint">The ticket list could not be read.</p>
-                ) : myTickets.length === 0 ? (
-                  <p className="mt-2 text-[12.5px] text-faint">
-                    No conversations. Their support threads appear here the moment they raise one
-                    from the guide app.
-                  </p>
-                ) : (
-                  <div className="mt-2 space-y-2">
-                    {myTickets.map((t) => (
-                      <button
-                        key={t.id}
-                        type="button"
-                        onClick={() => navigate(`/admin/support/${t.id}`)}
-                        className="flex w-full items-center justify-between gap-3 rounded-tile bg-raised px-3 py-2.5 text-left hover:bg-panel"
-                      >
-                        <span className="min-w-0">
-                          <span className="block truncate text-[13px] font-medium text-ink">{t.subject}</span>
-                          <span className="block truncate text-[12px] text-muted">{t.snippet ?? "No messages yet"}</span>
-                        </span>
-                        <span className="shrink-0 text-[11.5px] text-faint">{formatMoment(t.created_at)}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
+              <Card className="min-w-0">
+                <CardHeader className="border-b">
+                  <CardTitle className="text-xl leading-none">Chats</CardTitle>
+                  <CardDescription className="leading-snug">
+                    Their support threads — the only recorded conversations ICEFALL holds with a
+                    guide. Each row opens the same conversation view the desk uses.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="px-0">
+                  {tickets.state !== "ok" ? (
+                    <p className="px-4 text-sm text-muted-foreground">The ticket list could not be read.</p>
+                  ) : myTickets.length === 0 ? (
+                    <p className="px-4 text-sm leading-relaxed text-muted-foreground">
+                      No conversations. Their support threads appear here the moment they raise one
+                      from the guide app.
+                    </p>
+                  ) : (
+                    <div className="flex flex-col border-t">
+                      {myTickets.map((t) => (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => navigate(`/admin/support/${t.id}`)}
+                          className="flex w-full items-center justify-between gap-3 border-b border-border/60 px-4 py-4 text-left transition-colors last:border-b-0 hover:bg-ui-muted/50"
+                        >
+                          <span className="grid min-w-0 gap-0.5">
+                            <span className="block truncate text-sm font-medium">{t.subject}</span>
+                            <span className="block truncate text-sm text-muted-foreground">
+                              {t.snippet ?? "No messages yet"}
+                            </span>
+                          </span>
+                          <span className="shrink-0 text-sm tabular-nums text-muted-foreground">
+                            {formatMoment(t.created_at)}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
               </Card>
             </div>
-          </>
+          </div>
         );
       }}
     </Resolve>

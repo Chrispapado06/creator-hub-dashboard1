@@ -1,15 +1,11 @@
-import { useEffect, useState } from "react";
-import {
-  Avatar,
-  Button,
-  Card,
-  PageHead,
-  Pill,
-  SectionLabel,
-  Stat,
-  StatusChip,
-  TableCard,
-} from "@/components/ui";
+import { useEffect, useState, type ReactNode } from "react";
+import { PieChart, ShieldAlert, UserRound, UserRoundX, Users as UsersIcon } from "lucide-react";
+import { Avatar } from "@/components/ui";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Empty, Resolve, Unavailable } from "@/components/states";
 import { listCustomers, listLeads } from "@/data/queries";
 import { formatRatio, loading, type Result } from "@/data/result";
@@ -44,6 +40,11 @@ import { formatDay, formatMoment } from "@/lib/utils";
  * arrive. When the directory itself cannot be read the tiles carry no number at
  * all and give the reason instead, because "nobody has registered" and "we could
  * not reach the customer table" are not the same news.
+ *
+ * LAYOUT: the reference theme's own users page, 1:1 — metric cards across the
+ * top, then ONE card holding the title, the filter row and the table, with the
+ * standing footnote in the card's footer. Not one column, tab or sentence was
+ * dropped to fit it.
  */
 
 type Tab = "all" | CustomerRecord["status"];
@@ -54,9 +55,66 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "suspended", label: "Suspended" },
 ];
 
-/** The mockup's table metrics: roomy gutters, a tall row, a quiet header. */
-const TH = "px-5 py-3.5 text-[12px] font-semibold text-faint";
-const TD = "px-5 py-3.5";
+/**
+ * The theme's metric card, with ICEFALL's honesty contract intact: `value` of
+ * null prints the REASON there is no figure — never a dash, never a zero
+ * standing in for one. A measured zero prints as "0".
+ */
+function Metric({
+  icon,
+  label,
+  value,
+  reason,
+  hint,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string | null;
+  reason?: string;
+  hint?: string;
+}) {
+  return (
+    <Card className="min-w-0">
+      <CardHeader>
+        <CardTitle>
+          <div className="flex size-7 items-center justify-center rounded-lg border bg-ui-muted text-muted-foreground">
+            {icon}
+          </div>
+        </CardTitle>
+        <CardDescription>{label}</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-1">
+        {value === null ? (
+          <p className="text-sm leading-relaxed text-muted-foreground">{reason ?? "Not recorded"}</p>
+        ) : (
+          <>
+            <div className="font-medium text-3xl leading-none tracking-tight tabular-nums">{value}</div>
+            {hint && <p className="text-sm text-muted-foreground">{hint}</p>}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** The theme's status badge: hairline outline, a coloured dot, the word as it
+ *  is stored. Nothing here reworded a status. */
+function AccountBadge({ status }: { status: CustomerRecord["status"] }) {
+  const suspended = status === "suspended";
+  return (
+    <Badge
+      className={
+        suspended
+          ? "gap-1.5 border border-bad/20 bg-bad/10 px-2 py-1 font-medium text-bad"
+          : "gap-1.5 border border-ok/20 bg-ok/10 px-2 py-1 font-medium text-ok"
+      }
+      variant="outline"
+    >
+      <span className={`size-1.5 rounded-full ${suspended ? "bg-bad" : "bg-ok"}`} />
+      {status}
+    </Badge>
+  );
+}
 
 export default function Users() {
   const [customers, setCustomers] = useState<Result<CustomerRecord[]>>(loading);
@@ -99,51 +157,64 @@ export default function Users() {
       : null;
 
   const lastEnquiry = (c: CustomerRecord) => {
-    if (leads.state !== "ok") return <span className="text-faint">Unavailable</span>;
+    if (leads.state !== "ok") return <span className="text-muted-foreground">Unavailable</span>;
     const theirs = leads.value.filter((l) => l.customer_id === c.id);
     if (theirs.length === 0) {
       // Not "never active" — only that no enquiry of theirs is on file.
-      return <span className="text-faint">No enquiry on file</span>;
+      return <span className="text-muted-foreground">No enquiry on file</span>;
     }
     const latest = theirs.reduce((best, l) =>
       new Date(l.created_at).getTime() > new Date(best.created_at).getTime() ? l : best,
     );
     return (
-      formatMoment(latest.created_at) ?? <span className="text-faint">At an unrecorded time</span>
+      formatMoment(latest.created_at) ?? (
+        <span className="text-muted-foreground">At an unrecorded time</span>
+      )
     );
   };
 
   return (
-    <>
-      <PageHead
-        title="Users"
-        subtitle="Every person who holds an ICEFALL account, with the enquiries and bookings attributed to them. This is the customer side of the marketplace — the operators they enquire with live under Companies."
-      />
+    /* `@container` is load-bearing, not decoration: it gives this box size
+       containment in the inline axis, so a wide table scrolls inside its own
+       card instead of pushing the whole page sideways and clipping its last
+       column. The reference theme gets the same result from an
+       `overflow-x-hidden` on its page container. */
+    <div className="@container/page flex min-w-0 flex-col gap-4">
+      <div className="flex flex-col items-start gap-4 sm:flex-row sm:justify-between">
+        <div className="flex flex-col gap-1">
+          <h1 className="font-heading text-3xl tracking-tight">Users</h1>
+          <p className="max-w-3xl text-sm text-muted-foreground">
+            Every person who holds an ICEFALL account, with the enquiries and bookings attributed to
+            them. This is the customer side of the marketplace — the operators they enquire with live
+            under Companies.
+          </p>
+        </div>
+      </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat
-          tone="butter"
+      <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-linear-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs sm:grid-cols-2 xl:grid-cols-4 dark:*:data-[slot=card]:bg-card">
+        <Metric
+          icon={<UsersIcon className="size-4" />}
           label="Customers"
           value={roster ? String(roster.length) : null}
           reason={customerReason}
           hint="Accounts on the directory, active and suspended together."
         />
-        <Stat
-          tone="sky"
+        <Metric
+          icon={<UserRoundX className="size-4" />}
           label="Suspended accounts"
           value={roster ? String(roster.filter((c) => c.status === "suspended").length) : null}
           reason={customerReason}
           hint="Set by an administrator. Everyone else is active."
         />
-        <Stat
-          tone="lilac"
+        <Metric
+          icon={<UserRound className="size-4" />}
           label="Customers who have enquired"
           value={enquired === null ? null : String(enquired)}
           reason={roster === null ? customerReason : leadReason}
           hint="Counted from the lead table, not from the counter on the customer record."
         />
-        <Stat
-          tone="mint"
+        <Metric
+          icon={<PieChart className="size-4" />}
           label="Share who have enquired"
           value={share}
           reason={
@@ -156,144 +227,169 @@ export default function Users() {
         />
       </div>
 
-      <Card className="mt-3">
-        <SectionLabel>Personal data — staff only</SectionLabel>
-        <p className="mt-1.5 max-w-3xl text-[12.5px] leading-relaxed text-muted">
+      {/* Kept whole. The theme's Alert is the closest thing it owns to a
+          standing notice, so the sentence moved into one rather than losing
+          its box. */}
+      <Alert>
+        <ShieldAlert />
+        <AlertTitle>Personal data — staff only</AlertTitle>
+        <AlertDescription className="max-w-3xl leading-relaxed">
           This page shows real people&rsquo;s names, email addresses and countries. It is part of the
           internal CRM and is never bundled into the customer app or the operator portal. Export it,
           paste it into a message or hand it to an operator and it has left ICEFALL&rsquo;s control —
           an operator is entitled to the customers who enquired with them, not to the directory.
-        </p>
-      </Card>
+        </AlertDescription>
+      </Alert>
 
-      <div className="mt-6">
-        <Resolve
-          result={customers}
-          what="customers"
-          isEmpty={(v) => v.length === 0}
-          empty="Nobody holds an ICEFALL account yet. A record appears here when a person registers, and their enquiries and bookings attach to it from that point on."
-        >
-          {(list) => {
-            const shown = tab === "all" ? list : list.filter((c) => c.status === tab);
-            return (
-              <>
-                <div className="mb-3 flex flex-wrap items-center gap-1.5">
-                  {TABS.map((t) => {
-                    const n = t.id === "all" ? list.length : list.filter((c) => c.status === t.id).length;
-                    return (
-                      <Button
-                        key={t.id}
-                        size="sm"
-                        variant={tab === t.id ? "secondary" : "ghost"}
-                        aria-pressed={tab === t.id}
-                        onClick={() => setTab(t.id)}
-                      >
-                        {t.label}
-                        <span className="tnum text-[11.5px] font-semibold text-faint">{n}</span>
-                      </Button>
-                    );
-                  })}
+      <Resolve
+        result={customers}
+        what="customers"
+        isEmpty={(v) => v.length === 0}
+        empty="Nobody holds an ICEFALL account yet. A record appears here when a person registers, and their enquiries and bookings attach to it from that point on."
+      >
+        {(list) => {
+          const shown = tab === "all" ? list : list.filter((c) => c.status === tab);
+          return (
+            <Card className="min-w-0">
+              <CardHeader className="border-b has-data-[slot=card-action]:grid-cols-1 md:has-data-[slot=card-action]:grid-cols-[1fr_auto]">
+                <CardTitle className="text-xl leading-none">Customers</CardTitle>
+                <CardDescription className="max-w-sm leading-snug">
+                  The directory, filtered by account status.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-4 px-0">
+                {/* The account-status filter. Same three tabs, same counts, same
+                    behaviour — drawn as the theme draws a segmented filter. */}
+                <div className="flex flex-wrap items-center justify-between gap-3 px-4">
+                  <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
+                    <TabsList>
+                      {TABS.map((t) => {
+                        const n = t.id === "all" ? list.length : list.filter((c) => c.status === t.id).length;
+                        return (
+                          <TabsTrigger
+                            key={t.id}
+                            value={t.id}
+                            /* The chosen filter has to LOOK chosen. The ported
+                               tabs component styles its active trigger with
+                               `data-active:`, which this build's Tailwind does
+                               not map onto Radix's `data-state="active"` — so
+                               active and inactive render identically and the
+                               reader cannot tell which filter is applied. These
+                               three classes are the theme's own active
+                               treatment (white pill, ink text, small shadow)
+                               written through a selector that works here. */
+                            className="data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm"
+                          >
+                            {t.label}
+                            <span className="text-muted-foreground tabular-nums">{n}</span>
+                          </TabsTrigger>
+                        );
+                      })}
+                    </TabsList>
+                  </Tabs>
+                  <div className="text-sm tabular-nums text-muted-foreground">
+                    {shown.length} shown
+                  </div>
                 </div>
 
                 {shown.length === 0 ? (
-                  <Empty
-                    what="No customers with this account status"
-                    body="Every customer ICEFALL holds is under one of the other tabs — the count beside each name says where they are."
-                  />
+                  <div className="px-4">
+                    <Empty
+                      what="No customers with this account status"
+                      body="Every customer ICEFALL holds is under one of the other tabs — the count beside each name says where they are."
+                    />
+                  </div>
                 ) : (
-                  <>
-                    <TableCard>
-                      <table className="w-full min-w-[1020px] text-[13px]">
-                        <thead>
-                          <tr className="border-b border-line-soft text-left">
-                            <th className={TH}>Customer</th>
-                            <th className={TH}>Country</th>
-                            <th className={TH}>Joined</th>
-                            <th className={TH}>Mountain interests</th>
-                            <th className={TH}>Leads</th>
-                            <th className={TH}>Bookings</th>
-                            <th className={TH}>Last enquiry</th>
-                            <th className={TH}>Account</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {shown.map((c) => (
-                            <tr key={c.id} className="border-b border-line-soft last:border-0 hover:bg-raised">
-                              <td className={TD}>
-                                <div className="flex items-center gap-3">
-                                  <Avatar name={c.name} size={34} />
-                                  <div className="min-w-0">
-                                    <p className="font-medium text-ink">{c.name}</p>
-                                    <p className="text-[12px] text-faint">{c.email}</p>
-                                  </div>
-                                </div>
-                              </td>
-                              <td className={`${TD} text-muted`}>
-                                {c.country ?? <span className="text-faint">Not recorded</span>}
-                              </td>
-                              <td className={`tnum whitespace-nowrap ${TD} text-muted`}>
-                                {formatDay(c.joined_on) ?? <span className="text-faint">Not recorded</span>}
-                              </td>
-                              <td className={TD}>
-                                {c.mountain_interests.length === 0 ? (
-                                  <span className="text-faint">None recorded</span>
-                                ) : (
-                                  <div className="flex flex-wrap gap-1.5">
-                                    {c.mountain_interests.map((m) => (
-                                      <Pill key={m}>{m}</Pill>
-                                    ))}
-                                  </div>
-                                )}
-                              </td>
-                              <td className={`tnum ${TD} text-[15px] font-bold tracking-[-0.02em] text-ink`}>
-                                {c.leads}
-                              </td>
-                              <td className={`tnum ${TD} text-[15px] font-bold tracking-[-0.02em] text-ink`}>
-                                {c.bookings}
-                              </td>
-                              <td className={`tnum whitespace-nowrap ${TD} text-muted`}>
-                                {lastEnquiry(c)}
-                              </td>
-                              <td className={TD}>
-                                <StatusChip
-                                  state={c.status === "suspended" ? "bad" : "ok"}
-                                  label={c.status}
-                                />
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </TableCard>
-                    <p className="mt-2 max-w-3xl text-[12px] leading-relaxed text-faint">
-                      Mountain interests are the identifiers the customer chose, printed as they are
-                      stored — this screen does not read the mountain list, so it does not guess at a
-                      display name. Leads and Bookings are the customer record&rsquo;s own counters; Last
-                      enquiry is read from the lead table, so a customer whose enquiries ICEFALL cannot
-                      currently read shows the absence rather than a date.
-                    </p>
-                  </>
+                  <Table className="**:data-[slot='table-cell']:px-4 **:data-[slot='table-head']:px-4">
+                    <TableHeader className="[&_tr]:border-t">
+                      <TableRow>
+                        <TableHead className="py-4 font-normal">Customer</TableHead>
+                        <TableHead className="py-4 font-normal">Country</TableHead>
+                        <TableHead className="py-4 font-normal">Joined</TableHead>
+                        <TableHead className="py-4 font-normal">Mountain interests</TableHead>
+                        <TableHead className="py-4 font-normal">Leads</TableHead>
+                        <TableHead className="py-4 font-normal">Bookings</TableHead>
+                        <TableHead className="py-4 font-normal">Last enquiry</TableHead>
+                        <TableHead className="py-4 font-normal">Account</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {shown.map((c) => (
+                        <TableRow key={c.id} className="border-border/60">
+                          <TableCell className="py-4 align-middle">
+                            <div className="flex items-center gap-3">
+                              <Avatar name={c.name} size={40} />
+                              <div className="grid min-w-0 gap-0.5">
+                                <span className="font-medium">{c.name}</span>
+                                <span className="text-xs text-muted-foreground">{c.email}</span>
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell className="py-4 align-middle text-muted-foreground">
+                            {c.country ?? <span className="text-muted-foreground">Not recorded</span>}
+                          </TableCell>
+                          <TableCell className="py-4 align-middle tabular-nums text-muted-foreground">
+                            {formatDay(c.joined_on) ?? <span className="text-muted-foreground">Not recorded</span>}
+                          </TableCell>
+                          <TableCell className="py-4 align-middle whitespace-normal">
+                            {c.mountain_interests.length === 0 ? (
+                              <span className="text-muted-foreground">None recorded</span>
+                            ) : (
+                              <div className="flex flex-wrap gap-1.5">
+                                {c.mountain_interests.map((m) => (
+                                  <Badge key={m} className="rounded-sm" variant="outline">
+                                    {m}
+                                  </Badge>
+                                ))}
+                              </div>
+                            )}
+                          </TableCell>
+                          {/* Counts, not measurements. A zero here means none. */}
+                          <TableCell className="py-4 align-middle font-medium tabular-nums">{c.leads}</TableCell>
+                          <TableCell className="py-4 align-middle font-medium tabular-nums">{c.bookings}</TableCell>
+                          <TableCell className="py-4 align-middle tabular-nums text-muted-foreground">
+                            {lastEnquiry(c)}
+                          </TableCell>
+                          <TableCell className="py-4 align-middle">
+                            <AccountBadge status={c.status} />
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
                 )}
-              </>
-            );
-          }}
-        </Resolve>
-      </div>
+              </CardContent>
+              {shown.length > 0 && (
+                /* The standing footnote. It did not shrink and it did not move
+                   off the screen — the theme has a card footer, so it lives
+                   there now, still attached to the table it describes. */
+                <CardFooter>
+                  <p className="max-w-4xl text-sm leading-relaxed text-muted-foreground">
+                    Mountain interests are the identifiers the customer chose, printed as they are
+                    stored — this screen does not read the mountain list, so it does not guess at a
+                    display name. Leads and Bookings are the customer record&rsquo;s own counters; Last
+                    enquiry is read from the lead table, so a customer whose enquiries ICEFALL cannot
+                    currently read shows the absence rather than a date.
+                  </p>
+                </CardFooter>
+              )}
+            </Card>
+          );
+        }}
+      </Resolve>
 
-      <div className="mt-6">
-        <Unavailable
-          reason={
-            "Subscription status and last active are not shown. ICEFALL sells no subscription and " +
-            "runs no payment processor, so there is no tier a customer could be on — a column " +
-            "reading \"Free\" would assert a paid tier beside it that does not exist. Nothing " +
-            "records sign-ins, sessions or app opens either, so last active would be \"never\" for " +
-            "everyone: an absence of instrumentation printed as a statement about the person. Both " +
-            "arrive with the systems that would measure them, and neither is estimated in the " +
-            "meantime. Last enquiry is shown instead, because an enquiry is an event ICEFALL " +
-            "actually witnessed."
-          }
-        />
-      </div>
-    </>
+      <Unavailable
+        reason={
+          "Subscription status and last active are not shown. ICEFALL sells no subscription and " +
+          "runs no payment processor, so there is no tier a customer could be on — a column " +
+          "reading \"Free\" would assert a paid tier beside it that does not exist. Nothing " +
+          "records sign-ins, sessions or app opens either, so last active would be \"never\" for " +
+          "everyone: an absence of instrumentation printed as a statement about the person. Both " +
+          "arrive with the systems that would measure them, and neither is estimated in the " +
+          "meantime. Last enquiry is shown instead, because an enquiry is an event ICEFALL " +
+          "actually witnessed."
+        }
+      />
+    </div>
   );
 }

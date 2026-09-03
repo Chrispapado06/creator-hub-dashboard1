@@ -1,6 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus } from "lucide-react";
-import { Button, Card, PageHead, Pill } from "@/components/ui";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Plus, TriangleAlert } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Resolve } from "@/components/states";
 import { createDeal, listCompanies, listDeals, moveDeal } from "@/data/queries";
 import { loading, type Result } from "@/data/result";
@@ -24,11 +28,43 @@ import { Select } from "@/components/controls";
  *     probability" printed under a column — the weighted value sums only deals
  *     where somebody actually set a probability, and says how many it skipped.
  *   - "vs last 30 days" DELTAS. They need history nothing records. The KPI
- *     cards show what is computable from the rows in front of you.
+ *     cards show what is computable from the rows in front of you. This is also
+ *     why the tiles below carry NO delta Badge, which is the theme's signature
+ *     element on a stat tile: there is no prior period to compare against, and
+ *     a black "+12.5%" pill nobody measured is the exact failure this codebase
+ *     exists to avoid.
  *   - A DEAL WITHOUT A VALUE is "no value set", not €0 — and it is excluded
  *     from every sum rather than silently counted as zero.
  */
 
+/**
+ * THE PAGE HEADER, INLINE AND NOT `PageHead` — see the note in Finance.tsx.
+ * The theme draws page titles at `text-3xl tracking-tight` (30px / 400);
+ * `PageHead` draws 31px extrabold and accepts no className.
+ */
+function Head({ title, subtitle, actions }: { title: string; subtitle?: string; actions?: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+      <div className="space-y-1">
+        <h1 className="text-3xl tracking-tight">{title}</h1>
+        {subtitle && <p className="max-w-3xl text-muted-foreground text-sm">{subtitle}</p>}
+      </div>
+      {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
+    </div>
+  );
+}
+
+/**
+ * THE TEN STAGE DOTS ARE DELIBERATELY STILL IN COLOUR.
+ *
+ * index.css holds `--crm-stage-*` back from the neutral rebind, and says why:
+ * they encode a ten-value enum, the theme's chart ramp has five greys, and ten
+ * identical grey dots would remove the only way to read a pipeline board at a
+ * glance. That is a capability loss, which outranks the visual match. The
+ * fallbacks below are the ones this file has always carried; nothing here
+ * assembles a class name, because Tailwind scans source text and `bg-${stage}`
+ * would generate no CSS at all.
+ */
 const STAGES: { id: DealStage; label: string; dot: string }[] = [
   { id: "prospect", label: "Prospect", dot: "bg-[var(--crm-stage-prospect,oklch(0.585_0.17_275))]" },
   { id: "contacted", label: "Contacted", dot: "bg-[var(--crm-stage-contacted,oklch(0.62_0.15_245))]" },
@@ -39,7 +75,10 @@ const STAGES: { id: DealStage; label: string; dot: string }[] = [
   { id: "onboarding", label: "Onboarding", dot: "bg-[var(--crm-stage-onboarding,oklch(0.68_0.12_170))]" },
   { id: "active", label: "Active", dot: "bg-[var(--crm-stage-active,oklch(0.6_0.14_150))]" },
   { id: "renewal", label: "Renewal", dot: "bg-[var(--crm-stage-renewal,oklch(0.65_0.12_255))]" },
-  { id: "lost", label: "Lost", dot: "bg-[oklch(0.65_0.015_260)]" },
+  // The odd one out, fixed: nine stages read `--crm-stage-*` with a fallback,
+  // this one had the colour typed straight in and so ignored its own token —
+  // `--crm-stage-lost` is a red, and the board was painting Lost grey-blue.
+  { id: "lost", label: "Lost", dot: "bg-[var(--crm-stage-lost,oklch(0.64_0.16_25))]" },
 ];
 
 const OPEN: DealStage[] = ["prospect", "contacted", "conversation", "proposal", "negotiation"];
@@ -47,13 +86,40 @@ const WONISH: DealStage[] = ["won", "onboarding", "active", "renewal"];
 
 const eur = (cents: number) => `€${(cents / 100).toLocaleString("en-GB")}`;
 
+/**
+ * The theme's KPI tile (dashboard/crm/_components/kpi-cards.tsx): label as
+ * CardDescription, a 30px figure with `leading-none tracking-tight`, and a
+ * 14px caption. No delta pill — see the header for why this screen has none.
+ */
 function Kpi({ label, value, caption }: { label: string; value: string; caption: string }) {
   return (
     <Card>
-      <p className="text-[12.5px] font-medium text-muted">{label}</p>
-      <p className="tnum mt-1.5 text-[26px] font-extrabold leading-tight text-ink">{value}</p>
-      <p className="mt-1.5 text-[11.5px] text-faint">{caption}</p>
+      <CardHeader>
+        <CardDescription>{label}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        <div className="text-3xl leading-none tracking-tight tabular-nums">{value}</div>
+        <p className="text-muted-foreground text-sm">{caption}</p>
+      </CardContent>
     </Card>
+  );
+}
+
+/**
+ * A refusal from the database, shown verbatim and left on screen.
+ *
+ * Not a toast: the theme's habit is to fade a failure away after four seconds,
+ * and a write the database refused is exactly the thing the person needs to
+ * still be able to read when they look back at the screen. Styled as the
+ * theme's destructive surface (`border-destructive/20 bg-destructive/10
+ * text-destructive`, the same tone its own destructive Badge uses).
+ */
+function Refusal({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex items-start gap-2 rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2.5 text-destructive text-sm">
+      <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+      <span className="min-w-0">{children}</span>
+    </div>
   );
 }
 
@@ -112,61 +178,73 @@ export default function Sales() {
   }, [companies]);
 
   return (
-    <>
-      <PageHead
+    <div className="flex flex-col gap-4 md:gap-6">
+      <Head
         title="Sales Pipeline"
         subtitle="Track and manage expedition companies from first contact to active partnership."
         actions={
-          <Button className="!bg-accent text-white hover:opacity-90" onClick={() => setAdding((a) => !a)}>
-            <Plus size={15} strokeWidth={2.25} /> Add deal
+          <Button onClick={() => setAdding((a) => !a)}>
+            <Plus data-icon="inline-start" /> Add deal
           </Button>
         }
       />
 
       {adding && (
-        <Card className="mb-4">
-          <div className="grid gap-3 sm:grid-cols-3">
-            <label className="block">
-              <span className="mb-1 block text-[12px] font-medium text-muted">Company *</span>
-              <Select
-                value={form.company_id}
-                onChange={(v: string) => setForm((f) => ({ ...f, company_id: v }))}
-                ariaLabel="Company for this deal"
-                placeholder="Choose…"
-                className="w-full"
-                options={companies.state === "ok" ? companies.value.map((c) => ({ value: c.id, label: c.name })) : []}
-              />
-              {companies.state === "ok" && companies.value.length === 0 && (
-                <span className="mt-1 block text-[11.5px] text-faint">
-                  No companies exist yet — create one on the Companies page first; a deal is a
-                  conversation with somebody.
-                </span>
-              )}
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-[12px] font-medium text-muted">What the deal is *</span>
-              <input
-                value={form.title}
-                onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-                placeholder="e.g. Everest Slot 1, 2027 season"
-                className="h-9 w-full rounded-tile border border-line bg-surface px-3 text-[13px] text-ink outline-none placeholder:text-faint focus:border-accent"
-              />
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-[12px] font-medium text-muted">Estimated value (EUR, optional)</span>
-              <input
-                value={form.value}
-                onChange={(e) => setForm((f) => ({ ...f, value: e.target.value.replace(/[^\d]/g, "") }))}
-                inputMode="numeric"
-                placeholder="Leave empty if not discussed"
-                className="tnum h-9 w-full rounded-tile border border-line bg-surface px-3 text-[13px] text-ink outline-none placeholder:text-faint focus:border-accent"
-              />
-            </label>
-          </div>
-          <div className="mt-3 flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setAdding(false)}>Cancel</Button>
+        <Card>
+          <CardHeader>
+            <CardTitle className="leading-none">New deal</CardTitle>
+            <CardDescription>
+              It is created in Prospect. Value is optional — a deal nobody has priced is not a €0 deal.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div className="space-y-2">
+                <Label htmlFor="deal-company">Company *</Label>
+                <Select
+                  value={form.company_id}
+                  onChange={(v: string) => setForm((f) => ({ ...f, company_id: v }))}
+                  ariaLabel="Company for this deal"
+                  placeholder="Choose…"
+                  className="w-full"
+                  options={
+                    companies.state === "ok" ? companies.value.map((c) => ({ value: c.id, label: c.name })) : []
+                  }
+                />
+                {companies.state === "ok" && companies.value.length === 0 && (
+                  <p className="text-muted-foreground text-xs leading-relaxed">
+                    No companies exist yet — create one on the Companies page first; a deal is a
+                    conversation with somebody.
+                  </p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="deal-title">What the deal is *</Label>
+                <Input
+                  id="deal-title"
+                  value={form.title}
+                  onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+                  placeholder="e.g. Everest Slot 1, 2027 season"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="deal-value">Estimated value (EUR, optional)</Label>
+                <Input
+                  id="deal-value"
+                  value={form.value}
+                  onChange={(e) => setForm((f) => ({ ...f, value: e.target.value.replace(/[^\d]/g, "") }))}
+                  inputMode="numeric"
+                  placeholder="Leave empty if not discussed"
+                  className="tabular-nums"
+                />
+              </div>
+            </div>
+          </CardContent>
+          <CardFooter className="justify-end gap-2">
+            <Button variant="ghost" onClick={() => setAdding(false)}>
+              Cancel
+            </Button>
             <Button
-              className="!bg-accent text-white hover:opacity-90"
               disabled={busy || !form.company_id || form.title.trim().length === 0}
               onClick={() => {
                 setBusy(true);
@@ -186,13 +264,13 @@ export default function Sales() {
             >
               Create in Prospect
             </Button>
-          </div>
+          </CardFooter>
         </Card>
       )}
 
-      {moveError && deals.state === "ok" && deals.value.length === 0 && (
-        <p className="mb-3 rounded-tile bg-[oklch(0.955_0.03_25)] px-3.5 py-2.5 text-[12.5px] text-bad">{moveError}</p>
-      )}
+      {/* A refusal that arrives while the board is empty has no card to snap
+          back, so it is shown here on its own. */}
+      {moveError && deals.state === "ok" && deals.value.length === 0 && <Refusal>{moveError}</Refusal>}
 
       <Resolve
         result={deals}
@@ -229,8 +307,8 @@ export default function Sales() {
           }));
 
           return (
-            <>
-              <div className="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="flex flex-col gap-4 md:gap-6">
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
                 <Kpi label="Total Deals" value={String(rows.length)} caption="Across every stage" />
                 <Kpi
                   label="Open Pipeline Value"
@@ -242,6 +320,8 @@ export default function Sales() {
                   }
                 />
                 <Kpi label="Won Deals" value={String(won)} caption="Won, onboarding, active or renewing" />
+                {/* An em dash here means NOT MEASURED — no deal has closed, so
+                    there is no rate. It is not a zero and must never become one. */}
                 <Kpi
                   label="Conversion Rate"
                   value={closed > 0 ? `${Math.round((won / closed) * 100)}%` : "—"}
@@ -254,52 +334,67 @@ export default function Sales() {
                       ? eur(Math.round(valued.reduce((s, d) => s + d.estimated_value_cents!, 0) / valued.length))
                       : "—"
                   }
-                  caption={valued.length > 0 ? `Across ${valued.length} valued deal${valued.length === 1 ? "" : "s"}` : "No deal carries a value yet"}
+                  caption={
+                    valued.length > 0
+                      ? `Across ${valued.length} valued deal${valued.length === 1 ? "" : "s"}`
+                      : "No deal carries a value yet"
+                  }
                 />
               </div>
 
-              {moveError && (
-                <p className="mb-3 rounded-tile bg-[oklch(0.955_0.03_25)] px-3.5 py-2.5 text-[12.5px] text-bad">
-                  The move was refused and the card snapped back: {moveError}
-                </p>
-              )}
+              {moveError && <Refusal>The move was refused and the card snapped back: {moveError}</Refusal>}
+
               {lostPrompt && (
-                <Card className="mb-3">
-                  <p className="text-[13px] font-semibold text-ink">
-                    Why was it lost? The database refuses a lost deal without a reason.
-                  </p>
-                  <div className="mt-2 flex items-center gap-2">
-                    <input
-                      autoFocus
-                      value={lostPrompt.reason}
-                      onChange={(e) => setLostPrompt({ ...lostPrompt, reason: e.target.value })}
-                      placeholder="e.g. Renewed directly with their existing channel"
-                      className="h-9 min-w-0 flex-1 rounded-tile border border-line bg-surface px-3 text-[13px] text-ink outline-none placeholder:text-faint focus:border-accent"
-                    />
-                    <Button variant="ghost" onClick={() => setLostPrompt(null)}>
-                      Cancel
-                    </Button>
-                    <Button
-                      className="!bg-accent text-white hover:opacity-90"
-                      disabled={lostPrompt.reason.trim().length === 0}
-                      onClick={() => {
-                        const { id, reason } = lostPrompt;
-                        setLostPrompt(null);
-                        void commitMove(id, "lost", reason);
-                      }}
-                    >
-                      Mark lost
-                    </Button>
-                  </div>
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="leading-none">
+                      Why was it lost? The database refuses a lost deal without a reason.
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Input
+                        autoFocus
+                        value={lostPrompt.reason}
+                        onChange={(e) => setLostPrompt({ ...lostPrompt, reason: e.target.value })}
+                        placeholder="e.g. Renewed directly with their existing channel"
+                        className="min-w-0 flex-1"
+                      />
+                      <Button variant="ghost" onClick={() => setLostPrompt(null)}>
+                        Cancel
+                      </Button>
+                      <Button
+                        disabled={lostPrompt.reason.trim().length === 0}
+                        onClick={() => {
+                          const { id, reason } = lostPrompt;
+                          setLostPrompt(null);
+                          void commitMove(id, "lost", reason);
+                        }}
+                      >
+                        Mark lost
+                      </Button>
+                    </div>
+                  </CardContent>
                 </Card>
               )}
+
+              {/* THE BOARD. Column and card chrome copied from the theme's own
+                  kanban (dashboard/kanban/_components): a column is
+                  `rounded-xl border bg-muted/50` with a `px-4 pt-4 pb-3` head,
+                  a `font-medium text-base leading-none` title and a
+                  `text-muted-foreground text-sm tabular-nums` count; a card is
+                  `rounded-xl border bg-card p-4 shadow-xs`. The drop target
+                  goes to the theme's `bg-muted/70`, and the ring is kept on top
+                  of it because dragging across ten columns needs a stronger
+                  signal than one step of grey. */}
               <div className="overflow-x-auto pb-1">
-                <div className="grid min-w-[2000px] grid-cols-10 gap-3">
+                <div className="grid min-w-[2400px] grid-cols-10 gap-4">
                   {stagesWithDeals.map((stage) => {
                     const valuedHere = stage.deals.filter((d) => d.estimated_value_cents !== null);
                     const sum = valuedHere.reduce((s, d) => s + d.estimated_value_cents!, 0);
+                    const isTarget = overCol === stage.id && dragging !== null;
                     return (
-                      <div
+                      <section
                         key={stage.id}
                         onDragOver={(e) => {
                           e.preventDefault();
@@ -308,27 +403,30 @@ export default function Sales() {
                         onDragLeave={() => setOverCol((c) => (c === stage.id ? null : c))}
                         onDrop={() => onDropInto(stage.id)}
                         className={cn(
-                          "rounded-card bg-panel p-2.5 transition-shadow",
-                          overCol === stage.id && dragging && "ring-2 ring-accent",
+                          "flex flex-col rounded-xl border bg-ui-muted/50 transition-colors",
+                          isTarget && "bg-ui-muted/70 ring-2 ring-ring",
                         )}
                       >
-                        <div className="px-1.5 pb-2 pt-1">
-                          <div className="flex items-center justify-between gap-2">
-                            <p className="flex items-center gap-2 text-[13px] font-bold text-ink">
-                              <span className={cn("h-2 w-2 rounded-full", stage.dot)} aria-hidden />
+                        <div className="flex items-start justify-between gap-2 px-4 pt-4 pb-3">
+                          <div className="min-w-0 space-y-1">
+                            <h2 className="flex items-center gap-2 truncate font-medium text-base leading-none">
+                              <span className={cn("size-2 shrink-0 rounded-full", stage.dot)} aria-hidden />
                               {stage.label}
+                            </h2>
+                            <p className="text-muted-foreground text-sm tabular-nums leading-none">
+                              {stage.deals.length} deal{stage.deals.length === 1 ? "" : "s"}
                             </p>
-                            {valuedHere.length > 0 && (
-                              <span className="tnum text-[12px] font-semibold text-muted">{eur(sum)}</span>
-                            )}
                           </div>
-                          <p className="mt-0.5 pl-4 text-[11.5px] text-faint">
-                            {stage.deals.length} deal{stage.deals.length === 1 ? "" : "s"}
-                          </p>
+                          {/* Printed only when at least one deal here has a
+                              value somebody set. A column of unpriced deals
+                              shows no total rather than €0. */}
+                          {valuedHere.length > 0 && (
+                            <span className="shrink-0 font-medium text-sm tabular-nums">{eur(sum)}</span>
+                          )}
                         </div>
-                        <div className="space-y-2">
+                        <div className="flex min-h-0 flex-1 flex-col gap-3 px-3 pb-3">
                           {stage.deals.map((deal) => (
-                            <div
+                            <article
                               key={deal.id}
                               draggable
                               onDragStart={() => setDragging(deal.id)}
@@ -337,70 +435,101 @@ export default function Sales() {
                                 setOverCol(null);
                               }}
                               className={cn(
-                                "cursor-grab rounded-tile bg-surface p-3 shadow-soft active:cursor-grabbing",
-                                dragging === deal.id && "opacity-50",
+                                "flex cursor-grab flex-col gap-3 rounded-xl border bg-card p-4 text-card-foreground shadow-xs active:cursor-grabbing",
+                                dragging === deal.id && "opacity-30",
                               )}
                             >
-                              <div className="flex items-start justify-between gap-2">
-                                <p className="text-[13px] font-semibold leading-snug text-ink">
-                                  {nameOf(deal.company_id)}
-                                </p>
-                                {deal.stage === "won" && <Pill tone="green">Won</Pill>}
-                                {deal.stage === "lost" && <Pill tone="red">Lost</Pill>}
-                              </div>
-                              <p className="mt-1 text-[12px] text-muted">{deal.title}</p>
-                              <div className="mt-2 flex items-center justify-between gap-2">
-                                <span className="tnum text-[12px] font-semibold text-ink">
-                                  {deal.estimated_value_cents !== null ? (
-                                    eur(deal.estimated_value_cents)
-                                  ) : (
-                                    <span className="font-normal text-faint">No value set</span>
+                              <div className="min-w-0 space-y-1.5">
+                                <div className="flex items-start justify-between gap-2">
+                                  <h3 className="min-w-0 font-medium text-sm leading-snug">
+                                    {nameOf(deal.company_id)}
+                                  </h3>
+                                  {deal.stage === "won" && (
+                                    <Badge
+                                      variant="outline"
+                                      className="shrink-0 border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                                    >
+                                      Won
+                                    </Badge>
                                   )}
-                                </span>
+                                  {deal.stage === "lost" && (
+                                    <Badge
+                                      variant="outline"
+                                      className="shrink-0 border-destructive/20 bg-destructive/10 text-destructive"
+                                    >
+                                      Lost
+                                    </Badge>
+                                  )}
+                                </div>
+                                <p className="line-clamp-2 text-muted-foreground text-sm leading-5">
+                                  {deal.title}
+                                </p>
+                              </div>
+                              <div className="flex items-center justify-between gap-2">
+                                {/* NOT €0. A deal nobody has priced is a deal
+                                    nobody has priced, and it is excluded from
+                                    every sum above rather than counted as zero. */}
+                                {deal.estimated_value_cents !== null ? (
+                                  <span className="font-medium text-sm tabular-nums">
+                                    {eur(deal.estimated_value_cents)}
+                                  </span>
+                                ) : (
+                                  <span className="text-muted-foreground text-sm">No value set</span>
+                                )}
+                                {/* Only when a person set it. Never derived from the stage. */}
                                 {deal.probability_pct !== null && (
-                                  <span className="text-[11.5px] text-faint">{deal.probability_pct}%</span>
+                                  <span className="text-muted-foreground text-sm tabular-nums">
+                                    {deal.probability_pct}%
+                                  </span>
                                 )}
                               </div>
                               {deal.lost_reason && (
-                                <p className="mt-1.5 text-[11.5px] leading-snug text-faint">{deal.lost_reason}</p>
+                                <p className="text-muted-foreground text-sm leading-snug">{deal.lost_reason}</p>
                               )}
-                            </div>
+                            </article>
                           ))}
                         </div>
-                      </div>
+                      </section>
                     );
                   })}
                 </div>
               </div>
 
-              <Card className="mt-4">
-                <div className="grid grid-cols-2 items-center gap-4">
-                  <div>
-                    <p className="text-[12.5px] font-medium text-muted">Weighted Pipeline Value</p>
-                    <p className="tnum mt-1.5 text-[22px] font-extrabold text-ink">
+              <div className="grid gap-4 md:grid-cols-2">
+                <Card>
+                  <CardHeader>
+                    <CardDescription>Weighted Pipeline Value</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    <div className="text-3xl leading-none tracking-tight tabular-nums">
                       {weightable.length > 0 ? eur(weighted) : "—"}
-                    </p>
-                    <p className="mt-1 text-[11.5px] leading-relaxed text-faint">
+                    </div>
+                    <p className="text-muted-foreground text-sm leading-relaxed">
                       {weightable.length > 0
                         ? `From ${weightable.length} open deal${weightable.length === 1 ? "" : "s"} with a value and a probability someone set` +
                           (unweightable > 0 ? `; ${unweightable} excluded for lacking one` : "")
                         : "No open deal carries both a value and a probability — probabilities are set by people, never assumed from the stage"}
                     </p>
-                  </div>
-                  <div>
-                    <p className="text-[12.5px] font-medium text-muted">Forecast (This Month)</p>
-                    <p className="tnum mt-1.5 text-[22px] font-extrabold text-ink">—</p>
-                    <p className="mt-1 text-[11.5px] leading-relaxed text-faint">
-                      Needs expected-close dates and a probability on each deal; it appears once
-                      deals carry them.
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader>
+                    <CardDescription>Forecast (This Month)</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {/* The em dash is NOT MEASURED, and it stays one. */}
+                    <div className="text-3xl leading-none tracking-tight tabular-nums">—</div>
+                    <p className="text-muted-foreground text-sm leading-relaxed">
+                      Needs expected-close dates and a probability on each deal; it appears once deals carry
+                      them.
                     </p>
-                  </div>
-                </div>
-              </Card>
-            </>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
           );
         }}
       </Resolve>
-    </>
+    </div>
   );
 }

@@ -1,12 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  ChevronLeft,
-  ChevronRight,
-  EllipsisVertical,
-  Plus,
-} from "lucide-react";
-import { Button, PageHead, StatusChip, TableCard } from "@/components/ui";
+import { Building2, CheckCircle2, EllipsisVertical, PauseCircle, Plus, ShieldQuestion, UserPlus } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { Resolve } from "@/components/states";
 import { CompanyLogo } from "@/components/CompanyLogo";
 import { OFFLINE } from "@/offline/offline";
@@ -15,6 +10,20 @@ import { listCompanies, listRevenue } from "@/data/queries";
 import { loading, type Result } from "@/data/result";
 import { Select } from "@/components/controls";
 import type { Company, RevenueRecord } from "@/data/types";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
+import { Separator } from "@/components/ui/separator";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 /**
  * Companies — the mockup's design on the REAL query layer.
@@ -36,6 +45,31 @@ import type { Company, RevenueRecord } from "@/data/types";
  * today, so today you see initials; the moment a real operator's record exists
  * under one of these slugs, its own mark appears. Nothing is copied into the
  * repo either way.
+ *
+ * ── THE RE-SKIN, 2026-09-03 ────────────────────────────────────────────────
+ * Owner: "i dont see any change i want the designs 1:1". This screen is now
+ * shaped as the theme's own roster page, theme-ref /dashboard/users, with the
+ * headline figures taking the tile from /dashboard/default:
+ *
+ *   page head    h1 `font-medium text-3xl leading-none tracking-tight` over a
+ *                `text-muted-foreground text-sm` line, actions on the right —
+ *                the theme's invoice/page.tsx header, verbatim.
+ *   stat tile    Card + a `size-7 rounded-lg border bg-ui-muted` icon square,
+ *                CardDescription label, `font-medium text-3xl tabular-nums`
+ *                figure, `text-muted-foreground text-sm` caption. Measured on
+ *                the running theme, not guessed.
+ *   the roster   ONE Card. CardHeader carries the title, the description and
+ *                the actions and closes with a `border-b`; CardContent is
+ *                `px-0` so the table runs to the card's edge; the footer is
+ *                the theme's Separator + "Rows per page" + Pagination.
+ *   the rows     the theme's Table primitives with its own class hooks —
+ *                `**:data-[slot='table-cell']:px-4`, TableHead `py-4
+ *                font-normal`, TableRow `border-border/60`.
+ *
+ * NOTHING WAS DROPPED. Every control that was here is still here and still
+ * does the same thing: add-company, row-click-through, the five counts, the
+ * per-page chooser, the numbered pager, the results sentence, the row overflow
+ * glyph. Two MOVED rather than went away, and both are noted at their new home.
  */
 
 export const companyStatusTone = (s: Company["status"]) =>
@@ -57,24 +91,53 @@ export const companyStatusState = (s: Company["status"]): "ok" | "pending" | "ba
  * must never print anything a reader could take as meaning it did. The date
  * comes from `documents_checked_at`, which is NULL until a real staff review
  * recorded one — so an unchecked company shows the absence, not a placeholder.
+ *
+ * RE-SKIN NOTE: the shell is the theme's outline Badge with a status dot, from
+ * users-columns.tsx `StatusBadge`. THE SENTENCES ARE UNTOUCHED — "Documents
+ * checked 4 Aug 2026" is the whole point of this component and a theme has no
+ * opinion about it. The unverified/pending/rejected cases still print the raw
+ * status word rather than a friendlier synonym.
  */
 export function VerificationChip({ company }: { company: Company }) {
   if (company.verification_status !== "verified") {
+    const refused =
+      company.verification_status === "rejected" || company.verification_status === "suspended";
     return (
-      <StatusChip
-        state={
-          company.verification_status === "rejected" || company.verification_status === "suspended"
-            ? "bad"
+      <Badge
+        variant="outline"
+        className={cn(
+          "gap-1.5 border px-2 py-1 font-medium capitalize",
+          refused
+            ? "border-destructive/20 bg-destructive/10 text-destructive"
             : company.verification_status === "pending"
-              ? "pending"
-              : "neutral"
-        }
-        label={company.verification_status}
-      />
+              ? "border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+              : "border-border bg-ui-muted/50 text-muted-foreground",
+        )}
+      >
+        <span
+          className={cn(
+            "size-1.5 rounded-full",
+            refused
+              ? "bg-destructive"
+              : company.verification_status === "pending"
+                ? "bg-amber-500"
+                : "bg-muted-foreground",
+          )}
+        />
+        {company.verification_status}
+      </Badge>
     );
   }
   const on = formatDay(company.documents_checked_at);
-  return <StatusChip state="ok" label={on ? `Documents checked ${on}` : "Documents checked"} />;
+  return (
+    <Badge
+      variant="outline"
+      className="gap-1.5 border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 font-medium text-emerald-600 dark:text-emerald-400"
+    >
+      <span className="size-1.5 rounded-full bg-emerald-500" />
+      {on ? `Documents checked ${on}` : "Documents checked"}
+    </Badge>
+  );
 }
 
 /** Real operators' websites, by the slug their record would use. Public facts. */
@@ -97,50 +160,99 @@ export const OPERATOR_DOMAINS: Record<string, string> = {
   "summitclimb": "summitclimb.com",
 };
 
-const STATUS_META: Record<Company["status"], { label: string; dot: string; text: string }> = {
-  prospect: { label: "Prospect", dot: "bg-[oklch(0.65_0.015_260)]", text: "text-muted" },
-  onboarding: { label: "Onboarding", dot: "bg-[oklch(0.75_0.14_70)]", text: "text-[oklch(0.55_0.12_70)]" },
-  active: { label: "Active", dot: "bg-ok", text: "text-ok" },
-  suspended: { label: "Suspended", dot: "bg-bad", text: "text-bad" },
-  churned: { label: "Churned", dot: "bg-bad", text: "text-bad" },
+/**
+ * The lifecycle word, in the theme's own status vocabulary.
+ *
+ * These five pairs are lifted from theme-ref users/_components/data.tsx
+ * `statusMeta` rather than invented: emerald for settled, amber for in-flight,
+ * orange for suspended, destructive for gone, neutral for not-yet-started. The
+ * mapping keeps the same three-way reading `companyStatusTone` has always had —
+ * it does not re-rank anything — and it keeps five statuses distinguishable,
+ * which a single neutral badge would not.
+ */
+const STATUS_META: Record<Company["status"], { label: string; badge: string; dot: string }> = {
+  prospect: {
+    label: "Prospect",
+    badge: "border-border bg-ui-muted/50 text-muted-foreground",
+    dot: "bg-muted-foreground",
+  },
+  onboarding: {
+    label: "Onboarding",
+    badge: "border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+    dot: "bg-amber-500",
+  },
+  active: {
+    label: "Active",
+    badge: "border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+    dot: "bg-emerald-500",
+  },
+  suspended: {
+    label: "Suspended",
+    badge: "border-orange-500/20 bg-orange-500/10 text-orange-600 dark:text-orange-400",
+    dot: "bg-orange-500",
+  },
+  churned: {
+    label: "Churned",
+    badge: "border-destructive/20 bg-destructive/10 text-destructive",
+    dot: "bg-destructive",
+  },
 };
 
+/**
+ * The lifecycle word as the theme draws it, exported so the company's own page
+ * cannot drift from its row in the roster. One definition, two screens — which
+ * is the same reason `companyStatusState` and `companyStatusTone` sit up there
+ * together rather than being re-derived per surface.
+ */
+export function CompanyStatusBadge({ status }: { status: Company["status"] }) {
+  const meta = STATUS_META[status];
+  return (
+    <Badge variant="outline" className={cn("gap-1.5 border px-2 py-1 font-medium", meta.badge)}>
+      <span className={cn("size-1.5 rounded-full", meta.dot)} />
+      {meta.label}
+    </Badge>
+  );
+}
+
+/**
+ * The theme's metric card, from /dashboard/default `metric-cards.tsx`.
+ *
+ * NOTE WHAT IS NOT HERE: the theme's tile carries a delta Badge — "+12.5% vs
+ * last month". These five counts have no previous period to compare against;
+ * nothing in this app stores yesterday's roster. A tile that renders the theme's
+ * pill with a number nobody measured is the exact failure this codebase spends
+ * its comments guarding against, so the pill is left off rather than filled in.
+ * The `caption` says what the figure counts instead.
+ */
 function StatTile({
   label,
   value,
   caption,
-  tone,
+  icon: Icon,
 }: {
   label: string;
   value: number;
   caption: string;
-  tone: "plain" | "blue" | "amber" | "red" | "grey";
+  icon: LucideIcon;
 }) {
   return (
-    <div
-      className={cn(
-        "rounded-card p-4",
-        tone === "plain" && "bg-surface shadow-soft",
-        tone === "blue" && "bg-accent-soft",
-        tone === "amber" && "bg-butter",
-        tone === "red" && "bg-[oklch(0.955_0.03_25)]",
-        tone === "grey" && "bg-panel",
-      )}
-    >
-      <p
-        className={cn(
-          "text-[12.5px] font-semibold",
-          tone === "blue" && "text-accent-ink",
-          tone === "amber" && "text-[oklch(0.5_0.11_75)]",
-          tone === "red" && "text-[oklch(0.5_0.16_25)]",
-          (tone === "plain" || tone === "grey") && "text-muted",
-        )}
-      >
-        {label}
-      </p>
-      <p className="tnum mt-1 text-[24px] font-extrabold leading-tight text-ink">{value}</p>
-      <p className="mt-0.5 text-[11.5px] text-faint">{caption}</p>
-    </div>
+    <Card>
+      <CardHeader>
+        <CardTitle>
+          <div className="flex size-7 items-center justify-center rounded-lg border bg-ui-muted text-muted-foreground">
+            <Icon className="size-4" />
+          </div>
+        </CardTitle>
+        <CardDescription>{label}</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-1">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* A measured zero is a zero. It is never softened into a dash. */}
+          <div className="font-medium text-3xl leading-none tracking-tight tabular-nums">{value}</div>
+        </div>
+        <p className="text-muted-foreground text-sm">{caption}</p>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -175,19 +287,23 @@ export default function Companies() {
   );
 
   return (
-    <>
-      <PageHead
-        title="Companies"
-        subtitle="Every expedition company ICEFALL sells to or works with. One canonical record — the operator portal edits this same row."
-        actions={
-          <Button
-            className="!bg-accent text-white hover:opacity-90"
-            onClick={() => navigate("/admin/companies/page/new")}
-          >
-            <Plus size={15} strokeWidth={2.25} /> Add company
+    <div className="flex flex-col gap-4 md:gap-6">
+      {/* The theme's page header — invoice/page.tsx. The old PageHead drew a
+          31px extrabold title; the theme's is 30px at weight 500. */}
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex flex-col gap-1">
+          <h1 className="font-medium text-3xl leading-none tracking-tight">Companies</h1>
+          <p className="max-w-2xl text-muted-foreground text-sm">
+            Every expedition company ICEFALL sells to or works with. One canonical record — the
+            operator portal edits this same row.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button onClick={() => navigate("/admin/companies/page/new")}>
+            <Plus data-icon="inline-start" /> Add company
           </Button>
-        }
-      />
+        </div>
+      </div>
 
       <Resolve
         result={result}
@@ -213,147 +329,207 @@ export default function Companies() {
 
           return (
             <>
-              <div className="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-                <StatTile label="Companies" value={counts.total} caption="Total companies" tone="plain" />
-                <StatTile label="Active accounts" value={counts.active} caption="Active and onboarded" tone="blue" />
-                <StatTile label="Onboarding" value={counts.onboarding} caption="In the onboarding flow" tone="amber" />
-                <StatTile label="Suspended" value={counts.suspended} caption="Access suspended" tone="red" />
-                <StatTile label="Unverified" value={counts.unverified} caption="Awaiting verification" tone="grey" />
+              <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-linear-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs sm:grid-cols-2 xl:grid-cols-5 dark:*:data-[slot=card]:bg-card">
+                <StatTile label="Companies" value={counts.total} caption="Total companies" icon={Building2} />
+                <StatTile label="Active accounts" value={counts.active} caption="Active and onboarded" icon={CheckCircle2} />
+                <StatTile label="Onboarding" value={counts.onboarding} caption="In the onboarding flow" icon={UserPlus} />
+                <StatTile label="Suspended" value={counts.suspended} caption="Access suspended" icon={PauseCircle} />
+                <StatTile label="Unverified" value={counts.unverified} caption="Awaiting verification" icon={ShieldQuestion} />
               </div>
 
-              <TableCard>
-                <table className="w-full text-[13px]">
-                  <thead>
-                    <tr className="text-left text-[11.5px] uppercase tracking-[0.06em] text-faint">
-                      <th className="px-5 py-3 font-medium">Company</th>
-                      <th className="px-3 py-3 font-medium">Status</th>
-                      <th className="px-3 py-3 font-medium">Countries</th>
-                      <th className="px-3 py-3 font-medium">Trust</th>
-                      <th className="px-3 py-3 font-medium">Joined</th>
-                      <th className="px-3 py-3 text-right font-medium">Revenue YTD</th>
-                      <th className="px-4 py-3" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {visible.map((r) => {
-                      const status = STATUS_META[r.status];
-                      const earned = ytd?.get(r.id);
-                      return (
-                        <tr
-                          key={r.id}
-                          onClick={() => navigate(`/admin/companies/${r.id}`)}
-                          className="cursor-pointer border-t border-line-soft hover:bg-raised/60"
-                        >
-                          <td className="px-5 py-3">
-                            <span className="flex items-center gap-3">
-                              {/* Offline the logo chain is skipped entirely:
-                                  it fetches each operator's mark from their own
-                                  site, which is a network call with nothing to
-                                  reach. Initials render instead — a missing
-                                  logo is a cosmetic absence, not information. */}
-                              <CompanyLogo
-                                name={r.name}
-                                domain={OFFLINE ? null : OPERATOR_DOMAINS[r.slug]}
-                                size={34}
-                              />
-                              <span className="font-semibold text-ink">{r.name}</span>
-                            </span>
-                          </td>
-                          <td className="px-3 py-3">
-                            <span className={cn("flex items-center gap-2 text-[12.5px] font-medium", status.text)}>
-                              <span className={cn("h-1.5 w-1.5 rounded-full", status.dot)} aria-hidden />
-                              {status.label}
-                            </span>
-                          </td>
-                          <td className="px-3 py-3 text-muted">
-                            {r.countries.length > 0 ? (
-                              r.countries.join(", ")
-                            ) : (
-                              <span className="text-faint">Not recorded</span>
-                            )}
-                          </td>
-                          <td className="px-3 py-3">
-                            <VerificationChip company={r} />
-                          </td>
-                          <td className="tnum px-3 py-3 text-muted">{formatDay(r.created_at)}</td>
-                          <td className="tnum px-3 py-3 text-right font-semibold text-ink">
-                            {revenue.state !== "ok" ? (
-                              <span className="font-normal text-faint">
-                                {revenue.state === "loading" ? "…" : "Ledger unavailable"}
-                              </span>
-                            ) : earned === undefined ? (
-                              <span className="font-normal text-faint">None recorded</span>
-                            ) : (
-                              `€${(earned / 100).toLocaleString("en-GB")}`
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <EllipsisVertical size={15} strokeWidth={2} className="inline text-faint" aria-hidden />
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+              <Card>
+                <CardHeader className="border-b has-data-[slot=card-action]:grid-cols-1 md:has-data-[slot=card-action]:grid-cols-[1fr_auto]">
+                  <CardTitle className="text-xl leading-none">All companies</CardTitle>
+                  <CardDescription className="max-w-md leading-snug">
+                    Select a row to open the company's record.
+                  </CardDescription>
+                  {/* MOVED, NOT DELETED — the results sentence. It used to sit
+                      in the pagination bar beside the pager; the theme puts the
+                      row count in the card header and the page position in the
+                      footer, so the two halves are split the theme's way and
+                      both are still on screen. */}
+                  <CardAction className="col-start-1 row-start-auto flex w-full flex-wrap items-center justify-start gap-2 justify-self-stretch md:col-start-2 md:row-span-2 md:row-start-1 md:w-auto md:justify-end md:justify-self-end">
+                    <span className="text-muted-foreground text-sm tabular-nums">
+                      Showing {from} to {to} of {rows.length} results
+                    </span>
+                  </CardAction>
+                </CardHeader>
 
-                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line-soft px-5 py-3">
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setPage((p) => Math.max(1, p - 1))}
-                      className="grid h-8 w-8 place-items-center rounded-[8px] text-muted hover:bg-raised"
-                      aria-label="Previous page"
-                    >
-                      <ChevronLeft size={15} strokeWidth={2} />
-                    </button>
-                    {pageItems.map((it, i) =>
-                      it === "…" ? (
-                        <span key={`e${i}`} className="px-1 text-[12.5px] text-faint">
-                          …
-                        </span>
-                      ) : (
-                        <button
-                          key={it}
-                          type="button"
-                          onClick={() => setPage(it)}
-                          className={cn(
-                            "grid h-8 w-8 place-items-center rounded-[8px] text-[12.5px] font-medium",
-                            it === safePage ? "bg-accent text-white" : "text-muted hover:bg-raised",
-                          )}
-                        >
-                          {it}
-                        </button>
-                      ),
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setPage((p) => Math.min(pages, p + 1))}
-                      className="grid h-8 w-8 place-items-center rounded-[8px] text-muted hover:bg-raised"
-                      aria-label="Next page"
-                    >
-                      <ChevronRight size={15} strokeWidth={2} />
-                    </button>
+                <CardContent className="flex flex-col gap-4 px-0">
+                  <Table className="**:data-[slot='table-cell']:px-4 **:data-[slot='table-head']:px-4">
+                    <TableHeader className="[&_tr]:border-t">
+                      <TableRow>
+                        <TableHead className="py-4 font-normal">Company</TableHead>
+                        <TableHead className="py-4 font-normal">Status</TableHead>
+                        <TableHead className="py-4 font-normal">Countries</TableHead>
+                        <TableHead className="py-4 font-normal">Trust</TableHead>
+                        <TableHead className="py-4 font-normal">Joined</TableHead>
+                        <TableHead className="py-4 text-right font-normal">Revenue YTD</TableHead>
+                        <TableHead className="py-4 font-normal">
+                          <span className="sr-only">Actions</span>
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {visible.map((r) => {
+                        const earned = ytd?.get(r.id);
+                        return (
+                          <TableRow
+                            key={r.id}
+                            onClick={() => navigate(`/admin/companies/${r.id}`)}
+                            className="cursor-pointer border-border/60"
+                          >
+                            <TableCell className="py-4 align-middle">
+                              <span className="flex items-center gap-3">
+                                {/* Offline the logo chain is skipped entirely:
+                                    it fetches each operator's mark from their own
+                                    site, which is a network call with nothing to
+                                    reach. Initials render instead — a missing
+                                    logo is a cosmetic absence, not information. */}
+                                <CompanyLogo
+                                  name={r.name}
+                                  domain={OFFLINE ? null : OPERATOR_DOMAINS[r.slug]}
+                                  size={32}
+                                />
+                                <span className="font-medium">{r.name}</span>
+                              </span>
+                            </TableCell>
+                            <TableCell className="py-4 align-middle">
+                              <CompanyStatusBadge status={r.status} />
+                            </TableCell>
+                            <TableCell className="py-4 align-middle text-muted-foreground">
+                              {r.countries.length > 0 ? (
+                                r.countries.join(", ")
+                              ) : (
+                                /* Not a dash and not a blank: the cell names the
+                                   fact nobody has recorded. */
+                                <span className="text-faint">Not recorded</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="py-4 align-middle">
+                              <VerificationChip company={r} />
+                            </TableCell>
+                            <TableCell className="py-4 align-middle text-muted-foreground tabular-nums">
+                              {formatDay(r.created_at)}
+                            </TableCell>
+                            <TableCell className="py-4 text-right align-middle font-medium tabular-nums">
+                              {revenue.state !== "ok" ? (
+                                /* Three different absences, three different
+                                   sentences — a loading ledger, an unreachable
+                                   one, and a company with no rows in it. None of
+                                   them is €0, and none of them may print one. */
+                                <span className="font-normal text-faint">
+                                  {revenue.state === "loading" ? "…" : "Ledger unavailable"}
+                                </span>
+                              ) : earned === undefined ? (
+                                <span className="font-normal text-faint">None recorded</span>
+                              ) : (
+                                `€${(earned / 100).toLocaleString("en-GB")}`
+                              )}
+                            </TableCell>
+                            <TableCell className="py-4 text-right align-middle">
+                              {/* Drawn because the roster draws it, and NOT
+                                  interactive — there is no per-row action in
+                                  this build. Same reasoning as the old kit's
+                                  StatusChip chevron: a control that looks live
+                                  and is not is its own kind of lie. */}
+                              <EllipsisVertical
+                                className="inline size-4 text-muted-foreground"
+                                aria-hidden
+                              />
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+
+                  <Separator />
+
+                  <div className="flex flex-wrap items-center justify-between gap-3 px-4">
+                    <div className="flex flex-wrap items-center gap-4 text-muted-foreground text-sm">
+                      <div className="flex items-center gap-2">
+                        {/* MOVED, NOT DELETED — the per-page chooser. It was at
+                            the far right of the old bar; the theme puts it at
+                            the left of the footer with a "Rows per page" label
+                            beside it. Same control, same three choices, same
+                            reset-to-page-one behaviour. */}
+                        <span>Rows per page</span>
+                        <Select
+                          value={String(perPage)}
+                          onChange={(v: string) => {
+                            setPerPage(Number(v));
+                            setPage(1);
+                          }}
+                          ariaLabel="Results per page"
+                          className="w-20"
+                          options={[
+                            { value: "8", label: "8" },
+                            { value: "16", label: "16" },
+                            { value: "24", label: "24" },
+                          ]}
+                        />
+                      </div>
+                      <span className="tabular-nums">
+                        Page {safePage} of {pages}
+                      </span>
+                    </div>
+
+                    <Pagination className="mx-0 w-auto justify-start md:justify-end">
+                      <PaginationContent>
+                        <PaginationItem>
+                          <PaginationPrevious
+                            href="#"
+                            text=""
+                            className={safePage <= 1 ? "pointer-events-none opacity-50" : undefined}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              setPage((p) => Math.max(1, p - 1));
+                            }}
+                          />
+                        </PaginationItem>
+                        {pageItems.map((it, i) =>
+                          it === "…" ? (
+                            <PaginationItem key={`e${i}`}>
+                              <PaginationEllipsis />
+                            </PaginationItem>
+                          ) : (
+                            <PaginationItem key={it}>
+                              <PaginationLink
+                                href="#"
+                                isActive={it === safePage}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  setPage(it);
+                                }}
+                              >
+                                {it}
+                              </PaginationLink>
+                            </PaginationItem>
+                          ),
+                        )}
+                        <PaginationItem>
+                          <PaginationNext
+                            href="#"
+                            text=""
+                            className={
+                              safePage >= pages ? "pointer-events-none opacity-50" : undefined
+                            }
+                            onClick={(e) => {
+                              e.preventDefault();
+                              setPage((p) => Math.min(pages, p + 1));
+                            }}
+                          />
+                        </PaginationItem>
+                      </PaginationContent>
+                    </Pagination>
                   </div>
-                  <p className="text-[12px] text-faint">
-                    Showing {from} to {to} of {rows.length} results
-                  </p>
-                  <Select
-                    value={String(perPage)}
-                    onChange={(v: string) => { setPerPage(Number(v)); setPage(1); }}
-                    ariaLabel="Results per page"
-                    className="w-[130px]"
-                    options={[
-                      { value: "8", label: "8 per page" },
-                      { value: "16", label: "16 per page" },
-                      { value: "24", label: "24 per page" },
-                    ]}
-                  />
-                </div>
-              </TableCard>
+                </CardContent>
+              </Card>
             </>
           );
         }}
       </Resolve>
-    </>
+    </div>
   );
 }

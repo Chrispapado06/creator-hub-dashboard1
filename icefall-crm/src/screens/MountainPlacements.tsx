@@ -3,15 +3,24 @@ import { Link } from "react-router-dom";
 import {
   BadgeCheck, Ban, CalendarClock, ChevronRight, Crown, ExternalLink, Eye,
   MessageSquare, Mountain as MountainIcon, MousePointerClick, Pencil, PauseCircle,
-  Plus, Search, Settings2, Shuffle, SlidersHorizontal, Star, TrendingUp, Trophy, X,
+  Plus, Search, Settings2, Shuffle, Star, TrendingUp, Trophy,
 } from "lucide-react";
-import { Avatar, Button, Card, Pill, SectionLabel } from "@/components/ui";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
+import { Separator } from "@/components/ui/separator";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Resolve } from "@/components/states";
 import { listBookingsDetailed, listCompanies, listDestinations, listEnquiries, listPlacements, listProducts, listLeadDestinations, type BookingDetailed } from "@/data/queries";
 import { formatCents, formatCentsShort, loading, type Result } from "@/data/result";
 import type { Company, Enquiry, Mountain, PlacementView, Product } from "@/data/types";
 import { DateButton } from "@/components/controls";
-import { cn, daysUntil, formatDay } from "@/lib/utils";
+import { cn, daysUntil, formatDay, initials } from "@/lib/utils";
 
 /**
  * MOUNTAIN PLACEMENTS — one mental model.
@@ -26,12 +35,11 @@ import { cn, daysUntil, formatDay } from "@/lib/utils";
  *
  * ── WHAT IS TAKEN FROM THE DESIGN AND WHAT IS TAKEN FROM THE DATA ───────────
  *
- * The LAYOUT is the owner's mockup: two columns, hero band, five slot rows, a
- * detail drawer, the gold accent. The FIGURES are whatever the data actually
- * holds — the brief says so twice ("do not invent real values if the underlying
- * data does not exist", "do not fabricate companies, mountains, pricing,
- * bookings or performance metrics"), and a mockup showing 142 mountains is
- * showing what a full screen looks like, not asserting there are 142.
+ * The LAYOUT is the reference theme's: white cards, neutral ink, one dark
+ * primary button, tabs for a mode switch, a sheet for the detail drawer. The
+ * FIGURES are whatever the data actually holds — the brief says so twice ("do
+ * not invent real values if the underlying data does not exist", "do not
+ * fabricate companies, mountains, pricing, bookings or performance metrics").
  *
  * Performance is the sharpest case. The design shows impressions, clicks and
  * enquiries per placement. ICEFALL records none of them — nothing writes an
@@ -39,9 +47,15 @@ import { cn, daysUntil, formatDay } from "@/lib/utils";
  * reason. An operator deciding whether to renew a paid position must not be
  * shown a number nobody measured, and that is the one number on this page they
  * would act on.
+ *
+ * ── WHERE THE GOLD WENT ─────────────────────────────────────────────────────
+ * Every `#C79049` on this screen is now a theme token. The four things gold was
+ * carrying meaning for kept their meaning in the theme's own palette: the
+ * selected mountain is an ink ring, the premium slot is an ink outline over the
+ * pale accent, a filled slot dash is ink and an expired one is amber, and the
+ * primary action is the theme's near-black button.
  */
 
-const GOLD = "#C79049";
 /**
  * How many paid positions a destination has. Owner decision 17.
  *
@@ -52,14 +66,27 @@ const GOLD = "#C79049";
  */
 const slotsFor = (kind: Mountain["kind"]) => (kind === "trek" ? [1, 2, 3] : [1, 2, 3, 4, 5]);
 
-/**
- * One line describing a destination.
- *
- * A MOUNTAIN leads with its summit elevation. A TREK does not have one — its
- * high point is a different claim, and a metre figure beside a trek name reads
- * as a summit somebody stood on. So a trek leads with how long it takes, and
- * says "high point" explicitly where that is known.
- */
+/** The theme's status badge: an outline pill with a coloured dot. */
+const DOT: Record<"ok" | "pending" | "bad" | "neutral", { badge: string; dot: string }> = {
+  ok: { badge: "border-emerald-500/20 bg-emerald-500/10 text-emerald-600", dot: "bg-emerald-500" },
+  pending: { badge: "border-amber-500/20 bg-amber-500/10 text-amber-600", dot: "bg-amber-500" },
+  bad: { badge: "border-destructive/20 bg-destructive/10 text-destructive", dot: "bg-destructive" },
+  neutral: { badge: "border-border bg-ui-muted/50 text-muted-foreground", dot: "bg-muted-foreground" },
+};
+
+function StatusBadge({ state, label }: { state: "ok" | "pending" | "bad" | "neutral"; label: string }) {
+  const m = DOT[state];
+  return (
+    <Badge variant="outline" className={cn("gap-1.5 border px-2 py-1 font-medium capitalize", m.badge)}>
+      <span className={cn("size-1.5 rounded-full", m.dot)} />
+      {label}
+    </Badge>
+  );
+}
+
+const placementState = (s: PlacementView["effective_status"]): "ok" | "pending" | "bad" | "neutral" =>
+  s === "active" ? "ok" : s === "expired" ? "pending" : s === "cancelled" ? "bad" : "neutral";
+
 /**
  * A destination's photograph, or a neutral tile.
  *
@@ -71,8 +98,8 @@ const slotsFor = (kind: Mountain["kind"]) => (kind === "trek" ? [1, 2, 3] : [1, 
 function DestinationImage({ id, kind, className }: { id: string; kind: Mountain["kind"]; className?: string }) {
   const [failed, setFailed] = useState(false);
   return (
-    <span className={cn("grid shrink-0 place-items-center overflow-hidden bg-raised", className)}>
-      <MountainIcon size={18} strokeWidth={1.6} className="text-faint" aria-hidden />
+    <span className={cn("grid shrink-0 place-items-center overflow-hidden bg-ui-muted", className)}>
+      <MountainIcon className="size-4 text-muted-foreground" aria-hidden />
       {!failed && (
         <img
           src={`/img/destinations/${id}.jpg`}
@@ -89,6 +116,14 @@ function DestinationImage({ id, kind, className }: { id: string; kind: Mountain[
   );
 }
 
+/**
+ * One line describing a destination.
+ *
+ * A MOUNTAIN leads with its summit elevation. A TREK does not have one — its
+ * high point is a different claim, and a metre figure beside a trek name reads
+ * as a summit somebody stood on. So a trek leads with how long it takes, and
+ * says "high point" explicitly where that is known.
+ */
 function describe(m: Mountain): string {
   const bits: string[] = [];
   if (m.kind === "mountain") {
@@ -179,12 +214,10 @@ export default function MountainPlacements() {
   const current = mountains.state === "ok" ? mountains.value.find((m) => m.id === selected) : undefined;
 
   return (
-    <>
-      <div className="mb-6">
-        <h1 className="text-[26px] font-extrabold uppercase tracking-[-0.01em] text-ink">
-          Mountain Placements
-        </h1>
-        <p className="mt-1 text-[13.5px] text-muted">
+    <div className="flex flex-col gap-4 md:gap-6">
+      <div className="space-y-1">
+        <h2 className="text-3xl tracking-tight">Mountain Placements</h2>
+        <p className="max-w-3xl text-muted-foreground text-sm">
           Manage premium expedition visibility across ICEFALL mountains.
         </p>
       </div>
@@ -192,62 +225,58 @@ export default function MountainPlacements() {
       <AttentionNeeded rows={rows} mountains={mountains} onGo={setSelected} />
       <Summary mountains={mountains} rows={rows} />
 
-      <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-[minmax(320px,360px)_1fr]">
+      <div className="grid grid-cols-1 gap-4 md:gap-6 xl:grid-cols-[minmax(320px,360px)_1fr]">
         {/* ---- Left: find the mountain -------------------------------- */}
-        <div>
-          <div className="relative mb-3">
-            <Search size={16} strokeWidth={1.9} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-faint" />
-            <input
+        <div className="flex flex-col gap-3">
+          <InputGroup>
+            <InputGroupAddon align="inline-start">
+              <Search className="size-3.5" />
+            </InputGroupAddon>
+            <InputGroupInput
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search mountains, regions or countries..."
-              className="h-12 w-full rounded-tile bg-surface pl-11 pr-11 text-[13.5px] text-ink shadow-soft outline-none placeholder:text-faint"
             />
-            <SlidersHorizontal size={16} strokeWidth={1.9} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-faint" />
+          </InputGroup>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Tabs value={kind} onValueChange={(v) => setKind(v as Kind)}>
+              <TabsList>
+                {([
+                  ["all", "All"],
+                  ["mountain", "Mountains"],
+                  ["trek", "Treks"],
+                ] as [Kind, string][]).map(([k, label]) => (
+                  <TabsTrigger key={k} value={k} className="px-2.5">
+                    {label}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
           </div>
 
-          <div className="mb-2.5 inline-flex rounded-pill bg-surface p-1 shadow-soft">
-            {([
-              ["all", "All"],
-              ["mountain", "Mountains"],
-              ["trek", "Treks"],
-            ] as [Kind, string][]).map(([k, label]) => (
-              <button
-                key={k}
-                onClick={() => setKind(k)}
-                className={cn(
-                  "h-8 rounded-pill px-4 text-[12.5px] font-medium transition-colors",
-                  kind === k ? "bg-solid text-white" : "text-muted hover:text-ink",
-                )}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          <div className="mb-4 flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-1.5">
             {(["all", "active", "available", "expiring"] as Filter[]).map((f) => (
-              <button
+              <Button
                 key={f}
+                size="sm"
+                variant={filter === f ? "default" : "outline"}
+                aria-pressed={filter === f}
+                className="capitalize"
                 onClick={() => setFilter(f)}
-                className={cn(
-                  "h-9 rounded-pill px-4 text-[12.5px] font-medium capitalize transition-colors",
-                  filter === f ? "text-white" : "bg-surface text-muted shadow-soft hover:text-ink",
-                )}
-                style={filter === f ? { backgroundColor: GOLD } : undefined}
               >
                 {f}
-              </button>
+              </Button>
             ))}
           </div>
 
-          <div className="mb-3 flex items-center justify-between px-1">
-            <p className="text-[12.5px] text-muted">
+          <div className="flex items-center justify-between">
+            <p className="text-muted-foreground text-sm">
               {mountains.state === "ok"
                 ? `${visible.length} ${kind === "trek" ? "treks" : kind === "mountain" ? "mountains" : "destinations"}`
                 : "Loading…"}
             </p>
-            <span className="text-[12px] text-faint">Sorted A–Z</span>
+            <span className="text-muted-foreground text-xs">Sorted A–Z</span>
           </div>
 
           <Resolve
@@ -257,7 +286,7 @@ export default function MountainPlacements() {
             empty="No mountain matches that search."
           >
             {() => (
-              <div className="space-y-2.5">
+              <div className="flex flex-col gap-2.5">
                 {pageRows.map((m) => (
                   <MountainCard
                     key={m.id}
@@ -275,7 +304,7 @@ export default function MountainPlacements() {
           </Resolve>
 
           {pages > 1 && (
-            <div className="mt-4 flex items-center justify-center gap-1.5">
+            <div className="flex items-center justify-center gap-1.5">
               <PageBtn onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0}>‹</PageBtn>
               {Array.from({ length: pages }, (_, i) => (
                 <PageBtn key={i} onClick={() => setPage(i)} active={i === page}>{i + 1}</PageBtn>
@@ -303,8 +332,10 @@ export default function MountainPlacements() {
               onAdd={setAddingSlot}
             />
           ) : (
-            <Card className="grid h-64 place-items-center text-[13.5px] text-faint">
-              Choose a mountain to manage its placements.
+            <Card>
+              <CardContent className="grid h-64 place-items-center text-[13px] text-faint">
+                Choose a mountain to manage its placements.
+              </CardContent>
             </Card>
           )}
         </div>
@@ -331,7 +362,7 @@ export default function MountainPlacements() {
           onClose={() => setAddingSlot(null)}
         />
       )}
-    </>
+    </div>
   );
 }
 
@@ -357,35 +388,45 @@ function Summary({ mountains, rows }: { mountains: Result<Mountain[]>; rows: Pla
   ).length;
 
   return (
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-      <Tile icon={<MountainIcon size={17} strokeWidth={1.9} />} label="Mountains"
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+      <Tile icon={<MountainIcon className="size-4" />} label="Mountains"
         value={count === null ? null : String(count)} sub="In the catalogue" />
-      <Tile icon={<Trophy size={17} strokeWidth={1.9} />} label="Slots filled"
+      <Tile icon={<Trophy className="size-4" />} label="Slots filled"
         value={capacity === null ? null : `${filled} / ${capacity}`} sub="Paid placements" />
-      <Tile icon={<Star size={17} strokeWidth={1.9} />} label="Available"
+      <Tile icon={<Star className="size-4" />} label="Available"
         value={capacity === null ? null : String(capacity - filled)} sub="Open slots" />
-      <Tile icon={<TrendingUp size={17} strokeWidth={1.9} />} label="Active placement value"
+      <Tile icon={<TrendingUp className="size-4" />} label="Active placement value"
         value={formatCentsShort(value)}
         sub={unpriced ? `Excludes ${unpriced} with no agreed price` : "Active placements"} />
-      <Tile icon={<CalendarClock size={17} strokeWidth={1.9} />} label="Expiring soon"
+      <Tile icon={<CalendarClock className="size-4" />} label="Expiring soon"
         value={String(expiring)} sub="Within 30 days, or already past" />
     </div>
   );
 }
 
+/**
+ * A figure, or the reason there is not one — never a dash, never a zero standing
+ * in for an absence. `Not yet known` is what an unread catalogue says.
+ */
 function Tile({ icon, label, value, sub }: { icon: React.ReactNode; label: string; value: string | null; sub: string }) {
   return (
-    <Card className="p-4">
-      <div className="flex items-center gap-2.5">
-        <span className="grid h-8 w-8 place-items-center rounded-tile bg-raised text-ink">{icon}</span>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.05em] text-faint">{label}</p>
-      </div>
-      {value === null ? (
-        <p className="mt-2.5 text-[12px] leading-snug text-faint">Not yet known</p>
-      ) : (
-        <p className="tnum mt-2.5 text-[26px] font-bold leading-none tracking-[-0.02em] text-ink">{value}</p>
-      )}
-      <p className="mt-1.5 text-[11.5px] text-faint">{sub}</p>
+    <Card>
+      <CardHeader>
+        <CardTitle>
+          <div className="flex size-7 items-center justify-center rounded-lg border bg-ui-muted text-muted-foreground">
+            {icon}
+          </div>
+        </CardTitle>
+        <CardDescription>{label}</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-1">
+        {value === null ? (
+          <p className="text-[13px] leading-snug text-faint">Not yet known</p>
+        ) : (
+          <p className="font-medium text-3xl tabular-nums leading-none tracking-tight">{value}</p>
+        )}
+        <p className="text-muted-foreground text-sm">{sub}</p>
+      </CardContent>
     </Card>
   );
 }
@@ -425,21 +466,25 @@ function AttentionNeeded({
   if (!items.length) return null;
 
   return (
-    <Card className="mb-4 border-l-[3px] p-4" >
-      <SectionLabel className="mb-2">Attention needed</SectionLabel>
-      <div className="space-y-1.5">
-        {items.map((i) => (
-          <button
-            key={i.text}
-            onClick={() => i.go && onGo(i.go)}
-            className="flex w-full items-center gap-2 text-left text-[13px] text-ink hover:text-accent"
-          >
-            <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: GOLD }} />
-            {i.text}
-            <ChevronRight size={14} strokeWidth={2} className="text-faint" />
-          </button>
-        ))}
-      </div>
+    <Card>
+      <CardHeader>
+        <CardTitle>Attention needed</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-1.5">
+          {items.map((i) => (
+            <button
+              key={i.text}
+              onClick={() => i.go && onGo(i.go)}
+              className="flex w-full items-center gap-2 text-left text-sm hover:underline"
+            >
+              <span className="size-1.5 shrink-0 rounded-full bg-foreground" />
+              {i.text}
+              <ChevronRight className="size-3.5 text-muted-foreground" />
+            </button>
+          ))}
+        </div>
+      </CardContent>
     </Card>
   );
 }
@@ -462,31 +507,27 @@ function MountainCard({
     <button
       onClick={onSelect}
       className={cn(
-        "flex w-full items-center gap-3.5 rounded-card bg-surface p-3 text-left transition-shadow",
-        selected ? "shadow-lift" : "shadow-soft hover:shadow-lift",
+        "flex w-full items-center gap-3 rounded-xl bg-card p-3 text-left transition-colors",
+        // Selection is an ink ring, where the mockup used a gold one.
+        selected ? "ring-2 ring-foreground" : "ring-1 ring-foreground/10 hover:bg-ui-muted/50",
       )}
-      style={selected ? { boxShadow: `0 0 0 1.5px ${GOLD}, 0 8px 24px rgba(0,0,0,0.06)` } : undefined}
     >
-      <DestinationImage id={m.id} kind={m.kind} className="relative h-[64px] w-[64px] rounded-tile" />
+      <DestinationImage id={m.id} kind={m.kind} className="relative size-16 rounded-lg" />
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline justify-between gap-2">
           <span className="flex min-w-0 items-center gap-2">
-            <span className="truncate text-[14px] font-semibold text-ink">{m.name}</span>
-            {m.kind === "trek" && (
-              <span className="shrink-0 rounded-pill bg-raised px-1.5 py-[1px] text-[9.5px] font-semibold uppercase tracking-[0.06em] text-faint">
-                Trek
-              </span>
-            )}
+            <span className="truncate font-medium">{m.name}</span>
+            {m.kind === "trek" && <Badge variant="outline">Trek</Badge>}
           </span>
           {open > 0 ? (
-            <span className="shrink-0 text-[11.5px] font-medium text-[oklch(0.55_0.13_150)]">
+            <span className="shrink-0 font-medium text-emerald-600 text-xs">
               {open} slot{open === 1 ? "" : "s"} available
             </span>
           ) : (
-            <span className="shrink-0 text-[11.5px] font-medium text-faint">Full</span>
+            <span className="shrink-0 font-medium text-muted-foreground text-xs">Full</span>
           )}
         </span>
-        <span className="mt-0.5 block truncate text-[12px] text-muted">{describe(m)}</span>
+        <span className="mt-0.5 block truncate text-muted-foreground text-xs">{describe(m)}</span>
 
         <span className="mt-2 flex items-center justify-between gap-3">
           <span className="flex gap-1">
@@ -495,26 +536,29 @@ function MountainCard({
               return (
                 <span
                   key={n}
-                  className="h-1.5 w-6 rounded-full"
-                  style={{
-                    backgroundColor:
-                      !p ? "rgba(0,0,0,0.09)"
-                        : p.effective_status === "expired" ? "#D9A244"
-                        : p.effective_status === "reserved" ? "rgba(0,0,0,0.24)"
-                        : GOLD,
-                  }}
+                  className={cn(
+                    "h-1.5 w-6 rounded-full",
+                    !p
+                      ? "bg-border"
+                      : p.effective_status === "expired"
+                        ? "bg-amber-500"
+                        : p.effective_status === "reserved"
+                          ? "bg-muted-foreground/50"
+                          : "bg-foreground",
+                  )}
                 />
               );
             })}
           </span>
-          <span className="tnum shrink-0 text-right">
-            <span className="block text-[13px] font-bold text-ink">{formatCents(value) ?? "—"}</span>
-            <span className="block text-[10.5px] text-faint">Active value</span>
+          <span className="shrink-0 text-right tabular-nums">
+            {/* An em dash: nothing priced has been agreed on this mountain yet. */}
+            <span className="block font-medium text-sm">{formatCents(value) ?? "—"}</span>
+            <span className="block text-muted-foreground text-xs">Active value</span>
           </span>
         </span>
-        <span className="mt-1 block text-[11px] text-faint">{filled} / {total} slots filled</span>
+        <span className="mt-1 block text-muted-foreground text-xs">{filled} / {total} slots filled</span>
       </span>
-      <ChevronRight size={16} strokeWidth={2} className="shrink-0 text-faint" />
+      <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
     </button>
   );
 }
@@ -523,16 +567,15 @@ function PageBtn({
   children, onClick, active, disabled,
 }: { children: React.ReactNode; onClick: () => void; active?: boolean; disabled?: boolean }) {
   return (
-    <button
+    <Button
+      size="sm"
+      variant={active ? "default" : "outline"}
       onClick={onClick}
       disabled={disabled}
-      className={cn(
-        "tnum grid h-8 min-w-8 place-items-center rounded-tile px-2 text-[12.5px] transition-colors disabled:opacity-35",
-        active ? "bg-solid font-semibold text-white" : "bg-surface text-muted shadow-soft hover:text-ink",
-      )}
+      className="min-w-7 justify-center px-1.5 tabular-nums"
     >
       {children}
-    </button>
+    </Button>
   );
 }
 
@@ -556,27 +599,27 @@ function MountainPane({
   const filled = placements.length;
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4">
       {/* Hero band. Photograph credited in public/img/destinations/CREDITS.md. */}
-      <div className="relative h-[128px] overflow-hidden rounded-card">
+      <div className="relative h-[128px] overflow-hidden rounded-xl">
         <DestinationImage id={m.id} kind={m.kind} className="absolute inset-0 h-full w-full" />
         <div aria-hidden className="absolute inset-0 bg-gradient-to-r from-black/72 via-black/38 to-black/25" />
-        <div className="relative flex h-full items-center justify-between px-6">
-          <div>
-            <h2 className="text-[27px] font-bold leading-none tracking-[-0.02em] text-white">{m.name}</h2>
-            <p className="mt-2 text-[13px] text-white/80">
+        <div className="relative flex h-full items-center justify-between gap-4 px-6">
+          <div className="min-w-0">
+            <h3 className="truncate font-medium text-2xl leading-none tracking-tight text-white">{m.name}</h3>
+            <p className="mt-2 truncate text-sm text-white/80">
               {describe(m)}
               {m.country ? ` · ${m.country}` : ""}
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            <button className="inline-flex h-9 items-center gap-2 rounded-tile bg-white/92 px-3.5 text-[12.5px] font-medium text-ink hover:bg-white">
-              <Settings2 size={15} strokeWidth={1.9} />
+          <div className="flex shrink-0 items-center gap-3">
+            <Button variant="outline" className="border-transparent bg-background/90 hover:bg-background">
+              <Settings2 />
               Mountain settings
-            </button>
-            <span className="grid h-[54px] w-[74px] place-items-center rounded-tile bg-black/55 text-center">
-              <span className="tnum block text-[16px] font-bold leading-none text-white">{filled} / {slots.length}</span>
-              <span className="mt-1 block text-[9.5px] uppercase tracking-[0.08em] text-white/70">Slots filled</span>
+            </Button>
+            <span className="grid h-[54px] w-[74px] place-items-center rounded-lg bg-black/55 text-center">
+              <span className="block font-medium text-white tabular-nums">{filled} / {slots.length}</span>
+              <span className="mt-1 block text-[9.5px] uppercase tracking-widest text-white/70">Slots filled</span>
             </span>
           </div>
         </div>
@@ -585,45 +628,43 @@ function MountainPane({
       {/* CR-06: performance of THIS mountain. Enquiries are counted from real
           lead rows; searches are not measured anywhere in the family (nothing
           emits a search event), and the strip says so instead of drawing 0. */}
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-card bg-surface px-5 py-3 shadow-soft">
-        <span className="text-[12px] font-semibold uppercase tracking-[0.06em] text-faint">Performance</span>
-        <span className="text-[12.5px] text-muted">
-          Enquiries:{" "}
-          <span className="tnum font-semibold text-ink">
-            {enquiriesHere === null ? "—" : enquiriesHere}
+      <Card>
+        <CardContent className="flex flex-wrap items-center gap-x-6 gap-y-1">
+          <span className="font-medium text-muted-foreground text-xs">Performance</span>
+          <span className="text-muted-foreground text-sm">
+            Enquiries:{" "}
+            <span className="font-medium text-foreground tabular-nums">
+              {enquiriesHere === null ? "—" : enquiriesHere}
+            </span>
+            {enquiriesHere === null && <span className="text-faint"> (leads could not be read)</span>}
           </span>
-          {enquiriesHere === null && <span className="text-faint"> (leads could not be read)</span>}
-        </span>
-        <span className="text-[12.5px] text-muted">
-          Searches: <span className="text-faint">not measured — nothing emits a search event yet</span>
-        </span>
-      </div>
+          <span className="text-muted-foreground text-sm">
+            Searches: <span className="text-faint">not measured — nothing emits a search event yet</span>
+          </span>
+        </CardContent>
+      </Card>
 
       <Card>
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h3 className="text-[15px] font-bold uppercase tracking-[0.01em] text-ink">
-              Featured expedition placements
-            </h3>
-            <p className="mt-1 text-[12.5px] text-muted">
-              {slots.length} paid position{slots.length === 1 ? "" : "s"} on this{" "}
-              {m.kind === "trek" ? "trek" : "mountain"}. There is no extra one — when they are all
-              held, the only options are the waitlist or ending an existing placement.
-            </p>
-          </div>
+        <CardHeader className="border-b">
+          <CardTitle className="text-xl leading-none">Featured expedition placements</CardTitle>
+          <CardDescription className="max-w-xl leading-snug">
+            {slots.length} paid position{slots.length === 1 ? "" : "s"} on this{" "}
+            {m.kind === "trek" ? "trek" : "mountain"}. There is no extra one — when they are all
+            held, the only options are the waitlist or ending an existing placement.
+          </CardDescription>
           {filled < slots.length && (
-            <button
-              onClick={() => onAdd(slots.find((n) => !placements.some((p) => p.slot_position === n)) ?? 1)}
-              className="inline-flex h-10 shrink-0 items-center gap-2 rounded-tile px-4 text-[13px] font-semibold text-white"
-              style={{ backgroundColor: GOLD }}
-            >
-              <Plus size={16} strokeWidth={2.2} />
-              Add placement
-            </button>
+            <CardAction>
+              <Button
+                onClick={() => onAdd(slots.find((n) => !placements.some((p) => p.slot_position === n)) ?? 1)}
+              >
+                <Plus />
+                Add placement
+              </Button>
+            </CardAction>
           )}
-        </div>
+        </CardHeader>
 
-        <div className="space-y-2.5">
+        <CardContent className="flex flex-col gap-2.5">
           {slots.map((n) => {
             const p = placements.find((x) => x.slot_position === n);
             return p ? (
@@ -639,18 +680,18 @@ function MountainPane({
               <EmptySlot key={n} slot={n} onAdd={() => onAdd(n)} />
             );
           })}
-        </div>
 
-        {filled === slots.length && (
-          <p className="mt-4 rounded-tile bg-raised px-4 py-3 text-[12.5px] leading-relaxed text-muted">
-            <span className="font-semibold text-ink">
-              All {slots.length} positions are held.
-            </span>{" "}
-            ICEFALL does not add another. A company wanting this {m.kind === "trek" ? "trek" : "mountain"}{" "}
-            joins the waitlist, or waits for a term to end — and a term ending never moves anybody
-            automatically.
-          </p>
-        )}
+          {filled === slots.length && (
+            <p className="mt-1.5 rounded-lg border bg-ui-muted/50 px-4 py-3 text-muted-foreground text-sm leading-relaxed">
+              <span className="font-medium text-foreground">
+                All {slots.length} positions are held.
+              </span>{" "}
+              ICEFALL does not add another. A company wanting this {m.kind === "trek" ? "trek" : "mountain"}{" "}
+              joins the waitlist, or waits for a term to end — and a term ending never moves anybody
+              automatically.
+            </p>
+          )}
+        </CardContent>
       </Card>
 
       <MountainPerformance destinationId={m.id} />
@@ -674,64 +715,66 @@ function SlotRow({
   return (
     // Slot #1 carries slightly stronger emphasis as the highest featured
     // POSITION — never as a claim that the company holding it is better. It is
-    // the most expensive slot, not the best operator.
+    // the most expensive slot, not the best operator. In the theme that
+    // emphasis is an ink outline over the pale accent, not a gold one.
     <div
-      className="rounded-tile"
-      style={premium ? { boxShadow: `inset 0 0 0 1.5px ${GOLD}66` } : undefined}
+      className={cn(
+        "flex flex-wrap items-center gap-x-4 gap-y-3 rounded-lg border px-4 py-3.5",
+        premium ? "border-foreground/25 bg-ui-accent" : "border-transparent bg-ui-muted/50",
+      )}
     >
-      <div className={cn("flex flex-wrap items-center gap-x-4 gap-y-3 rounded-tile px-4 py-3.5", premium ? "bg-[#FDF8F1]" : "bg-raised")}>
-        <div className="flex w-[104px] shrink-0 flex-col gap-0.5">
-          {premium ? (
-            <>
-              <span className="inline-flex w-fit items-center gap-1.5 rounded-pill px-2 py-[3px] text-[10.5px] font-bold uppercase tracking-[0.06em] text-white" style={{ backgroundColor: GOLD }}>
-                <Crown size={11} strokeWidth={2.4} />
-                Premium
-              </span>
-              <span className="text-[10.5px] text-faint">Highest position</span>
-            </>
-          ) : (
-            <>
-              <span className="tnum text-[13px] font-bold text-ink">#{p.slot_position}</span>
-              <span className="text-[10.5px] uppercase tracking-[0.06em] text-faint">Featured</span>
-            </>
-          )}
-        </div>
+      <div className="flex w-[104px] shrink-0 flex-col items-start gap-1">
+        {premium ? (
+          <>
+            <Badge className="gap-1">
+              <Crown />
+              Premium
+            </Badge>
+            <span className="text-muted-foreground text-xs">Highest position</span>
+          </>
+        ) : (
+          <>
+            <span className="font-medium text-sm tabular-nums">#{p.slot_position}</span>
+            <span className="text-muted-foreground text-xs">Featured</span>
+          </>
+        )}
+      </div>
 
-        <Avatar name={company ?? "??"} size={34} />
+      <Avatar>
+        <AvatarFallback>{initials(company ?? "??")}</AvatarFallback>
+      </Avatar>
 
-        <div className="min-w-[180px] flex-1">
-          <p className="flex items-center gap-1.5 text-[13.5px] font-semibold text-ink">
-            {company ?? <span className="text-faint">Unknown company</span>}
-            {verified && <BadgeCheck size={14} strokeWidth={2.2} className="text-accent" />}
-          </p>
-          <p className="mt-0.5 text-[12px] text-muted">
-            {product ?? <span className="text-faint">No expedition chosen for this slot yet</span>}
-          </p>
-        </div>
+      <div className="min-w-[180px] flex-1">
+        <p className="flex items-center gap-1.5 font-medium text-sm">
+          {company ?? <span className="text-faint">Unknown company</span>}
+          {verified && <BadgeCheck className="size-3.5" />}
+        </p>
+        <p className="mt-0.5 text-muted-foreground text-xs">
+          {product ?? <span className="text-faint">No expedition chosen for this slot yet</span>}
+        </p>
+      </div>
 
-        <div className="tnum w-[92px] shrink-0">
-          <p className="text-[13.5px] font-semibold text-ink">
-            {formatCents(p.price_cents, p.currency) ?? <span className="text-[12px] font-normal text-faint">Not agreed</span>}
-          </p>
-          {p.price_cents !== null && <p className="text-[10.5px] text-faint">per term</p>}
-        </div>
+      <div className="w-[92px] shrink-0 tabular-nums">
+        {/* Never a zero: an unpriced slot says nobody has agreed a price. */}
+        <p className="font-medium text-sm">
+          {formatCents(p.price_cents, p.currency) ?? <span className="font-normal text-xs text-faint">Not agreed</span>}
+        </p>
+        {p.price_cents !== null && <p className="text-muted-foreground text-xs">per term</p>}
+      </div>
 
-        <div className="tnum w-[132px] shrink-0 text-[12px] text-muted">
-          <p>{formatDay(p.starts_on)}</p>
-          <p className="text-faint">→ {formatDay(p.ends_on)}</p>
-        </div>
+      <div className="w-[132px] shrink-0 text-muted-foreground text-xs tabular-nums">
+        <p>{formatDay(p.starts_on)}</p>
+        <p className="text-faint">→ {formatDay(p.ends_on)}</p>
+      </div>
 
-        <div className="w-[128px] shrink-0">
-          <Pill tone={expired ? "amber" : p.effective_status === "active" ? "green" : "neutral"}>
-            {p.effective_status}
-          </Pill>
-          {expired && <p className="mt-1 text-[10.5px] leading-tight text-warn">Term ended — still holds this position</p>}
-        </div>
+      <div className="w-[132px] shrink-0">
+        <StatusBadge state={placementState(p.effective_status)} label={p.effective_status} />
+        {expired && <p className="mt-1 text-[10.5px] leading-tight text-warn">Term ended — still holds this position</p>}
+      </div>
 
-        <div className="ml-auto flex shrink-0 gap-2">
-          {expired && <Button size="sm" variant="secondary">Renew</Button>}
-          <Button size="sm" variant="secondary" onClick={onManage}>Manage</Button>
-        </div>
+      <div className="ml-auto flex shrink-0 gap-2">
+        {expired && <Button size="sm" variant="outline">Renew</Button>}
+        <Button size="sm" variant="outline" onClick={onManage}>Manage</Button>
       </div>
     </div>
   );
@@ -739,25 +782,19 @@ function SlotRow({
 
 function EmptySlot({ slot, onAdd }: { slot: number; onAdd: () => void }) {
   return (
-    <div className="flex flex-wrap items-center gap-4 rounded-tile border border-dashed border-line px-4 py-3.5">
+    <div className="flex flex-wrap items-center gap-4 rounded-lg border border-dashed px-4 py-3.5">
       <div className="flex w-[104px] shrink-0 flex-col gap-0.5">
-        <span className="tnum text-[13px] font-bold text-ink">#{slot}</span>
-        <span className="text-[10.5px] uppercase tracking-[0.06em] text-faint">
-          {slot === 1 ? "Premium" : "Featured"}
-        </span>
+        <span className="font-medium text-sm tabular-nums">#{slot}</span>
+        <span className="text-muted-foreground text-xs">{slot === 1 ? "Premium" : "Featured"}</span>
       </div>
       <div className="flex-1">
-        <p className="text-[13.5px] font-semibold text-ink">Available</p>
-        <p className="mt-0.5 text-[12px] text-faint">No company assigned</p>
+        <p className="font-medium text-sm">Available</p>
+        <p className="mt-0.5 text-muted-foreground text-xs">No company assigned</p>
       </div>
-      <button
-        onClick={onAdd}
-        className="inline-flex h-9 shrink-0 items-center gap-2 rounded-tile px-4 text-[12.5px] font-semibold text-white"
-        style={{ backgroundColor: GOLD }}
-      >
-        <Plus size={15} strokeWidth={2.2} />
+      <Button size="sm" onClick={onAdd}>
+        <Plus />
         Add placement
-      </button>
+      </Button>
     </div>
   );
 }
@@ -801,34 +838,44 @@ function MountainPerformance({ destinationId }: { destinationId: string }) {
   const eurShort = (cents: number) => `€${(cents / 100).toLocaleString("en-GB")}`;
 
   const tiles: { icon: React.ReactNode; label: string; value: string | null; sub: string }[] = [
-    { icon: <Eye size={15} strokeWidth={1.9} />, label: "Searches", value: null, sub: "Not measured — nothing records a search." },
-    { icon: <MousePointerClick size={15} strokeWidth={1.9} />, label: "Views", value: null, sub: "Not measured — nothing records a view." },
-    { icon: <MessageSquare size={15} strokeWidth={1.9} />, label: "Enquiries", value: measured ? String(measured.enq) : null, sub: measured ? "naming this destination" : "reading…" },
-    { icon: <CalendarClock size={15} strokeWidth={1.9} />, label: "Bookings", value: measured ? String(measured.bookings) : null, sub: measured ? "recorded here" : "reading…" },
-    { icon: <TrendingUp size={15} strokeWidth={1.9} />, label: "Booking value", value: measured ? eurShort(measured.value) : null, sub: measured ? (measured.valueless > 0 ? `${measured.valueless} carry no value yet` : "sum of recorded values") : "reading…" },
-    { icon: <Trophy size={15} strokeWidth={1.9} />, label: "ICEFALL commission", value: measured ? eurShort(measured.commission) : null, sub: measured ? "stored rows, waived excluded" : "reading…" },
+    { icon: <Eye className="size-3.5" />, label: "Searches", value: null, sub: "Not measured — nothing records a search." },
+    { icon: <MousePointerClick className="size-3.5" />, label: "Views", value: null, sub: "Not measured — nothing records a view." },
+    { icon: <MessageSquare className="size-3.5" />, label: "Enquiries", value: measured ? String(measured.enq) : null, sub: measured ? "naming this destination" : "reading…" },
+    { icon: <CalendarClock className="size-3.5" />, label: "Bookings", value: measured ? String(measured.bookings) : null, sub: measured ? "recorded here" : "reading…" },
+    { icon: <TrendingUp className="size-3.5" />, label: "Booking value", value: measured ? eurShort(measured.value) : null, sub: measured ? (measured.valueless > 0 ? `${measured.valueless} carry no value yet` : "sum of recorded values") : "reading…" },
+    { icon: <Trophy className="size-3.5" />, label: "ICEFALL commission", value: measured ? eurShort(measured.commission) : null, sub: measured ? "stored rows, waived excluded" : "reading…" },
   ];
 
   return (
     <Card>
-      <SectionLabel className="mb-3">Mountain performance</SectionLabel>
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-        {tiles.map((t) => (
-          <div key={t.label}>
-            <span className="mb-1.5 flex items-center gap-1.5 text-faint">{t.icon}</span>
-            <p className={t.value === null ? "text-[18px] font-bold leading-none text-faint" : "tnum text-[18px] font-bold leading-none text-ink"}>
-              {t.value ?? "—"}
-            </p>
-            <p className="mt-1.5 text-[11.5px] leading-snug text-faint">{t.label}</p>
-            <p className="text-[10.5px] leading-snug text-faint">{t.sub}</p>
-          </div>
-        ))}
-      </div>
-      <p className="mt-4 text-[12.5px] leading-relaxed text-muted">
-        The four figures on the right are counted from real rows naming this destination. Searches and
-        views keep the dash because nothing in the product records either — an operator deciding
-        whether to renew a paid position should never be shown a number nobody measured.
-      </p>
+      <CardHeader>
+        <CardTitle>Mountain performance</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+          {tiles.map((t) => (
+            <div key={t.label}>
+              <span className="mb-1.5 flex items-center gap-1.5 text-muted-foreground">{t.icon}</span>
+              {/* An em dash is NOT MEASURED. It never stands in for a zero. */}
+              <p
+                className={cn(
+                  "font-medium text-lg leading-none",
+                  t.value === null ? "text-faint" : "tabular-nums",
+                )}
+              >
+                {t.value ?? "—"}
+              </p>
+              <p className="mt-1.5 text-muted-foreground text-xs leading-snug">{t.label}</p>
+              <p className="text-[10.5px] leading-snug text-faint">{t.sub}</p>
+            </div>
+          ))}
+        </div>
+        <p className="mt-4 text-muted-foreground text-sm leading-relaxed">
+          The four figures on the right are counted from real rows naming this destination. Searches and
+          views keep the dash because nothing in the product records either — an operator deciding
+          whether to renew a paid position should never be shown a number nobody measured.
+        </p>
+      </CardContent>
     </Card>
   );
 }
@@ -839,76 +886,84 @@ function PlacementHistory({
   const past = placements.filter((p) => p.effective_status === "expired");
   return (
     <Card>
-      <SectionLabel className="mb-3">Placement history</SectionLabel>
-      {past.length === 0 ? (
-        <p className="text-[12.5px] text-faint">No placement on this mountain has ended yet.</p>
-      ) : (
-        <table className="w-full text-[12.5px]">
-          <thead>
-            <tr className="border-b border-line text-left">
-              <th className="pb-2 font-semibold text-faint">Company</th>
-              <th className="pb-2 font-semibold text-faint">Slot</th>
-              <th className="pb-2 font-semibold text-faint">Term</th>
-              <th className="pb-2 font-semibold text-faint">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {past.map((p) => (
-              <tr key={p.id} className="border-b border-line-soft last:border-0">
-                <td className="py-2.5 text-ink">{companyName(p.company_id) ?? "Unknown"}</td>
-                <td className="tnum py-2.5 text-muted">#{p.slot_position}</td>
-                <td className="tnum py-2.5 text-muted">{formatDay(p.starts_on)} — {formatDay(p.ends_on)}</td>
-                <td className="py-2.5"><Pill tone="amber">expired</Pill></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+      <CardHeader>
+        <CardTitle>Placement history</CardTitle>
+      </CardHeader>
+      <CardContent className={cn(past.length > 0 && "px-0")}>
+        {past.length === 0 ? (
+          <p className="text-[13px] text-faint">No placement on this mountain has ended yet.</p>
+        ) : (
+          <Table className="**:data-[slot='table-cell']:px-4 **:data-[slot='table-head']:px-4">
+            <TableHeader className="[&_tr]:border-t">
+              <TableRow>
+                <TableHead className="py-3 font-normal">Company</TableHead>
+                <TableHead className="py-3 font-normal">Slot</TableHead>
+                <TableHead className="py-3 font-normal">Term</TableHead>
+                <TableHead className="py-3 font-normal">Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {past.map((p) => (
+                <TableRow key={p.id} className="border-border/60">
+                  <TableCell className="py-3 align-middle">{companyName(p.company_id) ?? "Unknown"}</TableCell>
+                  <TableCell className="py-3 align-middle text-muted-foreground tabular-nums">#{p.slot_position}</TableCell>
+                  {/* The dash between two dates is a range separator, not the
+                      not-measured dash. Both ends are real recorded days. */}
+                  <TableCell className="py-3 align-middle text-muted-foreground tabular-nums">
+                    {formatDay(p.starts_on)} — {formatDay(p.ends_on)}
+                  </TableCell>
+                  <TableCell className="py-3 align-middle">
+                    <StatusBadge state="pending" label="expired" />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
     </Card>
   );
 }
 
 /* ========================================================================== */
-/* Drawers                                                                    */
+/* Drawers — the theme's own Sheet                                            */
 /* ========================================================================== */
 
 function Drawer({ title, onClose, children }: { title: React.ReactNode; onClose: () => void; children: React.ReactNode }) {
   return (
-    <>
-      <div className="fixed inset-0 z-40 bg-black/20" onClick={onClose} aria-hidden />
-      <aside className="no-scrollbar fixed inset-y-0 right-0 z-50 w-full max-w-[420px] overflow-y-auto bg-surface shadow-lift">
-        <div className="flex items-start justify-between gap-4 p-6 pb-4">
-          {title}
-          <button onClick={onClose} aria-label="Close" className="grid h-8 w-8 shrink-0 place-items-center rounded-tile text-faint hover:bg-raised hover:text-ink">
-            <X size={17} strokeWidth={2} />
-          </button>
-        </div>
-        <div className="px-6 pb-8">{children}</div>
-      </aside>
-    </>
+    <Sheet
+      open
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+    >
+      <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-[440px]">
+        <SheetHeader className="pr-12">{title}</SheetHeader>
+        <div className="px-4 pb-8">{children}</div>
+      </SheetContent>
+    </Sheet>
   );
 }
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="border-b border-line-soft py-3 last:border-0">
-      <p className="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-faint">{label}</p>
-      <div className="mt-1 text-[13.5px] text-ink">{children}</div>
+    <div className="border-b py-3 last:border-0">
+      <p className="font-medium text-muted-foreground text-xs">{label}</p>
+      <div className="mt-1 text-sm">{children}</div>
     </div>
   );
 }
 
 function Action({ icon, label, danger }: { icon: React.ReactNode; label: string; danger?: boolean }) {
   return (
-    <button
-      className={cn(
-        "flex w-full items-center gap-3 rounded-tile border border-line px-4 py-3 text-left text-[13px] font-medium transition-colors hover:bg-raised",
-        danger ? "text-bad" : "text-ink",
-      )}
+    <Button
+      variant={danger ? "destructive" : "outline"}
+      size="lg"
+      className="w-full justify-start gap-3"
     >
-      <span className={danger ? "text-bad" : "text-faint"}>{icon}</span>
+      {icon}
       {label}
-    </button>
+    </Button>
   );
 }
 
@@ -928,34 +983,36 @@ function PlacementDrawer({
       onClose={onClose}
       title={
         <div className="flex items-center gap-3">
-          <Avatar name={company ?? "??"} size={42} />
-          <div>
-            <p className="flex items-center gap-1.5 text-[16px] font-bold text-ink">
+          <Avatar size="lg">
+            <AvatarFallback>{initials(company ?? "??")}</AvatarFallback>
+          </Avatar>
+          <div className="min-w-0">
+            <SheetTitle className="flex items-center gap-1.5">
               {company ?? "Unknown company"}
-              {verified && <BadgeCheck size={15} strokeWidth={2.2} className="text-accent" />}
-            </p>
-            <p className="text-[12px] text-faint">
+              {verified && <BadgeCheck className="size-3.5" />}
+            </SheetTitle>
+            <p className="text-muted-foreground text-xs">
               {verified ? "Documents checked by ICEFALL" : "Documents not checked"}
             </p>
           </div>
         </div>
       }
     >
-      <SectionLabel className="mb-2">Current placement</SectionLabel>
-      <div className="rounded-tile bg-raised p-4">
+      <p className="mb-2 font-medium text-muted-foreground text-xs">Current placement</p>
+      <div className="rounded-lg border bg-ui-muted/50 p-4">
         {premium ? (
-          <span className="inline-flex items-center gap-1.5 rounded-pill px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-[0.06em] text-white" style={{ backgroundColor: GOLD }}>
-            <Crown size={11} strokeWidth={2.4} /> #1 Premium
-          </span>
+          <Badge className="gap-1">
+            <Crown /> #1 Premium
+          </Badge>
         ) : (
-          <Pill tone="neutral">#{p.slot_position} Featured</Pill>
+          <Badge variant="outline">#{p.slot_position} Featured</Badge>
         )}
-        <p className="mt-3 text-[15px] font-bold text-ink">{mountain?.name ?? p.destination_id}</p>
-        <p className="text-[12px] text-muted">
+        <p className="mt-3 font-medium">{mountain?.name ?? p.destination_id}</p>
+        <p className="text-muted-foreground text-xs">
           {mountain?.elevation_m ? `${mountain.elevation_m.toLocaleString("en-GB")}m` : ""}
           {mountain?.range ? ` · ${mountain.range}` : ""}
         </p>
-        <p className="mt-2 text-[13px] text-ink">
+        <p className="mt-2 text-sm">
           {product ?? <span className="text-faint">No expedition chosen for this slot yet</span>}
         </p>
       </div>
@@ -964,14 +1021,12 @@ function PlacementDrawer({
         <Row label="Term">{formatDay(p.starts_on)} → {formatDay(p.ends_on)}</Row>
         <Row label="Price">
           {formatCents(p.price_cents, p.currency) ?? <span className="text-faint">Not agreed</span>}
-          {p.price_cents !== null && <span className="text-[12px] text-faint"> per term</span>}
+          {p.price_cents !== null && <span className="text-muted-foreground text-xs"> per term</span>}
         </Row>
         <Row label="Status">
-          <Pill tone={p.effective_status === "active" ? "green" : p.effective_status === "expired" ? "amber" : "neutral"}>
-            {p.effective_status}
-          </Pill>
+          <StatusBadge state={placementState(p.effective_status)} label={p.effective_status} />
           {p.effective_status === "expired" && (
-            <p className="mt-1.5 text-[12px] leading-relaxed text-warn">
+            <p className="mt-1.5 text-[13px] leading-relaxed text-warn">
               The term ended {daysUntil(p.ends_on) * -1} days ago. This company keeps the position
               until an administrator moves or ends the placement — nothing happens on a timer.
             </p>
@@ -985,36 +1040,36 @@ function PlacementDrawer({
         them, and this is the screen where inventing one would do the most damage:
         it is what an operator is shown when deciding whether to pay again.
       */}
-      <SectionLabel className="mb-2 mt-6">Performance</SectionLabel>
-      <div className="rounded-tile bg-raised p-4">
+      <p className="mb-2 mt-6 font-medium text-muted-foreground text-xs">Performance</p>
+      <div className="rounded-lg border bg-ui-muted/50 p-4">
         <div className="grid grid-cols-2 gap-y-2.5">
           {["Impressions", "Clicks", "Enquiries", "Bookings", "Booking value", "ICEFALL commission"].map((l) => (
             <div key={l} className="flex items-center justify-between pr-3">
-              <span className="text-[12.5px] text-muted">{l}</span>
-              <span className="text-[13px] font-semibold text-faint">—</span>
+              <span className="text-muted-foreground text-sm">{l}</span>
+              <span className="font-medium text-faint text-sm">—</span>
             </div>
           ))}
         </div>
-        <p className="mt-3 border-t border-line pt-3 text-[12px] leading-relaxed text-muted">
+        <Separator className="my-3" />
+        <p className="text-muted-foreground text-[13px] leading-relaxed">
           No performance data yet. Nothing in ICEFALL records an impression or a click, so these
           cannot be counted — and this is the figure a company would renew on.
         </p>
       </div>
 
-      <SectionLabel className="mb-2 mt-6">Actions</SectionLabel>
+      <p className="mb-2 mt-6 font-medium text-muted-foreground text-xs">Actions</p>
       <div className="space-y-2">
-        <Action icon={<Shuffle size={15} strokeWidth={1.9} />} label="Change slot" />
-        <Action icon={<Pencil size={15} strokeWidth={1.9} />} label="Edit placement" />
-        <Action icon={<CalendarClock size={15} strokeWidth={1.9} />} label="Extend placement" />
-        <Action icon={<PauseCircle size={15} strokeWidth={1.9} />} label="Pause placement" />
-        <Action icon={<Ban size={15} strokeWidth={1.9} />} label="End placement" danger />
-        <Link
-          to={`/admin/companies/${p.company_id}`}
-          className="flex w-full items-center gap-3 rounded-tile border border-line px-4 py-3 text-[13px] font-medium text-ink transition-colors hover:bg-raised"
-        >
-          <ExternalLink size={15} strokeWidth={1.9} className="text-faint" />
-          View company profile
-        </Link>
+        <Action icon={<Shuffle />} label="Change slot" />
+        <Action icon={<Pencil />} label="Edit placement" />
+        <Action icon={<CalendarClock />} label="Extend placement" />
+        <Action icon={<PauseCircle />} label="Pause placement" />
+        <Action icon={<Ban />} label="End placement" danger />
+        <Button variant="outline" size="lg" className="w-full justify-start gap-3" asChild>
+          <Link to={`/admin/companies/${p.company_id}`}>
+            <ExternalLink />
+            View company profile
+          </Link>
+        </Button>
       </div>
     </Drawer>
   );
@@ -1070,17 +1125,16 @@ function AddPlacementDrawer({
       onClose={onClose}
       title={
         <div>
-          <p className="text-[17px] font-bold text-ink">Add placement</p>
-          <p className="text-[12.5px] text-muted">{mountain.name}</p>
+          <SheetTitle>Add placement</SheetTitle>
+          <p className="text-muted-foreground text-sm">{mountain.name}</p>
         </div>
       }
     >
       <Step n={1} label="Select company">
-        <input
+        <Input
           value={companyQuery}
           onChange={(e) => setCompanyQuery(e.target.value)}
           placeholder="Search companies..."
-          className="h-11 w-full rounded-tile border border-line px-3.5 text-[13.5px] outline-none focus:border-accent"
         />
         <div className="mt-2 space-y-1.5">
           {companyRows.map((c) => (
@@ -1088,11 +1142,13 @@ function AddPlacementDrawer({
               key={c.id}
               onClick={() => { setCompanyId(c.id); setProductId(null); }}
               className={cn(
-                "flex w-full items-center gap-2.5 rounded-tile border px-3 py-2 text-left text-[13px]",
-                companyId === c.id ? "border-accent bg-accent-soft text-accent-ink" : "border-line hover:bg-raised",
+                "flex w-full items-center gap-2.5 rounded-lg border px-3 py-2 text-left text-sm transition-colors",
+                companyId === c.id ? "border-foreground bg-ui-accent" : "border-border hover:bg-ui-muted/60",
               )}
             >
-              <Avatar name={c.name} size={26} />
+              <Avatar size="sm">
+                <AvatarFallback>{initials(c.name)}</AvatarFallback>
+              </Avatar>
               {c.name}
             </button>
           ))}
@@ -1101,9 +1157,9 @@ function AddPlacementDrawer({
 
       <Step n={2} label="Select expedition">
         {!companyId ? (
-          <p className="text-[12.5px] text-faint">Choose a company first — a slot can only feature that company's own expedition.</p>
+          <p className="text-[13px] text-faint">Choose a company first — a slot can only feature that company's own expedition.</p>
         ) : productRows.length === 0 ? (
-          <p className="text-[12.5px] text-faint">This company has no expeditions yet.</p>
+          <p className="text-[13px] text-faint">This company has no expeditions yet.</p>
         ) : (
           <div className="space-y-1.5">
             {productRows.map((p) => (
@@ -1111,8 +1167,8 @@ function AddPlacementDrawer({
                 key={p.id}
                 onClick={() => setProductId(p.id)}
                 className={cn(
-                  "w-full rounded-tile border px-3 py-2 text-left text-[13px]",
-                  productId === p.id ? "border-accent bg-accent-soft text-accent-ink" : "border-line hover:bg-raised",
+                  "w-full rounded-lg border px-3 py-2 text-left text-sm transition-colors",
+                  productId === p.id ? "border-foreground bg-ui-accent" : "border-border hover:bg-ui-muted/60",
                 )}
               >
                 {p.name}
@@ -1125,20 +1181,16 @@ function AddPlacementDrawer({
       <Step n={3} label="Select slot">
         <div className="flex flex-wrap gap-2">
           {free.map((n) => (
-            <button
+            <Button
               key={n}
+              variant={chosenSlot === n ? "default" : "outline"}
               onClick={() => setChosenSlot(n)}
-              className={cn(
-                "h-10 rounded-tile border px-4 text-[12.5px] font-medium",
-                chosenSlot === n ? "text-white" : "border-line text-ink hover:bg-raised",
-              )}
-              style={chosenSlot === n ? { backgroundColor: GOLD, borderColor: GOLD } : undefined}
             >
               {n === 1 ? "#1 Premium" : `#${n}`}
-            </button>
+            </Button>
           ))}
         </div>
-        {free.length === 0 && <p className="text-[12.5px] text-faint">All five positions are held.</p>}
+        {free.length === 0 && <p className="text-[13px] text-faint">All five positions are held.</p>}
       </Step>
 
       <Step n={4} label="Term">
@@ -1146,27 +1198,27 @@ function AddPlacementDrawer({
       </Step>
 
       <Step n={5} label="Price">
-        <input placeholder="Placement price" className="h-11 w-full rounded-tile border border-line px-3.5 text-[13.5px] outline-none focus:border-accent" />
-        <p className="mt-1.5 text-[11.5px] text-faint">Leave empty if the price has not been agreed. It records as unagreed, not as zero.</p>
+        <Input placeholder="Placement price" />
+        <p className="mt-1.5 text-xs text-faint">Leave empty if the price has not been agreed. It records as unagreed, not as zero.</p>
       </Step>
 
       <Step n={6} label="Status" last>
         <div className="flex gap-2">
           {["Draft", "Reserved", "Active"].map((s) => (
-            <span key={s} className="rounded-pill border border-line px-3.5 py-1.5 text-[12.5px] text-ink">{s}</span>
+            <Badge key={s} variant="outline" className="px-2.5 py-1">{s}</Badge>
           ))}
         </div>
       </Step>
 
-      <button
+      <Button
         disabled
+        size="lg"
         title="No database is connected to this build yet."
-        className="mt-6 h-12 w-full cursor-not-allowed rounded-tile text-[14px] font-semibold text-white opacity-45"
-        style={{ backgroundColor: GOLD }}
+        className="mt-6 w-full"
       >
         Create placement
-      </button>
-      <p className="mt-2 text-center text-[11.5px] text-faint">
+      </Button>
+      <p className="mt-2 text-center text-xs text-faint">
         Not wired: there is no database behind this build, and a button that silently does nothing
         is worse than one that says so.
       </p>
@@ -1176,10 +1228,10 @@ function AddPlacementDrawer({
 
 function Step({ n, label, children, last }: { n: number; label: string; children: React.ReactNode; last?: boolean }) {
   return (
-    <div className={cn("py-4", !last && "border-b border-line-soft")}>
+    <div className={cn("py-4", !last && "border-b")}>
       <div className="mb-2.5 flex items-center gap-2.5">
-        <span className="tnum grid h-6 w-6 place-items-center rounded-full bg-solid text-[11px] font-bold text-white">{n}</span>
-        <p className="text-[12px] font-bold uppercase tracking-[0.06em] text-ink">{label}</p>
+        <span className="grid size-6 place-items-center rounded-full bg-primary text-primary-foreground text-xs font-medium tabular-nums">{n}</span>
+        <p className="font-medium text-sm">{label}</p>
       </div>
       {children}
     </div>
