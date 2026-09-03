@@ -328,6 +328,16 @@
     transform: scale(1.45);
   }
 
+  /*
+    A pin that is not the chosen route. Colour, not opacity — MapLibre writes
+    `style.opacity` on its markers every frame and would overwrite it.
+  */
+  .icefall-pin[data-dim="true"] {
+    background: var(--ice-mist-dim);
+    border-color: var(--ice-mist-dim);
+    box-shadow: 0 0 0 3px oklch(0.1277 0.0108 259.6 / 45%);
+  }
+
   .no-scrollbar {
     scrollbar-width: none;
     -ms-overflow-style: none;

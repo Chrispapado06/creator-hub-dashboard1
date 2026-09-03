@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Listbox } from "@/components/Listbox";
 import { Link, Navigate, useSearchParams } from "react-router-dom";
 import {
@@ -13,13 +13,23 @@ import { cn } from "@/lib/utils";
 import { companyById, companySlug } from "@/data/companies";
 import { CompanyMark } from "@/components/CompanyMark";
 import { RouteMap } from "./RouteMap";
-import { tileFor } from "./mapTiles";
-import { OFFLINE } from "@/offline/offline";
-import { MapThumbPlaceholder } from "@/offline/MapPlaceholder";
+import { TrailThumb } from "./TrailThumb";
 import { peakFallback, peakImage } from "./peakPlate";
 import { objectiveIsOn, PEAKS, type Peak } from "@/data/peaks";
 import { peakCredit } from "@/data/peakPhotoCredits";
-import { NETWORK_LABEL, useTrails } from "./trails";
+import {
+  distanceKm,
+  NETWORK_LABEL,
+  relForCountry,
+  searchPlaces,
+  useCountryTrails,
+  useTrailCountries,
+  useTrailLine,
+  useTrails,
+  type Place,
+  type Trail,
+  type TrailCountry,
+} from "./trails";
 import { Badge, Button, VerifiedTick } from "@/components/ui";
 import {
   DEMO_NOTICE,
@@ -280,7 +290,6 @@ function Section({ section }: { section: SectionId }) {
       </div>
 
       <div className="mt-7">
-        {section === "find" && <Find query={q} />}
         {section === "mountains" && <Mountains peaks={peaks} onClear={clear} />}
         {section === "expeditions" && (
           <Expeditions
@@ -307,7 +316,6 @@ function Section({ section }: { section: SectionId }) {
   );
 }
 
-export const FindPage = () => <Section section="find" />;
 export const MountainsPage = () => <Section section="mountains" />;
 export const ExpeditionsPage = () => <Section section="expeditions" />;
 
@@ -347,10 +355,14 @@ function SearchField({
   value,
   onChange,
   placeholder,
+  onKeyDown,
+  className,
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder: string;
+  onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
+  className?: string;
 }) {
   return (
     <div className="relative">
@@ -363,9 +375,13 @@ function SearchField({
         type="search"
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        onKeyDown={onKeyDown}
         placeholder={placeholder}
         aria-label={placeholder}
-        className="h-9 w-[248px] rounded-pill border border-hairline bg-slate pl-9 pr-4 text-[12.5px] text-snow outline-none placeholder:text-mist-dim focus:border-hairline-strong"
+        className={cn(
+          "h-9 w-[248px] rounded-pill border border-hairline bg-slate pl-9 pr-4 text-[12.5px] text-snow outline-none placeholder:text-mist-dim focus:border-hairline-strong",
+          className,
+        )}
       />
     </div>
   );
@@ -445,114 +461,471 @@ function Empty({ title, note, onClear }: { title: string; note: string; onClear?
  * have no verified photograph, and a stock alpine picture is a photograph of
  * somewhere else.
  */
-function Find({ query }: { query: string }) {
-  const { trails, loading } = useTrails(query);
+/**
+ * FIND — a rail of results beside a map that fills the rest of the screen.
+ *
+ * Laid out to the owner's reference (AllTrails, 2026-09-01): the search sits at
+ * the TOP OF THE RAIL rather than over the page, the list scrolls inside the
+ * rail, and the map owns everything else edge to edge. The previous version put
+ * a two-column card grid where the map should be and pushed the map into a
+ * 520px column, which is backwards for a screen whose subject is WHERE things
+ * are.
+ *
+ * ── THE FILTERS ARE NOT THE REFERENCE'S FILTERS, DELIBERATELY ───────────────
+ *
+ * The reference offers Difficulty, Length, Elevation, Activity and Features.
+ * ICEFALL has NONE of those for an OpenStreetMap trail. The index carries a
+ * name, a position, a country, a network tier, an optional ref and an optional
+ * length — that is the whole record. A "Difficulty" control here would either
+ * do nothing or invent a grade for 77,141 routes nobody has walked for us, and
+ * an "Est. 2-2.5 hr" line — which the reference shows and which reads as the
+ * most useful thing on its card — cannot be computed from a length without a
+ * gradient profile and an assumed pace.
+ *
+ * So the row carries the three filters that are real: COUNTRY, NETWORK TIER
+ * and LENGTH. Each offers only values present in the current result set, so a
+ * filter can never return nothing — the same rule the mountains filters follow.
+ */
+const TRAIL_LENGTH_BANDS: Band<Trail>[] = [
+  { label: "Under 10 km", test: (t) => t.lengthKm != null && t.lengthKm < 10 },
+  { label: "10 – 50 km", test: (t) => t.lengthKm != null && t.lengthKm >= 10 && t.lengthKm < 50 },
+  { label: "50 – 200 km", test: (t) => t.lengthKm != null && t.lengthKm >= 50 && t.lengthKm < 200 },
+  { label: "Over 200 km", test: (t) => t.lengthKm != null && t.lengthKm >= 200 },
+];
+
+/**
+ * What the search box can be pointed at.
+ *
+ * A COUNTRY is exact — the manifest holds its file and its extent, so picking
+ * one is a lookup. A TOWN is not: nothing in this data says where a town ends,
+ * so it resolves to a point and a radius, and the radius is stated on screen
+ * rather than implied.
+ */
+type Picked =
+  | { kind: "country"; name: string; detail: string; country: TrailCountry }
+  | { kind: "town"; name: string; detail: string; town: Place };
+
+/** How near "near a town" is. Printed on every card, never left to be guessed. */
+const NEAR_KM = 40;
+
+export function FindPage() {
+  const [q, setQ] = useState("");
+  const [country, setCountry] = useState("");
+  const [network, setNetwork] = useState("");
+  const [length, setLength] = useState("");
+  const [order, setOrder] = useState("longest");
   const [selected, setSelected] = useState<string | undefined>(undefined);
 
+  /*
+    PLACE SEARCH. Typing "cy" offers Cyprus, and picking it loads that country's
+    whole file and frames the map on its real extent.
+
+    This is a different question from the name search beside it, which is why it
+    is a different mechanism rather than a cleverer query. `searchTrails` matches
+    route NAMES, and a Cypriot footpath is under no obligation to have "Cyprus"
+    in its name — searching the text for a country finds only the routes that
+    happen to mention it, which is a subset with no meaning. Picking the place
+    reads the country file, so "Cyprus · 176 routes" is the whole of Cyprus.
+  */
+  const [place, setPlace] = useState<Picked | null>(null);
+  const [active, setActive] = useState(0);
+  const [towns, setTowns] = useState<Place[]>([]);
+  const countries = useTrailCountries();
+
+  /*
+    Towns come from Photon over the network and countries from the manifest on
+    disk, so they arrive at different speeds and are debounced differently: the
+    country list is filtered on every keystroke, the town request waits 300ms
+    for typing to stop. Photon allows roughly one request a second.
+  */
+  useEffect(() => {
+    const needle = q.trim();
+    if (needle.length < 2 || place !== null) {
+      setTowns([]);
+      return;
+    }
+    const ctrl = new AbortController();
+    const t = setTimeout(() => {
+      void searchPlaces(needle, ctrl.signal).then(setTowns);
+    }, 300);
+    return () => {
+      clearTimeout(t);
+      ctrl.abort();
+    };
+  }, [q, place]);
+
+  const suggestions = useMemo<Picked[]>(() => {
+    const needle = q.trim().toLowerCase();
+    if (needle === "" || place !== null) return [];
+    const countryHits: Picked[] = countries
+      .filter((c) => c.name.toLowerCase().includes(needle))
+      .map((c) => ({ kind: "country", name: c.name, detail: `${c.count.toLocaleString("en-GB")} routes`, country: c }));
+    const townHits: Picked[] = towns
+      // A town whose name is already a country in the list would read as a duplicate.
+      .filter((t) => !countryHits.some((c) => c.name.toLowerCase() === t.name.toLowerCase()))
+      .map((t) => ({ kind: "town", name: t.name, detail: t.detail, town: t }));
+    return [...countryHits, ...townHits].slice(0, 7);
+  }, [countries, towns, q, place]);
+
+  const choose = (pick: Picked) => {
+    setPlace(pick);
+    setQ(pick.name);
+    setCountry("");
+    setTowns([]);
+    setActive(0);
+  };
+
+  const onSearchKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (suggestions.length === 0) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActive((a) => Math.min(suggestions.length - 1, a + 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActive((a) => Math.max(0, a - 1));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      choose(suggestions[active] ?? suggestions[0]);
+    } else if (e.key === "Escape") {
+      setPlace(null);
+      setQ("");
+    }
+  };
+
+  /*
+    A TOWN IS ANSWERED BY DISTANCE, and the distance is printed.
+
+    Picking a country is exact — that country's file IS the answer. A town has
+    no such boundary in this data, so "routes near Limassol" has to mean
+    something measurable: every route in that town's COUNTRY, ranked by
+    great-circle distance from the town, and only those within NEAR_KM. The
+    figure goes on the card, so "near" is a number the reader can check rather
+    than a word they have to trust.
+  */
+  const townRel =
+    place !== null && place.kind === "town" ? relForCountry(countries, place.town.country) : null;
+  const countryRel =
+    place === null ? null : place.kind === "country" ? place.country.rel : townRel;
+
+  // Both hooks always run; only one of them is asked for anything.
+  const byName = useTrails(place === null ? q : "");
+  const byPlace = useCountryTrails(countryRel);
+
+  const trails = useMemo(() => {
+    if (place === null) return byName.trails;
+    if (place.kind === "country") return byPlace.trails;
+    const { lat, lon } = place.town;
+    return byPlace.trails
+      .map((t) => ({ t, km: distanceKm(lat, lon, t.lat, t.lon) }))
+      .filter((x) => x.km <= NEAR_KM)
+      .sort((a, b) => a.km - b.km)
+      .map((x) => x.t);
+  }, [place, byName.trails, byPlace.trails]);
+
+  const loading = place === null ? byName.loading : byPlace.loading;
+
+  const nearKm = useMemo(() => {
+    if (place === null || place.kind !== "town") return null;
+    const { lat, lon } = place.town;
+    const m = new Map<number, number>();
+    for (const t of trails) m.set(t.osmId, distanceKm(lat, lon, t.lat, t.lon));
+    return m;
+  }, [place, trails]);
+
+  /* A town has no extent here, so the map is framed on a box around it. */
+  const fit = useMemo<[number, number, number, number] | undefined>(() => {
+    if (place === null) return undefined;
+    if (place.kind === "country") return place.country.bbox;
+    const { lat, lon } = place.town;
+    const dLat = NEAR_KM / 111;
+    const dLon = dLat / Math.max(0.2, Math.cos((lat * Math.PI) / 180));
+    return [lat - dLat, lon - dLon, lat + dLat, lon + dLon];
+  }, [place]);
+
+  const list = useMemo(() => {
+    const filtered = trails.filter(
+      (t) =>
+        (country === "" || t.country === country) &&
+        (network === "" || (t.network !== undefined && NETWORK_LABEL[t.network] === network)) &&
+        inBand(TRAIL_LENGTH_BANDS, length, t),
+    );
+    return order === "name"
+      ? [...filtered].sort((a, b) => a.name.localeCompare(b.name))
+      : filtered;
+  }, [trails, country, network, length, order]);
+
   const pins = useMemo(
-    () =>
-      trails.slice(0, 40).map((t) => ({
-        id: String(t.osmId),
-        name: t.name,
-        lat: t.lat,
-        lon: t.lon,
-      })),
-    [trails],
+    () => list.slice(0, 40).map((t) => ({ id: String(t.osmId), name: t.name, lat: t.lat, lon: t.lon })),
+    [list],
   );
 
+  /*
+    The selected route's own course, fetched from OpenStreetMap on demand.
+
+    Keyed off the SELECTION, so it costs one request per route a reader actually
+    opens — not one per row rendered. Hover used to set the selection, which
+    would have made this fire on every mouse movement across the rail; selection
+    is now a click or a keyboard focus.
+  */
+  const lineFor = selected === undefined ? null : Number(selected);
+  const line = useTrailLine(lineFor);
+
+  const dirty = q.trim() !== "" || place !== null || country !== "" || network !== "" || length !== "";
+  const clear = () => {
+    setQ("");
+    setPlace(null);
+    setCountry("");
+    setNetwork("");
+    setLength("");
+  };
+
   return (
-    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,520px)]">
-      <div className="min-w-0">
-        <p className="tnum mb-3 text-[11.5px] text-mist-dim">
-          {loading
-            ? "Searching the catalogue…"
-            : trails.length === 0
-              ? "No route matches that name"
-              : `${trails.length} route${trails.length === 1 ? "" : "s"}`}
-        </p>
+    <div className="grid h-[calc(100vh-136px)] overflow-hidden rounded-card border border-hairline lg:grid-cols-[404px_minmax(0,1fr)]">
+      {/* ── the rail: search, count, and the list that scrolls inside it ── */}
+      <aside className="flex min-h-0 flex-col border-hairline bg-graphite lg:border-r">
+        <div className="border-b border-hairline p-5">
+          <h1 className="text-[19px] font-light tracking-[-0.02em] text-snow">Find a route</h1>
+          <div className="relative mt-3.5">
+            <SearchField
+              value={q}
+              onChange={(v) => {
+                setQ(v);
+                setPlace(null);
+                setActive(0);
+              }}
+              onKeyDown={onSearchKey}
+              placeholder="Route, region or country"
+              className="w-full"
+            />
+
+            {/*
+              Places matching what has been typed. Arrow keys move, Enter picks,
+              Escape clears — a suggestion list that only takes a mouse is the
+              same defect as a control with no focus ring, and this app spent a
+              morning removing those.
+            */}
+            {suggestions.length > 0 && (
+              <ul
+                role="listbox"
+                aria-label="Places"
+                className="absolute inset-x-0 top-full z-30 mt-1.5 overflow-hidden rounded-tile border border-hairline bg-elevated py-1 shadow-[0_24px_60px_-24px_rgba(0,0,0,0.85)]"
+              >
+                {suggestions.map((c, i) => (
+                  <li key={`${c.kind}-${c.name}-${c.detail}`} role="option" aria-selected={i === active}>
+                    <button
+                      type="button"
+                      onPointerDown={(e) => {
+                        e.preventDefault();
+                        choose(c);
+                      }}
+                      onMouseMove={() => setActive(i)}
+                      className={cn(
+                        "flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left transition-colors",
+                        i === active ? "bg-slate" : "bg-transparent",
+                      )}
+                    >
+                      <span className="flex min-w-0 items-center gap-2">
+                        <MapPin
+                          size={12}
+                          strokeWidth={1.9}
+                          className={c.kind === "country" ? "shrink-0 text-azure" : "shrink-0 text-mist-dim"}
+                        />
+                        <span className="min-w-0">
+                          <span className="block truncate text-[13px] text-snow">{c.name}</span>
+                          {c.detail !== "" && (
+                            <span className="block truncate text-[10.5px] text-mist-dim">{c.detail}</span>
+                          )}
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-[10px] uppercase tracking-[0.12em] text-mist-dim">
+                        {c.kind === "country" ? "Country" : "Town"}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {place !== null && (
+            <button
+              type="button"
+              onClick={() => {
+                setPlace(null);
+                setQ("");
+              }}
+              className="mt-3 inline-flex items-center gap-2 rounded-pill border border-azure/45 bg-azure/10 px-3 py-1.5 text-[11.5px] text-azure"
+            >
+              <MapPin size={11} strokeWidth={2} />
+              {place.kind === "town" ? `Within ${NEAR_KM} km of ${place.name}` : place.name}
+              <span aria-hidden className="text-azure/70">×</span>
+              <span className="sr-only">Clear this place</span>
+            </button>
+          )}
+          <div className="mt-3.5 flex items-center justify-between gap-3">
+            <p className="tnum text-[11.5px] text-mist-dim">
+              {loading
+                ? "Searching the catalogue…"
+                : list.length === 0
+                  ? "Nothing matches"
+                  : `${list.length.toLocaleString("en-GB")} route${list.length === 1 ? "" : "s"}`}
+            </p>
+            <Listbox
+              value={order}
+              onChange={setOrder}
+              label="Order"
+              options={[
+                { value: "longest", label: "Longest first" },
+                { value: "name", label: "Name A–Z" },
+              ]}
+              triggerClassName="h-8 rounded-pill border border-hairline bg-slate px-3 text-[11.5px] text-mist"
+            />
+          </div>
+        </div>
 
         {/*
           Keyed on the query so a new search REPLACES the list rather than
           reconciling into it. Without this, two cards from the previous result
           survived the swap — a Slovakian and an Austrian route sat above the
-          Cyprus ones on a search for "cyprus", while the component's own count
-          said 31. Cross-border routes share an OSM relation id across country
-          files, so `key={osmId}` is not unique across two different result
-          sets, and React kept the stale children.
+          Cyprus ones on a search for "cyprus". Cross-border routes share an OSM
+          relation id across country files, so `key={osmId}` is not unique
+          across two different result sets and React kept the stale children.
         */}
-        <div key={query} className="grid gap-4 sm:grid-cols-2">
-          {trails.map((t, i) => (
-            <article
-              key={`${t.osmId}-${i}`}
-              onMouseEnter={() => setSelected(String(t.osmId))}
-              onFocus={() => setSelected(String(t.osmId))}
-              tabIndex={0}
-              className={cn(
-                "overflow-hidden rounded-card border bg-graphite transition-colors",
-                String(t.osmId) === selected
-                  ? "border-azure/55"
-                  : "border-hairline hover:border-hairline-strong",
+        <div key={q} className="min-h-0 flex-1 overflow-y-auto p-4">
+          {list.length === 0 && !loading ? (
+            <p className="px-1 pt-6 text-[12.5px] leading-relaxed text-mist-dim">
+              No route in the catalogue matches that.
+              {dirty && (
+                <button type="button" onClick={clear} className="mt-2 block text-azure">
+                  Clear the filters
+                </button>
               )}
-            >
-              <span className="relative block aspect-[16/9] w-full bg-slate">
-                {/*
-                  OFFLINE DEMO. This image is a satellite tile of the route's own
-                  coordinates, streamed from Esri, and it is the ONLY <img> on
-                  this page with no onError fallback — offline every card in the
-                  grid becomes an empty slate box and the whole screen reads as
-                  broken. The list itself is local JSON and is perfectly
-                  populated, so the cards keep their place and say what is
-                  actually missing.
-                */}
-                {OFFLINE ? (
-                  <MapThumbPlaceholder />
-                ) : (
-                  <img
-                    src={tileFor(t.lat, t.lon, 10)}
-                    alt=""
-                    aria-hidden
-                    loading="lazy"
-                    className="h-full w-full object-cover"
-                  />
-                )}
-                <span className="absolute inset-0 bg-gradient-to-t from-graphite via-transparent to-transparent" />
-                {t.ref !== undefined && /[a-z]/i.test(t.ref) && (
-                  <span className="absolute right-2.5 top-2.5 rounded-pill border border-azure/45 bg-obsidian/75 px-2 py-0.5 text-[10px] text-azure">
-                    {t.ref}
-                  </span>
-                )}
-              </span>
-
-              <span className="block p-4">
-                <span className="block truncate text-[14.5px] font-light tracking-[-0.01em] text-snow">
-                  {t.name}
-                </span>
-                {t.country !== "" && (
-                  <span className="mt-1 flex items-center gap-1.5 text-[11px] text-mist-dim">
-                    <MapPin size={11} strokeWidth={1.9} />
-                    {t.country}
-                  </span>
-                )}
-                <span className="mt-3 flex items-end justify-between gap-3 border-t border-hairline pt-3">
-                  <span>
-                    <span className="section-label block">Length</span>
-                    <span className="tnum mt-1 block text-[14px] font-light text-snow">
-                      {t.lengthKm != null ? `${t.lengthKm.toFixed(0)} km` : "—"}
-                    </span>
-                  </span>
-                  {t.network !== undefined && (
-                    <Badge tone="azure">{NETWORK_LABEL[t.network]}</Badge>
+            </p>
+          ) : (
+            <div className="flex flex-col gap-3.5">
+              {list.map((t, i) => (
+                <article
+                  key={`${t.osmId}-${i}`}
+                  onClick={() => setSelected(String(t.osmId))}
+                  onFocus={() => setSelected(String(t.osmId))}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setSelected(String(t.osmId));
+                    }
+                  }}
+                  tabIndex={0}
+                  className={cn(
+                    "overflow-hidden rounded-tile border bg-obsidian/40 transition-colors",
+                    String(t.osmId) === selected
+                      ? "border-azure/55"
+                      : "border-hairline hover:border-hairline-strong",
                   )}
-                </span>
-              </span>
-            </article>
-          ))}
+                >
+                  <TrailThumb trail={t}>
+                    {t.ref !== undefined && /[a-z]/i.test(t.ref) && (
+                      <span className="absolute right-2.5 top-2.5 rounded-pill border border-azure/45 bg-obsidian/75 px-2 py-0.5 text-[10px] text-azure">
+                        {t.ref}
+                      </span>
+                    )}
+                  </TrailThumb>
+                  <div className="p-3.5">
+                    <p className="truncate text-[13.5px] font-light tracking-[-0.01em] text-snow">
+                      {t.name}
+                    </p>
+                    <p className="mt-1 flex items-center gap-1.5 text-[11px] text-mist-dim">
+                      <MapPin size={11} strokeWidth={1.9} />
+                      {t.country !== "" ? t.country : "Location not recorded"}
+                    </p>
+                    <p className="mt-2.5 flex items-center gap-2 text-[11.5px] text-mist">
+                      <span className="tnum">
+                        {t.lengthKm != null ? `${t.lengthKm.toFixed(0)} km` : "Length not recorded"}
+                      </span>
+                      {t.network !== undefined && (
+                        <>
+                          <span aria-hidden className="text-mist-dim">·</span>
+                          <span className="text-azure">{NETWORK_LABEL[t.network]}</span>
+                        </>
+                      )}
+                      {nearKm?.get(t.osmId) !== undefined && (
+                        <>
+                          <span aria-hidden className="text-mist-dim">·</span>
+                          <span className="tnum text-mist-dim">
+                            {(nearKm.get(t.osmId) ?? 0).toFixed(0)} km away
+                          </span>
+                        </>
+                      )}
+                    </p>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
         </div>
-      </div>
+      </aside>
 
-      <div className="lg:sticky lg:top-[88px] lg:h-[calc(100vh-140px)]">
-        <div className="h-[420px] overflow-hidden rounded-card border border-hairline lg:h-full">
-          <RouteMap pins={pins} selectedId={selected} onSelect={setSelected} className="h-full w-full" />
+      {/* ── the map, edge to edge, with the filters floating over it ── */}
+      <div className="relative min-h-0">
+        <RouteMap
+          pins={pins}
+          selectedId={selected}
+          onSelect={setSelected}
+          fit={fit}
+          line={line}
+          className="h-full w-full"
+        />
+
+        <div className="pointer-events-none absolute inset-x-0 top-0 flex flex-wrap items-center gap-2 p-4">
+          <div className="pointer-events-auto">
+            <Listbox
+              value={country}
+              onChange={setCountry}
+              label="Country"
+              placeholder="Anywhere"
+              options={uniq(trails.map((t) => t.country).filter((c) => c !== "")).map((c) => ({ value: c, label: c }))}
+              triggerClassName={cn(
+                "h-9 rounded-pill border px-3.5 text-[12.5px] shadow-[0_10px_30px_-12px_rgba(0,0,0,0.9)]",
+                country !== "" ? "border-azure/45 bg-azure/15 text-azure" : "border-hairline-strong bg-obsidian/85 text-snow",
+              )}
+            />
+          </div>
+          <div className="pointer-events-auto">
+            <Listbox
+              value={network}
+              onChange={setNetwork}
+              label="Network"
+              placeholder="Any network"
+              options={uniq(
+                trails.map((t) => (t.network === undefined ? "" : NETWORK_LABEL[t.network])).filter((n) => n !== ""),
+              ).map((n) => ({ value: n, label: n }))}
+              triggerClassName={cn(
+                "h-9 rounded-pill border px-3.5 text-[12.5px] shadow-[0_10px_30px_-12px_rgba(0,0,0,0.9)]",
+                network !== "" ? "border-azure/45 bg-azure/15 text-azure" : "border-hairline-strong bg-obsidian/85 text-snow",
+              )}
+            />
+          </div>
+          <div className="pointer-events-auto">
+            <Listbox
+              value={length}
+              onChange={setLength}
+              label="Length"
+              placeholder="Any length"
+              options={bandOptions(TRAIL_LENGTH_BANDS, trails).map((b) => ({ value: b, label: b }))}
+              triggerClassName={cn(
+                "h-9 rounded-pill border px-3.5 text-[12.5px] shadow-[0_10px_30px_-12px_rgba(0,0,0,0.9)]",
+                length !== "" ? "border-azure/45 bg-azure/15 text-azure" : "border-hairline-strong bg-obsidian/85 text-snow",
+              )}
+            />
+          </div>
+          {dirty && (
+            <button
+              type="button"
+              onClick={clear}
+              className="pointer-events-auto h-9 rounded-pill px-3.5 text-[12.5px] text-mist transition-colors hover:text-snow"
+            >
+              Clear
+            </button>
+          )}
         </div>
       </div>
     </div>
