@@ -205,7 +205,7 @@ function Composer() {
     { icon: MapPin, label: "Location" },
   ];
   return (
-    <section className="rounded-card border border-hairline bg-graphite p-5">
+    <section className="rounded-card border border-hairline bg-graphite p-5 transition-colors focus-within:border-azure/55">
       <div className="flex items-start gap-3.5">
         <GuidePhoto name="You" size={40} />
         <textarea

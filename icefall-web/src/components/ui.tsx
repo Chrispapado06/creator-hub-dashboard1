@@ -11,30 +11,49 @@ export function Button({
   ...rest
 }: {
   children: ReactNode;
-  variant?: "primary" | "secondary" | "ghost" | "destructive";
-  size?: "sm" | "md" | "lg";
+  variant?: "primary" | "secondary" | "ghost" | "danger";
+  size?: "sm" | "md" | "lg" | "icon" | "pill";
 } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  /*
+    DELIBERATELY THE PHONE APP'S CONTRACT — `icefall-app`
+    `src/components/ui/primitives.tsx`, confirmed by its owner 2026-09-01.
+
+    The two trees had drifted in six ways and I had added the sixth the day
+    before: a destructive variant named `destructive` where the phone had long
+    called the same thing `danger`. Same control, two names, which is the exact
+    pattern this codebase keeps paying for — so the name here is `danger`.
+
+    Two rules travel with it, both the phone's and both load-bearing:
+
+      · PRIMARY IS ONE PER SCREEN, AT MOST. It is the single azure call to
+        action; a screen with two has no call to action.
+      · DANGER IS AN OUTLINE, NEVER FILLED. A filled red button on a dark UI
+        reads as the primary action, which is the one thing a destructive
+        control must never look like.
+
+    Radii vary WITH SIZE here (8 / 10 / 12) rather than one `rounded-tile` for
+    all, because that is what the phone does and a button that is a different
+    shape on each device is two brands.
+  */
   return (
     <button
       {...rest}
       className={cn(
-        "inline-flex items-center justify-center gap-2 rounded-tile font-normal transition-colors",
+        "inline-flex items-center justify-center gap-2 font-medium whitespace-nowrap",
+        "transition-all duration-200 ease-[cubic-bezier(.22,1,.36,1)] active:scale-[0.985]",
+        "disabled:pointer-events-none disabled:opacity-40 [&_svg]:shrink-0",
         // 11-CONTROLS-CONTRACT: focus-visible ring on everything, no default styling.
         "outline-none focus-visible:ring-2 focus-visible:ring-azure/60 focus-visible:ring-offset-2 focus-visible:ring-offset-obsidian",
-        "disabled:cursor-not-allowed disabled:opacity-45",
-        size === "sm" && "h-9 px-3.5 text-[13px]",
-        size === "md" && "h-11 px-5 text-[14px]",
-        size === "lg" && "h-12 px-6 text-[15px]",
+        size === "sm" && "h-9 rounded-[8px] px-3.5 text-[13px]",
+        size === "md" && "h-11 rounded-[10px] px-5 text-[14px]",
+        size === "lg" && "h-[52px] rounded-[12px] px-6 text-[15px]",
+        size === "icon" && "h-10 w-10 rounded-full",
+        size === "pill" && "h-11 rounded-full px-6 text-[14px]",
         variant === "primary" && "bg-azure text-obsidian hover:bg-azure-bright",
-        variant === "secondary" && "border border-hairline bg-slate text-snow hover:bg-elevated",
-        variant === "ghost" && "text-mist hover:bg-slate hover:text-snow",
-        /*
-          Destructive gets its own colour and never the primary style, per the
-          contract — a delete that looks like the main action is a delete that
-          gets pressed by habit. Danger ring to match.
-        */
-        variant === "destructive" &&
-          "border border-danger/50 text-danger hover:bg-danger/10 focus-visible:ring-danger/60",
+        variant === "secondary" &&
+          "border border-hairline-strong text-snow hover:border-azure/50 hover:bg-white/[0.03]",
+        variant === "ghost" && "text-mist hover:bg-white/[0.04] hover:text-snow",
+        variant === "danger" && "border border-danger/40 text-danger hover:bg-danger/10",
         className,
       )}
     >

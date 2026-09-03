@@ -24,7 +24,7 @@ export default function Guides() {
         and payment run through us; your money is held until you meet.
       </p>
 
-      <div className="mt-7 flex max-w-[420px] items-center gap-2.5 rounded-tile border border-hairline bg-graphite px-3.5 py-2.5">
+      <div className="mt-7 flex max-w-[420px] items-center gap-2.5 rounded-tile border border-hairline bg-graphite px-3.5 py-2.5 transition-colors focus-within:border-azure/55">
         <Search size={16} strokeWidth={1.7} className="shrink-0 text-mist-dim" />
         <input
           value={q}

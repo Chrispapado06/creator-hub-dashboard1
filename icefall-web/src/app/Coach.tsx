@@ -474,7 +474,7 @@ function ChatPane({
       <div className="mt-auto pt-10">
         <form
           onSubmit={(e) => e.preventDefault()}
-          className="flex items-center gap-2 rounded-pill border border-hairline-strong bg-slate py-2 pl-5 pr-2"
+          className="flex items-center gap-2 rounded-pill border border-hairline-strong bg-slate py-2 pl-5 pr-2 transition-colors focus-within:border-azure/55"
         >
           <input
             value={draft}

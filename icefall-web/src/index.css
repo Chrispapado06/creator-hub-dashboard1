@@ -175,6 +175,17 @@
     color: var(--ice-snow);
   }
 
+  /*
+    Every focusable thing gets a ring here — but this rule is in @layer base,
+    and a Tailwind `outline-none` utility BEATS it. Measured 2026-09-01: three
+    composers set `outline-none`, computed to `outline-style: none`, and were
+    PIXEL-IDENTICAL focused vs blurred — invisible to a keyboard user while
+    still matching :focus-visible and still reporting a 2px azure outline
+    width. A computed-style check calls that a pass; only a screenshot catches
+    it. So: `outline-none` is a PROMISE TO REPLACE THE INDICATOR, never a way
+    to remove it — pair it with focus-visible:ring-* on the control, or
+    focus-within:border-* on the box the control sits in.
+  */
   :focus-visible {
     outline: 2px solid var(--ice-azure);
     outline-offset: 2px;

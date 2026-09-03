@@ -47,6 +47,14 @@ const SOCIAL_CHILDREN = [
 
 const PRIMARY = [
   { to: "/app", label: "Home", icon: Home, end: true },
+  /*
+    Messages sits directly under Home, in the primary nav — owner instruction
+    2026-09-01. It spent its life in QUICK, which is the wrong shelf for the
+    one item in this app that is WAITING ON YOU: quick links are places you
+    choose to go, and an inbox is a place you are summoned to. Everything else
+    in QUICK (saved, bookings, enquiries, settings) is genuinely passive.
+  */
+  { to: "/app/messages", label: "Messages", icon: MessageSquare },
   { to: "/app/find", label: "Find a route", icon: Search },
   { to: "/app/mountains", label: "Mountains", icon: MountainIcon },
   { to: "/app/expeditions", label: "Expeditions", icon: Flag },
@@ -61,7 +69,6 @@ const QUICK = [
   { to: "/app/saved", label: "Saved expeditions", icon: Bookmark },
   { to: "/app/bookings", label: "Bookings", icon: CalendarCheck },
   { to: "/app/enquiries", label: "My enquiries", icon: Send },
-  { to: "/app/messages", label: "Messages", icon: MessageSquare },
   { to: "/app/settings", label: "Settings", icon: SettingsIcon },
 ];
 
