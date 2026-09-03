@@ -13,6 +13,7 @@ import {
   Youtube,
 } from "lucide-react";
 import { IcefallLockup } from "@/components/IcefallMark";
+import { AddToHomeScreenNote, AppStoreButton } from "@/components/AppStoreButton";
 import {
   LAUNCH_AT,
   joinWaitlist,
@@ -261,6 +262,24 @@ function SignupCard() {
       </p>
 
       <SignupForm source="hero" withName idPrefix="hero" className="mt-6" />
+
+      {/*
+        THE APP STORE NOTE SITS UNDER THE FORM, NOT BESIDE THE HEADLINE.
+        It is an expectation-setter, not a call to action — the thing this page
+        wants somebody to do is give an email address, and a second control at
+        equal weight competes with the one that matters.
+
+        WEB-SHELFLIFE: "Coming to the App Store" is a present-tense claim about
+        what ICEFALL can do, and those expire. There is genuinely no listing today
+        (icefall-app/src/lib/install.ts:6). The DAY one exists, this is the thing
+        to switch on — it becomes a real link and the label becomes "Download on
+        the". Left as-is past that point it stops being a promise and becomes a
+        false one, and nothing in the code will notice.
+      */}
+      <div className="mt-6 border-t border-hairline pt-5">
+        <AppStoreButton />
+        <AddToHomeScreenNote className="mt-3" />
+      </div>
     </div>
   );
 }
