@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { IcefallLockup } from "@/components/IcefallMark";
 import { AddToHomeScreenNote, AppStoreButton } from "@/components/AppStoreButton";
+import { MotionButton } from "@/components/MotionButton";
 import {
   LAUNCH_AT,
   joinWaitlist,
@@ -145,13 +146,23 @@ function Header() {
         <a href="#top" aria-label="ICEFALL" className="shrink-0">
           <IcefallLockup />
         </a>
-        <button
-          type="button"
-          onClick={focusSignup}
-          className="ml-auto rounded-[10px] border border-azure/45 px-5 py-2.5 text-[11.5px] font-medium uppercase tracking-[0.14em] text-snow transition-colors duration-200 hover:border-azure hover:bg-azure/10"
-        >
-          Join waitlist
-        </button>
+        {/*
+          "GET STARTED", AND WHAT IT HONESTLY DOES.
+          It scrolls to the signup form — the same thing the old "Join waitlist"
+          button did, and the same thing this page is for.
+
+          It deliberately does NOT go to /app. That route is reachable the moment
+          somebody signs up, and before launch it is EMPTY BY DESIGN: every
+          fixture (COMPANIES, GUIDES, EXPEDITIONS, POSTS, STORIES, GROUPS) is
+          `IS_DEMO ? [ … ] : []`, so a production visitor who got in would find a
+          working app containing nothing. Sending a stranger there from the
+          headline control would be the worst first impression this site can
+          make, and it would be one WE chose.
+
+          On the day it opens, this is the line to change — and by then the label
+          is already right.
+        */}
+        <MotionButton label="Get Started" onClick={focusSignup} className="ml-auto" />
       </div>
     </header>
   );
