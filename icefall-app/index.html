@@ -26,6 +26,44 @@
       content="ICEFALL — the digital ecosystem for outdoor athletes and mountaineers. Track. Train. Plan. Explore."
     />
     <title>ICEFALL</title>
+    <!--
+      LIGHT-THEME DESIGN STUDY. Not a user preference, and not the default.
+
+      `?theme=light` stamps data-theme="light" on <html>, which is the only
+      thing that activates the light block at the bottom of src/index.css.
+      `?theme=dark` clears it. Anything else, including a first visit, leaves
+      the attribute absent and the app dark — the default is decided by the
+      absence of this attribute, so a bug in here cannot change it.
+
+      Session-scoped on purpose: the choice survives navigation inside the app
+      while the owner clicks through the screens, and is gone when the tab
+      closes. It deliberately does NOT use localStorage or touch app settings.
+
+      Inline and in <head> so it runs before first paint. Moving it into a
+      module would let the dark canvas paint first and flash.
+    -->
+    <script>
+      (function () {
+        try {
+          /* PERSISTENT now, not session-only. The owner asked for a theme
+             control in Settings on 2026-09-03, and a preference that forgets
+             itself when the tab closes is not a preference. `?theme=` still
+             works and still wins, so a link can force either one for a review.
+             localStorage key, so `resetAll`'s `icefall.` prefix clear takes it
+             with everything else — a fresh onboarding starts from the default. */
+          var q = new URLSearchParams(location.search).get("theme");
+          if (q === "light" || q === "dark") localStorage.setItem("icefall.theme.v1", q);
+          if ((q || localStorage.getItem("icefall.theme.v1")) === "light") {
+            document.documentElement.setAttribute("data-theme", "light");
+            var m = document.querySelector('meta[name="theme-color"]');
+            if (m) m.setAttribute("content", "#FFFFFF");
+          }
+        } catch (e) {
+          /* Private mode denies sessionStorage. Staying dark is the right
+             failure: the study is opt-in and this is not worth a crash. */
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

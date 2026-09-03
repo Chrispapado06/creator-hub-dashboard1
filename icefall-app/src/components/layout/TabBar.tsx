@@ -295,10 +295,16 @@ export function TabBar() {
                   <span className="grid h-[62px] w-[62px] place-items-center rounded-full bg-obsidian">
                     <span
                       className={cn(
-                        "grid h-[54px] w-[54px] place-items-center rounded-full text-snow",
-                        "bg-gradient-to-b from-azure to-azure-deep",
+                        /* Named tokens, not `text-snow` and not the azure pair.
+                           `snow` is the primary TEXT colour and only happens to
+                           be white on a dark canvas — on a light one it is dark
+                           ink, which turned the arrow black. See --ice-start-from
+                           in index.css. */
+                        "grid h-[54px] w-[54px] place-items-center rounded-full",
+                        "text-[color:var(--ice-on-accent)]",
+                        "bg-[linear-gradient(to_bottom,var(--ice-start-from),var(--ice-start-to))]",
                         "transition-all duration-200 ease-[cubic-bezier(.22,1,.36,1)]",
-                        "group-hover:from-azure-bright group-hover:to-azure group-active:scale-95",
+                        "group-active:scale-95",
                         // The glow is the control's whole presence in the bar.
                         "shadow-[0_8px_28px_-6px_var(--ice-azure-glow)]",
                       )}

@@ -22,7 +22,51 @@
    #05070B  #0E1219  #161B24  #EAEEF5  #4B9BFF
    ------------------------------------------------------------------------- */
 
-:root {
+/* ---------------------------------------------------------------------------
+   THE PALETTE — and every DARK ISLAND that carries it.
+
+   `:root` is the app's own ground. The selectors beside it are subtrees that
+   are dark WHATEVER the app's theme is, because what is under them never got
+   lighter: a photograph beneath a scrim, the dark alpine map, the leather of
+   the passport cover. In the dark theme every one of these is a no-op — the
+   values are the ones they would have inherited. Under `data-theme="light"`
+   they are the whole point: the light block at the foot of this file changes
+   the tokens ON `:root`, and a token set on a descendant wins over one
+   inherited from an ancestor regardless of specificity, so each island keeps
+   the dark palette while the page around it goes white.
+
+   WHY THIS IS ONE SELECTOR LIST AND NOT A COPY OF THE VALUES.
+
+   Two lists of the same hexes drift. This file already carries that scar in
+   `TrailPlate.tsx` and `icefallStyle.ts`, where restated tokens sat on the
+   retired champagne gold for weeks after the rebrand. There is one list.
+
+   `.scrim-bottom` / `.scrim-full` are matched two ways because the app uses
+   them two ways: sometimes the scrim IS the box the type sits in, and more
+   often it is an absolutely-positioned sibling of that type. `:has(> …)` puts
+   the tokens on the shared parent for the second case, which is also how the
+   two screens this session may not edit get fixed without being touched.
+
+   `.on-dark` is the manual form, for a dark ground that is not a scrim.
+   --------------------------------------------------------------------------- */
+
+:root,
+.on-dark,
+.scrim-bottom,
+.scrim-full,
+:has(> .scrim-bottom),
+:has(> .scrim-full) {
+  /*
+   * Tailwind's own white, restated so an island can take it BACK.
+   *
+   * The light theme redefines `--color-white` to near-black, which is what
+   * turns all 491 `bg-white/[0.0x]` lifts into ink tints (see the light block).
+   * On a dark island that inversion is exactly wrong — a lift over a
+   * photograph is still light spilling onto it — so the islands reclaim #fff.
+   * On `:root` this line restates Tailwind's default and changes nothing.
+   */
+  --color-white: #fff;
+
   /* Surfaces — near-black through graphite, all carrying a blue cast */
   --ice-obsidian: oklch(0.1277 0.0108 259.6); /* #05070B  app canvas   */
   --ice-graphite: oklch(0.1814 0.0158 261.5); /* #0E1219  cards        */
@@ -44,6 +88,25 @@
   --ice-azure: oklch(0.6868 0.1674 255.4); /* #4B9BFF */
   --ice-azure-bright: oklch(0.8013 0.1024 253.4); /* #8FC2FF */
   --ice-azure-deep: oklch(0.5464 0.1745 260.1); /* #2C6BD4 */
+
+  /*
+   * THE START CONTROL, and the ink that sits on it.
+   *
+   * It borrowed `from-azure to-azure-deep` plus `text-snow`, which is correct on
+   * a dark ground by coincidence rather than by design: `snow` means "primary
+   * TEXT colour", and text is white here only because the canvas is black. Invert
+   * the theme and snow becomes dark ink — so the play triangle turned dark, and
+   * `azure-deep` (a pale gradient END on white) turned the button light grey. The
+   * one control that must always read as the loudest thing in the app became a
+   * grey disc with a dark arrow on it.
+   *
+   * These name the JOB instead: the two ends of the button, and the ink that sits
+   * ON an accent. `on-accent` is white in BOTH themes, because the button is a
+   * saturated blue in one and near-black in the other and white reads on both.
+   */
+  --ice-start-from: var(--ice-azure);
+  --ice-start-to: var(--ice-azure-deep);
+  --ice-on-accent: oklch(1 0 0);
 
   /* Semantic — hue-separated from the accent so state never reads as chrome */
   --ice-summit: oklch(0.6687 0.1119 149.6); /* #5FA86F  complete    */
@@ -75,10 +138,59 @@
   --ice-gilt-bright: oklch(0.8867 0.0836 88.9); /* #F6D9A0 */
   --ice-gilt-deep: oklch(0.6312 0.1113 75.3); /* #A97B33 */
 
+  /*
+   * PLATE SHADE — the deep end of the generated contour plate.
+   *
+   * `TrailPlate` draws a ridgeline and a casing under the route line, and both
+   * were `var(--ice-obsidian)`. That is the right colour on the dark theme by
+   * accident of the canvas being the darkest thing in the palette, and wrong
+   * everywhere else: white at 55% over a near-white plate is nothing, so on the
+   * light theme the ridge and the casing both disappeared and the drawing lost
+   * its depth. What these two actually want is "further into shadow than the
+   * plate ground", which is a separate idea from "the app canvas".
+   */
+  --ice-plate-shade: oklch(0.1277 0.0108 259.6);
+
+  /*
+   * CREDENTIAL — the gold tick on a guide whose qualifications ICEFALL checked.
+   *
+   * A token because it was a raw `#D8B26A` inside `VerificationMark.tsx`, one
+   * of four marks that the file's own header says must never borrow each
+   * other's colour. Off-token literals do not follow a theme: on white it
+   * measured 2.00:1 and the claim disappeared.
+   *
+   * It is NOT `--ice-gilt`. Gilt means "somebody is selling you this", and a
+   * checked qualification is a fact about a person, not a placement. They are
+   * near-neighbours in the dark theme by coincidence of both being gold; the
+   * light values pull them 32deg apart.
+   *
+   * Close to `--ice-alert` in hue, in BOTH themes, and deliberately so: the
+   * dark pair sit 4.5deg apart and are told apart by chroma. They never share a
+   * surface — one is a state on a card, the other a tick beside a name.
+   */
+  --ice-credential: oklch(0.782 0.1008 82.3); /* #D8B26A · 10.08:1 on canvas */
+
+  /*
+   * SHADOWS.
+   *
+   * Four, because there are four jobs, and each was a literal `rgba(0,0,0,…)`
+   * at the call site before this. A black shadow is nearly invisible on
+   * near-black and unmissable on white, so these are the one part of the system
+   * that has to get WEAKER as the ground gets lighter, not stronger. Values on
+   * light are in the ink of the palette rather than neutral black — a neutral
+   * shadow on a cold white reads grubby.
+   */
+  --ice-shadow-banner: 0 6px 18px -8px rgba(0, 0, 0, 0.9);
+  --ice-shadow-pop: 0 18px 50px rgba(0, 0, 0, 0.55);
+  --ice-shadow-chip: 0 8px 24px -8px rgba(0, 0, 0, 0.8);
+  --ice-shadow-shell: 0 40px 120px -30px rgba(0, 0, 0, 0.9);
+
   /* The one border treatment in the entire app */
   --ice-hairline: oklch(1 0 0 / 7%);
   --ice-hairline-strong: oklch(1 0 0 / 12%);
+}
 
+:root {
   --radius-card: 14px;
   --radius-tile: 10px;
   --radius-pill: 999px;
@@ -116,6 +228,7 @@
   --color-summit: var(--ice-summit);
   --color-alert: var(--ice-alert);
   --color-danger: var(--ice-danger);
+  --color-credential: var(--ice-credential);
 
   --color-hairline: var(--ice-hairline);
   --color-hairline-strong: var(--ice-hairline-strong);
@@ -224,6 +337,34 @@
       oklch(0.147 0.0068 236 / 55%) 55%,
       oklch(0.147 0.0068 236 / 35%) 100%
     );
+  }
+
+  /*
+   * A scrim carried by the TYPE instead of laid over the picture.
+   *
+   * Used where a photograph has to stay bright — the home hero, where the
+   * gradients were deliberately lightened at the owner's request — and the
+   * words on it still have to read. The glow is the CANVAS colour, not black,
+   * which is the whole trick: on obsidian it is the near-black halo that was
+   * hard-coded here before, and on white it becomes a white halo, so dark type
+   * over a mid-tone cloud gets the same help in the opposite direction. One
+   * declaration, no branch, and it cannot go stale against the theme.
+   */
+  .type-scrim {
+    text-shadow:
+      0 1px 12px color-mix(in oklab, var(--ice-obsidian) 85%, transparent),
+      0 1px 3px color-mix(in oklab, var(--ice-obsidian) 70%, transparent);
+  }
+
+  /*
+   * `text-shadow` does nothing to an icon, and half of what sits on the home
+   * hero is icons — search, messages, the bell, the readiness dial. They were
+   * getting no help at all from the line above, which was only visible as a
+   * problem once the type around them stopped being white. Same colour, same
+   * geometry, expressed as the one property that reaches an SVG.
+   */
+  .type-scrim :where(svg) {
+    filter: drop-shadow(0 1px 3px color-mix(in oklab, var(--ice-obsidian) 75%, transparent));
   }
 
   /*
@@ -399,3 +540,407 @@
   .icefall-pin { transition: none; }
 
 }
+
+/* ===========================================================================
+   LIGHT — a design study, and NOT the default.
+   ===========================================================================
+
+   The app ships dark. This block only comes alive when something puts
+   `data-theme="light"` on <html> (see index.html — `?theme=light`). Nothing
+   here is reachable otherwise, and no app code branches on it.
+
+   WHY THIS IS A TOKEN BLOCK AND NOT A SWEEP THROUGH 491 CALL SITES.
+
+   The screens are written against a dark ground. Roughly 491 class literals
+   assume it — `bg-white/[0.05]`, `bg-white/[0.02]`, `border-white/10` and the
+   ~94 from-/via-/to-obsidian gradient stops. Each `bg-white/[0.0x]` is a LIFT:
+   white at low alpha brightening a dark card. Drop that on a white page and it
+   is invisible; every card, chip, input and hairline loses its surface.
+
+   Tailwind v4 hands us the fix for free. VERIFIED against this project's own
+   compiler (tailwindcss 4.3.3) rather than assumed — the emitted rule is:
+
+       .bg-white\/\[0\.05\] {
+         background-color: color-mix(in srgb, #fff 5%, transparent);
+         @supports (color: color-mix(in lab, red, red)) {
+           background-color: color-mix(in oklab, var(--color-white) 5%, transparent);
+         }
+       }
+
+   The `@supports` arm wins in every browser this app runs on, and it reads
+   `var(--color-white)` AT RUNTIME. So redefining `--color-white` below turns
+   all 491 lifts into black tints — a dark tint on a light card is exactly the
+   right equivalent of a light tint on a dark card. The literal `#fff` on the
+   first line is the no-color-mix fallback and never applies here.
+
+   The same held for every token utility: `@theme inline` means `bg-graphite`
+   compiles to `background-color: var(--ice-graphite)` and `via-obsidian/85` to
+   `color-mix(in oklab, var(--ice-obsidian) 85%, transparent)`. Both resolve at
+   runtime, so the gradients below fade to white instead of to black without a
+   single JSX edit.
+
+   THE ONE THING THE TRICK CANNOT DO. A lift tops out at pure black, and pure
+   black at 5% over a white card is a measured -0.037 oklch L step, where 5%
+   white over graphite is +0.052. Every light surface separation is therefore
+   ~70% of the strength of its dark counterpart, and no token value can recover
+   the rest. The hairlines below are re-tuned upward to carry the difference:
+   on light, structure comes from edges more than from fills.
+   ------------------------------------------------------------------------- */
+
+:root[data-theme="light"] {
+  /*
+   * THE LIFT INK.
+   *
+   * This is the load-bearing line of the whole block. Redefining Tailwind's
+   * `--color-white` inverts every `bg-white/[0.0x]`, `border-white/10`,
+   * `ring-white/10` and `divide-white/[0.06]` in the app at once.
+   *
+   * Near-black rather than #000 because the tint has to belong to the same
+   * family as the surfaces — a neutral black tint over a cool white reads
+   * slightly dirty next to cold greys. It costs almost nothing: at 5% alpha
+   * the composite differs from pure black by 0.0008 oklch L, well under a
+   * just-noticeable difference.
+   */
+  --color-white: oklch(0.12 0.017 262); /* #03060C */
+
+  /*
+   * Surfaces — the ladder RUNS DARKER AS IT RISES, which is the opposite of
+   * the dark theme and is forced, not stylistic. You cannot go lighter than
+   * the canvas, and more importantly the 491 inverted lifts now ADD ink. If
+   * cards got whiter as they raised, every `bg-white/[0.05]` chip would fight
+   * its own card. Elevation = one more coat of ink, consistently.
+   *
+   * The canvas is a true #FFFFFF; the other three carry hue 261 at chroma
+   * 0.003-0.006. Cold, matching the dark theme's 259-264 cast, but a tenth of
+   * its chroma: at L 0.92-0.97 a neutral reads as a tint far sooner than it
+   * does at L 0.18, and anything stronger stops looking like a white app and
+   * starts looking like a blue one. Cool rather than warm because warm greys
+   * at this lightness read as paper and cream, which is the wrong material for
+   * a mountain app — snow in shade is blue.
+   *
+   * Steps of 0.026 / 0.026 / 0.030 oklch L. Roughly half the dark theme's
+   * step, because the whole ladder has to fit between white and a grey still
+   * light enough to read as white.
+   */
+  --ice-obsidian: oklch(1 0 0); /* #FFFFFF  app canvas   */
+  --ice-graphite: oklch(0.974 0.0034 261); /* #F5F6F9  cards        */
+  --ice-slate: oklch(0.948 0.0048 261); /* #ECEEF1  raised       */
+  --ice-elevated: oklch(0.918 0.0062 261); /* #E1E4E8  inputs/chips  */
+
+  /*
+   * Ink — the three weights, hierarchy preserved, measured against the canvas.
+   *
+   *   snow      16.00:1  (dark theme: 17.33:1)
+   *   mist       6.60:1  (dark theme:  6.61:1)
+   *   mist-dim   4.60:1  (dark theme:  3.34:1)
+   *
+   * Primary is deliberately #1D222A and not black: it is the dark theme's own
+   * `--ice-slate`, and 16:1 is past the point where more contrast only adds
+   * harshness on a bright screen.
+   *
+   * Tertiary is the one place this block does NOT mirror the dark theme. At
+   * 3.34:1 the dark tertiary already fails AA for small text, and `.section-label`
+   * renders it at 10px. Mirroring the ratio would have carried the defect over,
+   * so it is set to 4.60:1 instead. The hierarchy still reads because the gap
+   * to secondary (6.60) is what the eye sorts on, not the absolute value.
+   */
+  --ice-snow: oklch(0.25 0.0165 262); /* #1D222A  primary text */
+  --ice-mist: oklch(0.478 0.03 264); /* #545D6E  secondary    */
+  --ice-mist-dim: oklch(0.563 0.029 264); /* #6D7687  tertiary     */
+
+  /*
+   * Accent — alpine azure, darkened until it survives a white ground.
+   *
+   * #4B9BFF is 2.26:1 on white and fails everything. It has to go to L 0.556.
+   *
+   * The bright/deep pair INVERTS, and it has to. On dark, `azure-bright` is
+   * the lighter, louder one; the invariant worth keeping is not "lighter" but
+   * "further from the ground", so on white the loud one is the darker one.
+   * Two independent call sites confirm the direction: `text-azure-bright`
+   * (33 uses) needs to beat plain azure for legibility, and the primary button
+   * is `bg-azure text-obsidian hover:bg-azure-bright` — with obsidian now
+   * white, the hover fill must stay dark enough to carry white type.
+   *
+   * That button pattern is also the quiet proof that the inversion is sound:
+   * "azure dark enough to read AS text on white" and "azure dark enough to
+   * carry white text" are the same constraint, so ~180 primary buttons keep
+   * working with no edit.
+   *
+   *   azure         4.80:1 on canvas · 3.77:1 on chips · white-on-azure 4.80:1
+   *   azure-bright  6.80:1 on canvas · 5.33:1 on chips
+   *   azure-deep    2.20:1 — NOT text. It is only ever a gradient end
+   *                 (`to-azure-deep`, 2 uses), and its job is to fade toward
+   *                 the ground, so on light it fades pale.
+   */
+  /*
+   * THE OWNER ASKED FOR DARK INSTEAD OF BLUE, 2026-09-03, and it is the right
+   * call for a white ground for a reason worth writing down: on black, azure was
+   * the brightest thing on screen and the eye went to it. On white, NOTHING is
+   * brighter than the page, so the accent's job passes to whatever is DARKEST.
+   * A blue accent on white is competing with black and losing — it reads as a
+   * link colour rather than as emphasis.
+   *
+   * So the accent here is near-black with the same blue cast the surfaces carry
+   * (hue 261, tiny chroma), not a dead grey. It is ICEFALL's blue taken all the
+   * way down rather than a different colour.
+   *
+   * WHAT THIS COSTS, said plainly because it is a real loss: colour no longer
+   * distinguishes a link from ordinary text. `text-azure` appears on inline
+   * links ("Full forecast", "Log today's check-in") and those now differ from
+   * body copy by weight and underline alone. That is legible, and it is how a
+   * printed page has always done it — but it is a downgrade from a blue that
+   * announced itself, and if a link ever goes unnoticed this is why.
+   *
+   * The bright/deep pair still inverts, as the dark theme's note explains: on a
+   * light ground "brighter" must mean DARKER to stay legible.
+   *
+   *   azure         15.9:1 on canvas · 12.5:1 on chips — far past AA
+   *   azure-bright  18.4:1 — the hover/active state, darker still
+   */
+  --ice-azure: oklch(0.255 0.019 261); /* #1B2130 */
+  --ice-azure-bright: oklch(0.185 0.017 261); /* #121724 */
+
+  /* The owner asked for a BLACK button with a WHITE arrow. `azure-deep` stays a
+     pale neutral for the two gradient fades that genuinely want one, so the
+     START control gets its own ends rather than borrowing that. A whisper of a
+     gradient, top slightly lighter, so it reads as a physical object rather than
+     a flat hole punched in the bar. */
+  --ice-start-from: oklch(0.285 0.019 261); /* #232939 */
+  --ice-start-to: oklch(0.175 0.016 261); /* #111623 */
+  /* The gradient END, never text. It was a pale blue chosen to fade toward a
+     blue accent; with the accent now near-black it fades toward the wrong
+     colour, so it becomes a light neutral of the same hue family. */
+  --ice-azure-deep: oklch(0.905 0.008 261); /* #E2E4E9 */
+
+  /*
+   * Semantic — meaning kept, hue separation kept, both re-measured.
+   *
+   *   summit  4.60:1 on canvas · white-on-summit 4.60:1 (`bg-summit text-obsidian`)
+   *   alert   4.56:1 on canvas
+   *   danger  4.90:1 on canvas · white-on-danger 4.90:1
+   *
+   * Alert sits at chroma 0.115, one notch under the 0.117 sRGB ceiling at this
+   * lightness and hue. Asking for more produces a value the screen cannot
+   * render, and a declared colour that is not the painted colour is a lie in
+   * the stylesheet.
+   */
+  --ice-summit: oklch(0.5502 0.115 150); /* #37844C  complete    */
+  --ice-alert: oklch(0.568 0.115 82); /* #986F07  caution     */
+  --ice-danger: oklch(0.5661 0.16 30); /* #C24838  severe      */
+
+  /*
+   * The glow under the START control and the active tab.
+   *
+   * On black a glow is light spilling outward. On white there is no light to
+   * spill, so the same gesture has to be a coloured shadow instead: the deep
+   * azure at lower alpha, reading as a halo rather than a bloom.
+   */
+  /* The halo under the START control. A BLUE glow beneath a near-black button
+     is the one place the old accent would still show, and it would read as a
+     stray colour rather than as a glow. Same ink, low alpha — a shadow now,
+     which is what a glow becomes on paper. */
+  --ice-azure-glow: oklch(0.255 0.019 261 / 18%);
+
+  /*
+   * GILT — the commercial layer, and the hardest colour in the palette.
+   *
+   * The rule it exists to serve is unchanged: azure is the athlete's own
+   * product, gilt is where money and other people's businesses are, and a
+   * climber should be able to tell from the colour alone that they have
+   * crossed from the thing they own into the thing somebody is selling.
+   *
+   * #E5B455 is 1.79:1 on white. Gold cannot survive here — the hue's gamut
+   * peaks at high lightness, so the only way down to a readable 6:1 is
+   * through bronze. That is the honest light-theme reading of gold anyway:
+   * on paper, gilding is a dark metal, not a bright one.
+   *
+   * THE HUE MOVED, ON PURPOSE. Dark gilt sits 6.7deg from `--ice-alert`, which
+   * is the weakest separation in the whole dark palette and only survives
+   * because gilt is much lighter there. Darken both for a white ground and
+   * they collapse into the same brown. So gilt is pulled 32deg red-ward, to
+   * copper at hue 52, opening the gap to 30deg and adding 0.063 L and 0.023 C
+   * on top. Three axes instead of one.
+   *
+   * The budget for that came out of gilt/danger, which drops from 51.6deg to
+   * 22deg. That trade is deliberate: gilt is chrome and danger is a state, so
+   * mistaking one for the other costs less than mistaking an advertisement for
+   * a warning — which is the exact confusion the dark theme's comment says
+   * this colour must never cause. They are still held apart by chroma (0.092
+   * against 0.160): gilt is muted metal, danger is saturated red.
+   *
+   *   gilt         6.07:1 on canvas · 4.76:1 on chips
+   *   gilt-bright  8.03:1 — the loud one, so on white the darkest one
+   *   gilt-deep    2.41:1 — the recessive wash, so on white the palest one
+   *
+   * The bright/deep pair inverts for the same reason azure's does: what is
+   * preserved is the ranking by distance from the ground, not the lightness.
+   */
+  --ice-gilt: oklch(0.505 0.092 52); /* #8E542F */
+  --ice-gilt-bright: oklch(0.44 0.088 48); /* #794223 */
+  --ice-gilt-deep: oklch(0.7318 0.062 56); /* #C79F83 */
+
+  /*
+   * The one border treatment in the entire app — re-tuned, not mirrored.
+   *
+   * 7% black on white is NOT the same visual weight as 7% white on near-black,
+   * and mirroring the numbers would have thinned every border in the app.
+   * Measured in oklch L against each theme's own canvas:
+   *
+   *   dark   7% white on #05070B  ->  +0.0825
+   *   light 11% ink   on #FFFFFF  ->  -0.0824   <- matched
+   *   dark  12% white on #05070B  ->  +0.1354
+   *   light 18% ink   on #FFFFFF  ->  -0.1358   <- matched
+   *
+   * These carry more than their share here. Because the inverted lifts land at
+   * ~70% of their dark strength (see the header), the edges are what keep a
+   * card looking like a card.
+   */
+  --ice-hairline: oklch(0.12 0.017 262 / 11%);
+  --ice-hairline-strong: oklch(0.12 0.017 262 / 18%);
+
+  /*
+   * CREDENTIAL on white.
+   *
+   * #D8B26A is 2.00:1 here — the tick is in the DOM, the layout reserves its
+   * box, and the reader cannot see the one claim it exists to make.
+   *
+   *   credential  4.83:1 on canvas · 4.47:1 on card · 3.79:1 on chip
+   *
+   * The lightness is spent on contrast, so the separation from `--ice-alert`
+   * is bought with hue and chroma instead: 6deg and 0.029 apart here, against
+   * 4.5deg and 0.026 in the dark theme. Slightly BETTER separated than the
+   * pair this theme is copying, not worse.
+   */
+  --ice-credential: oklch(0.552 0.086 88); /* #876F31 */
+
+  /*
+   * PLATE SHADE on white. Two steps of grey below the plate's own ground
+   * (#ECEEF1 -> #FFFFFF), so the ridgeline reads as shadow rather than as a
+   * second contour, and the route's casing still separates the line from the
+   * rings it crosses. 2.01:1 against the canvas — not type, and not trying to
+   * be: it is the shading on an illustration.
+   */
+  --ice-plate-shade: oklch(0.78 0.008 261); /* #B4B7BD */
+
+  /*
+   * SHADOWS, weakened.
+   *
+   * Every one of these was near-invisible on obsidian — a black shadow on a
+   * near-black page is a gesture, not a thing you see. On white the same values
+   * are hard grey smudges, and the banner's in particular drew a dirty band
+   * across the top of every screen. Alphas drop by roughly half and the colour
+   * becomes the palette's ink rather than neutral black.
+   */
+  --ice-shadow-banner: 0 5px 14px -10px oklch(0.12 0.017 262 / 45%);
+  --ice-shadow-pop: 0 16px 40px -14px oklch(0.12 0.017 262 / 26%);
+  --ice-shadow-chip: 0 8px 20px -10px oklch(0.12 0.017 262 / 30%);
+  --ice-shadow-shell: 0 40px 100px -40px oklch(0.12 0.017 262 / 38%);
+}
+
+/* ---------------------------------------------------------------------------
+   Light-theme component repairs.
+
+   Everything above is a variable and needed no rule of its own. These four are
+   the places in this file where a colour was written as a literal rather than a
+   token, so the light ground has to be handled by hand.
+   --------------------------------------------------------------------------- */
+
+/*
+ * Selection: gold-on-dark becomes azure-on-light. Kept at low alpha so it
+ * tints the word rather than boxing it.
+ */
+:root[data-theme="light"] ::selection {
+  background: oklch(0.5564 0.162 258 / 20%);
+  color: var(--ice-snow);
+}
+
+/*
+ * The best-match card's surface.
+ *
+ * The dark version is three layers of light ADDED to a dark panel. Light
+ * cannot be added to a near-white card, so the same three gestures are
+ * re-expressed as bronze taken away: a raking wash across the top-left, a
+ * warm tint over the whole panel, and a bronze top edge where the dark theme
+ * had a lit one. The outer shadow stays warm so the card still lifts.
+ *
+ * It has to survive the same test as the original: read as lit metal, not as
+ * a coloured box, and never as an alert.
+ */
+:root[data-theme="light"] .gilt-sheen {
+  background-image:
+    linear-gradient(
+      118deg,
+      oklch(0.505 0.092 52 / 13%) 0%,
+      oklch(0.505 0.092 52 / 6%) 26%,
+      transparent 58%
+    ),
+    linear-gradient(
+      to bottom,
+      oklch(0.505 0.092 52 / 7%) 0%,
+      oklch(0.505 0.092 52 / 3%) 100%
+    );
+  box-shadow:
+    inset 0 1px 0 0 oklch(0.505 0.092 52 / 24%),
+    0 2px 18px -8px oklch(0.505 0.092 52 / 34%);
+}
+
+/*
+ * Skeleton shimmer.
+ *
+ * The dark version sweeps white at 6% across a dark placeholder. On light the
+ * placeholder is already #E9EAED, so a white sweep across it is a 0.004 L
+ * change — invisible. The sweep inverts to ink: on a near-white ground the
+ * travelling band has to darken to be seen at all.
+ */
+:root[data-theme="light"] .icefall-shimmer::after {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    oklch(0.12 0.017 262 / 8%) 45%,
+    oklch(0.12 0.017 262 / 8%) 55%,
+    transparent
+  );
+}
+
+/*
+ * Film grain.
+ *
+ * `overlay` leaves white untouched, so the dark theme's grain is simply inert
+ * on this ground. Its stated job — keeping large black fields from banding —
+ * does not exist on a white page, so this is texture only: `multiply` at a
+ * lower opacity, enough to keep the surface from reading as flat paper.
+ */
+:root[data-theme="light"] .grain::after {
+  mix-blend-mode: multiply;
+  opacity: 0.02;
+}
+
+/*
+ * Map pins.
+ *
+ * Fill, ring and selected state are all tokens and invert on their own — a
+ * white ring around a deep-azure pin is right on a light map. Only the drop
+ * shadow is a literal, and 55% black under a pin on a white ground reads as
+ * dirt rather than depth.
+ */
+:root[data-theme="light"] .icefall-pin {
+  box-shadow: 0 1px 4px oklch(0.12 0.017 262 / 26%);
+}
+
+/*
+ * NOT OVERRIDDEN, DELIBERATELY: `.scrim-bottom` and `.scrim-full`.
+ *
+ * Those gradients do not belong to the theme. They sit between photography and
+ * the white type laid over it, and the photographs do not get lighter because
+ * the app did. Inverting them would put pale type on a pale scrim over a
+ * mid-tone image and make the captions unreadable. They stay dark in both
+ * themes because they are lighting for the photo, not chrome for the page.
+ *
+ * THE HALF THIS ARGUMENT ORIGINALLY MISSED. Keeping the scrim dark is only half
+ * a decision: the type ON it was `text-snow`, and `--ice-snow` is ink here, so
+ * every caption, peak name and trek duration in the app turned dark-on-dark and
+ * vanished. A scrim is not just a dark rectangle, it is a dark GROUND, and a
+ * ground carries a whole palette. That is what the island selector list at the
+ * top of this file is for; `.scrim-bottom`, `.scrim-full` and their parents are
+ * named in it, so the type over them stays the light type it was drawn as.
+ */
