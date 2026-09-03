@@ -939,7 +939,19 @@ export default function Profile() {
         <Rise className="pt-6">
           <button
             type="button"
-            onClick={resetAll}
+            /*
+              RELOAD, LIKE THE OTHER TWO CALL SITES — this one had neither.
+              `resetAll` empties localStorage, but several stores keep a
+              module-level copy of what they last read (Nutrition's `fuelCurrent`
+              is one). Without a reload those copies survive the erase and the
+              next write puts them straight back, so the button reported success
+              and undid itself. The other two sites navigate and reload; this one
+              only ever called the function.
+            */
+            onClick={() => {
+              resetAll();
+              window.location.replace("/");
+            }}
             className="flex items-center gap-2 text-[12px] text-mist-dim transition-colors hover:text-danger"
           >
             <RotateCcw size={13} strokeWidth={1.8} />

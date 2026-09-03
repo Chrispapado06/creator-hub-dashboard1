@@ -18,6 +18,12 @@ import { coarsen } from "@/network/privacy";
 import type { GroupMessage, GroupStyle, GroupTrainingSession, RsvpStatus } from "@/network/groups";
 import type { ItemStatus, PackItem } from "@/services/checklist";
 import { normalise as normaliseBudget, type BudgetState } from "@/coach/budget";
+import type { Sex } from "@/coach/fuelDay";
+/* The fuel record's one public door. See `rememberSexForEnergyFromSignup`: the
+   signup sex answer has to reach `icefall.fuel.v1`, because that record is the
+   only sex input the daily energy estimate has, and this is the only sanctioned
+   way to write it from outside the Fuel screen. */
+import { rememberSexForEnergy } from "@/coach/fuelRecord";
 
 /**
  * Personalisation is the product's central principle, so onboarding answers,
@@ -77,6 +83,194 @@ function seedObjectives(): SavedObjective[] {
 }
 
 /**
+ * Gender, as the athlete states it.
+ *
+ * THE FOUR VALUES ARE THE COLUMN'S FOUR VALUES. `20260903040000` puts a CHECK
+ * on `athlete_profiles.gender` naming exactly these strings, so this union and
+ * that constraint are one vocabulary written down twice. If one ever gains a
+ * value the other does not, the write comes back `23514 check_violation` — a
+ * code `pgErrors.ts` classifies as "unknown", which produces the vaguest
+ * sentence this app owns. Change both, in the same commit, or neither.
+ *
+ * "prefer-not-to-say" IS A VALUE HERE, NOT AN ABSENCE, and that is the single
+ * most important thing about this type. It is deliberately unlike the way this
+ * same file records a declined height, which is a boolean flag beside a missing
+ * number — a numeric column cannot hold the word "declined", so the flag is the
+ * only place the answer can live. A text column can hold it, so it does, and
+ * one column with one representation cannot be read wrongly by somebody who
+ * never saw the flag. `undefined` here means the question was never put; it
+ * does not mean somebody refused it, and the two must never collapse (§6ag).
+ *
+ * NOT SEX ASSIGNED AT BIRTH. They are different questions asked for different
+ * reasons, and a woman may still need the male figure out of a resting-energy
+ * equation. Nothing in ICEFALL reads this field, and nothing may start reading
+ * it as the sex term of a metabolic formula — that needs its own question, its
+ * own column, and its own honest explanation of what it is for.
+ */
+export type Gender = "woman" | "man" | "non-binary" | "prefer-not-to-say";
+
+/**
+ * Sex assigned at birth, as the athlete answered it.
+ *
+ * ── THIS IS NOT `Gender` AND IT IS NOT A WIDER `Gender` ────────────────────
+ *
+ * Read the comment above this one first. They are two questions, asked on two
+ * screens, stored in two columns, for two unrelated reasons, and the owner
+ * chose to ask both after being told exactly what the second one buys.
+ *
+ * GENDER IS IDENTITY. SEX IS A TERM IN AN EQUATION. Mifflin-St Jeor's sex term
+ * is a constant — +5 kcal for male, -161 for female — so a woman may well need
+ * the male figure out of it, and a man the female one. Collapsing these two
+ * types into one hands her the wrong number and hands it to her SILENTLY, with
+ * no screen saying which term was used. That is the failure this codebase
+ * exists to refuse, which is why `Gender` was not widened to hold "female" and
+ * "male" and why nothing here may ever read one field as the other.
+ *
+ * ── THREE VALUES STORED, TWO EXPOSED, AND THAT ASYMMETRY IS THE DESIGN ─────
+ *
+ * `athlete_profiles.sex_at_birth` has a CHECK naming exactly these three
+ * strings, and NULL on top of them for "never asked" — four distinguishable
+ * states in the database, because "eleven people declined" and "eleven people
+ * were never asked" are different facts about ICEFALL and a schema that cannot
+ * tell them apart can never be asked which it is looking at.
+ *
+ * The equation does not want four states. It wants a sex or nothing. So the
+ * collapse happens once, here, in `sexTermFor`, where it is visible.
+ *
+ * The two real answers are BYTE-IDENTICAL to the two members of fuelDay's
+ * `Sex`, on purpose: no lookup table, no mapping object, nothing for a
+ * translation to drift out of step with. If `Sex` ever gains or renames a
+ * member, `sexTermFor` stops compiling — which is the entire reason it is
+ * typed against the imported union rather than against a copy of it.
+ */
+export type SexAtBirth = "female" | "male" | "prefer-not-to-say";
+
+/**
+ * The one place the four database states become the two the equation takes.
+ *
+ * IT FAILS CLOSED, AND THAT IS THE WHOLE POINT. Declined, never asked, and any
+ * value this build does not recognise all become `undefined`. `fuelDay.ts`
+ * treats `undefined` as its default path already: it evaluates the published
+ * equation at BOTH sex terms and reports the span, and it says so on the screen
+ * in words — "It spans both values of the equation's sex term, because ICEFALL
+ * doesn't hold one." So the failure mode of this function is a WIDER band and a
+ * sentence explaining why, never a guess. A version that defaulted to one sex
+ * would be ICEFALL inventing somebody's metabolism, and it would look identical
+ * on screen to a real answer.
+ *
+ * Nothing else in the app may branch on `SexAtBirth`. If a second reader ever
+ * appears, it goes through this function too, or the two readers will disagree
+ * about what a decline means on the day somebody edits only one of them.
+ */
+export function sexTermFor(answer: SexAtBirth | undefined | null): Sex | undefined {
+  return answer === "female" || answer === "male" ? answer : undefined;
+}
+
+/**
+ * The signup answer, translated into the two fields the energy estimate reads.
+ *
+ * ── WHY THIS EXISTS AT ALL ────────────────────────────────────────────────
+ *
+ * The question shipped once collecting the answer and delivering nothing. It
+ * was written to `athlete_profiles.sex_at_birth`, written to the `answers`
+ * blob, and read by NOTHING — while the step, the payoff panel and the column
+ * comment all told the athlete it narrowed their daily energy estimate. Somebody
+ * handed over a private fact in exchange for a benefit that did not exist. That
+ * is worse than never asking, and this function is the repair.
+ *
+ * ── WHERE THE ANSWER ACTUALLY HAS TO LAND ─────────────────────────────────
+ *
+ * `screens/Nutrition.tsx` passes `fuel.sexForEnergy` into `dailyEnergyFor`, and
+ * `fuel` is the `icefall.fuel.v1` localStorage record. That record — not the
+ * database column, not the answers blob — is the only sex input the estimate
+ * has. So the answer has to reach it, and it has to arrive in the exact shape
+ * the Fuel screen's own question writes, or the two halves of one question end
+ * up meaning different things.
+ *
+ * `coach/fuelRecord.ts` owns that key and that shape; this file does not
+ * re-type either. An earlier plan duplicated both here with a note apologising
+ * for it, because the accessor was private to a screen. It is no longer: the
+ * setter is exported, so a rename over there is a compile error here instead of
+ * a silent stop to the narrowing.
+ *
+ * ── THE COLLAPSE HAPPENS ONCE, AND IT HAPPENS HERE ────────────────────────
+ *
+ * Four database states, two equation states. `sexTermFor` above is the only
+ * place that narrowing is allowed to happen, and this is its caller — the
+ * decline is recognised in the same function so there is still exactly ONE
+ * reader of `SexAtBirth` in the app, as the comment on that type requires.
+ *
+ * IT FAILS CLOSED, TWICE OVER. `sexTermFor` returns undefined for anything that
+ * is not "female" or "male", and the decline arm matches one exact string. That
+ * matters more than it looks: sign-in on a second device restores the answers
+ * blob straight out of `jsonb` and casts it, so this can be handed any string
+ * at all. An unrecognised one stores nothing, the estimate keeps spanning both
+ * terms, and the screen keeps saying why. Never a guess.
+ *
+ * NEVER CLOBBERS. `rememberSexForEnergy` refuses to overwrite an answer already
+ * in the record — including a decline, which is an answer. Onboarding normally
+ * runs first so the record is usually absent, but somebody re-running signup
+ * after answering on the Fuel screen must not silently lose the later answer.
+ * The Fuel screen stays the place to change it, so nothing is trapped.
+ */
+function rememberSexForEnergyFromSignup(answer: SexAtBirth | undefined | null): void {
+  const sex = sexTermFor(answer);
+  if (sex !== undefined) {
+    // `sexForEnergyDeclined: false` is passed so this call reads identically to
+    // the Fuel screen's own (`screens/Nutrition.tsx`, the sex ChoiceField). The
+    // accessor stores the flag only when it is true, so the record ends up
+    // `{ sexForEnergy: "male" }` rather than carrying a false — which every
+    // reader treats the same, since all of them test `!== true`.
+    rememberSexForEnergy({ sexForEnergy: sex, sexForEnergyDeclined: false });
+    return;
+  }
+  // "Prefer not to say" is an ANSWER and has to land as one. The Fuel screen's
+  // own decline writes exactly this, and matching it means the estimate widens
+  // honestly AND the Fuel screen does not put the same question again to
+  // somebody who has already said no to it.
+  if (answer === "prefer-not-to-say") {
+    rememberSexForEnergy({ sexForEnergyDeclined: true });
+  }
+  // Anything else — undefined, null, a string this build does not know — is
+  // "never asked". Nothing is written, because writing something would be this
+  // file answering a question about somebody's body on their behalf.
+}
+
+/**
+ * Where somebody says they found ICEFALL.
+ *
+ * A CLOSED SET, matching the `heard_about_channels` rows that `20260903040000`
+ * seeds, because `athlete_profiles.heard_about` carries a real foreign key to
+ * that table. Free text was rejected upstream for the reason that matters:
+ * "Instagram / instagram / IG / insta" is one channel and five rows, and the
+ * failure is silent — the report renders, the bars have heights, and the
+ * biggest real channel is smeared across a tail that reads like noise.
+ *
+ * SELF-REPORTED AND UNVERIFIED. Nothing checks any of it. There is no analytics
+ * package in this app, no UTM capture and no install referrer, so a chart of
+ * this field is a chart of what people remembered, and any screen that ever
+ * draws one has to say so — a bar chart is the most convincing shape an
+ * unverifiable number can be given.
+ *
+ * The last three name no place. They are answers all the same: somebody who
+ * cannot remember has told ICEFALL something true, and it is not the same thing
+ * as never having been asked.
+ */
+export type HeardAboutChannel =
+  | "friend"
+  | "guide-or-operator"
+  | "instagram"
+  | "youtube"
+  | "tiktok"
+  | "reddit"
+  | "podcast"
+  | "search"
+  | "article"
+  | "somewhere-else"
+  | "dont-remember"
+  | "prefer-not-to-say";
+
+/**
  * What "none" was actually answered to.
  *
  * Owner ruling 2026-09-01: every onboarding question must be answered, and
@@ -113,6 +307,68 @@ export interface OnboardingAnswers {
   altitudeIllness?: string | null;
   /** Where training starts FROM, so a plan is not built for a body at rest. */
   trainingBaseline?: string | null;
+  /**
+   * Gender, as given on the signup flow's "A few numbers about you." screen.
+   *
+   * READ BY NOTHING. It changes no session, no plan, no readiness figure and no
+   * calorie estimate, and the screen that asks it says exactly that before the
+   * answer is given. It is here because it belongs on a profile and because the
+   * owner asked for it, not because something downstream is waiting on it. The
+   * day anything does read it, the note on the step and the line on the payoff
+   * screen both stop being true and have to change with it.
+   *
+   * Optional, like everything else on this interface, so records written before
+   * the question existed load unchanged and read as never-asked — which is what
+   * they are. There is no backfill and there must not be one: a default here
+   * would be ICEFALL answering a question on somebody's behalf.
+   */
+  gender?: Gender;
+  /**
+   * Sex assigned at birth, as given on its own step in the signup flow.
+   *
+   * THE ONLY ANSWER ON THIS INTERFACE THAT NARROWS A LIVE NUMBER RATHER THAN
+   * BEING RECORDED AND LEFT ALONE, and `completeOnboarding` below is what makes
+   * that true — it hands this field to `rememberSexForEnergyFromSignup`, which
+   * is the whole path from the tap to the estimate. Delete that call and every
+   * sentence in this comment becomes a lie again.
+   *
+   * WHAT IT NARROWS, AND WHY NO SCREEN QUOTES A FIGURE FOR IT. Three screens
+   * used to say "166 kcal". 166 is real but it is not that number: it is the
+   * gap between the two sex intercepts of Mifflin-St Jeor, +5 and -161, inside
+   * the RESTING term. What the athlete actually sees narrow is the DAY, and the
+   * day puts the resting band through a ±10% individual spread and then a
+   * physical-activity multiplier, so the width it removes was measured across
+   * plausible bodies at 50 to 600 kcal — never 166 for anybody. `narrowingWorth`
+   * in `coach/fuelDay.ts` computes the athlete's own figure and the Fuel screen
+   * prints it; a fixed number belongs nowhere else. It is NOT a body-composition
+   * field —
+   * `coach/nutrition.ts` is explicit that ICEFALL sets no weight target and no
+   * body-composition target, and this field does not weaken that sentence.
+   *
+   * A DIFFERENT QUESTION FROM `gender`, which sits immediately above it here
+   * and immediately before it in the flow. Never read one as the other. See
+   * `SexAtBirth` and `sexTermFor` for why, at length.
+   *
+   * `"prefer-not-to-say"` is a value, not an absence. Undefined means the
+   * question was never put — which is every record written before 2026-09-03,
+   * and there is no backfill because a default here would be ICEFALL answering
+   * a question about somebody's body on their behalf.
+   */
+  sexAtBirth?: SexAtBirth;
+  /**
+   * Where they say they found ICEFALL.
+   *
+   * THE ONE ANSWER IN THIS FLOW THAT IS FOR ICEFALL RATHER THAN FOR THE ATHLETE,
+   * and the step says so in those words. It buys them nothing, so it is the one
+   * question whose "I'd rather not say" costs the person answering it nothing
+   * at all.
+   *
+   * Undefined means never asked. That distinction is the whole value of the
+   * field: everybody who signed up before this question existed will read as
+   * undefined forever, and a report that counted them as "didn't say" would be
+   * describing ICEFALL's own rollout while claiming to describe its audience.
+   */
+  heardAbout?: HeardAboutChannel;
   name: string;
   disciplines: Discipline[];
   experience: ExperienceLevel;
@@ -681,6 +937,31 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const goals = useMemo<Goal[]>(() => [...state.customGoals, ...SEEDED_GOALS], [state.customGoals]);
 
   const completeOnboarding = useCallback((a: OnboardingAnswers) => {
+    /**
+     * THE ONE ANSWER ON THIS OBJECT THAT CHANGES A LIVE NUMBER, SENT WHERE THAT
+     * NUMBER IS COMPUTED.
+     *
+     * This function used to persist five things — onboarded, name, disciplines,
+     * experience and any goal — and drop the rest, `sexAtBirth` included. That
+     * was fine for gender and for where they heard about ICEFALL, which are
+     * recorded and read by nothing and whose screens say so. It was not fine for
+     * this one: three screens promised it narrowed the daily energy estimate,
+     * and nothing carried it to the estimate.
+     *
+     * DELIBERATELY OUTSIDE `setState`. The updater below is invoked twice under
+     * StrictMode; a localStorage write in there would run twice and, worse,
+     * would put an effect inside a function React is entitled to treat as pure.
+     *
+     * THIS ALSO COVERS SIGN-IN ON A SECOND DEVICE, which is why it belongs here
+     * and not in the signup screen. `screens/auth/Auth.tsx` restores the answers
+     * blob from the server and calls this function with it, so a new phone gets
+     * the narrowed estimate without re-asking a question already answered. That
+     * path hands over raw `jsonb`, so the validation is not decorative — see
+     * `rememberSexForEnergyFromSignup`, which fails closed on anything it does
+     * not recognise.
+     */
+    rememberSexForEnergyFromSignup(a.sexAtBirth);
+
     setState((s) => {
       /**
        * Only create a goal when the athlete named one we don't already track —
@@ -733,13 +1014,46 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  /*
+   * "ERASE ALL DATA" — BY PREFIX, BECAUSE A LIST GOES STALE AND A PROMISE DOES NOT.
+   *
+   * This removed exactly two keys. The app writes THIRTY-SIX. So the button
+   * labelled "Erase all data and replay onboarding" left behind the food log and
+   * hydration, the sex answer, posts, comments, summit logs, the profile — name,
+   * bio, avatar and banner — the block list, the follow list, filed reports and
+   * the queue of reports not yet sent, readiness history, and a half-finished
+   * recording. On a shared, sold or returned phone the next person inherited all
+   * of it, and on this app that includes health data and somebody's answer to a
+   * question about their body.
+   *
+   * It was not wrong when it was written; it was written when two stores existed
+   * and every store added since was a key nobody came back to add. That is the
+   * failure mode a list has and a rule does not, which is why this now clears by
+   * PREFIX: everything under `icefall.` goes, including keys that do not exist
+   * yet. A store added tomorrow is erased by this function without anybody
+   * remembering to come here.
+   *
+   * ANYTHING THAT MUST SURVIVE GOES IN `KEEP`, WITH ITS REASON. The list is empty
+   * on purpose. A device-display preference is a weak reason to survive a reset,
+   * and a reset that keeps something the person was not told about is the same
+   * broken promise in miniature.
+   *
+   * The real fix for the shared-phone case is sign-out clearing per-person state,
+   * which it deliberately does not do (see `signOut`) — this button is the only
+   * complete erase the app has, so it has to actually be complete.
+   */
   const resetAll = useCallback(() => {
     setState(EMPTY);
-    // Recorded activities, points and achievements live in their own store —
-    // a "reset app" that left them behind wasn't a reset.
+    const KEEP = new Set<string>();
     try {
-      localStorage.removeItem("icefall.activities.v1");
-      localStorage.removeItem("icefall.athlete.v1");
+      /* Collected before removing: mutating localStorage while iterating its
+         index re-numbers the remaining keys and silently skips every other one. */
+      const doomed: string[] = [];
+      for (let i = 0; i < localStorage.length; i += 1) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith("icefall.") && !KEEP.has(k)) doomed.push(k);
+      }
+      doomed.forEach((k) => localStorage.removeItem(k));
     } catch {
       /* private mode — nothing to clear */
     }
