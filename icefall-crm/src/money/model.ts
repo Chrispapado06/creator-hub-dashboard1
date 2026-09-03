@@ -1,6 +1,14 @@
 /**
  * ICEFALL — the money model.
  *
+ * ═══ RE-SKIN NOTICE, 2026-09-03 ═══
+ * A visual pass over the CRM must NOT change anything in this file. It is copied
+ * verbatim into three other apps (see below), so a formatting convention picked
+ * up from a theme would travel to trees this task never opened and make four
+ * apps disagree about what a client owes. Re-skin the SCREENS that render money;
+ * leave the model alone. If it genuinely has to change, it changes here first
+ * and every copy is updated the same day.
+ *
  * CANONICAL COPY. This file lives in `icefall-shared/` and is copied verbatim
  * into icefall-app, icefall-guide and icefall-admin. Edit it HERE and re-copy;
  * three drifting definitions of what a client owes is the worst possible bug in

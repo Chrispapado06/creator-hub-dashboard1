@@ -1,5 +1,23 @@
-export function cn(...parts: (string | false | null | undefined)[]): string {
-  return parts.filter(Boolean).join(" ");
+import { clsx, type ClassValue } from "clsx";
+import { twMerge } from "tailwind-merge";
+
+/**
+ * WIDENED FOR THE SHADCN COMPONENT SET, 2026-09-03.
+ *
+ * This was a join-the-truthy-strings helper, which is all the CRM's own markup
+ * ever needed. The 59 components brought in from the theme need two things it
+ * could not do, and every one of the 14 typecheck failures was one of them:
+ *
+ *   OBJECT SYNTAX     cn({ "w-1": isThin, "my-0.5": isTight })
+ *   CONFLICT MERGING  cn("px-2", props.className) where className is "px-4"
+ *
+ * The second is the one that matters. Without `twMerge`, a caller passing
+ * `px-4` to a component whose base is `px-2` gets BOTH classes, and which wins
+ * is decided by their order in the compiled stylesheet — not by the caller.
+ * Every `className` override in the new component set would be a coin flip.
+ */
+export function cn(...inputs: ClassValue[]): string {
+  return twMerge(clsx(inputs));
 }
 
 export function initials(name: string): string {

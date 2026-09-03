@@ -91,6 +91,26 @@ export interface Company {
    * NEVER accepted from an operator draft: a draft able to clear this renders a
    * real company's page with the disclosure removed. See the preview protocol.
    */
+  /**
+   * ═══ READ BEFORE ANY RE-SKIN OR COMPONENT SWAP — 2026-09-03 ═══
+   *
+   * THE DISCLOSURE HANGS OFF THIS RECORD, NOT OFF THE PAGE, AND THAT IS THE
+   * WHOLE POINT. A real operator must be incapable of appearing on a surface
+   * where the banner has been left out, so anything that renders a company
+   * renders this with it. Losing it is a LEGAL problem, not a cosmetic one.
+   *
+   * A theme's card component has no slot for a disclosure banner. That is
+   * exactly how this vanishes: the row gets rebuilt out of a generic `<Card>`,
+   * the banner has nowhere to go, and the diff reads as a visual change. If you
+   * are re-skinning a company card, list, row or page, grep `realBusiness`
+   * before and after and confirm the render paths still match.
+   *
+   * Owner decision 2 removed four real, identifiable businesses (Seven Summit
+   * Treks, Adventure Consultants, Elite Exped, 14 Peaks) that had been carrying
+   * invented ratings and prices. Every name in this fixture is fictional now,
+   * deliberately. If a theme ships seeded demo rows — these kits usually do —
+   * a plausible real company name must not arrive with them.
+   */
   realBusiness: boolean;
 }
 

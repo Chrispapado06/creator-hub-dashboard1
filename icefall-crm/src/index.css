@@ -1,35 +1,176 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
 /**
  * ICEFALL Business — the internal CRM.
  *
- * DESIGN LANGUAGE FROM THE OWNER'S 31 AUG 2026 MOCKUP SET (the four screen
- * PNGs in icefall-sessions/mockups/), which supersedes the 28 Aug grey-canvas
- * mockup: white canvas, white cards held apart by hairline rings, generous
- * rounding, GOLD (#C79049) for the primary action and the active nav item.
- * The owner made these drawings the production design in words ("all this
- * time i was telling you to build things on the acc apps").
+ * ============================================================================
+ * THE TRANSFER (studio-admin 2.2.0 → this app)
+ * ============================================================================
+ * The owner bought a paid admin theme and asked for its design on this CRM,
+ * keeping the page names. The theme is Next; this is Vite + react-router, so
+ * its PAGES cannot come across. What transfers is everything below the pages:
+ * the token layer (this file), the 58 ported `components/ui` primitives, and
+ * the layout language, which gets rewritten for react-router rather than
+ * copied.
  *
- * IT IS STILL NOT THE ATHLETE APP'S SKIN. The product is near-black, cinematic
- * and photographic; this is light, soft and administrative. The contrast is the
- * point: at a glance you always know whether you are looking at what a customer
- * sees or at the back office.
+ * This file therefore carries TWO token systems that must stay in lockstep:
  *
- * WHERE AZURE SURVIVES, AND WHY. The mockup's palette is neutral plus pastel,
- * with black as the action colour. ICEFALL's accent is alpine azure and that is
- * a settled decision, not a preference — so azure stays as the interactive
- * accent (active navigation, links, focus) where the mockup uses black-on-grey,
- * and black is used for buttons exactly as drawn. The two coexist because the
- * mockup's own palette is almost hueless; azure is the only colour with an
- * opinion and it never fights the pastels.
+ *   1. The shadcn layer  (--background, --primary, --border, --chart-*, …)
+ *      New. Every ported component reads it. Bound to the TANGERINE preset.
  *
- * THE PASTELS CARRY MEANING, NOT DECORATION. Butter, sky and lilac are assigned
- * to figures in the mockup's own order — money owed, money held, money pending.
- * A tile whose figure is UNAVAILABLE drops to plain surface rather than keeping
- * its colour, so a missing number never looks like a reported one.
+ *   2. The --crm-* layer (--crm-canvas, --crm-ink, --crm-accent, …)
+ *      Pre-existing. 14,429 lines across 32 screens read it through
+ *      Tailwind utilities: `text-faint` alone appears 497 times, `text-ink`
+ *      369, `text-muted` 300. Deleting or renaming ANY of these breaks
+ *      screens this pass is not allowed to edit.
+ *
+ * So the --crm-* names all survive, and are REBOUND onto the tangerine
+ * palette. That is the whole trick: the re-skin reaches every existing screen
+ * without a single screen being touched. A rebind, not a rename.
+ *
+ * Where the two systems disagree about what a name MEANS, the binding is
+ * deliberate rather than mechanical — see --crm-accent and --crm-solid below.
+ * A mechanical bind of those two would have shipped invisible text and an
+ * unreadable badge.
+ *
+ * ============================================================================
+ * WHY TANGERINE, AND NOT THE OTHER TWO PRESETS
+ * ============================================================================
+ * The theme ships three: brutalist, soft-pop, tangerine. This is an operations
+ * tool for a mountaineering marketplace, used all day by staff approving
+ * expeditions, chasing invoices and moderating reports. It was chosen on four
+ * grounds, in order of weight:
+ *
+ * 1. THE NEUTRALS ARE COLD, AND THAT IS THE PRODUCT.
+ *    Tangerine's ground is oklch(0.94 0 236.5) — a blue-grey, not a white and
+ *    not a cream. Its border, muted and secondary are all cool. ICEFALL's
+ *    accent is alpine azure and that is a settled decision; a cool-neutral
+ *    preset keeps that identity intact instead of fighting it. Soft-pop's
+ *    ground is a warm cream-green (oklch 0.9789 0.0082 121.63) which kills the
+ *    alpine register outright.
+ *
+ * 2. THE RADII LAND EXACTLY ON THE MOCKUP'S.
+ *    Tangerine sets --radius: 0.625rem = 10px. The theme's scale then gives
+ *    --radius-xl  = 10 + 4  = 14px, and
+ *    --radius-3xl = 10 + 12 = 22px.
+ *    The owner's 31 Aug mockups specified 14px tiles and 22px cards, which is
+ *    what --radius-tile and --radius-card have always been. Both land on the
+ *    nose. Brutalist's --radius: 0px would have flattened all 97 rounded-tile
+ *    and 13 rounded-card call sites into squares.
+ *
+ * 3. THE CHART RAMP IS FOUR BLUES AND ONE ORANGE.
+ *    chart-1/3/4/5 are blue at descending lightness; chart-2 is the single
+ *    warm one. In an ops tool that reads correctly by default: a series is a
+ *    sequence, and the one exception is the thing worth looking at. Soft-pop
+ *    and brutalist both ship five unrelated loud hues, which turns every chart
+ *    into a colour-matching puzzle.
+ *
+ * 4. WARM-ON-COLD IS WHAT ALPINE EQUIPMENT ACTUALLY LOOKS LIKE.
+ *    The primary is oklch(0.64 0.17 36.44), rescue orange — bivvy bags,
+ *    helicopters, summit-day down. One warm thing on a cold screen, and it is
+ *    the thing you are meant to press. This also matches the discipline the
+ *    CRM already had, where black was reserved for the single primary action:
+ *    one action colour, not a palette.
+ *
+ * Brutalist was additionally disqualified on safety: its primary is red
+ * (oklch 0.6489 0.237 26.97), and on Approvals and Moderation a primary button
+ * that reads as destructive is a hazard, not a style.
+ *
+ * The matching worry about tangerine — that its primary (hue 36) and its
+ * destructive (hue 25) are only 11° apart — was checked against the ported
+ * button rather than assumed. It does not apply: `default` is a SOLID fill
+ * (bg-primary + white text) and `destructive` is a TINT (bg-destructive/10 +
+ * red text). They differ in fill weight, not just hue, so they are never
+ * confusable even side by side.
+ *
+ * ============================================================================
+ * WHAT THE THEME DOES NOT GET TO TOUCH
+ * ============================================================================
+ * THE PASTELS ARE SEMANTIC. Butter, sky, lilac and mint were sampled from the
+ * owner's own mockup tiles and assigned to figures in the mockup's order —
+ * money owed, money held, money pending. They are meaning, not decoration, so
+ * they are not the theme's to reassign, and they are carried across verbatim.
+ * Screens also hardcode text colours tuned to them specifically
+ * (`text-[oklch(0.45_0.1_75)]` on butter); retuning butter would silently
+ * break contrast at those call sites.
+ *
+ * THE TEN PIPELINE STAGE COLOURS are read off the data, not assembled into a
+ * class name, and carry the same kind of meaning. Verbatim too.
+ *
+ * THE FACE STAYS PLUS JAKARTA SANS. The theme ships Geist, which would mean a
+ * new webfont; index.html already loads Plus Jakarta Sans, and the offline
+ * build strips remote fonts on purpose. Swapping the family would have added a
+ * network dependency to buy nothing the mockup asked for.
+ *
+ * THE HONESTY RENDERING IS NOT AN EMPTY STATE. This CRM distinguishes an em
+ * dash (never measured) from 0 (a measured zero) from a refusal shown
+ * verbatim. `components/ui/empty.tsx` and `components/ui/skeleton.tsx` are
+ * ported because the theme ships them, but neither may be pointed at that
+ * distinction: "No data" erases the difference between unmeasured and zero,
+ * and a skeleton implies loading where the truth is that nobody ever measured.
  */
 
+@custom-variant dark (&:is(.dark *));
+
 @theme inline {
+  /* ---- shadcn layer: what the 58 ported ui/ components read ---- */
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  /* THE ONE NAME COLLISION IN THE WHOLE PORT, and why these two are prefixed.
+     Tailwind has a single --color-* namespace, and the two systems disagree
+     about what `muted` and `accent` mean:
+       shadcn  `bg-muted`  = a near-white FILL (oklch 0.98)
+       CRM     `text-muted` = mid-grey TEXT   (oklch 0.55), used 300 times
+       shadcn  `bg-accent` = a pale hover FILL (oklch 0.91)
+       CRM     `text-accent`/`border-accent`/`ring-accent` = strong blue,
+               used ~100 times as a FOREGROUND
+     No single value satisfies both, so ownership had to be decided rather
+     than fudged: the screens keep the short names, because this pass may not
+     edit the screens, and the 58 ported components — which it may edit — were
+     rewritten onto `bg-ui-muted` / `bg-ui-accent` (81 call sites, 29 files).
+     `muted-foreground` and `accent-foreground` collide with nothing and are
+     left exactly as shadcn ships them. */
+  --color-ui-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-ui-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* ---- --crm-* layer: what the 32 existing screens read ----
+     Same names as before the transfer, new values underneath. */
   --color-canvas: var(--crm-canvas);
   --color-surface: var(--crm-surface);
   --color-raised: var(--crm-raised);
@@ -53,56 +194,139 @@
   --color-warn: var(--crm-warn);
   --color-bad: var(--crm-bad);
 
-  /* The mockup's face is wide, round and geometric with heavy weights — Inter
-     Tight is a NARROW Inter and reads as a different product entirely. */
   --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-sans);
 
-  /* Generous, per the mockup. A 10px card in this language reads as a bug. */
-  --radius-card: 22px;
-  --radius-tile: 14px;
-  --radius-chip: 11px;
+  /* The mockup's radii, now expressed as the preset's own scale rather than
+     as loose pixels — see reason 2 in the header. Same numbers as before.
+
+     Spelled as the calc rather than as `var(--radius-3xl)`, deliberately:
+     Tailwind v4 only emits theme variables it sees used, so pointing one
+     theme var at another risks `rounded-card` compiling to a `var()` that was
+     tree-shaken away. `--radius` is a plain custom property and always
+     survives. Same arithmetic, no dependency on emission order. */
+  --radius-card: calc(var(--radius) + 12px); /* 22px, = the scale's 3xl */
+  --radius-tile: calc(var(--radius) + 4px); /*  14px, = the scale's xl  */
+  --radius-chip: calc(var(--radius) + 1px); /*  11px                    */
   --radius-pill: 999px;
 
-  /* Hairline ring + a whisper of depth — the drawings' card separation. */
-  --shadow-soft: 0 0 0 1px #ECEEF1, 0 1px 2px oklch(0 0 0 / 3%);
-  --shadow-lift: 0 0 0 1px #ECEEF1, 0 8px 24px oklch(0 0 0 / 5%);
+  /* Hairline ring + a whisper of depth: the mockup's card separation, kept,
+     but the ring now uses the preset's border colour instead of a hardcoded
+     grey so it moves with the palette. */
+  --shadow-soft: 0 0 0 1px var(--border), 0 1px 2px oklch(0 0 0 / 4%);
+  --shadow-lift: 0 0 0 1px var(--border), 0 8px 24px oklch(0 0 0 / 6%);
 }
 
+/* ==========================================================================
+   TANGERINE — light. Values are the preset's, unchanged.
+   ========================================================================== */
 :root {
-  /* WHITE canvas, sampled from the owner's 31 Aug PNGs (#FEFEFE page,
-     #FFFFFF cards): their ruling made the drawings the production design,
-     superseding the grey-canvas language of the 28 Aug mockup. Cards are held
-     apart by the hairline ring in the shadow tokens below, not by a grey. */
-  --crm-canvas: #FEFEFE;
-  --crm-surface: #FFFFFF;
-  --crm-raised: #F7F8FA;
-  --crm-panel: #F4F6F8;
-  --crm-line: #E7EAEE;
-  --crm-line-soft: #EFF1F4;
+  --radius: 0.625rem;
 
-  --crm-ink: oklch(0.215 0.006 264);
-  --crm-muted: oklch(0.565 0.008 264);
-  --crm-faint: oklch(0.695 0.007 264);
+  --background: oklch(0.94 0 236.5);
+  --foreground: oklch(0.32 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.32 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.32 0 0);
+  --primary: oklch(0.64 0.17 36.44);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.97 0 264.54);
+  --secondary-foreground: oklch(0.45 0.03 256.8);
+  --muted: oklch(0.98 0 247.84);
+  --muted-foreground: oklch(0.55 0.02 264.36);
+  --accent: oklch(0.91 0.02 243.82);
+  --accent-foreground: oklch(0.38 0.14 265.52);
+  --destructive: oklch(0.64 0.21 25.33);
+  --border: oklch(0.9 0.01 247.88);
+  --input: oklch(0.97 0 264.54);
+  --ring: oklch(0.64 0.17 36.44);
+  --chart-1: oklch(0.72 0.06 248.68);
+  --chart-2: oklch(0.79 0.09 35.96);
+  --chart-3: oklch(0.58 0.08 254.16);
+  --chart-4: oklch(0.5 0.08 259.49);
+  --chart-5: oklch(0.42 0.1 264.03);
+  --sidebar: oklch(0.9 0 258.33);
+  --sidebar-foreground: oklch(0.32 0 0);
+  --sidebar-primary: oklch(0.64 0.17 36.44);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.91 0.02 243.82);
+  --sidebar-accent-foreground: oklch(0.38 0.14 265.52);
+  --sidebar-border: oklch(0.93 0.01 264.53);
+  --sidebar-ring: oklch(0.64 0.17 36.44);
 
-  /* Black, for the one primary action on a screen. */
-  --crm-solid: oklch(0.205 0.006 264);
+  --shadow-2xs: 0px 1px 3px 0px hsl(0 0% 0% / 0.05);
+  --shadow-xs: 0px 1px 3px 0px hsl(0 0% 0% / 0.05);
+  --shadow-sm: 0px 1px 3px 0px hsl(0 0% 0% / 0.1), 0px 1px 2px -1px hsl(0 0% 0% / 0.1);
+  --shadow: 0px 1px 3px 0px hsl(0 0% 0% / 0.1), 0px 1px 2px -1px hsl(0 0% 0% / 0.1);
+  --shadow-md: 0px 1px 3px 0px hsl(0 0% 0% / 0.1), 0px 2px 4px -1px hsl(0 0% 0% / 0.1);
+  --shadow-lg: 0px 1px 3px 0px hsl(0 0% 0% / 0.1), 0px 4px 6px -1px hsl(0 0% 0% / 0.1);
+  --shadow-xl: 0px 1px 3px 0px hsl(0 0% 0% / 0.1), 0px 8px 10px -1px hsl(0 0% 0% / 0.1);
+  --shadow-2xl: 0px 1px 3px 0px hsl(0 0% 0% / 0.25);
 
-  /* Alpine azure, hue 255.4 held exactly, darkened for legibility on white. */
-  --crm-accent: oklch(0.548 0.155 255.4);
-  --crm-accent-ink: oklch(0.438 0.132 255.4);
-  --crm-accent-soft: oklch(0.955 0.026 255.4);
+  /* ------------------------------------------------------------------
+     THE REBIND. Every --crm-* name that existed before still exists.
+     ------------------------------------------------------------------ */
 
-  /* Sampled from the mockup's own tiles rather than guessed — the first pass was
-     pale enough that the screen read as monochrome from a normal distance, which
-     is the whole thing these tiles are for. */
-  --crm-butter: oklch(0.873 0.147 92);   /* #F5D45F */
-  --crm-sky: oklch(0.866 0.049 236);     /* #C3D9E9 */
-  --crm-lilac: oklch(0.876 0.055 316);   /* #E4D4EA */
-  --crm-mint: oklch(0.888 0.078 160);    /* a fourth, in the same register */
+  /* Surfaces. The canvas stops being white and becomes the preset's cool
+     blue-grey; cards stay pure white and now separate from the page by tone
+     as well as by the hairline ring. */
+  --crm-canvas: var(--background);
+  --crm-surface: var(--card);
+  --crm-raised: var(--muted);
+  --crm-panel: var(--secondary);
+  --crm-line: var(--border);
+  /* One step lighter than --border; the preset has no token for it and the
+     32 screens use it 80 times to separate rows inside a card. */
+  --crm-line-soft: oklch(0.94 0.008 247.88);
 
+  /* Type. */
+  --crm-ink: var(--foreground);
+  --crm-muted: var(--muted-foreground);
+  /* DELIBERATELY DARKER THAN IT WAS (0.695 → 0.66). This is the most-used
+     token in the app — `text-faint` appears 497 times — and it used to sit on
+     a white canvas. The canvas is now oklch(0.94), so holding the old
+     lightness would have quietly dropped the quietest text tier below
+     readable contrast on every screen at once. Darkening it is the response
+     to the ground moving, not a restyle. */
+  --crm-faint: oklch(0.66 0.012 264.36);
+
+  /* THE PRIMARY ACTION: was black, is now the preset's orange — the single
+     most visible change of the transfer.
+     NOT bound to --primary directly. `bg-solid` is used on two count badges
+     that carry white text at 11px and 12.5px, and raw --primary
+     (oklch 0.64) gives white only ~3.3:1 there, which is a real legibility
+     regression on small bold text. Same hue and chroma, lightness pulled down
+     until white clears 4.5:1. Solid FILLS in the ported components keep using
+     --primary itself, where the type is larger. */
+  --crm-solid: oklch(0.52 0.163 36.44);
+
+  /* THE INTERACTIVE ACCENT — the one binding that is not mechanical.
+     shadcn's --accent is a pale BACKGROUND (hover fills, oklch 0.91).
+     --crm-accent is a FOREGROUND: text-accent, border-accent and ring-accent
+     account for most of its 100-odd uses. Binding the two names together
+     because they share a word would have rendered accent-coloured text as
+     pale blue on white — invisible. It binds to --accent-foreground instead,
+     the preset's strong blue, which also keeps ICEFALL's azure identity.
+     Checked: every `bg-accent` in the app pairs with `text-white`, and this
+     is darker than the azure it replaces, so those get more contrast, not
+     less. */
+  --crm-accent: var(--accent-foreground);
+  --crm-accent-ink: oklch(0.32 0.12 265.52);
+  --crm-accent-soft: var(--accent);
+
+  /* Status. `bad` joins the preset's destructive so red means one thing
+     across both token systems; ok and warn have no preset counterpart and
+     keep the values the screens were built against. */
   --crm-ok: oklch(0.62 0.16 150);
   --crm-warn: oklch(0.74 0.145 66);
-  --crm-bad: oklch(0.60 0.20 25);
+  --crm-bad: var(--destructive);
+
+  /* Carried across verbatim — semantic, not decorative. See the header. */
+  --crm-butter: oklch(0.873 0.147 92); /* #F5D45F */
+  --crm-sky: oklch(0.866 0.049 236); /* #C3D9E9 */
+  --crm-lilac: oklch(0.876 0.055 316); /* #E4D4EA */
+  --crm-mint: oklch(0.888 0.078 160);
 
   /* The ten pipeline stages. Read off the data, never assembled into a class
      name — Tailwind scans source text, so `bg-${stage}` generates nothing. */
@@ -118,10 +342,65 @@
   --crm-stage-lost: oklch(0.64 0.16 25);
 }
 
+/**
+ * TANGERINE — dark. Ported for completeness because the ported components all
+ * carry `dark:` variants, but NOTHING IN THIS APP SETS `.dark`: the CRM has
+ * zero `dark:` utilities of its own and no theme switcher. Treat this block as
+ * inert until someone builds the switch and re-checks the --crm-* rebind
+ * above, which is written for the light ground only.
+ */
+.dark {
+  --background: oklch(0.26 0.03 262.67);
+  --foreground: oklch(0.92 0 0);
+  --card: oklch(0.31 0.03 268.64);
+  --card-foreground: oklch(0.92 0 0);
+  --popover: oklch(0.29 0.02 268.4);
+  --popover-foreground: oklch(0.92 0 0);
+  --primary: oklch(0.64 0.17 36.44);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.31 0.03 266.71);
+  --secondary-foreground: oklch(0.92 0 0);
+  --muted: oklch(0.31 0.03 266.71);
+  --muted-foreground: oklch(0.72 0 0);
+  --accent: oklch(0.34 0.06 267.59);
+  --accent-foreground: oklch(0.88 0.06 254.13);
+  --destructive: oklch(0.64 0.21 25.33);
+  --border: oklch(0.38 0.03 269.73);
+  --input: oklch(0.38 0.03 269.73);
+  --ring: oklch(0.64 0.17 36.44);
+  --chart-1: oklch(0.72 0.06 248.68);
+  --chart-2: oklch(0.77 0.09 34.19);
+  --chart-3: oklch(0.58 0.08 254.16);
+  --chart-4: oklch(0.5 0.08 259.49);
+  --chart-5: oklch(0.42 0.1 264.03);
+  --sidebar: oklch(0.31 0.03 267.74);
+  --sidebar-foreground: oklch(0.92 0 0);
+  --sidebar-primary: oklch(0.64 0.17 36.44);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.34 0.06 267.59);
+  --sidebar-accent-foreground: oklch(0.88 0.06 254.13);
+  --sidebar-border: oklch(0.38 0.03 269.73);
+  --sidebar-ring: oklch(0.64 0.17 36.44);
+}
+
+@layer base {
+  /* shadcn's convention, and the ported components depend on it: several use a
+     bare `border` and expect the neutral. The CRM's own markup nearly always
+     names its border colour (`border border-line-soft`), so this changes only
+     the handful of places that left it to currentColor. */
+  * {
+    @apply border-border outline-ring/50;
+  }
+}
+
 html,
 body,
 #root {
   height: 100%;
+}
+
+html {
+  overscroll-behavior: none;
 }
 
 body {
@@ -164,9 +443,19 @@ body {
   scrollbar-width: none;
 }
 
-:focus-visible {
+/**
+ * The CRM's global focus ring, kept for the app's own markup — but held off
+ * the ported components, every one of which carries `data-slot` and brings its
+ * own `focus-visible:ring-3 ring-ring/50`. Without the exclusion the two stack
+ * and a focused Input gets a double outline in two different colours.
+ */
+:focus-visible:not([data-slot]) {
   outline: 2px solid var(--crm-accent);
   outline-offset: 2px;
+}
+
+.disable-transitions * {
+  transition: none !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
