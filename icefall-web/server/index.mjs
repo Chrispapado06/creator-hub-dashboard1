@@ -25,6 +25,16 @@ import { searchLiteApiStays } from "./liteapi.mjs";
 import { handleWaitlist, waitlistConfigured } from "../api/_waitlist.mjs";
 import { handleSupport, supportConfigured } from "../api/_support.mjs";
 import { handleEnquiry, enquiryConfigured } from "../api/_enquiry.mjs";
+import {
+  handleOuraBackfill,
+  handleOuraCallback,
+  handleOuraConnect,
+  handleOuraDisconnect,
+  handleOuraSummary,
+  handleOuraWebhook,
+  handleOuraWebhookVerify,
+  ouraReady,
+} from "../api/_oura.mjs";
 
 /* -- minimal .env loader (no dependency) ----------------------------------- */
 
@@ -122,7 +132,9 @@ function send(res, status, obj) {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    // `Authorization` was added for the Oura endpoints, which identify the
+    // caller by their Supabase token rather than by a body field.
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
   });
   res.end(payload);
 }
@@ -145,6 +157,41 @@ function readBody(req) {
   });
 }
 
+/**
+ * The raw bytes, kept.
+ *
+ * Only the Oura webhook needs this, and it needs it for a specific reason: the
+ * signature is an HMAC over what Oura actually sent, and `JSON.parse` followed
+ * by `JSON.stringify` is not guaranteed to give those bytes back. The Vercel
+ * transport turns its body parser off for the same reason — the two have to
+ * hand `_oura.mjs` the same thing or the signature check is only tested here.
+ */
+function readRawBody(req, max = 64 * 1024) {
+  return new Promise((resolve) => {
+    let data = "";
+    let tooBig = false;
+    req.on("data", (c) => {
+      if (tooBig) return;
+      data += c;
+      if (data.length > max) {
+        tooBig = true;
+        data = "";
+      }
+    });
+    req.on("end", () => resolve(tooBig ? null : data));
+    req.on("error", () => resolve(null));
+  });
+}
+
+/** The caller's Supabase access token, or "" — never a default identity. */
+function bearerOf(req) {
+  const raw = req.headers.authorization || "";
+  return raw.toLowerCase().startsWith("bearer ") ? raw.slice(7).trim() : "";
+}
+
+const clientIp = (req) =>
+  (req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket.remoteAddress || "";
+
 /* -- routes ---------------------------------------------------------------- */
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
@@ -159,8 +206,100 @@ const server = createServer(async (req, res) => {
       waitlist: waitlistConfigured(waitlistEnv) ? "live" : "not_connected",
       support: supportConfigured(process.env) ? "live" : "not_connected",
       enquiry: enquiryConfigured(process.env) ? "live" : "not_connected",
-      providers: { flights: "duffel", stays: "liteapi" },
+      // Reports the FIRST missing piece by name, not a bare false. Oura needs
+      // six variables and "not_connected" would not say which one is absent.
+      oura: ouraReady(process.env).ready ? "live" : ouraReady(process.env).reason,
+      providers: { flights: "duffel", stays: "liteapi", health: "oura" },
     });
+  }
+
+  /*
+    ── OURA RING ──────────────────────────────────────────────────────────────
+
+    Identical code to the Vercel functions — see api/_oura.mjs. That matters
+    more here than for the waitlist: the webhook signature check and the OAuth
+    exchange are security boundaries, and a boundary that is only exercised in
+    production is a boundary nobody has tested.
+
+    To exercise the webhook locally, put a tunnel in front of this port (ngrok
+    or similar), point OURA_REDIRECT_URI and the subscription callback at the
+    tunnel, and run `node server/oura-subscriptions.mjs create`.
+  */
+
+  if (url.pathname === "/api/oura/connect" && req.method === "POST") {
+    const body = await readBody(req);
+    const { status, body: payload } = await handleOuraConnect(body, {
+      env: process.env,
+      ip: clientIp(req),
+      bearer: bearerOf(req),
+    });
+    return send(res, status, payload);
+  }
+
+  if (url.pathname === "/api/oura/callback" && req.method === "GET") {
+    const query = Object.fromEntries(url.searchParams.entries());
+    const { status, headers, body: payload } = await handleOuraCallback(query, {
+      env: process.env,
+      ip: clientIp(req),
+    });
+    if (headers?.Location) {
+      res.writeHead(status, { Location: headers.Location, "Cache-Control": "no-store, private" });
+      return res.end();
+    }
+    return send(res, status, payload);
+  }
+
+  if (url.pathname === "/api/oura/webhook" && req.method === "GET") {
+    const query = Object.fromEntries(url.searchParams.entries());
+    const { status, body: payload } = handleOuraWebhookVerify(query, { env: process.env });
+    return send(res, status, payload);
+  }
+
+  if (url.pathname === "/api/oura/webhook" && req.method === "POST") {
+    const raw = await readRawBody(req);
+    if (raw === null) return send(res, 413, { ok: false, error: "body too large" });
+    let parsed = null;
+    try {
+      parsed = raw ? JSON.parse(raw) : null;
+    } catch {
+      /* not JSON — the signature check refuses it without guessing */
+    }
+    const { status, body: payload } = await handleOuraWebhook({
+      env: process.env,
+      rawBody: raw,
+      parsedBody: parsed,
+      headers: req.headers,
+    });
+    return send(res, status, payload);
+  }
+
+  if (url.pathname === "/api/oura/summary" && req.method === "GET") {
+    const { status, body: payload } = await handleOuraSummary({
+      env: process.env,
+      ip: clientIp(req),
+      bearer: bearerOf(req),
+    });
+    return send(res, status, payload);
+  }
+
+  if (url.pathname === "/api/oura/backfill" && req.method === "POST") {
+    const body = await readBody(req);
+    const { status, body: payload } = await handleOuraBackfill(body, {
+      env: process.env,
+      ip: clientIp(req),
+      bearer: bearerOf(req),
+    });
+    return send(res, status, payload);
+  }
+
+  if (url.pathname === "/api/oura/disconnect" && req.method === "POST") {
+    const body = await readBody(req);
+    const { status, body: payload } = await handleOuraDisconnect(body, {
+      env: process.env,
+      ip: clientIp(req),
+      bearer: bearerOf(req),
+    });
+    return send(res, status, payload);
   }
 
   // The waitlist. Identical code to the Vercel function — see api/_waitlist.mjs.
@@ -255,6 +394,8 @@ server.listen(PORT, () => {
   console.log(
     `  waitlist:          ${process.env.SUPABASE_URL ? "LIVE (supabase)" : `dev file → ${WAITLIST_FILE}`}`,
   );
+  const oura = ouraReady(process.env);
+  console.log(`  health (Oura):     ${oura.ready ? "LIVE" : `not connected (${oura.reason})`}`);
   if (!flightsLive() && !staysLive()) {
     console.log("  → no keys set; the app will use its labelled demo data. Add keys in server/.env to go live.");
   }
