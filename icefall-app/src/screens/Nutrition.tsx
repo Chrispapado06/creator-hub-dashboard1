@@ -23,6 +23,7 @@ import {
   type SessionCost,
   type Sex,
 } from "@/coach/fuelDay";
+import { FUEL_RECORD_KEY } from "@/coach/fuelRecord";
 import { useCoachIntel } from "@/coach/hooks";
 import { useRecordedActivities } from "@/tracking/feed";
 import { useApp } from "@/state/AppState";
@@ -130,7 +131,13 @@ interface FuelLocal {
   foodLog?: FoodLogEntry[];
 }
 
-const FUEL_KEY = "icefall.fuel.v1";
+/* THE KEY NOW HAS ONE OWNER, and it is not this file.
+   `coach/fuelRecord.ts` exports it, and exports the only setter any other
+   surface may use. It was duplicated into the signup flow while this file held
+   the accessor privately — a copy that a rename here would have killed with no
+   error and a green typecheck. Importing it means the next rename breaks the
+   build instead of the feature. */
+const FUEL_KEY = FUEL_RECORD_KEY;
 /** Enough days of eating to be useful; not so many that localStorage strains. */
 const MAX_FOOD_ENTRIES = 400;
 
