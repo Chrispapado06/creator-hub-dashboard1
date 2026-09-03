@@ -55,10 +55,40 @@ export type JoinResult =
  */
 export const EMAIL_RE = /^[^\s@<>,;"]+@[^\s@<>,;".]+\.[^\s@<>,;".]{2,}$/;
 
+/**
+ * The sentence shown beside the marketing checkbox — DEFINED ONCE, HERE.
+ *
+ * It is both rendered on the page and sent with the signup, so what is stored
+ * as the record of consent is necessarily the same words the person read. Two
+ * copies of this string — one in the markup, one in the payload — would drift
+ * the first time the copy is edited, and the stored record would then describe
+ * a sentence nobody was ever shown.
+ *
+ * Changing it is a real change: everyone who ticked the old box consented to
+ * the OLD wording, which is why the old wording is stored on their row rather
+ * than looked up from here.
+ *
+ * ── WHAT THIS SENTENCE DOES NOT COVER ───────────────────────────────────────
+ *
+ * The owner authored it and chose it over a wider variant that added "…plus
+ * offers from expedition companies on ICEFALL". So this list may be emailed
+ * about ICEFALL — it MAY NOT be emailed on behalf of an operator. Promoting a
+ * partner to these addresses is a purpose they did not agree to and needs
+ * fresh consent. Do not design a partner-offers campaign against this list.
+ */
+export const MARKETING_CONSENT_TEXT =
+  "Email me occasional ICEFALL news and offers. Unsubscribe any time.";
+
 export async function joinWaitlist(input: {
   email: string;
   name?: string;
   source: WaitlistSource;
+  /**
+   * Ticked the marketing box. OPTIONAL AND UNTICKED BY DEFAULT — joining the
+   * waitlist must be possible without it, or the consent is bundled and is
+   * therefore not consent at all.
+   */
+  consent?: boolean;
   /** Honeypot. Always sent empty by real people; bots fill it in. */
   company?: string;
 }): Promise<JoinResult> {
@@ -90,6 +120,9 @@ export async function joinWaitlist(input: {
         email,
         name: input.name?.trim() ?? "",
         source: input.source,
+        consent: input.consent === true,
+        // The wording travels with the tick, never reconstructed server-side.
+        consentText: input.consent === true ? MARKETING_CONSENT_TEXT : "",
         company: input.company ?? "",
       }),
     });

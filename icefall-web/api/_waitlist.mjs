@@ -74,7 +74,46 @@ export function validate(body) {
 
   const source = ["hero", "footer", "header"].includes(raw.source) ? raw.source : "unknown";
 
-  return { value: { email, name: name || null, source } };
+  /*
+    MARKETING CONSENT, AND ITS EVIDENCE.
+
+    Joining the waitlist is a request to be told when ICEFALL opens. It is not
+    permission to send promotions, and the two are separate on the form for
+    that reason — a signup that cannot be completed without also agreeing to
+    marketing is not freely given consent, so the box is optional and unticked.
+
+    `consentText` is the sentence that was ON SCREEN when they ticked it, sent
+    by the client and stored verbatim. A bare `true` records that somebody
+    agreed but not what to, and the copy will change. Consent with no wording
+    is refused rather than silently downgraded: the column is NOT NULL false by
+    default, so dropping the tick would quietly turn a "yes" into a "no", and
+    the database rejects the row instead (`waitlist_consent_evidence`).
+  */
+  /*
+    THREE STATES REACH THE DATABASE, NOT TWO. `true` granted, `false` declined,
+    `null` never asked. This endpoint always ASKS — the form always renders the
+    box — so it writes true or false and never null. Null is reserved for rows
+    written by something that did not ask, and must not be produced here by a
+    missing field: an absent `consent` is a caller that did not show the box,
+    which is "never asked", not "declined".
+  */
+  const asked = typeof raw.consent === "boolean";
+  const consent = asked ? raw.consent === true : null;
+  const consentText = String(raw.consentText ?? "").trim();
+  if (consent === true && (consentText.length < 10 || consentText.length > 500)) {
+    return { error: "Something went wrong. Please try again." };
+  }
+
+  return {
+    value: {
+      email,
+      name: name || null,
+      source,
+      marketing_consent: consent,
+      marketing_consent_at: consent === true ? new Date().toISOString() : null,
+      marketing_consent_text: consent === true ? consentText : null,
+    },
+  };
 }
 
 /* -- rate limiting --------------------------------------------------------- */

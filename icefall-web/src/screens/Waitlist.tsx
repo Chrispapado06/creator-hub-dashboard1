@@ -18,6 +18,7 @@ import { MotionButton } from "@/components/MotionButton";
 import {
   LAUNCH_AT,
   joinWaitlist,
+  MARKETING_CONSENT_TEXT,
   launchLabel,
   remainingUntil,
   type Remaining,
@@ -315,6 +316,15 @@ function SignupForm({
   const [email, setEmail] = useState("");
   const [company, setCompany] = useState(""); // honeypot
   const [busy, setBusy] = useState(false);
+  /*
+    UNTICKED, AND THE SIGNUP WORKS WITHOUT IT.
+
+    A waitlist signup is "tell me when you open". Marketing is a separate
+    permission, so it is a separate, optional tick — a box that must be ticked
+    to submit is bundled consent, which is not consent. Default false, and
+    nothing in `onSubmit` requires it.
+  */
+  const [consent, setConsent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<{ email: string; already: boolean } | null>(null);
   const live = useRef(true);
@@ -332,7 +342,7 @@ function SignupForm({
     setBusy(true);
     setError(null);
 
-    const result = await joinWaitlist({ email, name, source, company });
+    const result = await joinWaitlist({ email, name, source, consent, company });
     if (!live.current) return;
 
     if (result.ok) setDone({ email: email.trim().toLowerCase(), already: result.already });
@@ -412,6 +422,27 @@ function SignupForm({
           {busy ? "Joining" : "Join waitlist"}
         </button>
       </div>
+
+      {/*
+        MARKETING CONSENT — separate from the signup, and optional.
+
+        Joining the waitlist is "tell me when you open". Sending promotions is a
+        different permission, and one that has to be specific, unbundled and
+        recorded. So: unticked by default, the form submits without it, and the
+        sentence is `MARKETING_CONSENT_TEXT` — the same constant sent with the
+        signup, so what is stored as the record of consent is exactly the words
+        that were on screen.
+      */}
+      <label className="mt-3.5 flex cursor-pointer items-start gap-2.5">
+        <input
+          type="checkbox"
+          checked={consent}
+          disabled={busy}
+          onChange={(e) => setConsent(e.target.checked)}
+          className="mt-[3px] h-[15px] w-[15px] shrink-0 cursor-pointer accent-azure disabled:cursor-not-allowed"
+        />
+        <span className="text-[11.5px] leading-relaxed text-mist">{MARKETING_CONSENT_TEXT}</span>
+      </label>
 
       {error && (
         <p role="alert" className="mt-2.5 text-[12px] text-danger">
