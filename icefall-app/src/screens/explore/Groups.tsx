@@ -494,6 +494,26 @@ function useGroupPrivacy(): { privacy: GroupPrivacy; reload: () => void } {
 export default function Groups() {
   const [scope, setScope] = useState<"discover" | "mine">("discover");
   const [creating, setCreating] = useState(false);
+
+  /*
+   * THE OTHER HALF OF THE HEADER CONTRACT, which the guard block above
+   * describes and which nobody had written. `ExploreLayout`'s + navigates to
+   * `?tab=groups&create=1`; this reads it, opens the flow, and CLEARS the param
+   * immediately — with `replace`, so a back-navigation returns to wherever they
+   * were rather than reopening the form they just closed.
+   *
+   * Through the URL rather than shared state, exactly as the contract says: the
+   * two components stay ignorant of each other and the flow is linkable for
+   * free.
+   */
+  const [params, setParams] = useSearchParams();
+  useEffect(() => {
+    if (params.get("create") !== "1") return;
+    setCreating(true);
+    const next = new URLSearchParams(params);
+    next.delete("create");
+    setParams(next, { replace: true });
+  }, [params, setParams]);
   const { state, reload } = useSharedGroups();
   const { privacy, reload: reloadPrivacy } = useGroupPrivacy();
 

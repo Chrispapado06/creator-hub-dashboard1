@@ -105,13 +105,49 @@ export default function ExploreLayout() {
     onNavigate: (v) => navigate(v),
   });
 
+  /* Social is one route with sub-tabs in the query string, so the test is the
+     PATH, not the tab: the + should be there whichever sub-tab is showing, and
+     tapping it switches to Groups and opens the flow. */
+  const onGroupsSurface = pathname.startsWith("/explore/social");
+
   return (
     // This header clears the notch, so nested `Screen`s must not clear it again.
     <div className="flex h-full flex-col" style={{ "--screen-safe-top": "0px" } as React.CSSProperties}>
       <div className="shrink-0 px-5" style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
         {/* The chevron is the way back to the hub from a tab. Without it the
             hub would be reachable only by leaving Explore and returning. */}
-        <ScreenHeader title="Explore" back={back} large />
+        {/*
+          THE CREATE-GROUP +, WHICH WAS DOCUMENTED AS BUILT AND WAS NOT.
+          The owner, 2026-09-02: "to create group, need to be added a + sign next
+          and above seocial page, not under discover." The floating + was duly
+          removed and `Groups.tsx` records the whole contract in its guard block
+          — including that this header must navigate to `?tab=groups&create=1`.
+          Nobody wrote either half. `Plus` was imported here and never rendered;
+          `useSearchParams` was imported there and never called; and nothing in
+          the app called `setCreating(true)`, so the create flow — card, privacy
+          choice, server write and all — was unreachable. A group could not be
+          made at all.
+
+          It shows only on Social, because a + beside Guides or Expeditions would
+          promise a create this app does not offer there.
+        */}
+        <ScreenHeader
+          title="Explore"
+          back={back}
+          large
+          action={
+            onGroupsSurface ? (
+              <button
+                type="button"
+                aria-label="Create a group"
+                onClick={() => navigate("/explore/social?tab=groups&create=1")}
+                className="flex h-9 w-9 items-center justify-center rounded-full text-mist transition-colors hover:text-snow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-azure/60"
+              >
+                <Plus size={20} strokeWidth={1.8} aria-hidden="true" />
+              </button>
+            ) : undefined
+          }
+        />
         <SegmentedTabs
           tabs={TABS}
           value={lit}
