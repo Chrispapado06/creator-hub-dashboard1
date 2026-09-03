@@ -19,6 +19,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { countryName, useMyProfile } from "@/auth/useMyProfile";
+import { usePublicProfile } from "@/social/publicProfile";
 import { Link } from "react-router-dom";
 import { Card, Divider, SectionLabel, Stat, sharePage } from "@/components/ui/primitives";
 import { MonthlyVolume } from "@/components/ui/charts";
@@ -69,8 +70,26 @@ const SAFE_TOP = "var(--screen-safe-top, env(safe-area-inset-top, 0px))";
  * count of nought. The one social number that IS real is the cards this athlete
  * has saved, which the strip prints under CONNECTIONS.
  */
+/*
+ * THIS SENTENCE WENT STALE, WHICH IS THE HAZARD IT NOW WARNS ABOUT.
+ *
+ * It used to read: "Accounts exist now, but following does not — no climber can
+ * follow another yet, so this is an empty feature rather than an empty result."
+ * That was true when it was written and is FALSE now: `follows` ships, the pill
+ * on `explore/AthleteProfile` works, and `follower_count_of` is live and
+ * callable by any authenticated caller. So this screen was showing an em dash —
+ * NOT MEASURED — beside an explanation that the thing could not be measured at
+ * all, while the screen for somebody ELSE'S profile printed the real number from
+ * the same server. Two surfaces, one fact, opposite claims.
+ *
+ * A present-tense claim about what the app CANNOT do ages by construction. The
+ * replacement says only what is true of the figure in front of the reader.
+ */
+const FOLLOW_COUNTS_HINT =
+  "Counted on ICEFALL's server. Following does not yet change what you see in any feed — see a climber's profile for what it does and does not do.";
+
 const NO_SOCIAL_GRAPH =
-  "Accounts exist now, but following does not — no climber can follow another yet, so this is an empty feature rather than an empty result. Cards you have saved are counted under Connections.";
+  "Not measured — ICEFALL could not reach the server for this figure. It is not a count of nobody.";
 
 /** One figure in the six-across strip. An unknown value is an em dash, never 0. */
 function ProfileFigure({
@@ -284,6 +303,15 @@ export default function Profile() {
    * what this device last saw — but it never manufactures one from a name.
    */
   const my = useMyProfile();
+  /* The athlete's own row, read the same way a stranger reads it — so the two
+     screens cannot disagree about the same person's follower count. */
+  /* By HANDLE, because `MyProfile` carries no id — and `usePublicProfile` takes
+     either. Somebody who has not claimed a handle yet has no row to look up,
+     which correctly leaves both figures at an em dash rather than a 0. */
+  const mine = usePublicProfile(my.status === "ready" ? (my.profile.username ?? "") : "").profile ?? {
+    followerCount: null,
+    followingCount: null,
+  };
   const serverHandle = my.status === "ready" ? my.profile.username : null;
   const handle = serverHandle ?? settings.username ?? null;
   const earnedBadges = BADGES.filter(
@@ -561,8 +589,20 @@ export default function Profile() {
         <Rise className="pt-5">
           {/* Pulled out past the page margin: six figures need every pixel. */}
           <div className="-mx-3 flex items-start">
-            <ProfileFigure value="—" label="Followers" hint={NO_SOCIAL_GRAPH} />
-            <ProfileFigure value="—" label="Following" hint={NO_SOCIAL_GRAPH} />
+            {/* The same server figures the athlete's own profile shows to
+                everybody else. `null` stays an em dash — not measured — and a
+                genuine 0 prints 0, because `follower_count_of` really did run
+                and really did count nobody. */}
+            <ProfileFigure
+              value={mine.followerCount === null ? "—" : mine.followerCount.toLocaleString("en-GB")}
+              label="Followers"
+              hint={mine.followerCount === null ? NO_SOCIAL_GRAPH : FOLLOW_COUNTS_HINT}
+            />
+            <ProfileFigure
+              value={mine.followingCount === null ? "—" : mine.followingCount.toLocaleString("en-GB")}
+              label="Following"
+              hint={mine.followingCount === null ? NO_SOCIAL_GRAPH : FOLLOW_COUNTS_HINT}
+            />
             <ProfileFigure
               value={String(people.length)}
               label="Connections"
