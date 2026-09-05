@@ -61,7 +61,9 @@ export default function ClientDetail() {
                 <Row label="Total trips" value={String(trips.length)} />
                 <Row
                   label="Last trip"
-                  value={last ? `${last.title} · ${fmtRange(last.from, last.to)}` : "None completed yet"}
+                  value={
+                    last ? `${last.title} · ${fmtRange(last.from, last.to)}` : "None completed yet"
+                  }
                 />
                 <Row label="Notes" value={c.notes} />
               </dl>
@@ -90,9 +92,7 @@ export default function ClientDetail() {
               ))}
               {threads.length === 0 && (
                 <Card>
-                  <p className="py-3 text-center text-[12.5px] text-mist-dim">
-                    Nothing said yet.
-                  </p>
+                  <p className="py-3 text-center text-[12.5px] text-mist-dim">Nothing said yet.</p>
                 </Card>
               )}
             </div>
@@ -101,7 +101,11 @@ export default function ClientDetail() {
       </div>
 
       <div className="shrink-0 border-t border-hairline px-5 pb-4 pt-3">
-        <input disabled placeholder={`Message ${c.name.split(" ")[0]}…`} className={`${inputClass} disabled:opacity-60`} />
+        <input
+          disabled
+          placeholder={`Message ${c.name.split(" ")[0]}…`}
+          className={`${inputClass} disabled:opacity-60`}
+        />
       </div>
     </div>
   );

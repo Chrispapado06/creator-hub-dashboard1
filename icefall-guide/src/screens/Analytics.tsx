@@ -250,17 +250,12 @@ export default function Analytics() {
             <Provenance>{a.provenance}</Provenance>
           </Card>
         </Rise>
-
       </Stagger>
     </Screen>
   );
 }
 
-const SLICE_COLOURS = [
-  "var(--ice-azure)",
-  "var(--ice-azure-bright)",
-  "var(--ice-azure-deep)",
-];
+const SLICE_COLOURS = ["var(--ice-azure)", "var(--ice-azure-bright)", "var(--ice-azure-deep)"];
 
 function StatCard<T>({
   label,
@@ -289,20 +284,41 @@ function StatCard<T>({
 }
 
 /** The mockup's line chart. Pure SVG — no chart library in this app. */
-function LineChart({ points, className }: { points: { label: string; cents: number }[]; className?: string }) {
+function LineChart({
+  points,
+  className,
+}: {
+  points: { label: string; cents: number }[];
+  className?: string;
+}) {
   if (points.length === 0) return null;
   const max = Math.max(...points.map((p) => p.cents), 1);
   const W = 300;
   const H = 92;
   const x = (i: number) => (i / Math.max(1, points.length - 1)) * W;
   const y = (c: number) => H - (c / max) * (H - 10) - 4;
-  const d = points.map((p, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(p.cents).toFixed(1)}`).join(" ");
+  const d = points
+    .map((p, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(p.cents).toFixed(1)}`)
+    .join(" ");
 
   return (
     <div className={className}>
-      <svg viewBox={`0 0 ${W} ${H}`} className="h-[92px] w-full overflow-visible" role="img" aria-label="Earnings by month">
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="h-[92px] w-full overflow-visible"
+        role="img"
+        aria-label="Earnings by month"
+      >
         <path d={`${d} L${W},${H} L0,${H} Z`} className="fill-azure/10" />
-        <path d={d} className="stroke-azure" fill="none" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path
+          d={d}
+          className="stroke-azure"
+          fill="none"
+          strokeWidth={2}
+          strokeLinejoin="round"
+          strokeLinecap="round"
+          vectorEffect="non-scaling-stroke"
+        />
         {points.map((p, i) => (
           <circle key={p.label} cx={x(i)} cy={y(p.cents)} r={2.5} className="fill-azure" />
         ))}
@@ -325,7 +341,12 @@ function Donut({ slices }: { slices: { key: string; cents: number }[] }) {
   const C = 2 * Math.PI * R;
   let offset = 0;
   return (
-    <svg viewBox="0 0 90 90" className="h-[92px] w-[92px] shrink-0 -rotate-90" role="img" aria-label="Earnings by kind of work">
+    <svg
+      viewBox="0 0 90 90"
+      className="h-[92px] w-[92px] shrink-0 -rotate-90"
+      role="img"
+      aria-label="Earnings by kind of work"
+    >
       <circle cx={45} cy={45} r={R} className="stroke-elevated" strokeWidth={14} fill="none" />
       {slices.map((s, i) => {
         const len = (s.cents / total) * C;

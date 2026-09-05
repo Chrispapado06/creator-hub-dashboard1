@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, Check, FileText, Upload } from "lucide-react";
 import { Rise, Screen, ScreenHeader, Stagger } from "@/components/layout/chrome";
-import { Badge, Button, Card, Disclaimer, SectionLabel } from "@/components/ui/primitives";
+import { Badge, Button, Card, SectionLabel } from "@/components/ui/primitives";
 import { Notice } from "@/components/guide";
 import { SupportEntry } from "@/components/Support";
-import { visibleApplication, DEMO_NOTICE, fmtDate } from "@/data/demo";
-import { SHOW_DEMO_DATA } from "@/lib/demoFlag";
+import { visibleApplication, fmtDate } from "@/data/demo";
 import { CredentialMark } from "@/components/StatusBadge";
 import { onAuthChange } from "@/auth/account";
 import {
@@ -42,8 +41,15 @@ export default function Verification() {
    * THE SERVER RECORD IS THE TRUTH, and the local application below it is the
    * sample. Both are shown because they answer different questions — "what has
    * ICEFALL actually recorded about me" and "what did I send them" — but the
-   * order matters: the recorded check is first, and the demo section carries the
-   * sample-data notice so the two can never be read as one contradicting itself.
+   * order matters: the recorded check is first.
+   *
+   * The sample-data notice that used to sit between them is gone, and its job is
+   * done better one level up: `SampleBanner` is mounted above the router, so
+   * this screen is covered whether or not somebody remembered to put a notice on
+   * it. The old one was also gated on `SHOW_DEMO_DATA` and the RAW application
+   * rather than on the sample gate, so a signed-in guide — whose application
+   * section is empty, because the gate closed — was shown a notice about sample
+   * data that was not on their screen.
    */
   const [creds, setCreds] = useState<CredentialsReading | null>(null);
   useEffect(() => {
@@ -63,18 +69,21 @@ export default function Verification() {
   const docFor = (k: CredentialKind) => APPLICATION.documents.find((d) => d.kind === k);
 
   const badgeTone =
-    copy.tone === "ok" ? "summit" : copy.tone === "warn" ? "alert" : copy.tone === "bad" ? "danger" : "neutral";
+    copy.tone === "ok"
+      ? "summit"
+      : copy.tone === "warn"
+        ? "alert"
+        : copy.tone === "bad"
+          ? "danger"
+          : "neutral";
 
   return (
     <Screen>
       <Stagger>
-        <ScreenHeader title="Verification" subtitle="What ICEFALL has checked — and what it has not." />
-
-        {SHOW_DEMO_DATA && APPLICATION.documents.length > 0 && (
-          <Rise>
-            <Disclaimer>{DEMO_NOTICE}</Disclaimer>
-          </Rise>
-        )}
+        <ScreenHeader
+          title="Verification"
+          subtitle="What ICEFALL has checked — and what it has not."
+        />
 
         {/* ---- What ICEFALL has recorded, server-derived -------------------- */}
         <Rise className="pt-5">
@@ -162,7 +171,9 @@ export default function Verification() {
                 <AlertTriangle size={15} strokeWidth={1.8} className="mt-px shrink-0 text-alert" />
                 <div>
                   <p className="text-snow">
-                    {soon.length === 1 ? "A document expires soon" : `${soon.length} documents expire soon`}
+                    {soon.length === 1
+                      ? "A document expires soon"
+                      : `${soon.length} documents expire soon`}
                   </p>
                   <ul className="mt-2 space-y-1">
                     {soon.map((d) => {
@@ -209,10 +220,20 @@ export default function Verification() {
                       );
                     })}
                   </ul>
+                  {/* "YOUR LISTING HIDES ITSELF" PRESUMES A LISTING IS SHOWING.
+                      This block renders in any status, but the sentence only
+                      described the approved one — read by a guide still in the
+                      queue it asserts a live listing they do not have, and
+                      offers to put them "back" somewhere they have never been.
+                      Same claim, told in the tense that is true for the reader.
+                      Home gates its copy of this notice on approval; this screen
+                      keeps the warning in every state, because a certificate
+                      running out is worth knowing about before the check as well
+                      as after it. */}
                   <p className="mt-2.5 text-mist-dim">
-                    Your listing hides itself the day after a document expires — the last day is still yours to
-                    work. That is not a rejection
-                    — replace the document and you are back the same day.
+                    {status === "approved"
+                      ? "Your listing hides itself the day after a document expires — the last day is still yours to work. That is not a rejection — replace the document and you are back the same day."
+                      : "Once you are listed, an expired document hides the listing the day after the expiry — the last day is still yours to work. That is not a rejection — replace the document and nothing is held against you."}
                   </p>
                 </div>
               </div>
@@ -258,7 +279,11 @@ export default function Verification() {
                         good ? "border-summit/40 text-summit" : "border-hairline text-mist-dim",
                       )}
                     >
-                      {good ? <Check size={15} strokeWidth={2} /> : <FileText size={14} strokeWidth={1.7} />}
+                      {good ? (
+                        <Check size={15} strokeWidth={2} />
+                      ) : (
+                        <FileText size={14} strokeWidth={1.7} />
+                      )}
                     </span>
 
                     <div className="min-w-0 flex-1">
@@ -345,9 +370,9 @@ export default function Verification() {
                 make no judgement about whether you are a good guide.
               </p>
               <p>
-                <span className="text-snow">Why it expires.</span> An approval is only as good as the
-                paperwork under it. A badge that outlives its certificate is a false statement to a
-                client.
+                <span className="text-snow">Why it expires.</span> An approval is only as good as
+                the paperwork under it. A badge that outlives its certificate is a false statement
+                to a client.
               </p>
             </div>
           </Card>

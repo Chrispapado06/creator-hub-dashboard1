@@ -59,7 +59,11 @@ export const SEASON_START_MONTH = 4;
 export const SEASON_END_MONTH = 9;
 
 const fmt = (d: Date, withYear = true) =>
-  d.toLocaleDateString("en-GB", { day: "numeric", month: "short", ...(withYear ? { year: "numeric" } : {}) });
+  d.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    ...(withYear ? { year: "numeric" } : {}),
+  });
 
 export function rangeLabel(from: Date, to: Date): string {
   const sameYear = from.getFullYear() === to.getFullYear();

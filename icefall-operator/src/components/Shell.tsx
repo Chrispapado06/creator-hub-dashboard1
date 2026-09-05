@@ -16,11 +16,12 @@
 
 import {
   Bell, Building2, ChartNoAxesColumn, Columns3, Footprints, LayoutDashboard, LogOut,
-  MessagesSquare, Mountain as MountainIcon, Package, Receipt, Settings as SettingsIcon, Users,
+  MessagesSquare, Mountain as MountainIcon, Package, Radio, Receipt, Settings as SettingsIcon, Users,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { can, type Permission } from "@/domain/authz";
+import { DEMO } from "@/offline/offline";
 import { useAsync, useOperator } from "@/state/OperatorContext";
 
 interface NavItem {
@@ -87,6 +88,9 @@ export function Shell({ children }: { children: ReactNode }) {
     { to: "/operator/bookings", label: "Bookings", icon: Receipt, permission: "viewAnalytics" },
     { to: "/operator/analytics", label: "Analytics", icon: ChartNoAxesColumn, permission: "viewAnalytics" },
     { to: "/operator/company", label: "Company Profile", icon: Building2, permission: "editCompanyProfile" },
+    // A channel is published company content, so it sits under the profile and
+    // takes the same permission the adapter checks before it accepts one.
+    { to: "/operator/channels", label: "Channels", icon: Radio, permission: "editCompanyProfile" },
     { to: "/operator/team", label: "Team", icon: Users, permission: "manageStaff" },
     { to: "/operator/notifications", label: "Notifications", icon: Bell, permission: "viewInbox", badge: unreadNotifications },
     { to: "/operator/settings", label: "Settings", icon: SettingsIcon, permission: "viewInbox" },
@@ -149,9 +153,26 @@ export function Shell({ children }: { children: ReactNode }) {
             {/* The mockup's label. `admin` is the schema's word; the person is an Operator. */}
             <div className="text-[11px] text-faint">{session.user.role === "admin" ? "Operator" : "Sales"}</div>
           </div>
-          <button onClick={signOut} title="Sign out" className="text-faint hover:text-ink">
-            <LogOut size={14} aria-hidden />
-          </button>
+          {/*
+            NOT DRAWN WHEN IT CANNOT ACT.
+
+            `signOut` returns immediately under DEMO (OperatorContext) — and
+            correctly so: the session is seeded at start-up, there is no sign-in
+            screen to return to, and clearing it would strand the reader on a
+            dead end. But DEMO is the build that is deployed, so what the
+            operator saw was a Sign out control that did nothing at all when
+            pressed. A control that silently declines is worse than an absent
+            one: the reader concludes they are signed out when they are not.
+
+            So the button renders only in a build where signing out signs you
+            out. This is a render decision taken from the same flag the action
+            reads, so the two cannot drift apart.
+          */}
+          {!DEMO && (
+            <button onClick={signOut} title="Sign out" className="text-faint hover:text-ink">
+              <LogOut size={14} aria-hidden />
+            </button>
+          )}
         </div>
       </aside>
 

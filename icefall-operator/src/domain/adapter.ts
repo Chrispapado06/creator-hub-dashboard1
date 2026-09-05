@@ -24,6 +24,9 @@
 import type { Session } from "./authz";
 import type {
   Booking,
+  Channel,
+  ChannelMessage,
+  ChannelMessageStats,
   Company,
   CompanyMountain,
   CompanyTrek,
@@ -290,6 +293,67 @@ export interface NewLeadInput {
   note?: string;
 }
 
+/**
+ * What an operator states when opening a channel.
+ *
+ * No `companyId` — the scope is the session, like every other write here. No
+ * `coverPath` either: a cover is an upload, and uploads go through the media
+ * surface that already exists, not through the create call.
+ */
+export interface NewChannelInput {
+  /** 1..60 after trimming, unique within the company. */
+  name: string;
+  /** ≤300 after trimming. Empty or omitted stores null, never "". */
+  description?: string | null;
+}
+
+/**
+ * The editable fields of a channel. `archivedAt` is NOT among them: archiving
+ * runs through `archiveChannel`, so "stop this channel" is one named act with
+ * one reason rather than a timestamp any patch could set — or unset.
+ */
+export interface ChannelPatch {
+  name?: string;
+  description?: string | null;
+}
+
+/**
+ * WHAT A CHANNEL MESSAGE PROMOTES, shaped so the invalid pair cannot be typed.
+ *
+ * The migration writes the rule as a constraint —
+ * `channel_messages_departure_needs_product`: a departure requires a product.
+ * This is that constraint at the type level. Because `departureId` only exists
+ * INSIDE an object that already carries a `productId`, "a departure with no
+ * product" is not a value this interface can hold, so it is never a refusal an
+ * operator has to read: it is a sentence the caller cannot write.
+ *
+ * A promotion is a PRODUCT and optionally one of its departures. It is never
+ * an offer — see the note on `ChannelMessage` in `types.ts` for why that is a
+ * correctness rule and not a preference.
+ */
+export interface ChannelPromotion {
+  productId: string;
+  /** One departure OF THAT PRODUCT, or null for "the trip in general". */
+  departureId?: string | null;
+}
+
+/**
+ * What an operator states when sending to a channel.
+ *
+ * THERE IS NO `media` FIELD. Message media has no bucket — `operator-media` is
+ * company-scoped and fine for a channel cover, but nothing yet holds a photo
+ * that belongs to a message. A field here would be a write the storage layer
+ * rejects, so the shape says text-plus-promotion, which is what actually ships.
+ */
+export interface NewChannelMessageInput {
+  /** 1..2000 after trimming. */
+  body: string;
+  /** Omitted or null = this message promotes nothing. */
+  promotion?: ChannelPromotion | null;
+  /** Terms in the seller's own words, ≤300. NEVER a price — see `types.ts`. */
+  promoNote?: string | null;
+}
+
 export interface OperatorBackend {
   /* ---- identity -------------------------------------------------------- */
   signIn(email: string): Promise<Session | null>;
@@ -498,6 +562,125 @@ export interface OperatorBackend {
    * reason. Null or empty clears the slot back to `{ source: "none" }`.
    */
   setPromoVideo?(session: Session, input: string | null): Promise<WriteResult<PromoVideo>>;
+
+  /* ---- channels -------------------------------------------------------- */
+  /*
+   * A COMPANY BROADCASTS; MEMBERS LISTEN. The owner's model, in their words:
+   * "like on instagram when creators create channels".
+   *
+   * These mirror `20260902180000_company_channels.sql`, which is written and
+   * NOT PUSHED — everything runs against the in-memory adapter today so the
+   * swap is a repoint, the route `leads.tags` took. Optional for the reason
+   * `getPosts` is optional and no other: `src/offline/backend.ts` is frozen by
+   * another session and a required member would break it. A screen finding
+   * these absent says channels are UNAVAILABLE; it does not draw an empty one.
+   *
+   * SESSION-SCOPED, ALL OF THEM. There is no `companyId` parameter anywhere, so
+   * a cross-company read cannot be expressed.
+   *
+   * READ THE ABSENCES. There is no method to reply, no method to comment, no
+   * method to add a member, no method to edit a message, and no method to
+   * delete a channel. Each one is a rule the database enforces, and adding any
+   * of them here would put the UI ahead of what the backend will accept.
+   */
+
+  /**
+   * The company's own channels, ARCHIVED ONES INCLUDED and marked as such
+   * (`archivedAt`). Filtering them away here would hide a channel that people
+   * joined and can still read, which is precisely the disappearance archiving
+   * exists to prevent.
+   */
+  getChannels?(session: Session): Promise<Channel[]>;
+  /**
+   * Opens a channel. Admin only — the same permission that publishes company
+   * content, because a channel IS published company content.
+   *
+   * Both the name and the description run the `findContactDetailsIn` guard,
+   * and blockingly. A channel is promotional text pointed straight at climbers
+   * with no reviewer in between, so it is exactly where a phone number gets
+   * smuggled — and a channel NAME is read far more often than its description.
+   */
+  createChannel?(session: Session, input: NewChannelInput): Promise<WriteResult<Channel>>;
+  /** Renames or re-describes a channel. Same guards as creating one. */
+  updateChannel?(
+    session: Session,
+    channelId: string,
+    patch: ChannelPatch,
+  ): Promise<WriteResult<Channel>>;
+  /**
+   * Stamps `archivedAt`: no new messages, still readable by everyone who
+   * joined.
+   *
+   * THERE IS NO `deleteChannel`, AND THERE NEVER WILL BE. Members joined
+   * something. A company that could delete a channel could make the thing
+   * people opted into disappear from under them, along with every promotional
+   * claim it ever made in there. Archive is the whole lifecycle; the absence of
+   * a delete method is the enforcement.
+   */
+  archiveChannel?(session: Session, channelId: string): Promise<WriteResult<Channel>>;
+
+  /** One channel's messages, NEWEST FIRST. */
+  getChannelMessages?(session: Session, channelId: string): Promise<ChannelMessage[]>;
+  /**
+   * Sends to a channel. Admin only — this is the ONLY write path onto
+   * `channel_messages`, and it is where "members cannot reply" actually lives.
+   *
+   * Refuses on an archived channel, with the reason. Runs the contact-details
+   * guard over BOTH `body` and `promoNote`. A promoted product must be the
+   * caller's OWN — a company promoting another company's trip is a cross-tenant
+   * leak wearing a compliment — and a promoted departure must belong to that
+   * product.
+   */
+  postChannelMessage?(
+    session: Session,
+    channelId: string,
+    input: NewChannelMessageInput,
+  ): Promise<WriteResult<ChannelMessage>>;
+  /**
+   * Deletes one of the company's own messages.
+   *
+   * THERE IS NO `updateChannelMessage`, DELIBERATELY. The table has no UPDATE
+   * policy, matching `posts`: a promotional claim is stood behind or deleted.
+   * Silent edits after people have read it — and after the view count accrued
+   * against the old words — is how a feed becomes a liability. Delete and
+   * repost is the honest correction, because it resets the count with the text.
+   */
+  deleteChannelMessage?(session: Session, messageId: string): Promise<WriteResult<ChannelMessage>>;
+  /**
+   * HOW MANY PEOPLE OPENED EACH MESSAGE, AND NOT ONE THING MORE.
+   *
+   * This is the feature the owner asked for, and rule 3 of the contract is why
+   * it returns what it returns. The count comes from `channel_message_stats`,
+   * an aggregate view; the company cannot read the `channel_message_views` rows
+   * underneath it. A company learning that a named climber opened a named
+   * promotional offer at a named time is surveillance, not analytics, and
+   * nobody joining a channel expects it.
+   *
+   * So the return type carries a message id and a number. No profile id, no
+   * name, no timestamp — not because a screen would misuse them, but so that a
+   * screen COULD not: build no "who viewed" list, no expandable row, no hover
+   * card, and if someone adds one anyway there is no identity in this data for
+   * it to show. A count must not become an affordance.
+   *
+   * Every message in the channel appears, including ones with zero views. A
+   * counted zero is a fact and renders as "0 views".
+   */
+  getChannelMessageStats?(session: Session, channelId: string): Promise<ChannelMessageStats[]>;
+  /**
+   * How many people have joined — a count the company legitimately sees,
+   * because people joined it themselves and know they did.
+   *
+   * NO METHOD RETURNS MEMBER IDENTITIES. Do not add one. The same rule as the
+   * view count, for the same reason, and it also runs the other way: a company
+   * CANNOT ADD MEMBERS either, so there is no invite, no add-member and no
+   * import here. An audience the company assembled is a mailing list nobody
+   * consented to.
+   *
+   * A `Reading` for the reason `getFollowerCount` is one: an implementation
+   * with no membership data should say so rather than ship a zero that reads
+   * as "nobody joined".
+   */
+  getChannelMemberCount?(session: Session, channelId: string): Promise<Reading<number>>;
 
   /* ---- dashboard, analytics, notifications ----------------------------- */
   getDashboard(session: Session): Promise<DashboardSummary>;

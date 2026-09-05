@@ -17,6 +17,7 @@ import Bookings from "@/screens/Bookings";
 import Expeditions from "@/screens/Expeditions";
 import Notifications from "@/screens/Notifications";
 import Treks from "@/screens/Treks";
+import Channels, { ChannelDetail } from "@/screens/Channels";
 import CompanyEditor from "@/screens/CompanyEditor";
 import CompanyProfile from "@/screens/CompanyProfile";
 import Conversation from "@/screens/Conversation";
@@ -141,6 +142,22 @@ function Shelled() {
         <Route
           path="/operator/company"
           element={<Gate><RequirePermission permission="editCompanyProfile"><CompanyProfile /></RequirePermission></Gate>}
+        />
+
+        {/*
+          Channels — the company broadcasts, members listen. Gated on
+          `editCompanyProfile` because a channel IS published company content:
+          the same permission that publishes a post, and the same one
+          `createChannel` and `postChannelMessage` check in the adapter, so the
+          nav never offers a surface the backend would refuse at.
+        */}
+        <Route
+          path="/operator/channels"
+          element={<Gate><RequirePermission permission="editCompanyProfile"><Channels /></RequirePermission></Gate>}
+        />
+        <Route
+          path="/operator/channels/:id"
+          element={<Gate><RequirePermission permission="editCompanyProfile"><ChannelDetail /></RequirePermission></Gate>}
         />
 
         <Route path="/operator/mountains" element={<Gate><Mountains /></Gate>} />

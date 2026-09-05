@@ -28,7 +28,7 @@
 
 import { useEffect, useSyncExternalStore } from "react";
 import { SHOW_DEMO_DATA } from "@/lib/demoFlag";
-import { guideAccess, onAuthChange } from "@/auth/account";
+import { currentUserId, guideAccess, onAuthChange } from "@/auth/account";
 
 /**
  * `null` means "not yet known", and it is deliberately distinct from `false`.
@@ -37,14 +37,58 @@ import { guideAccess, onAuthChange } from "@/auth/account";
  */
 let resolved: boolean | null = null;
 
+/**
+ * WHOSE APP THIS IS — not merely whether somebody is here.
+ *
+ * `resolved` answers "may invented data render". That was enough while the only
+ * question was what to SHOW. It is not enough for what a guide SAVES: their own
+ * mountains and dates need a drawer of their own, separable from the sample's
+ * and from the previous account's on a shared device. `session` is null until
+ * known, and `owner` carries the account id when there is one.
+ */
+let session: boolean | null = null;
+let owner: string | null = null;
+
 const listeners = new Set<() => void>();
 
 /** Set once the session is known. Called only by the identity provider. */
-export function setSessionPresent(present: boolean): void {
+export function setSessionPresent(present: boolean, uid: string | null = null): void {
   const next = SHOW_DEMO_DATA && !present;
-  if (next === resolved) return;
+  if (next === resolved && present === session && uid === owner) return;
   resolved = next;
+  session = present;
+  owner = uid;
   for (const fn of listeners) fn();
+}
+
+/**
+ * WHICH DRAWER THE GUIDE'S OWN WORK LIVES IN — `null` while unknown.
+ *
+ * THE BUG THIS EXISTS TO KILL: the sample gate was fitted to the listing and
+ * availability READS and never to their WRITES. A signed-in guide could add a
+ * mountain, be told "Saved on this phone", and find the next screen saying they
+ * had added nothing — the write succeeded into a drawer the read refused to
+ * open. Silent, and on the one screen the whole app exists for.
+ *
+ * The mistake was treating "this stored data might be the sample's" as a reason
+ * to show NOTHING, when it is a reason to keep the sample's work and the
+ * account's work APART. One drawer per owner does that:
+ *
+ *   "sample"      the seeded demo drawer (its existing key, so demo edits live)
+ *   "own:<uid>"   this account's own drawer — starts empty, never seeded
+ *   "own"         signed out of a non-demo build: still theirs, still separate
+ *   null          not yet known — reads give nothing AND writes REFUSE, so the
+ *                 screen can say so rather than swallow the edit
+ *
+ * Keying by uid also closes a leak nobody had hit yet: two guides sharing a
+ * phone would otherwise inherit each other's mountains.
+ */
+export type StoreScope = string | null;
+
+export function storeScope(): StoreScope {
+  if (session === null) return null;
+  if (sampleAllowed()) return "sample";
+  return owner ? `own:${owner}` : "own";
 }
 
 export function subscribeSampleGate(fn: () => void): () => void {
@@ -94,6 +138,18 @@ export function useSampleGate(): boolean {
   );
 }
 
+/**
+ * Re-render when the OWNER changes, not merely when the sample flips.
+ *
+ * A screen holding the guide's own work must re-read once the drawer is known:
+ * the first paint happens while `storeScope()` is still null, so anything
+ * captured then is empty forever. Subscribing here is what turns "not yet
+ * known" into "now known" on screen instead of on the next navigation.
+ */
+export function useStoreScope(): StoreScope {
+  return useSyncExternalStore(subscribeSampleGate, storeScope, () => null);
+}
+
 /** Mount once, at the app root. Nothing else may call `setSessionPresent`. */
 export function SampleGateResolver(): null {
   useEffect(() => {
@@ -104,7 +160,17 @@ export function SampleGateResolver(): null {
         /* signed-out and offline are the only states with no session behind
            them. `unknown` means signed in and the guide check failed — still a
            session, so still no sample. */
-        setSessionPresent(a !== "signed-out" && a !== "offline");
+        const present = a !== "signed-out" && a !== "offline";
+        if (!present) {
+          setSessionPresent(false, null);
+          return;
+        }
+        /* The uid names the drawer, so it is fetched before the gate opens
+           rather than after — a write landing in "own" and a later read in
+           "own:<uid>" would lose the edit exactly as the original bug did. */
+        void currentUserId().then((uid) => {
+          if (alive) setSessionPresent(true, uid);
+        });
       });
     resolve();
     const off = onAuthChange(resolve);
@@ -115,4 +181,3 @@ export function SampleGateResolver(): null {
   }, []);
   return null;
 }
-

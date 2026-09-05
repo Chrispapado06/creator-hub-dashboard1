@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, Mountain, Plus } from "lucide-react";
 import { Rise, Screen, Stagger } from "@/components/layout/chrome";
 import { Card, Fab, Tabs } from "@/components/ui/primitives";
 import { Photo } from "@/components/Photo";
+import { useStoreScope } from "@/domain/sampleGate";
 import { offeredRoutes } from "@/domain/listing";
 import { eur } from "@/data/demo";
 
@@ -38,6 +39,10 @@ export default function MyMountains() {
    * A `useState` initialiser is a snapshot, and a snapshot of data that can be
    * revoked is the §6aj failure with a React shape.
    */
+  /* Computing every render is necessary but not sufficient: nothing re-renders
+     this screen when the drawer resolves, so a direct load still showed the
+     empty state forever. Subscribing is the other half of the same fix. */
+  useStoreScope();
   const all = offeredRoutes();
   const rows = tab === "all" ? all : all.filter((r) => r.kind === tab);
 
@@ -68,10 +73,19 @@ export default function MyMountains() {
 
         <Rise className="space-y-2.5 pt-4">
           {rows.map((m) => (
-            <Link key={`${m.kind}:${m.routeId}`} to={`/route/${m.kind}/${m.routeId}`} className="block">
+            <Link
+              key={`${m.kind}:${m.routeId}`}
+              to={`/route/${m.kind}/${m.routeId}`}
+              className="block"
+            >
               <Card className="transition-colors hover:border-hairline-strong">
                 <div className="flex items-center gap-3.5">
-                  <Photo peak={m.routeId} kind={m.photoKind} alt="" className="h-16 w-16 shrink-0" />
+                  <Photo
+                    peak={m.routeId}
+                    kind={m.photoKind}
+                    alt=""
+                    className="h-16 w-16 shrink-0"
+                  />
                   <div className="min-w-0 flex-1">
                     {/* The kind sits on the meta line, not beside the title —
                         squeezed against a badge, "Mount Everest" wrapped to two
@@ -107,7 +121,10 @@ export default function MyMountains() {
                 <p className="mx-auto mt-1.5 max-w-[34ch] text-[12px] leading-relaxed text-mist-dim">
                   A climber cannot find you until you say what you guide.
                 </p>
-                <Link to="/route/add" className="mt-4 inline-flex items-center gap-1.5 text-[12.5px] text-azure">
+                <Link
+                  to="/route/add"
+                  className="mt-4 inline-flex items-center gap-1.5 text-[12.5px] text-azure"
+                >
                   <Plus size={14} strokeWidth={2} />
                   Add a mountain or trek
                 </Link>

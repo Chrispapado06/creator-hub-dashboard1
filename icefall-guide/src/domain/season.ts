@@ -130,11 +130,32 @@ const toInput = (b: GuideBooking) => ({
   passedThrough: b.passedThrough,
 });
 
-export function earningsSplit(staged: readonly StagedBooking[]): EarningsSplit {
+/**
+ * `season` MEANS THE SEASON. It did not: this filtered cancellations and
+ * nothing else, so the figure under "Overview this season" was the guide's
+ * ALL-TIME total — €16,440 across two seasons on the shipped seed, against
+ * €6,582.50 for the same window one tap away in Analytics. Two screens, two
+ * answers, and the label on the wrong one said "this season".
+ *
+ * `paidOut` and `coming` are deliberately NOT windowed: they answer "what has
+ * ICEFALL settled" and "what is still owed", which are lifetime questions and
+ * are labelled as such on Payouts.
+ */
+export function earningsSplit(
+  staged: readonly StagedBooking[],
+  range: DateRange = presetRange("season"),
+): EarningsSplit {
   const live = staged.filter((b) => b.state !== "cancelled");
-  const out = netEarnings(live.filter((b) => b.payout === "sent").map(toInput), "completed bookings");
-  const due = netEarnings(live.filter((b) => b.payout !== "sent").map(toInput), "upcoming bookings");
-  const all = netEarnings(live.map(toInput), "bookings this season");
+  const inSeason = live.filter((b) => withinRange(b.departureIso, range));
+  const out = netEarnings(
+    live.filter((b) => b.payout === "sent").map(toInput),
+    "completed bookings",
+  );
+  const due = netEarnings(
+    live.filter((b) => b.payout !== "sent").map(toInput),
+    "upcoming bookings",
+  );
+  const all = netEarnings(inSeason.map(toInput), "bookings this season");
   return {
     paidOut: out.total,
     paidOutExcluded: out.excluded,
@@ -177,7 +198,10 @@ export function conversations(
         clients: t.clientIds.map(clientById).filter((c): c is Client => c !== undefined),
         last,
         waitingHours: owed
-          ? Math.max(0, Math.floor((now.getTime() - new Date(lastInbound.at).getTime()) / 3_600_000))
+          ? Math.max(
+              0,
+              Math.floor((now.getTime() - new Date(lastInbound.at).getTime()) / 3_600_000),
+            )
           : null,
       };
     })
@@ -198,7 +222,9 @@ export interface Availability {
   emptyReason: string | null;
 }
 
-export function availability(states: Record<string, DayState> = sample(DAY_STATES, {})): Availability {
+export function availability(
+  states: Record<string, DayState> = sample(DAY_STATES, {}),
+): Availability {
   const keys = Object.keys(states);
   return {
     states,
@@ -240,10 +266,7 @@ export interface MonthPoint {
  * booked — distinct from the series being unavailable, which is what an empty
  * result gives.
  */
-export function earningsByMonth(
-  staged: readonly StagedBooking[],
-  range: DateRange,
-): MonthPoint[] {
+export function earningsByMonth(staged: readonly StagedBooking[], range: DateRange): MonthPoint[] {
   /**
    * THE AXIS IS THE CHOSEN WINDOW, not a fixed six months.
    *
@@ -261,6 +284,13 @@ export function earningsByMonth(
     const m = new Date(range.from.getFullYear(), range.from.getMonth() + i, 1);
     const inMonth = staged.filter((b) => {
       if (b.state === "cancelled") return false;
+      /* THE WINDOW, NOT JUST THE MONTH. A range of 2 Jun – 2 Sep walks four
+         calendar months, and the September cell used to collect every
+         September booking — including one departing on the 16th, a fortnight
+         OUTSIDE the window. The chart then disagreed with the total printed
+         directly above it, which is the one thing a chart beside a total must
+         never do. A part-month is drawn as the part that is in range. */
+      if (!withinRange(b.departureIso, range)) return false;
       const d = new Date(b.departureIso);
       return d.getFullYear() === m.getFullYear() && d.getMonth() === m.getMonth();
     });
@@ -356,8 +386,13 @@ export function topClientele(staged: readonly StagedBooking[]): ClienteleRow[] {
   for (const b of staged) {
     if (b.state === "cancelled") continue;
     for (const c of b.clients) {
-      const row =
-        byClient.get(c.id) ?? { client: c, trips: [], peak: b.peak, cents: 0, excluded: 0 };
+      const row = byClient.get(c.id) ?? {
+        client: c,
+        trips: [],
+        peak: b.peak,
+        cents: 0,
+        excluded: 0,
+      };
       row.trips.push(b);
       const t = netEarnings([toInput(b)], "bookings").total;
       if (t.available) row.cents += t.value;
@@ -414,9 +449,7 @@ export interface Analytics {
 
 /** Everything a window's figures are built from, so both windows use one path. */
 function windowTotals(staged: readonly StagedBooking[], r: DateRange) {
-  const live = staged.filter(
-    (b) => b.state !== "cancelled" && withinRange(b.departureIso, r),
-  );
+  const live = staged.filter((b) => b.state !== "cancelled" && withinRange(b.departureIso, r));
   const trips = new Map<string, number>();
   for (const b of live) for (const id of b.clientIds) trips.set(id, (trips.get(id) ?? 0) + 1);
   const clients = trips.size;
@@ -539,7 +572,12 @@ export function homeSummary(now: Date = new Date()): HomeSummary {
 /** Kept for the screens that only need the marketplace block. */
 export function marketplace() {
   const a = analytics();
-  return { views: a.views, enquiries: measured(sample(THREADS, []).length), conversion: a.conversion, provenance: a.provenance };
+  return {
+    views: a.views,
+    enquiries: measured(sample(THREADS, []).length),
+    conversion: a.conversion,
+    provenance: a.provenance,
+  };
 }
 
 export { parseDay };

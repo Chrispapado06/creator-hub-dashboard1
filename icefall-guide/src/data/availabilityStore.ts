@@ -25,7 +25,7 @@
  */
 
 import { DAY_STATES, type DayState } from "./demo";
-import { sampleAllowed } from "@/domain/sampleGate";
+import { storeScope } from "@/domain/sampleGate";
 import { DEMO } from "@/lib/demoFlag";
 
 /**
@@ -36,14 +36,19 @@ import { DEMO } from "@/lib/demoFlag";
  */
 const KEY = DEMO ? "icefall-guide:offline-demo:availability:v1" : "icefall-guide:availability:v1";
 
+/** One drawer per owner — see `storeScope()`, and `listingStore.ts` for why. */
+const keyFor = (scope: string): string => (scope === "sample" ? KEY : `${KEY}:${scope}`);
+
 /** What the guide may set. `booked` is derived and deliberately absent. */
 export type SettableState = Exclude<DayState, "booked">;
 
 type Stored = Record<string, SettableState>;
 
 function read(): Stored {
+  const scope = storeScope();
+  if (!scope) return {};
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = localStorage.getItem(keyFor(scope));
     if (!raw) return {};
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== "object" || parsed === null) return {};
@@ -56,8 +61,12 @@ function read(): Stored {
 }
 
 function write(v: Stored): boolean {
+  const scope = storeScope();
+  /* Refuse rather than guess — a day written to the wrong drawer is a day the
+     guide believes they marked. The callers return this to the screen. */
+  if (!scope) return false;
   try {
-    localStorage.setItem(KEY, JSON.stringify(v));
+    localStorage.setItem(keyFor(scope), JSON.stringify(v));
     return true;
   } catch {
     return false;
@@ -76,15 +85,21 @@ const TOMBSTONE = "__cleared__";
 type StoredWithTombstones = Record<string, SettableState | typeof TOMBSTONE>;
 
 export function loadStates(): Record<string, SettableState> {
-  /* Same leak as the listing store: the stored calendar in this browser was
-     seeded from the sample and belongs to it, so a signed-in account must not
-     inherit it. Their real calendar arrives with the `guide_availability`
-     migration. */
-  if (!sampleAllowed()) return {};
+  /* This refused every signed-in guide their own calendar, for the same reason
+     and with the same effect as the listing store: every tap was written and
+     none was read back, under a footer reading "Saved on this phone". The
+     drawers are separated by owner now, so a guide reads their own marks and
+     inherits none of the sample's. Their SERVER calendar still arrives with the
+     `guide_availability` migration; this is the honest local half. */
+  const scope = storeScope();
+  if (!scope) return {};
   const own = read() as StoredWithTombstones;
   const merged: Record<string, SettableState> = {};
-  for (const [day, s] of Object.entries(DAY_STATES)) {
-    if (s !== "booked") merged[day] = s as SettableState;
+  /* The seed is the sample's starting point and nobody else's. */
+  if (scope === "sample") {
+    for (const [day, s] of Object.entries(DAY_STATES)) {
+      if (s !== "booked") merged[day] = s as SettableState;
+    }
   }
   for (const [day, s] of Object.entries(own)) {
     if (s === TOMBSTONE) delete merged[day];

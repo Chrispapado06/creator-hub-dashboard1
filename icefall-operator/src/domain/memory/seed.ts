@@ -33,6 +33,8 @@
 import type {
   AnalyticsEvent,
   Booking,
+  Channel,
+  ChannelMessage,
   Company,
   CompanyMountain,
   CompanyTrek,
@@ -1550,4 +1552,369 @@ export const FOLLOWS: Follow[] = [
  */
 export const PROMO_VIDEOS: PromoVideoSlot[] = [
   { companyId: LANTERN, video: { source: "youtube", youtubeId: "LanternR21x" } },
+];
+
+/* -------------------------------------------------------------------------- */
+/* Channels — a company broadcasts, members listen                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * THE MEMBER AND VIEW ROW SHAPES LIVE HERE, NOT IN `types.ts`, AND THAT IS THE
+ * POINT.
+ *
+ * `types.ts` is the vocabulary every screen in this portal shares. A shape
+ * carrying "which person is in this channel" or "which person opened this
+ * message" must not be in that vocabulary at all, because the company is never
+ * allowed to see either — it sees `getChannelMemberCount` (a number) and
+ * `getChannelMessageStats` (a number per message). These two interfaces are
+ * stand-ins for `channel_members` and `channel_message_views`, tables the
+ * company cannot read row-by-row in the real database, so the rows exist ONLY
+ * on this side of the seam, purely so the counts above them are arithmetic over
+ * something real instead of a literal somebody typed.
+ *
+ * Note what a member row does NOT have: a name. Not one, anywhere. `Follow`
+ * carries `followerName` because a follower count sits beside a public social
+ * presence; a channel member joined a private promotional list, and the company
+ * has no business knowing who. There is nothing here to render even by
+ * accident.
+ */
+export interface ChannelMemberRow {
+  channelId: string;
+  profileId: string;
+  joinedAt: string;
+  /** Muted, not left: quiet without leaving. Mirrors `channel_members.muted`. */
+  muted: boolean;
+}
+
+/** One person, one message, once — never an incrementing counter. */
+export interface ChannelMessageViewRow {
+  messageId: string;
+  profileId: string;
+  viewedAt: string;
+}
+
+export const CHANNEL_LANTERN_DISPATCH = "ch-lantern-dispatch";
+export const CHANNEL_LANTERN_MONSOON = "ch-lantern-monsoon";
+export const CHANNEL_COLDHARBOUR = "ch-coldharbour-dispatch";
+
+/**
+ * TWO COMPANIES HAVE CHANNELS AND BOTH ARE INVENTED — Lantern Ridge and
+ * Coldharbour, the only companies in this seed. No real business gets a demo
+ * channel: a promotional broadcast attributed to a company that exists is an
+ * invented commercial claim published in its name, which is the one thing the
+ * honesty doctrine forbids outright.
+ *
+ * Coldharbour's channel is here for the reason Coldharbour is here at all: so
+ * "a company cannot read another company's channel" is a test with something
+ * real on the other side of it rather than an assertion against an empty set.
+ */
+export const CHANNELS: Channel[] = [
+  {
+    id: CHANNEL_LANTERN_DISPATCH,
+    companyId: LANTERN,
+    name: "Lantern Ridge Dispatch",
+    description:
+      "Departure news, remaining places and the occasional set of terms worth knowing about, straight from the Kathmandu office.",
+    coverPath: null,
+    archivedAt: null,
+    createdAt: "2026-05-06T09:00:00.000Z",
+  },
+  {
+    /*
+     * ARCHIVED, NOT DELETED — the state the whole lifecycle turns on. The
+     * monsoon is over, so no new message can be sent here; the 41 people who
+     * joined can still read every word the company told them, which is the
+     * entire reason there is no delete method anywhere in this app.
+     */
+    id: CHANNEL_LANTERN_MONSOON,
+    companyId: LANTERN,
+    name: "Monsoon 2026 — trail conditions",
+    description:
+      "Daily trail and flight conditions through the 2026 monsoon. Closed for the season.",
+    coverPath: null,
+    archivedAt: "2026-08-14T06:00:00.000Z",
+    createdAt: "2026-06-10T07:30:00.000Z",
+  },
+  {
+    id: CHANNEL_COLDHARBOUR,
+    companyId: COLDHARBOUR,
+    name: "Coldharbour Range Notes",
+    description: "Denali season notes and place releases.",
+    coverPath: null,
+    archivedAt: null,
+    createdAt: "2026-06-24T18:00:00.000Z",
+  },
+];
+
+/**
+ * Members, generated so the count is ADDITION over rows rather than a number
+ * typed into a fixture. People join themselves — there is no code path in this
+ * portal that creates one of these, because a company cannot add a member.
+ *
+ * Joining is spread EVENLY BETWEEN TWO STATED DATES rather than stepped by a
+ * fixed interval, and the second date is the point: a fixed step silently runs
+ * past the end of the world it is describing, and this seed would have had
+ * people joining the monsoon channel two days after the app clock and a
+ * fortnight after it was archived. Both ends are bounded so a membership can
+ * neither predate the channel nor postdate the day it closed.
+ *
+ * `new Date(ms)` here is ARITHMETIC ON A FIXED LITERAL, not a clock read —
+ * every input is a constant in this file, so the seed is identical on every
+ * machine. Nothing here calls `new Date()`.
+ */
+function channelMembers(
+  channelId: string,
+  prefix: string,
+  count: number,
+  firstJoinedIso: string,
+  lastJoinedIso: string,
+): ChannelMemberRow[] {
+  const start = Date.parse(firstJoinedIso);
+  const step = count > 1 ? (Date.parse(lastJoinedIso) - start) / (count - 1) : 0;
+  return Array.from({ length: count }, (_, i) => ({
+    channelId,
+    profileId: `pr-${prefix}-${i + 1}`,
+    joinedAt: new Date(Math.round(start + i * step)).toISOString(),
+    // Roughly one in seven wants the offers without the notifications.
+    muted: i % 7 === 3,
+  }));
+}
+
+const LANTERN_DISPATCH_MEMBERS = channelMembers(
+  CHANNEL_LANTERN_DISPATCH,
+  "ld",
+  48,
+  "2026-05-07T10:00:00.000Z",
+  // Still gaining members up to the day before the app clock.
+  "2026-08-27T18:00:00.000Z",
+);
+const LANTERN_MONSOON_MEMBERS = channelMembers(
+  CHANNEL_LANTERN_MONSOON,
+  "lm",
+  41,
+  "2026-06-11T09:00:00.000Z",
+  // Nobody joins after it closed — the last of them the morning it was archived.
+  "2026-08-14T04:00:00.000Z",
+);
+const COLDHARBOUR_MEMBERS = channelMembers(
+  CHANNEL_COLDHARBOUR,
+  "cd",
+  16,
+  "2026-06-25T12:00:00.000Z",
+  "2026-08-21T09:00:00.000Z",
+);
+
+export const CHANNEL_MEMBERS: ChannelMemberRow[] = [
+  ...LANTERN_DISPATCH_MEMBERS,
+  ...LANTERN_MONSOON_MEMBERS,
+  ...COLDHARBOUR_MEMBERS,
+];
+
+/**
+ * Messages. Every one of them is text plus, sometimes, a PRODUCT PROMOTION —
+ * never an offer, and no `promo_note` anywhere states a price. Read the notes
+ * on `promoNote`: the figures live on the product, or in an offer made inside a
+ * thread where one named climber can accept it.
+ *
+ * `authorId` is a PROFILE id (`CompanyUser.profileId`), not the company: a
+ * company does not press send, a person does, and a promotional claim traces to
+ * a human exactly as a post does.
+ */
+export const CHANNEL_MESSAGES: ChannelMessage[] = [
+  /* ---- Lantern Ridge Dispatch, oldest first ------------------------------ */
+  {
+    id: "cmsg-ld-1",
+    channelId: CHANNEL_LANTERN_DISPATCH,
+    authorId: "u-ravi",
+    authorName: "Ravi Thapa",
+    body:
+      "Autumn permits are in. Our Khumbu teams are confirmed for October and November, and the office is answering enquiries from six in the morning Kathmandu time.",
+    productId: null,
+    departureId: null,
+    promoNote: null,
+    createdAt: "2026-07-28T08:30:00.000Z",
+  },
+  {
+    id: "cmsg-ld-2",
+    channelId: CHANNEL_LANTERN_DISPATCH,
+    authorId: "u-ravi",
+    authorName: "Ravi Thapa",
+    body:
+      "The November Base Camp trek still has places. Eleven days, two acclimatisation days built in, and the same Sherpa team that walked it in April.",
+    productId: "p-everest-base-camp-trek",
+    departureId: "d-4",
+    // Terms, in the seller's own words. No number, deliberately.
+    promoNote: "Deposit held until the end of September for anyone on this channel.",
+    createdAt: "2026-08-04T15:05:00.000Z",
+  },
+  {
+    /*
+     * THE DUD. Six people out of forty-eight opened it, and it stays in the
+     * seed at six. A promotional channel where every message lands is a fake,
+     * and an operator who only ever sees good numbers learns nothing from them.
+     */
+    id: "cmsg-ld-3",
+    channelId: CHANNEL_LANTERN_DISPATCH,
+    authorId: "u-marta",
+    authorName: "Marta Kowalczyk",
+    body: "The office is closed on Friday for the public holiday. Enquiries will be answered on Saturday morning.",
+    productId: null,
+    departureId: null,
+    promoNote: null,
+    createdAt: "2026-08-12T09:25:00.000Z",
+  },
+  {
+    id: "cmsg-ld-4",
+    channelId: CHANNEL_LANTERN_DISPATCH,
+    authorId: "u-ravi",
+    authorName: "Ravi Thapa",
+    body:
+      "Ama Dablam, 20 October. Five places left on the south-west ridge with Pemba leading. This is the trip people come back for.",
+    productId: "p-ama-dablam-sw-ridge",
+    departureId: "d-5",
+    promoNote: null,
+    createdAt: "2026-08-19T11:40:00.000Z",
+  },
+  {
+    id: "cmsg-ld-5",
+    channelId: CHANNEL_LANTERN_DISPATCH,
+    authorId: "u-ravi",
+    authorName: "Ravi Thapa",
+    body:
+      "Spring 2027 on the South Col opens for booking this week. Two places on the April departure, and we are keeping teams to six on the summit push as always.",
+    productId: "p-everest-south-col",
+    departureId: "d-1",
+    promoNote: "Places held for seven days from enquiry, no deposit needed to hold one.",
+    createdAt: "2026-08-26T07:10:00.000Z",
+  },
+  {
+    /*
+     * THE MEASURED ZERO. Sent twenty-five minutes before the app clock, so
+     * nobody has opened it yet. The screen renders "0 views" — a counted fact,
+     * never a blank and never a dash.
+     */
+    id: "cmsg-ld-6",
+    channelId: CHANNEL_LANTERN_DISPATCH,
+    authorId: "u-ravi",
+    authorName: "Ravi Thapa",
+    body: "Kathmandu flights are running normally again this morning. Anyone travelling this week, your pickup times stand.",
+    productId: null,
+    departureId: null,
+    promoNote: null,
+    createdAt: "2026-08-28T08:55:00.000Z",
+  },
+
+  /* ---- The archived channel ---------------------------------------------- */
+  {
+    id: "cmsg-lm-1",
+    channelId: CHANNEL_LANTERN_MONSOON,
+    authorId: "u-ravi",
+    authorName: "Ravi Thapa",
+    body: "Lukla is weather-holding again. Two days of cloud forecast, and we are moving nobody until it clears.",
+    productId: null,
+    departureId: null,
+    promoNote: null,
+    createdAt: "2026-07-02T05:40:00.000Z",
+  },
+  {
+    id: "cmsg-lm-2",
+    channelId: CHANNEL_LANTERN_MONSOON,
+    authorId: "u-ravi",
+    authorName: "Ravi Thapa",
+    body:
+      "Trail below Namche is passable again after the landslide. The Thame side is not, and we are not walking it until the district says otherwise.",
+    productId: null,
+    departureId: null,
+    promoNote: null,
+    createdAt: "2026-07-21T06:15:00.000Z",
+  },
+  {
+    id: "cmsg-lm-3",
+    channelId: CHANNEL_LANTERN_MONSOON,
+    authorId: "u-ravi",
+    authorName: "Ravi Thapa",
+    body:
+      "That is the monsoon done. This channel closes today — everything in it stays here to read, and autumn news moves to Lantern Ridge Dispatch.",
+    productId: null,
+    departureId: null,
+    promoNote: null,
+    createdAt: "2026-08-14T05:50:00.000Z",
+  },
+
+  /* ---- Coldharbour's, for isolation to have a real other side ------------- */
+  {
+    id: "cmsg-cd-1",
+    channelId: CHANNEL_COLDHARBOUR,
+    authorId: "u-jo",
+    authorName: "Jo Vance",
+    body: "The 2027 Denali West Buttress dates are set. Two teams, both in May, both with a rest day built into the Kahiltna carry.",
+    productId: "p-coldharbour-denali",
+    departureId: null,
+    promoNote: null,
+    createdAt: "2026-08-06T20:00:00.000Z",
+  },
+  {
+    id: "cmsg-cd-2",
+    channelId: CHANNEL_COLDHARBOUR,
+    authorId: "u-jo",
+    authorName: "Jo Vance",
+    body: "Kit list for 2027 has changed — the double boot requirement is now firm. Ask us before you buy anything.",
+    productId: null,
+    departureId: null,
+    promoNote: null,
+    createdAt: "2026-08-22T17:30:00.000Z",
+  },
+];
+
+/**
+ * Views: ONE ROW PER PERSON PER MESSAGE, so the number a company reads is
+ * distinct people who opened it. That is the shape that can never double-count
+ * somebody re-reading, which an incrementing counter always eventually does.
+ *
+ * The viewers are drawn from that channel's OWN members and nowhere else,
+ * because the database will not accept a view from someone who has not joined.
+ * A rotating offset gives each message a different, overlapping audience —
+ * which is what a real channel looks like, rather than the same keen forty
+ * every time.
+ */
+function channelViews(
+  messageId: string,
+  members: readonly ChannelMemberRow[],
+  count: number,
+  offset: number,
+  postedAtIso: string,
+): ChannelMessageViewRow[] {
+  const posted = Date.parse(postedAtIso);
+  return Array.from({ length: count }, (_, i) => ({
+    messageId,
+    profileId: members[(offset + i) % members.length].profileId,
+    /*
+     * Read over the hours after it landed, never before it was sent — and, as
+     * above, arithmetic on a fixed literal rather than a clock read. The widest
+     * of these (41 reads at 37-minute spacing) finishes about a day after its
+     * message, well inside the app clock.
+     */
+    viewedAt: new Date(posted + (i + 1) * 37 * 60 * 1000).toISOString(),
+  }));
+}
+
+export const CHANNEL_MESSAGE_VIEWS: ChannelMessageViewRow[] = [
+  // 41 of 48 — the news everyone had been waiting for.
+  ...channelViews("cmsg-ld-1", LANTERN_DISPATCH_MEMBERS, 41, 0, "2026-07-28T08:30:00.000Z"),
+  // 27 of 48.
+  ...channelViews("cmsg-ld-2", LANTERN_DISPATCH_MEMBERS, 27, 5, "2026-08-04T15:05:00.000Z"),
+  // 6 of 48 — the office-hours note nobody needed.
+  ...channelViews("cmsg-ld-3", LANTERN_DISPATCH_MEMBERS, 6, 19, "2026-08-12T09:25:00.000Z"),
+  // 33 of 48.
+  ...channelViews("cmsg-ld-4", LANTERN_DISPATCH_MEMBERS, 33, 11, "2026-08-19T11:40:00.000Z"),
+  // 12 of 48 — sent two days ago and still being read.
+  ...channelViews("cmsg-ld-5", LANTERN_DISPATCH_MEMBERS, 12, 30, "2026-08-26T07:10:00.000Z"),
+  // cmsg-ld-6 has NO ROWS. Twenty-five minutes old: a real, measured zero.
+
+  ...channelViews("cmsg-lm-1", LANTERN_MONSOON_MEMBERS, 38, 0, "2026-07-02T05:40:00.000Z"),
+  ...channelViews("cmsg-lm-2", LANTERN_MONSOON_MEMBERS, 35, 7, "2026-07-21T06:15:00.000Z"),
+  ...channelViews("cmsg-lm-3", LANTERN_MONSOON_MEMBERS, 22, 14, "2026-08-14T05:50:00.000Z"),
+
+  ...channelViews("cmsg-cd-1", COLDHARBOUR_MEMBERS, 13, 0, "2026-08-06T20:00:00.000Z"),
+  ...channelViews("cmsg-cd-2", COLDHARBOUR_MEMBERS, 9, 4, "2026-08-22T17:30:00.000Z"),
 ];

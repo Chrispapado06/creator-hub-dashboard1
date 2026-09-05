@@ -229,7 +229,8 @@ export const GUIDE_NOTICES = {
    * and 'unavailable' are different statements." A guide who has not opened a
    * date has not declared themselves busy on it.
    */
-  DATES_NOT_SET: "You have not set any dates yet. Nothing is being shown as unavailable — a date you have not opened is simply a date you have not spoken about.",
+  DATES_NOT_SET:
+    "You have not set any dates yet. Nothing is being shown as unavailable — a date you have not opened is simply a date you have not spoken about.",
 
   /**
    * WHERE AN EXPIRY DATE CAME FROM, said beside the date rather than assumed.

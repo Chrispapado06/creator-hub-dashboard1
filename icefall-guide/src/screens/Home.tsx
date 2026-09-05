@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { ArrowRight, Bell, CalendarDays, ChevronRight, Menu } from "lucide-react";
+import { ArrowRight, Bell, CalendarDays, ChevronRight } from "lucide-react";
 import { Rise, Screen, Stagger } from "@/components/layout/chrome";
 import { Card, Disclaimer, StatusPill } from "@/components/ui/primitives";
 import { Notice } from "@/components/guide";
@@ -33,7 +33,7 @@ import { cn } from "@/lib/utils";
  * scanning tiles cannot mistake an absence for a small number.
  */
 export default function Home() {
-  const { identity } = useIdentity();
+  const { identity, loading } = useIdentity();
   const s = homeSummary();
   const status = effectiveStatus(APPLICATION);
   const copy = STATUS_COPY[status];
@@ -59,6 +59,33 @@ export default function Home() {
    * Their real figures arrive with S1 and the listing sync; until then the
    * honest states already written for an empty account are what they see.
    */
+  /**
+   * NOTHING INVENTED WHILE WE ARE STILL FINDING OUT WHO THIS IS.
+   *
+   * `useIdentity()` reports `{ mode: "none" }` until the session resolves, and
+   * this screen fell straight through that into the SAMPLE branch — so for the
+   * length of an `auth.getSession()` plus a `guide_profiles` round trip, a real
+   * guide signing in was greeted by name as somebody else, wearing the GOLD
+   * credentials mark that means ICEFALL has read their documents. On one bar of
+   * signal in a car park — this app's own stated use case — that is not a
+   * flicker, it is the screen.
+   *
+   * The sample gate already fails closed for exactly this reason; the identity
+   * read is the same question and gets the same answer.
+   */
+  if (loading) {
+    return (
+      <Screen>
+        <Stagger>
+          <Rise className="pb-1 pt-7">
+            <p className="text-[13px] text-mist">{greeting},</p>
+            <h1 className="mt-1 text-[22px] font-light leading-tight text-snow">…</h1>
+          </Rise>
+        </Stagger>
+      </Screen>
+    );
+  }
+
   if (identity.mode === "session") {
     return (
       <Screen>
@@ -85,18 +112,36 @@ export default function Home() {
               />
             </h1>
             <p className="mt-1 text-[12px] text-mist-dim">
-              {identity.isGuide ? "Guide account" : "Not a guide account"}
+              {identity.guideUnreadable
+                ? "Account not checked just now"
+                : identity.isGuide
+                  ? "Guide account"
+                  : "Not a guide account"}
             </p>
           </Rise>
 
-          {!identity.isGuide ? (
+          {identity.guideUnreadable ? (
+            /* A FAILED READ IS NOT A VERDICT. This fell into "your account is
+               not a guide account" whenever the check errored — telling a
+               verified guide on one bar of signal that they are not a guide.
+               Same shape as `credentialsUnreadable` one field up. */
+            <Rise className="pt-5">
+              <Notice tone="alert">
+                <p className="text-snow">We could not check your account</p>
+                <p className="mt-1.5">
+                  That is our side, not yours — nothing about your account has changed. Try again
+                  when you have a signal.
+                </p>
+              </Notice>
+            </Rise>
+          ) : !identity.isGuide ? (
             <Rise className="pt-5">
               <Notice tone="alert">
                 <p className="text-snow">This app is for guides</p>
                 <p className="mt-1.5">
                   Your ICEFALL account is not a guide account. Nothing is wrong with it — every
-                  account starts as a climber's, and it becomes a guide's when a member of our
-                  staff has read your qualifications.
+                  account starts as a climber's, and it becomes a guide's when a member of our staff
+                  has read your qualifications.
                 </p>
               </Notice>
             </Rise>
@@ -145,7 +190,10 @@ export default function Home() {
             <p className="mt-3 text-[12.5px] leading-relaxed text-mist">
               No guide account is signed in on this device, so there is nothing here yet.
             </p>
-            <Link to="/welcome" className="mt-3 inline-flex items-center gap-1.5 text-[12.5px] text-azure">
+            <Link
+              to="/welcome"
+              className="mt-3 inline-flex items-center gap-1.5 text-[12.5px] text-azure"
+            >
               Sign in <ArrowRight size={13} strokeWidth={1.8} />
             </Link>
           </Rise>
@@ -158,10 +206,14 @@ export default function Home() {
     <Screen>
       <Stagger>
         {/* ---- Chrome ------------------------------------------------------- */}
-        <Rise className="flex items-center justify-between pt-6">
-          <button type="button" aria-label="Menu" disabled className="text-mist disabled:opacity-40">
-            <Menu size={22} strokeWidth={1.6} />
-          </button>
+        {/* THE HAMBURGER IS GONE (audit response, 4 Sep 2026). It was a disabled
+            Menu button with no menu behind it, no route to give it and no
+            sentence explaining the absence — the first control on the first
+            screen of the app, and it did nothing. There is no hidden navigation
+            for it to reveal: the tab bar carries every destination. A dimmed
+            icon is not a disclosure; it is a promise of a feature, made in
+            grey. */}
+        <Rise className="flex items-center justify-end pt-6">
           <Link to="/profile" aria-label="Notifications" className="relative text-mist">
             <Bell size={20} strokeWidth={1.6} />
             {s.unread > 0 && (
@@ -208,7 +260,10 @@ export default function Home() {
             <Notice tone={copy.tone === "bad" ? "danger" : "alert"}>
               <p className="text-snow">{copy.label}</p>
               <p className="mt-1.5">{copy.says}</p>
-              <Link to="/verification" className="mt-2.5 inline-flex items-center gap-1.5 text-azure">
+              <Link
+                to="/verification"
+                className="mt-2.5 inline-flex items-center gap-1.5 text-azure"
+              >
                 Open verification <ArrowRight size={13} strokeWidth={1.8} />
               </Link>
             </Notice>
@@ -221,7 +276,10 @@ export default function Home() {
                 Your listing hides itself the day after it expires. Replace it before then and
                 nothing is interrupted.
               </p>
-              <Link to="/verification" className="mt-2.5 inline-flex items-center gap-1.5 text-azure">
+              <Link
+                to="/verification"
+                className="mt-2.5 inline-flex items-center gap-1.5 text-azure"
+              >
                 Review documents <ArrowRight size={13} strokeWidth={1.8} />
               </Link>
             </Notice>
@@ -312,7 +370,10 @@ export default function Home() {
                     <p className="mt-1 text-[11.5px] text-mist-dim">
                       {next.clients.length} {next.clients.length === 1 ? "Client" : "Clients"}
                     </p>
-                    <StatusPill state={next.state === "pending" ? "pending" : "confirmed"} className="mt-2" />
+                    <StatusPill
+                      state={next.state === "pending" ? "pending" : "confirmed"}
+                      className="mt-2"
+                    />
                   </div>
                   <ChevronRight size={18} strokeWidth={1.6} className="shrink-0 text-mist-dim" />
                 </div>

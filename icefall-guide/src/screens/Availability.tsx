@@ -5,6 +5,7 @@ import { Rise, Screen, Stagger } from "@/components/layout/chrome";
 import { Card, StatusPill } from "@/components/ui/primitives";
 import { Photo } from "@/components/Photo";
 import { stagedBookings, upcoming } from "@/domain/season";
+import { useStoreScope } from "@/domain/sampleGate";
 import { clearDay, loadStates, setDay, type SettableState } from "@/data/availabilityStore";
 import { CUTOFF_DAYS, fmtRange } from "@/data/demo";
 import { dayOffset, parseDay, startOfDay } from "@/lib/day";
@@ -29,7 +30,24 @@ import { cn } from "@/lib/utils";
 export default function Availability() {
   const [monthOffset, setMonthOffset] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
-  const [own, setOwn] = useState<Record<string, SettableState>>(() => loadStates());
+  /**
+   * KEYED TO THE DRAWER, NOT SNAPSHOT AT FIRST PAINT. `useState(() =>
+   * loadStates())` ran before `storeScope()` resolved, so it captured `{}` and
+   * the calendar stayed permanently empty on a direct load — every tap written
+   * and none shown. Re-reading when the scope changes is the fix; `edits`
+   * counts local writes so a tap repaints without another round trip.
+   */
+  const scope = useStoreScope();
+  const [edits, setEdits] = useState(0);
+  const own = useMemo<Record<string, SettableState>>(
+    () => loadStates(),
+    /* Both deps are deliberate cache-busters, not values the callback closes
+       over: `loadStates()` reads localStorage, which eslint cannot see, so it
+       calls them unnecessary. `scope` re-reads when the owner resolves, `edits`
+       after a local write. */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [scope, edits],
+  );
   const [saveFailed, setSaveFailed] = useState(false);
 
   const now = new Date();
@@ -70,7 +88,7 @@ export default function Availability() {
     if (!selected) return;
     const ok = state === null ? clearDay(selected) : setDay(selected, state);
     setSaveFailed(!ok);
-    setOwn(loadStates());
+    setEdits((n) => n + 1);
   };
 
   const freeDays = Object.values(own).filter((s) => s === "available").length;
@@ -180,9 +198,8 @@ export default function Availability() {
 
               {selectedState === "booked" ? (
                 <p className="mt-3 flex items-start gap-2 text-[12px] leading-relaxed text-mist-dim">
-                  <Lock size={13} strokeWidth={1.8} className="mt-px shrink-0" />
-                  A booking holds this day, so it cannot be changed here. Cancel the trip first if
-                  you need it back.
+                  <Lock size={13} strokeWidth={1.8} className="mt-px shrink-0" />A booking holds
+                  this day, so it cannot be changed here. Cancel the trip first if you need it back.
                 </p>
               ) : (
                 <>

@@ -161,8 +161,7 @@ export const STATUS_COPY: Record<
   approved: {
     label: "Documents checked",
     tone: "ok",
-    says:
-      "A member of ICEFALL staff has seen your documents and judged them genuine. That is what your badge says — it does not say we contacted your association, and it does not vouch for you on the mountain.",
+    says: "A member of ICEFALL staff has seen your documents and judged them genuine. That is what your badge says — it does not say we contacted your association, and it does not vouch for you on the mountain.",
   },
   changes_requested: {
     label: "Changes needed",
@@ -184,8 +183,7 @@ export const STATUS_COPY: Record<
      * perfectly current. The card below names which document and which of the
      * two happened; this line must cover both without choosing.
      */
-    says:
-      "A document behind your approval is no longer valid, so your listing is hidden until it is sorted out. This is automatic — nobody rejected you. See below for which document and why.",
+    says: "A document behind your approval is no longer valid, so your listing is hidden until it is sorted out. This is automatic — nobody rejected you. See below for which document and why.",
   },
 };
 

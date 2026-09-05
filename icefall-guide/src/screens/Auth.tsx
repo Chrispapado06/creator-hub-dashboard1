@@ -136,9 +136,7 @@ export default function Auth() {
               </Field>
             </div>
 
-            {error && (
-              <p className="mt-3 text-[12px] leading-relaxed text-danger">{error}</p>
-            )}
+            {error && <p className="mt-3 text-[12px] leading-relaxed text-danger">{error}</p>}
 
             <Button
               type="submit"

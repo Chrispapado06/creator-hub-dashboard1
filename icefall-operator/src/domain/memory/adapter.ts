@@ -20,7 +20,8 @@ import { conversionRate, estimatedGmv, measured, OPERATOR_NOTICES, unavailable, 
 import { demoListingViews } from "../demo";
 import { formatDayShort, NOW, parseDay, TODAY } from "../dates";
 import type {
-  Booking, Company, CompanyUser, Conversation, ConversationNote, ContentEntityType,
+  Booking, Channel, ChannelMessage, ChannelMessageStats, Company, CompanyUser,
+  Conversation, ConversationNote, ContentEntityType,
   ContentVersion, FunnelCounts, Lead, LeadNote, LeadStatus, Message, Mountain,
   Post, PromoVideo, Product, ProductDeparture, Trek,
 } from "../types";
@@ -87,6 +88,16 @@ const db = {
   postComments: [...seed.POST_COMMENTS],
   follows: [...seed.FOLLOWS],
   promoVideos: [...seed.PROMO_VIDEOS],
+  /*
+   * Channels — in-memory stand-ins for `20260902180000_company_channels.sql`,
+   * which is written and not pushed. The member and view rows are here because
+   * the counts above them have to be arithmetic over something real; NO METHOD
+   * RETURNS EITHER OF THEM. See the note on `getChannelMessageStats`.
+   */
+  channels: [...seed.CHANNELS],
+  channelMembers: [...seed.CHANNEL_MEMBERS],
+  channelMessages: [...seed.CHANNEL_MESSAGES],
+  channelMessageViews: [...seed.CHANNEL_MESSAGE_VIEWS],
 };
 
 /** Restores the seed. Used between tests so one cannot leak into the next. */
@@ -114,6 +125,10 @@ export function resetStore(): void {
   db.postComments = [...seed.POST_COMMENTS];
   db.follows = [...seed.FOLLOWS];
   db.promoVideos = seed.PROMO_VIDEOS.map((s) => ({ ...s }));
+  db.channels = seed.CHANNELS.map((c) => ({ ...c }));
+  db.channelMembers = [...seed.CHANNEL_MEMBERS];
+  db.channelMessages = [...seed.CHANNEL_MESSAGES];
+  db.channelMessageViews = [...seed.CHANNEL_MESSAGE_VIEWS];
 }
 
 let idCounter = 0;
@@ -125,6 +140,49 @@ const ok = <T>(value: T): WriteResult<T> => ({ ok: true, value });
 const DENY_OTHER_COMPANY = "That belongs to another company.";
 const DENY_ROLE = "Only a Company Admin can change published content.";
 const DENY_MOUNTAIN = "Icefall has not assigned that mountain to your company.";
+
+/*
+ * Channel lengths, mirroring the migration's checks exactly:
+ * `length(trim(name)) between 1 and 60`, `length(trim(description)) <= 300`,
+ * `length(trim(body)) between 1 and 2000`, `length(trim(promo_note)) <= 300`.
+ * Named here so the refusal an operator reads and the constraint the database
+ * enforces can never drift to two different numbers.
+ */
+const CHANNEL_NAME_MAX = 60;
+const CHANNEL_TEXT_MAX = 300;
+const CHANNEL_BODY_MAX = 2000;
+
+/**
+ * One sentence naming every contact detail found across a record's fields.
+ *
+ * Written once because the channel surface guards TWO fields in each of its
+ * two writes — name and description, body and promotional terms — and a rule
+ * applied by four separate copies is a rule with four chances to be forgotten.
+ */
+function contactRefusal(
+  found: Record<string, { label: string }[]>,
+  subject: string,
+): string | null {
+  const labels = [...new Set(Object.values(found).flat().map((f) => f.label))];
+  if (!labels.length) return null;
+  return `${subject} contains ${labels.join(" and ")}. ${OPERATOR_NOTICES.NO_CONTACT_DETAILS}`;
+}
+
+/**
+ * Refuses a name another of this company's channels already uses.
+ *
+ * The migration's `channels_name_unique` is an EXACT match on (company_id,
+ * name); this compares case-insensitively, so it is the stricter of the two and
+ * can never let through a write the database would reject. Two channels called
+ * "Dispatch" and "dispatch" would also be two channels members cannot tell
+ * apart, which is its own reason.
+ */
+function nameClash(session: Session, name: string, exceptId: string | null): string | null {
+  const taken = mine(session, db.channels).some(
+    (c) => c.id !== exceptId && c.name.toLowerCase() === name.toLowerCase(),
+  );
+  return taken ? "You already have a channel with that name." : null;
+}
 
 /* -------------------------------------------------------------------------- */
 /* Scoping helpers — the shape that prevents the leak                         */
@@ -173,6 +231,11 @@ function myPosts(session: Session): Post[] {
 function myPost(session: Session, postId: string): Post | null {
   const p = db.posts.find((x) => x.id === postId) ?? null;
   return p && p.authorKind === "company" && ownsCompany(session, p.authorId) ? p : null;
+}
+
+function myChannel(session: Session, channelId: string): Channel | null {
+  const c = db.channels.find((x) => x.id === channelId) ?? null;
+  return c && ownsCompany(session, c.companyId) ? c : null;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -907,6 +970,315 @@ export const memoryBackend: OperatorBackend = {
       ? db.promoVideos.map((s) => (s.companyId === session.user.companyId ? { ...s, video } : s))
       : [...db.promoVideos, { companyId: session.user.companyId, video }];
     return ok(video);
+  },
+
+  /* ---- channels -------------------------------------------------------- */
+  /*
+   * A COMPANY BROADCASTS; MEMBERS LISTEN. Mirrors
+   * `20260902180000_company_channels.sql` — written, tested, NOT PUSHED — so
+   * the Supabase implementation is a repoint of these bodies and not a rewrite.
+   *
+   * Every refusal below is a rule the database enforces too. This side refuses
+   * first so the operator reads a sentence instead of watching a save fail.
+   */
+
+  /**
+   * The company's own channels: RUNNING ONES FIRST, then archived, each newest
+   * first.
+   *
+   * ARCHIVED CHANNELS ARE RETURNED, always. One is still readable by everyone
+   * who joined it, so dropping it here would hide a live promotional surface
+   * from the only people answerable for it. It is ordered BELOW the running
+   * ones rather than by date alone because an archive that outranks a channel
+   * the company is actually using reads as the current one — the caller marks
+   * it from `archivedAt`, and the order should not fight the mark.
+   *
+   * `order by (archived_at is not null), created_at desc` when this repoints.
+   */
+  async getChannels(session) {
+    return mine(session, db.channels).sort((a, b) => {
+      const archived = Number(a.archivedAt !== null) - Number(b.archivedAt !== null);
+      return archived !== 0 ? archived : b.createdAt.localeCompare(a.createdAt);
+    });
+  },
+
+  async createChannel(session, input) {
+    // A channel is published company content, so it is the profile permission.
+    if (!can(session, "editCompanyProfile")) return deny(DENY_ROLE);
+
+    const name = input.name.trim();
+    if (!name) return deny("Give the channel a name first.");
+    if (name.length > CHANNEL_NAME_MAX) {
+      return deny(`A channel name can be at most ${CHANNEL_NAME_MAX} characters. That one is ${name.length}.`);
+    }
+
+    const description = (input.description ?? "").trim();
+    if (description.length > CHANNEL_TEXT_MAX) {
+      return deny(`A channel description can be at most ${CHANNEL_TEXT_MAX} characters. That one is ${description.length}.`);
+    }
+
+    /*
+     * THE GUARD RUNS ON BOTH FIELDS, and the name matters most. A channel is
+     * promotional text pointed straight at climbers with no reviewer in
+     * between, which makes it exactly where a phone number gets smuggled — and
+     * a channel NAME is read every time the list is drawn, far more often than
+     * anyone opens the description.
+     */
+    const contact = findContactDetailsIn({ name, description });
+    const refusal = contactRefusal(contact, "That channel");
+    if (refusal) return deny(refusal);
+
+    const clash = nameClash(session, name, null);
+    if (clash) return deny(clash);
+
+    const channel: Channel = {
+      id: nextId("ch"),
+      // Scope from the session, never the caller.
+      companyId: session.user.companyId,
+      name,
+      description: description || null,
+      // A cover is an upload and goes through the media surface, not through here.
+      coverPath: null,
+      archivedAt: null,
+      createdAt: NOW,
+    };
+    db.channels = [...db.channels, channel];
+    return ok(channel);
+  },
+
+  async updateChannel(session, channelId, patch) {
+    const c = myChannel(session, channelId);
+    if (!c) return deny(DENY_OTHER_COMPANY);
+    if (!can(session, "editCompanyProfile")) return deny(DENY_ROLE);
+
+    const next: Channel = { ...c };
+
+    if (patch.name !== undefined) {
+      const name = patch.name.trim();
+      if (!name) return deny("A channel cannot have an empty name.");
+      if (name.length > CHANNEL_NAME_MAX) {
+        return deny(`A channel name can be at most ${CHANNEL_NAME_MAX} characters. That one is ${name.length}.`);
+      }
+      const clash = nameClash(session, name, c.id);
+      if (clash) return deny(clash);
+      next.name = name;
+    }
+
+    if (patch.description !== undefined) {
+      const description = (patch.description ?? "").trim();
+      if (description.length > CHANNEL_TEXT_MAX) {
+        return deny(`A channel description can be at most ${CHANNEL_TEXT_MAX} characters. That one is ${description.length}.`);
+      }
+      next.description = description || null;
+    }
+
+    const contact = findContactDetailsIn({ name: next.name, description: next.description });
+    const refusal = contactRefusal(contact, "That channel");
+    if (refusal) return deny(refusal);
+
+    db.channels = db.channels.map((x) => (x.id === c.id ? next : x));
+    return ok(next);
+  },
+
+  /**
+   * ARCHIVED, NEVER DELETED.
+   *
+   * There is no `deleteChannel` in this file and there is none in the
+   * interface, because members joined something: a company able to delete a
+   * channel could make the thing people opted into disappear from under them,
+   * taking every promotional claim it made in there with it. Archiving stops
+   * new messages and leaves everything readable, which is the honest version of
+   * "we are done with this".
+   */
+  async archiveChannel(session, channelId) {
+    const c = myChannel(session, channelId);
+    if (!c) return deny(DENY_OTHER_COMPANY);
+    if (!can(session, "editCompanyProfile")) return deny(DENY_ROLE);
+    if (c.archivedAt !== null) return deny("This channel is already archived.");
+
+    const next: Channel = { ...c, archivedAt: NOW };
+    db.channels = db.channels.map((x) => (x.id === c.id ? next : x));
+    return ok(next);
+  },
+
+  /** Newest first — the company reads its channel the way a member does. */
+  async getChannelMessages(session, channelId) {
+    if (!myChannel(session, channelId)) return [];
+    return db.channelMessages
+      .filter((m) => m.channelId === channelId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+
+  /**
+   * THE ONLY WRITE PATH ONTO A CHANNEL, and it is admin-only. This is where
+   * "members cannot reply" actually lives: there is no member-facing write
+   * method here to be loosened, and no replies collection for one to write to.
+   */
+  async postChannelMessage(session, channelId, input) {
+    const c = myChannel(session, channelId);
+    if (!c) return deny(DENY_OTHER_COMPANY);
+    if (!can(session, "editCompanyProfile")) return deny(DENY_ROLE);
+    if (c.archivedAt !== null) {
+      return deny(
+        "This channel is archived, so it does not take new messages. Everything already in it stays readable for the people who joined.",
+      );
+    }
+
+    const body = input.body.trim();
+    if (!body) return deny("Write the message first.");
+    if (body.length > CHANNEL_BODY_MAX) {
+      return deny(`A channel message can be at most ${CHANNEL_BODY_MAX} characters. That one is ${body.length}.`);
+    }
+
+    const promoNote = (input.promoNote ?? "").trim();
+    if (promoNote.length > CHANNEL_TEXT_MAX) {
+      return deny(`Promotional terms can be at most ${CHANNEL_TEXT_MAX} characters. Those are ${promoNote.length}.`);
+    }
+
+    /*
+     * BOTH FIELDS, BLOCKING. A channel message goes to every member the moment
+     * this method succeeds, with no reviewer in between — the same situation as
+     * a post caption and a customer reply, so the same rule, enforced the same
+     * way. Advisory would mean not enforced.
+     */
+    const contact = findContactDetailsIn({ body, promoNote });
+    const refusal = contactRefusal(contact, "That message");
+    if (refusal) return deny(refusal);
+
+    /*
+     * WHAT A MESSAGE PROMOTES IS A PRODUCT, NEVER AN OFFER — see the note on
+     * `ChannelMessage` in `types.ts`. Note there is nothing to check about a
+     * departure without a product: `ChannelPromotion` cannot express one, so
+     * the constraint the migration writes as
+     * `channel_messages_departure_needs_product` is satisfied before this
+     * method is entered rather than refused inside it.
+     */
+    const promotion = input.promotion ?? null;
+    let productId: string | null = null;
+    let departureId: string | null = null;
+
+    if (promotion) {
+      // A company promoting another company's trip is a cross-tenant leak
+      // wearing a compliment. `myProduct` is the same scope check as everywhere.
+      const product = myProduct(session, promotion.productId);
+      if (!product) return deny(DENY_OTHER_COMPANY);
+      /*
+       * Only a LIVE trip can be promoted. Broadcasting a draft or a trip in
+       * review sends every member to a page they cannot open, and broadcasting
+       * an archived one sells a trip that is no longer run — a promotion has
+       * to point at something a climber can actually enquire about.
+       */
+      if (product.status !== "live") {
+        return deny(
+          "Only a published trip can be promoted in a channel. This one is not live yet, so members would have nothing to open.",
+        );
+      }
+      productId = product.id;
+
+      if (promotion.departureId != null) {
+        const departure = db.departures.find((d) => d.id === promotion.departureId) ?? null;
+        if (!departure || departure.productId !== product.id) {
+          return deny("That departure does not belong to the trip you are promoting.");
+        }
+        departureId = departure.id;
+      }
+    }
+
+    const message: ChannelMessage = {
+      id: nextId("cmsg"),
+      channelId: c.id,
+      /*
+       * The person, not the company — a company does not press send. The
+       * profile id is what `channel_messages.author_id` references, and it is
+       * taken from the session so a message cannot be authored onto a colleague.
+       */
+      authorId: session.user.profileId,
+      authorName: session.user.displayName,
+      body,
+      productId,
+      departureId,
+      promoNote: promoNote || null,
+      createdAt: NOW,
+    };
+    db.channelMessages = [...db.channelMessages, message];
+    return ok(message);
+  },
+
+  /**
+   * Deletes one of the company's own messages, and the view rows with it.
+   *
+   * THERE IS NO `updateChannelMessage` HERE OR IN THE INTERFACE, DELIBERATELY.
+   * The table carries no UPDATE policy, matching `posts`: a promotional claim
+   * is stood behind or deleted. An edit after people have read it — and after
+   * the view count has accrued against the old words — makes the count a
+   * measurement of text that no longer exists. Delete and repost is the honest
+   * correction, precisely because it resets the count along with the wording.
+   */
+  async deleteChannelMessage(session, messageId) {
+    const m = db.channelMessages.find((x) => x.id === messageId) ?? null;
+    if (!m || !myChannel(session, m.channelId)) return deny(DENY_OTHER_COMPANY);
+    if (!can(session, "editCompanyProfile")) return deny(DENY_ROLE);
+
+    db.channelMessages = db.channelMessages.filter((x) => x.id !== m.id);
+    // `on delete cascade` in the migration; the same effect here.
+    db.channelMessageViews = db.channelMessageViews.filter((v) => v.messageId !== m.id);
+    return ok(m);
+  },
+
+  /**
+   * HOW MANY PEOPLE OPENED EACH MESSAGE, AND NOT ONE THING MORE.
+   *
+   * A COUNT IS NOT A LIST, and this method is where that rule is made
+   * structural. The rows underneath — `db.channelMessageViews`, standing in for
+   * `channel_message_views` — carry a profile id per person per message, and
+   * the company cannot read them in the real database either: it reads the
+   * `channel_message_stats` aggregate, and this is that view.
+   *
+   * So what leaves this method is a message id and a number. No profile id, no
+   * name, no viewed-at, and nothing a caller could join back to a person. Not
+   * because a screen would misuse them — because a screen COULD not. If someone
+   * later adds a "who viewed" control, there is no identity in this data for it
+   * to show, and it will be built as nothing rather than as a leak. A company
+   * learning that a named climber opened a named promotional offer at a named
+   * time is surveillance, not analytics, and nobody joining a channel expects
+   * it.
+   *
+   * EVERY MESSAGE APPEARS, including those with no views at all. Zero is
+   * counted, not missing, and the screen renders "0 views".
+   */
+  async getChannelMessageStats(session, channelId): Promise<ChannelMessageStats[]> {
+    if (!myChannel(session, channelId)) return [];
+    return db.channelMessages
+      .filter((m) => m.channelId === channelId)
+      .map((m) => {
+        /*
+         * DISTINCT PEOPLE. The table's primary key is (message_id, profile_id)
+         * so a person cannot be counted twice by construction, and the Set says
+         * out loud what is being counted — which is the difference between this
+         * figure and an incrementing counter that eventually double-counts
+         * somebody re-reading.
+         */
+        const people = new Set(
+          db.channelMessageViews.filter((v) => v.messageId === m.id).map((v) => v.profileId),
+        );
+        return { messageId: m.id, views: people.size };
+      });
+  },
+
+  /**
+   * How many people joined — a count the company legitimately sees, because
+   * everyone in it put themselves there and knows it.
+   *
+   * NO METHOD IN THIS FILE RETURNS MEMBER IDENTITIES, and none should be added.
+   * The rule runs the other way too: there is no `addChannelMember` and no
+   * invite, because `channel_members` only accepts a row a person inserts for
+   * themselves. An audience a company assembled is a mailing list nobody
+   * consented to.
+   */
+  async getChannelMemberCount(session, channelId): Promise<Reading<number>> {
+    if (!myChannel(session, channelId)) return unavailable(DENY_OTHER_COMPANY);
+    // Counting rows we hold is a measurement, so an empty channel reads zero.
+    return measured(db.channelMembers.filter((m) => m.channelId === channelId).length);
   },
 
   /* ---- dashboard and analytics ----------------------------------------- */

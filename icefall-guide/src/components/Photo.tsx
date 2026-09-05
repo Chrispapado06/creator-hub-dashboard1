@@ -23,11 +23,9 @@ export const WEB_ASSET_ORIGIN: string =
   (import.meta.env.VITE_ICEFALL_WEB_ORIGIN as string | undefined) ?? "http://localhost:5194";
 
 /** The two libraries are separate directories, and a trek is not a peak. */
-export const peakPhotoUrl = (peak: string): string =>
-  `${WEB_ASSET_ORIGIN}/img/peaks/${peak}.jpg`;
+export const peakPhotoUrl = (peak: string): string => `${WEB_ASSET_ORIGIN}/img/peaks/${peak}.jpg`;
 
-export const trekPhotoUrl = (trek: string): string =>
-  `${WEB_ASSET_ORIGIN}/img/treks/${trek}.jpg`;
+export const trekPhotoUrl = (trek: string): string => `${WEB_ASSET_ORIGIN}/img/treks/${trek}.jpg`;
 
 /**
  * A drawn ridge line, seeded from the peak name so one mountain always draws the
@@ -37,7 +35,7 @@ export const trekPhotoUrl = (trek: string): string =>
 function RidgeFallback({ seed, className }: { seed: string; className?: string }) {
   let h = 0;
   for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) % 997;
-  const rand = () => ((h = (h * 1103515245 + 12345) % 2147483648) / 2147483648);
+  const rand = () => (h = (h * 1103515245 + 12345) % 2147483648) / 2147483648;
   const pts: string[] = ["0,100"];
   const n = 7;
   for (let i = 0; i <= n; i++) {
@@ -119,7 +117,8 @@ export function Photo({
 }) {
   const [failed, setFailed] = useState(false);
   if (OFFLINE) return <OfflinePhoto seed={peak || alt} className={className} rounded={rounded} />;
-  if (failed || !peak) return <RidgeFallback seed={peak || alt} className={cn(className, rounded)} />;
+  if (failed || !peak)
+    return <RidgeFallback seed={peak || alt} className={cn(className, rounded)} />;
   return (
     <img
       src={kind === "trek" ? trekPhotoUrl(peak) : peakPhotoUrl(peak)}
@@ -257,7 +256,10 @@ export function PersonAvatar({
               <rect x="28" y="31" width="44" height="7.5" rx="3.75" fill="#000" opacity="0.16" />
             </>
           ) : (
-            <path d="M31 36c0-13 8-22 19-22s19 9 19 22c-3-7-8-11-19-11s-16 4-19 11z" fill={f.hair} />
+            <path
+              d="M31 36c0-13 8-22 19-22s19 9 19 22c-3-7-8-11-19-11s-16 4-19 11z"
+              fill={f.hair}
+            />
           )}
 
           {f.hasShades ? (

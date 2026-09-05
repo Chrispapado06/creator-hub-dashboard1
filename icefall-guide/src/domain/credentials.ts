@@ -142,9 +142,7 @@ export function credentialsSentence(r: CredentialsRecord): string {
     year: "numeric",
   });
   const base = `Documents checked by ICEFALL on ${when}. We have not contacted the issuing association.`;
-  return r.state === "expired"
-    ? `${base} The document behind that check has since expired.`
-    : base;
+  return r.state === "expired" ? `${base} The document behind that check has since expired.` : base;
 }
 
 /** How the expiry reads. Never a countdown — the server owns the comparison. */

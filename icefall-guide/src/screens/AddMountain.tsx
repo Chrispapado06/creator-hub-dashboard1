@@ -7,6 +7,7 @@ import { inputClass } from "@/components/guide";
 import { Photo } from "@/components/Photo";
 import { PEAKS, REGIONS } from "@/data/peaks";
 import { TREKS, TREK_REGIONS, regionLabel } from "@/data/treks";
+import { useStoreScope } from "@/domain/sampleGate";
 import { listing } from "@/domain/listing";
 import { cn } from "@/lib/utils";
 
@@ -41,9 +42,15 @@ export default function AddMountain() {
   const [q, setQ] = useState("");
   const [region, setRegion] = useState<string | null>(null);
 
+  /* An empty dependency list froze this before `storeScope()` resolved, so
+     every already-added route looked new and could be added twice. */
+  const scope = useStoreScope();
   const already = useMemo(
     () => new Set(listing().routes.map((m) => `${m.kind}:${m.routeId}`)),
-    [],
+    /* `scope` is a cache-buster, not a closed-over value — `listing()` reads
+       storage that eslint cannot see. */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [scope],
   );
 
   const source: Row[] = useMemo(
@@ -62,7 +69,9 @@ export default function AddMountain() {
             name: t.name,
             region: t.region,
             detail: [
-              t.minDays ? `${t.minDays}${t.maxDays && t.maxDays !== t.minDays ? `–${t.maxDays}` : ""} days` : "",
+              t.minDays
+                ? `${t.minDays}${t.maxDays && t.maxDays !== t.minDays ? `–${t.maxDays}` : ""} days`
+                : "",
               t.country,
             ]
               .filter(Boolean)

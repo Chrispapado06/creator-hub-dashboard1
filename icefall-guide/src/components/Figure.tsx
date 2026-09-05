@@ -37,9 +37,7 @@ export function Figure<T>({
         {format(v)}
       </span>
     ),
-    (reason) => (
-      <span className="block text-[11.5px] leading-relaxed text-mist-dim">{reason}</span>
-    ),
+    (reason) => <span className="block text-[11.5px] leading-relaxed text-mist-dim">{reason}</span>,
   );
 }
 
@@ -81,9 +79,7 @@ export function StatTile<T>({
           <Figure reading={reading} format={format} />
         )}
       </div>
-      {footnote && (
-        <p className="mt-2 text-[11px] leading-relaxed text-mist-dim">{footnote}</p>
-      )}
+      {footnote && <p className="mt-2 text-[11px] leading-relaxed text-mist-dim">{footnote}</p>}
     </>
   );
 

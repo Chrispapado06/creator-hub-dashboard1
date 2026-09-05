@@ -7,6 +7,7 @@ import { Field, Notice, inputClass } from "@/components/guide";
 import { PersonAvatar, Photo } from "@/components/Photo";
 import { saveProfile } from "@/data/listingStore";
 import { listing, seedListing } from "@/domain/listing";
+import { useStoreScope } from "@/domain/sampleGate";
 import { PEAKS } from "@/data/peaks";
 import { cn } from "@/lib/utils";
 
@@ -25,7 +26,41 @@ const BIO_MAX = 400;
  * they guide, from the credited library, rather than this screen pretending to
  * accept a file it would have to discard.
  */
+/**
+ * THE FORM DOES NOT MOUNT UNTIL IT KNOWS WHOSE PROFILE IT IS EDITING.
+ *
+ * Every field below is a `useState` initialised from the stored profile. On a
+ * direct load those initialisers ran while `storeScope()` was still null — so
+ * the form opened BLANK over a profile that existed, and pressing Save wrote
+ * the blanks back over it. Not a display bug: a data-loss bug, on the screen
+ * where a guide writes the paragraph a climber reads before following them onto
+ * a glacier.
+ *
+ * Gating the mount (rather than patching each field with an effect) is what
+ * makes that unrepresentable: there is no render in which the initialisers can
+ * see the wrong drawer. The `key` remounts the form if the owner changes under
+ * it — signing out and back in as somebody else must not leave the previous
+ * guide's words in the boxes.
+ */
 export default function EditProfile() {
+  const scope = useStoreScope();
+  if (!scope) {
+    return (
+      <Screen>
+        <Stagger>
+          <Rise className="pt-7">
+            <Card>
+              <p className="text-[12.5px] leading-relaxed text-mist">Opening your profile…</p>
+            </Card>
+          </Rise>
+        </Stagger>
+      </Screen>
+    );
+  }
+  return <EditProfileForm key={scope} />;
+}
+
+function EditProfileForm() {
   const navigate = useNavigate();
   const seed = seedListing();
   const current = listing().profile;
@@ -73,7 +108,10 @@ export default function EditProfile() {
         title: title.trim(),
         nationality: nationality.trim(),
         basedIn: basedIn.trim(),
-        languages: languages.split(",").map((l) => l.trim()).filter(Boolean),
+        languages: languages
+          .split(",")
+          .map((l) => l.trim())
+          .filter(Boolean),
         yearsGuiding: Number(years) || 0,
         bio: bio.trim(),
         heroPeak,
@@ -118,10 +156,7 @@ export default function EditProfile() {
                 <Photo
                   peak={p.id}
                   alt={p.name}
-                  className={cn(
-                    "h-[54px] w-full",
-                    heroPeak === p.id && "ring-2 ring-azure",
-                  )}
+                  className={cn("h-[54px] w-full", heroPeak === p.id && "ring-2 ring-azure")}
                 />
                 <span className="mt-1 block text-center text-[10px] leading-tight text-mist-dim">
                   {p.name}
@@ -136,14 +171,26 @@ export default function EditProfile() {
           <Card className="mt-3">
             <div className="space-y-4">
               <Field label="Full name">
-                <input value={name} onChange={(e) => setName(e.target.value)} className={cn(inputClass, touched && !name.trim() && "border-danger")} />
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className={cn(inputClass, touched && !name.trim() && "border-danger")}
+                />
               </Field>
               <Field label="Title" hint="The qualification you work under.">
-                <input value={title} onChange={(e) => setTitle(e.target.value)} className={inputClass} />
+                <input
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  className={inputClass}
+                />
               </Field>
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Nationality">
-                  <input value={nationality} onChange={(e) => setNationality(e.target.value)} className={inputClass} />
+                  <input
+                    value={nationality}
+                    onChange={(e) => setNationality(e.target.value)}
+                    className={inputClass}
+                  />
                 </Field>
                 <Field label="Years guiding">
                   <input
@@ -155,10 +202,18 @@ export default function EditProfile() {
                 </Field>
               </div>
               <Field label="Where you work from" hint="A town or valley — not your home address.">
-                <input value={basedIn} onChange={(e) => setBasedIn(e.target.value)} className={cn(inputClass, touched && !basedIn.trim() && "border-danger")} />
+                <input
+                  value={basedIn}
+                  onChange={(e) => setBasedIn(e.target.value)}
+                  className={cn(inputClass, touched && !basedIn.trim() && "border-danger")}
+                />
               </Field>
               <Field label="Languages" hint="Separated by commas.">
-                <input value={languages} onChange={(e) => setLanguages(e.target.value)} className={inputClass} />
+                <input
+                  value={languages}
+                  onChange={(e) => setLanguages(e.target.value)}
+                  className={inputClass}
+                />
               </Field>
               <Field
                 label="About you"
@@ -168,7 +223,11 @@ export default function EditProfile() {
                   value={bio}
                   onChange={(e) => setBio(e.target.value.slice(0, BIO_MAX))}
                   rows={5}
-                  className={cn(inputClass, "resize-none", touched && !bio.trim() && "border-danger")}
+                  className={cn(
+                    inputClass,
+                    "resize-none",
+                    touched && !bio.trim() && "border-danger",
+                  )}
                 />
               </Field>
             </div>

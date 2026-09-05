@@ -172,16 +172,26 @@ export const OFFLINE_ROUTES: OfferedRoute[] = [
 /* -------------------------------------------------------------------------- */
 
 /**
- * Approved, with one certificate inside the 60-day warning window AND
+ * SUBMITTED, with one certificate inside the 60-day warning window AND
  * self-reported — deliberately, because that combination is the most
  * interesting state the verification screen has: it shows the amber notice, the
  * provenance caveat, and what happens to a listing if nothing is done.
  *
  * The avalanche credential is absent on purpose, so the "Not uploaded." path
  * renders too.
+ *
+ * NO `review`, AND NOT `approved`. This carried
+ * `review: { decidedAt: <91 days ago>, decidedBy: "ICEFALL — sample review" }`,
+ * which `verificationSentence()` rendered as "Documents checked by ICEFALL on
+ * <date>." Naming the reviewer "sample review" did not save it: the sentence
+ * still stated that ICEFALL inspects documents and dates the decision, which is
+ * a claim about ICEFALL and not about the invented guide, so no amount of
+ * sample-labelling covers it. Same reasoning and same change as the demo seed in
+ * `data/demo.ts` — the two fixtures are kept in step deliberately, because this
+ * repository's recurring failure is two copies of one rule drifting apart.
  */
 export const OFFLINE_APPLICATION: GuideApplication = {
-  status: "approved",
+  status: "submitted",
   submittedAt: hoursAgo(24 * 96),
   documents: [
     {
@@ -212,7 +222,6 @@ export const OFFLINE_APPLICATION: GuideApplication = {
       expiry: { status: "none" },
     },
   ],
-  review: { decidedAt: hoursAgo(24 * 91), decidedBy: "ICEFALL — sample review" },
 };
 
 /* -------------------------------------------------------------------------- */

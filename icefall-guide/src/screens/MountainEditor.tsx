@@ -36,7 +36,11 @@ export default function MountainEditor() {
   const name = peak?.name ?? trek?.name ?? id;
   const detail =
     kind === "mountain"
-      ? [peak?.elevationM ? `${peak.elevationM.toLocaleString("en-GB")} m` : "", peak?.range, peak?.country]
+      ? [
+          peak?.elevationM ? `${peak.elevationM.toLocaleString("en-GB")} m` : "",
+          peak?.range,
+          peak?.country,
+        ]
           .filter(Boolean)
           .join(" · ")
       : [
@@ -225,9 +229,7 @@ export default function MountainEditor() {
 
         {failed && (
           <Rise className="px-5 pt-3">
-            <Notice tone="danger">
-              That did not save — this device is refusing to store it.
-            </Notice>
+            <Notice tone="danger">That did not save — this device is refusing to store it.</Notice>
           </Rise>
         )}
 

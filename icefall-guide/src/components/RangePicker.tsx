@@ -1,7 +1,14 @@
 import { useState } from "react";
 import { Check, ChevronLeft, ChevronRight } from "lucide-react";
 import { Card } from "@/components/ui/primitives";
-import { customRange, PRESETS, presetRange, rangeLabel, type DateRange, type PresetId } from "@/domain/range";
+import {
+  customRange,
+  PRESETS,
+  presetRange,
+  rangeLabel,
+  type DateRange,
+  type PresetId,
+} from "@/domain/range";
 import { dayOffset, parseDay, startOfDay } from "@/lib/day";
 import { cn } from "@/lib/utils";
 
@@ -82,8 +89,7 @@ export function RangePicker({
     onClose();
   };
 
-  const inSelection = (day: string) =>
-    start !== null && end !== null && day >= start && day <= end;
+  const inSelection = (day: string) => start !== null && end !== null && day >= start && day <= end;
 
   return (
     <Card className="mt-3">

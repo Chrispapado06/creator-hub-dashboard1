@@ -335,7 +335,9 @@ export function Tabs<T extends string>({
             )}
           >
             {t.label}
-            {active && <span className="absolute inset-x-0 bottom-0 h-[2px] rounded-pill bg-azure" />}
+            {active && (
+              <span className="absolute inset-x-0 bottom-0 h-[2px] rounded-pill bg-azure" />
+            )}
           </button>
         );
       })}

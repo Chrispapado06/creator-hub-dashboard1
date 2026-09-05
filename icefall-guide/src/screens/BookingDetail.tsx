@@ -28,6 +28,18 @@ export default function BookingDetail() {
     );
   }
 
+  /**
+   * A CANCELLED BOOKING PAYS NOTHING, and this screen said otherwise.
+   *
+   * It printed "Booking value €390 · ICEFALL 15% −€58.50 · You receive €331.50"
+   * against a booking that `earningsSplit` deliberately excludes from every
+   * total — so the one screen showing a single booking contradicted every
+   * screen that adds them up, and told a guide they were owed money nobody
+   * owes them. Payouts had already been fixed to say this; the fix never
+   * travelled here (§6e — a rule applied at one reader is not applied at the
+   * others).
+   */
+  const cancelled = b.state === "cancelled";
   const breakdown = bookingBreakdown(b);
 
   return (
@@ -69,32 +81,38 @@ export default function BookingDetail() {
         <Rise className="px-5 pt-5">
           <p className="section-label">Your money</p>
           <Card className="mt-3">
-            {fold(
-              breakdown,
-              (t) => (
-                <>
-                  <dl className="space-y-1.5 text-[12.5px]">
-                    <Row label="Booking value" value={formatEur(t.total)} />
-                    <Row
-                      label={
-                        t.passedThrough > 0
-                          ? `ICEFALL ${GUIDE_COMMISSION_PCT}% of your ${formatEur(t.commissionable)} fee`
-                          : `ICEFALL ${GUIDE_COMMISSION_PCT}%`
-                      }
-                      value={`−${formatEur(t.commission)}`}
-                      dim
-                    />
-                    <Row label="You receive" value={formatEur(t.guideReceives)} strong />
-                  </dl>
-                  {t.passedThrough > 0 && (
-                    <p className="mt-2.5 border-t border-hairline pt-2.5 text-[11px] leading-relaxed text-mist-dim">
-                      {formatEur(t.passedThrough)} of that is huts, lifts and permits you pay on.
-                      ICEFALL takes no commission on those — only on your fee.
-                    </p>
-                  )}
-                </>
-              ),
-              (reason) => <p className="text-[12.5px] leading-relaxed text-mist-dim">{reason}</p>,
+            {cancelled ? (
+              <p className="text-[12px] leading-relaxed text-mist-dim">
+                Cancelled — nothing is due on this booking, and it is not counted in your earnings.
+              </p>
+            ) : (
+              fold(
+                breakdown,
+                (t) => (
+                  <>
+                    <dl className="space-y-1.5 text-[12.5px]">
+                      <Row label="Booking value" value={formatEur(t.total)} />
+                      <Row
+                        label={
+                          t.passedThrough > 0
+                            ? `ICEFALL ${GUIDE_COMMISSION_PCT}% of your ${formatEur(t.commissionable)} fee`
+                            : `ICEFALL ${GUIDE_COMMISSION_PCT}%`
+                        }
+                        value={`−${formatEur(t.commission)}`}
+                        dim
+                      />
+                      <Row label="You receive" value={formatEur(t.guideReceives)} strong />
+                    </dl>
+                    {t.passedThrough > 0 && (
+                      <p className="mt-2.5 border-t border-hairline pt-2.5 text-[11px] leading-relaxed text-mist-dim">
+                        {formatEur(t.passedThrough)} of that is huts, lifts and permits you pay on.
+                        ICEFALL takes no commission on those — only on your fee.
+                      </p>
+                    )}
+                  </>
+                ),
+                (reason) => <p className="text-[12.5px] leading-relaxed text-mist-dim">{reason}</p>,
+              )
             )}
           </Card>
         </Rise>
@@ -131,11 +149,23 @@ export default function BookingDetail() {
   );
 }
 
-function Row({ label, value, dim, strong }: { label: string; value: string; dim?: boolean; strong?: boolean }) {
+function Row({
+  label,
+  value,
+  dim,
+  strong,
+}: {
+  label: string;
+  value: string;
+  dim?: boolean;
+  strong?: boolean;
+}) {
   return (
     <div className="flex items-baseline justify-between gap-3">
       <dt className={dim ? "text-mist-dim" : "text-mist"}>{label}</dt>
-      <dd className={`tnum ${strong ? "text-[14px] text-snow" : dim ? "text-mist-dim" : "text-mist"}`}>
+      <dd
+        className={`tnum ${strong ? "text-[14px] text-snow" : dim ? "text-mist-dim" : "text-mist"}`}
+      >
         {value}
       </dd>
     </div>

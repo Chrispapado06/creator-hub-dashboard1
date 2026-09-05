@@ -64,7 +64,12 @@ export default function Thread() {
       <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto px-4 py-4">
         {convo.bookingId && (
           <div className="mb-4">
-            <Photo peak={peakFor(convo.bookingId)} alt="" className="h-32 w-full" rounded="rounded-card" />
+            <Photo
+              peak={peakFor(convo.bookingId)}
+              alt=""
+              className="h-32 w-full"
+              rounded="rounded-card"
+            />
           </div>
         )}
 
@@ -76,9 +81,7 @@ export default function Thread() {
               <li key={m.id} className={cn("flex gap-2.5", mine && "flex-row-reverse")}>
                 {!mine && who && <PersonAvatar name={who} size={30} className="mt-4" />}
                 <div className={cn("max-w-[76%]", mine && "items-end")}>
-                  {!mine && isGroup && who && (
-                    <p className="mb-1 text-[11px] text-azure">{who}</p>
-                  )}
+                  {!mine && isGroup && who && <p className="mb-1 text-[11px] text-azure">{who}</p>}
                   <div
                     className={cn(
                       "rounded-card border p-3",
@@ -93,12 +96,7 @@ export default function Thread() {
                       <p className="text-[13px] leading-relaxed text-snow">{m.body}</p>
                     )}
                   </div>
-                  <p
-                    className={cn(
-                      "tnum mt-1 text-[10.5px] text-mist-dim",
-                      mine && "text-right",
-                    )}
-                  >
+                  <p className={cn("tnum mt-1 text-[10.5px] text-mist-dim", mine && "text-right")}>
                     {fmtWhen(m.at)}
                   </p>
                 </div>

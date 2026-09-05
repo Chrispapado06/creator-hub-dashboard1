@@ -23,6 +23,7 @@ import Payouts from "@/screens/Payouts";
 import Auth from "@/screens/Auth";
 import { OFFLINE } from "@/offline/offline";
 import { OfflineBanner } from "@/offline/OfflineBanner";
+import { SampleBanner } from "@/components/SampleBanner";
 
 /**
  * ICEFALL Guide — the app a working mountain guide runs their season from.
@@ -51,9 +52,17 @@ export default function App() {
     <PhoneShell>
       <SampleGateResolver />
       <div className="flex h-full min-h-0 flex-col">
-        {/* ABOVE THE ROUTER, SO IT IS ON EVERY ROUTE AND CANNOT BE SCROLLED
-            AWAY. Renders only in an offline build; unset, this is nothing. */}
+        {/* ABOVE THE ROUTER, SO THEY ARE ON EVERY ROUTE AND CANNOT BE SCROLLED
+            AWAY. Neither is a screen's decision to make, which is the point:
+            adding a screen cannot omit them.
+
+            The offline strip renders only in an offline build; unset, it is
+            nothing. The sample strip renders whenever the invented seed may
+            render — it reads the same gate the seed reads — and stands down on
+            an offline build, where the strip above already says the same thing.
+            Between them, no route can show the sample without saying so. */}
         {OFFLINE && <OfflineBanner />}
+        <SampleBanner />
 
         {/* No `mode="wait"` — it stalls under a hidden document and can strand
             the UI mid-transition. Crossfade only. */}

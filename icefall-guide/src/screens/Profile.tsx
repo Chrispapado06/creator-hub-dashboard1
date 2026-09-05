@@ -1,5 +1,14 @@
 import { Link } from "react-router-dom";
-import { ArrowRight, BadgeCheck, CalendarDays, ChevronRight, Eye, Mountain, Pencil, Wallet } from "lucide-react";
+import {
+  ArrowRight,
+  BadgeCheck,
+  CalendarDays,
+  ChevronRight,
+  Eye,
+  Mountain,
+  Pencil,
+  Wallet,
+} from "lucide-react";
 import { Rise, Screen, Stagger } from "@/components/layout/chrome";
 import { Button, Card } from "@/components/ui/primitives";
 import { Notice } from "@/components/guide";
@@ -8,7 +17,12 @@ import { PersonAvatar, Photo } from "@/components/Photo";
 import { fromDayRate, listing, offeredRoutes } from "@/domain/listing";
 import { whatIsMissing } from "@/data/listingStore";
 import { APPLICATION, ME } from "@/data/demo";
-import { canListPublicly, effectiveStatus, identityVerified, verificationSentence } from "@/data/model";
+import {
+  canListPublicly,
+  effectiveStatus,
+  identityVerified,
+  verificationSentence,
+} from "@/data/model";
 import { StatusMarks } from "@/components/StatusBadge";
 import { showsCredentialMark, useIdentity } from "@/domain/identity";
 import { signOut } from "@/auth/account";
@@ -22,7 +36,7 @@ import { signOut } from "@/auth/account";
  * the two screens cannot show different answers to "how am I doing".
  */
 export default function Profile() {
-  const { identity } = useIdentity();
+  const { identity, loading } = useIdentity();
   const listed = canListPublicly(APPLICATION);
   const status = effectiveStatus(APPLICATION);
   const offered = offeredRoutes();
@@ -30,6 +44,20 @@ export default function Profile() {
   const from = fromDayRate();
 
   /** A session displaces the sample here too — see `domain/identity.ts`. */
+  /* Same gap as Home: while the session resolves this fell through to the
+     sample, showing a real guide the invented profile and its marks. */
+  if (loading) {
+    return (
+      <Screen>
+        <Stagger>
+          <Rise className="pt-7">
+            <h1 className="text-[22px] font-light text-snow">Profile</h1>
+          </Rise>
+        </Stagger>
+      </Screen>
+    );
+  }
+
   if (identity.mode === "session") {
     return (
       <Screen>
@@ -44,7 +72,11 @@ export default function Profile() {
               <StatusMarks credentials={showsCredentialMark(identity, false)} identity={false} />
             </h1>
             <p className="mt-1 text-[12.5px] text-mist">
-              {identity.isGuide ? "Guide account" : "Not a guide account"}
+              {identity.guideUnreadable
+                ? "Account not checked just now"
+                : identity.isGuide
+                  ? "Guide account"
+                  : "Not a guide account"}
             </p>
           </Rise>
 
@@ -61,21 +93,36 @@ export default function Profile() {
           <Rise className="pt-4">
             <Card inset={false}>
               <ul className="divide-y divide-hairline">
-                <Row to="/mountains" icon={Mountain} title="What I guide" detail="Mountains and treks, and your terms" />
-                <Row to="/availability" icon={CalendarDays} title="Availability" detail="The days you are free to work" />
-                <Row to="/verification" icon={BadgeCheck} title="Verification" detail="What ICEFALL has checked" />
-                <Row to="/payouts" icon={Wallet} title="Payouts" detail="What you are owed, and when it lands" />
+                <Row
+                  to="/mountains"
+                  icon={Mountain}
+                  title="What I guide"
+                  detail="Mountains and treks, and your terms"
+                />
+                <Row
+                  to="/availability"
+                  icon={CalendarDays}
+                  title="Availability"
+                  detail="The days you are free to work"
+                />
+                <Row
+                  to="/verification"
+                  icon={BadgeCheck}
+                  title="Verification"
+                  detail="What ICEFALL has checked"
+                />
+                <Row
+                  to="/payouts"
+                  icon={Wallet}
+                  title="Payouts"
+                  detail="What you are owed, and when it lands"
+                />
               </ul>
             </Card>
           </Rise>
 
           <Rise className="pb-2 pt-6">
-            <Button
-              variant="secondary"
-              size="sm"
-              className="w-full"
-              onClick={() => void signOut()}
-            >
+            <Button variant="secondary" size="sm" className="w-full" onClick={() => void signOut()}>
               Sign out
             </Button>
           </Rise>
@@ -93,8 +140,8 @@ export default function Profile() {
             <Card className="mt-5">
               <p className="text-[12.5px] leading-relaxed text-mist">
                 There is no guide profile on this device yet. Nothing is listed, and nothing is
-                hidden — an athlete searching for a guide simply does not find you, because you
-                have not applied.
+                hidden — an athlete searching for a guide simply does not find you, because you have
+                not applied.
               </p>
               <Link
                 to="/welcome"
@@ -197,7 +244,11 @@ export default function Profile() {
           {offered.length > 0 ? (
             <div className="no-scrollbar mt-3 flex gap-2.5 overflow-x-auto">
               {offered.slice(0, 4).map((m) => (
-                <Link key={`${m.kind}:${m.routeId}`} to={`/route/${m.kind}/${m.routeId}`} className="w-[86px] shrink-0">
+                <Link
+                  key={`${m.kind}:${m.routeId}`}
+                  to={`/route/${m.kind}/${m.routeId}`}
+                  className="w-[86px] shrink-0"
+                >
                   <Photo peak={m.routeId} kind={m.photoKind} alt="" className="h-[68px] w-full" />
                   <p className="mt-1.5 text-center text-[10.5px] leading-tight text-mist">
                     {m.name}
@@ -216,8 +267,8 @@ export default function Profile() {
           ) : (
             <Card className="mt-3">
               <p className="text-[12.5px] leading-relaxed text-mist">
-                You have not added a mountain or trek yet, so a climber searching for a guide
-                cannot find you.
+                You have not added a mountain or trek yet, so a climber searching for a guide cannot
+                find you.
               </p>
               <Link
                 to="/route/add"
@@ -233,10 +284,30 @@ export default function Profile() {
         <Rise className="px-5 pt-6">
           <Card inset={false}>
             <ul className="divide-y divide-hairline">
-              <Row to="/mountains" icon={Mountain} title="What I guide" detail="Mountains and treks, and your terms" />
-              <Row to="/availability" icon={CalendarDays} title="Availability" detail="The days you are free to work" />
-              <Row to="/verification" icon={BadgeCheck} title="Verification" detail="What ICEFALL has checked" />
-              <Row to="/payouts" icon={Wallet} title="Payouts" detail="What you are owed, and when it lands" />
+              <Row
+                to="/mountains"
+                icon={Mountain}
+                title="What I guide"
+                detail="Mountains and treks, and your terms"
+              />
+              <Row
+                to="/availability"
+                icon={CalendarDays}
+                title="Availability"
+                detail="The days you are free to work"
+              />
+              <Row
+                to="/verification"
+                icon={BadgeCheck}
+                title="Verification"
+                detail="What ICEFALL has checked"
+              />
+              <Row
+                to="/payouts"
+                icon={Wallet}
+                title="Payouts"
+                detail="What you are owed, and when it lands"
+              />
             </ul>
           </Card>
         </Rise>
@@ -261,7 +332,6 @@ export default function Profile() {
             </p>
           </Card>
         </Rise>
-
       </Stagger>
     </Screen>
   );
@@ -280,7 +350,10 @@ function Row({
 }) {
   return (
     <li>
-      <Link to={to} className="flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-white/[0.03]">
+      <Link
+        to={to}
+        className="flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-white/[0.03]"
+      >
         <Icon size={17} strokeWidth={1.7} className="shrink-0 text-mist-dim" />
         <span className="min-w-0 flex-1">
           <span className="block text-[13.5px] text-snow">{title}</span>

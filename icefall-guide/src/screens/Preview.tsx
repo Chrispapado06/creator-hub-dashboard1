@@ -46,7 +46,9 @@ export default function Preview() {
             <ChevronLeft size={16} strokeWidth={1.7} /> Profile
           </Link>
           <Card className="mt-5">
-            <p className="text-[12.5px] text-mist">There is no listing on this device to preview.</p>
+            <p className="text-[12.5px] text-mist">
+              There is no listing on this device to preview.
+            </p>
           </Card>
         </div>
       </Screen>
@@ -117,7 +119,12 @@ export default function Preview() {
             {offered.map((m) => (
               <Card key={`${m.kind}:${m.routeId}`}>
                 <div className="flex items-center gap-3.5">
-                  <Photo peak={m.routeId} kind={m.photoKind} alt="" className="h-14 w-14 shrink-0" />
+                  <Photo
+                    peak={m.routeId}
+                    kind={m.photoKind}
+                    alt=""
+                    className="h-14 w-14 shrink-0"
+                  />
                   <div className="min-w-0 flex-1">
                     <p className="text-[14px] leading-snug text-snow">{m.name}</p>
                     <p className="mt-0.5 truncate text-[11.5px] text-mist">{m.routes}</p>
@@ -134,9 +141,7 @@ export default function Preview() {
             ))}
             {offered.length === 0 && (
               <Card>
-                <p className="py-3 text-center text-[12.5px] text-mist-dim">
-                  Nothing listed yet.
-                </p>
+                <p className="py-3 text-center text-[12.5px] text-mist-dim">Nothing listed yet.</p>
               </Card>
             )}
           </div>

@@ -1,13 +1,19 @@
 import { AlertTriangle, Banknote } from "lucide-react";
 import { Rise, Screen, ScreenHeader, Stagger } from "@/components/layout/chrome";
-import { Badge, Button, Card, Disclaimer, SectionLabel, StatusPill } from "@/components/ui/primitives";
+import {
+  Badge,
+  Button,
+  Card,
+  Disclaimer,
+  SectionLabel,
+  StatusPill,
+} from "@/components/ui/primitives";
 import { Notice } from "@/components/guide";
 import { SupportEntry } from "@/components/Support";
 import { Figure, StatTile } from "@/components/Figure";
 import { GUIDE_NOTICES, bookingValueReading, excludedNote, fold } from "@/domain/honesty";
 import { bookingBreakdown, earningsSplit, stagedBookings } from "@/domain/season";
-import { DEMO_NOTICE, fmtDate } from "@/data/demo";
-import { SHOW_DEMO_DATA } from "@/lib/demoFlag";
+import { fmtDate } from "@/data/demo";
 import {
   GUIDE_COMMISSION_PCT,
   PAYMENTS_NOT_CONNECTED,
@@ -68,10 +74,14 @@ export default function Payouts() {
         <ScreenHeader title="Payouts" subtitle="What you are owed, and when it lands." back />
 
         <Rise>
-          <Disclaimer>
-            {SHOW_DEMO_DATA ? `${DEMO_NOTICE} ` : ""}
-            {PAYMENTS_NOT_CONNECTED}
-          </Disclaimer>
+          {/* The sample-data half of this line has moved to `SampleBanner`,
+              above the router — one strip on all eighteen screens rather than a
+              sentence on the three somebody remembered. What stays is the part
+              only this screen can say: that no payment rail exists. It was also
+              gated on `SHOW_DEMO_DATA` rather than on the sample gate, so a
+              signed-in guide read "this account, its clients and its bookings
+              are invented" above their own empty payouts. */}
+          <Disclaimer>{PAYMENTS_NOT_CONNECTED}</Disclaimer>
         </Rise>
 
         {/* ---- Can we even pay this person? -------------------------------- */}
@@ -205,11 +215,12 @@ export default function Payouts() {
                         Cancelled — nothing is due on this booking, and it is not counted in the
                         totals above.
                       </p>
-                    ) : fold(
-                      breakdown,
-                      (t) => (
-                        <>
-                          {/*
+                    ) : (
+                      fold(
+                        breakdown,
+                        (t) => (
+                          <>
+                            {/*
                             THE COLUMN HAS TO ADD UP, and the first version of it
                             did not. It read:
 
@@ -233,30 +244,31 @@ export default function Payouts() {
                             pass-through sits BELOW the total as what it is: part
                             of the money arriving that is already spoken for.
                           */}
-                          <dl className="space-y-1.5">
-                            <Row label="Booking value" value={formatEur(t.total)} />
-                            <Row
-                              label={
-                                t.passedThrough > 0
-                                  ? `ICEFALL ${GUIDE_COMMISSION_PCT}% of your ${formatEur(t.commissionable)} fee`
-                                  : `ICEFALL ${GUIDE_COMMISSION_PCT}%`
-                              }
-                              value={`−${formatEur(t.commission)}`}
-                              dim
-                            />
-                            <Row label="You receive" value={formatEur(t.guideReceives)} strong />
-                          </dl>
-                          {t.passedThrough > 0 && (
-                            <p className="mt-2 border-t border-hairline pt-2 text-[11px] leading-relaxed text-mist-dim">
-                              {formatEur(t.passedThrough)} of that is huts, lifts and permits you
-                              pay on. ICEFALL takes no commission on those — only on your fee.
-                            </p>
-                          )}
-                        </>
-                      ),
-                      (reason) => (
-                        <p className="text-[12px] leading-relaxed text-mist-dim">{reason}</p>
-                      ),
+                            <dl className="space-y-1.5">
+                              <Row label="Booking value" value={formatEur(t.total)} />
+                              <Row
+                                label={
+                                  t.passedThrough > 0
+                                    ? `ICEFALL ${GUIDE_COMMISSION_PCT}% of your ${formatEur(t.commissionable)} fee`
+                                    : `ICEFALL ${GUIDE_COMMISSION_PCT}%`
+                                }
+                                value={`−${formatEur(t.commission)}`}
+                                dim
+                              />
+                              <Row label="You receive" value={formatEur(t.guideReceives)} strong />
+                            </dl>
+                            {t.passedThrough > 0 && (
+                              <p className="mt-2 border-t border-hairline pt-2 text-[11px] leading-relaxed text-mist-dim">
+                                {formatEur(t.passedThrough)} of that is huts, lifts and permits you
+                                pay on. ICEFALL takes no commission on those — only on your fee.
+                              </p>
+                            )}
+                          </>
+                        ),
+                        (reason) => (
+                          <p className="text-[12px] leading-relaxed text-mist-dim">{reason}</p>
+                        ),
+                      )
                     )}
                   </div>
 
@@ -270,13 +282,13 @@ export default function Payouts() {
                   )}
 
                   {!cancelled && (
-                  <p className="tnum mt-3 text-[11px] text-mist-dim">
-                    {r.payout === "sent"
-                      ? `Paid out after ${fmtDate(r.departureIso)}`
-                      : r.payout === "releasable"
-                        ? "Released — on its way to your account"
-                        : `Releases ${fmtDate(r.departureIso)}`}
-                  </p>
+                    <p className="tnum mt-3 text-[11px] text-mist-dim">
+                      {r.payout === "sent"
+                        ? `Paid out after ${fmtDate(r.departureIso)}`
+                        : r.payout === "releasable"
+                          ? "Released — on its way to your account"
+                          : `Releases ${fmtDate(r.departureIso)}`}
+                    </p>
                   )}
                 </Card>
               );

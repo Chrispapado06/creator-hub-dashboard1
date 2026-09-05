@@ -51,11 +51,36 @@ export const eur = (whole: number): Cents => Math.round(whole * 100);
  * not a preference.
  */
 const EEA = [
-  "Austria", "Belgium", "Bulgaria", "Croatia", "Cyprus", "Czechia", "Denmark",
-  "Estonia", "Finland", "France", "Germany", "Greece", "Hungary", "Iceland",
-  "Ireland", "Italy", "Latvia", "Liechtenstein", "Lithuania", "Luxembourg",
-  "Malta", "Netherlands", "Norway", "Poland", "Portugal", "Romania", "Slovakia",
-  "Slovenia", "Spain", "Sweden",
+  "Austria",
+  "Belgium",
+  "Bulgaria",
+  "Croatia",
+  "Cyprus",
+  "Czechia",
+  "Denmark",
+  "Estonia",
+  "Finland",
+  "France",
+  "Germany",
+  "Greece",
+  "Hungary",
+  "Iceland",
+  "Ireland",
+  "Italy",
+  "Latvia",
+  "Liechtenstein",
+  "Lithuania",
+  "Luxembourg",
+  "Malta",
+  "Netherlands",
+  "Norway",
+  "Poland",
+  "Portugal",
+  "Romania",
+  "Slovakia",
+  "Slovenia",
+  "Spain",
+  "Sweden",
 ];
 
 export const PAYOUT_COUNTRIES = new Set([
@@ -66,9 +91,7 @@ export const PAYOUT_COUNTRIES = new Set([
   "Canada",
 ]);
 
-export type PayoutEligibility =
-  | { ok: true }
-  | { ok: false; reason: string; options: string[] };
+export type PayoutEligibility = { ok: true } | { ok: false; reason: string; options: string[] };
 
 export function payoutEligibility(country: string): PayoutEligibility {
   if (PAYOUT_COUNTRIES.has(country.trim())) return { ok: true };
@@ -296,8 +319,7 @@ export const GUIDE_COMMISSION_PCT = 15;
  * the practical benefit of the deducted arrangement: the price on the card is
  * the price on the invoice.
  */
-export const GUIDE_FEE_DISCLOSURE =
-  `The price shown is what you pay. ICEFALL keeps ${GUIDE_COMMISSION_PCT}% of it and the guide receives the rest.`;
+export const GUIDE_FEE_DISCLOSURE = `The price shown is what you pay. ICEFALL keeps ${GUIDE_COMMISSION_PCT}% of it and the guide receives the rest.`;
 
 /**
  * "Flexible" — free cancellation up to 14 days out, then nothing.
@@ -345,12 +367,19 @@ export function instalmentsFor(total: Cents, departureIso: string, now = new Dat
   const balanceDue = new Date(departure.getTime() - BALANCE_DUE_DAYS_BEFORE * 86_400_000);
 
   if (balanceDue <= now) {
-    return [{ kind: "deposit", amount: total, dueIso: now.toISOString(), label: "Full amount, today" }];
+    return [
+      { kind: "deposit", amount: total, dueIso: now.toISOString(), label: "Full amount, today" },
+    ];
   }
 
   const deposit = Math.round((total * DEPOSIT_PCT) / 100);
   return [
-    { kind: "deposit", amount: deposit, dueIso: now.toISOString(), label: `${DEPOSIT_PCT}% deposit, today` },
+    {
+      kind: "deposit",
+      amount: deposit,
+      dueIso: now.toISOString(),
+      label: `${DEPOSIT_PCT}% deposit, today`,
+    },
     {
       kind: "balance",
       amount: total - deposit,
@@ -556,14 +585,7 @@ export function isWithinAttribution(introIso: string, bookingIso: string): boole
  * honest system names the states where a fee is at risk instead of assuming it
  * will arrive.
  */
-export type ReferralStatus =
-  | "introduced"
-  | "booked"
-  | "invoiced"
-  | "paid"
-  | "disputed"
-  | "expired";
-
+export type ReferralStatus = "introduced" | "booked" | "invoiced" | "paid" | "disputed" | "expired";
 
 export const PAYMENTS_NOT_CONNECTED =
   "Payments are not connected. No card is charged, no money moves and no booking is made — these screens show what the flow will do once a payment provider is live.";

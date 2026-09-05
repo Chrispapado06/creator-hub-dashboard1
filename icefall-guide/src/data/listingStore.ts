@@ -35,6 +35,7 @@
  */
 
 import { DEMO } from "@/lib/demoFlag";
+import { storeScope } from "@/domain/sampleGate";
 
 /* v2: the listing gained treks, so stored shapes from v1 are not readable. A new
    key rather than a migration — nothing is deployed, and a half-understood
@@ -51,6 +52,14 @@ import { DEMO } from "@/lib/demoFlag";
  * With the flag unset this is the same string it has always been.
  */
 const KEY = DEMO ? "icefall-guide:offline-demo:listing:v2" : "icefall-guide:listing:v2";
+
+/**
+ * ONE DRAWER PER OWNER. The sample keeps the original key so a demo's existing
+ * edits survive; an account's own work goes in a drawer named after it. See
+ * `storeScope()` for why — and for the silent-discard bug that made it
+ * necessary.
+ */
+const keyFor = (scope: string): string => (scope === "sample" ? KEY : `${KEY}:${scope}`);
 
 /** How hard the guide grades their own offering on that mountain. */
 export type Grade = "Introductory" | "Moderate" | "Technical" | "Expedition";
@@ -105,12 +114,63 @@ export interface Listing {
 
 const EMPTY: Listing = { profile: null, routes: [] };
 
+const str = (v: unknown): v is string => typeof v === "string";
+const num = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+
+/** Every field `whatIsMissing()` and the screens dereference without a guard. */
+function isRoute(v: unknown): v is OfferedRoute {
+  if (typeof v !== "object" || v === null) return false;
+  const r = v as Record<string, unknown>;
+  return (
+    (r.kind === "mountain" || r.kind === "trek") &&
+    str(r.routeId) &&
+    str(r.routes) &&
+    str(r.grade) &&
+    num(r.dayRateEur) &&
+    num(r.typicalDays) &&
+    str(r.requires)
+  );
+}
+
+function isProfile(v: unknown): v is ListingProfile {
+  if (typeof v !== "object" || v === null) return false;
+  const p = v as Record<string, unknown>;
+  return (
+    str(p.name) &&
+    str(p.title) &&
+    str(p.nationality) &&
+    str(p.basedIn) &&
+    Array.isArray(p.languages) &&
+    p.languages.every(str) &&
+    num(p.yearsGuiding) &&
+    str(p.bio) &&
+    str(p.heroPeak)
+  );
+}
+
 function read(): Partial<Listing> {
+  const scope = storeScope();
+  /* Not yet known whose app this is: no drawer to open. */
+  if (!scope) return {};
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = localStorage.getItem(keyFor(scope));
     if (!raw) return {};
     const parsed: unknown = JSON.parse(raw);
-    return typeof parsed === "object" && parsed !== null ? (parsed as Partial<Listing>) : {};
+    if (typeof parsed !== "object" || parsed === null) return {};
+    /* VALID JSON IS NOT A VALID LISTING, and the difference took the app down.
+       This checked only that the bytes parsed, then handed the result out as a
+       `Listing`. A stored route missing `requires` — an older shape, a partial
+       write, anything — reached `whatIsMissing()`, which does
+       `m.requires.trim()`, and Profile rendered a blank white screen. The
+       comment below promised the opposite: "never a crash".
+       So the shape is checked here, at the one door, and anything that does not
+       match is dropped rather than believed. A guide loses a malformed row;
+       they do not lose the screen. */
+    const o = parsed as Record<string, unknown>;
+    const out: Partial<Listing> = {};
+    if (isProfile(o.profile)) out.profile = o.profile;
+    if (Array.isArray(o.routes)) out.routes = o.routes.filter(isRoute);
+    return out;
   } catch {
     /* A corrupt store is an empty one, never a crash. The guide loses their
        edits; they do not lose the app in a car park with no signal. */
@@ -119,8 +179,14 @@ function read(): Partial<Listing> {
 }
 
 function write(v: Partial<Listing>): boolean {
+  const scope = storeScope();
+  /* REFUSING IS THE HONEST ANSWER while the owner is unknown. Writing to a
+     guessed drawer is what produced the silent discard: the edit landed
+     somewhere nothing would later read. `false` reaches the screen, which
+     already says "That did not save". */
+  if (!scope) return false;
   try {
-    localStorage.setItem(KEY, JSON.stringify(v));
+    localStorage.setItem(keyFor(scope), JSON.stringify(v));
     return true;
   } catch {
     return false;
@@ -153,13 +219,13 @@ export function saveRoutes(r: OfferedRoute[], seed: Listing): boolean {
 }
 
 /** Identity is the PAIR — a peak and a trek may legitimately share an id. */
-const same = (a: OfferedRoute, kind: RouteKind, id: string) =>
-  a.kind === kind && a.routeId === id;
+const same = (a: OfferedRoute, kind: RouteKind, id: string) => a.kind === kind && a.routeId === id;
 
 export function upsertRoute(next: OfferedRoute, seed: Listing): boolean {
   const cur = loadListing(seed).routes;
   const i = cur.findIndex((m) => same(m, next.kind, next.routeId));
-  const out = i === -1 ? [...cur, next] : cur.map((m) => (same(m, next.kind, next.routeId) ? next : m));
+  const out =
+    i === -1 ? [...cur, next] : cur.map((m) => (same(m, next.kind, next.routeId) ? next : m));
   return saveRoutes(out, seed);
 }
 

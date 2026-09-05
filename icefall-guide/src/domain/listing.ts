@@ -44,13 +44,20 @@ export function seedListing(): Listing {
 }
 
 /**
- * GATED AT THE STORE, NOT ONLY AT THE SEED. `localStorage` holds whatever was
- * last edited in THIS browser, which was seeded from the sample — so gating
- * `seedListing()` alone would still hand a signed-in account the sample guide's
- * mountains, one layer down. The stored copy is the sample's too.
+ * SEPARATED AT THE STORE, NOT REFUSED AT THE STORE.
+ *
+ * This used to return an empty listing to anyone signed in, to stop the sample
+ * guide's mountains reaching a real account through `localStorage`. It did stop
+ * that — and it also refused a real guide their OWN work: their write went into
+ * the drawer, the read came back empty, and the screen said they had added
+ * nothing. The leak and the guide's own listing are two different problems, and
+ * one answer served neither.
+ *
+ * `storeScope()` now keeps them apart by owner, so this reads whatever belongs
+ * to whoever is here. `seedListing()` is still gated, so an account's drawer
+ * starts genuinely empty rather than pre-filled with somebody else's peaks.
  */
-export const listing = (): Listing =>
-  sampleAllowed() ? loadListing(seedListing()) : { profile: null, routes: [] };
+export const listing = (): Listing => loadListing(seedListing());
 
 /** What a screen needs to draw one offering, whichever catalogue it came from. */
 export interface ResolvedRoute extends OfferedRoute {
@@ -75,7 +82,10 @@ export function resolveRoute(r: OfferedRoute): ResolvedRoute {
       photoKind: "trek",
       altitudeM: t?.maxAltitudeM ?? null,
       country: t?.country ?? "",
-      detail: [t?.maxAltitudeM ? `${t.maxAltitudeM.toLocaleString("en-GB")} m high point` : "", t?.country ?? ""]
+      detail: [
+        t?.maxAltitudeM ? `${t.maxAltitudeM.toLocaleString("en-GB")} m high point` : "",
+        t?.country ?? "",
+      ]
         .filter(Boolean)
         .join(" · "),
       missing: t === undefined,
@@ -118,6 +128,8 @@ export const offeredOfKind = (kind: RouteKind): ResolvedRoute[] =>
  * listed has not priced themselves at nothing.
  */
 export function fromDayRate(): number | null {
-  const rates = listing().routes.map((m) => m.dayRateEur).filter((r) => r > 0);
+  const rates = listing()
+    .routes.map((m) => m.dayRateEur)
+    .filter((r) => r > 0);
   return rates.length > 0 ? Math.min(...rates) : null;
 }

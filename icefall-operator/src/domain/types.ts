@@ -674,6 +674,148 @@ export interface PromoVideoSlot {
 }
 
 /* ========================================================================== */
+/* Channels — a company broadcasts, members listen                            */
+/* ========================================================================== */
+
+/*
+ * THE OWNER'S MODEL, in their words: "like on instagram when creators create
+ * channels". A company posts promotional content, a climber joins if they want
+ * to hear it, MEMBERS CANNOT REPLY, and the company sees how many people saw
+ * each message.
+ *
+ * These shapes mirror `20260902180000_company_channels.sql` column for column.
+ * The migration is the truth; when it is pushed, the Supabase implementation of
+ * these methods is a repoint and nothing here changes.
+ *
+ * FIVE RULES LIVE IN THE DATABASE AND ARE VISIBLE HERE AS ABSENCES. Read the
+ * absences as deliberate, because each one is:
+ *
+ *   1. No reply type, no comment type, no member-writable field. "Members
+ *      cannot reply" is enforced by there being nowhere to put a reply. A
+ *      read-only channel built as a chat with the reply box hidden is one
+ *      forgotten prop away from being a chat again; two-way conversation is
+ *      `Conversation`/`Message`, a different feature with a different name.
+ *   2. `ChannelMessageStats.views` is COUNTED — one row per person per message
+ *      in `channel_message_views` — so it is distinct people, never a counter
+ *      that double-counts somebody re-reading.
+ *   3. `ChannelMessageStats` carries a message id and a number and NOTHING
+ *      ELSE. See the note on it.
+ *   4. There is no member type in this file at all. See the note on
+ *      `ChannelMessageStats`, and `CHANNEL_MEMBERS` in `memory/seed.ts`.
+ *   5. No edit shape and no `updatedAt` on `ChannelMessage`: a promotional
+ *      claim is stood behind or deleted, exactly as `Post` is.
+ */
+
+/**
+ * One row of `channels`.
+ *
+ * `archivedAt` is the whole lifecycle. THERE IS NO DELETED STATE and no delete
+ * method anywhere in this app: members joined something, and a company must not
+ * be able to make it vanish from under them. An archived channel stops
+ * accepting messages and stays readable — which is why this is a timestamp
+ * rather than a boolean, so "when did this stop" survives too.
+ *
+ * `coverPath` is a path in the existing `operator-media` bucket, which is
+ * already company-scoped. There is no equivalent on `ChannelMessage`, and that
+ * is a real blocker rather than an omission: message media has no bucket yet,
+ * so a channel message is text plus a product promotion and nothing else.
+ */
+export interface Channel {
+  id: string;
+  companyId: string;
+  /** 1..60 after trimming, and unique within the company. */
+  name: string;
+  /** ≤300 after trimming. Null is "none written", never an empty string. */
+  description: string | null;
+  coverPath: string | null;
+  /** Set = archived: no new messages, still readable. Never deleted. */
+  archivedAt: string | null;
+  createdAt: string;
+}
+
+/**
+ * One row of `channel_messages`.
+ *
+ * WHAT A MESSAGE PROMOTES IS A PRODUCT, NEVER AN OFFER — and the migration was
+ * corrected mid-build to say so, so the reasoning is worth carrying here. An
+ * `offers` row is a PERSONAL, ADDRESSED, ONE-OUTCOME instrument: `thread_id`
+ * NOT NULL, exactly one `recipient_id`, one acceptance. A broadcast to 1,200
+ * members has no thread and cannot be accepted 1,200 times; decision 19 in the
+ * offers migration forbids a cold offer outright; and broadcasting an existing
+ * offer would show every member the best price that company privately quoted to
+ * one named climber. So a message promotes something PURCHASABLE, and a member
+ * who wants it enquires — which opens a thread, which is where a real offer
+ * belongs. Broadcast and quote stay different objects because they behave
+ * differently.
+ *
+ * `promoNote` IS TERMS, NEVER A PRICE. "15% off if you book before March", in
+ * the seller's own words. A number here would be an unenforceable commitment
+ * sitting outside the money model, and every real figure belongs to the product
+ * or to an offer made in a thread — which is why this is free text and not a
+ * `discountPct` or a `promoPriceCents` column. Do not format it as money.
+ *
+ * NO `updatedAt`, deliberately: there is no UPDATE policy on the table and no
+ * edit method in the adapter, so nothing can be quietly reworded after people
+ * have read it and the view count has accrued against the old words.
+ */
+export interface ChannelMessage {
+  id: string;
+  channelId: string;
+  /**
+   * The person who pressed send — a company does not press buttons. Kept so a
+   * promotional claim traces to a human, exactly as `Post` does.
+   */
+  authorId: string;
+  /**
+   * The author's display name, carried for rendering — the same demo-world
+   * convenience as `PostComment.authorName`. It names a colleague on the
+   * caller's own team, never a member: see `ChannelMessageStats`.
+   */
+  authorName: string;
+  /** 1..2000 after trimming. */
+  body: string;
+  /** The product being promoted, or null. */
+  productId: string | null;
+  /**
+   * One departure of that product, or null. NEVER SET WITHOUT `productId` —
+   * `channel_messages_departure_needs_product` in the migration. The write
+   * side makes the invalid pair unrepresentable rather than validating it
+   * late: see `ChannelPromotion` in `adapter.ts`.
+   */
+  departureId: string | null;
+  /** Promotional terms in words. ≤300. Never a price — see above. */
+  promoNote: string | null;
+  createdAt: string;
+}
+
+/**
+ * The ONLY thing a company learns about who read a message: how many.
+ *
+ * THIS SHAPE IS THE RULE. A count is not a list. The underlying
+ * `channel_message_views` rows are readable by the viewer and by nobody else;
+ * the company reads the `channel_message_stats` aggregate, and this interface
+ * is that view's two useful columns. A company learning that a named climber
+ * opened a named promotional offer at a named time is surveillance, not
+ * analytics, and nobody joining a channel expects it.
+ *
+ * So there is no `viewers`, no `profileIds`, no `lastViewedAt` and no member
+ * type in this file to hang one off — not because a screen would misuse them,
+ * but so that a screen CANNOT: if a control were added tomorrow that wanted to
+ * expand a count into a list, there would be no data behind it to leak. That
+ * is the difference between a rule and a habit.
+ *
+ * `views` is a plain number rather than a `Reading` for one reason: it is
+ * always counted. Zero views is a MEASURED ZERO — nobody opened it — and the
+ * screen renders "0 views", never a blank and never a dash. It is also the
+ * only engagement figure that exists here; there is no reach, no delivery
+ * count and no open rate, because nothing measures those.
+ */
+export interface ChannelMessageStats {
+  messageId: string;
+  views: number;
+}
+
+/* ========================================================================== */
 /* ContentVersion — the publication boundary                                  */
 /* ========================================================================== */
 

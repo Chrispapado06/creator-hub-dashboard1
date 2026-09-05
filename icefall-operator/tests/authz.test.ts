@@ -113,6 +113,30 @@ import { DateField, DateRangeField, Listbox, strictIsoDay } from "../src/compone
 import { TODAY, daysUntil } from "../src/domain/dates";
 import { LEADS } from "../src/domain/memory/seed";
 import type { FunnelCounts, Lead } from "../src/domain/types";
+/*
+ * Added for section 20 — the guard suite over company CHANNELS (the owner's
+ * "like on instagram when creators create channels"), built against
+ * `20260902180000_company_channels.sql`, which is WRITTEN AND NOT PUSHED. Like
+ * section 18, these run against the same in-memory adapter the app uses, in
+ * the migration's exact shapes, so the file re-points when it lands.
+ *
+ * THE SUITE EXISTS FOR ONE CHECK ABOVE ALL THE OTHERS: a count is not a list.
+ * A company learning that a named climber opened a named promotional offer at
+ * a named time is surveillance, not analytics, and nobody joining a channel
+ * expects it. Everything else here — no reply, no invite, no edit, no delete —
+ * is a rule the database enforces by ABSENCE, and an absence is exactly the
+ * kind of thing a helpful later change restores without noticing.
+ */
+import {
+  CHANNELS,
+  CHANNEL_COLDHARBOUR,
+  CHANNEL_LANTERN_DISPATCH,
+  CHANNEL_LANTERN_MONSOON,
+  CHANNEL_MESSAGES,
+  COMPANIES as SEED_COMPANIES,
+} from "../src/domain/memory/seed";
+import { COMPANIES as CANONICAL_COMPANIES } from "../src/domain/companies";
+import type { Channel, ChannelMessage, ChannelMessageStats } from "../src/domain/types";
 
 let passed = 0;
 const failures: string[] = [];
@@ -5309,6 +5333,810 @@ async function run() {
       "and the hold-past-departure refusal stands with it",
     );
     eq(/new Date\(\)\.toISOString|type\s*=\s*"date"/.test(code), false, "no machine clock, no native date input in the composer");
+  });
+
+  /* ====================================================================== */
+  /* 20. Company channels — a company broadcasts, members listen            */
+  /* ====================================================================== */
+
+  /*
+   * `20260902180000_company_channels.sql` is WRITTEN AND NOT PUSHED, so these
+   * run against the in-memory adapter in the migration's exact shapes. They
+   * assert the RULES, not the storage, and every rule below is enforced in the
+   * database by an ABSENCE — no replies table, no member-writable column, no
+   * UPDATE policy, no delete path, no row-level read of the view table. An
+   * absence is the easiest thing in a codebase to helpfully fill in, which is
+   * the entire reason this section exists.
+   *
+   * ORDER IS IMPORTANCE. 20.1 is the one that matters: a count is not a list.
+   */
+
+  const channelsScreenSrc = readFileSync(new URL("../src/screens/Channels.tsx", import.meta.url), "utf8");
+  const backendIfaceSrc = readFileSync(new URL("../src/domain/adapter.ts", import.meta.url), "utf8");
+
+  /** Every .ts/.tsx in the app EXCEPT `src/offline/` — another session's frozen tree. */
+  const appFiles = (): string[] => {
+    const walkApp = (dir: URL, out: string[] = []): string[] => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        if (entry.isDirectory()) {
+          if (entry.name === "offline") continue;
+          walkApp(new URL(`${entry.name}/`, dir), out);
+        } else if (/\.tsx?$/.test(entry.name)) out.push(new URL(entry.name, dir).pathname);
+      }
+      return out;
+    };
+    return walkApp(new URL("../src/", import.meta.url));
+  };
+  const relPath = (f: string): string => f.split("/src/")[1] ?? f;
+
+  /**
+   * The nine methods that ARE the channel surface, and the whole of it.
+   *
+   * Written out rather than derived so that adding a tenth fails here and has
+   * to be argued for. Read what is not in the list: nothing replies, nothing
+   * comments, nothing adds a member, nothing edits a message, nothing deletes
+   * a channel, and nothing reads a view row.
+   */
+  const CHANNEL_METHODS = [
+    "archiveChannel",
+    "createChannel",
+    "deleteChannelMessage",
+    "getChannelMemberCount",
+    "getChannelMessageStats",
+    "getChannelMessages",
+    "getChannels",
+    "postChannelMessage",
+    "updateChannel",
+  ] as const;
+
+  /* ---- 20.1 RULE 3: A COUNT IS NOT A LIST — the one that matters -------- */
+
+  await check("A COUNT IS NOT A LIST — stats carry a message id and a number, and NOTHING else", async () => {
+    /*
+     * THE MOST IMPORTANT TEST IN THIS SECTION. The keys are enumerated rather
+     * than spot-checked, so a `profileId`, a `viewerName` or a `viewedAt`
+     * added to the row fails here on the way in — before any screen could
+     * render it, and whether or not a screen ever tries.
+     */
+    resetStore();
+    const r = await signIn(RAVI);
+    assert(be.getChannelMessageStats, "the stats method must exist — it is the feature the owner asked for");
+
+    const rows = await be.getChannelMessageStats(r, CHANNEL_LANTERN_DISPATCH);
+    assert(rows.length > 0, "Lantern's dispatch channel has messages, so it has stats");
+
+    for (const row of rows) {
+      eq(
+        JSON.stringify(Object.keys(row).sort()),
+        JSON.stringify(["messageId", "views"]),
+        `a stats row is exactly { messageId, views } — got ${JSON.stringify(Object.keys(row).sort())}`,
+      );
+      eq(typeof row.views, "number", "the count is a number");
+      eq(Number.isInteger(row.views), true, "counted people are whole people");
+      assert(row.views >= 0, "and never negative");
+    }
+    resetStore();
+  });
+
+  await check("NO VIEW ROW EVER LEAVES THE BACKEND — not one counted profile id reaches a caller", async () => {
+    /*
+     * The keys check above proves the SHAPE. This proves the CONTENT: the
+     * fixture holds real per-person view rows (standing in for
+     * `channel_message_views`, which the company cannot read row-by-row in the
+     * database either), and not one of those profile ids appears anywhere in
+     * anything the channel surface hands back.
+     */
+    resetStore();
+    const r = await signIn(RAVI);
+
+    const counted = new Set(__store.channelMessageViews.map((v) => v.profileId));
+    assert(counted.size > 20, `the fixture must actually hold view rows — found ${counted.size} people`);
+
+    const everythingReturned = JSON.stringify([
+      await be.getChannels!(r),
+      await be.getChannelMessages!(r, CHANNEL_LANTERN_DISPATCH),
+      await be.getChannelMessages!(r, CHANNEL_LANTERN_MONSOON),
+      await be.getChannelMessageStats!(r, CHANNEL_LANTERN_DISPATCH),
+      await be.getChannelMessageStats!(r, CHANNEL_LANTERN_MONSOON),
+      await be.getChannelMemberCount!(r, CHANNEL_LANTERN_DISPATCH),
+      await be.postChannelMessage!(r, CHANNEL_LANTERN_DISPATCH, { body: "A message sent by this test." }),
+    ]);
+
+    /* Teeth: the search must be capable of finding one. */
+    const sample = [...counted][0];
+    assert(JSON.stringify({ profileId: sample }).includes(sample), "the scan must be able to spot a profile id");
+
+    const leaked = [...counted].filter((id) => everythingReturned.includes(id));
+    eq(
+      leaked.length,
+      0,
+      `a company must never learn WHO opened a message — leaked: ${leaked.slice(0, 3).join(", ")}`,
+    );
+
+    /* The member rows are the same rule running the other way. */
+    const members = new Set(__store.channelMembers.map((m) => m.profileId));
+    assert(members.size > 20, "the fixture must hold members too");
+    eq(
+      [...members].filter((id) => everythingReturned.includes(id)).length,
+      0,
+      "and never WHO joined either — membership is a number, not a mailing list",
+    );
+    resetStore();
+  });
+
+  await check("THE TYPE ITSELF CANNOT CARRY AN IDENTITY — ChannelMessageStats declares two fields", () => {
+    /*
+     * Guarded at the TYPE, not at the query. RLS stops the company reading the
+     * rows, but the rule survives in the product only while nothing hands a
+     * screen a shape that COULD hold one. Two fields, and a "who viewed"
+     * control physically has nothing to render.
+     */
+    const block = domainTypesSrc.match(/export interface ChannelMessageStats \{([\s\S]*?)\n\}/);
+    assert(block, "ChannelMessageStats must still be a plain interface in domain/types.ts");
+    const fields = [...codeOf(block[1]).matchAll(/^\s*(\w+)\s*[?:]/gm)].map((m) => m[1]).sort();
+    eq(
+      JSON.stringify(fields),
+      JSON.stringify(["messageId", "views"]),
+      `the stats type declares exactly messageId and views — found ${JSON.stringify(fields)}`,
+    );
+
+    /* And the message type carries no viewer anything, nor a removed offer id. */
+    const msg = domainTypesSrc.match(/export interface ChannelMessage \{([\s\S]*?)\n\}/);
+    assert(msg, "ChannelMessage must still be a plain interface");
+    const msgFields = [...codeOf(msg[1]).matchAll(/^\s*(\w+)\s*[?:]/gm)].map((m) => m[1]);
+    for (const banned of ["offerId", "viewers", "viewedBy", "viewCount", "updatedAt", "mediaPath"]) {
+      eq(msgFields.includes(banned), false, `a channel message must not carry ${banned}`);
+    }
+    assert(msgFields.includes("productId"), "it promotes a product…");
+    assert(msgFields.includes("promoNote"), "…on terms written in words");
+  });
+
+  await check("NOTHING IN THE APP READS CHANNEL VIEW ROWS OR NAMES A VIEWER — the whole tree", () => {
+    /*
+     * The rows exist only on the fixture side of the seam, in
+     * `src/domain/memory/`, purely so the counts above them are arithmetic
+     * over something real. Anywhere else — a screen, a component, a shared
+     * type — is a leak in progress. Comments may name the tables; they explain
+     * the rule. Only code is scanned.
+     */
+    const rowIdentifiers = /channelMessageViews|CHANNEL_MESSAGE_VIEWS|ChannelMessageViewRow|CHANNEL_MEMBERS\b|ChannelMemberRow|\bviewedAt\b/;
+    const viewerIdentifiers = /\bviewers\b|\bwhoViewed\b|\bviewedBy\b|\bviewerNames?\b|\bviewerIds?\b|\bprofileIds\b/i;
+
+    /* Teeth, both of them, before either is trusted. */
+    assert(rowIdentifiers.test(codeOf("const rows = db.channelMessageViews;")), "the row scan must find one");
+    eq(
+      rowIdentifiers.test(codeOf("/* the company cannot read channelMessageViews */\nconst x = 1;")),
+      false,
+      "...and must ignore a comment explaining why it cannot",
+    );
+    assert(viewerIdentifiers.test(codeOf("const viewers = await who(id);")), "the viewer scan must find one");
+
+    const files = appFiles();
+    assert(files.length > 40, `the scan must actually have read the app — found ${files.length} files`);
+
+    const rowLeaks: string[] = [];
+    const viewerLeaks: string[] = [];
+    let sawTheRows = 0;
+    for (const file of files) {
+      const code = codeOf(readFileSync(file, "utf8"));
+      const where = relPath(file);
+      if (rowIdentifiers.test(code)) {
+        sawTheRows++;
+        if (!where.startsWith("domain/memory/")) rowLeaks.push(where);
+      }
+      if (viewerIdentifiers.test(code)) viewerLeaks.push(where);
+    }
+    assert(sawTheRows >= 2, `the view rows must actually exist to be guarded — seen in ${sawTheRows} files`);
+    eq(
+      rowLeaks.length,
+      0,
+      `channel view and member ROWS live only behind the adapter seam:\n      ${rowLeaks.join("\n      ")}`,
+    );
+    eq(
+      viewerLeaks.length,
+      0,
+      `nothing in this app names a viewer:\n      ${viewerLeaks.join("\n      ")}`,
+    );
+
+    /* And the screen that shows the count holds no profile id of any kind. */
+    eq(/\bprofileId\b/.test(codeOf(channelsScreenSrc)), false, "Channels.tsx never touches a profile id");
+  });
+
+  await check("THE COUNT IS NOT AN AFFORDANCE — no drill-down, and no second engagement figure", () => {
+    /*
+     * A "12 views" that is clickable, hoverable, or sits beside a member list
+     * implies a drill-down that must never exist. And there is exactly ONE
+     * real number in this feature: count(distinct profile_id). Reach,
+     * impressions, delivery and open rate are not measured, so they are not
+     * shown.
+     */
+    const code = codeOf(channelsScreenSrc);
+    for (const invented of [/\breach\b/i, /\bimpressions?\b/i, /\bopen rate\b/i, /\bdelivered\b/i, /\bdelivery\b/i, /\bengagement\b/i]) {
+      eq(invented.test(code), false, `Channels.tsx invents no ${invented} figure beside the counted one`);
+    }
+    /* The count renders inside a plain <div>, never a button or a link. */
+    assert(
+      flat(code).includes('<div className="lbl mt-1">{viewsLabel(views)}</div>'),
+      "the label is text in a div",
+    );
+    eq(
+      /<(button|Button|a|Link)[^>]*>\s*\{?\s*views/i.test(flat(code)),
+      false,
+      "the count is never the content of a control",
+    );
+  });
+
+  /* ---- 20.2 RULE 1: no reply affordance, not even a disabled one -------- */
+
+  await check("THE CHANNELS SCREEN HAS NO REPLY AFFORDANCE — every mention of one denies it", () => {
+    /*
+     * The word "reply" is ALL OVER this screen, and it should be: the operator
+     * needs telling that climbers cannot reply, or they will assume the box is
+     * missing rather than forbidden. So the scan is not for the word — it is
+     * for the word used as anything other than a denial, and for the
+     * identifiers a control would need.
+     */
+    const code = flat(codeOf(channelsScreenSrc));
+
+    const undenied = (src: string): string[] => {
+      const hits: string[] = [];
+      for (const m of src.matchAll(/repl(?:y|ies|ied|ying)/gi)) {
+        const before = src.slice(Math.max(0, m.index - 90), m.index);
+        if (!/\b(cannot|can't|no|nobody|never|not|without|nothing)\b/i.test(before)) {
+          hits.push(src.slice(Math.max(0, m.index - 60), m.index + 20));
+        }
+      }
+      return hits;
+    };
+
+    /* Teeth. */
+    eq(undenied("<Button>Reply</Button>").length, 1, "a Reply button must be caught");
+    eq(undenied("Climbers cannot reply to a channel.").length, 0, "...and a denial must not be");
+
+    const found = undenied(code);
+    eq(found.length, 0, `every mention of a reply must be a denial of one:\n      ${found.join("\n      ")}`);
+
+    /* The identifiers a reply or comment control would carry, denial or not. */
+    const controlish =
+      /\bonRepl\w*|\bhandleRepl\w*|\bcanRepl\w*|\bsetRepl\w*|\bReplyBox\b|\breplyTo\b|\breplyBody\b|\breplyDraft\b|\bcomments?\s*[:=]|\bpostComment\b|\baddComment\b|\bCommentList\b|\bcommentBox\b/i;
+    assert(controlish.test("const [reply, setReply] = useState('')"), "the identifier scan must have teeth");
+    eq(controlish.test(code), false, "Channels.tsx carries no reply or comment control, disabled or otherwise");
+
+    /* No dead attach control either — a paperclip nobody can press reads as unbuilt. */
+    eq(/paperclip|<input[^>]*type\s*=\s*"file"|attachMedia|onAttach/i.test(code), false, "and no attach control");
+  });
+
+  await check("THE CAPABILITY DOES NOT EXIST — the channel surface is nine methods, none of them a member's", async () => {
+    /*
+     * `canEditPlacement` is the pattern: the strongest guarantee is not a
+     * refusal, it is that the method a screen would call does not exist. This
+     * asserts the surface at RUNTIME and again in the INTERFACE, so neither an
+     * implementation nor a declaration can grow a tenth member quietly.
+     */
+    const runtime = Object.keys(be).filter((k) => /channel/i.test(k)).sort();
+    eq(
+      JSON.stringify(runtime),
+      JSON.stringify([...CHANNEL_METHODS]),
+      `the adapter's channel methods are the sanctioned nine — found ${JSON.stringify(runtime)}`,
+    );
+
+    const block = backendIfaceSrc.slice(backendIfaceSrc.indexOf("export interface OperatorBackend"));
+    assert(block.length > 500, "the OperatorBackend interface must still be in domain/adapter.ts");
+    const declared = [...codeOf(block).matchAll(/^ {2}(\w+)\??\(/gm)]
+      .map((m) => m[1])
+      .filter((n) => /channel/i.test(n))
+      .sort();
+    eq(
+      JSON.stringify(declared),
+      JSON.stringify([...CHANNEL_METHODS]),
+      `and the interface declares the same nine — found ${JSON.stringify(declared)}`,
+    );
+
+    /* Named absences, so a rename cannot slip past the list above. */
+    const forbidden = [
+      "replyToChannelMessage",
+      "postChannelReply",
+      "addChannelComment",
+      "getChannelReplies",
+      "addChannelMember",
+      "inviteToChannel",
+      "importChannelMembers",
+      "getChannelMembers",
+      "getChannelMessageViews",
+      "updateChannelMessage",
+      "editChannelMessage",
+      "deleteChannel",
+    ];
+    for (const name of forbidden) {
+      eq(name in be, false, `there is no ${name}, and there must never be`);
+      eq(
+        new RegExp(`\\b${name}\\b`).test(codeOf(backendIfaceSrc)),
+        false,
+        `${name} is not declared on the interface either`,
+      );
+    }
+  });
+
+  /* ---- 20.3 Cross-company isolation, both directions -------------------- */
+
+  await check("RAVI'S CHANNELS ARE LANTERN'S ALONE — Coldharbour's never appears, archived ones do", async () => {
+    resetStore();
+    const r = await signIn(RAVI);
+    const mine = await be.getChannels!(r);
+
+    assert(
+      mine.every((c: Channel) => c.companyId === r.user.companyId),
+      "every channel returned belongs to the caller's company",
+    );
+    eq(mine.some((c) => c.id === CHANNEL_COLDHARBOUR), false, "Coldharbour's channel is not in Lantern's list");
+    assert(mine.some((c) => c.id === CHANNEL_LANTERN_DISPATCH), "the running channel is there");
+    /* The archived one is RETURNED, marked. Hiding it would be the disappearance archiving prevents. */
+    const monsoon = mine.find((c) => c.id === CHANNEL_LANTERN_MONSOON);
+    assert(monsoon, "the archived channel is still listed — people joined it and can still read it");
+    assert(monsoon.archivedAt !== null, "and it says so, with the day it stopped");
+
+    /* And the other direction, so this is isolation rather than a filter. */
+    const jos = await be.getChannels!(jo);
+    eq(jos.some((c) => c.id === CHANNEL_LANTERN_DISPATCH), false, "Jo does not see Lantern's channel either");
+    assert(jos.some((c) => c.id === CHANNEL_COLDHARBOUR), "she sees her own");
+    resetStore();
+  });
+
+  await check("DIRECT-ID CHANNEL READS REFUSE ACROSS COMPANIES — messages, counts and the count itself", async () => {
+    resetStore();
+    const r = await signIn(RAVI);
+
+    eq((await be.getChannelMessages!(r, CHANNEL_COLDHARBOUR)).length, 0, "Ravi reads none of Coldharbour's messages");
+    eq(
+      (await be.getChannelMessageStats!(r, CHANNEL_COLDHARBOUR)).length,
+      0,
+      "and learns nothing about how they landed — a competitor's promotional performance is commercial intelligence",
+    );
+    const count = await be.getChannelMemberCount!(r, CHANNEL_COLDHARBOUR);
+    eq(count.available, false, "nor how big their audience is");
+
+    /* Jo really does have all three, so the zeroes above are refusals not emptiness. */
+    assert((await be.getChannelMessages!(jo, CHANNEL_COLDHARBOUR)).length > 0, "Jo reads her own messages");
+    assert((await be.getChannelMessageStats!(jo, CHANNEL_COLDHARBOUR)).length > 0, "and her own counts");
+    eq((await be.getChannelMessages!(jo, CHANNEL_LANTERN_DISPATCH)).length, 0, "and none of Lantern's");
+    eq((await be.getChannelMessageStats!(jo, CHANNEL_LANTERN_DISPATCH)).length, 0, "nor Lantern's counts");
+    resetStore();
+  });
+
+  await check("DIRECT-ID CHANNEL WRITES REFUSE ACROSS COMPANIES — post, archive, rename, delete", async () => {
+    resetStore();
+    const r = await signIn(RAVI);
+    const before = __store.channelMessages.length;
+
+    for (const [what, res] of [
+      ["post into it", await be.postChannelMessage!(r, CHANNEL_COLDHARBOUR, { body: "Book with us instead." })],
+      ["archive it", await be.archiveChannel!(r, CHANNEL_COLDHARBOUR)],
+      ["rename it", await be.updateChannel!(r, CHANNEL_COLDHARBOUR, { name: "Lantern Ridge Dispatch" })],
+      ["delete a message in it", await be.deleteChannelMessage!(r, "cmsg-cd-1")],
+    ] as const) {
+      eq(res.ok, false, `a company cannot ${what} in another company's channel`);
+      assert(!res.ok && res.reason.length > 0, "and the refusal carries a reason the screen shows verbatim");
+    }
+
+    eq(__store.channelMessages.length, before, "and nothing was written on the way to being refused");
+    assert(
+      __store.channels.find((c) => c.id === CHANNEL_COLDHARBOUR)?.archivedAt === null,
+      "Coldharbour's channel is untouched",
+    );
+    assert(__store.channelMessages.some((m) => m.id === "cmsg-cd-1"), "and their message is still there");
+    resetStore();
+  });
+
+  /* ---- 20.4 RULE 4: a company cannot add members ------------------------ */
+
+  await check("A COMPANY CANNOT ADD A MEMBER — people join themselves, and there is no method to say otherwise", async () => {
+    /*
+     * An audience the company assembled is a mailing list nobody consented to.
+     * `channel_members` only accepts a row a person inserts for themselves, so
+     * the portal must carry no invite, no add-member and no import — and it
+     * carries them by having nowhere to put one.
+     */
+    resetStore();
+    const r = await signIn(RAVI);
+
+    const memberWriters = Object.keys(be).filter((k) =>
+      /channel/i.test(k) && /(add|invite|import|join|remove|set|create).*member|member.*(add|invite|import|write)/i.test(k),
+    );
+    eq(JSON.stringify(memberWriters), "[]", "no method on the backend puts a person into a channel");
+
+    /* The only membership method there is returns a NUMBER, and nothing else. */
+    const count = await be.getChannelMemberCount!(r, CHANNEL_LANTERN_DISPATCH);
+    eq(count.available, true, "the company's own member count is measured");
+    assert(count.available && typeof count.value === "number", "and it is a number");
+    eq(
+      count.available && count.value,
+      __store.channelMembers.filter((m) => m.channelId === CHANNEL_LANTERN_DISPATCH).length,
+      "counted from rows, never a figure typed into a fixture",
+    );
+
+    /* Nor a screen offering it. */
+    const code = codeOf(channelsScreenSrc);
+    eq(
+      /\binvite\w*\s*[(<={]|addMember|<Button[^>]*>\s*Invite|importMembers/i.test(flat(code)),
+      false,
+      "and the screen has no invite, add-member or import control",
+    );
+    resetStore();
+  });
+
+  /* ---- 20.5 RULE 5: a message is stood behind or deleted ---------------- */
+
+  await check("A MESSAGE CANNOT BE EDITED — delete is the only correction, and there is no edit anywhere", async () => {
+    /*
+     * The table has no UPDATE policy, matching `posts`. An edit after people
+     * have read it — and after the view count accrued against the old words —
+     * makes the count a measurement of text that no longer exists.
+     */
+    resetStore();
+    const r = await signIn(RAVI);
+
+    for (const name of ["updateChannelMessage", "editChannelMessage", "patchChannelMessage", "reviseChannelMessage"]) {
+      eq(name in be, false, `no ${name} on the adapter`);
+      eq(new RegExp(`\\b${name}\\b`).test(codeOf(backendIfaceSrc)), false, `and none declared on the interface`);
+      eq(new RegExp(`\\b${name}\\b`).test(codeOf(memoryAdapterSrc)), false, `and none implemented in the adapter`);
+    }
+    eq(
+      /edit\w*\s*=\s*|onEditMessage|setEditing[A-Z]/.test(codeOf(channelsScreenSrc)),
+      false,
+      "and no edit control on the screen to wire one to",
+    );
+
+    /* Delete does exist, and it takes the counted views with it. */
+    const stats = await be.getChannelMessageStats!(r, CHANNEL_LANTERN_DISPATCH);
+    assert(stats.find((s) => s.messageId === "cmsg-ld-3"), "the message is there to begin with");
+    const del = await be.deleteChannelMessage!(r, "cmsg-ld-3");
+    eq(del.ok, true, "a company can delete its own message");
+    const after = await be.getChannelMessageStats!(r, CHANNEL_LANTERN_DISPATCH);
+    eq(after.some((s) => s.messageId === "cmsg-ld-3"), false, "and it is gone from the counts with it");
+    eq(
+      __store.channelMessageViews.some((v) => v.messageId === "cmsg-ld-3"),
+      false,
+      "the view rows go too — the count resets with the wording, which is why delete-and-repost is the honest correction",
+    );
+    resetStore();
+  });
+
+  /* ---- 20.6 Archived, never deleted ------------------------------------ */
+
+  await check("AN ARCHIVED CHANNEL REFUSES MESSAGES AND STAYS READABLE — with the reason, verbatim", async () => {
+    resetStore();
+    const r = await signIn(RAVI);
+
+    const refused = await be.postChannelMessage!(r, CHANNEL_LANTERN_MONSOON, { body: "One more thing." });
+    eq(refused.ok, false, "an archived channel takes no new messages");
+    assert(
+      !refused.ok &&
+        refused.reason ===
+          "This channel is archived, so it does not take new messages. Everything already in it stays readable for the people who joined.",
+      "and the reason says what survives, not only what is refused",
+    );
+    eq(__store.channelMessages.filter((m) => m.channelId === CHANNEL_LANTERN_MONSOON).length, 3, "nothing was written");
+
+    /* Readable, all of it, counts included. */
+    const messages = await be.getChannelMessages!(r, CHANNEL_LANTERN_MONSOON);
+    eq(messages.length, 3, "every word the company told those people is still there");
+    const stats = await be.getChannelMessageStats!(r, CHANNEL_LANTERN_MONSOON);
+    eq(stats.length, 3, "and so is every count");
+    assert(stats.every((s) => s.views > 0), "the monsoon channel's messages were read");
+
+    /* Archiving a running channel does the same to it, and nothing more. */
+    const arch = await be.archiveChannel!(r, CHANNEL_LANTERN_DISPATCH);
+    eq(arch.ok, true, "a company can stop its own channel");
+    assert(arch.ok && arch.value.archivedAt !== null, "which stamps the day it stopped");
+    eq(
+      (await be.postChannelMessage!(r, CHANNEL_LANTERN_DISPATCH, { body: "hello" })).ok,
+      false,
+      "after which it takes no messages either",
+    );
+    eq((await be.getChannelMessages!(r, CHANNEL_LANTERN_DISPATCH)).length, 6, "while everything in it stays readable");
+    resetStore();
+  });
+
+  await check("THERE IS NO DELETE-CHANNEL METHOD, AND THERE NEVER WILL BE", async () => {
+    /*
+     * Members joined something. A company that could delete a channel could
+     * make the thing people opted into disappear from under them, along with
+     * every promotional claim it ever made in there. Archive is the whole
+     * lifecycle, and the absence of a delete is the enforcement.
+     */
+    resetStore();
+    for (const name of ["deleteChannel", "removeChannel", "destroyChannel", "purgeChannel"]) {
+      eq(name in be, false, `no ${name} on the adapter`);
+      eq(new RegExp(`\\b${name}\\b`).test(codeOf(backendIfaceSrc)), false, `nor declared on the interface`);
+      eq(new RegExp(`\\b${name}\\b`).test(codeOf(memoryAdapterSrc)), false, `nor implemented`);
+      eq(new RegExp(`\\b${name}\\b`).test(codeOf(channelsScreenSrc)), false, `nor called from the screen`);
+    }
+    /* `archivedAt` is the whole lifecycle, so it is a timestamp, not a boolean. */
+    const block = domainTypesSrc.match(/export interface Channel \{([\s\S]*?)\n\}/);
+    assert(block, "the Channel interface must still be a plain interface");
+    assert(/archivedAt:\s*string \| null;/.test(block[1]), "archivedAt records WHEN it stopped, not merely that it did");
+    eq(/deletedAt|isDeleted/.test(block[1]), false, "and there is no deleted state to record");
+  });
+
+  /* ---- 20.7 The contact-details guard, on all three fields -------------- */
+
+  await check("A PHONE NUMBER IS REFUSED IN A CHANNEL NAME, ITS DESCRIPTION AND A MESSAGE — and nothing is stored", async () => {
+    /*
+     * A channel is promotional text pointed straight at climbers with no
+     * reviewer in between, and a channel NAME is read every time the list is
+     * drawn. So the guard is BLOCKING on all three fields — advisory would
+     * mean not enforced.
+     */
+    resetStore();
+    const r = await signIn(RAVI);
+    const channelsBefore = __store.channels.length;
+    const messagesBefore = __store.channelMessages.length;
+
+    const attempts = [
+      ["a channel name", await be.createChannel!(r, { name: "Ring us on +977 9812 345 678" })],
+      [
+        "a channel description",
+        await be.createChannel!(r, { name: "Autumn news", description: "WhatsApp us on +977 9812 345 678 to book." }),
+      ],
+      [
+        "a message body",
+        await be.postChannelMessage!(r, CHANNEL_LANTERN_DISPATCH, { body: "Call the office on +977 9812 345 678." }),
+      ],
+      [
+        "promotional terms",
+        await be.postChannelMessage!(r, CHANNEL_LANTERN_DISPATCH, {
+          body: "Two places left on the April departure.",
+          promoNote: "Message us on wa.me/9779812345678 to hold one.",
+        }),
+      ],
+      [
+        "a rename",
+        await be.updateChannel!(r, CHANNEL_LANTERN_DISPATCH, { name: "Dispatch — text 9812 345 678" }),
+      ],
+    ] as const;
+
+    for (const [where, res] of attempts) {
+      eq(res.ok, false, `contact details in ${where} are refused`);
+      assert(!res.ok && /phone number|WhatsApp|email|handle|link/i.test(res.reason), `and the reason names what to remove (${where})`);
+    }
+
+    eq(__store.channels.length, channelsBefore, "no channel was created on the way to being refused");
+    eq(__store.channelMessages.length, messagesBefore, "and no message was written");
+    eq(
+      __store.channels.find((c) => c.id === CHANNEL_LANTERN_DISPATCH)?.name,
+      "Lantern Ridge Dispatch",
+      "and the rename did not take",
+    );
+
+    /* The same fields accept the honest version, so this is a guard and not a wall. */
+    const good = await be.createChannel!(r, {
+      name: "Autumn 2026 news",
+      description: "Departure news and remaining places, straight from the Kathmandu office.",
+    });
+    eq(good.ok, true, "clean promotional text goes through");
+    resetStore();
+  });
+
+  /* ---- 20.8 The measured zero ------------------------------------------ */
+
+  await check("A ZERO IS COUNTED — the unread message reports 0, and the screen has no blank to fall back to", async () => {
+    /*
+     * `cmsg-ld-6` was sent twenty-five minutes before the app clock and nobody
+     * has opened it. That is a MEASURED zero: it renders "0 views", never a
+     * blank and never a dash.
+     */
+    resetStore();
+    const r = await signIn(RAVI);
+
+    const stats = await be.getChannelMessageStats!(r, CHANNEL_LANTERN_DISPATCH);
+    const fresh = stats.find((s) => s.messageId === "cmsg-ld-6");
+    assert(fresh, "every message appears in the stats, including the ones nobody opened");
+    eq(fresh.views, 0, "the newest message reports zero");
+    eq(fresh.views === null || fresh.views === undefined, false, "as a counted number, never a null or an absence");
+    eq(
+      __store.channelMessageViews.some((v) => v.messageId === "cmsg-ld-6"),
+      false,
+      "and it is zero because there are no rows, not because a number was typed",
+    );
+
+    /* A message sent right now is the same case. */
+    const sent = await be.postChannelMessage!(r, CHANNEL_LANTERN_DISPATCH, { body: "Sent this second." });
+    assert(sent.ok, "the message sends");
+    const after = await be.getChannelMessageStats!(r, CHANNEL_LANTERN_DISPATCH);
+    eq(after.find((s) => s.messageId === sent.value.id)?.views, 0, "a brand-new message is a measured zero too");
+
+    /* And the screen renders it rather than hiding it. */
+    const code = flat(codeOf(channelsScreenSrc));
+    eq(/views\s*(\?\?|\|\|)\s*(0|""|'')/.test(code), false, "the screen never substitutes a value for a missing count");
+    eq(/views[^;)}]{0,40}["'`]\s*[—–-]\s*["'`]/.test(code), false, "and never falls back to a dash");
+    assert(code.includes("{views.toLocaleString(\"en-GB\")}"), "it prints the counted number…");
+    assert(code.includes("{viewsLabel(views)}"), "…with a label that pluralises rather than a hardcoded word");
+    assert(
+      flat(codeOf(channelsScreenSrc)).includes('const viewsLabel = (n: number) => (n === 1 ? "view" : "views")'),
+      "and 0 takes the plural — '0 views', which is the sentence the honesty note asks for",
+    );
+    resetStore();
+  });
+
+  /* ---- 20.9 The real-business rule -------------------------------------- */
+
+  await check("NO SEEDED CHANNEL BELONGS TO A REAL BUSINESS — a broadcast in a real name is an invented claim", () => {
+    /*
+     * Elite Exped is a REAL company among invented ones, and the rule is
+     * PER-SURFACE: it is not enough that this seed happens to be clean, the
+     * check has to be able to catch a real name if one arrives.
+     */
+    const realNames = new Set(
+      CANONICAL_COMPANIES.filter((c) => c.realBusiness).map((c) => c.name.toLowerCase()),
+    );
+    /* Known real operators the family has removed before, by name. */
+    const knownReal = [
+      "elite exped",
+      "seven summit treks",
+      "adventure consultants",
+      "14 peaks",
+      "madison mountaineering",
+      "furtenbach adventures",
+    ];
+
+    const isReal = (name: string): boolean =>
+      realNames.has(name.toLowerCase()) || knownReal.includes(name.toLowerCase());
+
+    /* Teeth: the predicate must be able to catch one. */
+    eq(isReal("Elite Exped"), true, "the check must recognise a real business");
+    eq(isReal("Lantern Ridge Expeditions"), false, "...and let an invented one through");
+
+    assert(CHANNELS.length > 0, "there are seeded channels to check");
+    const offenders: string[] = [];
+    for (const channel of CHANNELS) {
+      const company = SEED_COMPANIES.find((c) => c.id === channel.companyId);
+      assert(company, `every seeded channel resolves to a company — ${channel.id} did not`);
+      if (isReal(company.name)) offenders.push(`${company.name} has channel "${channel.name}"`);
+    }
+    eq(offenders.length, 0, `no real business carries a demo channel:\n      ${offenders.join("\n      ")}`);
+
+    /* And no real name is written into a channel or a message either. */
+    const channelText = JSON.stringify([CHANNELS, CHANNEL_MESSAGES]).toLowerCase();
+    for (const name of knownReal) {
+      eq(channelText.includes(name), false, `no channel or message names ${name}`);
+    }
+  });
+
+  /* ---- 20.10 Promotion integrity: a product, never a quote -------------- */
+
+  await check("A MESSAGE CANNOT PROMOTE ANOTHER COMPANY'S TRIP — a compliment is still a cross-tenant leak", async () => {
+    resetStore();
+    const r = await signIn(RAVI);
+    const before = __store.channelMessages.length;
+
+    const res = await be.postChannelMessage!(r, CHANNEL_LANTERN_DISPATCH, {
+      body: "Denali is worth a look this year.",
+      promotion: { productId: "p-coldharbour-denali" },
+    });
+    eq(res.ok, false, "promoting a competitor's trip is refused");
+    assert(!res.ok && res.reason.length > 0, "with a reason");
+    eq(__store.channelMessages.length, before, "and nothing is stored");
+    resetStore();
+  });
+
+  await check("A DEPARTURE MUST BELONG TO THE TRIP, AND A DEPARTURE WITHOUT A TRIP CANNOT BE WRITTEN", async () => {
+    /*
+     * `channel_messages_departure_needs_product` is the migration's
+     * constraint. In this app it is a TYPE: `departureId` only exists inside
+     * an object that already carries a `productId`, so "a departure with no
+     * trip" is not a sentence the caller can write — it never becomes a
+     * refusal an operator has to read.
+     */
+    resetStore();
+    const r = await signIn(RAVI);
+    const before = __store.channelMessages.length;
+
+    const mismatched = await be.postChannelMessage!(r, CHANNEL_LANTERN_DISPATCH, {
+      body: "Places left in November.",
+      promotion: { productId: "p-everest-base-camp-trek", departureId: "d-1" },
+    });
+    eq(mismatched.ok, false, "a departure of a different trip is refused");
+    assert(
+      !mismatched.ok && mismatched.reason === "That departure does not belong to the trip you are promoting.",
+      "and the reason says which half is wrong",
+    );
+    eq(__store.channelMessages.length, before, "nothing stored");
+
+    /* The constraint at the type level: ChannelPromotion requires a productId. */
+    const promo = backendIfaceSrc.match(/export interface ChannelPromotion \{([\s\S]*?)\n\}/);
+    assert(promo, "ChannelPromotion must still be a plain interface");
+    assert(/productId:\s*string;/.test(promo[1]), "productId is required — not optional, not nullable");
+    assert(/departureId\?:/.test(promo[1]), "and departureId is the optional half, inside it");
+    eq(/offerId/i.test(promo[1]), false, "and there is no offer id in it");
+
+    /* The happy path still works, so the refusals above are precision not breakage. */
+    const good = await be.postChannelMessage!(r, CHANNEL_LANTERN_DISPATCH, {
+      body: "Two places left on the April departure.",
+      promotion: { productId: "p-everest-base-camp-trek", departureId: "d-4" },
+      promoNote: "Deposit held until the end of September for anyone on this channel.",
+    });
+    eq(good.ok, true, "a company's own trip and its own departure go through");
+    assert(good.ok && good.value.productId === "p-everest-base-camp-trek", "the promotion is recorded");
+    assert(good.ok && good.value.departureId === "d-4", "with the departure");
+    resetStore();
+  });
+
+  await check("NO offerId ANYWHERE — the removed column must not come back by hand", () => {
+    /*
+     * The migration was corrected mid-build: `offer_id` is GONE. An `offers`
+     * row is a quote made to one named climber inside one thread, with one
+     * acceptance; broadcasting one would show every member the best price that
+     * company ever privately gave anyone, and decision 19 forbids a cold offer
+     * outright. Broadcast and quote are different objects because they behave
+     * differently.
+     */
+    assert(/\bofferId\b/i.test(codeOf("const x = { offerId: id };")), "the scan must have teeth");
+
+    const found: string[] = [];
+    for (const file of appFiles()) {
+      const code = codeOf(readFileSync(file, "utf8"));
+      if (!/channel/i.test(code)) continue;
+      if (/\bofferId\b/i.test(code)) found.push(relPath(file));
+    }
+    eq(found.length, 0, `no file touching channels may carry an offer id:\n      ${found.join("\n      ")}`);
+
+    /* And the screen says why, where an operator will read it. */
+    const code = flat(channelsScreenSrc);
+    assert(code.includes("a channel never carries a quote"), "the composer states the rule at the control");
+  });
+
+  await check("PROMOTIONAL TERMS ARE WORDS, NEVER A PRICE — no discount input, no money formatting", () => {
+    /*
+     * `promo_note` is free text on purpose: a number there would be an
+     * unenforceable commitment sitting outside the money model, and every real
+     * figure belongs to the trip or to an offer made inside a thread.
+     */
+    const code = flat(codeOf(channelsScreenSrc));
+    assert(code.includes('label="Terms, not a price"'), "the field says so at the field, not in a file header");
+    eq(
+      /discount|promoPrice|percentOff|priceCents|type\s*=\s*"number"/i.test(code),
+      false,
+      "there is no discount or price input on the composer",
+    );
+    eq(
+      /promoNote[\s\S]{0,160}?(formatMoney|eur\(|toFixed|Intl\.NumberFormat[\s\S]{0,60}currency)/i.test(code),
+      false,
+      "and promoNote is never formatted as money",
+    );
+
+    /* The seeded terms are terms: not one of them states a figure. */
+    for (const m of CHANNEL_MESSAGES as ChannelMessage[]) {
+      if (!m.promoNote) continue;
+      eq(
+        /[€$£]|\b\d+\s*%|\b\d[\d,.]*\s*(usd|eur|npr)\b/i.test(m.promoNote),
+        false,
+        `seeded terms state no price — "${m.promoNote}"`,
+      );
+    }
+  });
+
+  /* ---- 20.11 The role boundary, unchanged by any of it ------------------ */
+
+  await check("SENDING TO A CHANNEL IS THE PUBLISHED-CONTENT PERMISSION — a channel IS published content", async () => {
+    resetStore();
+    const r = await signIn(RAVI);
+    const m = await signIn(MARTA);
+    const before = __store.channelMessages.length;
+
+    for (const [what, res] of [
+      ["open a channel", await be.createChannel!(m, { name: "Marta's own channel" })],
+      ["send to one", await be.postChannelMessage!(m, CHANNEL_LANTERN_DISPATCH, { body: "hello everyone" })],
+      ["archive one", await be.archiveChannel!(m, CHANNEL_LANTERN_DISPATCH)],
+      ["delete a message", await be.deleteChannelMessage!(m, "cmsg-ld-1")],
+    ] as const) {
+      eq(res.ok, false, `Sales cannot ${what}`);
+      assert(!res.ok && res.reason.length > 0, "and is told why");
+    }
+    eq(__store.channelMessages.length, before, "and nothing Sales tried was written");
+
+    /* The admin can, so the refusals above are the role and not a broken method. */
+    eq((await be.postChannelMessage!(r, CHANNEL_LANTERN_DISPATCH, { body: "Office opens at six." })).ok, true, "the Company Admin can send");
+    resetStore();
   });
 
   const total = passed + failures.length;

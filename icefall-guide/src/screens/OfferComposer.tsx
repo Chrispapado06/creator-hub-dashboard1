@@ -52,9 +52,7 @@ export default function OfferComposer() {
   const convo = useMemo(() => conversations().find((c) => c.id === id), [id]);
 
   const [partySize, setPartySize] = useState("1");
-  const [lines, setLines] = useState<QuoteLine[]>([
-    { label: "Guiding", amount: 0, per: "person" },
-  ]);
+  const [lines, setLines] = useState<QuoteLine[]>([{ label: "Guiding", amount: 0, per: "person" }]);
 
   const quote: Quote = {
     id: "draft",
@@ -247,7 +245,9 @@ function Row({
   return (
     <div className="flex items-baseline justify-between gap-3">
       <dt className={dim ? "text-mist-dim" : "text-mist"}>{label}</dt>
-      <dd className={`tnum ${strong ? "text-[14px] text-snow" : dim ? "text-mist-dim" : "text-mist"}`}>
+      <dd
+        className={`tnum ${strong ? "text-[14px] text-snow" : dim ? "text-mist-dim" : "text-mist"}`}
+      >
         {value}
       </dd>
     </div>
