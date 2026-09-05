@@ -9,3 +9,8 @@ node_modules
 dist
 .env
 .env.*
+
+# Generated portraits of guides who do not exist. See scripts/strip-local-assets.mjs —
+# .vercelignore alone was measured NOT to stop this; the build step is the guarantee.
+public/img/guides/
+public/img/operators/

@@ -282,3 +282,49 @@ Three of the readers were ones no screen-by-screen sweep would catch:
 Worth other sessions' time: any app with seeded demo data and a login has this
 shape. Gate at one point, fail closed while the session is unknown, and check
 stores, initialisers and counts — not just screens.
+
+---
+
+## A focus indicator can pass every code check and still paint nothing
+
+**Session 02, web, 2026-09-01. Applies to all five apps — every tree uses
+Tailwind and a global `:focus-visible` rule.**
+
+The controls contract says a replacement control must not regress keyboard
+behaviour. Verifying that is where two plausible methods both lie.
+
+**Grep lies in both directions.** A global `:focus-visible { outline: ... }`
+in `@layer base` means a component with no focus classes is usually FINE, and
+a component with `outline-none` is usually BROKEN — the opposite of what a
+per-component grep suggests. Tailwind utilities beat the base layer, so
+`outline-none` silently cancels the global rule for that element.
+
+**Computed style lies worse, because it returns a PASS.** Three composers in
+the web app reported, while focused: `outline-width: 2px`, `outline-color:
+azure`, `:focus-visible = true`. Perfect on paper. They drew nothing —
+`outline-style` was `none`, and an outline paints nothing at `style: none`
+regardless of its width or colour. It never appeared in a before/after diff
+either, because it was `none` in both states. **A style diff can report a
+change that is invisible.**
+
+**Only pixels are ground truth.** Screenshot the control blurred; Tab to it
+for real; screenshot again; compare bytes. Identical bytes = the keyboard user
+cannot see where they are. 394 controls across 22 pages took about four
+minutes this way and found three real defects that both cheaper methods
+cleared.
+
+**Three rules for anyone re-running this:**
+
+1. **Reach the control by Tab, never by clicking it.** A mouse click drops the
+   browser out of keyboard modality, so `:focus-visible` correctly stops
+   matching — and on a menu control the click also opens the menu. Both make a
+   working control look broken.
+2. **A shared element that fails on exactly one of the N pages it appears on
+   is a measurement fault, not a defect.** A sidebar link failed 1-of-16 here;
+   it sits below the fold and the screenshot clip fell outside the viewport.
+   The ratio identified the probe as the fault before reading any source.
+3. **`outline-none` is a promise to replace the indicator, never a way to
+   remove it.** Pair it with `focus-visible:ring-*` on the control, or
+   `focus-within:border-*` on the box the control visually lives in — which is
+   usually the better answer, because the bordered pill or card IS what the eye
+   reads as the control.

@@ -7,7 +7,7 @@
     "dev": "vite",
     "server": "node server/index.mjs",
     "dev:all": "API_PORT=8788 node server/index.mjs & vite",
-    "build": "tsc && vite build",
+    "build": "tsc && vite build && node scripts/strip-local-assets.mjs",
     "build:offline": "VITE_ICEFALL_OFFLINE=1 NODE_ENV=development vite build --mode development --outDir dist-offline --emptyOutDir",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit"

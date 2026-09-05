@@ -1,6 +1,7 @@
 import { Suspense, lazy, useEffect } from "react";
 import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import Waitlist from "@/screens/Waitlist";
+import Join from "@/screens/Join";
 import { useAuth } from "@/lib/auth";
 
 /**
@@ -61,6 +62,14 @@ export default function App() {
   return (
     <Routes>
       <Route path="/auth/callback" element={<AuthCallback />} />
+
+      {/*
+        A sign-up with an ADDRESS. `AuthModal` has done this since 31 August but
+        only as a pop-up inside the dev-only /preview tree, and a modal cannot be
+        linked from an email, a store listing, an advert or a launch site. Both
+        call the same `signUp` — one account system, two doors.
+      */}
+      <Route path="/join" element={<Join />} />
       <Route
         path="/app/*"
         element={

@@ -6,9 +6,16 @@ import { offlineJoinWaitlist } from "@/offline/fixtures";
  *
  * A fixed UTC instant rather than a local one: the countdown has to tick toward
  * the same moment for a visitor in Nicosia and one in Denver, and "midnight" is
- * not a moment. The prose label ("October 12th") is generated from this same
- * value in UTC, so the headline and the clock can never disagree — change the
- * date here and both follow.
+ * not a moment. The prose label is generated from this same value in UTC, so the
+ * headline and the clock can never disagree — change the date here and both
+ * follow.
+ *
+ * THE DATE MOVED TO THE 15TH AND THESE TWO NOTES SAID THE 12TH until 4 Sep 2026.
+ * No visitor ever saw the 12th — every date on the page is derived, which is the
+ * whole point of the constant — but the next person to read the file would have
+ * been told the wrong launch date by the file that defines it. Do not write an
+ * example date into a comment here: write what the value means, not what it
+ * currently is.
  */
 export const LAUNCH_AT = new Date("2026-10-15T09:00:00Z");
 
@@ -17,7 +24,7 @@ const ORDINAL = (n: number) => {
   return ["th", "st", "nd", "rd"][n % 10] ?? "th";
 };
 
-/** "October 12th" — the form used in the copy. */
+/** The launch date in the form the copy uses — month name, day, ordinal. */
 export function launchLabel(date: Date = LAUNCH_AT): string {
   const month = date.toLocaleDateString("en-GB", { month: "long", timeZone: "UTC" });
   const day = Number(date.toLocaleDateString("en-GB", { day: "numeric", timeZone: "UTC" }));

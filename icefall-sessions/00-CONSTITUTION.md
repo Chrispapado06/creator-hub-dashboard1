@@ -2538,6 +2538,56 @@ is only as good as the last person who remembered to update it.** Prefer asking
 what an element can do at the moment the question matters.
 
 
+
+## 6ap. A PROMISE WITH NO FAILURE PATH IS A PERMANENT PROMISE
+
+**2026-09-01, the trail cards.** Every route showed *"Contours — imagery
+loading"* forever. The tiles carried `onLoad` and **no `onError`**, so a tile
+that 404'd incremented nothing: the component could not distinguish *still
+arriving* from *never coming*, and the caption's last branch was the only home
+for both. **Failure rendered as progress and stayed there.**
+
+The satellite source was healthy throughout — a direct fetch returned a real
+JPEG — which is what makes the shape worth naming: **the absence of an error
+path does not look like a bug, it looks like patience.** Nothing throws, nothing
+logs, and the screen keeps politely promising.
+
+**Rule: every asynchronous state needs three outcomes, not two — pending,
+arrived, and FAILED — and the third must be visibly distinct.** A settled-but-
+empty result says what it actually is (*"Contours from elevation data — no
+imagery for this area"*), never what it hoped for. Verify by FORCING the
+failure — redirecting every tile to a 404 — rather than waiting to be unlucky.
+
+Two satellites from the same batch:
+
+- **Reset per subject.** The tile counts never cleared between trails, so a
+  second trail could inherit the first one's count and caption itself from
+  imagery it never loaded. State keyed to a subject must be cleared when the
+  subject changes.
+- **Empty-because-failed is not empty-because-nothing-matched.** A failed
+  lookup returning `[]` made the screen say *"Nothing found for X"* **when
+  nobody had looked.** The search now throws; an abort still returns `[]`,
+  because there the caller genuinely cancelled.
+
+## 6aq. NAME IT BEFORE YOU OFFER IT
+
+From the same fix. Place results were being rendered with blank subtitles and
+bare decimal coordinates because their `kind` had no entry in `KIND_LABEL` — the
+app was offering the user a thing it could not describe.
+
+**Rule: if the app cannot NAME what it is showing, it must not show it.** An
+allow-list plus a label requirement means anything unfamiliar an upstream source
+starts returning is **excluded and noticed**, rather than admitted and rendered
+badly — which is the difference between a source change surfacing as a bug
+report and surfacing as garbage in front of a user.
+
+And the counterweight, because an allow-list can be tightened until it lies:
+**hamlets were deliberately kept.** Filtering to towns-and-larger would have
+looked tidier on the failing case and quietly lost Les Praz de Chamonix — a real
+mountain base. **Test a filter against what it removes, not only against the
+noise it fixes.**
+
+
 ## 6f. A SYNC SCRIPT'S CORRECTNESS IS NOT OBSERVABLE FROM THE FILE IT COPIES FROM
 
 `icefall-web` was never in `icefall-shared`'s sync list. Its `src/money/model.ts`
@@ -2963,3 +3013,121 @@ documents that the keyless Esri World Imagery tier is non-commercial-only and
 non-redistributable — and it is now the default base for ~99.5% of trail cards,
 while Pro billing is already scaffolded in `growth/tiers.ts`. Needs a licensing
 decision before billing goes live.
+
+---
+
+## §6ar — the asker must never be able to write the decider's answer
+
+**One family, three shapes, all three of which produced live defects on 2026-09-02.**
+Recorded together because they are the same mistake seen from three sides, and each
+was found by applying the previous one rather than by hunting.
+
+**(1) A column added AFTER a guard was written is invisible to that guard.**
+`threads_guard` pinned the objective and was written before `20260828120000` added
+five commercial columns. A company rep who was a thread participant could
+`update threads set company_id = null` and take a live customer conversation out of
+their own employer's sight — colleagues stop seeing it, nobody can join, there is no
+DELETE on `thread_participants` so they cannot be evicted, and nothing is audited.
+When the untracked column controls VISIBILITY, the omission is an access-control hole,
+not an untidiness.
+
+**(2) A column only ONE party may write, on a table the OTHER party inserts into,
+must be pinned NULL on that insert.**
+Wherever a workflow has an ASKER and a DECIDER, they share a table, and the asker
+creates the row. Unless the insert policy nails every decision column to NULL, the
+asker writes the decider's answer.
+
+- `group_join_requests_insert` required only "this is me" and "the group is private".
+  It did not require the request to arrive undecided, so:
+  `insert ... (group_id, profile_id, accepted_at) values (<any private group>, auth.uid(), now())`
+  followed by an ordinary join — because `group_members_insert` admits anyone holding
+  an accepted request. Private was decorative against anyone not using the app, which
+  is precisely the population it exists to stop.
+- `enquiries_anon_insert` pinned the sender's identity and none of the desk's SEVEN
+  decision columns, on the one write path the **public internet** actually reaches.
+  A visitor could plant `answered_at / answered_by / answer` — "ICEFALL guarantees a
+  summit", recorded as ICEFALL's own reply, attributed to a named staff member — or
+  set `handed_off_at` and land the row in a real company's queue with no staff member
+  ever deciding to send it. The whole S4 gate bypassed from a browser.
+  `enquiries_guard` is BEFORE UPDATE, so it never saw an insert; the coherence CHECKs
+  only required each pair's halves to agree with each other, not to be absent.
+
+The paired half is just as real: the DECIDER's update must pin `decided_by` to
+`auth.uid()`. A decision recorded in someone else's name is the same lie one table over.
+
+**(3) A comment claiming a guarantee nobody built is worse than no comment**, because
+it stops the next reader looking. `threads_guard`'s docstring said "everything else IS
+the enquiry" while enforcing four columns of it.
+
+**THE CHECK, wherever an asker and a decider share a table:** list every column that
+represents the decision. Confirm the asker's INSERT policy pins each one NULL, and the
+decider's UPDATE pins the identity column to themselves. Two layers where the path is
+public — a BEFORE INSERT trigger is authoritative and survives a future write path
+nobody thought about; the policy pin refuses earlier with a clearer message. RAISE
+rather than silently nulling: an insert claiming to be already answered is a forgery
+attempt, not a client mistake to tidy away.
+
+**And the method, which is the transferable part.** Session 03 found (1) in their own
+applied work and sent the class rather than the fix. The brain session applied it to
+its own new schema, found (2), and sent the generalisation back naming two candidates.
+One of the two was live and public-facing. Nobody found the enquiries hole by looking
+for it — it was found by taking somebody else's bug seriously enough to ask where the
+same shape lived.
+
+### §6ar addendum — the fourth shape: a policy written before the table held anything sensitive
+
+Found 2026-09-02 while scoping the public profile screen. **Unverified — recorded so it
+is checked rather than lost**, because the session that would have adjudicated it ended.
+
+`profiles_select` is `for select to authenticated using (true)`. That is ROW-level, and
+PostgREST returns whatever columns the caller asks for. A later migration added
+`account_status`, `suspended_at` and `suspended_reason` to that same table. So:
+
+    /rest/v1/profiles?select=display_name,suspended_reason
+
+If those columns carry moderation prose — "suspended for harassment of another member",
+anything naming a third party — every signed-in account can read the moderation record
+of every other account, by username.
+
+`using (true)` was correct and cheap when the table held id, display_name and
+avatar_url. **It silently became a disclosure decision the moment a moderation column
+landed beside them**, and nothing about adding a column prompts anyone to re-read the
+policy that already governs it. That is §6ar's family with the arrow reversed: not a
+column added after a GUARD, but a column added after a POLICY.
+
+**WHAT IS NOT KNOWN:** whether those columns hold prose or a terse enum, and whether
+they are null in practice. One query settles it. Until then this is a hazard, not a
+finding.
+
+**IF REAL:** move moderation columns to a staff-only side table, or keep them and add a
+column-level `revoke (suspended_reason, suspended_at) on public.profiles from
+authenticated` with a grant to staff — column privileges compose with RLS rather than
+being replaced by it. Unchecked: whether PostgREST surfaces a column-privilege denial as
+an error or a silent omission, which decides whether existing callers break.
+
+**THE CHECK THIS ADDS:** when adding a column, read the table's existing SELECT policy
+before writing the migration. If the policy is `using (true)` and the column is not
+something you would print on the person's public profile, the column is in the wrong
+table.
+
+### §6as — a stale premise outlives the thing that made it true
+
+Four instances in one day, all the same shape: a comment or a guard states a fact about
+the world, the world changes, and the sentence stays — now steering everyone who reads it.
+
+- `threads_guard`'s docstring: "everything else IS the enquiry", while enforcing four of
+  nine columns.
+- `Search.tsx`: "People cannot be found yet — there is no climber directory until
+  accounts connect." Accounts connected; the sentence sat above live results.
+- `AthleteProfile.tsx`: "ICEFALL has no server, no user database and no other users."
+  That premise justified a `<Navigate>` that made the screen itself dead code — so the
+  stale comment was not merely wrong, it was load-bearing for a routing decision that
+  blocked three features.
+- `post_media_bucket.sql`'s disclosure paragraph, which argued the private-bucket case
+  correctly and never mentioned the peer case it did not close.
+
+**The tell is always the same:** a sentence in the present tense about a CAPABILITY.
+"ICEFALL has no…", "there is no…", "nothing yet…". Those age badly by construction,
+because the whole project is the business of making them false. When writing one, date
+it and name what would change it — "as of 2026-08, no server exists; this changes when
+`profiles` is live" survives contact with the future in a way the bare claim does not.

@@ -340,7 +340,19 @@ Search certified operators for Mont Blanc
 ICEFALL does not operate, guide or vet expeditions, and lists no operators for peaks outside its own catalogue — a guiding company invented by an app is a real danger. Permit rules and access change; confirm everything with the authority named here and the local guides office before you commit money or travel.
 
 ### `PH-08` Social — **BUILD**
-- **Design:** People and groups need to be one page together. Groups where you can add mountain you want to climb and shows you people who are interested climbing with each other.
+- **Design:** ~~People and groups need to be one page together.~~ **SUPERSEDED 2026-09-02
+  by the owner's 1:1 mockups**, which show FOUR separate screens: FEED (stories rail +
+  post cards with an ACTIVITY chip and a distance/elevation/time trio), PEOPLE
+  (portrait-left cards, years exp. right, "N mountains guided", "Docs checked <date>"),
+  GROUPS (Discover/My Groups pills, cover-photo cards with member/post counts, Join),
+  and a full-screen STORIES viewer. People and Groups are SEPARATE tabs.
+  The flight note above was built as written — People.tsx was reduced to a
+  `PeopleSection` rendered inside Groups.tsx — and then reverted, because the owner
+  said the result "did a general thing, never got the mockup". Build the mockups.
+  Kept here rather than deleted so nobody re-merges them from the original sentence.
+- **Design (still live from the note):** Groups are ABOUT A MOUNTAIN — you add a mountain
+  you want to climb and it shows you people who are interested in climbing it together.
+  The mockup does not contradict this; it is what a group card is for.
 - **Function:** Add the ability for reels or videos to be posted by verified users with identity only . When reporting a post there should be couple optons to choose from and text to add under it. Also when you click on post it can then show you comments and when you like theres an animation. Following should be post made by people you follow via the app + my mountains is post on mountains you set as goals
 
 + big thing, we need to add stories as well so people can post stories, and click next like instagram scrolling via stories on the people you follow. We also want to introduce ads on stories + post scrlling a little bit . Social Page could be insane just needs correct management
@@ -1838,6 +1850,79 @@ missed one element returned twice under different tags.
 **Verified live:** "vietnam" → 6 rows, country first, no Vienna, no localities.
 "chamonix" → town and hamlet both present.
 
+### ⚠️ `PH-41` "Some countries don't show mountains when they have" — REPRODUCED, cause found, **one half needs the owner** · session 01
+Reproduced on localhost, so this one is NOT a stale build. **Nepal — eight of
+the fourteen 8,000 m peaks — shows no mountains at all.** Two separate causes,
+and which one you hit depends on the activity pill.
+
+**1. THE DEFAULT VIEW NEVER LOOKS FOR MOUNTAINS. This is the main one.**
+`Routes.tsx:85`:
+
+    const peaks = useNearbyPeaks(place, activity, radiusKm,
+                                 hits.length === 0 && trails.list.length === 0);
+
+The last argument is `enabled`. **Peaks are only searched when the trail search
+found NOTHING.** Nepal with the default Hiking pill returns *"79 hiking routes
+in Nepal"*, so the summit search never runs — the app does not fail to find
+Everest, it never asks. That exactly explains "SOME countries": the ones with
+trail coverage show no mountains; the ones without at least try.
+
+**This half is a PRODUCT decision and I have not made it.** Peaks-as-fallback is
+clearly deliberate — trails are the answer for hiking, and the comment on
+`ACTIVITY_BANDS` says so. But the consequence is that the one screen called
+"Find" will not show a country its own mountains. Whether summits should appear
+ALONGSIDE trails is the owner's call, not a bug to quietly patch.
+
+**2. COUNTRY-WIDE SUMMIT SEARCH IS TOO HEAVY.** Switch to Mountaineering and
+trails drop to 0, so the peak search does run — and for Nepal it made **18
+Overpass calls** before giving up. Slovenia, small and mountainous, was still
+searching after 45 seconds. Worth saying: **the failure message is exemplary** —
+*"This is a connection problem, not an empty map — it says nothing about what is
+actually near you."* The app is honest about not knowing; it just cannot answer.
+
+Also noted, unverified as a cause: the radius pill still reads **"within 100 km"**
+for a country. `areaIdFor` passes an area id for wide places, so the radius may
+be moot on that path — but a 100 km circle on a country's centroid would be the
+wrong question if it is not.
+
+**Not fixed, deliberately.** Half is the owner's decision and half is a
+performance problem in a shared query path. Fixing the second without the first
+would leave the default view exactly as reported.
+
+### `PH-42` Under 3,000 m the tab is Guides, not Expeditions — **DONE** · session 01
+Owner: *"for mountains under 3000 meters on the mountains page there shouldn't be
+expedition page, it should be guides."*
+
+**The data already agreed and nobody had noticed.** `operatorsFor` keeps a
+company only when `elevationM >= o.minElevationM`, and **the lowest floor any
+listed operator sets is 4,000 m**. So a 2,500 m peak could never match one: the
+tab was headed "Expeditions", promised *"Companies that run this objective"*,
+and could only ever answer *"No listing covers this objective"* — an empty
+result presented as a gap in the listings when it was really the wrong kind of
+help for that mountain.
+
+Below `EXPEDITION_TERRAIN_M` (3,000 m) the tab now reads **Guides** and shows the
+guide route plus one line explaining WHY there are no companies: expedition
+outfits organise permits, base camps and logistics for high peaks, and the
+lowest altitude any of them works at is above this summit. Naming the reason
+matters — otherwise it reads as ICEFALL having no listings rather than the
+question not applying.
+
+At or above 3,000 m nothing changes.
+
+The tab's internal value stays `"expeditions"` — it is the "who takes you up"
+tab either way, and renaming it would churn every reference for a label change.
+Said in a comment so the next reader is not puzzled by a value that disagrees
+with its label.
+
+**A dead call found on the way:** `accessFor(...)` was computed at the top of
+this panel and never rendered — invisible because `noUnusedLocals` is off. It is
+used properly in four other places, so only this call site and its import went.
+
+Verified: Mount Olympus (2,918 m) → tab "Guides", no companies section, no
+operator search, explanation present. Everest (8,849 m) → tab "Expeditions",
+unchanged.
+
 #### Still to build from the mockups
 Find a Guide's inline availability calendar and selector rows; Request Guide's
 price breakdown; the guide profile's four tabs; the Plan screen's session
@@ -1983,7 +2068,8 @@ Free users will also get to see like a pop up add for a guide which wants to spe
 
 ## Operator CRM  ·  `icefall-operator`
 9 items — 7 buildable now, 2 waiting on design, 0 waiting on a decision. Plus `OP-10`,
-which is not a flight note but request 08 from the Company CRM session.
+which is not a flight note but request 08 from the Company CRM session, and `CH-01`
+(Channels), which is not a flight note either but the owner's request of 2026-09-02.
 
 ### `CTRL-OP` Controls modernised — 11-CONTROLS-CONTRACT — **DONE** · session 04, 2026-08-31
 **Inventory before → after: `type="date"` 2 → 0 · `<select>` 10 (across 7
@@ -2599,6 +2685,84 @@ half of the first.
   `p-kilimanjaro-machame` for the empty paths — no bookings, no enquiries, no
   placement, no chart, each saying why rather than showing a zero.
 
+### `CH-01` Channels — a company broadcasts, members listen — **DONE** · session 04, 2026-09-02
+- **Source:** not a flight note. The owner, verbatim, 2026-09-02: *"I want expeition
+  companies to have like a Channel where they add promtional content that users can join
+  if they want where the expedition company can send offers etc but cant reply to the
+  chat + add how many people viewed the message. its like on insgaram when creators
+  create channels"*. Contract in `icefall-sessions/13-CHANNELS-CONTRACT.md`; schema in
+  `icefall-supabase/migrations/20260902180000_company_channels.sql`, **written and NOT
+  PUSHED** — everything below runs against the in-memory adapter, so the Supabase swap is
+  a repoint, the route `leads.tags` took.
+- **DONE** — new `icefall-operator/src/screens/Channels.tsx` (list + detail), two routes
+  in `App.tsx` and one nav entry in `Shell.tsx` under Company Profile, all three gated on
+  `editCompanyProfile` — the same permission `createChannel` and `postChannelMessage`
+  check, so the nav never offers a surface the backend would refuse at. `npx tsc
+  --noEmit` clean, suite green at **184/184**.
+- **THE FEATURE THE OWNER ASKED FOR IS THE VIEW COUNT, and it is the point of the row,**
+  not a footnote on it: the number sits in its own column beside the words, largest thing
+  after them. It is PLAIN TEXT and never a control — not clickable, not hoverable, no
+  member list beside it. A count that behaves like an affordance implies a drill-down
+  that must never exist.
+- **THE FIVE RULES SURVIVED AS ABSENCES, which is the whole design.** No reply
+  affordance anywhere, not even disabled — there is nothing a prop could turn back into
+  a conversation. No invite, no add-member, no import. No edit control; delete is the
+  only correction, behind a `bg-scrim` confirm. No delete for a CHANNEL at all — archive
+  is the whole lifecycle, with a confirm that says why (people joined it, and a company
+  that could make it vanish could make every promotional claim in it vanish too).
+- **RULE 3 IS GUARDED AT THE TYPE, NOT THE QUERY, and that is the important one.** The
+  screen reads `getChannelMessageStats`, which returns `{ messageId, views }` and carries
+  no profile id, no name and no timestamp. So there is no "who viewed" list, no
+  expandable row and no hover card — and if someone adds one tomorrow there is no
+  identity in this state for it to render. A company learning that a named climber opened
+  a named promotional offer at a named time is surveillance, not analytics.
+- **THE TWO ABSENCES ARE STATED ON THE SCREEN, once, in a "How a channel works" panel
+  and not in a tooltip** — because a rule read as a bug gets "fixed". "You broadcast;
+  members listen" first, since a missing reply box is the first thing an operator will
+  assume is broken; then "you see how many people opened a message, never who", told in
+  the operator's favour: it is exactly what makes joining safe for a climber, and
+  therefore why anybody joins.
+- **A MESSAGE PROMOTES A PRODUCT AND NEVER CARRIES A QUOTE.** The migration was corrected
+  mid-build from `offer_id` to `product_id` + `departure_id` + `promo_note`, and the
+  composer is built to the corrected shape: an `offers` row is addressed to one named
+  climber in one thread and can be accepted once, decision 19 forbids a cold offer, and
+  broadcasting an existing one would show every member the best price that company ever
+  privately quoted anyone. A member who wants a promotion enquires, which opens a thread,
+  which is where a real offer belongs.
+- **The departure Listbox appears only once a trip is chosen** — the migration's
+  `channel_messages_departure_needs_product` made VISIBLE rather than validated late, so
+  the invalid pair is not a refusal anybody reads, it is a sentence the form cannot say.
+  Only LIVE trips are offered, with the reason at the field: a draft would send members
+  to a page they cannot open.
+- **`promo_note` is labelled "Terms, not a price"** and is never formatted as money.
+  There is no discount input and no price input. A number there would be an
+  unenforceable commitment sitting outside the money model; every real figure belongs to
+  the trip or to an offer made in a conversation.
+- **No message media and NO DISABLED ATTACH CONTROL.** `operator-media` is company-scoped
+  and fine for a channel cover; nothing yet holds a photo belonging to a message. A dead
+  paperclip reads as "not built yet" and invites the next person to finish it. The one
+  control that IS shown disabled — Send, on an archived channel — carries its reason AT
+  the control, not in a file header.
+- **Honesty:** a view count of 0 renders "0 views", a measured zero, never blank and
+  never a dash; while the stats read is in flight the row says "Counting…" rather than
+  showing a zero it has not measured. There is exactly ONE engagement figure on the
+  screen — no reach, no impressions, no delivery count, no open rate, because nothing
+  measures those. Member counts come through `Reading` so an implementation with no
+  membership data says so instead of shipping a zero that reads as "nobody joined".
+  Backend refusals are shown VERBATIM in the dialog or at the composer.
+- **Real-business rule held:** no demo channel exists on Elite Exped or any real
+  business. The seed puts channels on Lantern Ridge and Coldharbour only, both invented.
+- **Seen** at http://localhost:5196/operator/channels as Ravi Thapa in BOTH themes:
+  created "Spring 2027 releases" (0 members / 0 messages, both measured); saw the
+  duplicate-name refusal verbatim ("You already have a channel with that name.") and the
+  contact-details guard fire on a phone number in the name; posted a message promoting
+  Everest Base Camp Trek — 12 Days / 2 Nov 2026 with terms and watched it appear at the
+  top reading **0 views**; read the seeded counts 0 / 12 / 33 / 6 / 27 / 41 on Lantern
+  Ridge Dispatch; deleted the test message through its confirm; archived the new channel
+  and watched Send go disabled with the archived reason beside it; and opened the seeded
+  archived channel (Monsoon 2026) where Send is closed the same way and its 22 / 35 / 38
+  stay readable.
+
 ## Guide App  ·  `icefall-guide`
 5 items, now 13 after splitting — **9 done**, 3 waiting on design, 0 waiting on a
 migration. S3 (sign-in) done; S1/S2 queued behind the CRM's send function. GU-03c (the commission rate) is settled at 15%; D4's three marks are
@@ -2786,6 +2950,88 @@ were the account's real state.
   owner's push, together with `20260831150000_enquiry_delivery.sql`. The offer
   screen's "cannot send" stays true; client wiring waits for the brain's GO,
   which will follow a live re-probe, not a file listing.
+
+- **`AUDIT-05` Six-lens adversarial audit of the guide app — 9 confirmed defects
+  found and fixed, 2026-09-02.** Six independent readers (displacement, money,
+  dates, honesty, failure-modes, UI integrity) over `icefall-guide`, every
+  finding then handed to two skeptics briefed to REFUTE it; only unanimous
+  survivors were acted on. 71 raised → 52 unique → 10 verified → **9 confirmed,
+  1 refuted**. 42 lower-severity findings are recorded below the cap, unverified
+  and NOT acted on — named here rather than silently dropped.
+
+  **The worst one was mine, one day old, and it broke the app's whole purpose.**
+  Last night's `sampleGate` displacement fix was fitted to every READ and to no
+  WRITE. `listing()` and `loadStates()` returned empty for anyone signed in;
+  `upsertRoute`, `saveProfile`, `setDay` and `clearDay` wrote regardless and
+  returned `true`. So a real guide could add the Matterhorn — route, grade, day
+  rate, prerequisites — be told "Saved on this phone", and land on a screen
+  reading "You have not added anything yet. A climber cannot find you until you
+  say what you guide." Silent, on the supply-side screen the app exists for, and
+  permanently true in any production build where `SHOW_DEMO_DATA` is false.
+
+  The mistake was conceptual, not clerical: I treated "this stored data might be
+  the sample's" as a reason to show NOTHING, when it is a reason to keep the
+  sample's work and the account's work APART. Fixed with `storeScope()` — one
+  drawer per owner (`sample`, `own:<uid>`, `own`, or `null` while unknown), and
+  while unknown **writes refuse rather than guess**, so the screen can say so.
+  Keying by uid also closed a leak nobody had reached yet: two guides sharing a
+  phone would have inherited each other's mountains. Proved in the browser
+  against the app's own module instance: write → read back the same route;
+  sample cannot see it; a second uid inherits nothing; the first still has it.
+
+  The other eight:
+  - **Home greeted a real guide as the invented one, wearing the GOLD mark.**
+    `useIdentity()` reports `{mode:"none"}` while resolving and Home fell
+    through that into the sample branch — so for the length of an auth round
+    trip on one bar of signal, a signed-in guide was called Alex Martin and
+    shown the mark meaning ICEFALL had read their documents. Both Home and
+    Profile now hold until identity is known; the gate fails closed, so the
+    read that decides who you are does too.
+  - **"We could not check" was rendered as "you are not a guide."**
+    `isGuide: access === "guide"` collapsed the failed-read state `unknown` into
+    a verdict, telling verified guides their account was not a guide account
+    whenever the network hiccuped. `guideUnreadable` now carries the third
+    state — the same distinction `credentialsUnreadable` already made one field
+    up, which is why it was findable at all.
+  - **"Overview this season" was the all-time total.** `earningsSplit` filtered
+    cancellations and nothing else: €16,440 on Home against €6,582.50 in
+    Analytics for the same window, one tap apart. Now windowed. `paidOut` and
+    `coming` stay lifetime deliberately — they answer different questions and
+    are labelled as such.
+  - **The Analytics chart drew bookings its own total excluded.** A 2 Jun–2 Sep
+    window walks four calendar months, and the September cell collected a
+    booking departing on the 16th — a fortnight outside the range. A chart
+    beside a total must never disagree with it.
+  - **The Clients list showed each client's OLDEST trip**, so a client
+    departing in a fortnight appeared as a trek that ended last year with an
+    "archived" pill — and the Pending tab was permanently empty, because
+    pending bookings are by nature the future ones. Now the soonest trip still
+    ahead, falling back to the most recent past one.
+  - **A cancelled booking still promised "You receive €331.50."** Payouts had
+    been fixed; BookingDetail had not (§6e — a rule applied at one reader is
+    not applied at the others).
+  - **A malformed stored row took the whole screen down.** Found by accident:
+    my own verification wrote a route with the wrong field names, and
+    `whatIsMissing()` did `m.requires.trim()` on it — blank white screen. The
+    store validated that bytes parsed as JSON and never that they were a
+    listing, under a comment promising "never a crash". Shape is now checked at
+    the one door and bad rows are dropped. Proved by planting the exact row
+    that crashed it and watching the screen render.
+  - **Snapshots taken before the owner was known.** `Availability` captured the
+    calendar at first paint, `AddMountain` froze its already-added set, and
+    `EditProfile` initialised every field from an empty drawer and then wrote
+    the blanks back on Save — data loss, not display. The form now does not
+    mount until it knows whose profile it is editing.
+
+  **Method note worth keeping:** the two-instance trap caught me again — a
+  console `import()` of a module the app already loaded yields a SECOND copy
+  whose gate never resolves, and my first test "passed" against it meaninglessly
+  in both directions. A temporary probe exposing the app's own instances is the
+  only honest way to test this, and it was reverted immediately. Second note:
+  my first leak check reported the sample seeing a guide's private Matterhorn —
+  a false positive, because the Matterhorn is simply IN the seed. Re-tested with
+  an id that could not be, and the leak was genuinely absent (§6h: check the
+  check).
 
 - **`NEXT-05` Where session 05 resumes (written at stand-down, 2026-09-01
   ~00:00).** Tomorrow is guide design days 26–29: the five pages the owner's
@@ -3015,6 +3261,78 @@ Talkeetna, Alaska" · grid walk 1 Oct → 2 Oct → 9 Oct · today ringed and re
 as "Monday, 31 August 2026". One false alarm resolved by method, not
 assumption: "today MISSING" was the calendar correctly opening on the
 future-seeded search month — paged back, ring present.
+
+### `WEB-SHELFLIFE` a claim about what ICEFALL cannot do, asserted not derived — **LATENT, not live** · Session 02, 2026-09-01
+
+From Session 01's phone-app bug (`5033454`), and the rule worth more than the
+bug: **an em dash carrying an expired reason is worse than a bare em dash.** A
+dash alone says "we don't know". A dash plus "this feature does not exist yet"
+makes the reader believe something specific, and keeps doing it long after it
+stops being true. Theirs was wrong for a week: the own-profile screen printed a
+hardcoded dash explaining that following did not exist, while `follows` had
+shipped and `follower_count_of` was live and callable the whole time.
+
+**Any sentence written in the present tense about what ICEFALL CANNOT do is a
+claim with a shelf life.** Swept the web for them.
+
+Most are safe: "None yet" / "No plan yet" / "No listings yet" are conditioned on
+the data actually being empty, so they correct themselves. The five
+"ICEFALL can't reach the server" lines describe a live failure, not a capability.
+
+**One is not safe.** `TrekDetail.tsx:406` passes the enquiry form the prose
+*"No operator has listed it yet, so the answer comes from us."* — hardcoded, on
+every trek page. Measured: 0 of 252 treks have a non-empty `operatorIds`, so it
+is TRUE today and this is latent, not live. But it is ASSERTED, not derived: the
+day one trek gains an operator, that page tells its reader something false and
+nothing in the code notices. `TrekDetail` already has `trek` in scope, so the
+honest version is one expression — derive the sentence from
+`trek.operatorIds.length === 0` rather than stating it.
+
+NOT FIXED — logged rather than changed, because the page is correct today and
+the owner has not asked for it. The fix is one line whenever it is wanted.
+
+### `WEB-FOCUS` keyboard focus visibility, measured in pixels — **DONE 2026-09-01, Session 02**
+
+The tail of `WEB-CTRL`, and the half a grep cannot settle. `index.css` carries
+a global `:focus-visible { outline: 2px solid azure }`, so per-component greps
+prove nothing in either direction (Session 05's warning, and correct).
+
+**What a grep would have concluded, and why it was wrong.** 16 sites use
+Tailwind's `outline-none`; 10 pair it with a replacement. Of the other 6, two
+were Listbox's own (a ring on the next line; and a popover whose indicator is
+the highlighted active row — both fine) and one was `EnquiryForm` (has
+`focus:border-azure/50`). Three real suspects.
+
+**The computed-style probe passed all three.** Focused, each reported
+`outline-width: 2px`, `outline-color: azure`, `:focus-visible = true` — a clean
+bill of health. All three drew nothing: `outline-style: none` was identical
+before and after, so it never appeared in a before/after diff, and an outline
+of any width or colour paints NOTHING at `style: none`.
+
+**Only pixels caught it.** Screenshot the control blurred, Tab to it for real,
+screenshot again, compare bytes. Three were PIXEL-IDENTICAL — the Coach
+composer, the Feed composer, the `/preview` guides search. A keyboard user had
+no way to know where they were.
+
+FIXED by moving the indicator to the box the control visually lives in
+(`focus-within:border-azure/55`) — the pill, the card, the search box — rather
+than sprinkling per-input rings. The rule in `index.css` now carries this
+finding above it: **`outline-none` is a promise to replace the indicator, never
+a way to remove it.**
+
+**Then the whole app the same way:** 394 controls across 22 pages (16 app, 6
+`/preview`), each reached by a real Tab, each pixel-compared. After the three
+fixes every control shows a visible focus state, and every control counted is
+reachable by Tab.
+
+**Two false positives, both instructive.** (1) The Listbox trigger read as
+invisible — an artefact of CLICKING it, which opens the menu AND drops the
+browser out of keyboard modality, so `:focus-visible` correctly stops matching.
+Reach a control by Tab, or you are measuring the mouse. (2) The sidebar "See
+plans" link failed on exactly 1 of the 16 pages it appears on — which is itself
+the tell: a shared element that fails once is a measurement fault, not a defect.
+It sits below the fold, so the screenshot clip fell outside the viewport.
+Scrolled into view it is `outline-style: solid` and visible on every page.
 
 ### `WEB-AUDIT` every newly-reachable screen walked with empty data — **DONE 2026-08-31, Session 02**
 
