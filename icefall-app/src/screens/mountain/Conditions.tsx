@@ -18,7 +18,16 @@ import { UnavailableState, UNAVAILABLE_COPY as ABSENCE_COPY } from "@/components
 import { UpgradePrompt } from "@/components/growth/UpgradePrompt";
 import { useApp } from "@/state/AppState";
 import { sync } from "@/services/repository";
-import { fmtCountdown, fmtDate, fmtElevation, fmtTime } from "@/lib/format";
+import {
+  fmtCountdown,
+  fmtDate,
+  fmtElevation,
+  fmtTempCoarse,
+  fmtTempInProse,
+  fmtTempValue,
+  fmtTime,
+  fmtVisibility,
+} from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Unavailable } from "@/coach/types";
 import {
@@ -97,25 +106,22 @@ const bearing = (deg: number) => {
   return `${COMPASS[Math.round(normalised / 22.5) % 16]} ${Math.round(normalised)}°`;
 };
 
-/**
- * A true minus sign (U+2212) rather than a hyphen.
+/*
+ * The minus-sign rule and the temperature/visibility formatters LEFT THIS FILE.
  *
- * Not typographic vanity. A hyphen is short, sits high, and is genuinely easy
- * to miss on a phone in daylight — and "3.9" read for "−3.9" is a 7 °C error
- * about whether the ground is frozen. The minus sign is the width of the digits
- * beside it and cannot be mistaken for nothing.
+ * They were written here, with their reasoning, and then the Home card was
+ * built without them and printed hyphens at 40px one tap from this screen. A
+ * rule that lives in the file that obeys it is a rule the next surface will
+ * miss, so all four now sit in `@/lib/format` and this screen imports them —
+ * the reasoning travelled with them and is worth reading there.
  */
-const minus = (s: string) => s.replace(/^-/, "−");
-
-/** The number alone, for tiles that carry "°C" as a separate unit. */
-const tempValue = (v: number) => minus(v.toFixed(1));
+const tempValue = fmtTempValue;
 const tempC = (v: number) => `${tempValue(v)}°`;
-const tempCoarse = (v: number) => minus(`${Math.round(v)}°`);
-const tempInProse = (v: number) => minus(`${Math.round(v)}`);
+const tempCoarse = fmtTempCoarse;
+const tempInProse = fmtTempInProse;
 const kph = (v: number) => `${Math.round(v)}`;
 
-const visibility = (m: number) =>
-  m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(m < 10_000 ? 1 : 0)} km`;
+const visibility = fmtVisibility;
 
 /**
  * Local-calendar parse for the API's `YYYY-MM-DD` day keys.

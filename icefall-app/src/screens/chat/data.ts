@@ -86,6 +86,19 @@ export function isLocked(c: Conversation): boolean {
 /**
  * Dev only, like every other invented record in this app. A production build
  * shows the athlete's real threads and nothing else — see `useConversations`.
+ *
+ * EVERY `credential` BELOW SAYS IT IS INVENTED. The companies were already
+ * labelled and the guides were not, so a bare "IFMGA / UIAGM mountain guide"
+ * sat in the same list as "Sample listing — invented company" — two standards
+ * in one list, with the unqualified one being the licence, which is the single
+ * claim a climber acts on when choosing who to rope up with. `credential` is
+ * rendered in `Messages.tsx` and `Thread.tsx`, so the qualifier is on screen
+ * rather than in a note.
+ *
+ * The system line under a booking said a flat "Booking confirmed", which is a
+ * transaction state, not sample colour. It now says the booking is invented.
+ * `verifiedOn` is untouched and still drawn by nothing — see the note in
+ * `Thread.tsx` for why that field renders nowhere.
  */
 
 /**
@@ -104,7 +117,7 @@ export const DEMO_CONVERSATIONS: Conversation[] = import.meta.env.DEV
         id: "c1",
         name: "Tobias Frei",
         kind: "guide",
-        credential: "IFMGA / UIAGM mountain guide",
+        credential: "Sample thread — invented guide, states an IFMGA / UIAGM licence",
         verifiedOn: "5 Jun 2026",
         peak: "Matterhorn",
         unread: 2,
@@ -114,7 +127,7 @@ export const DEMO_CONVERSATIONS: Conversation[] = import.meta.env.DEV
             id: "m0",
             from: "them",
             kind: "system",
-            body: "Booking confirmed. You can now message Tobias to plan your trip.",
+            body: "Invented booking. Nothing was paid and nobody was contacted — in a real one, payment is what opens this channel.",
             at: "2026-08-16T09:00:00Z",
           },
           {
@@ -151,7 +164,7 @@ export const DEMO_CONVERSATIONS: Conversation[] = import.meta.env.DEV
         id: "c5",
         name: "Nadia Berger",
         kind: "guide",
-        credential: "IFMGA / UIAGM mountain guide",
+        credential: "Sample thread — invented guide, states an IFMGA / UIAGM licence",
         verifiedOn: "2 Mar 2026",
         peak: "Mont Blanc",
         unread: 0,
@@ -163,7 +176,7 @@ export const DEMO_CONVERSATIONS: Conversation[] = import.meta.env.DEV
         id: "c3",
         name: "Chamonix Alpine Guides",
         kind: "company",
-        credential: "Guiding company · 14 guides",
+        credential: "Sample listing — invented company",
         verifiedOn: "11 Feb 2026",
         peak: "Gran Paradiso",
         unread: 0,
@@ -254,7 +267,7 @@ export const DEMO_CONVERSATIONS: Conversation[] = import.meta.env.DEV
         id: "co-sst",
         name: "Falkenrath Expeditions",
         kind: "company",
-        credential: "8,000 m expedition operator",
+        credential: "Sample listing — invented company, 8,000 m operator",
         peak: "Everest",
         unread: 2,
         introduction: { at: hoursAgo(30), objective: "Everest — South Col, spring 2027" },
@@ -278,7 +291,7 @@ export const DEMO_CONVERSATIONS: Conversation[] = import.meta.env.DEV
         id: "co-ac",
         name: "Halvorsen Alpine",
         kind: "company",
-        credential: "IFMGA-led, multi-range",
+        credential: "Sample listing — invented company, states IFMGA-led trips",
         peak: "Aconcagua",
         unread: 1,
         introduction: { at: hoursAgo(80), objective: "Aconcagua — normal route" },
@@ -302,7 +315,7 @@ export const DEMO_CONVERSATIONS: Conversation[] = import.meta.env.DEV
         id: "co-ee",
         name: "Zelenika High Altitude",
         kind: "company",
-        credential: "8,000 m logistics",
+        credential: "Sample listing — invented company, 8,000 m logistics",
         peak: "Ama Dablam",
         unread: 0,
         introduction: { at: hoursAgo(120), objective: "Ama Dablam — south-west ridge" },
@@ -319,7 +332,7 @@ export const DEMO_CONVERSATIONS: Conversation[] = import.meta.env.DEV
         id: "co-14p",
         name: "Callaghan Himalaya",
         kind: "company",
-        credential: "Himalayan expedition operator",
+        credential: "Sample listing — invented company, Himalayan operator",
         peak: "Mera Peak",
         unread: 0,
         introduction: { at: hoursAgo(150), objective: "Mera Peak — trekking peak" },
@@ -338,7 +351,7 @@ export const DEMO_CONVERSATIONS: Conversation[] = import.meta.env.DEV
         id: "g-pasang",
         name: "Pasang Sherpa",
         kind: "guide",
-        credential: "IFMGA mountain guide",
+        credential: "Sample thread — invented guide, states an IFMGA licence",
         verifiedOn: "12 Jun 2026",
         peak: "Everest",
         unread: 1,
@@ -351,7 +364,7 @@ export const DEMO_CONVERSATIONS: Conversation[] = import.meta.env.DEV
         id: "g-nima",
         name: "Nima Dorjee",
         kind: "guide",
-        credential: "High-altitude guide",
+        credential: "Sample thread — invented guide, states a high-altitude record",
         verifiedOn: "3 Mar 2026",
         peak: "Everest",
         unread: 2,
@@ -369,7 +382,7 @@ export const DEMO_CONVERSATIONS: Conversation[] = import.meta.env.DEV
         id: "g-alex",
         name: "Alex Martin",
         kind: "guide",
-        credential: "Expedition doctor",
+        credential: "Sample thread — invented guide, states a doctor’s role",
         verifiedOn: "9 Jan 2026",
         peak: "Everest",
         unread: 0,

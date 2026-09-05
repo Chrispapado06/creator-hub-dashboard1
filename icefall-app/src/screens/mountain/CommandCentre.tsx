@@ -575,8 +575,20 @@ export default function CommandCentre() {
    *
    * The checklist is derived from the peak, so it exists as soon as an
    * elevation does; what the athlete has recorded against it lives in app
-   * state, keyed by goal. Both counts come from the checklist service so this
-   * screen and the checklist screen can never disagree about the figure.
+   * state, keyed by goal.
+   *
+   * ⚠️ THIS SAID THE TWO SCREENS "CAN NEVER DISAGREE ABOUT THE FIGURE." THEY
+   * DO. Both call `completion` from the checklist service, which is where that
+   * confidence came from — but the Checklist screen filters the list down to
+   * the items it actually shows before counting, and this one counts every
+   * generated row. Same function, two different inputs, two different
+   * denominators on screen at once, and this figure drives the readiness
+   * wording and the "do this next" line.
+   *
+   * The fix is to share the visible-items filter, not to restate the claim:
+   * see `Checklist.tsx`, where the filter lives today. Until it is lifted into
+   * `services/checklist.ts`, this note records the disagreement rather than
+   * denying it.
    */
   const equipment = useMemo<EquipmentSummary>(() => {
     if (!goal || elevationM === null) {

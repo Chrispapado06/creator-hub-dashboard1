@@ -125,6 +125,54 @@ export function fmtCountdown(targetIso: string, now = new Date()) {
   return `${Math.round(months / 12)} years to go`;
 }
 
+/* -------------------------------------------------------------------------- */
+/* Weather                                                                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A true minus sign (U+2212) rather than a hyphen.
+ *
+ * Not typographic vanity. A hyphen is short, sits high, and is genuinely easy
+ * to miss on a phone in daylight — and "3.9" read for "−3.9" is a 7 °C error
+ * about whether the ground is frozen. The minus sign is the width of the digits
+ * beside it and cannot be mistaken for nothing.
+ *
+ * ⚠️ THIS LIVES HERE BECAUSE TWO SCREENS DRIFTED APART ON IT. The rule was
+ * written and enforced on the full-forecast screen while the Home card — the
+ * larger, more glanceable surface, seven numbers to a card, 40px on the
+ * headline — rendered plain hyphens one tap away. Same peak, same minute,
+ * "−2.9°C" on one screen and "-3°" on the other. Anything in ICEFALL that
+ * prints a temperature imports it from here.
+ */
+export const minus = (s: string) => s.replace(/^-/, "−");
+
+/** The number alone, one decimal, for tiles carrying "°C" as a separate unit. */
+export const fmtTempValue = (v: number) => minus(v.toFixed(1));
+
+/**
+ * A whole-degree temperature with its sign: "−3°", "0°".
+ *
+ * `Math.round(-0.3)` is negative zero and `String(-0)` is "0", so a fraction of
+ * a degree below freezing prints as "0°" and never as "-0°". A measured zero is
+ * a zero; only an absent reading is an em dash, and that decision belongs to
+ * the caller holding the `Reading`.
+ */
+export const fmtTempCoarse = (v: number) => minus(`${Math.round(v)}°`);
+
+/** A whole-degree temperature for running prose — no degree sign. */
+export const fmtTempInProse = (v: number) => minus(`${Math.round(v)}`);
+
+/**
+ * Visibility, in the unit a climber reads it in.
+ *
+ * Metres below a kilometre, because that is the band where the number decides
+ * something. ONE DECIMAL up to 10 km: rounding to whole kilometres turned 1,500 m
+ * into "2 km" on the Home card while the forecast screen said "1.5 km", and it
+ * rounded UP, in exactly the band where being generous is the wrong error.
+ */
+export const fmtVisibility = (m: number) =>
+  m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(m < 10_000 ? 1 : 0)} km`;
+
 export const DIFFICULTY_LABELS = ["", "Accessible", "Moderate", "Demanding", "Serious", "Extreme"];
 
 export const fmtDifficulty = (d: number) => `${d} / 5 · ${DIFFICULTY_LABELS[d] ?? ""}`;

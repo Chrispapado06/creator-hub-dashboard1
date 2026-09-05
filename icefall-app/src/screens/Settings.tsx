@@ -1,7 +1,6 @@
-import { useState } from "react";
 import { RotateCcw } from "lucide-react";
 import { Button, Card, Disclaimer, SectionLabel } from "@/components/ui/primitives";
-import { currentTheme, setTheme } from "@/settings/theme";
+import { ThemePicker } from "@/components/settings/ThemePicker";
 import { Rise, Screen, ScreenHeader, Stagger } from "@/components/layout/chrome";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/state/AppState";
@@ -15,8 +14,8 @@ import { useApp } from "@/state/AppState";
  */
 export default function Settings() {
   const { bodyMassKg, setBodyMassKg, autoPause, setAutoPause, resetAll } = useApp();
-  const theme = currentTheme();
-  const [refused, setRefused] = useState(false);
+  /* The theme's own state — the choice, the refusal message — lives inside
+     `ThemePicker`, so this screen holds none of it. */
 
   return (
     <Screen padded={false}>
@@ -25,7 +24,23 @@ export default function Settings() {
       </div>
 
       <Stagger className="px-5">
+        {/* ---- Appearance, FIRST -------------------------------------------
+            Added 2026-09-03, moved to the top and given previews on 2026-09-04
+            at the owner's request ("somewhere where it's easy… like on
+            iPhones"). It leads the screen for the reason it used to sit above
+            Recording, only more so: it changes what every other row here looks
+            like, and a control you find only after scrolling past everything it
+            affects is in the wrong place. A phone puts the same choice at the
+            top of its own display page and shows the themes rather than naming
+            them; `ThemePicker` does that. */}
         <Rise>
+          <SectionLabel>Appearance</SectionLabel>
+          <Card className="mt-3">
+            <ThemePicker />
+          </Card>
+        </Rise>
+
+        <Rise className="pt-6">
           <SectionLabel>Athlete</SectionLabel>
           <Card className="mt-3">
             <div className="flex items-baseline justify-between">
@@ -49,58 +64,6 @@ export default function Settings() {
                 <span className="text-[12px] text-mist">kg</span>
               </div>
             </div>
-          </Card>
-        </Rise>
-
-        {/* ---- Appearance --------------------------------------------------
-            Added 2026-09-03 at the owner's request. It sits above Recording
-            rather than at the bottom with Data, because it changes what every
-            other row on this screen looks like and a control you only find
-            after scrolling past everything it affects is in the wrong place. */}
-        <Rise className="pt-6">
-          <SectionLabel>Appearance</SectionLabel>
-          <Card className="mt-3">
-            <p className="text-[14px] text-snow">Theme</p>
-            <p className="mt-1 text-[11px] leading-relaxed text-mist-dim">
-              Dark is what ICEFALL is designed at, and what a screen at 4 a.m. in a hut wants.
-              Light reads better in daylight.
-            </p>
-            <div className="mt-3 flex gap-2">
-              {(["dark", "light"] as const).map((t) => {
-                const on = theme === t;
-                return (
-                  <button
-                    key={t}
-                    type="button"
-                    aria-pressed={on}
-                    onClick={() => {
-                      /* Returns false when nothing changed — a no-op tap, or
-                         storage refused. Only then is there anything to say;
-                         a real change reloads and this component is gone. */
-                      if (!setTheme(t) && !on) setRefused(true);
-                    }}
-                    className={cn(
-                      "h-11 flex-1 rounded-tile border text-[13.5px] transition-colors",
-                      on
-                        ? "border-azure/60 bg-azure/[0.10] text-snow"
-                        : "border-hairline text-mist hover:border-azure/40 hover:text-snow",
-                    )}
-                  >
-                    {t === "dark" ? "Dark" : "Light"}
-                  </button>
-                );
-              })}
-            </div>
-            {refused && (
-              <p className="mt-2.5 text-[11px] leading-relaxed text-[color:var(--ice-danger)]">
-                This device would not store the choice, so nothing changed. Applying it anyway
-                would give you a theme that reverts on the next launch.
-              </p>
-            )}
-            <p className="mt-2.5 text-[11px] leading-relaxed text-mist-dim">
-              Changing it reloads the app — the map reads its colours once, when it loads, so
-              switching without a reload would leave the map on the old theme.
-            </p>
           </Card>
         </Rise>
 

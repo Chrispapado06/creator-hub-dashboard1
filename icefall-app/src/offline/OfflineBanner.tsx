@@ -26,7 +26,7 @@ export function OfflineBanner() {
     <div
       role="status"
       aria-live="off"
-      className="relative z-[300] flex shrink-0 items-center justify-center gap-2 bg-azure px-4 py-1.5 text-obsidian shadow-[0_6px_18px_-8px_rgba(0,0,0,0.9)]"
+      className="relative z-[300] flex shrink-0 items-center justify-center gap-2 bg-azure px-4 py-1.5 text-obsidian shadow-[var(--ice-shadow-banner)]"
       style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 6px)" }}
     >
       <span

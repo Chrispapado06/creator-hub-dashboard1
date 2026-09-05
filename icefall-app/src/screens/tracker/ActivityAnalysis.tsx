@@ -141,11 +141,34 @@ export default function ActivityAnalysis() {
           </Rise>
         )}
 
+        {/*
+          HEART RATE — WHAT IS TRUE OF THIS RECORDING, NOT A BLANKET DENIAL.
+
+          This line read "ICEFALL has no heart-rate pairing, so nothing was read
+          from a strap or a watch" — on every activity, in every build,
+          including one recorded with a paired strap. It is false:
+          `tracking/sources/heartRate.ts` is a working Web Bluetooth heart-rate
+          source, `recorder.pushHeartRate` takes its samples, and
+          `RecordedActivity.avgHeartRateBpm` is the average it produced.
+          Denying a feature that ships is the same class of error as claiming
+          one that does not, and it is read by someone deciding whether a strap
+          is worth buying.
+
+          What is genuinely missing is the PER-POINT store: the recorder keeps a
+          running average and the split averages and writes no reading onto each
+          track point, so `seriesFor(…, "heartRate")` has nothing to plot even
+          when a monitor was connected the whole way. That is the sentence
+          below; the wiring that would draw a real trace is its own piece of
+          work (`tracking/recorder.ts`, `tracking/types.ts`).
+        */}
         {!available.includes("heartRate") && (
           <Rise className="pt-3">
             <p className="text-[11.5px] leading-relaxed text-mist-dim">
-              Heart rate — no data recorded. ICEFALL has no heart-rate pairing, so nothing was read
-              from a strap or a watch.
+              {recorded.avgHeartRateBpm !== null
+                ? `Heart rate — a monitor was connected and averaged ${Math.round(
+                    recorded.avgHeartRateBpm,
+                  )} bpm over this activity. ICEFALL does not yet store a reading against each point of the track, so there is no trace to draw here.`
+                : "Heart rate — none recorded. ICEFALL pairs a Bluetooth heart-rate strap, and none was connected for this activity."}
             </p>
           </Rise>
         )}

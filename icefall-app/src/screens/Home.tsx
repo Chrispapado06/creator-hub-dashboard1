@@ -1,15 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import {
-  Activity as ActivityIcon, ArrowUpRight, Backpack, Bell, Check, ChevronRight, Clock, CloudSun,
-  Droplets, Eye, Flame, MessageCircle, Play, Route, Search, TrendingUp, Wind,
+  Activity as ActivityIcon, ArrowUpRight, Backpack, Check, ChevronRight, Clock,
+  Flame, Play, Route, TrendingUp,
 } from "lucide-react";
 import { Button, Card, SectionLabel } from "@/components/ui/primitives";
 import { MiniBars } from "@/components/ui/charts";
 import { Rise, Screen, Stagger } from "@/components/layout/chrome";
 import { MountainThumb } from "@/components/domain/MountainImage";
+import { ObjectiveWeather } from "@/components/domain/ObjectiveWeather";
 import { PromotedCard } from "@/components/domain/PromotedCard";
-import { IcefallMark } from "@/components/ui/IcefallMark";
 import {
   fmtCountdown, fmtDistance, fmtElevation, fmtHours, greeting, FOCUS_LABELS,
 } from "@/lib/format";
@@ -20,9 +20,7 @@ import { activityById } from "@/tracking/activities";
 import { ACTIVITY_ICON } from "@/components/tracker/activityIcons";
 import { useApp } from "@/state/AppState";
 import { usePrimaryGoalWithProgress, useTraining } from "@/tracking/training";
-import { useConversations } from "@/screens/chat/useConversations";
 import { useCoachIntel } from "@/coach/hooks";
-import { getMountainConditions, type MountainConditions } from "@/services/conditions";
 import { usePromotedHomeCard } from "@/social/promoted";
 import { parseDay } from "@/network/groups";
 import type { Score } from "@/coach/types";
@@ -137,7 +135,6 @@ export default function Home() {
   const feed = useActivityFeed();
   const { plan, today, currentWeek, completedByDate, satisfiedByActivity } = useTraining();
   const intel = useCoachIntel();
-  const conversations = useConversations();
   /*
    * The one paid thing on Home, and usually there is nothing.
    *
@@ -149,7 +146,6 @@ export default function Home() {
   const promo = usePromotedHomeCard();
 
   const firstName = user.name.split(" ")[0];
-  const unread = conversations.reduce((n, c) => n + c.unread, 0);
   const todayIndex = (new Date().getDay() + 6) % 7;
   const recent = feed.slice(0, 2);
   const doneToday = today ? completedByDate.get(today.date) === true : false;
@@ -270,54 +266,12 @@ export default function Home() {
             <div className="absolute inset-0 bg-gradient-to-r from-obsidian/55 via-obsidian/15 to-transparent" />
           </div>
 
-          {/* ---- Top bar, transparent over the photograph ----------------- */}
-          <header className="relative flex items-center justify-between px-5 pb-1 pt-3">
-            <IcefallMark className="h-[17px] shrink-0 text-azure" />
-            {/* Centred on the DISPLAY, not on what is left between the mark and
-                the icons — the wordmark is the axis of the whole screen. */}
-            <p className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 pl-[0.32em] text-center text-[13px] font-light tracking-[0.32em] text-snow">
-              ICEFALL
-            </p>
-            <div className="relative flex shrink-0 items-center gap-0.5">
-              {/* One door to the whole app — every other search box in ICEFALL is
-                  local to the screen it sits on. */}
-              <Link
-                to="/search"
-                aria-label="Search"
-                className="grid h-9 w-9 place-items-center rounded-full text-snow/90 transition-colors hover:bg-white/[0.07] hover:text-snow"
-              >
-                <Search size={18} strokeWidth={1.6} />
-              </Link>
-              <Link
-                to="/messages"
-                aria-label={unread > 0 ? `Messages, ${unread} unread` : "Messages"}
-                className="relative grid h-9 w-9 place-items-center rounded-full text-snow/90 transition-colors hover:bg-white/[0.07] hover:text-snow"
-              >
-                <MessageCircle size={18} strokeWidth={1.5} />
-                {/* A real count, and only when there is one to show. */}
-                {unread > 0 && (
-                  <span className="tnum absolute right-0.5 top-1 grid h-[15px] min-w-[15px] place-items-center rounded-full bg-azure px-1 text-[9px] font-medium text-obsidian ring-2 ring-obsidian/60">
-                    {unread}
-                  </span>
-                )}
-              </Link>
-              {/*
-                No unread dot on the bell.
-                The mockup shows one, and the messages icon beside it earns its
-                badge from a real unread count. This one had nothing behind it:
-                there is no notification model anywhere in the app, so the dot
-                asserted "something is waiting for you" that ICEFALL cannot
-                know. Put it back the day notifications exist and not before.
-              */}
-              <Link
-                to="/notifications"
-                aria-label="Notifications"
-                className="relative grid h-9 w-9 place-items-center rounded-full text-snow/90 transition-colors hover:bg-white/[0.07] hover:text-snow"
-              >
-                <Bell size={18} strokeWidth={1.5} />
-              </Link>
-            </div>
-          </header>
+          {/* The top bar moved to `components/layout/AppTopBar`, mounted in
+              `AppShell` so it appears on every screen with the bottom
+              navigation (owner, 2026-09-04). The hero photograph used to run up
+              behind it and now begins below it — the cost of the bar being
+              shared, since an overlaid bar would sit on every other screen's
+              content too. */}
 
           {/* ---- Greeting and today's readiness ---------------------------- */}
           {/*
@@ -329,11 +283,16 @@ export default function Home() {
             undone the thing that was asked for. Shadowing only the text keeps
             the mountain bright AND the words readable, and it costs nothing on
             the dark photographs where it is invisible.
+
+            `.type-scrim` rather than the literal `rgba(5,7,11,…)` that was
+            here. The two gradients above are token gradients, so they already
+            fade this photograph toward whatever the canvas is; the halo had to
+            follow, and a near-black halo behind ink on a white page is a smudge
+            that makes the greeting worse, not better. The class glows in
+            `--ice-obsidian`, which IS this shadow's old value on the dark
+            theme and a white halo on the light one. See index.css.
           */}
-          <div
-            className="relative flex items-start justify-between gap-4 px-5 pb-1 pt-6"
-            style={{ textShadow: "0 1px 12px rgba(5,7,11,0.85), 0 1px 3px rgba(5,7,11,0.7)" }}
-          >
+          <div className="type-scrim relative flex items-start justify-between gap-4 px-5 pb-1 pt-6">
             <div className="min-w-0 flex-1">
               <p className="text-[15px] text-mist">{greeting()},</p>
               <h1 className="mt-1 truncate text-[38px] font-light leading-[1.05] tracking-[-0.03em] text-snow">
@@ -420,10 +379,23 @@ export default function Home() {
 
                 {/* The objective's weather, inside the objective's card. Needs a
                     position to ask about, so it appears only when the mountain
-                    has coordinates and an elevation — never as an empty slot. */}
+                    has coordinates and an elevation — never as an empty slot.
+
+                    Built to the owner's reference and monochrome by instruction.
+                    It is a SECTION of this card — a rule and shared ground, no
+                    border of its own — because the forecast IS the objective's
+                    forecast, which is the ruling that merged the two boxes in the
+                    first place. It had been rebuilt as a nested rounded box; that
+                    is why this note now says what the markup does rather than what
+                    it was supposed to do.
+
+                    It does not print the peak's name. The h2 twelve lines above
+                    prints it at 26px, and the two of them saying it twice is the
+                    thing that ruling was about. */}
                 {elevationM !== null && lat !== undefined && lon !== undefined && (
-                  <ConditionsPanel
-                    name={goal.name}
+                  <ObjectiveWeather
+                    className="mt-4"
+                    peakName={goal.name}
                     elevationM={elevationM}
                     lat={lat}
                     lon={lon}
@@ -1100,151 +1072,6 @@ function IntelRow({
  * The ICEFALL events fixture is deliberately not used here: it is invented, and
  * it ships without the disclaimer that travels with it on its own screen.
  */
-
-/**
- * Live conditions for the objective.
- *
- * `getMountainConditions` never throws and never invents a reading: a failed
- * request comes back with every value absent, which renders as an explicit
- * "unavailable" rather than as calm weather.
- */
-function ConditionsPanel({
-  /** Used to request the forecast. Not rendered — the card prints it above. */
-  name,
-  elevationM,
-  lat,
-  lon,
-  goalId,
-}: {
-  name: string;
-  elevationM: number;
-  lat: number;
-  lon: number;
-  goalId: string;
-}) {
-  const [data, setData] = useState<MountainConditions | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    setLoading(true);
-    void getMountainConditions({
-      peakName: name,
-      elevationM,
-      lat,
-      lon,
-      signal: controller.signal,
-    }).then((d) => {
-      if (!controller.signal.aborted) {
-        setData(d);
-        setLoading(false);
-      }
-    });
-    return () => controller.abort();
-  }, [name, elevationM, lat, lon]);
-
-  const c = data?.current;
-  const temp = c?.temperatureC.value;
-  const wind = c?.windKph.value;
-  const precip = c?.precipitationMm.value;
-  const vis = c?.visibilityM.value;
-  const failed = Boolean(data?.error) || temp === null || temp === undefined;
-
-  return (
-    /*
-      A SECTION OF THE OBJECTIVE CARD, not a card of its own.
-
-      Owner: "connect this to the current objective box together." They were two
-      boxes saying the same mountain's name twice — the forecast IS the
-      objective's forecast, and reading it as separate information was the
-      thing to fix.
-
-      A sibling `Link`, not a nested one: the card's upper half already links to
-      /goals, and an anchor inside an anchor is invalid. The two live side by
-      side inside the card, so tapping the summit goes to the objective and
-      tapping the weather goes to the forecast.
-
-      The name is gone from here — the card prints it at 26px two rows up — but
-      "at N m" stays: it is what ties the temperature to an ALTITUDE rather than
-      to the mountain in general, and a summit reading presented as the
-      mountain's weather is the kind of number someone packs against.
-    */
-    <Link
-      to={`/mountain/${goalId}/conditions`}
-      className="mt-4 block border-t border-hairline pt-4"
-    >
-      <p className="section-label">Conditions at your destination</p>
-
-      {loading ? (
-        <p className="mt-3 text-[12.5px] text-mist">Requesting the forecast…</p>
-      ) : failed ? (
-        <p className="mt-3 text-[12.5px] leading-relaxed text-mist">
-          The forecast could not be loaded. ICEFALL will not show conditions it has not read —
-          nothing here is a guess.
-        </p>
-      ) : (
-        <div className="mt-3 flex items-center gap-4">
-          <div className="flex shrink-0 items-center gap-2.5">
-            <CloudSun size={30} strokeWidth={1.2} className="text-azure/85" />
-            <div>
-              <p className="tnum text-[28px] font-light leading-none text-snow">
-                {Math.round(temp as number)}
-                <span className="text-[13px] text-mist">°C</span>
-              </p>
-              <p className="tnum mt-1 text-[10px] text-mist-dim">at {fmtElevation(elevationM)} m</p>
-            </div>
-          </div>
-          <div className="grid flex-1 grid-cols-3 gap-2 border-l border-hairline pl-4">
-            <Micro
-              icon={Wind}
-              label="Wind"
-              value={wind !== null && wind !== undefined ? `${Math.round(wind)} km/h` : "—"}
-            />
-            <Micro
-              icon={Droplets}
-              label="Precip"
-              value={precip !== null && precip !== undefined ? `${precip.toFixed(1)} mm` : "—"}
-            />
-            <Micro
-              icon={Eye}
-              label="Visibility"
-              value={
-                vis !== null && vis !== undefined
-                  ? vis >= 1000
-                    ? `${Math.round(vis / 1000)} km`
-                    : `${Math.round(vis)} m`
-                  : "—"
-              }
-            />
-          </div>
-        </div>
-      )}
-
-      <div className="mt-3 flex items-center justify-between">
-        <span className="text-[12.5px] text-azure">Full forecast</span>
-        <ChevronRight size={15} strokeWidth={1.8} className="text-azure" />
-      </div>
-    </Link>
-  );
-}
-
-function Micro({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: typeof Wind;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="min-w-0">
-      <Icon size={13} strokeWidth={1.6} className="text-mist-dim" />
-      <p className="tnum mt-1.5 truncate text-[11.5px] text-snow">{value}</p>
-      <p className="section-label mt-0.5 truncate text-[8px]">{label}</p>
-    </div>
-  );
-}
 
 /**
  * Why the split is stated rather than implied.

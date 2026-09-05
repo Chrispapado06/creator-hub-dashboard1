@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { Check, ChevronRight, Lock, Minus } from "lucide-react";
+import { Check, ChevronRight, Minus } from "lucide-react";
 import { Rise, Screen, Stagger } from "@/components/layout/chrome";
 import { Button, Card, Disclaimer, SectionLabel } from "@/components/ui/primitives";
 import { GuideRow, MountainRow, StepHeader } from "@/components/booking/parts";
@@ -122,11 +122,13 @@ export default function BookGuide() {
             Continue to payment
           </Button>
 
-          <p className="mt-3 flex items-center justify-center gap-1.5 text-[11px] text-mist-dim">
-            <Lock size={11} strokeWidth={1.8} />
-            Card details are handled by our payment provider, never by ICEFALL
-          </p>
-
+          {/* THERE IS NO PAYMENT PROVIDER, SO THIS SCREEN DOES NOT NAME ONE.
+              A padlocked line here read "Card details are handled by our payment
+              provider, never by ICEFALL" — present tense, two lines above the
+              notice saying payments are not connected at all. The identical
+              sentence had already been deleted from checkout steps 2 and 3 for
+              exactly that reason and step 1 was missed. It may come back the
+              day a processor is actually integrated, naming it. */}
           <Disclaimer className="mt-4">{PAYMENTS_NOT_CONNECTED}</Disclaimer>
         </Rise>
       </Stagger>

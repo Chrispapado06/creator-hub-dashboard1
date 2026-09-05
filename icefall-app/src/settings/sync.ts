@@ -18,17 +18,30 @@
  *
  * ── THE THING THAT MAKES THIS AWKWARD, AND THE PATTERN THAT SOLVES IT ────────
  *
- * The eight fields somebody can edit live in THREE different deployment states
- * on 3 September 2026, and a module that ignored that would be broken on
- * arrival in one direction or the other:
+ * The eight fields somebody can edit depend on THREE different migrations, and
+ * a module that assumed they all landed together would be broken on arrival in
+ * one direction or the other.
  *
- *   LIVE TODAY, no migration needed
- *     `display_name`, `location_label`, `country_code`, `avatar_url` — all four
- *     are columns on the live database this minute, and `profiles_update_self`
- *     already permits an account to update its own row.
+ * ⚠️ WHAT THIS BLOCK NO LONGER DOES IS TELL YOU WHICH ARE APPLIED. It used to
+ * ("NEEDS 20260903020000 — written, NOT pushed"), and it was wrong: measured
+ * against the live database on 2026-09-04, `profiles.bio`, `languages`,
+ * `interests` and `banner_url` all answer `42501 permission denied` rather than
+ * `42703 column does not exist`, which is PostgREST's way of saying the columns
+ * are there. A deployment state written into a comment is out of date the next
+ * time somebody runs `supabase db push`, and this one was — while the paragraph
+ * below still described a fault that had already been fixed. If you need to
+ * know what is applied, ask the database; the recipe is one curl and it is in
+ * the audit plan's Appendix B.
  *
- *   NEEDS 20260903020000 (written, NOT pushed)
- *     `bio`, `languages`, `interests`, `banner_url`. No column exists yet.
+ * What is durable is the DEPENDENCY, which is what this module is built on:
+ *
+ *   NO MIGRATION NEEDED
+ *     `display_name`, `location_label`, `country_code`, `avatar_url` — four
+ *     columns that have been on `profiles` from the start, with
+ *     `profiles_update_self` permitting an account to update its own row.
+ *
+ *   NEEDS 20260903020000
+ *     `bio`, `languages`, `interests`, `banner_url`.
  *
  *   NEEDS 20260903020000's STORAGE BLOCK, which can be skipped independently
  *     The `profile-media` bucket. Its whole `do $$ … $$` is wrapped in an
@@ -61,11 +74,16 @@
  * The result is PER FIELD. A single boolean would let a screen print "Saved"
  * over a form in which the name reached the server and the bio did not.
  *
- * ── ONE FAULT THAT IS ALREADY WAITING, SO NOBODY DEBUGS IT TWICE ─────────────
+ * ── ONE FAULT THIS MODULE RECOGNISES, SO NOBODY DEBUGS IT TWICE ──────────────
  *
- * With `20260903010000_block_and_report.sql` applied and `20260903020000` NOT
- * applied, EVERY profile update fails for EVERY account with `42P17 infinite
- * recursion detected in policy for relation "profiles"` — `profiles_update_self`
+ * IN ONE COMBINATION OF MIGRATIONS — `20260903010000_block_and_report.sql`
+ * applied and `20260903020000` not — EVERY profile update fails for EVERY
+ * account with `42P17 infinite recursion detected in policy for relation
+ * "profiles"`. (This paragraph used to open "one fault that is already
+ * waiting", which asserted that combination was the live state. It was not:
+ * both had landed by 2026-09-04. The failure mode is real; whether the
+ * database is currently in it is a question for the database.)
+ * `profiles_update_self`
  * pins `role` and `username` with subqueries on `profiles`, which only ever
  * worked because `profiles_select` was `using (true)`, and block-and-report
  * makes that a real expression. Section 0 of 20260903020000 is the fix. This
@@ -97,6 +115,18 @@ import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "@/backend/client";
 import { classifyBackendError, type BackendFailure } from "@/backend/pgErrors";
 import type { Database, Profile } from "@/backend/types";
+/* Type-only, so nothing of `AppState` reaches this module at runtime. The two
+   unions live there because that is where the onboarding answers are declared;
+   they are the same vocabulary the migration's CHECK and lookup table hold, and
+   writing them down a third time here is how the three drift apart. */
+import type { Gender, HeardAboutChannel } from "@/state/AppState";
+/* A SECOND import line from the same module rather than a third name added to
+   the one above it. `sex_at_birth` arrived after that line was written and
+   after this file had been queued for review, and this module is edited by
+   several sessions at once with no branch between them — so every change made
+   for it is an INSERTION and touches no existing line. Merge the two the day
+   this file is committed and nothing is racing it. */
+import type { SexAtBirth } from "@/state/AppState";
 import { withTimeout } from "@/lib/netTimeout";
 
 /**
@@ -149,6 +179,30 @@ export const SYNC_POLICY_FAULT =
 /** The columns for this field are not on this deployment yet. */
 export const SYNC_NOT_DEPLOYED =
   "ICEFALL's server has nowhere to keep this yet. It is kept on this phone and will be sent as soon as the server can take it — you do not need to type it again.";
+
+/**
+ * A SIGNUP answer whose column is not on this deployment yet.
+ *
+ * DELIBERATELY NOT `SYNC_NOT_DEPLOYED`, and the difference is the whole reason
+ * this constant exists. That sentence ends "will be sent as soon as the server
+ * can take it", which is a promise the profile outbox actually keeps: a queued
+ * profile edit is written to `OUTBOX_KEY` and re-sent by `flushProfile` after
+ * the next save that succeeds. THERE IS NO OUTBOX FOR SIGNUP ANSWERS. They are
+ * asked once, on a screen nobody returns to, so there is no later save to ride
+ * along with and nothing anywhere retries this write. Saying "will be sent"
+ * about it would be the same class of lie as a "Saved" that was never read
+ * back, which is the fault this entire module was written to end.
+ *
+ * What IS true is the middle clause: the answer is not lost. It lives in the
+ * app's own onboarding record — on the phone, and inside the `answers` blob
+ * that `auth/account.ts` upserts, a column that has existed since 20260830100000
+ * and needs no migration. What the missing column costs is not the answer, it
+ * is the ability to COUNT the answers, because `heard_about_tally()` reads the
+ * typed column and knows nothing about the blob. So the sentence says exactly
+ * that and claims nothing further.
+ */
+export const SIGNUP_ANSWER_NOT_DEPLOYED =
+  "ICEFALL's server has nowhere to file this answer yet, so nothing at ICEFALL can count it. It is kept with the rest of your signup answers and nothing here tries again — the column has to arrive first.";
 
 /** No `profile-media` bucket. Photographs specifically. */
 export const SYNC_NO_PHOTO_STORE =
@@ -1714,4 +1768,409 @@ async function runFlush(): Promise<SaveProfileResult | null> {
     return null;
   }
   return saveProfile(edit);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Signup answers — a different table, and a different promise                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * THE TWO ANSWERS THE SIGNUP FLOW COLLECTS THAT NOTHING ELSE EDITS.
+ *
+ * ── WHY THIS IS NOT PART OF `saveProfile` ───────────────────────────────────
+ *
+ * `saveProfile` updates `public.profiles`. Neither of these columns is on that
+ * table and neither ever may be: `profiles_select` is `using (true)`, so a
+ * column added there is published to every signed-in account on the platform.
+ * Where somebody heard about ICEFALL is business data about a signup, and no
+ * version of this product has a stranger opening a profile and learning that
+ * its owner arrived from a Reddit thread. Gender fails the same test for the
+ * plainer reason that ICEFALL prints it nowhere at all. Both therefore live on
+ * `public.athlete_profiles`, whose SELECT policy is already `id = auth.uid() or
+ * public.is_admin()` — private by construction, with no new policy to keep in
+ * step and nothing for a future reader to remember.
+ *
+ * Two tables is also why this is a separate exported function rather than four
+ * more keys on `ProfileEdit`. `SaveProfileResult` answers "what happened to the
+ * fields on the edit-profile form"; folding a signup-only answer into it would
+ * make `allSaved` — the only "Saved" a screen earns — depend on a question that
+ * screen does not ask.
+ *
+ * ── WHY IT IS UNTYPED, LIKE THE PENDING HALF ABOVE ──────────────────────────
+ *
+ * `backend/types.ts` describes the columns this app may rely on unconditionally,
+ * and `gender` and `heard_about` are not among them: they arrive with
+ * `20260903040000_gender_and_heard_about.sql`. Adding them there would be this
+ * module claiming, in the type system, that two columns exist — a claim the
+ * type system cannot check and that goes stale the moment the migration state
+ * changes in either direction, while `backend/types.ts` is the one place in the
+ * app whose job is to be right about that. So the same trick the
+ * pending profile columns use applies here: the untyped view of the same
+ * client, and a `.select()` read-back that proves the write rather than
+ * assuming it.
+ *
+ * ── THE ORDERING THIS DEPENDS ON, WHICH IS THE CALLER'S TO GET RIGHT ────────
+ *
+ * This is an UPDATE, not an upsert, and it therefore needs the athlete's row to
+ * already exist. `auth/account.ts:syncOnboarding` is what creates it, with an
+ * upsert carrying the whole `answers` blob. So the caller must run this AFTER
+ * that has settled — `Onboarding.tsx` chains it — and if the upsert failed, the
+ * update here matches no row and is reported as `SYNC_NO_ROW`, not as a save.
+ *
+ * An upsert here would remove that ordering constraint and was rejected anyway:
+ * two upserts racing on one row is a way to write a half-formed athlete record
+ * with a gender and no `onboarded_at`, and a row like that would make
+ * `storedOnboarding()` believe somebody had signed up when they had not.
+ *
+ * ── WHAT IT NEVER CLAIMS ────────────────────────────────────────────────────
+ *
+ * `keptOnDevice` is FALSE on every failure path, which looks wrong beside
+ * `saveProfile` and is not. That flag means "this is waiting on this phone to
+ * be sent later, so a screen may offer to try again". Nothing retries a signup
+ * answer: there is no outbox for one, `flushProfile` drains `ProfileEdit`s and
+ * knows nothing about these, and the screen that asked is one nobody returns
+ * to. The answer is not lost — it is in the app's own onboarding record and in
+ * the `answers` blob — but it is not QUEUED, and a screen told it was queued
+ * would offer a retry against a queue that does not exist.
+ */
+
+/** The columns, named once. Read back to prove the write, never assumed. */
+const SIGNUP_ANSWER_COLUMNS = "gender, heard_about";
+
+export type SignupAnswerFieldName = "gender" | "heardAbout";
+
+export interface SignupAnswerEdit {
+  /**
+   * `"prefer-not-to-say"` is a VALUE, not an absence — it is the answer given
+   * by somebody who read the question and declined it, and the column's CHECK
+   * accepts it as one of four. Leaving the key off means the question was not
+   * asked. The two are different facts and this module keeps them different.
+   */
+  gender?: Gender;
+  /** A slug from `heard_about_channels`, which the column has a real FK to. */
+  heardAbout?: HeardAboutChannel;
+}
+
+/** One entry per answer the caller passed. Never more, never fewer. */
+export type SignupAnswerResult = Partial<Record<SignupAnswerFieldName, FieldResult>>;
+
+/** Reached nobody. See the note on `keptOnDevice` in the block above. */
+const notReached = (state: FieldState, message: string): FieldResult => ({
+  state,
+  keptOnDevice: false,
+  message,
+});
+
+/**
+ * Write the signup answers to the athlete's own row.
+ *
+ * Never throws. It is called fire-and-forget from the last step of onboarding,
+ * where an unhandled rejection would be an error thrown at somebody in the act
+ * of finishing signup, over a write whose failure costs them nothing.
+ */
+export async function saveSignupAnswers(edit: SignupAnswerEdit): Promise<SignupAnswerResult> {
+  const asked: SignupAnswerFieldName[] = [];
+  if (edit.gender !== undefined) asked.push("gender");
+  if (edit.heardAbout !== undefined) asked.push("heardAbout");
+
+  const fields: SignupAnswerResult = {};
+  if (asked.length === 0) return fields;
+
+  let session: Gate;
+  try {
+    session = await gate();
+  } catch {
+    // `gate()` awaits a token refresh, which can reject outright rather than
+    // resolving with an error. Treated as unreachable, which is what it is: the
+    // server was never actually asked.
+    session = { ok: false, failure: "unreachable", message: SYNC_UNREACHABLE };
+  }
+  if (!session.ok) {
+    for (const key of asked) fields[key] = notReached("queued", session.message);
+    return fields;
+  }
+
+  const values: Row = {};
+  if (edit.gender !== undefined) values.gender = edit.gender;
+  if (edit.heardAbout !== undefined) values.heard_about = edit.heardAbout;
+
+  const deadline = withTimeout(WRITE_TIMEOUT_MS);
+  /* `.abortSignal()` BEFORE `.maybeSingle()`, for the reason spelled out at the
+     live-columns write above: the other order compiles away the deadline. */
+  const query = session.loose
+    .from("athlete_profiles")
+    .update(values)
+    .eq("id", session.uid)
+    .select(SIGNUP_ANSWER_COLUMNS);
+
+  let result: WriteOutcome;
+  try {
+    result = await interpretWrite((deadline ? query.abortSignal(deadline) : query).maybeSingle());
+  } catch {
+    result = { ok: false, state: "queued", message: SYNC_UNREACHABLE };
+  }
+
+  if (result.ok) {
+    /*
+     * Reported off the READ-BACK ROW, like everything else in this file. It
+     * matters more than usual here: both columns are constrained on the server
+     * — gender by a CHECK, `heard_about` by a foreign key to
+     * `heard_about_channels` — so a value this app offered that the database
+     * does not recognise is a real possibility the day one vocabulary is edited
+     * without the other. That arrives as `23514` or `23503`, which
+     * `classifyBackendError` calls "unknown", so it lands on the generic
+     * sentence below rather than being mistaken for a missing column.
+     */
+    if (edit.gender !== undefined) {
+      fields.gender = {
+        state: "saved",
+        keptOnDevice: false,
+        message: "Recorded on your ICEFALL account.",
+        stored: textOf(result.row, "gender"),
+      };
+    }
+    if (edit.heardAbout !== undefined) {
+      fields.heardAbout = {
+        state: "saved",
+        keptOnDevice: false,
+        message: "Recorded on your ICEFALL account.",
+        stored: textOf(result.row, "heard_about"),
+      };
+    }
+    return fields;
+  }
+
+  const message =
+    result.state === "not-yet-on-server" ? SIGNUP_ANSWER_NOT_DEPLOYED : result.message;
+  for (const key of asked) fields[key] = notReached(result.state, message);
+  return fields;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Sex at birth — the same table, and a separate call for an ugly reason       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * WHY THIS IS NOT ONE MORE KEY ON `SignupAnswerEdit`, WHICH IS WHERE IT BELONGS.
+ *
+ * It belongs there. `sex_at_birth` is a third column on the same table, written
+ * at the same moment in the same flow by the same person, and one UPDATE
+ * carrying all three would be one round trip, one read-back and one result
+ * shape instead of two of each. Nothing about the problem wanted two functions.
+ *
+ * The reason there are two is mechanical and it is about this repository, not
+ * about the schema. `saveSignupAnswers` above is UNCOMMITTED work by an earlier
+ * pass, several sessions edit this tree simultaneously with no branch and no
+ * index between them, and folding a third field into it means editing lines
+ * that another session may be holding a stale copy of — `SignupAnswerFieldName`
+ * is one line, `SIGNUP_ANSWER_COLUMNS` is one line, and both would have to
+ * change. Every rewritten line is a chance to silently delete somebody else's
+ * work with no merge conflict to warn anyone. An appended function cannot do
+ * that. So the cost is paid in a second HTTP request rather than in a class of
+ * data loss that leaves no evidence.
+ *
+ * THIS IS A TEMPORARY SHAPE AND IT SHOULD BE MERGED. The day `sync.ts` is
+ * committed and nothing is racing it, fold `sexAtBirth` into `SignupAnswerEdit`,
+ * add `sex_at_birth` to `SIGNUP_ANSWER_COLUMNS`, and delete this function and
+ * its caller's second `await`. Nothing about the columns argues for keeping
+ * them apart; only the tree does, and that is temporary.
+ *
+ * WHAT IS SHARED, DELIBERATELY, SO THE TWO CANNOT DRIFT ON THE THINGS THAT
+ * MATTER: the same `gate()`, the same `WRITE_TIMEOUT_MS`, the same
+ * `interpretWrite`, the same `FieldResult` states, the same `notReached`
+ * helper, and the same `SIGNUP_ANSWER_NOT_DEPLOYED` sentence. There is no
+ * second, weaker write path here — only a second call site into the same one.
+ *
+ * ── THE SAME ORDERING CONSTRAINT AS ABOVE ─────────────────────────────────
+ *
+ * An UPDATE, not an upsert, so the athlete's row must already exist.
+ * `auth/account.ts:syncOnboarding` creates it. The caller runs this after that
+ * has settled, and if the upsert failed this matches no row and is reported as
+ * `SYNC_NO_ROW` — never as a save.
+ *
+ * ── AND THE SAME PROMISE IT REFUSES TO MAKE ───────────────────────────────
+ *
+ * `keptOnDevice` is FALSE on every failure path. Nothing retries a signup
+ * answer: there is no outbox for one, `flushProfile` drains `ProfileEdit`s and
+ * knows nothing about this, and the screen that asked is one nobody returns to.
+ *
+ * A FAILURE HERE LOSES THE ANSWER OUTRIGHT, AND THE PHRASE "IT IS STILL IN THE
+ * APP'S OWN ONBOARDING RECORD" IS NOT AVAILABLE AS A CONSOLATION. It was
+ * checked rather than assumed, because it is the obvious thing to assume:
+ * `AppState.completeOnboarding` receives the whole `OnboardingAnswers` object
+ * and persists exactly four things out of it — `onboarded`, `name`,
+ * `disciplines`, `experience`, plus any goal it creates. Gender, sex at birth
+ * and the acquisition channel are not among them and are never written to
+ * localStorage at all. `storedOnboarding()` reads the answers back FROM THE
+ * SERVER, out of `athlete_profiles.answers`, so it is not a local copy either.
+ *
+ * So the only two homes for this answer are the `answers` blob that
+ * `syncOnboarding` upserts and the typed column this function writes — both on
+ * the server, and both reached over the same network in the same second. If
+ * that network is down, the answer is gone the moment the screen unmounts.
+ * That is the honest description, it is the reason `keptOnDevice` is false, and
+ * it is why NO SCREEN MAY EVER SAY THIS ANSWER WILL BE SENT LATER.
+ *
+ * WHAT THAT COSTS THE ATHLETE, STATED PLAINLY: the typed column is what
+ * `fuelDay.ts` reads to narrow the energy band. So a failure here means their
+ * estimate keeps spanning both sex terms after they answered — a wider band,
+ * with the sentence that explains why still on screen. Wrong, but not
+ * misleading, and it fails in the direction that invents nothing. That is the
+ * correct way for this to fail, and it is the reason this write is allowed to
+ * be fire-and-forget at all.
+ */
+
+/**
+ * ── CORRECTION TO THE TWO PARAGRAPHS ABOVE, 2026-09-03 ────────────────────
+ *
+ * APPENDED RATHER THAN APPLIED IN PLACE, on purpose. Several sessions edit this
+ * file at once with no branch between them, so every change made here is an
+ * insertion that touches no existing line. The paragraphs above are left
+ * standing and wrong rather than rewritten and possibly clobbering somebody
+ * else's work. Fold this into them the day this file is committed and nothing
+ * is racing it.
+ *
+ * TWO CLAIMS UP THERE ARE NO LONGER TRUE, AND ONE OF THEM NEVER WAS.
+ *
+ * 1. "Gender, sex at birth and the acquisition channel … are never written to
+ *    localStorage at all." Sex at birth now is. `AppState.completeOnboarding`
+ *    passes it to `rememberSexForEnergyFromSignup`, which writes it into the
+ *    `icefall.fuel.v1` record through `coach/fuelRecord.ts`. Gender and the
+ *    channel are unchanged: still server-only, still lost by a failed send.
+ *
+ * 2. "the typed column is what `fuelDay.ts` reads to narrow the energy band."
+ *    IT NEVER DID. Nothing in the app has ever read `sex_at_birth` back —
+ *    grep it. `screens/Nutrition.tsx` passes `fuel.sexForEnergy` into
+ *    `dailyEnergyFor`, and that comes from the local fuel record and from
+ *    nowhere else. This column is write-only today. It is the durable copy of
+ *    the answer, and the reason it is still worth writing is the second device:
+ *    sign-in restores the `answers` blob and seeds the fuel record there.
+ *
+ * WHAT A FAILURE HERE ACTUALLY COSTS, THEN. Not this athlete's estimate on this
+ * phone — that narrowed before the request was made. It costs the server's
+ * record of the answer, so a new device re-asks the question. Still a real
+ * cost, still a reason `keptOnDevice` is false for the COLUMN, and still no
+ * grounds for any screen to say the answer will be sent later.
+ */
+
+/**
+ * ── SECOND CORRECTION, SAME DAY, APPENDED FOR THE SAME REASON ─────────────
+ *
+ * The block above says the local write HAPPENS — "writes it into the
+ * `icefall.fuel.v1` record", and "that narrowed before the request was made".
+ * Both are true only when the record was empty. They are not always true, and
+ * this note is the correction; nothing above is deleted, because this file is
+ * still being edited by more than one session at once.
+ *
+ * `rememberSexForEnergy` REFUSES TO OVERWRITE AN EXISTING ANSWER, deliberately:
+ * an answer given on the Fuel screen, next to the number it moves, outranks one
+ * given during signup. And storage can refuse the write outright — private mode,
+ * or a full quota. So there are three local outcomes, not one:
+ *
+ *   - the record was empty and the answer landed. The estimate narrowed here,
+ *     exactly as the block above describes.
+ *   - the record already held an answer. NOTHING was written locally, and the
+ *     estimate is still computed from whatever was already there. This is
+ *     reachable in ordinary use: `signOut` keeps everything on the device on
+ *     purpose, so the second person to use a phone meets the first person's
+ *     answer, and `screens/auth/Auth.tsx` replays `completeOnboarding` with the
+ *     restored blob on every sign-in.
+ *   - storage refused. The answer is on neither the device nor, if this send
+ *     fails too, the server.
+ *
+ * `AppState.completeOnboarding` now RETURNS which of those happened (see
+ * `SexNarrowing` there) and the signup payoff panel says so. Nothing in this
+ * file changes: the column write is the same write with the same failure
+ * meaning, and it is still worth making in all three cases, because the server
+ * copy is what a NEW device restores. But no comment here — including the two
+ * paragraphs above — may be read as a promise that the local narrowing happened.
+ */
+
+/** The column, named once. Read back to prove the write, never assumed. */
+const SEX_AT_BIRTH_COLUMN = "sex_at_birth";
+
+export type SexAtBirthFieldName = "sexAtBirth";
+
+export interface SexAtBirthEdit {
+  /**
+   * `"prefer-not-to-say"` is a VALUE, not an absence — the answer given by
+   * somebody who read the question and declined it, and the column's CHECK
+   * accepts it as one of three. Leaving the key off means the question was not
+   * asked. The database keeps those two apart on purpose; `sexTermFor` in
+   * `state/AppState.tsx` is the single place they collapse, on the way OUT.
+   */
+  sexAtBirth?: SexAtBirth;
+}
+
+/** One entry, and only when the caller passed an answer. */
+export type SexAtBirthResult = Partial<Record<SexAtBirthFieldName, FieldResult>>;
+
+/**
+ * Write the sex-at-birth answer to the athlete's own row.
+ *
+ * Never throws. Called fire-and-forget from the last step of onboarding, where
+ * an unhandled rejection would be an error thrown at somebody in the act of
+ * finishing signup, over a write whose failure costs them a wider estimate and
+ * nothing else.
+ */
+export async function saveSexAtBirth(edit: SexAtBirthEdit): Promise<SexAtBirthResult> {
+  const fields: SexAtBirthResult = {};
+  if (edit.sexAtBirth === undefined) return fields;
+
+  let session: Gate;
+  try {
+    session = await gate();
+  } catch {
+    // `gate()` awaits a token refresh, which can reject outright rather than
+    // resolving with an error. Treated as unreachable, which is what it is: the
+    // server was never actually asked.
+    session = { ok: false, failure: "unreachable", message: SYNC_UNREACHABLE };
+  }
+  if (!session.ok) {
+    fields.sexAtBirth = notReached("queued", session.message);
+    return fields;
+  }
+
+  const values: Row = { sex_at_birth: edit.sexAtBirth };
+
+  const deadline = withTimeout(WRITE_TIMEOUT_MS);
+  /* `.abortSignal()` BEFORE `.maybeSingle()`, for the reason spelled out at the
+     live-columns write above: the other order compiles away the deadline. */
+  const query = session.loose
+    .from("athlete_profiles")
+    .update(values)
+    .eq("id", session.uid)
+    .select(SEX_AT_BIRTH_COLUMN);
+
+  let result: WriteOutcome;
+  try {
+    result = await interpretWrite((deadline ? query.abortSignal(deadline) : query).maybeSingle());
+  } catch {
+    result = { ok: false, state: "queued", message: SYNC_UNREACHABLE };
+  }
+
+  if (result.ok) {
+    /*
+     * Reported off the READ-BACK ROW, like everything else in this file, and it
+     * earns its keep here: the column is constrained by a CHECK naming three
+     * strings, so a value this app offered that the database does not recognise
+     * is a real possibility the day one vocabulary is edited without the other.
+     * That arrives as `23514`, which `classifyBackendError` calls "unknown", so
+     * it lands on the generic sentence below rather than being mistaken for a
+     * missing column.
+     */
+    fields.sexAtBirth = {
+      state: "saved",
+      keptOnDevice: false,
+      message: "Recorded on your ICEFALL account.",
+      stored: textOf(result.row, SEX_AT_BIRTH_COLUMN),
+    };
+    return fields;
+  }
+
+  fields.sexAtBirth = notReached(
+    result.state,
+    result.state === "not-yet-on-server" ? SIGNUP_ANSWER_NOT_DEPLOYED : result.message,
+  );
+  return fields;
 }

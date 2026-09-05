@@ -53,8 +53,10 @@ import { useMountainImage } from "@/components/domain/MountainImage";
  * sample VALUES, and every tile that holds one is built here. What is NOT done
  * is printing them when the recording has nothing behind them:
  *
- *   · AVG HR      `avgHeartRateBpm` is null unless a strap was paired, and
- *                 ICEFALL pairs none today. The tile says "Not connected".
+ *   · AVG HR      `avgHeartRateBpm` is null unless a strap was paired. ICEFALL
+ *                 does pair one (`tracking/sources/heartRate.ts`, connected
+ *                 from LiveTracker), so this tile is filled on a recording made
+ *                 with a strap and says "Not connected" on one made without.
  *   · CALORIES    modelled, not measured — MET × mass × hours. Where the mass
  *                 was assumed rather than set, the footnote says so.
  *   · WEATHER     the recorder stores `temperatureC` and no sky condition, so

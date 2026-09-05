@@ -1,33 +1,32 @@
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
-import { SegmentedTabs } from "@/components/layout/chrome";
 import { useTabSwipe } from "@/hooks/useTabSwipe";
-
-const TABS = [
-  { value: "/coach", label: "Chat" },
-  /*
-   * Fuel sits SECOND, beside Chat, at the owner's request (2026-09-02).
-   * It was reachable only as a detail view before — linked from Today and from
-   * nowhere else — which made the app's fuelling guidance effectively invisible
-   * to anybody who did not already know it existed.
-   *
-   * "Fuel", not "Nutrition": the screen is about supporting the work, and
-   * `coach/nutrition.ts` is explicit that ICEFALL sets no weight or
-   * body-composition targets. "Nutrition" is the word every calorie app the
-   * athlete has already deleted uses on its tab bar.
-   */
-  { value: "/coach/nutrition", label: "Fuel" },
-  { value: "/coach/today", label: "Today" },
-  { value: "/coach/plan", label: "Plan" },
-  { value: "/coach/progress", label: "Progress" },
-] as const;
+import { COACH_TABS, activeCoachTab } from "@/screens/coach/shell";
 
 /**
- * Coach owns the surfaces that answer "what should I do today, and why?".
+ * Coach owns the surfaces that answer "what should I do today, and why?" —
+ * five of them, to the owner's designs of 2026-09-04: Today, Plan, Fuel,
+ * Progress, Chat. TODAY IS THE DEFAULT. Chat used to land first ("the Coach is
+ * a conversation first"); the owner's redesign opens on the next step instead,
+ * and says so in its own brief: "Chat should not open first."
  *
- * The tab strip belongs to the four top-level surfaces only. Everything reached
- * from them — a session, the check-in, readiness, recovery — is a detail view
- * with its own back control, and showing tabs there would offer an escape hatch
- * that loses the athlete's place mid-task.
+ * The strip is not here any more. It used to be pinned above the outlet;
+ * the designs show the serif title, the objective and the strip all scrolling
+ * away together, so each tab page draws `CoachHead` at the top of its own
+ * scroller. What stays in the layout is only what every route shares:
+ *
+ *   · NOT the theme. An earlier version stamped `data-theme="light"` here so
+ *     the section matched its light designs — which overrode a dark
+ *     preference for exactly these pages. The theme is the person's
+ *     (Settings › Appearance, or the phone's under "System"), the bootstrap in
+ *     index.html is the only thing that sets it, and the pages draw correctly
+ *     in both through the editorial palette's per-theme variables;
+ *   · the swipe between the five tabs, which needs the layout's wrapper to
+ *     bind to and is OFF on detail routes — a session or the check-in must not
+ *     slide sideways into Plan mid-task.
+ *
+ * Fuel's tab used to be `/coach/nutrition`; that path is now the detail view
+ * holding the engine's inputs and the food log (see `coach/details.tsx`), so
+ * every existing link to it still lands on something true.
  */
 const DETAIL_PREFIXES = [
   "/coach/session",
@@ -35,10 +34,10 @@ const DETAIL_PREFIXES = [
   "/coach/readiness",
   "/coach/recovery",
   "/coach/prep",
-  // Linked from Home and from empty session states; without this it rendered
-  // under the strip with the CHAT tab lit, since unmatched paths fall back to
-  // "/coach".
   "/coach/training",
+  "/coach/nutrition",
+  "/coach/plan/calendar",
+  "/coach/progress/history",
 ];
 
 export default function CoachLayout() {
@@ -46,53 +45,22 @@ export default function CoachLayout() {
   const navigate = useNavigate();
 
   const isDetail = DETAIL_PREFIXES.some((p) => pathname.startsWith(p));
-  // `/coach` and `/coach/chat` are the same surface, so both light the Chat tab.
-  const normalised = pathname === "/coach/chat" ? "/coach" : pathname;
-  const active = (TABS.find((t) => t.value === normalised)?.value ??
-    "/coach") as (typeof TABS)[number]["value"];
+  const active = activeCoachTab(pathname);
 
-  /*
-   * The same hook Explore uses. `!isDetail` is already the layout's own test
-   * for "is the tab strip showing", and where there is no strip there is no tab
-   * set to swipe within — a session or the check-in must not slide sideways
-   * into Plan mid-task.
-   */
   const swipe = useTabSwipe({
-    tabs: TABS.map((t) => t.value),
+    tabs: COACH_TABS.map((t) => t.value),
     current: active,
     enabled: !isDetail,
     onNavigate: (v) => navigate(v),
   });
 
   return (
-    // When the tab strip is showing it clears the notch, so a nested `Screen`
-    // must not clear it a second time. On a detail route there is no strip, so
-    // the screen keeps the inset and owns the top edge itself.
-    <div
-      className="flex h-full flex-col"
-      style={isDetail ? undefined : ({ "--screen-safe-top": "0px" } as React.CSSProperties)}
-    >
-      {!isDetail && (
-        <div
-          className="shrink-0 px-5"
-          // The inset alone left the strip flush against the top edge wherever
-          // there is no notch; the added space is what gives it room to breathe.
-          style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 18px)", paddingBottom: "2px" }}
-        >
-          <SegmentedTabs
-            tabs={TABS}
-            value={active}
-            onChange={(v) => navigate(v)}
-            swipeOffset={swipe.swipeOffset}
-          />
-        </div>
-      )}
-      {/* Must be a flex column: `Screen` inside uses `flex-1 overflow-y-auto`,
-          which does nothing under a block parent — the content grew to its full
-          height and was clipped instead of scrolling. */}
-      <div className="flex min-h-0 flex-1 flex-col" {...swipe.bind}>
-        <Outlet />
-      </div>
+    // No header here, so `--screen-safe-top` is NOT zeroed: each page's own
+    // `Screen` clears the notch. The detail wrappers zero it themselves.
+    // Must be a flex column: `Screen` inside uses `flex-1 overflow-y-auto`,
+    // which does nothing under a block parent.
+    <div className="flex h-full min-h-0 flex-col" {...(isDetail ? {} : swipe.bind)}>
+      <Outlet />
     </div>
   );
 }

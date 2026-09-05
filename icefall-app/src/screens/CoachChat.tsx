@@ -1,8 +1,9 @@
-import { ArrowUp } from "lucide-react";
+import { ArrowUp, Lock } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 import { Disclaimer } from "@/components/ui/primitives";
 import { IcefallMark } from "@/components/ui/IcefallMark";
+import { ShiningText } from "@/components/ui/ShiningText";
 import { cn } from "@/lib/utils";
 import { SUGGESTED_PROMPTS, askCoach } from "@/services/coach";
 import { useCoachContext } from "@/coach/context";
@@ -11,6 +12,8 @@ import { useApp } from "@/state/AppState";
 import { UpgradePrompt } from "@/components/growth/UpgradePrompt";
 import { useUpgradeCopy } from "@/growth/upgradeCopy";
 import type { CoachMessage } from "@/types";
+import { DEMO } from "@/offline/offline";
+import { ACCENT, CoachHead, Eyebrow, TINT } from "@/screens/coach/shell";
 
 /**
  * Screen 08 — ICEFALL Coach.
@@ -48,28 +51,19 @@ export default function CoachChat() {
    * your progress and produces nothing, which is a promise the screen breaks in
    * its own first sentence.
    *
-   * So: no seeded turn. The greeting became the intro overlay below, which
-   * fades and leaves, and the composer opens on a clean thread the way a new
-   * chat should.
+   * So: no seeded turn. The greeting is an INTRO CARD above the thread — the
+   * coach saying what it can help with, what it answers from (what the athlete
+   * has logged; sample data in a demo build) and that it says when something
+   * is not logged rather than guessing. It is labelled as the coach
+   * introducing itself, it is not in the transcript, it is not sent to the
+   * model, and it goes when the first real turn arrives. That is the owner's
+   * Chat design of 2026-09-04 and it keeps PH-14a's promise: it announces no
+   * analysis it does not deliver.
    */
   const [messages, setMessages] = useState<CoachMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [thinking, setThinking] = useState(false);
-  const [intro, setIntro] = useState(true);
   const endRef = useRef<HTMLDivElement>(null);
-
-  // The intro is a greeting, not a gate: it never blocks the composer, and a
-  // reduced-motion preference skips it rather than slowing the screen down.
-  useEffect(() => {
-    const reduce =
-      typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reduce) {
-      setIntro(false);
-      return;
-    }
-    const t = setTimeout(() => setIntro(false), 1900);
-    return () => clearTimeout(t);
-  }, []);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -89,55 +83,105 @@ export default function CoachChat() {
     ]);
     setDraft("");
     setThinking(true);
+    const askedAt = Date.now();
 
     const { message, spentMicros } = await askCoach(q, ctx, messages, remainingMicros(coachBudget));
     // Bank what it actually cost, from the usage the proxy reported.
     if (spentMicros > 0) recordCoachSpend(spentMicros);
+
+    /*
+     * A 5-10 SECOND FLOOR ON THE "Thinking…" LINE — THE OWNER'S EXPLICIT
+     * DECISION, TAKEN TWICE, AND IT IS A DELIBERATE DELAY RATHER THAN A
+     * MEASUREMENT. WRITTEN DOWN HERE SO NOBODY "FIXES" IT BACK.
+     *
+     * The reply is often ready sooner than this. When it is, the answer sits in
+     * memory, finished, while the line keeps sweeping — so for that stretch the
+     * screen is saying the coach is still working when it is not. That is the
+     * one thing this file otherwise never does, and it was raised with the
+     * owner in those terms before it was built. They asked for it anyway, so it
+     * is theirs, not an oversight, and it is not to be quietly reverted by a
+     * later session reading the doctrine and assuming a mistake. If it is ever
+     * removed, remove it because the OWNER changed their mind.
+     *
+     * WHAT IT DOES NOT DO: it never shortens anything. A model that genuinely
+     * takes twelve seconds still shows the line for twelve — the floor only
+     * ever tops up an answer that arrived early. And nothing about the ANSWER
+     * is invented or altered by the wait; it is the same reply, shown later.
+     *
+     * The range is randomised per question rather than fixed, because a
+     * constant seven seconds every single time reads as a mechanical timer,
+     * which is exactly what it is, and varying it does not make it more honest
+     * — it makes it less obviously a timer. That is the owner's stated intent.
+     */
+    /*
+     * 5.0-9.0s, NOT 5-10, and the shortfall is deliberate. Measured in the
+     * running app: the line takes ~600ms to appear after the tap (React render
+     * plus this screen's own re-layout) and its `AnimatePresence` exit fades
+     * for a further ~300ms after `thinking` goes false. A 5-10s floor therefore
+     * READS as 5.6-10.9s, and the top of that range overshoots what was asked
+     * for. Ending the timer at 9s puts the observed line back inside 5-10s.
+     * If you change this constant, change it by what somebody SEES, not by
+     * what the timer says.
+     */
+    const MIN_VISIBLE_MS = 5_000 + Math.floor(Math.random() * 4_000);
+    const shownFor = Date.now() - askedAt;
+    if (shownFor < MIN_VISIBLE_MS) {
+      await new Promise((r) => setTimeout(r, MIN_VISIBLE_MS - shownFor));
+    }
+
     setMessages((m) => [...m, message]);
     setThinking(false);
   }
 
   return (
     <div className="relative flex h-full flex-col">
-      {/* The greeting, as an intro that leaves. Positioned over the thread
-          rather than inside it, so it can never be mistaken for a turn in the
-          conversation or scrolled back to. `pointer-events-none` so it cannot
-          swallow a tap on the composer while it fades. */}
-      <AnimatePresence>
-        {intro && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0, transition: { duration: 0.55 } }}
-            className="pointer-events-none absolute inset-0 z-10 grid place-items-center bg-obsidian px-8 text-center"
-          >
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
-            >
-              <IcefallMark className="mx-auto h-5 text-azure" />
-              <p className="mt-5 text-[22px] font-light leading-tight text-snow">
-                Hello, {ctx.athlete.firstName}.
-              </p>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* The head scrolls with the thread, as on every Coach page. No layout
+          header sits above this screen, so the scroller clears the notch. */}
+      <div
+        className="no-scrollbar flex-1 overflow-y-auto px-5 pb-4"
+        style={{ paddingTop: "calc(var(--screen-safe-top, env(safe-area-inset-top, 0px)) + 24px)" }}
+      >
+        <CoachHead
+          title="Ask Coach"
+          subtitle="Get guidance about your objective, plan, or today’s session."
+          objective="line"
+        />
 
-      <div className="no-scrollbar flex-1 overflow-y-auto px-5 pb-4 pt-5">
-        <div className="space-y-4">
-          {/* An empty thread says what this is, without pretending a turn has
-              happened. It makes no claim about what it has read. */}
+        {/* Identity and privacy, before a word is typed. This is the one
+            conversation in the app that is not a public feed, and it says so
+            where the Social tab's look might otherwise be assumed. */}
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-hairline-strong px-3 py-1 text-[12px] text-mist">
+            <Lock size={12} strokeWidth={2} aria-hidden="true" />
+            Private · separate from Social
+          </span>
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[12px]"
+            style={{ backgroundColor: TINT.blue, color: ACCENT.blue }}
+          >
+            <IcefallMark className="h-3" />
+            ICEFALL AI Coach
+          </span>
+        </div>
+
+        <div className="mt-5 space-y-4">
+          {/* The intro card — the coach introducing itself, NOT a turn. See the
+              PH-14a note above: it names what it answers from and promises to
+              say when something is not logged, and claims nothing it has read. */}
           {messages.length === 0 && !thinking && (
-            <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: intro ? 1.9 : 0, duration: 0.5 }}
-              className="pt-2 text-[12.5px] leading-relaxed text-mist-dim"
-            >
-              Ask about today's session, your objective, or anything you are unsure of.
-            </motion.p>
+            <div className="rounded-[20px] bg-graphite p-4 shadow-[0_1px_10px_rgba(20,24,40,0.05)]">
+              <Eyebrow>ICEFALL AI Coach · Alpine Performance Engine</Eyebrow>
+              <p className="mt-2.5 text-[14px] leading-relaxed text-snow">
+                Hi {ctx.athlete.firstName}. I'm here to help with your{" "}
+                {ctx.objective ? `${ctx.objective.name} preparation` : "preparation"}. You can ask
+                about today's session, your plan, Fuel, recovery, or whether you're ready for a
+                specific objective.
+              </p>
+              <p className="mt-2.5 text-[13px] leading-relaxed text-mist">
+                I answer from what you've logged{DEMO ? " — sample data, in this demo" : ""}. When
+                something isn't logged, I'll say so rather than guess.
+              </p>
+            </div>
           )}
 
           {messages.map((m) => (
@@ -152,17 +196,14 @@ export default function CoachChat() {
                 exit={{ opacity: 0 }}
                 className="flex items-center gap-2.5"
               >
-                <IcefallMark className="h-3.5 text-azure" />
-                <div className="flex gap-1">
-                  {[0, 1, 2].map((i) => (
-                    <motion.span
-                      key={i}
-                      className="h-1 w-1 rounded-full bg-mist"
-                      animate={{ opacity: [0.25, 1, 0.25] }}
-                      transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.16 }}
-                    />
-                  ))}
-                </div>
+                <IcefallMark className="h-3.5 shrink-0 text-azure" />
+                {/* The words replace three pulsing dots. Dots said "something is
+                    happening"; this says WHAT is happening, which is the part
+                    somebody waiting actually wants, and it costs no more room.
+                    `text-[12.5px]` rather than the component's default base size
+                    so it matches the empty-thread line directly above it — a
+                    16px line here would read as a message rather than a status. */}
+                <ShiningText text="Thinking…" className="!text-[12.5px]" />
               </motion.div>
             )}
           </AnimatePresence>
@@ -207,6 +248,9 @@ export default function CoachChat() {
           className="shrink-0 border-t border-hairline bg-obsidian px-5 py-3"
           style={{ paddingBottom: "0.75rem" }}
         >
+          <p className="mb-1.5 px-1 text-[11px] text-mist-dim">
+            Coach conversations are private · Not shared to Social
+          </p>
           <div className="mb-2 flex items-center justify-between gap-3 px-1">
             {metered && coachInteractionsLeft !== null ? (
               <p className="text-[11px] text-mist-dim">

@@ -300,7 +300,11 @@ export default function CoachProgress() {
           the content's so that changing the range re-runs the body only. */}
       <Entrance still={still} className="px-5">
         <Rise>
-          <ScreenHeader title="Progress" />
+          {/* This screen is the ACTIVITY HISTORY behind the Progress tab now —
+              totals, load, distribution, records, the weekly review. The tab
+              itself is `screens/coach/Progress.tsx`, to the owner's design, and
+              links here. A back control because there is no strip above it. */}
+          <ScreenHeader title="Activity history" back />
         </Rise>
         <Rise>
           <SegmentedTabs tabs={RANGES} value={range} onChange={setRange} />
@@ -649,7 +653,7 @@ function FirstRun({ hasGoal, hasPlan }: { hasGoal: boolean; hasPlan: boolean }) 
     <Screen padded={false}>
       <Entrance still={still} className="px-5">
         <Rise>
-          <ScreenHeader title="Progress" subtitle="Nothing recorded yet" />
+          <ScreenHeader title="Activity history" subtitle="Nothing recorded yet" back />
         </Rise>
 
         <Rise className="pt-6">

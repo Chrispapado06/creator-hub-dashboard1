@@ -9,3 +9,27 @@ node_modules
 dist
 .env
 .env.*
+
+# THIRD-PARTY TRADEMARKS AND GENERATED PORTRAITS — the two lines that were missing.
+#
+# Both directories were listed in .gitignore with the note "never shipped", and
+# two comments in src/services/operators.ts asserted they were "gitignored AND
+# vercelignored". Only the first half was true. `vercel` deploys from the local
+# working directory, not from git, so it copied both folders wholesale.
+#
+# Measured on the 2026-09-04 preview deployment, all HTTP 200:
+#   /img/operators/ee.png   Elite Exped's mark
+#   /img/operators/p14.png  14 Peaks Expedition's mark
+#   /img/guides/guide-demo-lama.jpg   a generated portrait of an invented guide
+#   /img/guides/CREDITS.md  a public file naming all eight invented guides
+#
+# Four real companies' trademarks (Elite Exped, 14 Peaks, Adventure Consultants,
+# Seven Summit Treks) were downloadable by anyone who guessed the path. The
+# safety model the code describes — a mark stays on the machine it was put on —
+# only works if BOTH ignore files carry it.
+#
+# Nothing breaks: `CompanyMark` falls back to a monogram when a path is missing
+# or fails to load, and GuidePortrait falls back to initials. That fallback is
+# what a fresh clone has always rendered.
+public/img/operators/
+public/img/guides/

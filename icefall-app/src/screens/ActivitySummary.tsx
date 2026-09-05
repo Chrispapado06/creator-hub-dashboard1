@@ -16,6 +16,7 @@ import {
   fmtPace,
   fmtTime,
 } from "@/lib/format";
+import { formatReading } from "@/tracking/metrics";
 import { useActivityById } from "@/tracking/feed";
 import { useRecordedActivities } from "@/tracking/feed";
 import { DEFAULT_BODY_MASS_KG, useApp } from "@/state/AppState";
@@ -31,6 +32,25 @@ export default function ActivitySummary() {
 
   if (!activity) return <Navigate to="/activity" replace />;
 
+  /*
+   * AVERAGE HEART RATE — a reading, not a bare dash.
+   *
+   * This tile printed "—" under a flat "bpm" while the pace tile beside it
+   * correctly printed "—" under "no GPS". Two tiles, one screen, two standards,
+   * and a dash with nothing attached to it is exactly what the doctrine
+   * forbids: an absence has to say why.
+   *
+   * The reason is not decided here. `readMetric("avgHeartRate", …)` already
+   * answers a missing average with `not-connected` for the live tracker, and
+   * `formatReading` already turns a reading into text and a unit — so the same
+   * two functions answer for a finished activity and the two screens cannot
+   * drift apart. Nothing is inferred from `recorded.capabilities`: a strap that
+   * connected and then read nothing is still, for this figure, not connected.
+   */
+  const avgHr = formatReading(
+    "avgHeartRate",
+    activity.avgHr ? { value: activity.avgHr } : { value: null, reason: "not-connected" },
+  );
 
   return (
     <Screen padded={false}>
@@ -83,12 +103,7 @@ export default function ActivitySummary() {
                 unit={activity.avgPaceSecPerKm ? "/km" : "no GPS"}
                 label="Avg pace"
               />
-              <Metric
-                size="sm"
-                value={activity.avgHr ? String(activity.avgHr) : "—"}
-                unit="bpm"
-                label="Avg HR"
-              />
+              <Metric size="sm" value={avgHr.text} unit={avgHr.unit} label="Avg HR" />
               <Metric
                 size="sm"
                 value={activity.calories ? String(activity.calories) : "—"}

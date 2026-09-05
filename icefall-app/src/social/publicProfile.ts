@@ -6,7 +6,8 @@
  *
  * `search/people.ts` finds real accounts on `public.profiles` and every row it
  * returns is a dead end: `PERSON_ROUTE` is the empty string, and its header
- * explains why — `/explore/people/:id` is declared twice in `App.tsx`, the
+ * explains why — `/social/people/:id` (`/explore/people/:id` before the move)
+ * was declared twice in `App.tsx`, the
  * first declaration is a `<Navigate>` and wins, and the `AthleteProfile` behind
  * the second reads local state, so it resolved every id but the phone owner's
  * to nobody. That was CORRECT when it was written. The premise it rested on —
@@ -128,7 +129,7 @@
  * ── A HANDLE LINK IS NOT PERMANENT, AN ID LINK IS ────────────────────────────
  *
  * Both are accepted, because the owner wants a shared link to be able to read
- * `/explore/people/wren.calloway` rather than a uuid. Worth knowing before that
+ * `/social/people/wren.calloway` rather than a uuid. Worth knowing before that
  * link is printed on anything: `profiles_update_self` lets somebody change
  * their own `username`, so a handle can be given up and — nothing stops this —
  * later claimed by a different account. A handle link therefore points at a

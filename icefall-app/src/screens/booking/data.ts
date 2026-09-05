@@ -88,13 +88,28 @@ function buildDemoGuide(): BookingGuide | null {
 
 export const GUIDE: BookingGuide | null = buildDemoGuide();
 
+/**
+ * THE MONEY DISCLOSURE, CARRIED BY BOTH NOTICES.
+ *
+ * A DISCLOSURE MUST NEVER BE GATED MORE TIGHTLY THAN THE THING IT DISCLOSES.
+ * There were two notices and only the demo one mentioned the figures. With the
+ * demo flag off — which is the build an outside reviewer is handed, because the
+ * login wall and the invented data are two different switches — `GUIDE` is null,
+ * `NO_BOOKING_GUIDE_NOTICE` rendered, and it explained the missing guide while
+ * the screen underneath showed an invented €4,550 quote with nothing anywhere
+ * saying the price was made up. The quote is unconditional, so its disclosure
+ * is now unconditional too.
+ */
+const INVENTED_FIGURES =
+  "The dates, the day rate and the total on these screens were made up to show how checkout works — nobody has quoted this and no price has been agreed.";
+
 /** Shown on every checkout step while a demo guide is being rendered. */
 export const BOOKING_DEMO_NOTICE =
-  "Demonstration data. This guide does not exist, the licence is invented, and the dates, day rate and total below were made up to show how checkout works. ICEFALL has verified nothing about this person and nobody can be contacted through these screens — a production build shows no guide at all.";
+  `Demonstration data. This guide does not exist and the licence is invented. ${INVENTED_FIGURES} ICEFALL has verified nothing about this person and nobody can be contacted through these screens — a production build shows no guide at all.`;
 
 /** Shown on every checkout step when there is no guide, which in production there is not. */
 export const NO_BOOKING_GUIDE_NOTICE =
-  "No guide is attached to this booking. Nobody has listed with ICEFALL yet, so rather than show a person who does not exist these screens run through the checkout with the guide left blank. Find an IFMGA/UIAGM-certified guide through the local guides office or the national association for the range you are heading to.";
+  `No guide is attached to this booking. Nobody has listed with ICEFALL yet, so rather than show a person who does not exist these screens run through the checkout with the guide left blank. ${INVENTED_FIGURES} Find an IFMGA/UIAGM-certified guide through the local guides office or the national association for the range you are heading to.`;
 
 /**
  * The one the checkout steps render — always on screen, never behind a tap.
@@ -114,9 +129,14 @@ export const BOOKING_NOTICE = GUIDE === null ? NO_BOOKING_GUIDE_NOTICE : BOOKING
  *
  * This flow used to price with `priceBooking`, which added a 5% service fee on
  * top of the guide's rate and showed it as its own line before the total. The
- * commercial model is now a 10% commission DEDUCTED from the guide's fee
- * (constitution 3b), worked by the owner as: a guide charges €1,000, the client
- * pays €1,000, the guide receives €900.
+ * commercial model is now a commission DEDUCTED from the guide's fee
+ * (constitution 3b) rather than added to the client's bill.
+ *
+ * THE RATE IS NOT REPEATED HERE, and the worked example that used to follow is
+ * gone. It said 10% — the owner raised it to 15% and this note stayed behind,
+ * so a reader checking the checkout's arithmetic against its own explanation
+ * got two different answers. `GUIDE_COMMISSION_PCT` in `money/model.ts` is the
+ * one place that number exists; anything that needs it reads it from there.
  *
  * So there is no fee line, no `serviceFeePct`, and no second number to disclose
  * at checkout — the price on the card is the price on the invoice. The client

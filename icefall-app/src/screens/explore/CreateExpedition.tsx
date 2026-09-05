@@ -155,14 +155,14 @@ export default function CreateExpedition() {
         <ScreenHeader
           title="Expedition created"
           subtitle="Saved on this device"
-          back="/explore/crew"
+          back="/social?tab=groups"
         />
 
         <Stagger>
           <Rise>
             {/* The card the group list draws, linking where it links there —
                 into the workspace, which is where the group is planned. */}
-            <GroupCard group={created} to={`/explore/groups/${created.id}`} />
+            <GroupCard group={created} to={`/social/groups/${created.id}`} />
           </Rise>
 
           <Rise className="pt-5">
@@ -176,13 +176,13 @@ export default function CreateExpedition() {
 
           <Rise className="pt-4">
             <Button asChild className="w-full">
-              <Link to={`/explore/groups/${created.id}`}>Open the workspace</Link>
+              <Link to={`/social/groups/${created.id}`}>Open the workspace</Link>
             </Button>
           </Rise>
 
           <Rise className="pt-3">
             <Button asChild variant="secondary" className="w-full">
-              <Link to="/explore/crew">Back to your groups</Link>
+              <Link to="/social?tab=groups">Back to your groups</Link>
             </Button>
           </Rise>
 
@@ -201,7 +201,7 @@ export default function CreateExpedition() {
       <ScreenHeader
         title="New expedition"
         subtitle="One mountain, one window, the party you want"
-        back="/explore/crew"
+        back="/social?tab=groups"
       />
 
       <Stagger>

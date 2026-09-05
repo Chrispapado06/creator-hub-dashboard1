@@ -15,11 +15,18 @@
  * licences, invented ascent records and invented day rates — credentials a
  * stranger could act on when choosing who to hire on glaciated ground. The
  * operator directory carries the same kind of invented figures — ratings,
- * summit rates, prices — though it no longer attaches them to real companies:
- * those four names and their marks were replaced with invented ones, so this
- * flag is no longer the only thing standing between a defamatory claim and the
- * public. It is still the thing standing between invented safety-relevant
- * numbers and a stranger, which is reason enough to keep the condition below.
+ * summit rates, prices — and this flag is what keeps them off a public build.
+ *
+ * ⚠️ THIS PARAGRAPH USED TO SAY the four real companies "and their marks were
+ * replaced with invented ones", and drew the conclusion that the flag was no
+ * longer the only thing between a defamatory claim and the public. Both halves
+ * went stale. Three real companies — Elite Exped, 14 Peaks Expedition and 8K
+ * Expeditions — are named again in `services/operators.ts`, deliberately, and
+ * they are NOT behind this flag: they are ungated `real: true` entries carrying
+ * a name, the ground they work and their own website, and no invented figure of
+ * any kind. That separation is what makes it safe, not this flag. The marks are
+ * gone for good (no entry sets `logo`), and the invented figures are what this
+ * flag still stands between and a stranger.
  *
  * So this flag may only be set on a deployment that is NOT publicly readable:
  * Vercel Deployment Protection (password or SSO) must be enabled on the project

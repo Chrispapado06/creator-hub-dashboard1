@@ -275,7 +275,8 @@ function useMemberReadiness(peak: GroupPeak): DerivedReadiness {
 /**
  * ONE ROUTE, TWO KINDS OF GROUP, AND THEY ARE NOT THE SAME THING.
  *
- * `/explore/groups/:id` has always resolved against `expeditions` — the parties
+ * `/social/groups/:id` (`/explore/groups/:id` before the move, still redirected)
+ * has always resolved against `expeditions` — the parties
  * this athlete plans on this device, whose ids are `expedition-<timestamp>`.
  * That workspace is below and is unchanged: it is planning, it works at one
  * member, and it has never needed a server.
@@ -312,7 +313,16 @@ function Workspace({ group }: { group: Expedition }) {
 
   return (
     <Screen>
-      <ScreenHeader title={group.peakName} subtitle="Group workspace" />
+      {/* `back` IS NOT DECORATION HERE. This screen used to be routed under
+          `/explore`, and `ExploreLayout`'s chevron was the only way off it —
+          this header had none of its own. At `/social/groups/:id` there is no
+          layout above it, so without this the workspace had no back control at
+          all: reachable, but only leaveable through the bottom tab bar.
+          HISTORY, not a fixed path, because this is opened from the Groups
+          list, from the create flow's "Open the workspace", from a join and
+          from search, and each of those deserves to be returned to. The
+          server-group space further down this file already does exactly this. */}
+      <ScreenHeader title={group.peakName} subtitle="Group workspace" back />
 
       <Stagger>
         <Rise>
@@ -447,7 +457,7 @@ function NoGroupUnderThatLink() {
               </p>
             </div>
             <Button asChild variant="secondary" className="mt-5 w-full">
-              <Link to="/explore/groups">Back to your groups</Link>
+              <Link to="/social?tab=groups">Back to your groups</Link>
             </Button>
           </Card>
         </Rise>
@@ -1663,7 +1673,7 @@ function LeaveGroup({ group }: { group: Expedition }) {
             leaveExpedition(group.id);
             // Replaced rather than pushed: the workspace of a group that no
             // longer exists is not somewhere Back should return to.
-            navigate("/explore/groups", { replace: true });
+            navigate("/social?tab=groups", { replace: true });
           }}
         >
           Delete it
@@ -1902,7 +1912,7 @@ function GroupSpaceScreen({ groupId }: { groupId: string }) {
           </Rise>
           <Rise className="pt-3">
             <Button asChild variant="secondary" className="w-full">
-              <Link to="/explore/groups">Back to your groups</Link>
+              <Link to="/social?tab=groups">Back to your groups</Link>
             </Button>
           </Rise>
         </Stagger>

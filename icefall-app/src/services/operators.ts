@@ -143,12 +143,23 @@ export interface Operator {
   /**
    * A COMPANY'S OWN MARK, AND ONLY FROM ITS OWNER.
    *
-   * Set on the `real` entries whose files the owner supplied into
-   * `public/img/operators` — a directory that is gitignored AND vercelignored,
-   * so a mark stays on the machine it was put on and reaches no build. That is
-   * the whole safety model here: ICEFALL never collects a trademark, it renders
-   * one that has been handed to it, and a fresh clone of this repo shows
-   * monograms because the files are simply not in it.
+   * NO ENTRY IN THIS FILE SETS IT — that is the ruling, not a description of a
+   * passing state. Two `real` entries carried marks the owner had supplied by
+   * hand into `public/img/operators`; both `logo` lines were deleted on
+   * 2026-09-04 and the monogram renders for every listing instead.
+   *
+   * What made that a decision rather than tidying: the directory was gitignored
+   * from the start and vercelignored only from 2026-09-04, and a comment here
+   * asserted both for months while `vercel` — which deploys the local working
+   * directory, not git — copied the folder into every build. Four real
+   * companies' marks were downloadable from the live deployment at a guessable
+   * path. A safety model that depends on a file staying on one machine is one
+   * ignore-file away from being untrue, so the field is left unset and the
+   * exposure has nothing to leak.
+   *
+   * The type survives for the day an operator uploads their own mark through a
+   * portal, at which point ICEFALL is rendering something handed to it rather
+   * than something it collected.
    *
    * The INVENTED companies in `DEMO_OPERATORS` have none and never will — an
    * invented company has no mark.
@@ -211,7 +222,6 @@ const OPERATORS: Operator[] = [
     regions: ["Nepal", "China", "Pakistan"],
     minElevationM: 5000,
     real: true,
-    logo: "/img/operators/ee.svg",
     website: "https://eliteexped.com",
   },
   {
@@ -221,7 +231,6 @@ const OPERATORS: Operator[] = [
     regions: ["Nepal", "China"],
     minElevationM: 5000,
     real: true,
-    logo: "/img/operators/p14.png",
     website: "https://14peaksexpedition.com",
   },
   {

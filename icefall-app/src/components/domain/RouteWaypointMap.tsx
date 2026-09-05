@@ -154,7 +154,9 @@ export function RouteWaypointMap({
   }, [ready, start, waypoints, line.length]);
 
   return (
-    <div className={cn("relative overflow-hidden", className)}>
+    /* `on-dark` — see index.css. The basemap is dark in both themes, so the
+       attribution line under it and the pins on it keep the dark palette. */
+    <div className={cn("on-dark relative overflow-hidden", className)}>
       <div ref={holder} className="h-full w-full [&_.maplibregl-canvas]:outline-none" />
       <div
         className="pointer-events-none absolute bottom-1.5 left-2 right-2 text-[8.5px] leading-tight text-mist-dim/70 [&_a]:underline"

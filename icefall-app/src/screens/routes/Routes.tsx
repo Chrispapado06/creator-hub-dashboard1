@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   ChevronDown, Clock, Compass, Loader2, MapPin, Mountain as MountainIcon,
   MoveHorizontal, Navigation, Plus, Route as RouteIcon, RotateCw, Search,
@@ -65,7 +65,19 @@ export default function Routes() {
   const [activity, setActivity] = useState<ActivityKind>("hiking");
   const [radiusKm, setRadiusKm] = useState(100);
   const [band, setBand] = useState<string | null>(null);
-  const [sheet, setSheet] = useState<null | "where" | "what" | "radius" | "filters">(null);
+  /*
+   * `/explore/routes?where=1` opens the place picker on arrival.
+   *
+   * The Explore hub's discovery card offers "or pick a region" as a control in
+   * its own right. Landing that on this screen with the sheet CLOSED would be a
+   * control that promises one thing and does another — the person tapped "pick
+   * a region" and is looking at results for wherever they last were. Read once,
+   * as the initial value: the picker is theirs to close afterwards.
+   */
+  const [params] = useSearchParams();
+  const [sheet, setSheet] = useState<null | "where" | "what" | "radius" | "filters">(
+    params.get("where") === "1" ? "where" : null,
+  );
 
   const activityInfo = activityOption(activity);
   const radiusLabel = RADIUS_OPTIONS.find((r) => r.value === radiusKm)?.label ?? `within ${radiusKm} km`;

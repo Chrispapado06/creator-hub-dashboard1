@@ -24,7 +24,6 @@ import { Link } from "react-router-dom";
 import { Card, Divider, SectionLabel, Stat, sharePage } from "@/components/ui/primitives";
 import { MonthlyVolume } from "@/components/ui/charts";
 import { VerificationMark } from "@/components/ui/VerificationMark";
-import { DEMO } from "@/offline/offline";
 import { BadgeHex } from "@/components/domain/BadgeHex";
 import { MountainThumb } from "@/components/domain/MountainImage";
 import { TrailShape } from "@/components/domain/TrailShape";
@@ -308,7 +307,10 @@ export default function Profile() {
   /* By HANDLE, because `MyProfile` carries no id — and `usePublicProfile` takes
      either. Somebody who has not claimed a handle yet has no row to look up,
      which correctly leaves both figures at an em dash rather than a 0. */
-  const mine = usePublicProfile(my.status === "ready" ? (my.profile.username ?? "") : "").profile ?? {
+  const minePublic = usePublicProfile(
+    my.status === "ready" ? (my.profile.username ?? "") : "",
+  ).profile;
+  const mine = minePublic ?? {
     followerCount: null,
     followingCount: null,
   };
@@ -326,13 +328,19 @@ export default function Profile() {
   /*
    * THE WHITE MARK — read from the server, never decided here.
    *
-   * A DEMO build has no Supabase client at all, so no profile can be read and no
-   * mark granted — but the demo profile IS the owner's own account and the whole
-   * build is stamped "DEMO · sample data, not real", so showing it there is how
-   * the mark gets reviewed before it exists in production. In a real build this
-   * is the server's answer or it is false. It is never a local decision.
+   * This line read `const isOwner = DEMO`, three lines under a note saying the
+   * mark "is never a local decision". It was: any build with the demo switch on
+   * drew "runs ICEFALL" beside whoever was signed in. That is a claim about
+   * identity and authority, not sample data — a demo stamp qualifies an invented
+   * day rate, it does not qualify a false statement about who someone is.
+   *
+   * `app_owner` is a computed field on `profiles` (20260902250000) and there is
+   * no client-writable path to it. `=== true`, never truthiness: `null` means
+   * the read did not land and `false` means the server said no, and neither
+   * earns a mark. A demo build has no Supabase client, so `minePublic` is null
+   * and no mark is drawn — which is the correct answer, not a regression.
    */
-  const isOwner = DEMO;
+  const isOwner = minePublic?.isOwner === true;
   const tierLabel = currentTier === "free" ? null : currentTier;
   const serverLocation =
     my.status === "ready"
@@ -734,8 +742,14 @@ export default function Profile() {
         <Rise className="pt-7">
           <div className="flex items-center justify-between">
             <SectionLabel>Badges</SectionLabel>
+            {/* `/settings/badges`, which is where `Badges` is declared. This
+                read `/profile/badges` — a path no route matches — so "View all"
+                and all five hexes below landed on `NotFound`, outside
+                `AppShell`, with the tab bar gone. Found by matching every link
+                target in `src/` against the route table in `App.tsx`; the
+                router fails silently, so nothing else would have. */}
             <Link
-              to="/profile/badges"
+              to="/settings/badges"
               className="flex items-center gap-0.5 text-[11.5px] text-azure transition-colors hover:text-azure-bright"
             >
               View all
@@ -748,7 +762,7 @@ export default function Profile() {
               return (
                 <Link
                   key={b.id}
-                  to="/profile/badges"
+                  to="/settings/badges"
                   aria-label={`${b.name} — ${earned ? "earned" : "not earned"}`}
                   className="flex min-w-0 flex-1 flex-col items-center gap-1.5"
                 >
@@ -915,7 +929,11 @@ export default function Profile() {
           <Card className="overflow-hidden p-0">
             {[
               { to: "/goals", title: "Goals", detail: `${goals.filter((g) => g.status === "active").length} active` },
-              { to: "/daily", title: "Daily & Health", detail: "Steps, energy, recovery" },
+              // `/daily` is not a route and never was: this row landed on the
+              // off-route page, which mounts OUTSIDE the app shell, so the tab
+              // bar disappeared and a full reload was the only way back. The
+              // screen it means is `/health`.
+              { to: "/health", title: "Daily & Health", detail: "Steps, energy, recovery" },
               { to: "/gear", title: "Gear", detail: "Locker & catalogue" },
               { to: "/activity", title: "Activity history", detail: `${recorded.length} sessions` },
               { to: "/settings", title: "Settings", detail: "Account, privacy, units" },
@@ -1240,7 +1258,7 @@ function PostsTab({
             Share your first climb, route or expedition.
           </p>
           <Link
-            to="/explore/social"
+            to="/social"
             className="mt-4 inline-block rounded-card bg-azure px-5 py-3 text-[12.5px] uppercase tracking-[0.08em] text-obsidian transition-colors hover:bg-azure-bright"
           >
             Create post

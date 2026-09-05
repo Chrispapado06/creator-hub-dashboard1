@@ -50,10 +50,23 @@ export default function Leaderboard() {
   const [picker, setPicker] = useState<"category" | null>(null);
 
   /**
-   * Which summit logs are VERIFIED — matched to a recording whose track
-   * actually reached the top. A log with no recording behind it is a record,
-   * not a ranking entry, and it is filtered out here rather than counted with
-   * an asterisk.
+   * Which summit logs are counted here, AND WHAT THAT DOES AND DOES NOT PROVE.
+   *
+   * ⚠️ This said the logs were "matched to a recording whose track actually
+   * reached the top." NOTHING BELOW CHECKS A TRACK. The test is that the log
+   * names an activity, that the activity exists, and that it was not simulated.
+   * A recording that started at the car park and stopped at the first hut
+   * passes it, and the board still calls the result a "verified summit".
+   *
+   * The real check — the logged peak's coordinates against the recorded track —
+   * is not written, and a summit log carries no coordinates to check against.
+   * Until it exists the honest word for this column is RECORDED, not verified;
+   * that is a copy decision, and attaching a recording to a log without the
+   * coordinate check would be worse than the current state, because it would
+   * mint a verified summit that nothing verified.
+   *
+   * A log with no recording behind it is filtered out here rather than counted
+   * with an asterisk. That part was always true.
    */
   const verifiedSummits = useMemo(
     () =>
@@ -61,8 +74,8 @@ export default function Leaderboard() {
         .filter((log) => {
           if (!log.activityId) return false;
           const activity = recorded.find((r) => r.id === log.activityId);
-          // Without coordinates on the log there is nothing to check the track
-          // against, so it cannot be verified.
+          // The whole test: a real, non-simulated recording is attached. No
+          // part of the track is examined — see the note above.
           return Boolean(activity) && !activity!.simulated;
         })
         .map((log) => ({ name: log.peakName, date: log.date })),
@@ -161,7 +174,21 @@ export default function Leaderboard() {
                 loading="lazy"
                 className="absolute inset-0 h-full w-full object-cover opacity-[0.13]"
               />
-              <div className="scrim-full absolute inset-0" />
+              {/*
+               * The same gradient `.scrim-full` draws, restated in the token —
+               * and deliberately NOT that class.
+               *
+               * `.scrim-full` is lighting for a PHOTOGRAPH: it stays dark in
+               * every theme because the picture under it never got lighter, and
+               * anything wearing it becomes a dark island (see index.css).
+               * That is not this. The photograph here runs at 13% and is
+               * texture; what is really underneath is `bg-graphite`, a card,
+               * and a card follows the theme. Written in `--ice-obsidian` this
+               * deepens a dark card on the dark theme and lightens a pale one
+               * on the light theme, which is what the podium needs to keep its
+               * own ink either way.
+               */}
+              <div className="absolute inset-0 bg-gradient-to-t from-obsidian/[0.97] via-obsidian/60 to-obsidian/35" />
 
               <div className="relative">
                 {podium.length > 0 ? (
@@ -431,7 +458,7 @@ function BoardRow({
 }) {
   return (
     <Link
-      to={`/explore/people/${entry.athleteId}`}
+      to={`/social/people/${entry.athleteId}`}
       className={cn(
         "flex items-center gap-3 px-4 py-3 transition-colors",
         !first && "border-t border-hairline",

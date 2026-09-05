@@ -2,7 +2,8 @@ import { isKnown, known, unavailable, type Score } from "@/coach/types";
 import { EXPERIENCE_LABELS, type ExperienceLevel, type Expedition } from "@/network/types";
 
 /**
- * Group planning — the model behind /explore/groups and its workspace.
+ * Group planning — the model behind Social's Groups tab and its workspace
+ * (/social?tab=groups and /social/groups/:id).
  *
  * A GROUP IS AN `Expedition`. There is no second entity here and there must
  * never be one: a party forming around one mountain and one date window is

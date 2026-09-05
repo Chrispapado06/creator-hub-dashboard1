@@ -137,7 +137,7 @@ export function Listbox({
       </button>
 
       {open && (
-        <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-30 overflow-hidden rounded-card border border-hairline bg-graphite shadow-[0_18px_50px_rgba(0,0,0,0.55)]">
+        <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-30 overflow-hidden rounded-card border border-hairline bg-graphite shadow-[var(--ice-shadow-pop)]">
           {typeahead && (
             <p className="border-b border-hairline px-3.5 py-2 text-[11.5px] text-mist-dim">
               {filter ? (

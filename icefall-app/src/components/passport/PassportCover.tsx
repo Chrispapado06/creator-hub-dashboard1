@@ -279,7 +279,17 @@ export function PassportCover({
     </>
   );
 
-  const shell = cn("relative block h-full w-full select-none", className);
+  /*
+   * `on-dark` — see the island list in index.css.
+   *
+   * `LEATHER` is a hard-coded near-black material and stays that way in every
+   * theme; a passport cover does not turn white because the app did. So the
+   * emboss and the lettering on it have to keep the dark palette. Without this
+   * the mark inverted where the leather did not: the highlight copies are
+   * `text-white`, which the light theme redefines to ink, so the two lit passes
+   * became a second and third SHADOW and the crest sank into the cover.
+   */
+  const shell = cn("on-dark relative block h-full w-full select-none", className);
   // `transformPerspective` keeps the tilt correct whether or not an ancestor
   // supplies a perspective, so the cover looks the same standing alone as it
   // does inside the book.

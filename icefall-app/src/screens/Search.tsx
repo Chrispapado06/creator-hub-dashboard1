@@ -86,10 +86,11 @@ const PLACES: Place[] = [
   { label: "Objectives", detail: "The mountains you're training for", to: "/goals", icon: Flag, keywords: "goals summit target" },
   { label: "Mountain library", detail: "Every peak ICEFALL holds", to: "/explore/mountains", icon: Compass, keywords: "peaks explore browse search" },
   { label: "Treks", detail: "Multi-day walking routes", to: "/explore/treks", icon: Footprints, keywords: "trek trekking hike walking camino tour" },
-  { label: "Groups", detail: "Parties heading for a mountain", to: "/explore/groups", icon: Users, keywords: "group party team partners" },
+  { label: "Groups", detail: "Parties heading for a mountain", to: "/social?tab=groups", icon: Users, keywords: "group party team partners" },
   { label: "Gear", detail: "The system for your objective", to: "/gear", icon: ShoppingBag, keywords: "kit equipment boots" },
   { label: "Health", detail: "What ICEFALL reads, and from where", to: "/health", icon: Heart, keywords: "sensors heart rate" },
-  { label: "Expedition network", detail: "People and groups", to: "/explore/people", icon: Users, keywords: "partners climbers friends" },
+  { label: "Ring and health data", detail: "Connect an Oura ring, and your permission for it", to: "/settings/health-sources", icon: Heart, keywords: "oura ring sleep hrv consent gdpr disconnect delete" },
+  { label: "Expedition network", detail: "People and groups", to: "/social?tab=people", icon: Users, keywords: "partners climbers friends" },
   { label: "Settings", detail: "Units, notifications, privacy", to: "/settings", icon: SettingsIcon, keywords: "preferences account privacy" },
   { label: "Plans & pricing", detail: "What each plan includes", to: "/pricing", icon: Target, keywords: "subscription upgrade pro billing" },
 ];
@@ -237,7 +238,7 @@ export default function Search() {
             kind: "person",
             title: a.displayName,
             subtitle: a.bio ?? undefined,
-            to: "/explore/people",
+            to: "/social?tab=people",
           }));
     return [...local, ...people.hits].slice(0, PERSON_LIMIT);
   }, [query, people.hits]);
@@ -492,7 +493,7 @@ export default function Search() {
                 <HitRow key={h.id} hit={h} />
               ))}
             </div>
-            {/* These rows now open `/explore/people/:id`, so this no longer
+            {/* These rows now open `/social/people/:id`, so this no longer
                 explains a dead end — it carries the one caveat that outlived
                 the dead end: the accounts are real, and ICEFALL has vouched for
                 none of them. */}
@@ -663,7 +664,7 @@ function Row({
 }: {
   /**
    * Empty means this row opens nothing. No hit builder produces one any more —
-   * people were the last, and they now open `/explore/people/:id` — but the
+   * people were the last, and they now open `/social/people/:id` — but the
    * empty case is still handled below rather than asserted away, because the
    * failure mode is silent: see the chevron comment.
    */

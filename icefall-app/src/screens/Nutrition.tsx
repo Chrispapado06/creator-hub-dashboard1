@@ -163,7 +163,13 @@ function writeFuel(next: FuelLocal) {
   fuelListeners.forEach((l) => l(next));
 }
 
-function useFuelLocal() {
+/*
+ * EXPORTED for `coach/Fuel.tsx`, the redesigned Fuel tab, which reads the same
+ * record — the food log, the sex and movement answers — to draw the ring and
+ * the macro tiles. One module, one cache, one listener set: a second reader
+ * with its own copy of the key would go silently stale the day this changed.
+ */
+export function useFuelLocal() {
   const [state, setState] = useState(fuelCurrent);
 
   useEffect(() => {

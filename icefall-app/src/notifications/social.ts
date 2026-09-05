@@ -213,6 +213,24 @@ export interface SocialNotices {
    */
   canLoadMore: boolean;
   /**
+   * Whether asking again could produce a different answer.
+   *
+   * TRUE only for the three `Failure` states — ICEFALL asked and did not get an
+   * answer it could use. FALSE for `no-backend` and `signed-out`, where nothing
+   * was asked in the first place: a demo build has no client to ask with, and
+   * offering "Try again" directly beneath the sentence "nothing was asked for"
+   * invites the reader to retry a request that was never made and cannot be.
+   *
+   * THE BUTTON ITSELF IS REAL and must not be deleted: on a build with a server
+   * it re-runs the three queries. What was wrong is where it appeared, not what
+   * it does. See `RETRYABLE`.
+   *
+   * It lives here rather than as a condition on the screen because the screen
+   * would then be restating a rule this module already owns, and the two would
+   * drift the first time a state is added.
+   */
+  canRetry: boolean;
+  /**
    * How many of the notices on screen arrived after this device last marked
    * them seen, or `null` for NOT MEASURED. See `readSeen` — the timestamp is
    * genuinely stored, and `null` is returned rather than a guessed zero
@@ -376,6 +394,22 @@ function isMissingField(error: PostgrestError): boolean {
  * wins over the most alarming one.
  */
 const FAILURE_ORDER: Failure[] = ["unreachable", "not-live", "refused"];
+
+/**
+ * Which states a "Try again" is honest under — and it is a `Record<Failure, …>`
+ * rather than three strings in a condition, so a state added to `Failure` is a
+ * compile error here rather than a retry button that silently appears or
+ * silently does not.
+ *
+ * Only the failures. `no-backend` and `signed-out` mean nothing was asked in
+ * the first place, and a control offering to ask again sits directly under a
+ * sentence saying nothing was asked for.
+ */
+const RETRYABLE: Record<Failure, true> = {
+  "not-live": true,
+  unreachable: true,
+  refused: true,
+};
 
 /* -------------------------------------------------------------------------- */
 /* Row reading                                                                 */
@@ -926,6 +960,7 @@ export function useSocialNotices(): SocialNotices {
     reload,
     loadMore,
     canLoadMore: state === "ready" && more && pages < MAX_PAGES,
+    canRetry: RETRYABLE[state as Failure] === true,
     unseen,
     markSeen,
   };

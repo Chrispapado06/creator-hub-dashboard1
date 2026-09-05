@@ -69,10 +69,11 @@ function weekTemplate(
       focus: "endurance",
       title: "Endurance Run",
       /* NOT "Zone 2 throughout". ICEFALL has never measured anyone's maximum,
-         resting or threshold heart rate — there is no HR pairing in the app at
-         all — so a zone is a measurement printed where none was taken. The
-         rule is argued in full at `coach/sessionIntent.ts:14-25`, and this
-         module shipped the exact string those three paragraphs forbid.
+         resting or threshold heart rate, so a zone is a measurement printed
+         where none was taken. (A paired Bluetooth strap does give a live
+         reading — it is the ceiling to divide it by that has never existed.)
+         The rule is argued in full in `coach/sessionIntent.ts`, and this
+         module shipped the exact string those paragraphs forbid.
          Replaced with effort the athlete can verify against themselves. */
       detail: "Steady and conversational throughout",
       difficulty: 2,

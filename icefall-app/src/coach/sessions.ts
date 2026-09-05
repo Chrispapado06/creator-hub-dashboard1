@@ -18,9 +18,10 @@ import type { TrainingDay, TrainingFocus } from "@/types";
  *     item's note. Distance and ascent targets come from the plan or they are
  *     not shown. There are no heart-rate zones and no target paces anywhere in
  *     here, because ICEFALL has never measured this athlete's maximum, resting
- *     or threshold heart rate — see the same refusal in load.ts. Effort is
- *     therefore described in words, which is honest, rather than in numbers,
- *     which would not be.
+ *     or threshold heart rate — see the same refusal in load.ts. (A paired
+ *     strap gives a real reading during a recording; what is missing is the
+ *     ceiling to express it as a percentage OF.) Effort is therefore described
+ *     in words, which is honest, rather than in numbers, which would not be.
  *
  *  2. A REST DAY IS A REST DAY. `focus: "rest"` returns no exercises at all. A
  *     "light optional mobility circuit" on a rest day is how rest quietly stops

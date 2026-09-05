@@ -40,7 +40,9 @@ import { useApp } from "@/state/AppState";
 import { cn } from "@/lib/utils";
 
 /**
- * EXPLORE → SOCIAL → COMMUNITY.
+ * SOCIAL → FEED. (It was EXPLORE → SOCIAL → COMMUNITY; Social left Explore on
+ * 2026-09-03 and the tab is labelled "Feed", though its query value is still
+ * `community` so old links resolve.)
  *
  * A feed of mountain activity, not a timeline. Every post is anchored to a
  * mountain and a date, because that is the only reason two people on this app
@@ -745,7 +747,7 @@ function SearchResults({
         people.map((athlete) => (
           <Rise key={athlete.id} className="pt-2.5">
             <Link
-              to={`/explore/people/${athlete.id}`}
+              to={`/social/people/${athlete.id}`}
               className="flex items-center gap-3 rounded-card border border-hairline bg-graphite p-3.5 transition-colors hover:border-hairline-strong"
             >
               <Avatar name={athlete.displayName} />

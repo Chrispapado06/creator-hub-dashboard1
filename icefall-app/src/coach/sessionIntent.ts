@@ -13,11 +13,16 @@ import type { TrainingFocus } from "@/types";
  *
  * ⚠️ THE RULE THIS MODULE INHERITS, from `sessions.ts` and `load.ts`:
  * there are NO heart-rate zones and NO target paces anywhere in here. ICEFALL
- * has never measured anyone's maximum, resting or threshold heart rate — there
- * is no HR pairing in the app at all — so "Zone 2" or "70% of max" would be a
- * measurement presented where none was taken. "Fat burning" in particular is
- * normally sold as a heart-rate zone, and that is exactly the number this app
- * must not print.
+ * has never measured anyone's maximum, resting or threshold heart rate, so
+ * "Zone 2" or "70% of max" would be a measurement presented where none was
+ * taken. "Fat burning" in particular is normally sold as a heart-rate zone, and
+ * that is exactly the number this app must not print.
+ *
+ * NOTE, because this paragraph used to say it and it was wrong: the app DOES
+ * pair a Bluetooth heart-rate strap (`tracking/sources/heartRate.ts`), and a
+ * recording made with one carries a real average. What it has never had is a
+ * MAXIMUM or a THRESHOLD to express that reading as a percentage of — and that,
+ * not the absence of a strap, is what makes a zone unprintable.
  *
  * What replaces it is effort described so the athlete can verify it against
  * themselves — the talk test, breathing, whether the last effort still looks
@@ -134,8 +139,14 @@ export interface SessionPlan {
 /** Vertical disciplines are paced in metres gained per hour, not min/km. */
 const VERTICAL_FAMILIES = new Set(["mountaineering", "climbing", "hiking", "winter"]);
 
+/*
+ * This read "ICEFALL holds no heart-rate, threshold or fitness test for you",
+ * which parses as a denial that the app reads heart rate at all — it does, from
+ * a paired strap. The true and narrower claim is the one the rule actually
+ * rests on: no maximum, no threshold, no fitness test, so no percentage.
+ */
 const CAVEAT =
-  "A structure, not a prescription. ICEFALL holds no heart-rate, threshold or fitness test for you, so every effort here is described in words you can check against yourself rather than a number that would look measured.";
+  "A structure, not a prescription. ICEFALL has never measured your maximum or threshold heart rate and holds no fitness test for you, so every effort here is described in words you can check against yourself rather than a number that would look measured.";
 
 /**
  * A session plan for an intent and the discipline it will be recorded as.

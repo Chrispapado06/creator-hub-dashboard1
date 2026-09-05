@@ -403,8 +403,17 @@ function SocialSignIn() {
           disabled={pending !== null}
         />
       )}
+      {/*
+        `text-danger`, and it was `text-[color:var(--danger,#F08A7C)]` in all
+        six places an auth error is printed. There is no `--danger` token in
+        this app — it is `--ice-danger` — so the variable never resolved and
+        every one of these lines had always been painted by the FALLBACK. The
+        dark theme hid it: #F08A7C is a pale salmon that looks fine on obsidian.
+        On white it is 2.43:1, and the message telling somebody why they could
+        not sign in was the least readable text on the screen.
+      */}
       {providerError && (
-        <p className="text-[11.5px] leading-relaxed text-[color:var(--danger,#F08A7C)]">
+        <p className="text-[11.5px] leading-relaxed text-danger">
           {providerError}
         </p>
       )}
@@ -575,7 +584,7 @@ export function SignUp() {
           the same silent-failure class this codebase keeps finding.
         */}
         {error && (
-          <p className="text-[12px] leading-relaxed text-[color:var(--danger,#F08A7C)]">{error}</p>
+          <p className="text-[12px] leading-relaxed text-danger">{error}</p>
         )}
         <Button type="submit" className="w-full" disabled={!ready}>
           {busy ? "Creating…" : "Create account"}
@@ -702,7 +711,7 @@ export function SignIn() {
         </div>
 
         {error && (
-          <p className="text-[12px] leading-relaxed text-[color:var(--danger,#F08A7C)]">{error}</p>
+          <p className="text-[12px] leading-relaxed text-danger">{error}</p>
         )}
         <Button type="submit" className="w-full" disabled={!ready || busy}>
           Sign in

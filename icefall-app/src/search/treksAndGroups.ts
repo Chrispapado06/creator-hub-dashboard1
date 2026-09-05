@@ -248,15 +248,18 @@ export function useTrekSearch(q: string): SearchHit[] {
 /**
  * WHY EVERY GROUP ROW BUT YOUR OWN OPENS THE LIST, NOT A GROUP.
  *
- * `/explore/groups/:id` is `GroupWorkspace`, and it resolves its id against
+ * `/social/groups/:id` is `GroupWorkspace`, and it resolves its id against
  * `useApp().expeditions` — the LOCAL parties — then renders `NotOnThisDevice`
  * for anything it cannot find. So a server group's uuid or a demo group's
  * `g-mont-blanc` sent to that route is a dead end that looks like a bug. Until
- * a group detail screen exists that can open a server group, those rows land
- * on `/explore/groups`, where both lists are drawn with the disclosure the
- * Groups screen already carries.
+ * a group detail screen exists that can open a server group, those rows land on
+ * the Groups sub-tab of Social, where both lists are drawn with the disclosure
+ * the Groups screen already carries.
+ *
+ * IT IS A QUERY, NOT A PATH: Social's sub-tab lives in the search string, so
+ * the list is `/social?tab=groups`. `/explore/groups` still redirects here.
  */
-const GROUPS_LIST_ROUTE = "/explore/groups";
+const GROUPS_LIST_ROUTE = "/social?tab=groups";
 
 /**
  * The marker on an invented group. Short on purpose.
@@ -291,7 +294,7 @@ function myGroupHit(group: Expedition): SearchHit {
     // dates you entered; `formatWindow` says "Dates not recorded" rather than
     // inventing one when they are missing.
     subtitle: line("Your group", formatWindow(group.window)),
-    to: `/explore/groups/${encodeURIComponent(group.id)}`,
+    to: `/social/groups/${encodeURIComponent(group.id)}`,
     imageUrl: peak?.photo,
   };
 }

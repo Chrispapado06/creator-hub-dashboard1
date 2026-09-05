@@ -8,7 +8,7 @@ import {
 import { Card, Disclaimer, HeroCircleButton, IconAction, Stat, sharePage } from "@/components/ui/primitives";
 import { CompanyMark } from "@/components/domain/CompanyMark";
 import { Sheet, SheetRow } from "@/components/ui/Sheet";
-import { Rise, Stagger } from "@/components/layout/chrome";
+import { Rise, Stagger, scrollContentToTop } from "@/components/layout/chrome";
 import { MapBackdrop, MiniMap } from "@/components/domain/MiniMap";
 import { TrailShape, useTrailLine } from "@/components/domain/TrailShape";
 import {
@@ -770,10 +770,15 @@ export default function TrailDetail() {
                     <button
                       key={p.src}
                       type="button"
-                      onClick={() => {
+                      onClick={(e) => {
                         setFrame(i);
                         setTab("trail");
-                        window.scrollTo({ top: 0 });
+                        // Back to the top: the frame just chosen becomes the
+                        // hero at the very top of the page. This was
+                        // `window.scrollTo`, which has never moved anything —
+                        // the document does not scroll in this app, the
+                        // container above does. See `scrollContentToTop`.
+                        scrollContentToTop(e.currentTarget);
                       }}
                       className="overflow-hidden rounded-tile border border-hairline text-left"
                     >

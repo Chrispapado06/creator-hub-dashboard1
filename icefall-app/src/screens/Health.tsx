@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   Activity as ActivityIcon,
   Footprints,
@@ -204,6 +205,33 @@ export default function Health() {
                 fmt={(n) => `${Math.floor(n / 60)}h ${Math.round(n % 60)}m`}
               />
             </div>
+          </Card>
+        </Rise>
+
+        {/*
+          The ring is a SEPARATE SOURCE and says so.
+
+          Every tile on this screen is driven by `healthService`, which reads
+          Apple Health or Health Connect and nothing else. An Oura ring is an
+          API, not a phone bridge, and its measurements are on their own screen.
+          The sentence below states that limit rather than implying the tiles
+          above will fill in once a ring is connected — they will not, until
+          they are rewired to `tracking/sources/vitals.ts`.
+        */}
+        <Rise className="pt-6">
+          <SectionLabel>Other sources</SectionLabel>
+          <Card className="mt-3">
+            <Link to="/settings/health-sources" className="block">
+              <p className="text-[13.5px] text-snow">Oura ring</p>
+              <p className="mt-1.5 text-[12px] leading-relaxed text-mist">
+                Sleep, HRV, resting heart rate, respiratory rate and blood oxygen from an Oura
+                ring, with its own permission. Those readings are shown on that screen — the tiles
+                above read Apple Health and Health Connect only.
+              </p>
+              <p className="mt-2.5 text-[12px] text-azure">
+                Ring and health data <span aria-hidden="true">→</span>
+              </p>
+            </Link>
           </Card>
         </Rise>
 

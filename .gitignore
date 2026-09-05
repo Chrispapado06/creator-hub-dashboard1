@@ -40,3 +40,5 @@ dist-ssr
 
 # staff Discord IDs — keep out of the public repo (load via Railway env at runtime)
 shift-downtime-monitor/chatters.json
+theme-ref
+icefall-app-001

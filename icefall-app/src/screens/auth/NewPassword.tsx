@@ -99,7 +99,7 @@ export function NewPassword() {
         </ul>
 
         {error && (
-          <p className="text-[12px] leading-relaxed text-[color:var(--danger,#F08A7C)]">{error}</p>
+          <p className="text-[12px] leading-relaxed text-danger">{error}</p>
         )}
 
         <Button type="submit" className="w-full" disabled={!ok || busy}>

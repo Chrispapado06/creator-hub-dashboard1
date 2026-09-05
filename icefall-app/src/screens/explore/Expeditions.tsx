@@ -17,6 +17,6 @@
  *
  * The file stays as a re-export so the `/explore/crew` route and any link that
  * still points at it keep resolving to a real screen instead of dying. Once
- * /explore/groups is routed, `/explore/crew` should redirect to it.
+ * the group list is Social's Groups tab, `/explore/crew` redirects there.
  */
 export { default } from "@/screens/explore/Groups";

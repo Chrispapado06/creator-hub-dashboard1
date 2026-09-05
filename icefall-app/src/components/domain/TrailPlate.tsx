@@ -160,6 +160,17 @@ function routePath(
  * nothing and the plate comes out blank. These are the same values `index.css`
  * defines, in the hex the tokens document.
  *
+ * THEY ARE ALSO WHY THE TWO RENDERERS NO LONGER MATCH UNDER A LIGHT THEME, AND
+ * THAT IS THE INTENDED ANSWER RATHER THAN DRIFT. `TrailPlate` (the component)
+ * reads live custom properties, so it follows the theme and draws a pale plate
+ * on a white page — which is right, because its one caller puts it inside a
+ * light card under token gradients. `plateDataUri` cannot read anything and so
+ * stays dark — which is also right, because ITS callers hand the result to
+ * `MountainImage` and `peakImagery`, where it is a stand-in for a photograph
+ * and is shown under `.scrim-bottom`. A scrim is dark in every theme (see
+ * index.css), and a pale plate beneath a dark scrim would be the one
+ * combination that reads as a mistake.
+ *
  * THEY MUST BE UPDATED BY HAND WHEN THE TOKENS MOVE, AND ONCE THEY WERE NOT:
  * `azure` sat at #A78B5C — the champagne gold from before the alpine-blue
  * rebrand — long after `--ice-azure` became #4B9BFF. Nothing broke loudly.
@@ -324,7 +335,7 @@ export function TrailPlate({
         ))}
       </g>
 
-      <path d={ridge} fill="var(--ice-obsidian)" opacity="0.55" />
+      <path d={ridge} fill="var(--ice-plate-shade)" opacity="0.55" />
 
       {/* The trail itself — real, measured, and unique to this route. */}
       {route && (
@@ -334,7 +345,7 @@ export function TrailPlate({
               look like a rendering effect rather than a plotted route. */}
           <path
             d={route.d}
-            stroke="var(--ice-obsidian)"
+            stroke="var(--ice-plate-shade)"
             strokeWidth="4.5"
             strokeOpacity="0.7"
             strokeLinecap="round"

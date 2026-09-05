@@ -1479,7 +1479,7 @@ function ShareProfile() {
    *
    * `settings.username` is a local field somebody can type anything into; the
    * handle on `public.profiles` is unique across the platform and claimed
-   * atomically, and it is the one that resolves at `/explore/people/:handle`.
+   * atomically, and it is the one that resolves at `/social/people/:handle`.
    * Printing the local one on a card sent to a stranger gives them an address
    * that reaches nobody — which is exactly why `useMyProfile` exists. The local
    * value is still the fallback, because a card has to render with no signal,
@@ -2326,7 +2326,13 @@ function dumpLocalData(): Record<string, unknown> {
 
 function Devices() {
   const integrations = [
-    "Apple Watch", "Apple Health", "Garmin", "COROS", "Suunto", "Strava", "Google Health",
+    // Strava was removed at the owner's instruction on 2026-09-03. Everything left
+    // is a WATCH OR A HEALTH STORE — a place training data is measured or kept.
+    // Strava was the odd one out: another training app and a social network, not a
+    // source, so listing it invited "ICEFALL will import my Strava history" when the
+    // page only ever meant "your watch could feed this". Do not re-add it here if
+    // an import is ever built; that belongs wherever accounts are connected.
+    "Apple Watch", "Apple Health", "Garmin", "COROS", "Suunto", "Google Health",
   ];
   return (
     <SettingsPage title="Devices & apps" subtitle="Where your training data could come from.">

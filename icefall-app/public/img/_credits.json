@@ -286,5 +286,29 @@
     "artist": "juldaks",
     "descUrl": "https://commons.wikimedia.org/wiki/File:Alps-2201165.jpg",
     "url": "https://upload.wikimedia.org/wikipedia/commons/e/ea/Alps-2201165.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original"
+  },
+  {
+    "slug": "ama-dablam",
+    "title": "120405-018 Ama Dablam, Phortse-Pangboche.jpg",
+    "license": "CC BY-SA 4.0",
+    "artist": "Faj2323",
+    "descUrl": "https://commons.wikimedia.org/wiki/File:120405-018_Ama_Dablam,_Phortse-Pangboche.jpg",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/1f/120405-018_Ama_Dablam%2C_Phortse-Pangboche.jpg/1920px-120405-018_Ama_Dablam%2C_Phortse-Pangboche.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail"
+  },
+  {
+    "slug": "cho-oyu",
+    "title": "( TIBET HIMALAYA CHO-OYU 8201mts).jpg",
+    "license": "CC BY-SA 4.0",
+    "artist": "PORSCHE 911 MADRID",
+    "descUrl": "https://commons.wikimedia.org/wiki/File:(_TIBET_HIMALAYA_CHO-OYU_8201mts).jpg",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/ca/%28_TIBET_HIMALAYA_CHO-OYU_8201mts%29.jpg/1920px-%28_TIBET_HIMALAYA_CHO-OYU_8201mts%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail"
+  },
+  {
+    "slug": "alpine-team",
+    "title": "Sanawar Everest Team.jpg",
+    "license": "CC BY-SA 4.0",
+    "artist": "Iamsk21",
+    "descUrl": "https://commons.wikimedia.org/wiki/File:Sanawar_Everest_Team.jpg",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/a7/Sanawar_Everest_Team.jpg/1920px-Sanawar_Everest_Team.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail"
   }
 ]

@@ -50,6 +50,7 @@ import type {
   CurrentConditions,
   DayForecast,
   ElevationBand,
+  HourlyOutlook,
   MountainConditions,
   Reading,
 } from "@/services/conditions";
@@ -624,6 +625,13 @@ export const OFFLINE_SUMMIT_LOGS: SummitLog[] = !DEMO
  * rule the app enforces: a guide channel opens on a PAID BOOKING and a company
  * channel on a QUALIFIED ENQUIRY, so two of these are locked and show what a
  * locked channel looks like rather than pretending everything is open.
+ *
+ * EVERY `credential` SAYS IT IS INVENTED, and so does the system line under a
+ * booking. The companies here were labelled "Sample listing — invented company"
+ * and the guides beside them carried a bare "IFMGA / UIAGM mountain guide" —
+ * two standards in one list, and the unqualified one was the licence, which is
+ * the single claim a climber acts on when choosing who to rope up with. The
+ * booking line read a flat "Booking confirmed", which is a transaction state.
  */
 export const OFFLINE_CONVERSATIONS: Conversation[] = !DEMO
   ? []
@@ -632,7 +640,7 @@ export const OFFLINE_CONVERSATIONS: Conversation[] = !DEMO
         id: "oc-guide-open",
         name: "Marta Ehrensvärd",
         kind: "guide",
-        credential: "IFMGA / UIAGM mountain guide",
+        credential: "Sample thread — invented guide, states an IFMGA / UIAGM licence",
         peak: "Gran Paradiso",
         unread: 2,
         pinned: true,
@@ -646,7 +654,7 @@ export const OFFLINE_CONVERSATIONS: Conversation[] = !DEMO
             id: "ocg-0",
             from: "them",
             kind: "system",
-            body: "Booking confirmed. You can now message Marta to plan the trip.",
+            body: "Invented booking. Nothing was paid and nobody was contacted — in a real one, payment is what opens this channel.",
             at: hoursAgoIso(96),
           },
           {
@@ -817,7 +825,7 @@ export const OFFLINE_CONVERSATIONS: Conversation[] = !DEMO
         id: "oc-guide-locked",
         name: "Bo Halvard",
         kind: "guide",
-        credential: "IFMGA / UIAGM mountain guide",
+        credential: "Sample thread — invented guide, states an IFMGA / UIAGM licence",
         peak: "Eiger",
         unread: 0,
         messages: [],
@@ -1292,7 +1300,37 @@ export function offlineConditions(args: {
     visibilityM: reading(24_000),
     precipitationMm: reading(0),
     freezingLevelM: reading(3_400),
+    weatherCode: reading(2), // WMO 2 — partly cloudy.
+    isDay: new Date(NOW).getHours() >= 6 && new Date(NOW).getHours() < 19,
     observedAt: new Date(NOW).toISOString(),
+  };
+
+  /*
+   * Six hours ahead, invented like everything else in this file.
+   *
+   * The live module refuses to pad a short series precisely so that a row of
+   * plausible temperatures never appears without a forecast behind it. That
+   * rule holds there; here the banner is doing the work, and an offline build
+   * whose hour strip is permanently empty would read as a bug rather than as a
+   * demo. Labels are built from the fixture's own clock — there is no peak
+   * timezone to honour when there is no request.
+   */
+  const hourly: HourlyOutlook = {
+    requested: 6,
+    hours: Array.from({ length: 6 }, (_, i) => {
+      const at = new Date(NOW + i * 3_600_000);
+      const hour = at.getHours();
+      const drift = [0, 0.4, 0.9, 0.3, -0.6, -1.4][i];
+      return {
+        time: `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}-${String(at.getDate()).padStart(2, "0")}T${String(hour).padStart(2, "0")}:00`,
+        hour,
+        label: `${hour % 12 === 0 ? 12 : hour % 12} ${hour < 12 ? "AM" : "PM"}`,
+        temperatureC: reading(Math.round((tempAt(elevationM) + drift) * 10) / 10),
+        weatherCode: reading([2, 2, 3, 3, 71, 71][i]),
+        isDay: hour >= 6 && hour < 19,
+        isNow: i === 0,
+      };
+    }),
   };
 
   const daily: DayForecast[] = Array.from({ length: 7 }, (_, i) => {
@@ -1317,5 +1355,5 @@ export function offlineConditions(args: {
         windKph: reading(windAt(b.elevationM)),
       }));
 
-  return { peakName, elevationM, current, daily, bands: elevationBands };
+  return { peakName, elevationM, current, hourly, daily, bands: elevationBands };
 }

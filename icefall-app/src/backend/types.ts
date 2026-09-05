@@ -260,6 +260,37 @@ export type Database = {
         };
         Returns: SupportTicketOpened;
       };
+      /**
+       * HEALTH-DATA CONSENT. Three calls, and the split matters.
+       *
+       * `health_consent_wording_in_force` hands back the sentence to PUT ON THE
+       * SCREEN. `health_record_consent` takes no version: it stamps whatever is
+       * in force at write time, so a stale build cannot record agreement to
+       * words nobody was shown. `health_my_consent` reads back the decision
+       * with the frozen sentence it was made against.
+       *
+       * `p_decision` of 'withdrawn' or 'declined' DELETES every stored
+       * measurement inside the same transaction. That is not a side effect to
+       * be surprised by — it is the erasure Article 17 requires, placed where a
+       * caller cannot forget it.
+       */
+      health_consent_wording_in_force: {
+        Args: { p_purpose: string };
+        Returns: { version: string; wording: string }[];
+      };
+      health_record_consent: {
+        Args: { p_purpose: string; p_decision: string; p_route?: string };
+        Returns: number;
+      };
+      health_my_consent: {
+        Args: { p_purpose: string };
+        Returns: {
+          decision: string;
+          version: string | null;
+          wording: string | null;
+          recorded_at: string;
+        }[];
+      };
       open_enquiry: {
         Args: {
           p_body: string;

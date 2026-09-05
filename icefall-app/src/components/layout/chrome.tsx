@@ -3,6 +3,9 @@ import { ChevronLeft } from "lucide-react";
 import { animate, motion, useMotionValue, useMotionValueEvent, type MotionValue } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
+import { tabStripScrollLeft } from "./tabStripScroll";
+
+export { scrollContentToTop } from "./tabStripScroll";
 
 /* -------------------------------------------------------------------------- */
 /* Screen — scroll container with safe-area aware padding                     */
@@ -138,14 +141,29 @@ export function SegmentedTabs<T extends string>({
   const scroller = useRef<HTMLDivElement | null>(null);
   const [clipped, setClipped] = useState(false);
 
-  // Explore now carries six tabs, which overflow 375 px. The strip has always
-  // scrolled, but silently: the fifth label was clipped with nothing to say it
-  // could be reached, and selecting it from elsewhere left it off-screen.
+  // Written when Explore carried six tabs and they overflowed 375 px: the strip
+  // had always scrolled, but silently — the fifth label was clipped with
+  // nothing to say it could be reached, and selecting it from elsewhere left it
+  // off-screen. Explore is down to three tabs now and, measured on 4 Sep 2026,
+  // NO STRIP IN THE APP OVERFLOWS AT 375 px any more. This is kept because the
+  // next tab added to any of them brings the clipping straight back, and
+  // because the strip must not be the reason a tab is unreachable.
+  //
+  // SIDEWAYS ONLY, AND NEVER `scrollIntoView`. This line used to read
+  // `active.scrollIntoView({ inline: "nearest", block: "nearest" })`, which
+  // scrolls every scrollable ancestor — including the page — so on the screens
+  // whose tab row sits below the fold the whole screen opened scrolled past its
+  // own header and its own disclosures. Measurements and the full account are
+  // in `tabStripScroll.ts`; a test in `scroll.test.ts` fails if it comes back.
   useEffect(() => {
     const el = scroller.current;
     if (!el) return;
     const active = el.querySelector<HTMLElement>('[data-active="true"]');
-    active?.scrollIntoView({ inline: "nearest", block: "nearest" });
+    if (!active) return;
+    const left = tabStripScrollLeft(el, active);
+    // `scrollLeft` rather than `scrollTo`, because it cannot move the page even
+    // by accident: there is no vertical axis on this property to get wrong.
+    if (left !== null) el.scrollLeft = left;
   }, [value]);
 
   // The fade is a scroll affordance, so it may only exist while there is

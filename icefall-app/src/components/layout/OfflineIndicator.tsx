@@ -39,7 +39,7 @@ export function OfflineIndicator() {
           style={{ top: "calc(env(safe-area-inset-top, 0px) + 8px)" }}
           role="status"
         >
-          <span className="flex items-center gap-2 rounded-full border border-hairline-strong bg-elevated/95 py-1.5 pl-3 pr-3.5 shadow-[0_8px_24px_-8px_rgba(0,0,0,0.8)] backdrop-blur">
+          <span className="flex items-center gap-2 rounded-full border border-hairline-strong bg-elevated/95 py-1.5 pl-3 pr-3.5 shadow-[var(--ice-shadow-chip)] backdrop-blur">
             <CloudOff size={13} strokeWidth={1.7} className="shrink-0 text-mist" />
             <span className="text-[11.5px] leading-none text-mist">
               Offline{recording ? " — still recording" : ""}

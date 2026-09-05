@@ -49,7 +49,13 @@ const MARKS: Record<
   },
   credentials: {
     size: 15,
-    className: "text-[#D8B26A]",
+    // A TOKEN, not a literal. This was `text-[#D8B26A]`, which is a colour no
+    // theme can reach: on a white ground it measured 2.00:1 and the one claim
+    // this mark makes stopped being visible. `--ice-credential` holds the same
+    // gold on dark and a readable bronze on light. It is deliberately not
+    // `--ice-gilt` — gilt means somebody is selling you something, and a
+    // checked qualification is a fact about a person.
+    className: "text-credential",
     label: "Credentials checked by ICEFALL",
     says: "ICEFALL checked their guiding qualifications.",
   },

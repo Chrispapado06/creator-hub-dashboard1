@@ -294,7 +294,14 @@ function PersonCard({ guide }: { guide: Guide }) {
 
   return (
     <Link
-      to={`/explore/guide/${guide.id}`}
+      /* `guides`, PLURAL, and encoded — the same link `Search.tsx` builds for
+         the same screen. It read `/explore/guide/${guide.id}` for as long as
+         this card has existed: singular matches no declared route, so every
+         card on this tab landed on `NotFound`, which renders OUTSIDE `AppShell`
+         and takes the bottom tab bar with it. The router warns about nothing
+         here, and a typecheck cannot see inside a template string — the only
+         thing that catches this is opening the tab. */
+      to={`/explore/guides/${encodeURIComponent(guide.id)}`}
       className="flex overflow-hidden rounded-card border border-hairline bg-graphite transition-colors hover:border-hairline-strong"
     >
       {/* The portrait, down the left, full height of the card. */}
@@ -1185,7 +1192,7 @@ function MountainWaiting({
           icon={<Users size={15} strokeWidth={1.6} />}
           label="Create a group"
           detail="The same form as Your groups, higher up this page."
-          to="/explore/groups/new"
+          to="/social/groups/new"
         />
         <EmptyAction
           icon={
@@ -1470,10 +1477,10 @@ export function AthleteCard({
       {/* ---- Actions ------------------------------------------------------- */}
       <div className="mt-4 flex gap-2.5">
         <Button asChild variant="secondary" size="sm" className="flex-1">
-          <Link to={`/explore/people/${encodeURIComponent(athlete.id)}`}>View profile</Link>
+          <Link to={`/social/people/${encodeURIComponent(athlete.id)}`}>View profile</Link>
         </Button>
         <Button asChild size="sm" className="flex-1">
-          <Link to={`/explore/people/${encodeURIComponent(athlete.id)}/connect`}>Connect</Link>
+          <Link to={`/social/people/${encodeURIComponent(athlete.id)}/connect`}>Connect</Link>
         </Button>
       </div>
 

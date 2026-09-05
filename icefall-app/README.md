@@ -284,6 +284,34 @@ client.
 
 ---
 
+## Oura ring
+
+Two public settings, both addresses and neither a credential:
+
+```bash
+VITE_ICEFALL_API_BASE=https://icefall.app
+VITE_ICEFALL_OURA_RETURN_URL=https://<this app>/settings/health-sources
+```
+
+`VITE_ICEFALL_API_BASE` is where the Oura endpoints live — Vercel functions in `icefall-web`, on a
+different origin from this bundle. Unset means unset: the screen reports "not available in this
+build" rather than guessing a host and posting somebody's session token to it.
+
+`VITE_ICEFALL_OURA_RETURN_URL` must appear **verbatim** in the server's `OURA_APP_RETURN_URLS`
+allowlist, or `connect()` refuses. A `redirect_uri`-shaped value a caller can choose is an open
+redirect, and this one sits at the end of an OAuth flow.
+
+**There is no Oura client secret in this app and there can never be one.** `VITE_` variables are
+compiled into the bundle and readable by anyone who opens it. The token exchange, every refresh
+and the webhook HMAC all use the secret and all happen server-side in
+`icefall-web/api/_oura*.mjs`. If a `VITE_OURA_CLIENT_SECRET` ever appears, it has already leaked.
+
+Storing measurements needs its own explicit consent, separate from signing up and separate from
+marketing — `src/health/consent.ts`, purpose `health-metrics`. The sentence is read from the
+database and rendered verbatim; with no sentence there is no grant button.
+
+---
+
 ## Photography
 
 21 images in `public/img/`, ~5.4 MB total, all from Wikimedia Commons — mostly CC0 Unsplash

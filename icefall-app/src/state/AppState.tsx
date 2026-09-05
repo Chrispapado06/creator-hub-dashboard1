@@ -212,8 +212,39 @@ export function sexTermFor(answer: SexAtBirth | undefined | null): Sex | undefin
  * runs first so the record is usually absent, but somebody re-running signup
  * after answering on the Fuel screen must not silently lose the later answer.
  * The Fuel screen stays the place to change it, so nothing is trapped.
+ *
+ * ── AND THE REFUSAL IS RETURNED, BECAUSE IT USED TO BE THROWN AWAY ─────────
+ *
+ * This function ignored what the accessor told it and returned `void`, so the
+ * screen said "your daily energy estimate is computed at your own answer" in
+ * every case — including the two where nothing of the sort had happened.
+ *
+ * The reachable case that decides this is a SHARED PHONE. `signOut` keeps
+ * everything on the device on purpose, and `screens/auth/Auth.tsx` calls
+ * `completeOnboarding` with the answers restored from the server, so a second
+ * person signing in after a first meets a record that is already answered. A
+ * woman signing in after a man would have had her day computed at the MALE
+ * intercept — narrow, confident, with no screen saying which term was used, and
+ * with his food log and hydration beside it. That is exactly the silent wrong
+ * number the `SexAtBirth` comment above exists to refuse, and it became
+ * reachable the day this field started being load-bearing.
+ *
+ * So the outcome is returned all the way up to the copy. Only `"narrowed"` may
+ * be described as a narrowing.
  */
-function rememberSexForEnergyFromSignup(answer: SexAtBirth | undefined | null): void {
+export type SexNarrowing =
+  /** A sex reached the record. The estimate is now computed at that term. */
+  | "narrowed"
+  /** A decline reached the record. The estimate stays wide, and Fuel won't re-ask. */
+  | "decline-recorded"
+  /** The device already held an answer. This tap changed NOTHING. */
+  | "already-answered"
+  /** Storage refused the write. The answer is not on this device at all. */
+  | "not-kept"
+  /** No answer to store. Nothing was written and nothing may be claimed. */
+  | "not-asked";
+
+function rememberSexForEnergyFromSignup(answer: SexAtBirth | undefined | null): SexNarrowing {
   const sex = sexTermFor(answer);
   if (sex !== undefined) {
     // `sexForEnergyDeclined: false` is passed so this call reads identically to
@@ -221,19 +252,37 @@ function rememberSexForEnergyFromSignup(answer: SexAtBirth | undefined | null): 
     // accessor stores the flag only when it is true, so the record ends up
     // `{ sexForEnergy: "male" }` rather than carrying a false — which every
     // reader treats the same, since all of them test `!== true`.
-    rememberSexForEnergy({ sexForEnergy: sex, sexForEnergyDeclined: false });
-    return;
+    const outcome = rememberSexForEnergy({ sexForEnergy: sex, sexForEnergyDeclined: false });
+    /* `"nothing-to-store"` cannot mean "you passed me nothing" here — a sex was
+       passed. On this branch it can only be the write being refused: full
+       storage, or private mode. The answer is genuinely lost, and the screen has
+       to say so rather than round it up to success. */
+    return outcome === "stored"
+      ? "narrowed"
+      : outcome === "already-answered"
+        ? "already-answered"
+        : "not-kept";
   }
   // "Prefer not to say" is an ANSWER and has to land as one. The Fuel screen's
   // own decline writes exactly this, and matching it means the estimate widens
   // honestly AND the Fuel screen does not put the same question again to
   // somebody who has already said no to it.
   if (answer === "prefer-not-to-say") {
-    rememberSexForEnergy({ sexForEnergyDeclined: true });
+    const outcome = rememberSexForEnergy({ sexForEnergyDeclined: true });
+    /* A stored decline and a lost decline look IDENTICAL on the estimate — both
+       leave it spanning both terms — and they are still different facts. The
+       stored one means the Fuel screen will not ask again; the lost one means it
+       will. Reporting them as one would make the next question a surprise. */
+    return outcome === "stored"
+      ? "decline-recorded"
+      : outcome === "already-answered"
+        ? "already-answered"
+        : "not-kept";
   }
   // Anything else — undefined, null, a string this build does not know — is
   // "never asked". Nothing is written, because writing something would be this
   // file answering a question about somebody's body on their behalf.
+  return "not-asked";
 }
 
 /**
@@ -337,9 +386,39 @@ export interface OnboardingAnswers {
    * gap between the two sex intercepts of Mifflin-St Jeor, +5 and -161, inside
    * the RESTING term. What the athlete actually sees narrow is the DAY, and the
    * day puts the resting band through a ±10% individual spread and then a
-   * physical-activity multiplier, so the width it removes was measured across
-   * plausible bodies at 50 to 600 kcal — never 166 for anybody. `narrowingWorth`
-   * in `coach/fuelDay.ts` computes the athlete's own figure and the Fuel screen
+   * physical-activity multiplier.
+   *
+   * "50 TO 600 KCAL" REPLACED THAT FIGURE AND WAS WRONG IN ITS TURN, which is
+   * why what follows names its domain instead of quoting one range. Re-measured
+   * 2026-09-03 by running the real `narrowingWorth` from `coach/fuelDay.ts`
+   * over every combination the app will do arithmetic with, stepping 1 kg,
+   * 1 cm and 1 year:
+   *
+   *   · Height and birth year also given — the ordinary case, since signup asks
+   *     both on the very next step: 200 kcal, or 250 ONLY when everyday movement
+   *     is answered `physical`. `seated` and `on-feet` both leave it at 200 —
+   *     the same as never answering — so two of that question's three answers
+   *     move this figure not at all. (Mechanism at `fuelDay.ts:355-357`: the PAL
+   *     bands are seated 1.25-1.4, on-feet 1.4-1.55, physical 1.55-1.75, and
+   *     only the last widens the multiplier enough to push the rounded gain over
+   *     a 50 kcal step.) Those two figures are FLAT across the whole accepted
+   *     body — 30-250 kg, 100-250 cm, ages 10-100 — over 12.1M combinations
+   *     with no exceptions.
+   *   · Height declined, birth year given, adult of 45-120 kg, AGES 18-100:
+   *     50 to 600 kcal. The 600 needs `physical`; with movement unanswered,
+   *     which is its state throughout signup, it is 50 to 500. Sixteen- and
+   *     seventeen-year-olds are real users (signup accepts anyone born up to
+   *     `currentYear - 5`) and reach 650, which is why the age bound is stated
+   *     rather than left to the word "adult".
+   *   · Both declined, adult of 45-120 kg: 250 to 600 kcal.
+   *   · Across the entire accepted domain: 50 to 1,450 kcal — and for the
+   *     lightest, oldest athletes who declined a height it is worth nothing at
+   *     all, where `narrowingWorth` returns null rather than a figure.
+   *
+   * The old range therefore understated the ceiling by more than half AND
+   * described nobody's ordinary case. A bare range is what went stale twice, so
+   * any figure repeated from here carries the domain it was measured on.
+   * `narrowingWorth` computes the athlete's own figure and the Fuel screen
    * prints it; a fixed number belongs nowhere else. It is NOT a body-composition
    * field —
    * `coach/nutrition.ts` is explicit that ICEFALL sets no weight target and no
@@ -661,7 +740,16 @@ interface AppStateValue {
   user: User;
   goals: Goal[];
   onboarded: boolean;
-  completeOnboarding: (a: OnboardingAnswers) => void;
+  /**
+   * Returns what actually happened to the sex answer — see `SexNarrowing`.
+   *
+   * A caller is free to ignore it (sign-in restore does), but no caller may
+   * report the answer as narrowing anything without reading it first: on a phone
+   * that already holds an answer the write is refused, and the older `void`
+   * signature is what let the payoff screen claim a narrowing that never
+   * happened.
+   */
+  completeOnboarding: (a: OnboardingAnswers) => SexNarrowing;
   resetAll: () => void;
   isSessionComplete: (weekIndex: number, date: string, fallback: boolean) => boolean;
   toggleSession: (weekIndex: number, date: string, fallback: boolean) => void;
@@ -936,7 +1024,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
    */
   const goals = useMemo<Goal[]>(() => [...state.customGoals, ...SEEDED_GOALS], [state.customGoals]);
 
-  const completeOnboarding = useCallback((a: OnboardingAnswers) => {
+  const completeOnboarding = useCallback((a: OnboardingAnswers): SexNarrowing => {
     /**
      * THE ONE ANSWER ON THIS OBJECT THAT CHANGES A LIVE NUMBER, SENT WHERE THAT
      * NUMBER IS COMPUTED.
@@ -959,8 +1047,17 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
      * path hands over raw `jsonb`, so the validation is not decorative — see
      * `rememberSexForEnergyFromSignup`, which fails closed on anything it does
      * not recognise.
+     *
+     * THE RESULT IS RETURNED, NOT SWALLOWED. Three things can happen — the
+     * answer lands, the device already holds one, or storage refuses the write —
+     * and only the first is a narrowing. The caller that draws the "what your
+     * answers changed" panel needs to know which, so the outcome is handed back
+     * rather than inferred from the absence of an exception. `screens/auth/
+     * Auth.tsx` restores a blob and has no panel to draw, so it ignores this
+     * return value; that is fine, and it is not the same thing as claiming a
+     * success it never checked.
      */
-    rememberSexForEnergyFromSignup(a.sexAtBirth);
+    const sexNarrowing = rememberSexForEnergyFromSignup(a.sexAtBirth);
 
     setState((s) => {
       /**
@@ -1012,6 +1109,8 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         customGoals,
       };
     });
+
+    return sexNarrowing;
   }, []);
 
   /*

@@ -622,10 +622,14 @@
    * step, because the whole ladder has to fit between white and a grey still
    * light enough to read as white.
    */
-  --ice-obsidian: oklch(1 0 0); /* #FFFFFF  app canvas   */
-  --ice-graphite: oklch(0.974 0.0034 261); /* #F5F6F9  cards        */
-  --ice-slate: oklch(0.948 0.0048 261); /* #ECEEF1  raised       */
-  --ice-elevated: oklch(0.918 0.0062 261); /* #E1E4E8  inputs/chips  */
+  /* WARM, not white — the owner's light designs (Explore 2026-09-04, Coach the
+     same day) sit on a warm off-white with white cards, and this block is
+     what every page reads, so the whole app takes that ground in light. The
+     previous pure-white study values are in git if the choice is reversed. */
+  --ice-obsidian: oklch(0.967 0.0048 85); /* #F6F4F0  app canvas   */
+  --ice-graphite: oklch(1 0 0); /* #FFFFFF  cards        */
+  --ice-slate: oklch(0.955 0.0048 85); /* #F1EEE9  raised       */
+  --ice-elevated: oklch(0.93 0.006 85); /* #EBE7E0  inputs/chips  */
 
   /*
    * Ink — the three weights, hierarchy preserved, measured against the canvas.
@@ -694,11 +698,16 @@
    * The bright/deep pair still inverts, as the dark theme's note explains: on a
    * light ground "brighter" must mean DARKER to stay legible.
    *
-   *   azure         15.9:1 on canvas · 12.5:1 on chips — far past AA
-   *   azure-bright  18.4:1 — the hover/active state, darker still
+   *   azure         ≈5:1 on the warm canvas — AA for text at any size
+   *   azure-bright  ≈3.1:1 — the hover/active state; a lift, never body text
    */
-  --ice-azure: oklch(0.255 0.019 261); /* #1B2130 */
-  --ice-azure-bright: oklch(0.185 0.017 261); /* #121724 */
+  /* A REAL BLUE in light, not the near-black of the earlier study. The owner's
+     light designs use a saturated blue for links, active tabs, progress and
+     the primary button, and `--ice-on-accent` is white in both themes, so a
+     blue button keeps its white arrow. */
+  --ice-azure: oklch(0.53 0.21 266); /* #2F5BE8 */
+  --ice-azure-bright: oklch(0.64 0.18 262); /* #5B85F2 */
+  --ice-azure-glow: oklch(0.53 0.21 266 / 28%);
 
   /* The owner asked for a BLACK button with a WHITE arrow. `azure-deep` stays a
      pale neutral for the two gradient fades that genuinely want one, so the
@@ -707,10 +716,11 @@
      a flat hole punched in the bar. */
   --ice-start-from: oklch(0.285 0.019 261); /* #232939 */
   --ice-start-to: oklch(0.175 0.016 261); /* #111623 */
-  /* The gradient END, never text. It was a pale blue chosen to fade toward a
-     blue accent; with the accent now near-black it fades toward the wrong
-     colour, so it becomes a light neutral of the same hue family. */
-  --ice-azure-deep: oklch(0.905 0.008 261); /* #E2E4E9 */
+  /* The gradient END, never text. It was made a pale neutral while the accent
+     was near-black, because a fade toward blue from a black accent went the
+     wrong way. The accent is blue again, so the fade is back to a deeper blue
+     of the same hue — what `to-azure-deep` was always meant to reach. */
+  --ice-azure-deep: oklch(0.42 0.2 268); /* #1F3FBF */
 
   /*
    * Semantic — meaning kept, hue separation kept, both re-measured.
@@ -909,8 +919,14 @@
  * on this ground. Its stated job — keeping large black fields from banding —
  * does not exist on a white page, so this is texture only: `multiply` at a
  * lower opacity, enough to keep the surface from reading as flat paper.
+ *
+ * EXCEPT ON A DARK ISLAND. `.grain` sits on the photo containers, and most of
+ * those are islands (see the selector list at the top of this file) — the field
+ * under them is still large and still black, so the original argument still
+ * applies there and the original treatment has to stay. This is the one light
+ * rule in the file that had to be told where NOT to reach.
  */
-:root[data-theme="light"] .grain::after {
+:root[data-theme="light"] .grain:not(.on-dark, :has(> .scrim-bottom), :has(> .scrim-full))::after {
   mix-blend-mode: multiply;
   opacity: 0.02;
 }
@@ -944,3 +960,50 @@
  * top of this file is for; `.scrim-bottom`, `.scrim-full` and their parents are
  * named in it, so the type over them stays the light type it was drawn as.
  */
+
+/* ===========================================================================
+   EDITORIAL PALETTE — the tinted cards of the Explore and Coach designs, in
+   BOTH themes. Read through `components/layout/editorialPalette.ts`.
+
+   The designs were drawn light: pale blue, green, lavender and peach cards,
+   each with a saturated ink. Those pastels cannot be literals — `text-snow`
+   on a `#E6EDFB` card is white-on-pale-blue the moment the theme is dark —
+   so each is a variable with a value per theme. Dark gets a deep, low-chroma
+   tint of the same hue and a brighter ink, so a card keeps its colour identity
+   without a single conditional in a component.
+
+   THE THEME IS THE PERSON'S, NOT THE PAGE'S. An earlier version put
+   `data-theme="light"` on <html> while Explore or Coach was mounted, which
+   overrode a dark preference for exactly those pages. That is gone: the only
+   thing that stamps the theme is the bootstrap in index.html, from the
+   Settings › Appearance choice or, under "System", the phone's own setting.
+   =========================================================================== */
+:root {
+  --ed-tint-blue: oklch(0.26 0.05 262);
+  --ed-tint-green: oklch(0.26 0.04 150);
+  --ed-tint-lavender: oklch(0.27 0.05 290);
+  --ed-tint-peach: oklch(0.28 0.04 50);
+  --ed-on-blue: oklch(0.8 0.12 255);
+  --ed-on-green: oklch(0.8 0.12 150);
+  --ed-on-lavender: oklch(0.8 0.1 290);
+  --ed-on-peach: oklch(0.82 0.12 55);
+  --ed-tile: var(--ice-elevated);
+  --ed-strong: var(--ice-azure);
+  /* Obsidian, not white: dark ink on the dark theme's light azure, the same
+     pair the app's primary button uses. White on that azure is 2.9:1. */
+  --ed-on-strong: var(--ice-obsidian);
+}
+
+:root[data-theme="light"] {
+  --ed-tint-blue: #e6edfb;
+  --ed-tint-green: #e7f0e9;
+  --ed-tint-lavender: #eae7f7;
+  --ed-tint-peach: #f9e9e0;
+  --ed-on-blue: #2e5be8;
+  --ed-on-green: #3d7a4f;
+  --ed-on-lavender: #6a5dd1;
+  --ed-on-peach: #c9673b;
+  --ed-tile: #ffffff;
+  --ed-strong: #0f1a33;
+  --ed-on-strong: #ffffff;
+}

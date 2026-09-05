@@ -1,39 +1,54 @@
-import { Outlet, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { Plus } from "lucide-react";
+import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { ScreenHeader, SegmentedTabs } from "@/components/layout/chrome";
 import { useTabSwipe } from "@/hooks/useTabSwipe";
 
 /**
- * Four tabs, and a hub above them.
+ * Three tabs, and a hub above them.
  *
  * `/explore` is no longer the Mountains list: it is the discovery hub, which
- * sits above the tab set and leads to all four plus conditions and gear. The
- * mountains list moved to `/explore/mountains`, so it now has a tab of its own
- * like the others.
- *
- * GROUPS returns to the tab bar as a real destination rather than a blank room:
- * an athlete's own expedition groups exist locally, so the screen has something
- * true to show even at zero network members. Finding OTHER people's groups
- * still needs a network ICEFALL has not connected, and that screen says so
- * itself rather than being hidden behind a missing tab.
+ * sits above the tab set and leads to all three plus conditions and gear. The
+ * mountains list moved to `/explore/mountains`.
  *
  * `value` is typed as a plain string so the hub can pass a path that is in no
  * tab — on `/explore` itself, nothing is lit, which is correct: the hub is not
- * one of the four.
+ * one of the three.
  *
  * Events and Community stay out of the tab bar. Their routes still resolve, so
  * nothing breaks and no deep link dies; they simply are not surfaced here.
  */
 /**
  * FIND leads, because it is what Explore is for: where can I go from here.
- * PEOPLE and GROUPS merged into SOCIAL — six tabs ran off the edge of the
- * screen, and they are the same question twice (who is out there, who am I
- * going with).
+ *
+ * SOCIAL IS NOT A TAB HERE ANY MORE, and this is the important one to know
+ * about. It used to be the fourth, holding People and Groups as sub-tabs after
+ * six tabs ran off the edge of the screen. Then Social took a slot in the
+ * BOTTOM tab bar while still rendering inside this layout, and the result was
+ * the bug the owner reported on 2026-09-03 — "when you click on social, i dont
+ * want it to be shown on explore anymore": a screen titled "Explore", with a
+ * back chevron to a hub they had not asked for, and two stacked tab rows.
+ *
+ * So Social is a top-level destination at `/social` (`screens/social/Social.tsx`)
+ * and `/explore/social` redirects there, query string and all. THE CREATE-GROUP
+ * + WENT WITH IT — it used to live in this header, conditional on the path, and
+ * it is the only way to make a group. It is now unconditional in Social's own
+ * header. Do not put one back here: a + beside Find, Expeditions or Guides
+ * would promise a create this section does not offer.
+ *
+ * NOTHING OF SOCIAL'S RENDERS UNDER THIS HEADER ANY MORE, and this paragraph
+ * used to say the opposite. `/explore/people/:id`, `/explore/groups`,
+ * `/explore/groups/new` and `/explore/groups/:id` were still declared inside the
+ * `/explore` block, so opening a climber or a group FROM Social put this
+ * header — the word "Explore", the chevron to the hub, the three-tab row — back
+ * on screen one tap after the move that was supposed to end it. They are
+ * `/social/people/:id`, `/social/groups/new` and `/social/groups/:id` now, flat
+ * under `AppShell`, each drawing its own header. The old paths redirect, and
+ * those redirects are declared OUTSIDE this layout so they never mount it: a
+ * `<Navigate>` nested here renders this header for a frame first.
  */
 const TABS: readonly { value: string; label: string }[] = [
   // Order is a claim about what this section is for. Find leads; then the two
   // ways to hire somebody — a company for an expedition, an individual for a
-  // day — because that is what most people open Explore to do, and Social last.
+  // day — because that is what most people open Explore to do.
   //
   // MOUNTAINS AND TREKS ARE NOT TABS ANY MORE. Both were removed from this bar
   // at the owner's request. Their ROUTES still exist and still work: the
@@ -44,7 +59,6 @@ const TABS: readonly { value: string; label: string }[] = [
   { value: "/explore/routes", label: "Find" },
   { value: "/explore/expeditions", label: "Expeditions" },
   { value: "/explore/guides", label: "Guides" },
-  { value: "/explore/social", label: "Social" },
 ];
 
 /** The hub. Reached by the back chevron from any tab. */
@@ -53,21 +67,23 @@ const HUB = "/explore/hub";
 /** Everything beyond your own training lives here. */
 export default function ExploreLayout() {
   const { pathname } = useLocation();
-  const [params] = useSearchParams();
   const navigate = useNavigate();
 
   // Longest matching prefix so detail routes keep their parent tab lit. No
-  // match — the hub, or a route filed under none of the four — lights nothing
+  // match — the hub, or a route filed under none of the three — lights nothing
   // rather than falsely lighting the first tab.
+  //
+  // `/explore/people` and `/explore/groups` used to be aliased onto the Social
+  // tab so they lit something. Both the tab and the routes are gone — they live
+  // under `/social` — so nothing here needs an alias any more. The hub is the
+  // only path left that matches no tab, and lighting Find while somebody reads
+  // the hub would say they are somewhere they are not.
   const active =
     [...TABS]
       .sort((a, b) => b.value.length - a.value.length)
       .find((t) => pathname === t.value || pathname.startsWith(`${t.value}/`))?.value ?? "";
 
   const onHub = pathname === HUB;
-  // Social keeps its tab lit on the old /people and /groups paths, which still
-  // resolve for anything already linking to them.
-  const lit = /^\/explore\/(people|groups)\b/.test(pathname) ? "/explore/social" : active;
 
   /**
    * Where the chevron goes.
@@ -87,28 +103,49 @@ export default function ExploreLayout() {
   const back = onHub ? undefined : onTabRoot ? HUB : true;
 
   /*
-   * Swipe between the six, but ONLY on a tab root.
+   * Swipe between the three, but ONLY on a tab root.
    *
    * `onTabRoot` already exists above for the back chevron, and it is exactly
-   * the right condition: someone reading a trek detail who swiped to Mountains
+   * the right condition: someone reading a trek detail who swiped to Guides
    * would lose their place. Detail routes keep their parent tab lit and stay
    * put — the gesture belongs to the tab set, not to everything filed under it.
    *
-   * `/explore/people` and `/explore/groups` are legacy aliases that light Social
-   * without being tab values, so they get no swipe either. That is the safe
-   * side of the line: no gesture rather than a gesture to the wrong place.
+   * `current` is `active`, which is "" on the hub and on the People and Groups
+   * routes. `onTabRoot` is false for all of those, so the gesture is off there
+   * anyway: no swipe rather than a swipe to the wrong place.
    */
   const swipe = useTabSwipe({
     tabs: TABS.map((t) => t.value),
-    current: lit,
+    current: active,
     enabled: onTabRoot,
     onNavigate: (v) => navigate(v),
   });
 
-  /* Social is one route with sub-tabs in the query string, so the test is the
-     PATH, not the tab: the + should be there whichever sub-tab is showing, and
-     tapping it switches to Groups and opens the flow. */
-  const onGroupsSurface = pathname.startsWith("/explore/social");
+  /*
+   * THE HUB DRAWS ITS OWN HEAD, AND NO TAB ROW.
+   *
+   * The owner's Explore design (2026-09-04) opens on a large editorial
+   * "Explore" with the subtitle and a map button beside it — not the small
+   * shared header above a Find / Expeditions / Guides strip. Those three are
+   * still the way through the section once you are IN it; on the hub they are
+   * the four category cards instead, so drawing the strip as well would show
+   * the same doors twice on one screen.
+   *
+   * `--screen-safe-top` is NOT zeroed on this branch, on purpose. That
+   * variable exists so `Screen` does not clear the notch a second time when a
+   * layout header has already cleared it — and on this branch there is no
+   * header above the outlet, so the screen has to clear it itself. Zeroing it
+   * here would push the heading under the status bar on a notched phone.
+   */
+  if (onHub) {
+    return (
+      <div className="flex h-full flex-col">
+        <div className="flex min-h-0 flex-1 flex-col">
+          <Outlet />
+        </div>
+      </div>
+    );
+  }
 
   return (
     // This header clears the notch, so nested `Screen`s must not clear it again.
@@ -116,41 +153,12 @@ export default function ExploreLayout() {
       <div className="shrink-0 px-5" style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
         {/* The chevron is the way back to the hub from a tab. Without it the
             hub would be reachable only by leaving Explore and returning. */}
-        {/*
-          THE CREATE-GROUP +, WHICH WAS DOCUMENTED AS BUILT AND WAS NOT.
-          The owner, 2026-09-02: "to create group, need to be added a + sign next
-          and above seocial page, not under discover." The floating + was duly
-          removed and `Groups.tsx` records the whole contract in its guard block
-          — including that this header must navigate to `?tab=groups&create=1`.
-          Nobody wrote either half. `Plus` was imported here and never rendered;
-          `useSearchParams` was imported there and never called; and nothing in
-          the app called `setCreating(true)`, so the create flow — card, privacy
-          choice, server write and all — was unreachable. A group could not be
-          made at all.
-
-          It shows only on Social, because a + beside Guides or Expeditions would
-          promise a create this app does not offer there.
-        */}
-        <ScreenHeader
-          title="Explore"
-          back={back}
-          large
-          action={
-            onGroupsSurface ? (
-              <button
-                type="button"
-                aria-label="Create a group"
-                onClick={() => navigate("/explore/social?tab=groups&create=1")}
-                className="flex h-9 w-9 items-center justify-center rounded-full text-mist transition-colors hover:text-snow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-azure/60"
-              >
-                <Plus size={20} strokeWidth={1.8} aria-hidden="true" />
-              </button>
-            ) : undefined
-          }
-        />
+        {/* No `action`: the create-group + this header used to carry moved to
+            Social's own header when Social left Explore. See the TABS comment. */}
+        <ScreenHeader title="Explore" back={back} large />
         <SegmentedTabs
           tabs={TABS}
-          value={lit}
+          value={active}
           onChange={(v) => navigate(v)}
           variant="section"
           swipeOffset={swipe.swipeOffset}

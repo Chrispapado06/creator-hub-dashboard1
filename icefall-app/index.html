@@ -51,12 +51,44 @@
              works and still wins, so a link can force either one for a review.
              localStorage key, so `resetAll`'s `icefall.` prefix clear takes it
              with everything else — a fresh onboarding starts from the default. */
+          /* THE THEME FOLLOWS THE PERSON, ON EVERY PAGE (owner, 2026-09-04).
+             A stored choice — from Settings › Appearance, or forced by
+             `?theme=light|dark` for a review link — always wins. With no
+             choice stored ("System" in Settings, or a fresh install), the
+             phone's own `prefers-color-scheme` decides, and a change of that
+             setting while the app is open re-stamps the attribute live.
+             `?theme=system` clears a stored choice. Nothing else in the app
+             sets `data-theme`: no screen may override what is chosen here. */
+          var KEY = "icefall.theme.v1";
           var q = new URLSearchParams(location.search).get("theme");
-          if (q === "light" || q === "dark") localStorage.setItem("icefall.theme.v1", q);
-          if ((q || localStorage.getItem("icefall.theme.v1")) === "light") {
-            document.documentElement.setAttribute("data-theme", "light");
+          if (q === "light" || q === "dark") localStorage.setItem(KEY, q);
+          if (q === "system") localStorage.removeItem(KEY);
+          var stored = localStorage.getItem(KEY);
+          var chosen = stored === "light" || stored === "dark" ? stored : null;
+          var mq = window.matchMedia ? window.matchMedia("(prefers-color-scheme: light)") : null;
+          function apply(theme) {
+            if (theme === "light") document.documentElement.setAttribute("data-theme", "light");
+            else document.documentElement.removeAttribute("data-theme");
             var m = document.querySelector('meta[name="theme-color"]');
-            if (m) m.setAttribute("content", "#FFFFFF");
+            /* The canvas colour of each theme, so the status bar matches. */
+            if (m) m.setAttribute("content", theme === "light" ? "#F6F4F0" : "#080B0D");
+          }
+          function followSystem() {
+            apply(mq && mq.matches ? "light" : "dark");
+          }
+          apply(chosen || (mq && mq.matches ? "light" : "dark"));
+          if (!chosen && mq) {
+            /* Live, two ways. The media-query change event is the standard
+               route. The foreground re-check is the belt to its braces: on a
+               phone the setting is changed in the OS Settings app and the
+               person switches back, which fires visibilitychange/focus — and
+               a re-read there costs nothing if the event already did its job. */
+            if (mq.addEventListener) mq.addEventListener("change", followSystem);
+            else if (mq.addListener) mq.addListener(followSystem);
+            document.addEventListener("visibilitychange", function () {
+              if (document.visibilityState === "visible") followSystem();
+            });
+            window.addEventListener("focus", followSystem);
           }
         } catch (e) {
           /* Private mode denies sessionStorage. Staying dark is the right

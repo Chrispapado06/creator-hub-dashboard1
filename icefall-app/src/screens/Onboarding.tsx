@@ -8,18 +8,24 @@ import {
   ArrowRight,
   Bike,
   Check,
+  CircleHelp,
   Compass,
+  EyeOff,
   Footprints,
   Loader2,
+  MicVocal,
   MoreHorizontal,
   MountainSnow,
+  Newspaper,
   Search,
   Snowflake,
+  Users,
   Wind,
   X,
 } from "lucide-react";
 import { Button, Disclaimer } from "@/components/ui/primitives";
 import { MountainThumb } from "@/components/domain/MountainImage";
+import { PlatformMark, hasPlatformMark } from "@/components/ui/BrandMarks";
 import { cn } from "@/lib/utils";
 import { fmtDate, fmtElevation } from "@/lib/format";
 import { monthsAhead } from "@/data/mock/clock";
@@ -27,8 +33,16 @@ import { sync } from "@/services/repository";
 import { assessPeak } from "@/services/peakAssessment";
 import { PEAK_ATTRIBUTION, searchPeaks, type Peak } from "@/services/peaks";
 import { buildPlanForGoal } from "@/tracking/training";
-import { useApp, type OnboardingAnswers } from "@/state/AppState";
+import {
+  useApp,
+  type Gender,
+  type HeardAboutChannel,
+  type OnboardingAnswers,
+  type SexAtBirth,
+  type SexNarrowing,
+} from "@/state/AppState";
 import { syncOnboarding } from "@/auth/account";
+import { saveSexAtBirth, saveSignupAnswers } from "@/settings/sync";
 import type { Discipline, ExperienceLevel, Goal } from "@/types";
 import type { Equipment } from "@/coach/exercises";
 import { SESSION_INTENTS, type IntentId } from "@/coach/sessionIntent";
@@ -327,6 +341,296 @@ const ALTITUDE_BANDS: { id: string; label: string; lowerM: number }[] = [
   { id: "b4", label: "Above 6,000 m", lowerM: 6000 },
 ];
 
+/**
+ * Gender.
+ *
+ * ALPHABETICAL FOR THE FIRST THREE, then the decline. No ordering of these is
+ * neutral, and alphabetical is the only one that is not somebody's decision
+ * about who gets named first.
+ *
+ * "Prefer not to say" is the fourth OPTION, at the same visual weight as the
+ * other three — not a skip link, not a small grey "skip" under the list, and
+ * not a Continue button that advances on nothing. Choosing it is an answer, it
+ * is stored as `"prefer-not-to-say"`, and it satisfies the gate. A step nobody
+ * touched is unanswered; a step answered "prefer not to say" is answered, and
+ * those two must never look the same (§6ag).
+ *
+ * That is a DIFFERENT MECHANISM from the one Height and Year of birth use two
+ * fields above, and the difference is not an inconsistency. Those are numeric,
+ * so their decline has nowhere to live inside the value and rides on a separate
+ * boolean; `athlete_profiles.gender` is a text column whose CHECK names this
+ * string, so the answer lives in the answer. One representation cannot be
+ * misread by somebody who never saw the flag.
+ *
+ * The ids are the four the migration's CHECK accepts. They are a vocabulary
+ * written down twice — here and in `20260903040000` — and if the two ever
+ * disagree the write comes back `23514` with the vaguest sentence this app
+ * owns. Change both or neither.
+ */
+const GENDERS: { id: Gender; label: string }[] = [
+  { id: "man", label: "Man" },
+  { id: "non-binary", label: "Non-binary" },
+  { id: "woman", label: "Woman" },
+  { id: "prefer-not-to-say", label: "Prefer not to say" },
+];
+
+/**
+ * Sex assigned at birth.
+ *
+ * ── WHY THIS IS A SECOND QUESTION AND NOT A WIDER `GENDERS` ────────────────
+ *
+ * The owner was offered gender alone, was told what asking both would buy, and
+ * chose both. So two questions, two adjacent steps, two columns, and the second
+ * step opens by saying it is not a re-ask of the first.
+ *
+ * GENDER IS IDENTITY. SEX IS A TERM IN AN EQUATION. Mifflin-St Jeor's sex term
+ * is a constant — +5 kcal for male, -161 for female — so a woman may need the
+ * male figure out of it and a man the female one. One list serving both
+ * questions hands somebody the wrong number and hands it to them SILENTLY, with
+ * no screen saying which term was used. That is the exact failure this app is
+ * built to refuse, so `GENDERS` was not widened and `Gender` was not reused.
+ *
+ * ── THE ORDER, WHICH IS NOT ALPHABETICAL AND IS NOT A PREFERENCE ───────────
+ *
+ * `GENDERS` is alphabetical because no ordering of an identity list is neutral.
+ * This list is not an identity list: it is the two terms of a published
+ * equation, and they are in the order that equation is always written in
+ * (female first, the -161 term). The decline is third and last, at the same
+ * visual weight, because it is an ANSWER — it satisfies the gate, it is stored
+ * as `"prefer-not-to-say"`, and a step answered that way must never look like a
+ * step nobody touched (§6ag).
+ *
+ * ── THE NOTES SAY WHAT THE ANSWER DOES, INCLUDING THE DECLINE ──────────────
+ *
+ * Each row names the consequence of picking it, and the decline's note is the
+ * most important of the three: it says the estimate spans both terms and says
+ * so on screen. That is true — `fuelDay.ts` evaluates the equation at both
+ * values when it holds no sex and prints "It spans both values of the
+ * equation's sex term, because ICEFALL doesn't hold one." So declining is not
+ * punished with a silently worse number; it is answered with a wider band that
+ * explains itself. Somebody deciding whether to answer deserves to know that
+ * before they decide, not after.
+ *
+ * NOTHING HERE MAY MENTION WEIGHT, BODY FAT, LEANNESS OR A TARGET.
+ * `coach/nutrition.ts` is explicit that ICEFALL sets no weight target and no
+ * body-composition target, and that one sentence is the reason the fuel screen
+ * is not another calorie app. One term of a resting-energy equation is the
+ * entire claim this question is allowed to make.
+ *
+ * ── THE NOTES SAY "USES", AND THAT WORD HAD TO BE EARNED ───────────────────
+ *
+ * It was not, for one release. The answer was written to the database and to
+ * the answers blob and read by nothing, while these three notes and two other
+ * screens described a narrowing that never happened. It is wired now:
+ * `AppState.completeOnboarding` passes it to `rememberSexForEnergyFromSignup`,
+ * which puts it in the `icefall.fuel.v1` record that `screens/Nutrition.tsx`
+ * feeds to `dailyEnergyFor`. If that call ever goes, these notes go with it.
+ *
+ * ── AND WHY NO NOTE HERE QUOTES 166 KCAL ANY MORE ──────────────────────────
+ *
+ * Because it was the wrong number for the thing it was attached to. 166 kcal is
+ * the gap between Mifflin-St Jeor's two sex intercepts, +5 and -161, in the
+ * RESTING term only. The daily estimate widens the resting band by ±10% for
+ * individual variation and then multiplies it by an activity range, so the
+ * width an answer removes is a different figure again.
+ *
+ * The replacement said "50 to 600 kcal" and was wrong in its turn, so here is
+ * the measurement instead of a range — `narrowingWorth` in `coach/fuelDay.ts`,
+ * run 2026-09-03 over every combination the app accepts, stepping 1 kg / 1 cm /
+ * 1 year. For somebody who ALSO gives a height and a birth year — which the very
+ * next step asks for — it is 200 kcal, or 250 ONLY where everyday movement is
+ * answered `physical`; `seated` and `on-feet` leave it at 200, exactly as not
+ * answering does. Those two figures hold across the whole accepted body
+ * (30-250 kg, 100-250 cm, ages 10-100) without exception. Decline the height
+ * and it opens right up: 50 to 600 kcal for an adult of 45-120 kg aged 18-100
+ * (600 needs `physical`; movement is unanswered throughout signup, so 50 to 500
+ * is the common case), and 50 to 1,450 kcal across the entire accepted domain.
+ *
+ * So there is no one figure to print on this step, and there was never a single
+ * honest range either. Nothing here prints one. The Fuel screen computes the
+ * athlete's own and shows it, which is the honest place for a number that is
+ * different for everybody.
+ *
+ * The ids are the three the migration's CHECK accepts, and the first two are
+ * byte-identical to the two members of `Sex` in `coach/fuelDay.ts`. That is the
+ * design, not a coincidence: `sexTermFor` narrows without a lookup table, so
+ * there is nowhere for a translation to drift.
+ *
+ * ── WHY EVERY NOTE CARRIES A CONDITION, WHICH READS FUSSY AND IS NOT ───────
+ *
+ * These notes said "Uses the female term of the resting-energy equation", flat,
+ * present tense. Two reachable states make that false, and neither is exotic:
+ *
+ *   1. THE PHONE ALREADY HOLDS AN ANSWER. `rememberSexForEnergy` refuses to
+ *      overwrite one, deliberately — an answer given on the Fuel screen, beside
+ *      the number it changes, is the more considered of the two. It is also what
+ *      happens to the SECOND PERSON on a shared phone, because signing out keeps
+ *      everything on the device on purpose. Their tap here changes nothing, and
+ *      a flat "uses the female term" would be telling a woman her estimate had
+ *      moved to her own answer while it sat at the previous owner's.
+ *   2. STORAGE REFUSES THE WRITE. Private mode, or a full quota. The answer is
+ *      simply lost, and the estimate stays as wide as it was.
+ *
+ * This screen cannot tell which state it is in — `coach/fuelRecord.ts` exposes a
+ * setter and no getter, on purpose, so that nothing outside the Fuel screen can
+ * read somebody's answers or race the write. So the notes describe the request
+ * honestly, condition and all, and the payoff panel — which DOES know, because
+ * `completeOnboarding` returns it — says what actually happened.
+ */
+const SEXES: { id: SexAtBirth; label: string; note: string }[] = [
+  {
+    id: "female",
+    label: "Female",
+    note: "The female term of the resting-energy equation — if this phone holds no answer yet and can store this one.",
+  },
+  {
+    id: "male",
+    label: "Male",
+    note: "The male term of the resting-energy equation — if this phone holds no answer yet and can store this one.",
+  },
+  {
+    id: "prefer-not-to-say",
+    label: "Prefer not to say",
+    note: "A recorded answer, not a blank — again, if this phone holds no answer yet and can store this one. If so, your daily estimate stays a wider band covering both terms and says on screen that ICEFALL doesn't hold one. If the phone does already hold an answer, your estimate keeps following that one, and the Fuel screen shows which it is.",
+  },
+];
+
+/**
+ * What the payoff panel says happened to the sex answer, one sentence per state.
+ *
+ * A `Record<SexNarrowing, string>` rather than a chain of ternaries, so that a
+ * sixth state added to `SexNarrowing` is a COMPILE ERROR here rather than a
+ * silent fall-through to whichever branch happened to be last. The last time
+ * this line was wrong it was wrong by omission — three outcomes existed and one
+ * sentence covered all of them — and the type is what stops that recurring.
+ *
+ * Each sentence has to be true on its own, with no help from the others:
+ *
+ *   narrowed          the write landed; the estimate moved to their answer.
+ *   decline-recorded  the decline landed; the estimate stays wide ON PURPOSE and
+ *                     the fuel screen will not ask again.
+ *   already-answered  the phone held an answer, so their tap changed NOTHING. It
+ *                     does not say WHICH answer is held, because nothing here can
+ *                     read it — `coach/fuelRecord.ts` exposes a setter and no
+ *                     getter — so it names the screen that can show them.
+ *   not-kept          storage refused. The answer is gone, not queued, not
+ *                     retried later. Saying anything softer would be an outbox
+ *                     this app does not have.
+ *   not-asked         nothing was written and nothing may be claimed.
+ *
+ * Every one of them ends at the fuel screen, which is where an answer already on
+ * the phone is changed and where a lost one can be given again.
+ */
+const SEX_PAYOFF: Record<SexNarrowing, string> = {
+  narrowed:
+    "Used as the sex term of the resting-energy equation, so your daily energy estimate is computed at your answer instead of spanning both. That is the only thing it is used for, and the Fuel screen is where you change it.",
+  "decline-recorded":
+    "Kept as an answer rather than a blank, so nothing asks you again. Your daily energy estimate spans both values of the equation's sex term, and the Fuel screen says so rather than picking one.",
+  "already-answered":
+    "This phone already held an answer to this — from the Fuel screen, or from whoever used it before you — and ICEFALL does not overwrite one, so what you chose here changed nothing. Your estimate follows the answer already stored. The fuel screen shows which answer that is, and is the only place it can be changed.",
+  "not-kept":
+    "This phone refused to store it, so the answer reached nothing and is not saved anywhere on here. Your daily energy estimate still spans both values of the equation's sex term. Giving it again on the Fuel screen is the only way it is kept.",
+  "not-asked":
+    "Nothing was stored from this answer. If this phone holds no earlier answer, your daily energy estimate spans both values of its sex term and the Fuel screen says so rather than picking one; if it does hold one, the estimate follows that, and the Fuel screen shows which.",
+};
+
+/**
+ * Where people found ICEFALL.
+ *
+ * ── THE RULE THAT DECIDED WHAT IS ON THIS LIST ──────────────────────────────
+ *
+ * AN OPTION IS DISHONEST TO OFFER WHEN ICEFALL HAS NO PRESENCE ON THAT CHANNEL,
+ * because then it is not measuring where somebody came from — it is inviting
+ * them to guess, and every guess reads afterwards as a channel that worked.
+ *
+ * So these are deliberately absent, and each has a reason rather than an
+ * oversight:
+ *
+ *   · The App Store    — this is a web build. There is no listing, so nobody
+ *                        can have found ICEFALL there, and the answers would be
+ *                        pure noise from people picking the nearest familiar
+ *                        thing. Add it the day there is a listing.
+ *   · Facebook, X,
+ *     Threads          — `PlatformMark` holds accurate marks for all three, and
+ *                        a mark is not a reason. Offer one only once ICEFALL
+ *                        actually posts there; until then every such answer is
+ *                        somebody's friend's post, which "A friend" already
+ *                        covers, and the bar would read as a marketing success
+ *                        ICEFALL never had.
+ *   · Strava           — REMOVED ENTIRELY on 2026-09-03 at the owner's
+ *                        instruction, mark and all, not merely left unoffered.
+ *                        It was also the odd row out in Settings › Devices &
+ *                        apps, where every other entry is a watch or a health
+ *                        store — a place data is measured or kept. Strava is
+ *                        another training app and a social network, so listing
+ *                        it invited "ICEFALL will import my Strava history"
+ *                        from a page that only ever meant "your watch could
+ *                        feed this". If an import is ever built, it belongs
+ *                        where accounts are connected, not on either list.
+ *   · An ICEFALL ad    — there is no ad account and nothing is running.
+ *   · A referral link  — there is no referral system, no link and no code. The
+ *                        moment one exists this becomes the most valuable
+ *                        option on the list, because it is the only one that
+ *                        could ever be CHECKED rather than self-reported.
+ *
+ * ── WHY THE FIRST TWO ARE SPLIT ─────────────────────────────────────────────
+ *
+ * "A friend" is named first because it is the likeliest true answer for a niche
+ * training app, and a list that buries it under six social platforms teaches
+ * people which answer is wanted. "A guide, a club, or an expedition company" is
+ * kept separate from it rather than folded into word of mouth: ICEFALL has an
+ * operator side, so an athlete arriving through a company is a completely
+ * different event commercially from one arriving through a mate, and collapsing
+ * them destroys the only distinction that would change what ICEFALL does next.
+ *
+ * ── THE LAST THREE NAME NO PLACE, AND ARE STILL ANSWERS ─────────────────────
+ *
+ * "Somewhere else" is required: without it everyone whose real route is missing
+ * picks the nearest wrong option, which is worse than an unclassified answer.
+ * "I don't remember" is required because it is very often the true answer, in
+ * the same way "Never been high enough to know" is a true answer on the
+ * altitude step. And "I'd rather not say" is here because this is the one
+ * question in the flow that is for ICEFALL rather than for the athlete, so it
+ * is the one they must be able to decline at no cost to themselves.
+ *
+ * ── ICONS ───────────────────────────────────────────────────────────────────
+ *
+ * `mark` is a real, officially-sourced brand glyph and appears only where
+ * `PlatformMark` actually holds one. Everything else carries an ordinary lucide
+ * pictogram, which is UI furniture and not a claim about anybody's logo — the
+ * newspaper beside "A blog, forum, or news article" names no publication. Every
+ * row has one or the other, so the column has no empty notch in it; that was
+ * the alternative and it looks like a bug rather than a decision.
+ *
+ * The `id`s are the slugs `heard_about_channels` is seeded with, and the column
+ * carries a real foreign key to that table, so an id that is not a row there is
+ * refused outright with `23503`.
+ */
+interface HeardAboutOption {
+  id: HeardAboutChannel;
+  label: string;
+  /** A neutral lucide pictogram, used where there is no brand mark to use. */
+  icon?: typeof Users;
+}
+
+const HEARD_ABOUT: HeardAboutOption[] = [
+  { id: "friend", label: "A friend, or someone I climb with", icon: Users },
+  { id: "guide-or-operator", label: "A guide, a club, or an expedition company", icon: MountainSnow },
+  { id: "instagram", label: "Instagram" },
+  { id: "youtube", label: "YouTube" },
+  { id: "tiktok", label: "TikTok" },
+  { id: "reddit", label: "Reddit" },
+  { id: "podcast", label: "A podcast", icon: MicVocal },
+  // "A search engine", never "Google". Somebody who found ICEFALL by searching
+  // may have used Bing, DuckDuckGo or whatever Safari is set to, and putting
+  // Google's name or its G on this row would invent which one.
+  { id: "search", label: "A search engine", icon: Search },
+  { id: "article", label: "A blog, forum, or news article", icon: Newspaper },
+  { id: "somewhere-else", label: "Somewhere else", icon: MoreHorizontal },
+  { id: "dont-remember", label: "I don't remember", icon: CircleHelp },
+  { id: "prefer-not-to-say", label: "I'd rather not say", icon: EyeOff },
+];
+
 /* -------------------------------------------------------------------------- */
 /* Shared chrome — the visual language of the auth screens                     */
 /* -------------------------------------------------------------------------- */
@@ -570,7 +874,10 @@ type StepKey =
   | "altitudeIllness"
   | "baseline"
   | "limitations"
+  | "gender"
+  | "sexAtBirth"
   | "body"
+  | "heardAbout"
   | "name"
   | "building"
   | "payoff";
@@ -596,7 +903,10 @@ const ALL_QUESTION_STEPS: StepKey[] = [
   "altitudeIllness",
   "baseline",
   "limitations",
+  "gender",
+  "sexAtBirth",
   "body",
+  "heardAbout",
   "name",
 ];
 
@@ -665,6 +975,34 @@ export default function Onboarding() {
   const [limitations, setLimitations] = useState<string[]>([]);
   const [limitationsNote, setLimitationsNote] = useState("");
   const [noLimitations, setNoLimitations] = useState(false);
+  /*
+   * The three questions added 2026-09-03. All three are `null` until answered,
+   * never a default, because every one of them has a "prefer not to say" that
+   * IS an answer — so `null` can mean exactly one thing here: nobody has
+   * touched this step yet. That is what the gate below reads.
+   *
+   * `gender` and `sexAtBirth` are two separate pieces of state on purpose and
+   * must never be merged. See `SEXES` above: gender is identity, sex is one
+   * constant in a resting-energy equation, and collapsing them hands somebody
+   * the wrong figure with nothing on screen saying so.
+   */
+  const [gender, setGender] = useState<Gender | null>(null);
+  const [sexAtBirth, setSexAtBirth] = useState<SexAtBirth | null>(null);
+  /**
+   * WHAT THE TAP ON THE SEX STEP ACTUALLY DID, as opposed to what it asked for.
+   *
+   * The pick above is the athlete's REQUEST. This is the RESULT, and they are
+   * not the same thing on a phone that already holds an answer — from the Fuel
+   * screen, or from whoever used the phone before this person, since signing out
+   * deliberately keeps everything. `rememberSexForEnergy` refuses to overwrite
+   * an existing answer, and the payoff panel used to describe a narrowing
+   * regardless. It reads this instead.
+   *
+   * Starts at "not-asked" because until `finish` runs nothing has been written,
+   * and the panel is only ever drawn after it.
+   */
+  const [sexNarrowing, setSexNarrowing] = useState<SexNarrowing>("not-asked");
+  const [heardAbout, setHeardAbout] = useState<HeardAboutChannel | null>(null);
   const [created, setCreated] = useState<CreatedGoal | null>(null);
 
   /**
@@ -681,6 +1019,28 @@ export default function Onboarding() {
     // "body" and "intent" sit BEFORE "name" deliberately: `finish()` runs on
     // leaving the name step, so anything asked after it would be written after
     // the answers were already saved.
+    /*
+     * "gender" and "sexAtBirth" sit immediately BEFORE "body", in that order,
+     * and the placement is the argument.
+     *
+     * Adjacent, because the second screen's first sentence is "this is not the
+     * question you just answered". A reader meets them together and sees the
+     * split was deliberate; separated by four screens, the second reads as the
+     * flow having forgotten it already asked.
+     *
+     * Before "body", because "body" is weight, height and year of birth — the
+     * other three inputs to the same resting-energy estimate. Sex is a term in
+     * that equation, so it belongs against those numbers and not, say, next to
+     * the altitude questions. It is NOT folded INTO the body step: that step's
+     * head is "A few numbers about you", sex is not a number, and a step's
+     * promise about what it is asking for has to stay true.
+     *
+     * "heardAbout" sits after "body" and before "name", which is the only
+     * constraint that is not aesthetic: `finish()` runs on LEAVING "name", so
+     * every question that must be saved has to be asked before it. A question
+     * placed after "name" is answered, collected into state, and silently
+     * discarded.
+     */
     s.push(
       "days",
       "length",
@@ -690,7 +1050,10 @@ export default function Onboarding() {
       "altitudeIllness",
       "baseline",
       "limitations",
+      "gender",
+      "sexAtBirth",
       "body",
+      "heardAbout",
       "name",
       "building",
       "payoff",
@@ -840,6 +1203,19 @@ export default function Onboarding() {
       limitationsNote: limitationsNote.trim(),
       altitudeIllness,
       trainingBaseline: baseline,
+      /*
+       * `?? undefined`, never `?? null` and never a fallback value. The
+       * gate above cannot be passed without answering, so these are only
+       * null on a path that never reaches here — but if one ever does, the
+       * record must read as NEVER ASKED rather than as a decline. Those are
+       * different facts and this file does not blur them.
+       *
+       * `gender` and `sexAtBirth` are two fields for the reason given at
+       * `SEXES`. Never write one from the other.
+       */
+      gender: gender ?? undefined,
+      sexAtBirth: sexAtBirth ?? undefined,
+      heardAbout: heardAbout ?? undefined,
       name,
       disciplines: disciplines
         .map((id) => DISCIPLINES.find((d) => d.id === id)?.discipline)
@@ -895,11 +1271,67 @@ export default function Onboarding() {
       sessionGoal: derivedIntent,
     });
 
-    completeOnboarding(answers);
+    /*
+     * THE RETURN VALUE IS THE POINT OF THIS LINE, not a nicety.
+     *
+     * `completeOnboarding` is what carries the sex answer into the fuel record,
+     * and the write can be REFUSED: the record may already hold an answer, or
+     * storage may reject it outright. Both used to be discarded here, and the
+     * payoff panel then told the athlete their estimate had narrowed when it had
+     * not. Captured, the panel can say which of the three actually happened.
+     */
+    setSexNarrowing(completeOnboarding(answers));
 
-    // Tell the server they are done, so signing in on another device does not
-    // ask all twelve questions again. Not awaited — see `syncOnboarding`.
-    void syncOnboarding({ ...answers });
+    /*
+     * Tell the server they are done, so signing in on another device does not
+     * ask all the questions again. Not awaited — see `syncOnboarding`.
+     *
+     * THE TYPED COLUMNS ARE WRITTEN AFTER IT SETTLES, AND THE ORDER IS NOT
+     * OPTIONAL. `syncOnboarding` UPSERTS the athlete's row; both calls below
+     * are UPDATEs, so they match no row until it exists. Fired in parallel they
+     * would race the insert and report `SYNC_NO_ROW` on a signup that worked.
+     * `syncOnboarding` returns `Promise<void>` and swallows its own errors, so
+     * `.then` runs whether the upsert succeeded or not — which is correct: if
+     * it failed, these two report "no profile matched" rather than pretending.
+     *
+     * TWO CALLS FOR THREE COLUMNS ON ONE TABLE, WHICH IS NOT THE SHAPE ANYBODY
+     * WOULD CHOOSE. `settings/sync.ts` explains it at the function: its signup
+     * half is uncommitted work being edited by several sessions at once, so
+     * `sexAtBirth` was APPENDED as its own function rather than folded into
+     * `saveSignupAnswers`, whose type and column list would both have had to be
+     * rewritten. Merge them into one call — and one `await` here — the day that
+     * file is committed and nothing is racing it.
+     *
+     * NOT AWAITED AND NOT REPORTED. The results carry a per-field sentence, and
+     * there is deliberately nowhere on this screen to show one: the next thing
+     * that happens is the plan being built, and a person finishing signup must
+     * not be stopped by a message about a column. The honest consequence is
+     * written down in the migration and in `sync.ts` — a failed send is a LOST
+     * answer, there is no outbox on this path, and nothing here may ever say it
+     * will be sent later.
+     *
+     * ONE CORRECTION TO THAT, AND IT ONLY APPLIES TO `sexAtBirth`. What a
+     * failed send loses is the SERVER's copy, which is what a new phone would
+     * have restored. It no longer costs this athlete their narrowed estimate:
+     * `completeOnboarding` above already tried the local fuel record,
+     * synchronously, before any of this network work started. So offline signup
+     * keeps the benefit here and loses it on the next device — and `sync.ts`
+     * still carries an older paragraph saying otherwise, with a correction
+     * appended under it.
+     *
+     * "TRIED", NOT "WROTE", AND THE WORD IS DELIBERATE. The local write is
+     * refused when the phone already holds an answer, and refused again when
+     * storage itself refuses. `sexNarrowing` above holds which happened, and the
+     * payoff panel reports it — this paragraph may not promise a benefit the
+     * panel is about to have to walk back.
+     */
+    void syncOnboarding({ ...answers }).then(() => {
+      void saveSignupAnswers({
+        gender: gender ?? undefined,
+        heardAbout: heardAbout ?? undefined,
+      });
+      void saveSexAtBirth({ sexAtBirth: sexAtBirth ?? undefined });
+    });
   }, [
     addGoal,
     altitudeId,
@@ -919,10 +1351,13 @@ export default function Onboarding() {
     days,
     disciplines,
     equipment,
+    gender,
     goalPeak,
+    heardAbout,
     levels,
     name,
     sessionMin,
+    sexAtBirth,
     skills,
     timelineId,
     updateCoachProfile,
@@ -1096,6 +1531,17 @@ export default function Onboarding() {
         return baseline !== null;
       case "limitations":
         return limitations.length > 0 || noLimitations;
+      // All three block until answered, and all three offer a decline that IS
+      // an answer — so requiring one costs nobody anything. A `null` here can
+      // only mean the step was never touched, which is exactly what should
+      // block. If any of these ever gained a default value, this gate would
+      // silently stop gating.
+      case "gender":
+        return gender !== null;
+      case "sexAtBirth":
+        return sexAtBirth !== null;
+      case "heardAbout":
+        return heardAbout !== null;
       case "name":
         return name.trim().length > 0;
       default:
@@ -1674,6 +2120,132 @@ export default function Onboarding() {
               </>
             )}
 
+            {step === "gender" && (
+              <>
+                <StepHead
+                  eyebrow="You"
+                  title="How do you describe yourself?"
+                  subtitle="Recorded on your account and read by nothing. It changes no session, no plan, no readiness figure and no calorie estimate — it is here because it belongs on a profile, not because something downstream is waiting on it. The next question asks about sex at birth, which is a different question and the only one of the two that changes a number."
+                />
+                <div className="mt-7 space-y-2.5">
+                  {GENDERS.map((o) => (
+                    <button
+                      key={o.id}
+                      type="button"
+                      onClick={() => setGender(o.id)}
+                      aria-pressed={gender === o.id}
+                      className={cn(
+                        "w-full rounded-tile border px-4 py-3.5 text-left transition-colors",
+                        gender === o.id
+                          ? "border-azure/55 bg-azure/[0.08]"
+                          : "border-hairline bg-elevated/40 hover:border-hairline-strong",
+                      )}
+                    >
+                      <span className="block text-[15px] text-snow">{o.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {step === "sexAtBirth" && (
+              <>
+                {/*
+                  THE SUBTITLE IS THE FEATURE ON THIS STEP, and every clause of
+                  it is load-bearing.
+
+                  It opens by saying this is NOT the previous question, because
+                  the second of two adjacent questions about the same broad
+                  subject reads as a form that forgot what it just asked, and a
+                  person who reads it that way answers it carelessly or resents
+                  it. Then it says exactly what the answer buys — one term of
+                  one estimate — because that is the entire measurable benefit
+                  and a vaguer promise ("helps us personalise your nutrition")
+                  would be a larger claim than the code can pay.
+
+                  IT USED TO QUOTE "166 kcal" AND THAT WAS WRONG TWICE OVER.
+                  Wrong first because the answer reached nothing: it went to the
+                  database and into the answers blob, and the estimate read
+                  neither, so this sentence sold a narrowing that did not exist.
+                  That is fixed — `AppState.completeOnboarding` now puts the
+                  answer in the fuel record the estimate actually reads. Wrong
+                  second because 166 was never the daily figure even in
+                  principle: it is the gap between Mifflin-St Jeor's two sex
+                  intercepts, +5 and -161, inside the RESTING term, and the day
+                  widens that band by ±10% for individual variation and then
+                  multiplies it by an activity range.
+
+                  ITS REPLACEMENT, "50 to 600 kcal", WAS WRONG AS WELL, which is
+                  the reason this step quotes nothing at all. Re-measured
+                  2026-09-03 with the real `narrowingWorth` over every
+                  combination the app accepts, stepping 1 kg / 1 cm / 1 year: an
+                  athlete who also gives height and birth year — the next step
+                  asks for both — gets 200 kcal back, or 250 ONLY where everyday
+                  movement is answered `physical` (`seated` and `on-feet` leave
+                  it at 200, as not answering does), flat across the whole
+                  accepted body (30-250 kg, 100-250 cm, ages 10-100). Decline the
+                  height and it runs 50 to 600 for an adult of 45-120 kg aged
+                  18-100 — 600 needs `physical`, so 50 to 500 is the common case
+                  — and 50 to 1,450 across everything the app accepts. So the
+                  subtitle
+                  names the mechanism, says the size depends on their other
+                  answers, and quotes no figure — which is the only version of it
+                  that survives somebody checking the arithmetic.
+
+                  AND IT NO LONGER SAYS ICEFALL "HOLDS NO SEX FOR YOU". It said
+                  that, and then "Answering picks one and the range narrows",
+                  and this screen has no way to know either is true. The phone
+                  may already hold an answer — from the Fuel screen, or from
+                  whoever used it before, since signing out keeps everything on
+                  the device on purpose — and `rememberSexForEnergy` refuses to
+                  overwrite one. Storage can also simply refuse the write. So the
+                  subtitle states the condition instead of asserting the state,
+                  points at the Fuel screen as the place an existing answer is
+                  changed, and promises that the next screen will say what
+                  actually happened. That promise is kept by the payoff panel,
+                  which reads the outcome `completeOnboarding` returns.
+
+                  Then it says what declining does, in the same breath rather
+                  than in small grey text underneath: the band widens and says
+                  so. Declining is an ANSWER here, it satisfies the gate, and it
+                  is stored as a value. Somebody weighing it up deserves to know
+                  the cost before they choose, not to discover it afterwards.
+
+                  WHAT IT DOES NOT SAY, AND MUST NEVER SAY: anything about
+                  weight, body fat, leanness, or a target of any kind.
+                  `coach/nutrition.ts` states that ICEFALL sets no weight target
+                  and no body-composition target, and that single sentence is
+                  the reason the fuel screen is not another calorie app. A sex
+                  question framed anywhere near body composition would break it
+                  on the first screen a new athlete ever sees.
+                */}
+                <StepHead
+                  eyebrow="You"
+                  title="Sex assigned at birth?"
+                  subtitle="A different question from the last one, not a re-ask. Gender is who you are; this is one term in a published equation. ICEFALL estimates what your body uses at rest, and without a sex that estimate spans both terms and is wider for it. Unless this phone already holds an answer — from the Fuel screen, or from whoever used it before you — what you pick here becomes the term, as long as this phone will store it: choosing one narrows the estimate to it, and Prefer not to say keeps the wider band covering both and says on screen why rather than guessing. If it does already hold one, that answer stands and the Fuel screen is where it changes. How much a sex narrows the estimate depends on the rest of your numbers, so no single figure would be honest here. Nothing else reads this. The summary at the end says what was actually stored."
+                />
+                <div className="mt-7 space-y-2.5">
+                  {SEXES.map((o) => (
+                    <button
+                      key={o.id}
+                      type="button"
+                      onClick={() => setSexAtBirth(o.id)}
+                      aria-pressed={sexAtBirth === o.id}
+                      className={cn(
+                        "w-full rounded-tile border px-4 py-3.5 text-left transition-colors",
+                        sexAtBirth === o.id
+                          ? "border-azure/55 bg-azure/[0.08]"
+                          : "border-hairline bg-elevated/40 hover:border-hairline-strong",
+                      )}
+                    >
+                      <span className="block text-[15px] text-snow">{o.label}</span>
+                      <span className="mt-0.5 block text-[12px] text-mist-dim">{o.note}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+
             {step === "body" && (
               <>
                 <StepHead
@@ -1730,6 +2302,66 @@ export default function Onboarding() {
                       },
                     }}
                   />
+                </div>
+              </>
+            )}
+
+            {step === "heardAbout" && (
+              <>
+                <StepHead
+                  eyebrow="ICEFALL"
+                  title="Where did you find ICEFALL?"
+                  subtitle="The one question here that is for ICEFALL rather than for you — it changes nothing about your plan. One person reads these answers and decides where to spend their time. Nothing checks it, so 'I don't remember' and 'I'd rather not say' are real answers and cost you nothing."
+                />
+                <div className="mt-7 space-y-2.5">
+                  {HEARD_ABOUT.map((o) => {
+                    /*
+                      A real brand mark where BrandMarks.tsx holds accurate
+                      geometry, an ordinary lucide pictogram otherwise, and one
+                      or the other on EVERY row — a fixed icon column with a gap
+                      in it reads as a rendering fault rather than as a decision.
+
+                      `hasPlatformMark` is asked rather than assumed because the
+                      answer list is deliberately wider than the set of marks:
+                      "A search engine" must never get Google's G (this file has
+                      no idea which engine it was, and BrandMarks holds a real G
+                      twenty lines from here, which is what makes that tempting)
+                      and a friend, a guide and a podcast are not brands.
+
+                      `tone="current"` on the selected row: a Reddit orange
+                      sitting inside a row that has gone azure looks like a bug
+                      rather than a brand colour.
+                    */
+                    const Pictogram = o.icon;
+                    const selected = heardAbout === o.id;
+                    return (
+                      <button
+                        key={o.id}
+                        type="button"
+                        onClick={() => setHeardAbout(o.id)}
+                        aria-pressed={selected}
+                        className={cn(
+                          "flex w-full items-center gap-3 rounded-tile border px-4 py-3.5 text-left transition-colors",
+                          selected
+                            ? "border-azure/55 bg-azure/[0.08] text-azure"
+                            : "border-hairline bg-elevated/40 text-mist hover:border-hairline-strong",
+                        )}
+                      >
+                        <span className="grid h-[18px] w-[18px] shrink-0 place-items-center">
+                          {hasPlatformMark(o.id) ? (
+                            <PlatformMark
+                              platform={o.id}
+                              size={18}
+                              tone={selected ? "current" : "brand"}
+                            />
+                          ) : Pictogram ? (
+                            <Pictogram size={18} strokeWidth={1.6} />
+                          ) : null}
+                        </span>
+                        <span className="text-[15px] text-snow">{o.label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </>
             )}
@@ -1888,6 +2520,10 @@ export default function Onboarding() {
                 equipment={equipment}
                 skills={skills}
                 altitudeId={altitudeId}
+                gender={gender}
+                sexAtBirth={sexAtBirth}
+                sexNarrowing={sexNarrowing}
+                heardAbout={heardAbout}
               />
             )}
           </motion.div>
@@ -2062,6 +2698,10 @@ function Payoff({
   equipment,
   skills,
   altitudeId,
+  gender,
+  sexAtBirth,
+  sexNarrowing,
+  heardAbout,
 }: {
   created: CreatedGoal | null;
   disciplines: string[];
@@ -2071,6 +2711,17 @@ function Payoff({
   equipment: Equipment[];
   skills: string[];
   altitudeId: string | null;
+  gender: Gender | null;
+  sexAtBirth: SexAtBirth | null;
+  /**
+   * What the sex answer DID, which is not the same as what it said.
+   *
+   * This panel is titled "what your answers changed", so for the one answer that
+   * changes a live number it has to report the outcome rather than the input.
+   * See the Line below, and `SexNarrowing` in `state/AppState.tsx`.
+   */
+  sexNarrowing: SexNarrowing;
+  heardAbout: HeardAboutChannel | null;
 }) {
   /**
    * The plan's real shape, read back out of the generator.
@@ -2222,11 +2873,72 @@ function Payoff({
                 : "Nothing recorded, and nothing downstream depends on it."
             }
           />
+
+          {/*
+            THE THREE LINES BELOW EXIST BECAUSE THIS PANEL IS TITLED "WHAT YOUR
+            ANSWERS CHANGED", AND TWO OF THEM CHANGED NOTHING.
+
+            Leaving them off would let the panel read as though every question
+            fed the plan. Two of these did not, and the honest thing is to say
+            so on the same screen and in the same shape as the answers that did
+            — a question whose payoff line is "nothing" is a question whose
+            screen already told you that, and this is where it is proved rather
+            than promised.
+
+            `sexAtBirth` is the exception among the three, and its line is the
+            one that has to be exact: the sex term of the resting-energy
+            equation, and nothing else. No weight, no body composition, no
+            target — see `coach/nutrition.ts`.
+
+            ITS LINE IS PRESENT TENSE AND NOW EARNS IT. The panel is titled
+            "what your answers changed", and for one release this line said the
+            answer narrowed the estimate by 166 kcal while nothing carried it to
+            the estimate at all — the panel's own promise, broken on the panel.
+            `AppState.completeOnboarding` writes it to the fuel record now, so
+            the sentence describes something that happens. The figure is gone
+            for the separate reason given at the step above: 166 is Mifflin-St
+            Jeor's resting intercept gap, not the width the day loses, and the
+            real width is different for every athlete.
+
+            AND IT BRANCHES ON THE OUTCOME, NOT ON THE ANSWER, which is the
+            second half of the same repair. Writing the answer can be REFUSED —
+            the phone may already hold one (`rememberSexForEnergy` will not
+            overwrite it) or storage may reject the write — and this line read
+            `sexAtBirth`, the tap, so it announced a narrowing in both of those
+            cases too. The one that made it urgent is a shared phone: signing out
+            keeps everything on the device by design, so the second person to
+            sign in meets the first person's answer, and a woman signing in after
+            a man was being told her estimate had moved to her own answer while
+            it sat at the male intercept. `completeOnboarding` returns which of
+            the five states happened and the panel reports that instead.
+
+            EVERY BRANCH POINTS AT THE FUEL SCREEN, because that is the only
+            place an answer already on the phone can be changed, and a person
+            told "this changed nothing" without being told where to go has been
+            informed and stranded.
+          */}
+          <Line
+            label="Gender"
+            value={GENDERS.find((g) => g.id === gender)?.label ?? "Not asked"}
+            effect="Recorded on your account and read by nothing — no session, no plan, no readiness figure, no estimate. If that ever changes, this line changes with it."
+          />
+
+          <Line
+            label="Sex at birth"
+            value={SEXES.find((s) => s.id === sexAtBirth)?.label ?? "Not asked"}
+            effect={SEX_PAYOFF[sexNarrowing]}
+          />
+
+          <Line
+            label="Where you found ICEFALL"
+            value={HEARD_ABOUT.find((h) => h.id === heardAbout)?.label ?? "Not asked"}
+            effect="Nothing about your plan depends on this. It is counted, alongside everyone else's answer, so one person can decide where to spend their time — and it is never checked against anything, so it is a record of what people remembered."
+          />
         </div>
       </div>
 
       <div className="mt-5 rounded-card border border-hairline bg-graphite p-4">
-        <p className="section-label text-azure/85">Why the last two questions mattered</p>
+        <p className="section-label text-azure/85">Why the skills and altitude questions mattered</p>
         <p className="mt-3 text-[12px] leading-relaxed text-mist">
           Nothing in a training feed says whether you can move on crampons, travel roped on a
           glacier or get a partner out of a crevasse — and no amount of volume implies it. The same

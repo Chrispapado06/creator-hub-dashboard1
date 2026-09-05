@@ -641,7 +641,7 @@ function ProfileBody({ idOrUsername, onRetry }: { idOrUsername: string; onRetry:
    * account. So a handle link points at a NAME and an id link points at a
    * PERSON — and a link somebody shares outlives the reason they shared it.
    */
-  const shareUrl = `${window.location.origin}/explore/people/${profile.id}`;
+  const shareUrl = `${window.location.origin}/social/people/${profile.id}`;
   const shareProfile = () => sharePage(`${profile.displayName} · ICEFALL`, shareUrl);
 
   /**
@@ -1781,7 +1781,7 @@ function NoClimberHere({ message }: { message?: string }) {
             ? "Nothing was asked of the server for this one: no ICEFALL account can hold a value of that shape, so it is the link that is wrong rather than a person who is missing."
             : "ICEFALL asked its server and got an answer, so this is not a connection problem — there is genuinely no account behind this link."}
         </p>
-        <Link to="/explore/social?tab=people" className="mt-4 block">
+        <Link to="/social?tab=people" className="mt-4 block">
           <Button variant="secondary" className="w-full">
             Search for people
           </Button>
@@ -1832,7 +1832,7 @@ function CouldNotLook({
         )}
 
         {noBackend ? (
-          <Link to="/explore/social?tab=people" className="mt-4 block">
+          <Link to="/social?tab=people" className="mt-4 block">
             <Button variant="secondary" className="w-full">
               Back to people
             </Button>

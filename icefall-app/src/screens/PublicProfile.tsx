@@ -53,7 +53,7 @@ export default function PublicProfile() {
    */
   useEffect(() => {
     if (session && profile?.handle) {
-      navigate(`/explore/people/${encodeURIComponent(profile.handle)}`, { replace: true });
+      navigate(`/social/people/${encodeURIComponent(profile.handle)}`, { replace: true });
     }
   }, [session, profile?.handle, navigate]);
   const [copied, setCopied] = useState(false);
@@ -181,7 +181,7 @@ export default function PublicProfile() {
             </Button>
 
             {mode === "installed" ? (
-              <Link to="/explore/social" className="block">
+              <Link to="/social" className="block">
                 <Button variant="secondary" className="w-full">
                   Open in ICEFALL
                   <ArrowRight size={15} strokeWidth={1.8} />

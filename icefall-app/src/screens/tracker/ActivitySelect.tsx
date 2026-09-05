@@ -182,9 +182,11 @@ function DisciplinePicker({ onPick }: { onPick: (d: Discipline) => void }) {
  * Screen 04b — the settings for the discipline just chosen.
  *
  * The mockup shows "HR Monitor · Connected" in green. It is NOT rendered that
- * way here, because ICEFALL has no heart-rate integration: there is no Bluetooth
- * pairing anywhere in the app, so a green "Connected" would be a claim about the
- * athlete's equipment that the phone has never checked. Every row below reports
+ * way here. ICEFALL does pair a Bluetooth heart-rate strap — `tracking/sources/
+ * heartRate.ts`, connected from the Connect control on `LiveTracker` — but this
+ * screen has never asked for that state, and a green "Connected" printed before
+ * anything is paired is a claim about the athlete's equipment nothing checked.
+ * The live state belongs where the connection is made. Every row below reports
  * what is actually true, and says plainly when the answer is nothing.
  */
 function ActivitySettings({
@@ -329,18 +331,26 @@ function ActivitySettings({
                       /* ICEFALL's style is vector and has no raster endpoint,
                          so this card is drawn from the style's own tokens: the
                          obsidian ground, a hairline contour, the azure route. */
-                      <span className="block h-full w-full bg-obsidian">
+                      /* `on-dark` — see index.css. This card is a PREVIEW of
+                         ICEFALL's map style, and that style is dark in every
+                         theme, so the swatch has to stay dark or it stops
+                         describing the thing it is choosing. */
+                      <span className="on-dark block h-full w-full bg-obsidian">
                         <svg viewBox="0 0 120 62" className="h-full w-full" aria-hidden>
                           <path
                             d="M0 46 L26 34 L44 40 L70 22 L92 30 L120 16"
                             fill="none"
-                            stroke="var(--ice-hairline-strong, rgba(255,255,255,0.14))"
+                            stroke="var(--ice-hairline-strong)"
                             strokeWidth="1"
                           />
+                          {/* The faint second contour. Its stroke was a
+                              literal white at 7% — the hairline token's own
+                              value, written out — so it followed neither the
+                              theme nor any future change to the token. */}
                           <path
                             d="M0 54 L30 44 L52 49 L78 33 L100 40 L120 28"
                             fill="none"
-                            stroke="rgba(255,255,255,0.07)"
+                            stroke="var(--ice-hairline)"
                             strokeWidth="1"
                           />
                           <path

@@ -175,7 +175,7 @@ export function DateField({
         <div
           role="dialog"
           aria-label={`${label} calendar`}
-          className="absolute left-0 right-0 top-[calc(100%+6px)] z-30 rounded-card border border-hairline bg-graphite p-3.5 shadow-[0_18px_50px_rgba(0,0,0,0.55)]"
+          className="absolute left-0 right-0 top-[calc(100%+6px)] z-30 rounded-card border border-hairline bg-graphite p-3.5 shadow-[var(--ice-shadow-pop)]"
         >
           <div className="flex items-center justify-between">
             <button

@@ -113,21 +113,27 @@ export const PEOPLE_SOURCE_NOTE =
   "These are real ICEFALL accounts. ICEFALL has not verified anybody's identity, qualifications or experience, so treat a profile as what somebody says about themselves.";
 
 /**
- * WHERE A PERSON ROW GOES: `/explore/people/:id`, which now exists.
+ * WHERE A PERSON ROW GOES: `/social/people/:id`.
  *
- * IT DID NOT WHEN THIS WAS WRITTEN, and the reasoning then was sound —
- * `AthleteProfile` read local state, and `App.tsx` declared this path twice
- * with a `<Navigate>` winning, so a row linking here would have taken somebody
- * who just found a real account to an empty tab. Both halves of that are fixed:
- * the redirect is gone, and the screen reads `profiles` from the server through
+ * IT DID NOT EXIST WHEN THIS WAS WRITTEN, and the reasoning then was sound —
+ * `AthleteProfile` read local state, and `App.tsx` declared the path twice with
+ * a `<Navigate>` winning, so a row linking there would have taken somebody who
+ * just found a real account to an empty tab. Both halves of that are fixed: the
+ * redirect is gone, and the screen reads `profiles` from the server through
  * `social/publicProfile.ts`.
+ *
+ * UNDER `/social`, NOT `/explore`, since 2026-09-03. A climber's profile is
+ * Social's screen; declared under `/explore` it rendered inside `ExploreLayout`
+ * and put the word "Explore" above a person you opened from Social.
+ * `/explore/people/:id` still redirects here for links already in the wild, but
+ * nothing in this app should aim at a redirect when the real path is known.
  *
  * BY ID, NOT BY HANDLE, even though the screen accepts either. A handle can be
  * changed or given up; `profiles.id` is the account. A search result is also
  * one of the two places (the other being a share link) where the id is already
  * in hand, so there is nothing to gain by spending the mutable key.
  */
-export const PERSON_ROUTE = "/explore/people/";
+export const PERSON_ROUTE = "/social/people/";
 
 /* -------------------------------------------------------------------------- */
 /* Tuning                                                                      */

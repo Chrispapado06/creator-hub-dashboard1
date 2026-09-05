@@ -156,8 +156,18 @@ export default defineConfig({
     alias: { "@": path.resolve(__dirname, "./src") },
   },
   server: {
-    port: 5190,
-    strictPort: true,
+    /*
+     * 5190 is this app's own port and stays the default, so `npm run dev` in a
+     * terminal behaves exactly as it always has and the docs stay true.
+     *
+     * PORT OVERRIDES IT. Several chats can have this repo open at once, and a
+     * second one starting the same server hit "port 5190 is in use" with
+     * `strictPort` refusing to move. When the harness assigns a port it passes
+     * it as PORT, and `strictPort` is then dropped — pinning a port we were
+     * told not to use is the whole failure.
+     */
+    port: Number(process.env.PORT) || 5190,
+    strictPort: !process.env.PORT,
     // Bind to every interface so a phone on the same Wi-Fi can reach the dev
     // server. Note iOS treats http:// on a LAN IP as an insecure context, so
     // Geolocation and Wake Lock stay blocked there — the tracker needs HTTPS.

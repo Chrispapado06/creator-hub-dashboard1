@@ -195,7 +195,7 @@ export function ChooseHandle() {
           />
         </div>
 
-        {error && <p className="text-[12px] leading-relaxed text-[color:var(--danger,#F08A7C)]">{error}</p>}
+        {error && <p className="text-[12px] leading-relaxed text-danger">{error}</p>}
 
         <Button className="w-full" disabled={!ready} onClick={submit}>
           {busy ? "Claiming…" : "Continue"}
@@ -271,7 +271,7 @@ function Line({ tone, children }: { tone: "good" | "bad" | "muted"; children: Re
       className={cn(
         "mt-2 flex items-center gap-1.5 text-[11.5px] leading-relaxed",
         tone === "good" && "text-azure",
-        tone === "bad" && "text-[color:var(--danger,#F08A7C)]",
+        tone === "bad" && "text-danger",
         tone === "muted" && "text-mist-dim",
       )}
     >

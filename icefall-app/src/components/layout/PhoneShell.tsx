@@ -1,7 +1,5 @@
 import { IcefallLockup } from "@/components/ui/IcefallMark";
 import { OfflineIndicator } from "@/components/layout/OfflineIndicator";
-import { DEMO } from "@/offline/offline";
-import { OfflineBanner } from "@/offline/OfflineBanner";
 
 /**
  * On a phone the app is full-bleed. On a desktop it sits in a 430 × 884 frame
@@ -34,7 +32,7 @@ export function PhoneShell({ children }: { children: React.ReactNode }) {
       </div>
 
       <div
-        className="relative flex h-dvh w-full flex-col overflow-hidden bg-obsidian sm:h-[884px] sm:w-[430px] sm:rounded-[42px] sm:border sm:border-hairline-strong sm:shadow-[0_40px_120px_-30px_rgba(0,0,0,0.9)]"
+        className="relative flex h-dvh w-full flex-col overflow-hidden bg-obsidian sm:h-[884px] sm:w-[430px] sm:rounded-[42px] sm:border sm:border-hairline-strong sm:shadow-[var(--ice-shadow-shell)]"
         data-phone-shell
       >
         {/* Shows on every screen, including the live tracker — the one place
@@ -47,14 +45,36 @@ export function PhoneShell({ children }: { children: React.ReactNode }) {
           unchanged branch below renders `children` exactly as before so an
           ordinary build's DOM is untouched.
         */}
-        {DEMO ? (
-          <>
-            <OfflineBanner />
-            <div className="relative flex min-h-0 flex-1 flex-col">{children}</div>
-          </>
-        ) : (
-          children
-        )}
+        {/*
+          THE DEMO BANNER IS OFF — owner's instruction, 2026-09-04: "remove demo
+          as well. no one is seeing it so need to know how it looks."
+
+          TO PUT IT BACK: import `OfflineBanner` from "@/offline/OfflineBanner"
+          and `DEMO` from "@/offline/offline", then render
+          `{DEMO && <OfflineBanner />}` directly above `children`. The component
+          itself is untouched. IF IT COMES BACK, READ THIS FIRST, because it
+          took a real handset to find what it broke:
+
+          `OfflineBanner` pads itself by `env(safe-area-inset-top)` and takes the
+          top edge — that is why the status bar sat inside the blue strip. But
+          every layout and screen underneath ALSO clears that inset, so the
+          notch was counted TWICE: ~50px of dead space between the banner and
+          every screen's title on a phone, and nothing at all in a desktop
+          browser, where `env()` resolves to 0. It was invisible in every check
+          that was not a phone. The fix, if the banner returns, is to wrap
+          `children` in a div carrying `--screen-safe-top: 0px`, because
+          `Screen` and the layouts all read `var(--screen-safe-top, env(...))` —
+          the banner has already cleared the notch, so nothing below it should.
+
+          WHAT THE APP LOSES WHILE IT IS OFF, stated plainly: the one persistent,
+          screen-independent label saying the data is sample data. The per-screen
+          honesty lines remain — "sample listings", the network-not-connected
+          notices, the em dashes for unmeasured figures — but a person landing
+          mid-app no longer has a standing marker. That is a fine trade for a
+          link the owner is reviewing alone, and a poor one for a link shared
+          with somebody who might take a figure at face value.
+        */}
+        {children}
       </div>
     </div>
   );

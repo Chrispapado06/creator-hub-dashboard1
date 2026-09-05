@@ -538,7 +538,9 @@ export function TerrainMap({
 
   if (failed) {
     return (
-      <div className={cn("relative", className)}>
+      /* `on-dark` — see index.css. The topographic fallback is the same dark
+         cartography, so the notice over it keeps the dark theme's ink. */
+      <div className={cn("on-dark relative", className)}>
         <RouteMap
           track={fallbackTrack}
           seed={fallbackSeed}
@@ -556,7 +558,17 @@ export function TerrainMap({
   }
 
   return (
-    <div className={cn("relative overflow-hidden bg-obsidian", className)}>
+    /*
+     * `on-dark` — see the island list in index.css.
+     *
+     * ICEFALL's cartography is a hand-written DARK alpine style, and a
+     * MapLibre style spec cannot read a CSS variable, so the map stays dark
+     * whatever the app's theme is. Everything in this box sits ON that map:
+     * the loading ground, the control buttons, and the attribution line the
+     * two sources' licences require. Without this the attribution went ink on
+     * near-black — present in the DOM, legally useless.
+     */
+    <div className={cn("on-dark relative overflow-hidden bg-obsidian", className)}>
       <div ref={holder} className="h-full w-full [&_.maplibregl-canvas]:outline-none" />
 
       {!ready && (

@@ -1,5 +1,5 @@
-import { Compass, House, MessageCircle, Play, User } from "lucide-react";
-import { NavLink, useLocation, useNavigate } from "react-router-dom";
+import { Compass, House, MessageCircle, Play, Users } from "lucide-react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
 import { animate, motion, useMotionValue, useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -17,7 +17,27 @@ const TABS = [
   { to: "/explore", label: "Explore", icon: Compass },
   null, // centre slot — the start control
   { to: "/coach", label: "Coach", icon: MessageCircle },
-  { to: "/profile", label: "Profile", icon: User },
+  /*
+     SOCIAL TAKES THE PROFILE SLOT, at the owner's request (2026-09-03).
+
+     The profile did not lose its door, it changed door: the avatar at the top
+     of Home is now the way in, which is where a person looks for themselves
+     anyway. Trading a bottom-bar slot for a feed is the right trade because a
+     feed is somewhere you GO REPEATEDLY and a profile is somewhere you go to
+     change something.
+
+     IT POINTS AT `/social`, A DESTINATION OF ITS OWN. It used to point at
+     `/explore/social`, and the screen rendered inside `ExploreLayout` — so this
+     tab produced a screen titled "Explore", with a back chevron and the Explore
+     tab row stacked above Social's own. The owner, 2026-09-03: "when you click
+     on social, i dont want it to be shown on explore anymore."
+
+     The reason it had been left under Explore is worth keeping: that layout
+     owned the create-group + in its header, and it is the only way to make a
+     group. The + moved to Social's own header with the screen rather than being
+     left behind. `/explore/social` still redirects here, query string intact.
+  */
+  { to: "/social", label: "Social", icon: Users },
 ] as const;
 
 /* -------------------------------------------------------------------------- */
@@ -248,8 +268,37 @@ function SummitEdge({ index }: { index: number | null }) {
 }
 
 /** One predicate, so the peak and the highlight cannot land on different tabs. */
-function isActivePath(pathname: string, to: string): boolean {
-  return pathname === to || pathname.startsWith(`${to}/`);
+/*
+ * LONGEST MATCH WINS.
+ *
+ * Written when the bar held two nested destinations, `/explore` and
+ * `/explore/social`: a plain prefix test lit BOTH on `/explore/social`, because
+ * the more specific tab is also a prefix of itself and the less specific one
+ * had no idea it had been outranked. NO TWO TABS NEST TODAY — Social moved to
+ * `/social` — so nothing currently depends on this. It is kept because the
+ * ambiguity comes back the moment anybody files a fifth destination under an
+ * existing one, and because it is what keeps `/social/post/:id` lighting Social
+ * rather than nothing.
+ *
+ * A tab is active when it prefix-matches AND no other tab matches with a longer
+ * `to`. One computation, one winner.
+ */
+function matchLength(pathname: string, to: string): number {
+  return pathname === to || pathname.startsWith(`${to}/`) ? to.length : -1;
+}
+
+function activeTabPath(pathname: string): string | null {
+  let best: string | null = null;
+  let bestLen = -1;
+  for (const t of TABS) {
+    if (!t) continue;
+    const len = matchLength(pathname, t.to);
+    if (len > bestLen) {
+      bestLen = len;
+      best = t.to;
+    }
+  }
+  return best;
 }
 
 export function TabBar() {
@@ -265,7 +314,8 @@ export function TabBar() {
    * than parking over whichever tab happened to be last.
    */
   const activeIndex = ((): number | null => {
-    const i = TABS.findIndex((t) => t !== null && isActivePath(pathname, t.to));
+    const winner = activeTabPath(pathname);
+    const i = TABS.findIndex((t) => t !== null && t.to === winner);
     return i === -1 ? null : i;
   })();
 
@@ -320,12 +370,30 @@ export function TabBar() {
             );
           }
 
-          const active = isActivePath(pathname, tab.to);
+          const active = tab.to === activeTabPath(pathname);
           const Icon = tab.icon;
 
           return (
             <li key={tab.to} className="flex-1">
-              <NavLink
+              {/*
+                A PLAIN `Link`, NOT `NavLink`, and the reason is the whole point
+                of the matcher above. `NavLink` runs its OWN prefix matcher and
+                stamps `aria-current="page"` from it — passing `undefined` does
+                NOT switch that off, it falls through to the component's default.
+                So the bar would carry two independent notions of "active", and
+                the accessible one would not be ours: back when Social sat at
+                `/explore/social`, a screen reader heard two current tabs while
+                the eye saw one.
+
+                `NavLink` also stamps a literal `active` class from a
+                case-insensitive matcher. Nothing styles `.active` today, so it
+                is inert — but the next person to write that rule would have no
+                way to know it was already being applied.
+
+                A `Link` has no opinion. One computation, one winner.
+                (Found by the ICEFALL 001 variant, which hit it first.)
+              */}
+              <Link
                 to={tab.to}
                 className="group relative flex h-full flex-col items-center justify-center gap-1.5"
                 aria-current={active ? "page" : undefined}
@@ -349,7 +417,7 @@ export function TabBar() {
                 >
                   {tab.label}
                 </span>
-              </NavLink>
+              </Link>
             </li>
           );
         })}

@@ -93,7 +93,7 @@ const SOCIAL_ICON: Record<SocialNoticeKind, typeof UserPlus> = {
 
 /** Where the row goes, or null when the row has nothing real to open. */
 function destinationFor(n: SocialNotice): string | null {
-  if (n.kind === "follow") return `/explore/people/${encodeURIComponent(n.actor.id)}`;
+  if (n.kind === "follow") return `/social/people/${encodeURIComponent(n.actor.id)}`;
   /*
    * A like or a comment opens the post it is on. If the post did not come back
    * — deleted between the two reads, or hidden by its own policy — the row is
@@ -364,13 +364,23 @@ export default function Notifications() {
           <Rise>
             <Card>
               <p className="text-[13px] leading-relaxed text-mist">{absence}</p>
-              <button
-                type="button"
-                onClick={() => social.reload()}
-                className="mt-3 text-[12px] text-azure transition-opacity hover:opacity-80"
-              >
-                Try again
-              </button>
+              {/* RETRY ONLY WHERE THERE IS SOMETHING TO RETRY.
+                  This button is real and it works: it re-runs the queries
+                  against ICEFALL's server, and it must not be deleted. What was
+                  wrong is that it appeared under EVERY absence sentence,
+                  including "ICEFALL is not connected to a server in this build
+                  … nothing was asked for" — a control inviting the reader to
+                  retry a request that was never made and, in that build, cannot
+                  be. `social.canRetry` owns the distinction. */}
+              {social.canRetry && (
+                <button
+                  type="button"
+                  onClick={() => social.reload()}
+                  className="mt-3 text-[12px] text-azure transition-opacity hover:opacity-80"
+                >
+                  Try again
+                </button>
+              )}
             </Card>
           </Rise>
         )}

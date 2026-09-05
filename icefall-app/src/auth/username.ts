@@ -289,7 +289,7 @@ export async function claimUsername(raw: string): Promise<ClaimResult> {
  * Stated here, exported as `HANDLE_CHANGE_BREAKS_LINKS`, and true of both
  * servers — the hold protects the NAME, not the LINKS:
  *
- *   · Nothing redirects. `/explore/people/:idOrUsername` resolves a handle by
+ *   · Nothing redirects. `/social/people/:idOrUsername` resolves a handle by
  *     an exact `eq("username", …)` match against `public.profiles`
  *     (`social/publicProfile.ts`). There is no alias table, no history table
  *     and no 301 anywhere in this app, so the old address does not point

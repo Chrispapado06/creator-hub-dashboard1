@@ -204,8 +204,9 @@ export function verifiedTotals(recorded: RecordedActivity[]): VerifiedTotals {
  *
  * `/social/post/:id` resolved through `useOwnPosts()` alone, so it could only
  * ever open a post the phone owner had written HERE. Every other link into it
- * hit `<Navigate to="/explore/social" replace />` and the reader was dropped on
- * the feed with no explanation. Two of those links are already shipped and both
+ * was redirected to the Social feed (`/social`, and `/explore/social` before
+ * Social was lifted out of Explore) and the reader was dropped there with no
+ * explanation. Two of those links are already shipped and both
  * carry SERVER uuids:
  *
  *   · `screens/Notifications.tsx` — "somebody liked your post" opens

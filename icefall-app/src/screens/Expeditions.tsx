@@ -1395,12 +1395,14 @@ function TreksTab() {
 /**
  * The company's mark.
  *
- * Every card now draws the monogram, because no listing carries a logo. The
- * four demo entries used to point at four real businesses' marks in
- * `public/img/operators` — gitignored and vercelignored, so they never left the
- * designer's machine — and attaching someone else's trademark to a rating
- * ICEFALL invented would have passed their mark off as our content. The
- * companies are invented now and an invented company has no mark.
+ * Every card draws the monogram, because the ruling in `services/operators.ts`
+ * is that no listing sets `logo` — see the note on the field there for why.
+ * Marks used to point into `public/img/operators`, gitignored since the start
+ * and vercelignored only since 2026-09-04; before that they DID leave the
+ * designer's machine. Attaching someone else's trademark to a rating ICEFALL
+ * invented would pass their mark off as our content, and the sample listings
+ * are invented companies, which have no mark to attach. The three real
+ * companies named on the Everest list carry facts only — and no mark either.
  *
  * The image path stays supported for the day a real operator uploads their own,
  * and the `onError` fallback stays because a listing whose logo fails to load

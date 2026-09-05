@@ -93,7 +93,7 @@
  * accept". Three things landed here, and each one has a trap worth knowing.
  *
  * A. THE CREATE FLOW IS INLINE, REACHED BY A FLOATING +. There is no route for
- *    it and there must not be: `/explore/groups/new` is `CreateExpedition`,
+ *    it and there must not be: `/social/groups/new` is `CreateExpedition`,
  *    which makes an `Expedition` — a plan held on THIS DEVICE. A group with a
  *    privacy setting is a row in `public.groups` on the server. Two different
  *    records, and pointing the new flow at the old route would have quietly
@@ -116,7 +116,7 @@
  * C. JOIN NAVIGATES, AND ONLY BECAUSE THE DESTINATION NOW EXISTS. Section 6
  *    records the owner's ruling: joining a public group lands you inside it,
  *    because the join was the decision and a second tap is friction. That
- *    depends entirely on `/explore/groups/:id`, which `GroupWorkspace` now
+ *    depends entirely on `/social/groups/:id`, which `GroupWorkspace` now
  *    dispatches — a LOCAL expedition id renders the planning workspace, a
  *    uuid-shaped one renders the server group's space. Before that dispatch
  *    existed the same navigation answered a real join with "this device holds
@@ -133,16 +133,23 @@
  * page, not under discover."
  *
  * So the floating azure + that used to sit bottom-right above the tab bar is
- * GONE, and a + now lives in ExploreLayout's ScreenHeader `action` slot —
- * beside "Explore", above the tab row, at the same altitude as search and
- * notifications. A create control below the Discover/My Groups pills reads as a
- * filter on the list it sits in rather than a way to add to it.
+ * GONE, and a + now lives in the ScreenHeader `action` slot of the screen that
+ * shows this one — beside its title, above the tab row, at the same altitude as
+ * search and notifications. A create control below the Discover/My Groups pills
+ * reads as a filter on the list it sits in rather than a way to add to it.
  *
- * IT TALKS TO THIS FILE THROUGH THE URL, not through shared state. The header
- * button navigates to `/explore/social?tab=groups&create=1`; THIS SCREEN must
- * open its create flow when it sees `create=1`, and clear the param when the
- * flow closes so a back-navigation does not reopen it. Nothing is plumbed
- * between the two components, and the flow becomes linkable for free.
+ * THAT HEADER IS `screens/social/Social.tsx`, NOT `ExploreLayout`. Social was
+ * lifted out of Explore on 2026-09-03 and the + travelled with it; the old
+ * layout carries no action at all now.
+ *
+ * IT TALKS TO THIS FILE THROUGH THE URL, not through shared state. The + sets
+ * `?tab=groups&create=1` on `/social`; THIS SCREEN must open its create flow
+ * when it sees `create=1`, and clear the param when the flow closes so a
+ * back-navigation does not reopen it. Nothing is plumbed between the two
+ * components, and the flow becomes linkable for free — note that it works on
+ * `/social/groups?create=1` and on the legacy `/explore/groups?create=1` too,
+ * because the test is the param and not the path — every redirect into Social
+ * carries the search string for exactly this reason.
  *
  * DO NOT re-add a floating +. It was mine, the owner has replaced it, and a
  * second entry point to the same form is how two of them drift apart.
@@ -497,10 +504,17 @@ export default function Groups() {
 
   /*
    * THE OTHER HALF OF THE HEADER CONTRACT, which the guard block above
-   * describes and which nobody had written. `ExploreLayout`'s + navigates to
+   * describes and which nobody had written. THE HEADER + IS
+   * `screens/social/Social.tsx`'s, not `ExploreLayout`'s — Social left Explore
+   * on 2026-09-03 and the button went with it — and it sets
    * `?tab=groups&create=1`; this reads it, opens the flow, and CLEARS the param
    * immediately — with `replace`, so a back-navigation returns to wherever they
    * were rather than reopening the form they just closed.
+   *
+   * `create=1` ALSO ARRIVES FROM ELSEWHERE, which is the point of doing it
+   * through the URL: the Explore hub's "Start a group" links straight at
+   * `/social?tab=groups&create=1` rather than at a list with no create control
+   * on it, which is what it used to point at.
    *
    * Through the URL rather than shared state, exactly as the contract says: the
    * two components stay ignorant of each other and the flow is linkable for
@@ -929,7 +943,7 @@ function GroupCoverCard({
                  when matter more than the talk to somebody who has just walked
                  in. `GroupWorkspace` sends a uuid-shaped id to the server
                  group's space; see §7C before removing this. */
-              navigate(`/explore/groups/${group.id}`);
+              navigate(`/social/groups/${group.id}`);
             }}
             className="shrink-0 rounded-card bg-azure px-5 py-2 text-[13.5px] text-obsidian transition-colors hover:bg-azure-bright disabled:opacity-60"
           >
@@ -1023,7 +1037,7 @@ const CREATE_REFUSED =
  * START A GROUP: a mountain, a name, and who may get in.
  *
  * ── WHY THIS IS INLINE AND NOT A ROUTE ──────────────────────────────────────
- * `/explore/groups/new` already exists and makes an `Expedition` — the plan
+ * `/social/groups/new` already exists and makes an `Expedition` — the plan
  * held on this device, with its window, its party size and its checklist. This
  * makes a row in `public.groups`, which is on the server and which strangers
  * can find. Two records that share the word "group", and sending both through
@@ -1123,7 +1137,7 @@ function CreateGroupCard({
         {/* The founder is seated by `groups_creator_joins`, an AFTER INSERT
             trigger, so they are genuinely in the group and this really does
             open. Same destination as a join — see §7C. */}
-        <Button className="mt-4 w-full" onClick={() => navigate(`/explore/groups/${made.id}`)}>
+        <Button className="mt-4 w-full" onClick={() => navigate(`/social/groups/${made.id}`)}>
           Open the group
         </Button>
         <Button variant="secondary" className="mt-2.5 w-full" onClick={onClose}>
@@ -2029,7 +2043,7 @@ function MountainPicker({
         <div className="border-t border-hairline px-4 py-3">
           <p className="text-[11px] leading-relaxed text-mist-dim">
             Climbing something outside this catalogue?{" "}
-            <Link to="/explore/groups/new" className="text-azure">
+            <Link to="/social/groups/new" className="text-azure">
               Create a group for it
             </Link>{" "}
             — that takes any peak the map can find, and stays on this device.
@@ -2132,7 +2146,7 @@ function InterestFailureNote({ reason }: { reason: InterestFailure }) {
  * The parties this athlete is planning, on this device.
  *
  * A GROUP IS AN `Expedition` — the record, the creation flow and the membership
- * are the ones that already existed, and the workspace at /explore/groups/:id
+ * are the ones that already existed, and the workspace at /social/groups/:id
  * is where one is actually planned. That rule is unchanged by the merge and by
  * the shared lists above: those are about a mountain, this is about a trip.
  *
@@ -2167,8 +2181,8 @@ function YourGroupsSection() {
   // objective, never a mountain invented to make the screen look busy.
   const suggestedPeak = goal?.name ?? objectives.find((o) => !o.summitedAt)?.name ?? null;
   const createHref = suggestedPeak
-    ? `/explore/groups/new?peak=${encodeURIComponent(suggestedPeak)}`
-    : "/explore/groups/new";
+    ? `/social/groups/new?peak=${encodeURIComponent(suggestedPeak)}`
+    : "/social/groups/new";
 
   const filtering = anyFilterActive(filters);
 
@@ -2179,7 +2193,7 @@ function YourGroupsSection() {
           action={
             expeditions.length > 0 ? (
               <Button asChild variant="ghost" size="sm" className="-mr-2">
-                <Link to="/explore/groups/new">
+                <Link to="/social/groups/new">
                   <Plus size={14} strokeWidth={1.8} aria-hidden="true" />
                   New
                 </Link>
@@ -2258,7 +2272,7 @@ function YourGroupsSection() {
           )}
           {visible.map((group) => (
             <Rise key={group.id} className="pt-3">
-              <GroupCard group={group} style={groupStyle[group.id]} to={`/explore/groups/${group.id}`} />
+              <GroupCard group={group} style={groupStyle[group.id]} to={`/social/groups/${group.id}`} />
             </Rise>
           ))}
         </>

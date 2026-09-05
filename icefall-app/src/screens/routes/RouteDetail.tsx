@@ -7,7 +7,7 @@ import {
 import { Card, Disclaimer, HeroCircleButton, IconAction, Stat, sharePage } from "@/components/ui/primitives";
 import { Sheet, SheetRow } from "@/components/ui/Sheet";
 import { ElevationProfile } from "@/components/ui/charts";
-import { Rise, Stagger } from "@/components/layout/chrome";
+import { Rise, Stagger, scrollContentToTop } from "@/components/layout/chrome";
 import { fmtDistance, fmtElevation } from "@/lib/format";
 import {
   DEMAND_LEVEL_LABEL, ROUTE_DEMAND_DISCLAIMER, routeById, routeDemands, routePhoto,
@@ -357,7 +357,17 @@ export default function RouteDetail() {
                     <button
                       key={p}
                       type="button"
-                      onClick={() => { setPhoto(i); setTab("route"); window.scrollTo({ top: 0 }); }}
+                      onClick={(e) => {
+                        setPhoto(i);
+                        setTab("route");
+                        // Back to the top: the photograph just chosen becomes
+                        // the hero at the very top of the page, and there is no
+                        // point switching to it below the fold. This was
+                        // `window.scrollTo`, which has never moved anything —
+                        // the document does not scroll in this app, the
+                        // container above does. See `scrollContentToTop`.
+                        scrollContentToTop(e.currentTarget);
+                      }}
                       className="overflow-hidden rounded-tile border border-hairline text-left"
                     >
                       <img src={p} alt="" aria-hidden loading="lazy" className="h-28 w-full object-cover" />

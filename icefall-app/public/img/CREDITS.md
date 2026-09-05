@@ -57,3 +57,16 @@ point `Product.photo` at them when they exist.
 
 Community avatars are generated from initials, not photographs — attaching real people's faces
 to fictional athletes would misrepresent them.
+
+## Sourcing rule added 2026-09-02
+
+**Require a modern CC licence; do not accept a bare "Public domain".** On Commons a
+public-domain mountaineering image is almost always old ARTWORK, because that is what
+"copyright expired" means for this subject. Two picks passed every keyword filter and
+were still paintings: Giacomo Grosso's oil *Seilschaft am Gletscher*, and an Edward
+Whymper engraving from *A Tramp Abroad* (1880). A keyword list cannot catch a book-scan
+filename like `A Tramp Abroad 0502h.jpg`; the licence can.
+
+Four files below predate this rule and carry a bare public-domain licence — `denali`,
+`denali-1`, `gran-paradiso`, `mont-blanc-2`. The note above says every image was checked
+by eye, so they are presumed photographs, but they are the ones to re-check first.

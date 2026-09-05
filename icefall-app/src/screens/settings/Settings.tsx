@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { Rise, Screen, ScreenHeader, Stagger } from "@/components/layout/chrome";
 import { Group, LinkRow } from "@/components/settings/kit";
+import { ThemePicker } from "@/components/settings/ThemePicker";
 import { useApp, usePrimaryGoal } from "@/state/AppState";
 import { useSettings } from "@/settings/store";
 import { fmtDate } from "@/lib/format";
@@ -94,6 +95,26 @@ export default function Settings() {
             </div>
           </div>
         </Rise>
+
+        {/* ---- Appearance, FIRST AND INLINE --------------------------------
+            The owner asked for the theme "somewhere where it's easy… like on
+            iPhones" (2026-09-04), and the reason it was not easy turned out to
+            be worse than placement: the only theme control in the app lived in
+            `screens/Settings.tsx`, which NOTHING IMPORTS. `/settings` renders
+            THIS file. So the control existed, looked finished, and could not be
+            reached from anywhere — the same class of fault as a comment that
+            describes a control nobody built.
+
+            It is inline rather than a row into `/settings/display`, and it
+            leads the list rather than sitting with Data, because it is one tap
+            from the Profile tab this way and because a phone puts the same
+            choice at the top of its own display page. `ThemePicker` shows the
+            themes rather than naming them, as a phone does. */}
+        <Group label="Appearance">
+          <div className="p-4">
+            <ThemePicker />
+          </div>
+        </Group>
 
         {/* ---- Profile ----------------------------------------------------
             No "Share profile" row here: it is one of the two buttons in the

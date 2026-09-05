@@ -202,14 +202,23 @@ export function PriceLines() {
  * Written in the conditional, because none of it happens yet. The guide step
  * names the guide only when there is one — with no listing attached, "Tomás is
  * told straight away" would be a promise about a person who is not there.
+ *
+ * NO RESPONSE TIME. Both guide lines ended "and would be in touch within 24
+ * hours" — a service level nobody has agreed to, on behalf of a self-employed
+ * guide ICEFALL has no contract with, in a trade where the person may be on a
+ * mountain for a week. This codebase bans response times outright in four other
+ * places and this was the fifth. The conditional does not rescue it: "would be
+ * in touch within 24 hours" still states what the arrangement WOULD be, and
+ * nobody has established that. What survives is the part that is genuinely a
+ * design decision — the guide hears about it immediately.
  */
 const STEPS: readonly (readonly [string, string])[] = [
   ["Booking confirmed", "You would get a confirmation with everything in one place."],
   [
     "Guide notified",
     GUIDE
-      ? `${GUIDE.firstName} would be told straight away and would be in touch within 24 hours.`
-      : "Your guide would be told straight away and would be in touch within 24 hours.",
+      ? `${GUIDE.firstName} would be told straight away.`
+      : "Your guide would be told straight away.",
   ],
   ["Plan together", "Itinerary, logistics, and anything particular to you."],
   ["Be ready", "Prepare for your objective — ICEFALL's training plan follows your dates."],

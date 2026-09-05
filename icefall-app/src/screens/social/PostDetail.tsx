@@ -124,7 +124,7 @@ function PostBody({ id, onRetry }: { id: string; onRetry: () => void }) {
    * back where the reader actually came from, which matters now that a post
    * opens from the feed, from a profile and from a notification.
    */
-  const back = location.key === "default" ? "/explore/social" : true;
+  const back = location.key === "default" ? "/social" : true;
 
   const me = {
     name: user.name,
@@ -296,7 +296,7 @@ function NoPost({
           </Button>
         ) : (
           <Button asChild variant="secondary" className="mt-4 w-full">
-            <Link to="/explore/social">Back to Social</Link>
+            <Link to="/social">Back to Social</Link>
           </Button>
         )}
       </Card>
