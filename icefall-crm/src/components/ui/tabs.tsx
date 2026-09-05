@@ -1,3 +1,5 @@
+"use client"
+
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { Tabs as TabsPrimitive } from "radix-ui"
@@ -27,7 +29,7 @@ const tabsListVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-ui-muted",
+        default: "bg-muted",
         line: "gap-1 bg-transparent",
       },
     },
