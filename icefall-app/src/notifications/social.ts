@@ -555,9 +555,7 @@ const ACTOR_SELECTS = [
  */
 let actorRung = 0;
 
-type ActorResult =
-  | { ok: true; actors: Map<string, NoticeActor> }
-  | { ok: false; failure: Failure };
+type ActorResult = { ok: true; actors: Map<string, NoticeActor> } | { ok: false; failure: Failure };
 
 function toActor(row: Record<string, unknown>): NoticeActor | null {
   const id = str(row.id);
@@ -574,8 +572,7 @@ function toActor(row: Record<string, unknown>): NoticeActor | null {
     // Strictly `boolean`. A field that came back as a string or a number was
     // NOT MEASURED rather than coerced into a claim about somebody's authority.
     isOwner: typeof row.app_owner === "boolean" ? row.app_owner : null,
-    identityVerified:
-      typeof row.identity_verified === "boolean" ? row.identity_verified : null,
+    identityVerified: typeof row.identity_verified === "boolean" ? row.identity_verified : null,
   };
 }
 
@@ -929,6 +926,16 @@ function build(
  * new" in a way that implies a server knows anything about it, and it must
  * never be shown as a global badge that two devices would disagree about
  * without saying why.
+ *
+ * THERE IS NOW SUCH A BADGE, on the bell in `AppTopBar`, and it is inside that
+ * rule rather than an exception to it. A 15px circle cannot carry "on this
+ * device" — so the caveat lives one tap behind it, in the screen the badge
+ * opens, which prints the whole sentence ("N new since you last looked on this
+ * device") under its title from this same `unseen`. Badge and subtitle are the
+ * one number from the one mark; the phone that shows 3 and the phone that shows
+ * nothing are both telling the truth about themselves, and the reader is told
+ * which truth that is the moment they act on it. If that subtitle is ever
+ * dropped, the badge has to go with it.
  *
  * NOTHING STORED IS `null`, NOT ZERO. A first open, a private window, a browser
  * with site data blocked — the app does not know when you last looked, and an

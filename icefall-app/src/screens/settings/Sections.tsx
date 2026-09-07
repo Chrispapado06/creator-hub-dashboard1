@@ -64,11 +64,12 @@ import { useApp, usePrimaryGoal } from "@/state/AppState";
 import { planFor } from "@/growth/tiers";
 import { fmtDate } from "@/lib/format";
 import { encodeProfile, profileLink, type SharedProfile } from "@/profile/shareLink";
-import { readAvatar, readBanner } from "@/lib/image";
+import { AVATAR_PX, readBanner } from "@/lib/image";
 import { isBackendConfigured } from "@/backend/client";
 import { PROFILE_BANNERS, bannerFor, bannerIndex } from "@/profile/banners";
 import { BADGES, badgeState } from "@/badges/model";
 import { BadgeHex } from "@/components/domain/BadgeHex";
+import { PhotoAdjuster } from "@/components/settings/PhotoAdjuster";
 import { supabase } from "@/backend/client";
 import { sendPasswordReset, signOut as signOutServer, signOutEverywhere } from "@/auth/account";
 import SupportRequest from "./SupportRequest";
@@ -1196,6 +1197,12 @@ function InterestChips({
  * part that may not exist yet, and the difference is reported rather than
  * flattened. The local copy is kept regardless: it is what the app draws
  * offline, and it is why the picture appears the instant it is chosen.
+ *
+ * AND THE PERSON NOW CHOOSES THE CROP. Tapping the face opens `PhotoAdjuster`
+ * before anything is uploaded, so the head is where they put it rather than
+ * where a centre-crop happened to leave it. "The instant it is chosen" above
+ * still holds — it now means the instant they confirm the framing, and until
+ * they do, nothing local or remote has changed at all.
  */
 /**
  * THE COVER AND THE FACE — design 3, chosen by the owner on 2026-09-07 from the
@@ -1249,19 +1256,32 @@ function PhotoHeader({
   const bannerInput = useRef<HTMLInputElement | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  /*
+   * THE PHOTOGRAPH THEY PICKED, NOT YET THE PHOTOGRAPH THEY HAVE.
+   *
+   * Choosing a file used to be the whole act: `readAvatar` took the middle
+   * square and the upload started. A phone photo of a person is portrait, so
+   * the middle square is a chest — and there was no control to say otherwise,
+   * only "shoot it again". So the chosen file waits here while `PhotoAdjuster`
+   * is open, and NOTHING is patched or sent until they confirm. That is what
+   * makes Cancel free: the profile has not been touched, so there is nothing
+   * to put back.
+   */
+  const [adjusting, setAdjusting] = useState<File | null>(null);
+
   const photo = settings.avatar;
   const cover = settings.cover;
 
-  async function chooseAvatar(file: File | undefined) {
-    if (!file) return;
+  /*
+   * The server side of choosing an avatar, unchanged and deliberately separate
+   * from where the picture came from. It patches the phone first and sends
+   * second — see the header note — and it now takes a data URL rather than a
+   * file, because the adjuster has already done the decoding, cropping and
+   * encoding that `readAvatar` used to do on the way past.
+   */
+  async function commitAvatar(data: string) {
+    setAdjusting(null);
     setError(null);
-    let data: string;
-    try {
-      data = await readAvatar(file);
-    } catch (e) {
-      setError((e as { message?: string }).message ?? "That image couldn't be used.");
-      return;
-    }
     patch({ avatar: data });
     avatar.touch();
     await avatar.send({ avatar: data });
@@ -1353,8 +1373,14 @@ function PhotoHeader({
         accept="image/*"
         className="hidden"
         onChange={(e) => {
-          void chooseAvatar(e.target.files?.[0]);
+          const file = e.target.files?.[0];
+          // Cleared straight away so picking the SAME file twice — which is
+          // exactly what somebody does after cancelling the adjuster — still
+          // fires a change event.
           e.target.value = "";
+          if (!file) return;
+          setError(null);
+          setAdjusting(file);
         }}
       />
       <input
@@ -1367,6 +1393,35 @@ function PhotoHeader({
           e.target.value = "";
         }}
       />
+
+      {/*
+        THE ADJUST STEP, AND ONLY FOR THE FACE.
+        
+        `PhotoAdjuster` takes its mask, aspect and output size as arguments
+        precisely so the banner could use it too — the banner has the same
+        problem in the other direction, since `readBanner` guesses a quarter
+        down the frame on the theory that summits sit high in a photograph.
+        THE BANNER IS DELIBERATELY NOT WIRED YET: it is a second gesture
+        surface to test on a real phone, and shipping it untested alongside
+        the avatar would risk both rather than one. It is a prop change, not a
+        rewrite, when the owner has tried this one.
+        
+        `AVATAR_PX` rather than a number typed here: `lib/image.ts` owns the
+        stored size, because it also owns the localStorage budget that size is
+        chosen against.
+      */}
+      {adjusting !== null && (
+        <PhotoAdjuster
+          file={adjusting}
+          title="Position your photo"
+          mask="circle"
+          aspect={1}
+          outputWidth={AVATAR_PX}
+          confirmLabel="Use photo"
+          onCancel={() => setAdjusting(null)}
+          onConfirm={(data) => void commitAvatar(data)}
+        />
+      )}
 
       {error && <p className="mt-2 text-[11.5px] text-danger">{error}</p>}
 

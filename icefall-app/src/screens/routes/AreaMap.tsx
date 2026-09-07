@@ -1,10 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2, LocateFixed } from "lucide-react";
+import { Layers, Loader2, LocateFixed } from "lucide-react";
 import { Map as MapLibreMap, Marker } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 
-import { attributionFor, savedMapStyle, styleFor } from "@/components/map/icefallStyle";
+import {
+  attributionFor,
+  MAP_STYLE_LABEL,
+  saveMapStyle,
+  savedMapStyle,
+  styleFor,
+  type MapStyleId,
+} from "@/components/map/icefallStyle";
 import { OFFLINE } from "@/offline/offline";
 import { cn } from "@/lib/utils";
 
@@ -39,6 +46,26 @@ import { cn } from "@/lib/utils";
  * Every trail and summit in the list below is a pin here, and tapping a pin
  * opens the same page the card opens. Nothing is pinned that is not in the
  * list, so the map never shows a trail the list cannot name.
+ *
+ * ── THE SAME THREE STYLES AS EVERYWHERE ELSE ────────────────────────────────
+ * The owner, 2026-09-07: "have options on the map of explore to change via
+ * satellite imagery, normal, line etc etc". Those options already existed —
+ * `icefallStyle.ts` has held ICEFALL / Satellite / Terrain since the tracker
+ * screens got a picker — and this map alone read the saved choice once at
+ * construction and then offered no way to change it. So this is the same three
+ * styles, the same labels and the same `saveMapStyle` key, surfaced here.
+ *
+ * ONE PREFERENCE, NOT A SECOND ONE. Choosing Satellite here is the choice the
+ * tracker will use on the next recording, and vice versa. A separate Explore-
+ * only preference would mean the athlete sets "satellite" twice and still meets
+ * a dark map somewhere, which is exactly the kind of half-applied setting that
+ * reads as a bug.
+ *
+ * The switch restyles the LIVE map. Remounting was rejected: this map's whole
+ * character is that it is created once and travels (see above), and tearing it
+ * down to change a basemap would lose the pan and zoom the athlete has just
+ * done and flash the "Loading map…" line at them for a change they made
+ * deliberately.
  */
 
 export interface MapPin {
@@ -89,6 +116,14 @@ export function FindMap({
   const [status, setStatus] = useState<"loading" | "ready" | "failed">("loading");
   const navigate = useNavigate();
 
+  /* The style on screen. Seeded from the shared preference, so the map opens in
+     whatever the athlete last chose on any screen. */
+  const [mapStyle, setMapStyle] = useState<MapStyleId>(() => savedMapStyle());
+  /* The picker is one glyph until asked for. Three permanent pills would sit on
+     the map's uncovered half — the half that exists to show where the trails
+     are — for a control most people touch once. */
+  const [pickerOpen, setPickerOpen] = useState(false);
+
   /* ---- The map, once ------------------------------------------------------ */
   useEffect(() => {
     if (OFFLINE || !holder.current) return;
@@ -97,6 +132,10 @@ export function FindMap({
     try {
       map = new MapLibreMap({
         container: holder.current,
+        /* `savedMapStyle()` again rather than the state, because this effect is
+           mount-once and reading the state here would be a stale closure the
+           day anything else changes it before load. Both resolve to the same
+           value on the first paint. */
         style: styleFor(savedMapStyle()),
         center: [lon, lat],
         zoom: zoomForRadius(radiusKm),
@@ -142,6 +181,34 @@ export function FindMap({
     // Created once; the place is followed by the effect below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /* ---- Restyle in place ------------------------------------------------------ */
+  /*
+   * `setStyle` swaps every source and layer under the same map instance, so the
+   * centre, the zoom and the canvas all survive — the ground changes, the view
+   * does not.
+   *
+   * THE PINS SURVIVE THIS, AND THAT IS NOT LUCK. A MapLibre `Marker` is a DOM
+   * element appended to the map's canvas CONTAINER, not a style layer: it is
+   * held by the Map, and `setStyle` only replaces `map.style`. Verified against
+   * `Marker.addTo` in maplibre-gl before relying on it, because the opposite is
+   * true of anything drawn as a layer — `TerrainMap` has to redraw its route
+   * line after exactly this call, and it does not re-add its markers, which is
+   * the same conclusion reached from the other direction. So there is no
+   * re-add here: adding one would be a ritual against a problem that does not
+   * exist, and it would make the pins blink on every switch.
+   *
+   * Guarded on `status` so a switch made while the first style is still
+   * arriving cannot race the load. The ref is what makes this a no-op on every
+   * unrelated re-render, of which this component has many.
+   */
+  const styleRef = useRef(mapStyle);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || status !== "ready" || styleRef.current === mapStyle) return;
+    styleRef.current = mapStyle;
+    map.setStyle(styleFor(mapStyle));
+  }, [mapStyle, status]);
 
   /* ---- Follow the place ---------------------------------------------------- */
   useEffect(() => {
@@ -199,16 +266,71 @@ export function FindMap({
         </div>
       )}
 
-      {/* Controls sit on the part of the map the sheet leaves uncovered. */}
+      {/*
+        Controls sit on the part of the map the sheet leaves uncovered.
+
+        ANCHORED BY ITS BOTTOM EDGE. This block used to be anchored by its top,
+        at the resting line minus the height of the one button it held — which
+        worked only while it held one button. Anything added above the button,
+        the locate note included, pushed the button DOWN past the resting line
+        and under the sheet. `-translate-y-full` pins the bottom of the stack to
+        the line instead, so the locate button stays exactly where it has always
+        been and everything else grows upward into open map.
+      */}
       <div
-        className="absolute right-4 flex flex-col items-end gap-2"
-        style={{ top: `calc(${visibleFraction * 100}% - 64px)` }}
+        className="absolute right-4 flex -translate-y-full flex-col items-end gap-2"
+        style={{ top: `calc(${visibleFraction * 100}% - 20px)` }}
       >
         {locateNote && (
           <p className="max-w-[220px] rounded-tile bg-obsidian/85 px-3 py-2 text-right text-[11px] leading-relaxed text-mist backdrop-blur">
             {locateNote}
           </p>
         )}
+
+        {/* The three styles, in the tracker's own vocabulary: the same labels,
+            the same pill, the same azure-on-selected. A picker that looked
+            different here would read as a different setting. */}
+        {pickerOpen && (
+          <div className="flex flex-col items-end gap-1.5">
+            {(Object.keys(MAP_STYLE_LABEL) as MapStyleId[]).map((id) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => {
+                  setMapStyle(id);
+                  saveMapStyle(id);
+                  setPickerOpen(false);
+                }}
+                aria-pressed={mapStyle === id}
+                className={cn(
+                  "rounded-pill border px-3 py-1.5 text-[11px] backdrop-blur transition-colors",
+                  mapStyle === id
+                    ? "border-azure/55 bg-azure/[0.12] text-azure"
+                    : "border-hairline-strong bg-obsidian/85 text-mist hover:text-snow",
+                )}
+              >
+                {MAP_STYLE_LABEL[id]}
+              </button>
+            ))}
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={() => setPickerOpen((open) => !open)}
+          aria-expanded={pickerOpen}
+          /* The label carries the current style because the glyph cannot: a
+             stack of sheets says "styles", never which one is drawn. */
+          aria-label={`Map style — ${MAP_STYLE_LABEL[mapStyle]}`}
+          className={cn(
+            "grid h-11 w-11 place-items-center rounded-full border bg-obsidian/85 shadow-[var(--ice-shadow-pop)] backdrop-blur transition-colors",
+            pickerOpen
+              ? "border-azure/55 text-azure"
+              : "border-hairline-strong text-snow hover:border-azure/50",
+          )}
+        >
+          <Layers size={17} strokeWidth={1.8} aria-hidden />
+        </button>
+
         <button
           type="button"
           onClick={onLocate}
@@ -227,13 +349,16 @@ export function FindMap({
         </button>
       </div>
 
-      {/* OpenFreeMap and OpenStreetMap are credited because their licences
-          require it, and `attributionFor` is the style's own markup so the
-          credit always matches the tiles actually drawn. */}
+      {/* The credit for the tiles ACTUALLY ON SCREEN, which is a licence
+          obligation and not a caption. This read `attributionFor(savedMapStyle())`
+          — the stored preference rather than the live style — which was right
+          only because nothing on this screen could change the style. Now that
+          something can, the same call would have credited OpenStreetMap for
+          Esri's imagery until the next remount. It follows the state. */}
       <p
         className="pointer-events-auto absolute left-3 text-[9px] text-mist-dim [&_a]:underline"
         style={{ top: `calc(${visibleFraction * 100}% - 22px)` }}
-        dangerouslySetInnerHTML={{ __html: attributionFor(savedMapStyle()) }}
+        dangerouslySetInnerHTML={{ __html: attributionFor(mapStyle) }}
       />
     </div>
   );
