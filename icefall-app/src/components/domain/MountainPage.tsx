@@ -32,7 +32,7 @@ import {
 import { treksForMountain } from "@/treks";
 import { Sheet, SheetRow } from "@/components/ui/Sheet";
 import { ProgressRing } from "@/components/ui/charts";
-import { Rise, Screen, Stagger } from "@/components/layout/chrome";
+import { Rise, Screen, Stagger, TABBAR_STICKY_BOTTOM } from "@/components/layout/chrome";
 import { GearCard } from "@/components/domain/cards";
 import { PhotoGallery } from "@/components/domain/PhotoGallery";
 import { ObjectiveActions, type MountainRef } from "@/components/domain/ObjectiveActions";
@@ -212,7 +212,11 @@ function ActionBar({ data, assessment }: { data: MountainPageData; assessment: A
   const flash = useSaveFlash(saved);
 
   return (
-    <div className="sticky bottom-0 mt-2 border-t border-hairline bg-obsidian/95 px-5 py-4 backdrop-blur">
+    <div
+      className="sticky mt-2 border-t border-hairline bg-obsidian/95 px-5 py-4 backdrop-blur"
+      /* Rests just above the floating tab bar, not under it. */
+      style={{ bottom: TABBAR_STICKY_BOTTOM }}
+    >
       <SavedToast show={flash} label={`${data.name} saved`} detail="to your objectives" />
       <div className="flex gap-2.5">
         {objective && (

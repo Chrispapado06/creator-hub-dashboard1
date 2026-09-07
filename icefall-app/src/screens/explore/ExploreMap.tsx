@@ -7,6 +7,7 @@ import { attributionFor, icefallMapStyle } from "@/components/map/icefallStyle";
 import { OFFLINE } from "@/offline/offline";
 import { sync } from "@/services/repository";
 import { useApp } from "@/state/AppState";
+import { TABBAR_CLEAR } from "@/components/layout/chrome";
 
 /**
  * EXPLORE — the map.
@@ -154,7 +155,7 @@ export default function ExploreMap() {
       {/* Counts are of things that exist and are pinned — never of things
           nearby, which this screen does not know. The credit is the style's
           own, so satellite is never credited to OpenFreeMap or the reverse. */}
-      <div className="shrink-0 px-5 pb-3 pt-2">
+      <div className="shrink-0 px-5 pt-2" style={{ paddingBottom: TABBAR_CLEAR }}>
         <p className="tnum text-[11px] text-mist">
           {curatedCount} ICEFALL mountain{curatedCount === 1 ? "" : "s"}
           {savedCount > 0

@@ -7,7 +7,7 @@ import {
   Mountain as MountainIcon,
   Trophy,
 } from "lucide-react";
-import { Rise, Stagger } from "@/components/layout/chrome";
+import { Rise, Screen, Stagger } from "@/components/layout/chrome";
 import { Avatar, SectionLabel } from "@/components/ui/primitives";
 import { Sheet, SheetRow } from "@/components/ui/Sheet";
 import { useRecordedActivities } from "@/tracking/feed";
@@ -121,8 +121,8 @@ export default function Leaderboard() {
   const rows = podium.length > 0 ? ranked.slice(3) : ranked;
 
   return (
-    <>
-      <Stagger className="px-5 pb-24 pt-4">
+    <Screen padded={false}>
+      <Stagger className="px-5 pt-4">
         {/* ---- Scope ------------------------------------------------------ */}
         <Rise>
           <div className="grid grid-cols-3 gap-2">
@@ -337,7 +337,7 @@ export default function Leaderboard() {
           ))}
         </Sheet>
       )}
-    </>
+    </Screen>
   );
 }
 
