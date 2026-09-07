@@ -394,7 +394,12 @@ function buildDemoPromotions(): PromotedPlacement[] {
       // Said here rather than assumed by the surfaces: this href IS a company
       // page, so these words are true of this row and of no other row by
       // default.
-      ctaLabel: "View company",
+      // The owner, 2026-09-07: an advertisement should look like one, "so on the
+      // add theres a button like click to find more". A real placement carries
+      // the advertiser's own `creative_cta_label`; this demo row needs a label
+      // of its own, and it must still be TRUE of where the button goes — the
+      // href is this operator's page, which lists the expeditions they run.
+      ctaLabel: "Find out more",
       // Nobody bought it, and every surface that draws it says so.
       demo: true,
     },
