@@ -1,6 +1,12 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { BadgeCheck, ChevronDown, ChevronRight, Mountain as MountainIcon, Trophy } from "lucide-react";
+import {
+  BadgeCheck,
+  ChevronDown,
+  ChevronRight,
+  Mountain as MountainIcon,
+  Trophy,
+} from "lucide-react";
 import { Rise, Stagger } from "@/components/layout/chrome";
 import { Avatar, SectionLabel } from "@/components/ui/primitives";
 import { Sheet, SheetRow } from "@/components/ui/Sheet";
@@ -9,10 +15,24 @@ import { useApp } from "@/state/AppState";
 import { useSettings } from "@/settings/store";
 import { useSummitLogs } from "@/social/summitLog";
 import {
-  CATEGORY_LABEL, CATEGORY_MEANING, DEFAULT_PERIOD, EMPTY_BOARD_BODY, EMPTY_BOARD_TITLE,
-  EMPTY_MOUNTAIN_BOARD_BODY, EMPTY_MOUNTAIN_BOARD_TITLE, PERIOD_LABEL, RANKING_UPDATE_NOTICE,
-  SCOPE_LABEL, VERIFIED_ONLY_NOTICE, boardEntries, categoryValue, standingFor,
-  type BoardCategory, type BoardEntry, type BoardPeriod, type BoardScope,
+  CATEGORY_LABEL,
+  CATEGORY_MEANING,
+  DEFAULT_PERIOD,
+  EMPTY_BOARD_BODY,
+  EMPTY_BOARD_TITLE,
+  EMPTY_MOUNTAIN_BOARD_BODY,
+  EMPTY_MOUNTAIN_BOARD_TITLE,
+  PERIOD_LABEL,
+  RANKING_UPDATE_NOTICE,
+  SCOPE_LABEL,
+  VERIFIED_ONLY_NOTICE,
+  boardEntries,
+  categoryValue,
+  standingFor,
+  type BoardCategory,
+  type BoardEntry,
+  type BoardPeriod,
+  type BoardScope,
 } from "@/social/leaderboard";
 import { cn } from "@/lib/utils";
 
@@ -238,7 +258,12 @@ export default function Leaderboard() {
             <div className="flex items-center gap-3.5">
               <span className="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-full bg-slate text-[15px] text-mist">
                 {settings.avatar ? (
-                  <img src={settings.avatar} alt="" aria-hidden className="h-full w-full object-cover" />
+                  <img
+                    src={settings.avatar}
+                    alt=""
+                    aria-hidden
+                    className="h-full w-full object-cover"
+                  />
                 ) : (
                   user.name.slice(0, 1).toUpperCase()
                 )}
@@ -431,7 +456,12 @@ function PodiumPlace({
         <p className="mt-0.5 max-w-full truncate text-[11px] text-mist-dim">{entry.region}</p>
       )}
 
-      <p className={cn("tnum mt-2 font-light leading-none text-azure", first ? "text-[22px]" : "text-[19px]")}>
+      <p
+        className={cn(
+          "tnum mt-2 font-light leading-none text-azure",
+          first ? "text-[22px]" : "text-[19px]",
+        )}
+      >
         {entry.value}
       </p>
       <p className="mt-1 text-[10px] uppercase tracking-[0.12em] text-mist-dim">{metricLabel}</p>

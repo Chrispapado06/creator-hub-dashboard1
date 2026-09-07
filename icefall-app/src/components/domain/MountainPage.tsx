@@ -21,7 +21,14 @@ import {
   TriangleAlert,
   X,
 } from "lucide-react";
-import { Badge, Button, Card, Disclaimer, SectionLabel, sharePage } from "@/components/ui/primitives";
+import {
+  Badge,
+  Button,
+  Card,
+  Disclaimer,
+  SectionLabel,
+  sharePage,
+} from "@/components/ui/primitives";
 import { treksForMountain } from "@/treks";
 import { Sheet, SheetRow } from "@/components/ui/Sheet";
 import { ProgressRing } from "@/components/ui/charts";
@@ -337,38 +344,38 @@ function MountainHero({
           )}
 
           <div className="mt-3 flex items-end gap-4">
-          <div className="min-w-0 flex-1">
-            <p className="section-label text-azure/85">{goal ? "Your goal" : "Mountain"}</p>
-            <h1 className="display mt-1.5 text-[34px] leading-[1.05] text-snow">{data.name}</h1>
-            {data.localName && data.localName !== data.name && (
-              <p className="mt-1 text-[13px] text-mist-dim">{data.localName}</p>
-            )}
-            <p className="tnum mt-2 text-[13px] text-mist">
-              {fmtElevation(data.elevationM)} m{data.region ? ` · ${data.region}` : ""}
-              {data.country ? ` · ${data.country}` : ""}
-            </p>
-            <span className="mt-3 inline-flex items-center gap-2 rounded-full border border-hairline bg-obsidian/50 px-3 py-1.5 backdrop-blur">
-              <MountainIcon size={13} strokeWidth={1.5} className="shrink-0 text-azure" />
-              <span className="section-label whitespace-nowrap text-snow">
-                {data.curated?.difficultyLabel ?? assessment.shortLabel}
+            <div className="min-w-0 flex-1">
+              <p className="section-label text-azure/85">{goal ? "Your goal" : "Mountain"}</p>
+              <h1 className="display mt-1.5 text-[34px] leading-[1.05] text-snow">{data.name}</h1>
+              {data.localName && data.localName !== data.name && (
+                <p className="mt-1 text-[13px] text-mist-dim">{data.localName}</p>
+              )}
+              <p className="tnum mt-2 text-[13px] text-mist">
+                {fmtElevation(data.elevationM)} m{data.region ? ` · ${data.region}` : ""}
+                {data.country ? ` · ${data.country}` : ""}
+              </p>
+              <span className="mt-3 inline-flex items-center gap-2 rounded-full border border-hairline bg-obsidian/50 px-3 py-1.5 backdrop-blur">
+                <MountainIcon size={13} strokeWidth={1.5} className="shrink-0 text-azure" />
+                <span className="section-label whitespace-nowrap text-snow">
+                  {data.curated?.difficultyLabel ?? assessment.shortLabel}
+                </span>
               </span>
-            </span>
-          </div>
-
-          {goal && (
-            <div className="shrink-0 text-right">
-              <ProgressRing value={goal.preparation} size={84} stroke={2.5} className="ml-auto">
-                <div className="text-center">
-                  <p className="tnum text-[19px] font-extralight leading-none text-snow">
-                    {Math.round(goal.preparation)}%
-                  </p>
-                  <p className="section-label mt-1 text-[8px] text-azure/85">Prepared</p>
-                </div>
-              </ProgressRing>
-              <p className="mt-2.5 text-[11px] text-mist">{fmtCountdown(goal.targetDate)}</p>
-              <p className="tnum text-[11px] text-mist-dim">Target {fmtDate(goal.targetDate)}</p>
             </div>
-          )}
+
+            {goal && (
+              <div className="shrink-0 text-right">
+                <ProgressRing value={goal.preparation} size={84} stroke={2.5} className="ml-auto">
+                  <div className="text-center">
+                    <p className="tnum text-[19px] font-extralight leading-none text-snow">
+                      {Math.round(goal.preparation)}%
+                    </p>
+                    <p className="section-label mt-1 text-[8px] text-azure/85">Prepared</p>
+                  </div>
+                </ProgressRing>
+                <p className="mt-2.5 text-[11px] text-mist">{fmtCountdown(goal.targetDate)}</p>
+                <p className="tnum text-[11px] text-mist-dim">Target {fmtDate(goal.targetDate)}</p>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -467,7 +474,6 @@ function OptionsSheet({
     </Sheet>
   );
 }
-
 
 /* -------------------------------------------------------------------------- */
 /* Stat strip                                                                 */
@@ -970,72 +976,72 @@ function Expeditions({ data }: { data: MountainPageData }) {
         <Rise className="pt-6">
           <p className="text-[12px] leading-relaxed text-mist-dim">
             {data.name} is a guided objective rather than an expedition. Expedition companies
-            organise permits, base camps and logistics for high peaks — the lowest altitude any
-            of them works at is well above this summit, so none is listed here. That is not a
-            gap in the listings; it is the wrong kind of help for this mountain.
+            organise permits, base camps and logistics for high peaks — the lowest altitude any of
+            them works at is well above this summit, so none is listed here. That is not a gap in
+            the listings; it is the wrong kind of help for this mountain.
           </p>
           <Disclaimer className="mt-4">{ACCESS_DISCLAIMER}</Disclaimer>
         </Rise>
       )}
 
       {expeditionGround && (
-      <Rise className="pt-1">
-        <SectionLabel>Companies that run this objective</SectionLabel>
-        <p className="mt-2 text-[12px] leading-relaxed text-mist-dim">
-          Matched to {data.name} by region and working altitude. Ordered by that match, then
-          alphabetically — no listing is promoted, sponsored or paid for.
-        </p>
+        <Rise className="pt-1">
+          <SectionLabel>Companies that run this objective</SectionLabel>
+          <p className="mt-2 text-[12px] leading-relaxed text-mist-dim">
+            Matched to {data.name} by region and working altitude. Ordered by that match, then
+            alphabetically — no listing is promoted, sponsored or paid for.
+          </p>
 
-        {/* Placeholder businesses render first only because they are the fuller
+          {/* Placeholder businesses render first only because they are the fuller
             cards for evaluating this layout; they are badged DEMO and every
             number on them is invented. */}
-        {operators.some((o) => o.demo) && <Disclaimer className="mt-3">{DEMO_NOTICE}</Disclaimer>}
+          {operators.some((o) => o.demo) && <Disclaimer className="mt-3">{DEMO_NOTICE}</Disclaimer>}
 
-        <div className="mt-3 space-y-2.5">
-          {operators.map((o, i) => (
-            <OperatorCard
-              key={o.id}
-              operator={o}
-              lead={i === 0}
-              rank={i === 0 ? undefined : i + 1}
-              peak={{
-                name: data.name,
-                elevationM: data.elevationM,
-                lat: data.lat,
-                lon: data.lon,
-                goalId: data.goal?.id,
-              }}
-            />
-          ))}
-        </div>
+          <div className="mt-3 space-y-2.5">
+            {operators.map((o, i) => (
+              <OperatorCard
+                key={o.id}
+                operator={o}
+                lead={i === 0}
+                rank={i === 0 ? undefined : i + 1}
+                peak={{
+                  name: data.name,
+                  elevationM: data.elevationM,
+                  lat: data.lat,
+                  lon: data.lon,
+                  goalId: data.goal?.id,
+                }}
+              />
+            ))}
+          </div>
 
-        {operators.length === 0 && (
-          <Card className="mt-3">
-            <p className="text-[13px] leading-relaxed text-mist">
-              No listing covers this objective. Use the search below to find IFMGA-certified
-              operators who actually work here.
-            </p>
-          </Card>
-        )}
+          {operators.length === 0 && (
+            <Card className="mt-3">
+              <p className="text-[13px] leading-relaxed text-mist">
+                No listing covers this objective. Use the search below to find IFMGA-certified
+                operators who actually work here.
+              </p>
+            </Card>
+          )}
 
-        <Disclaimer className="mt-4">{OPERATOR_DISCLAIMER}</Disclaimer>
-      </Rise>
+          <Disclaimer className="mt-4">{OPERATOR_DISCLAIMER}</Disclaimer>
+        </Rise>
       )}
 
       {expeditionGround && (
-      <Rise className="pt-6">
-        <SectionLabel>Find a real operator</SectionLabel>
-        <a
-          href={operatorSearchUrl(data.name)}
-          target="_blank"
-          rel="noreferrer noopener"
-          className="mt-3 flex items-center gap-2.5 rounded-card border border-hairline bg-graphite px-4 py-3.5 text-[13px] text-mist transition-colors hover:border-azure/50 hover:text-snow"
-        >
-          <ExternalLink size={15} strokeWidth={1.6} className="shrink-0" />
-          <span className="flex-1">Search certified operators for {data.name}</span>
-        </a>
-        <Disclaimer className="mt-4">{ACCESS_DISCLAIMER}</Disclaimer>
-      </Rise>
+        <Rise className="pt-6">
+          <SectionLabel>Find a real operator</SectionLabel>
+          <a
+            href={operatorSearchUrl(data.name)}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="mt-3 flex items-center gap-2.5 rounded-card border border-hairline bg-graphite px-4 py-3.5 text-[13px] text-mist transition-colors hover:border-azure/50 hover:text-snow"
+          >
+            <ExternalLink size={15} strokeWidth={1.6} className="shrink-0" />
+            <span className="flex-1">Search certified operators for {data.name}</span>
+          </a>
+          <Disclaimer className="mt-4">{ACCESS_DISCLAIMER}</Disclaimer>
+        </Rise>
       )}
 
       <Rise className="pt-6">

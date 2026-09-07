@@ -48,7 +48,8 @@ import { cn } from "@/lib/utils";
  */
 
 /** Matches a message pushing payment off ICEFALL. Deliberately narrow. */
-const OFF_PLATFORM = /\b(bank transfer|pay me directly|cash|paypal|revolut|outside the app|off the platform|knock the .*fee)\b/i;
+const OFF_PLATFORM =
+  /\b(bank transfer|pay me directly|cash|paypal|revolut|outside the app|off the platform|knock the .*fee)\b/i;
 
 export default function Thread() {
   const { id } = useParams<{ id: string }>();
@@ -125,141 +126,139 @@ export default function Thread() {
       {locked ? (
         <LockedBody
           convo={convo}
-          onAction={() =>
-            navigate(convo.kind === "company" ? "/explore/expeditions" : "/book")
-          }
+          onAction={() => navigate(convo.kind === "company" ? "/explore/expeditions" : "/book")}
         />
       ) : (
         <>
-      {/* ---- Messages ------------------------------------------------------ */}
-      <Screen className="px-4">
-        <div className="space-y-5 pt-5">
-          {grouped.map((g) => (
-            <div key={g.day}>
-              <p className="mb-4 text-center text-[10.5px] uppercase tracking-[0.14em] text-mist-dim">
-                {g.day}
-              </p>
+          {/* ---- Messages ------------------------------------------------------ */}
+          <Screen className="px-4">
+            <div className="space-y-5 pt-5">
+              {grouped.map((g) => (
+                <div key={g.day}>
+                  <p className="mb-4 text-center text-[10.5px] uppercase tracking-[0.14em] text-mist-dim">
+                    {g.day}
+                  </p>
 
-              <div className="space-y-2.5">
-                {g.items.map((m) => {
-                  if (m.kind === "system") {
-                    return (
-                      <p key={m.id} className="text-center text-[11.5px] text-mist-dim">
-                        {m.body}
-                      </p>
-                    );
-                  }
-
-                  const mine = m.from === "me";
-                  const flagged = !mine && OFF_PLATFORM.test(m.body);
-
-                  return (
-                    <div key={m.id}>
-                      <div className={cn("flex", mine ? "justify-end" : "justify-start")}>
-                        <div
-                          className={cn(
-                            "max-w-[84%] rounded-card px-3.5 py-2.5",
-                            mine
-                              ? "rounded-br-sm bg-azure/[0.14] ring-1 ring-azure/25"
-                              : "rounded-bl-sm border border-hairline bg-graphite",
-                          )}
-                        >
-                          {m.author && (
-                            <p className="mb-1 text-[11px] text-azure/80">{m.author}</p>
-                          )}
-                          <p className="whitespace-pre-wrap text-[13.5px] leading-relaxed text-snow">
+                  <div className="space-y-2.5">
+                    {g.items.map((m) => {
+                      if (m.kind === "system") {
+                        return (
+                          <p key={m.id} className="text-center text-[11.5px] text-mist-dim">
                             {m.body}
                           </p>
-                          <p className="mt-1.5 flex items-center justify-end gap-1.5 text-[10px] text-mist-dim">
-                            <span className="tnum">{fmtTime(m.at)}</span>
-                            {mine && <State state={m.state} />}
-                          </p>
-                        </div>
-                      </div>
+                        );
+                      }
 
-                      {flagged && !reported && (
-                        <Card className="mt-2.5 border-alert/35">
-                          <div className="flex items-start gap-2.5">
-                            <ShieldAlert
-                              size={15}
-                              strokeWidth={1.8}
-                              className="mt-px shrink-0 text-alert"
-                            />
-                            <div className="min-w-0">
-                              <p className="text-[12.5px] text-snow">
-                                This message suggests paying outside ICEFALL
+                      const mine = m.from === "me";
+                      const flagged = !mine && OFF_PLATFORM.test(m.body);
+
+                      return (
+                        <div key={m.id}>
+                          <div className={cn("flex", mine ? "justify-end" : "justify-start")}>
+                            <div
+                              className={cn(
+                                "max-w-[84%] rounded-card px-3.5 py-2.5",
+                                mine
+                                  ? "rounded-br-sm bg-azure/[0.14] ring-1 ring-azure/25"
+                                  : "rounded-bl-sm border border-hairline bg-graphite",
+                              )}
+                            >
+                              {m.author && (
+                                <p className="mb-1 text-[11px] text-azure/80">{m.author}</p>
+                              )}
+                              <p className="whitespace-pre-wrap text-[13.5px] leading-relaxed text-snow">
+                                {m.body}
                               </p>
-                              <p className="mt-1.5 text-[11.5px] leading-relaxed text-mist">
-                                {OFF_PLATFORM_WARNING}
+                              <p className="mt-1.5 flex items-center justify-end gap-1.5 text-[10px] text-mist-dim">
+                                <span className="tnum">{fmtTime(m.at)}</span>
+                                {mine && <State state={m.state} />}
                               </p>
-                              <Button
-                                variant="secondary"
-                                size="sm"
-                                className="mt-3"
-                                onClick={() => setReported(true)}
-                              >
-                                <Flag size={13} strokeWidth={1.8} />
-                                Report this
-                              </Button>
                             </div>
                           </div>
-                        </Card>
-                      )}
 
-                      {flagged && reported && (
-                        <Card className="mt-2.5">
-                          <p className="text-[12px] text-mist">
-                            Nothing was sent — reporting is not connected yet. When it is, this goes
-                            to ICEFALL with the message attached, and the guide is not told who
-                            reported it.
-                          </p>
-                        </Card>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+                          {flagged && !reported && (
+                            <Card className="mt-2.5 border-alert/35">
+                              <div className="flex items-start gap-2.5">
+                                <ShieldAlert
+                                  size={15}
+                                  strokeWidth={1.8}
+                                  className="mt-px shrink-0 text-alert"
+                                />
+                                <div className="min-w-0">
+                                  <p className="text-[12.5px] text-snow">
+                                    This message suggests paying outside ICEFALL
+                                  </p>
+                                  <p className="mt-1.5 text-[11.5px] leading-relaxed text-mist">
+                                    {OFF_PLATFORM_WARNING}
+                                  </p>
+                                  <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    className="mt-3"
+                                    onClick={() => setReported(true)}
+                                  >
+                                    <Flag size={13} strokeWidth={1.8} />
+                                    Report this
+                                  </Button>
+                                </div>
+                              </div>
+                            </Card>
+                          )}
+
+                          {flagged && reported && (
+                            <Card className="mt-2.5">
+                              <p className="text-[12px] text-mist">
+                                Nothing was sent — reporting is not connected yet. When it is, this
+                                goes to ICEFALL with the message attached, and the guide is not told
+                                who reported it.
+                              </p>
+                            </Card>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+
+              <Disclaimer className="pt-3">{BACKEND_NOT_CONNECTED}</Disclaimer>
             </div>
-          ))}
+          </Screen>
 
-          <Disclaimer className="pt-3">{BACKEND_NOT_CONNECTED}</Disclaimer>
-        </div>
-      </Screen>
-
-      {/* ---- Composer ------------------------------------------------------- */}
-      <div
-        className="shrink-0 border-t border-hairline bg-obsidian/90 px-3 py-2.5 backdrop-blur"
-        style={{ paddingBottom: "max(10px, env(safe-area-inset-bottom, 0px))" }}
-      >
-        <div className="flex items-end gap-2">
-          <button
-            disabled
-            aria-label="Attach"
-            className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-mist-dim disabled:opacity-45"
+          {/* ---- Composer ------------------------------------------------------- */}
+          <div
+            className="shrink-0 border-t border-hairline bg-obsidian/90 px-3 py-2.5 backdrop-blur"
+            style={{ paddingBottom: "max(10px, env(safe-area-inset-bottom, 0px))" }}
           >
-            <Paperclip size={18} strokeWidth={1.6} />
-          </button>
+            <div className="flex items-end gap-2">
+              <button
+                disabled
+                aria-label="Attach"
+                className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-mist-dim disabled:opacity-45"
+              >
+                <Paperclip size={18} strokeWidth={1.6} />
+              </button>
 
-          <textarea
-            rows={1}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder="Message"
-            className="no-scrollbar max-h-28 min-h-[40px] flex-1 resize-none rounded-card border border-hairline bg-graphite px-3.5 py-2.5 text-[13.5px] text-snow outline-none placeholder:text-mist-dim focus:border-azure"
-          />
+              <textarea
+                rows={1}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                placeholder="Message"
+                className="no-scrollbar max-h-28 min-h-[40px] flex-1 resize-none rounded-card border border-hairline bg-graphite px-3.5 py-2.5 text-[13.5px] text-snow outline-none placeholder:text-mist-dim focus:border-azure"
+              />
 
-          <button
-            disabled
-            aria-label="Send"
-            className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-azure text-obsidian disabled:opacity-45"
-          >
-            <Send size={16} strokeWidth={1.9} />
-          </button>
-        </div>
-        <p className="mt-1.5 text-center text-[10.5px] text-mist-dim">
-          Sending is not connected — nothing leaves this device.
-        </p>
-      </div>
+              <button
+                disabled
+                aria-label="Send"
+                className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-azure text-obsidian disabled:opacity-45"
+              >
+                <Send size={16} strokeWidth={1.9} />
+              </button>
+            </div>
+            <p className="mt-1.5 text-center text-[10.5px] text-mist-dim">
+              Sending is not connected — nothing leaves this device.
+            </p>
+          </div>
         </>
       )}
     </div>
@@ -303,7 +302,9 @@ function LockedBody({ convo, onAction }: { convo: Conversation; onAction: () => 
         </span>
       )}
       <h2 className="mt-5 text-[16px] text-snow">
-        {company ? `Message ${convo.name} after a qualified enquiry` : `Message ${first} after you book`}
+        {company
+          ? `Message ${convo.name} after a qualified enquiry`
+          : `Message ${first} after you book`}
       </h2>
       <p className="mt-2.5 max-w-[19rem] text-[12.5px] leading-relaxed text-mist">
         {company ? LOCKED_EXPLAINER_COMPANY : LOCKED_EXPLAINER}
