@@ -410,7 +410,12 @@ export default function Community() {
         <Stagger className="pb-6 pt-1">
           {items.map((item, i) =>
             item.kind === "promoted" ? (
-              <Rise key={`promoted:${item.placement.id}:${i}`} className="px-5 pt-3">
+              /* `pt-3` and nothing else — the SAME wrapper the post branch
+                 below uses. The `px-5` here was the last of the card: it inset
+                 the advertisement's photograph by 20px while every post's ran
+                 edge to edge, which is the box surviving as a margin after the
+                 border was taken away. */
+              <Rise key={`promoted:${item.placement.id}:${i}`} className="pt-3">
                 <PromotedCard
                   placement={item.placement}
                   onDismiss={promoted.dismiss}
@@ -719,10 +724,29 @@ function PromotedCard({
   const imageSrc = imageBroken ? null : inAppImage(placement.creativePath);
 
   return (
-    <div ref={holder} className="overflow-hidden rounded-card border border-hairline bg-graphite">
+    /*
+     * NOT A CARD. THE OWNER, TWICE, AND THE SECOND TIME IN CAPITALS.
+     *
+     * This was a bordered box on a fill, sitting in a column of posts that
+     * carry no border and no fill at all — so the advertisement read as a
+     * foreign object dropped into the feed rather than as a post somebody paid
+     * for. The owner's standing rule is that a card is for a genuinely distinct
+     * OBJECT, and a promotion in a feed is not one: it is a post with a
+     * different reason for being there.
+     *
+     * So the shape is `PostCard`'s exactly — byline row, media edge to edge,
+     * copy under it, nothing around any of it — and the ONE difference is
+     * colour. Gilt is not decoration here and it is not a second accent: the
+     * palette in `index.css` defines `--ice-gilt` as "somebody is selling you
+     * this", the colour reserved for a paid placement, and this is the one
+     * surface in the app that is literally that. Azure would have been wrong
+     * for the same reason it is right everywhere else — azure means the
+     * athlete's own things, and this is not theirs.
+     */
+    <div ref={holder} className="relative">
       {/* ---- The label, and the x beside it ------------------------------- */}
-      <div className="flex items-center gap-2 border-b border-hairline px-4 py-2.5">
-        <span className="rounded-pill border border-hairline-strong bg-slate/70 px-2 py-[3px] text-[9.5px] uppercase tracking-[0.12em] text-mist">
+      <div className="flex items-center gap-2 px-4 py-2.5">
+        <span className="rounded-pill border border-gilt/45 bg-gilt/[0.12] px-2 py-[3px] text-[9.5px] uppercase tracking-[0.12em] text-gilt">
           Promoted
         </span>
         <span className="min-w-0 flex-1 truncate text-[11.5px] text-mist-dim">
@@ -762,7 +786,10 @@ function PromotedCard({
         placeholder advertisement this surface must never draw.
       */}
       {imageSrc && (
-        <div className="h-[150px] w-full overflow-hidden bg-slate/40">
+        /* Edge to edge and taller, because that is what the posts above and
+           below it do. A promotion that is inset while they are not is the
+           box again, wearing a smaller frame. */
+        <div className="aspect-[4/3] w-full overflow-hidden bg-slate/40">
           <img
             src={imageSrc}
             alt=""
@@ -780,7 +807,7 @@ function PromotedCard({
         <Link
           to={placement.href}
           aria-label={`${placement.ctaLabel} — promoted by ${placement.companyName}`}
-          className="mt-2 flex items-center gap-1 px-4 pb-1 text-[12px] text-azure"
+          className="mt-2 flex items-center gap-1 px-4 pb-1 text-[12px] font-medium text-gilt"
         >
           {/* The advertiser's own words. `creative_cta_href` may point at a
               route, a trek or an expedition as easily as at a company, so
@@ -791,7 +818,7 @@ function PromotedCard({
         </Link>
       )}
 
-      <div className="mt-3 border-t border-hairline px-4 py-2.5">
+      <div className="mt-2.5 px-4 pb-1">
         <p className="text-[10.5px] leading-relaxed text-mist-dim">
           Paid placement by {placement.companyName}. ICEFALL does not endorse it, does not vet it,
           and takes no part in anything you book.{" "}
