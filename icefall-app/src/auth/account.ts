@@ -52,7 +52,12 @@ export type ProviderKey = keyof typeof PROVIDERS;
 
 export type AuthOutcome =
   | { ok: true; needsEmailConfirmation: boolean }
-  | { ok: false; message: string };
+  | {
+      ok: false;
+      message: string;
+      /** The address already has an account. Nothing was sent; the screen offers sign-in. */
+      existingAccount?: boolean;
+    };
 
 /** Where a provider sends the browser back to. Must be allow-listed in Supabase. */
 function callbackUrl(): string {
@@ -61,6 +66,9 @@ function callbackUrl(): string {
 
 const OFFLINE =
   "ICEFALL can't reach the account server. Check your connection and try again — nothing was lost.";
+
+const EXISTING_ACCOUNT =
+  "There's already an ICEFALL account for this address, so no email was sent. Sign in instead — or reset the password if you don't remember it.";
 
 /**
  * Create an account.
@@ -86,7 +94,32 @@ export async function signUpWithEmail(
     },
   });
 
-  if (error) return { ok: false, message: friendly(error.message) };
+  if (error) {
+    const m = error.message.toLowerCase();
+    if (m.includes("already registered") || m.includes("already been registered")) {
+      return { ok: false, existingAccount: true, message: EXISTING_ACCOUNT };
+    }
+    return { ok: false, message: friendly(error.message) };
+  }
+
+  /*
+   * AN ADDRESS THAT ALREADY HAS AN ACCOUNT, said as it is.
+   *
+   * With email confirmation on, Supabase answers a repeat sign-up as if it had
+   * worked — a user object, no session — and sends NOTHING, so that nobody can
+   * probe which addresses are registered. The tell is documented: that user
+   * carries an EMPTY `identities` list. Without this check the screen said
+   * "We sent a link to …" to a person whose inbox would stay empty forever —
+   * the owner hit exactly that on 2026-09-07 with an address registered five
+   * days earlier.
+   *
+   * The trade-off is deliberate: telling someone the address is taken is a
+   * small enumeration leak, and this app's rule is that a screen never claims
+   * a thing that did not happen. A false "we sent a link" is the worse harm.
+   */
+  if (data.user && (data.user.identities?.length ?? 0) === 0) {
+    return { ok: false, existingAccount: true, message: EXISTING_ACCOUNT };
+  }
 
   // Supabase returns a user with no session when confirmation is required. That
   // distinction is the difference between "you're in" and "go and click a link",

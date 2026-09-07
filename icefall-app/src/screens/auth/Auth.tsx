@@ -413,9 +413,7 @@ function SocialSignIn() {
         not sign in was the least readable text on the screen.
       */}
       {providerError && (
-        <p className="text-[11.5px] leading-relaxed text-danger">
-          {providerError}
-        </p>
+        <p className="text-[11.5px] leading-relaxed text-danger">{providerError}</p>
       )}
     </div>
   );
@@ -440,7 +438,6 @@ export function CreateAccount() {
           onClick={() => navigate("/auth/signup")}
         />
       </div>
-
 
       <Note>{SERVER_NOTE}</Note>
     </AuthScreen>
@@ -469,6 +466,9 @@ export function SignUp() {
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /* The address already has an account: the failure comes with the two ways
+     out of it, so the sentence is never a dead end. */
+  const [existing, setExisting] = useState(false);
   const [confirmSent, setConfirmSent] = useState(false);
 
   const passwordOk = RULES.every((r) => r.test(password));
@@ -482,6 +482,7 @@ export function SignUp() {
     const r = await signUpWithEmail(name, email, password);
     if (!r.ok) {
       setError(r.message);
+      setExisting(r.existingAccount === true);
       setBusy(false);
       return;
     }
@@ -510,8 +511,8 @@ export function SignUp() {
         back="/auth/create"
       >
         <Note>
-          The link proves the address is yours. Until it's opened the account
-          can't be used — that's what stops somebody signing up as you.
+          The link proves the address is yours. Until it's opened the account can't be used — that's
+          what stops somebody signing up as you.
         </Note>
       </AuthScreen>
     );
@@ -564,7 +565,9 @@ export function SignUp() {
                   <span
                     className={cn(
                       "grid h-4 w-4 shrink-0 place-items-center rounded-full border transition-colors",
-                      met ? "border-azure bg-azure/15 text-azure" : "border-hairline text-transparent",
+                      met
+                        ? "border-azure bg-azure/15 text-azure"
+                        : "border-hairline text-transparent",
                     )}
                   >
                     <Check size={10} strokeWidth={3} />
@@ -583,8 +586,22 @@ export function SignUp() {
           showed it, so a refused signup looked exactly like a dead button —
           the same silent-failure class this codebase keeps finding.
         */}
-        {error && (
-          <p className="text-[12px] leading-relaxed text-danger">{error}</p>
+        {error && <p className="text-[12px] leading-relaxed text-danger">{error}</p>}
+        {error && existing && (
+          <div className="flex gap-4">
+            <Link
+              to="/auth/signin"
+              className="text-[12px] text-azure transition-colors hover:text-azure-bright"
+            >
+              Sign in
+            </Link>
+            <Link
+              to="/auth/forgot"
+              className="text-[12px] text-azure transition-colors hover:text-azure-bright"
+            >
+              Reset password
+            </Link>
+          </div>
         )}
         <Button type="submit" className="w-full" disabled={!ready}>
           {busy ? "Creating…" : "Create account"}
@@ -710,16 +727,13 @@ export function SignIn() {
           </div>
         </div>
 
-        {error && (
-          <p className="text-[12px] leading-relaxed text-danger">{error}</p>
-        )}
+        {error && <p className="text-[12px] leading-relaxed text-danger">{error}</p>}
         <Button type="submit" className="w-full" disabled={!ready || busy}>
           Sign in
         </Button>
       </form>
 
-      <Note>
-        {SERVER_NOTE}</Note>
+      <Note>{SERVER_NOTE}</Note>
     </AuthScreen>
   );
 }
