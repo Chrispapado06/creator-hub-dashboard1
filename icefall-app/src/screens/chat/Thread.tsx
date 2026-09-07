@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { Avatar, Button, Card, Disclaimer } from "@/components/ui/primitives";
 import { CompanyMark } from "@/components/domain/CompanyMark";
-import { Screen } from "@/components/layout/chrome";
+import { TABBAR_STICKY_BOTTOM } from "@/components/layout/chrome";
 import {
   LOCKED_EXPLAINER,
   LOCKED_EXPLAINER_COMPANY,
@@ -131,7 +131,7 @@ export default function Thread() {
       ) : (
         <>
           {/* ---- Messages ------------------------------------------------------ */}
-          <Screen className="px-4">
+          <div className="no-scrollbar flex-1 overflow-y-auto overscroll-contain px-4 pb-4">
             <div className="space-y-5 pt-5">
               {grouped.map((g) => (
                 <div key={g.day}>
@@ -223,12 +223,14 @@ export default function Thread() {
 
               <Disclaimer className="pt-3">{BACKEND_NOT_CONNECTED}</Disclaimer>
             </div>
-          </Screen>
+          </div>
 
           {/* ---- Composer ------------------------------------------------------- */}
           <div
             className="shrink-0 border-t border-hairline bg-obsidian/90 px-3 py-2.5 backdrop-blur"
-            style={{ paddingBottom: "max(10px, env(safe-area-inset-bottom, 0px))" }}
+            /* The tab bar floats over the bottom of this column; the composer
+               clears it itself — pill, inset and all. */
+            style={{ paddingBottom: `calc(${TABBAR_STICKY_BOTTOM} + 10px)` }}
           >
             <div className="flex items-end gap-2">
               <button
