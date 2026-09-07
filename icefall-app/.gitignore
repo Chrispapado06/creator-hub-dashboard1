@@ -14,3 +14,6 @@ public/img/operators/
 # GAN-generated demo guide portraits — faces of people who do not exist, local
 # design mockup only, never shipped. GuidePortrait falls back to initials.
 public/img/guides/
+
+# Trail photo harvest working state — intermediate, never shipped
+.harvest/
