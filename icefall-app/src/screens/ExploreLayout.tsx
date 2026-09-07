@@ -1,5 +1,4 @@
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
-import { ChevronLeft } from "lucide-react";
 import { ScreenHeader, SegmentedTabs } from "@/components/layout/chrome";
 import { useTabSwipe } from "@/hooks/useTabSwipe";
 
@@ -158,6 +157,17 @@ export default function ExploreLayout() {
    * keeps one control up here: the way back to the hub.
    */
   if (pathname === "/explore/routes") {
+    /*
+     * AND NO FLOATING CHEVRON EITHER, ANY MORE.
+     *
+     * It used to hang here at z-30 over the map, which forced Find's sheet to
+     * stop 58px short of the top so the sheet would not swallow it. The owner
+     * read that reserved band as dead space twice in one evening, and they were
+     * right — nothing was ever drawn in it. The way back now lives in the
+     * sheet's own head row, beside the search field (see `Routes.tsx`), where it
+     * is on screen at every scroll position and costs no reserved height. So
+     * Find is the bare screen: no header, no tab strip, no overlay.
+     */
     return (
       <div
         className="relative flex h-full flex-col"
@@ -165,21 +175,6 @@ export default function ExploreLayout() {
       >
         <div className="flex min-h-0 flex-1 flex-col">
           <Outlet />
-        </div>
-        <div
-          className="pointer-events-none absolute inset-x-0 top-0 z-30 flex items-center px-4"
-          style={{
-            paddingTop: "calc(var(--screen-safe-top, env(safe-area-inset-top, 0px)) + 10px)",
-          }}
-        >
-          <button
-            type="button"
-            onClick={() => navigate(HUB)}
-            aria-label="Back to Explore"
-            className="pointer-events-auto grid h-9 w-9 shrink-0 place-items-center rounded-full border border-hairline-strong bg-obsidian/70 text-snow backdrop-blur-xl"
-          >
-            <ChevronLeft size={18} strokeWidth={1.8} />
-          </button>
         </div>
       </div>
     );

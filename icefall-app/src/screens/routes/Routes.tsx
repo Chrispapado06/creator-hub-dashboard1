@@ -3,6 +3,7 @@ import { useMyProfile } from "@/auth/useMyProfile";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   ChevronDown,
+  ChevronLeft,
   Clock,
   Compass,
   Loader2,
@@ -361,8 +362,8 @@ export default function Routes() {
       */}
       <div
         ref={scroller}
-        className="no-scrollbar absolute inset-x-0 bottom-0 overflow-y-auto overscroll-contain"
-        style={{ top: STRIP_H, scrollSnapType: "y proximity" }}
+        className="no-scrollbar absolute inset-0 overflow-y-auto overscroll-contain"
+        style={{ scrollSnapType: "y proximity" }}
       >
         {/* The map shows through this. Its height is the sheet's resting position. */}
         <div
@@ -376,7 +377,7 @@ export default function Routes() {
           style={{ scrollSnapAlign: "start" }}
         >
           {/* Handle, search and chips travel with the sheet, then hold at the
-              strip line while the cards scroll under them. */}
+              top edge while the cards scroll under them. */}
           <div className="sticky top-0 z-10 rounded-t-[22px] bg-obsidian">
             {/* The handle — the drawing's grab affordance. Decorative: the whole
               sheet drags. */}
@@ -384,36 +385,59 @@ export default function Routes() {
               <span className="h-1 w-9 rounded-full bg-white/25" />
             </div>
 
-            {/* ---- Search ------------------------------------------------------ */}
+            {/* ---- Back and search ---------------------------------------------
+              THE WAY BACK TRAVELS WITH THE SHEET.
+
+              It used to be a glass chevron floating over the map from
+              `ExploreLayout`, which meant the sheet had to stop short of the top
+              so as not to swallow it — and that reserved band is exactly what
+              the owner kept seeing as dead space, twice. Sitting it in the head
+              row instead costs nothing: the head is on screen at every scroll
+              position, so the control is always reachable, and the sheet is free
+              to cover the whole stage.
+            */}
             <div className="px-4 pb-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setSheet("where")}
-                className="flex w-full items-center gap-3 rounded-full bg-white/[0.08] px-4 py-3.5 text-left transition-colors hover:bg-white/[0.11]"
-              >
-                <Search size={17} strokeWidth={1.9} className="shrink-0 text-snow/80" />
-                {/*
+              {/* Back and search share a line; the chip row below is a sibling
+                  inside this same block and must NOT join that line — putting
+                  `flex` on the wrapper instead of on this inner row squashed
+                  the search field to 32px and stood the chips beside it. */}
+              <div className="flex items-center gap-2">
+                <Link
+                  to="/explore/hub"
+                  aria-label="Back to Explore"
+                  className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white/[0.08] text-snow transition-colors hover:bg-white/[0.11]"
+                >
+                  <ChevronLeft size={18} strokeWidth={1.8} aria-hidden />
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => setSheet("where")}
+                  className="flex min-w-0 flex-1 items-center gap-3 rounded-full bg-white/[0.08] px-4 py-3.5 text-left transition-colors hover:bg-white/[0.11]"
+                >
+                  <Search size={17} strokeWidth={1.9} className="shrink-0 text-snow/80" />
+                  {/*
                 EMPTY UNTIL THEY TYPE. Until the athlete picks somewhere this is a
                 search box with nothing in it, because nothing has been searched
                 for. The area is still named, one line down, by the results
                 count — "150 trails near Larnaca" — so nothing is hidden.
               */}
-                {picked ? (
-                  <span className="block min-w-0 flex-1 truncate text-[15px] text-snow">
-                    {place.name}
-                    {(place.kind || place.region) && (
-                      <span className="text-mist-dim">
-                        {" · "}
-                        {[place.kind, place.region].filter(Boolean)[0]}
-                      </span>
-                    )}
-                  </span>
-                ) : (
-                  <span className="block min-w-0 flex-1 truncate text-[15px] text-mist">
-                    Find a place or region
-                  </span>
-                )}
-              </button>
+                  {picked ? (
+                    <span className="block min-w-0 flex-1 truncate text-[15px] text-snow">
+                      {place.name}
+                      {(place.kind || place.region) && (
+                        <span className="text-mist-dim">
+                          {" · "}
+                          {[place.kind, place.region].filter(Boolean)[0]}
+                        </span>
+                      )}
+                    </span>
+                  ) : (
+                    <span className="block min-w-0 flex-1 truncate text-[15px] text-mist">
+                      Find a place or region
+                    </span>
+                  )}
+                </button>
+              </div>
 
               {/* What / radius / filters — the drawing's chip row. */}
               <div className="no-scrollbar -mx-4 mt-3 overflow-x-auto px-4">
@@ -944,23 +968,24 @@ const PAGE = 10;
 /** How much of the stage the map keeps at rest — the drawing's proportion. */
 const MAP_VISIBLE = 0.55;
 
-/**
- * THE BAND OF MAP THE SHEET NEVER COVERS.
+/*
+ * THERE IS NO RESERVED BAND ANY MORE, AND THE HISTORY IS THE POINT.
  *
- * This began as the floating tab strip's height, so a fully raised sheet parked
- * under the strip rather than behind it. The strip is gone from this screen —
- * Find keeps only the glass back chevron — but the reservation stayed, and it
- * was reserved in the WRONG PLACE: the scroller still spanned the full stage,
- * so what showed in the band was whichever card happened to be passing behind
- * the search head. A photograph sliced off mid-button reads as a broken render,
- * which is what the owner saw on their phone.
+ * A 58px strip was held clear at the top of this screen through three separate
+ * shapes. It began as room for Explore's floating tab row; that row was removed
+ * from Find, but the reservation stayed, and the scroller still spanned the
+ * whole stage — so what appeared in the strip was whichever card was passing
+ * behind the sticky search head, a photograph sliced off mid-button. Moving the
+ * scroller's top edge down to the line fixed the slicing and left an empty
+ * band, which the owner reported again the same evening: "again theres still
+ * distance on explore trails".
  *
- * So the scroller now STARTS at this line instead of being padded to it. The
- * band is outside the scrollport entirely: nothing inside the sheet can paint
- * there, the map shows through it at every scroll position, and the back
- * chevron has the map behind it that it was drawn for.
+ * Both reports are the same report. The band never had content of its own; it
+ * only ever existed so a floating control would not be covered. So the control
+ * moved into the sheet's own head row, where it is on screen at every scroll
+ * position, and the band is gone. The sheet now covers the stage completely
+ * when raised, which is what the reference does.
  */
-const STRIP_H = 58;
 
 function useNearbyTrails(place: Place, radiusKm: number | null, enabled: boolean) {
   const [all, setAll] = useState<Trail[]>([]);
