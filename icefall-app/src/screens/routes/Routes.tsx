@@ -252,7 +252,7 @@ export default function Routes() {
         const top = spacer.current?.offsetHeight ?? 0;
         /* A little slack: proximity snapping settles a few px either side of
            the exact snap line, and the button must be there at that line. */
-        setAtTop(el.scrollTop >= top - STRIP_H - 16);
+        setAtTop(el.scrollTop >= top - 16);
       });
     };
     el.addEventListener("scroll", onScroll, { passive: true });
@@ -328,29 +328,41 @@ export default function Routes() {
      * scrolls — only the sheet's scroller does.
      */
     <div className="relative h-full overflow-hidden bg-obsidian">
-      <FindMap
-        lat={place.lat}
-        lon={place.lon}
-        radiusKm={radiusKm}
-        pins={pins}
-        visibleFraction={MAP_VISIBLE}
-        locating={locating}
-        onLocate={() => void locateHere()}
-        locateNote={locateNote}
-      />
+      {/* z-10: above the scroller's transparent spacer, below the sheet. That
+          order is what lets a finger on the map's visible half reach the map
+          while a finger on the sheet scrolls the sheet. */}
+      <div className="absolute inset-0 z-10">
+        <FindMap
+          lat={place.lat}
+          lon={place.lon}
+          radiusKm={radiusKm}
+          pins={pins}
+          visibleFraction={MAP_VISIBLE}
+          locating={locating}
+          onLocate={() => void locateHere()}
+          locateNote={locateNote}
+        />
+      </div>
 
       {/*
-        THE SCROLLER IS TRANSPARENT TO THE FINGER; THE SHEET IS NOT.
-        `pointer-events-none` on the scroller lets a touch on the map's visible
-        half reach the map (pan, pinch, a pin); `pointer-events-auto` on the
-        sheet lets a touch on the sheet scroll it. Scrolling is decided by the
-        touched element's nearest scrollable ancestor, which is still this
-        scroller, so dragging the sheet moves the sheet.
+        THE MAP AND THE SHEET ARE SEPARATED BY PAINT ORDER, NOT BY POINTER-EVENTS.
+
+        This scroller used to carry `pointer-events-none` so a touch on the map's
+        visible half would fall through to the map. It did — and it also stopped
+        iOS scrolling the sheet at all: WebKit hit-tests the scroll container
+        itself to start a touch scroll, and a container that is not hit-testable
+        never starts one. On a real iPhone the list simply would not move.
+
+        So the finger is routed by z-index instead, which every engine agrees on:
+        the map is `z-10`, the sheet below is `z-20`, and this scroller keeps the
+        default. A touch over the map's half lands on the map; a touch on the
+        sheet lands on the sheet and scrolls its nearest scrollable ancestor,
+        which is this element.
       */}
       <div
         ref={scroller}
-        className="no-scrollbar pointer-events-none absolute inset-0 overflow-y-auto overscroll-contain"
-        style={{ scrollSnapType: "y proximity", scrollPaddingTop: STRIP_H }}
+        className="no-scrollbar absolute inset-x-0 bottom-0 overflow-y-auto overscroll-contain"
+        style={{ top: STRIP_H, scrollSnapType: "y proximity" }}
       >
         {/* The map shows through this. Its height is the sheet's resting position. */}
         <div
@@ -360,12 +372,12 @@ export default function Routes() {
         />
 
         <div
-          className="pointer-events-auto relative min-h-full rounded-t-[22px] bg-obsidian shadow-[0_-12px_40px_rgba(0,0,0,0.45)]"
+          className="relative z-20 min-h-full rounded-t-[22px] bg-obsidian shadow-[0_-12px_40px_rgba(0,0,0,0.45)]"
           style={{ scrollSnapAlign: "start" }}
         >
           {/* Handle, search and chips travel with the sheet, then hold at the
               strip line while the cards scroll under them. */}
-          <div className="sticky z-10 rounded-t-[22px] bg-obsidian" style={{ top: STRIP_H }}>
+          <div className="sticky top-0 z-10 rounded-t-[22px] bg-obsidian">
             {/* The handle — the drawing's grab affordance. Decorative: the whole
               sheet drags. */}
             <div className="flex justify-center pb-1 pt-2.5" aria-hidden>
@@ -933,11 +945,20 @@ const PAGE = 10;
 const MAP_VISIBLE = 0.55;
 
 /**
- * The floating tab strip's height plus its gap (see ExploreLayout). The sheet's
- * top snap point sits this far below the stage's top edge, so a fully raised
- * sheet parks UNDER the strip rather than behind it — the strip stayed on top
- * of the search field the first time round. The search head is sticky at the
- * same line, so it stays put while the cards scroll under it.
+ * THE BAND OF MAP THE SHEET NEVER COVERS.
+ *
+ * This began as the floating tab strip's height, so a fully raised sheet parked
+ * under the strip rather than behind it. The strip is gone from this screen —
+ * Find keeps only the glass back chevron — but the reservation stayed, and it
+ * was reserved in the WRONG PLACE: the scroller still spanned the full stage,
+ * so what showed in the band was whichever card happened to be passing behind
+ * the search head. A photograph sliced off mid-button reads as a broken render,
+ * which is what the owner saw on their phone.
+ *
+ * So the scroller now STARTS at this line instead of being padded to it. The
+ * band is outside the scrollport entirely: nothing inside the sheet can paint
+ * there, the map shows through it at every scroll position, and the back
+ * chevron has the map behind it that it was drawn for.
  */
 const STRIP_H = 58;
 

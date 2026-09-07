@@ -6,8 +6,10 @@ import { cn } from "@/lib/utils";
  * The select replacement — 11-CONTROLS-CONTRACT.
  *
  * A button opening a styled listbox popover. Arrow keys move, Enter picks,
- * Escape closes without picking, and past ~8 options typing filters the list —
- * the behaviours that make it BETTER than native, not just prettier. Native
+ * Escape closes without picking, and past ~8 options a search field filters the
+ * list — the behaviours that make it BETTER than native, not just prettier.
+ * The search field is a real input, not a typing hint: a hint cannot raise a
+ * keyboard on a phone, and the country picker behind it is 258 rows long. Native
  * `<select>` is retired from user surfaces because it renders the platform's
  * menu in the platform's colours and cannot show the chosen row's meaning.
  *
@@ -43,6 +45,7 @@ export function Listbox({
   const [cursor, setCursor] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const listId = useId();
 
   const chosen = options.find((o) => o.value === value);
@@ -66,9 +69,17 @@ export function Listbox({
   useEffect(() => {
     if (open) {
       setFilter("");
-      const i = Math.max(0, options.findIndex((o) => o.value === value));
+      const i = Math.max(
+        0,
+        options.findIndex((o) => o.value === value),
+      );
       setCursor(i);
-      requestAnimationFrame(() => listRef.current?.focus());
+      requestAnimationFrame(() => {
+        /* The search field when the list has one, because focusing an input is
+           the only thing that raises the keyboard on a touch device. */
+        if (searchRef.current) searchRef.current.focus();
+        else listRef.current?.focus();
+      });
     }
     // Reopening starts from the current value, never from stale filter state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -98,11 +109,9 @@ export function Listbox({
     } else if (e.key === "Escape") {
       e.preventDefault();
       setOpen(false);
-    } else if (typeahead && e.key === "Backspace") {
-      setFilter((f) => f.slice(0, -1));
-    } else if (typeahead && e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
-      setFilter((f) => f + e.key);
     }
+    /* Characters are NOT captured here any more. They go to the search field,
+       which is a real input rather than an invisible buffer — see the popup. */
   };
 
   useEffect(() => {
@@ -138,16 +147,40 @@ export function Listbox({
 
       {open && (
         <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-30 overflow-hidden rounded-card border border-hairline bg-graphite shadow-[var(--ice-shadow-pop)]">
+          {/*
+            A REAL FIELD, NOT AN INSTRUCTION.
+
+            This used to be the line "Type to filter", with the characters
+            captured by the list's own key handler. On a desktop that worked.
+            On a phone there is no keyboard to type on and nothing to tap to
+            raise one, so the sentence asked for something the screen could not
+            accept — and the country list it sits on is 258 rows long.
+
+            An input fixes both ends: tapping it raises the keyboard, and the
+            same `filter` state drives the same matching. Arrows and Enter are
+            forwarded to the list's handler so the keyboard path is unchanged.
+          */}
           {typeahead && (
-            <p className="border-b border-hairline px-3.5 py-2 text-[11.5px] text-mist-dim">
-              {filter ? (
-                <>
-                  Typing: <span className="text-snow">{filter}</span>
-                </>
-              ) : (
-                "Type to filter"
-              )}
-            </p>
+            <div className="border-b border-hairline px-2.5 py-2">
+              <input
+                ref={searchRef}
+                type="text"
+                value={filter}
+                onChange={(e) => {
+                  setFilter(e.target.value);
+                  setCursor(0);
+                }}
+                onKeyDown={onKey}
+                aria-label={`Search ${label}`}
+                aria-controls={listId}
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="none"
+                spellCheck={false}
+                placeholder="Search…"
+                className="h-9 w-full rounded-tile bg-elevated/60 px-3 text-[13.5px] text-snow placeholder:text-mist-dim focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-azure/60"
+              />
+            </div>
           )}
           <div
             ref={listRef}
@@ -179,7 +212,12 @@ export function Listbox({
                 >
                   <span className="min-w-0 flex-1 truncate">{o.label}</span>
                   {isChosen && (
-                    <Check size={14} strokeWidth={2} aria-hidden="true" className="shrink-0 text-azure" />
+                    <Check
+                      size={14}
+                      strokeWidth={2}
+                      aria-hidden="true"
+                      className="shrink-0 text-azure"
+                    />
                   )}
                 </button>
               );
