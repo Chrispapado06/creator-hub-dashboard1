@@ -1,8 +1,9 @@
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { Bell, MessageCircle, Search } from "lucide-react";
 
 import { Avatar } from "@/components/ui/primitives";
 import { useConversations } from "@/screens/chat/useConversations";
+import { useSettings } from "@/settings/store";
 import { useApp } from "@/state/AppState";
 
 /**
@@ -34,7 +35,16 @@ import { useApp } from "@/state/AppState";
  */
 export function AppTopBar() {
   const { user } = useApp();
+  /* The same stored photo the profile draws (owner, 2026-09-07: "if you add a
+     profile then it needs to show the profile on top left as well"). */
+  const { settings } = useSettings();
   const conversations = useConversations();
+  /* The name beside the photo everywhere EXCEPT Home (owner, 2026-09-07: "if
+     you are not on home page, next to profile i want it to display the users
+     name"). Home already greets the person by name in its hero a few lines
+     below, and saying it twice on one screen is noise. */
+  const { pathname } = useLocation();
+  const showName = pathname !== "/home";
   const unread = conversations.reduce((n, c) => n + c.unread, 0);
 
   return (
@@ -45,9 +55,12 @@ export function AppTopBar() {
       <Link
         to="/profile"
         aria-label="Your profile"
-        className="shrink-0 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-azure/60"
+        className="flex min-w-0 items-center gap-3 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-azure/60"
       >
-        <Avatar name={user.name} size={38} />
+        <Avatar name={user.name} src={settings.avatar ?? user.avatar} size={38} />
+        {showName && (
+          <span className="truncate text-[15px] font-medium text-snow">{user.name}</span>
+        )}
       </Link>
 
       <div className="relative flex shrink-0 items-center gap-0.5">

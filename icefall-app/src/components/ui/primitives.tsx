@@ -1,6 +1,6 @@
 import { cva, type VariantProps } from "class-variance-authority";
 import { Slot } from "@radix-ui/react-slot";
-import { forwardRef } from "react";
+import { forwardRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { initialsFor } from "@/lib/monogram";
 
@@ -169,13 +169,19 @@ export function Badge({
 
 export function Avatar({
   name,
+  src,
   size = 36,
   className,
 }: {
   name: string;
+  /** The person's photo. Drawn OVER the initials, which stay underneath as the
+      fallback — a stored image that no longer decodes shows a letter, never the
+      browser's broken-image glyph. */
+  src?: string | null;
   size?: number;
   className?: string;
 }) {
+  const [broken, setBroken] = useState(false);
   /**
    * THE SAME FUNCTION COMPANIES USE, and converging it was not cosmetic.
    *
@@ -200,7 +206,7 @@ export function Avatar({
   return (
     <div
       className={cn(
-        "grid shrink-0 place-items-center rounded-full border border-hairline-strong font-medium",
+        "relative grid shrink-0 place-items-center overflow-hidden rounded-full border border-hairline-strong font-medium",
         className,
       )}
       style={{
@@ -229,6 +235,15 @@ export function Avatar({
       aria-hidden="true"
     >
       {initials}
+      {src && !broken && (
+        <img
+          src={src}
+          alt=""
+          aria-hidden
+          onError={() => setBroken(true)}
+          className="absolute inset-0 h-full w-full rounded-full object-cover"
+        />
+      )}
     </div>
   );
 }
@@ -289,8 +304,7 @@ export function Stat({
   size?: "sm" | "md" | "lg";
   className?: string;
 }) {
-  const valueCls =
-    size === "lg" ? "text-[19px]" : size === "sm" ? "text-[14px]" : "text-[15.5px]";
+  const valueCls = size === "lg" ? "text-[19px]" : size === "sm" ? "text-[14px]" : "text-[15.5px]";
   return (
     <div className={cn("min-w-0", className)}>
       <p className="flex items-baseline gap-1">

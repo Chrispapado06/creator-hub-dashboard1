@@ -206,6 +206,9 @@ function AppShell() {
   }
   if (!onboarded) return <Navigate to="/" replace />;
 
+  /* Screens that keep the bottom navigation but not the top bar. */
+  const bare = pathname === "/settings/profile";
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* The top bar, on every screen that has the bottom navigation (owner,
@@ -216,7 +219,12 @@ function AppShell() {
           here: two copies of one filter id is undefined behaviour, and the
           second button silently loses its refraction. */}
       <GlassFilterDefs />
-      <AppTopBar />
+      {/* NOT on Edit Profile (owner, 2026-09-07: "when you click edit profile,
+          i dont want the top navigation to be shown"). That screen is a form
+          with its own back arrow; the profile / search / messages doors above
+          it were three ways to leave a half-edited form. When the bar is
+          absent the screen clears the notch itself — see the style below. */}
+      {!bare && <AppTopBar />}
       {/*
         `key={pathname}` IS ALSO THE SCROLL RESET, and that is a second reason
         to keep it rather than an accident worth tidying away.
@@ -247,8 +255,9 @@ function AppShell() {
         className="flex min-h-0 flex-1 flex-col"
         /* The bar above has cleared the notch. Screens read
            `var(--screen-safe-top, env(...))`, so zeroing it here is what keeps
-           the inset counted once. */
-        style={{ "--screen-safe-top": "0px" } as React.CSSProperties}
+           the inset counted once — and NOT zeroing it when there is no bar is
+           what keeps the screen from sliding up under the status bar. */
+        style={bare ? undefined : ({ "--screen-safe-top": "0px" } as React.CSSProperties)}
       >
         <Outlet />
       </motion.main>
@@ -436,16 +445,25 @@ export default function App() {
                 empty `network/` directory), so it lands on the people list
                 rather than 404ing. Ranked above `people/:id` by the router
                 because it is the more specific pattern. */}
-            <Route path="/explore/people/:id/connect" element={<SocialTabRedirect tab="people" />} />
+            <Route
+              path="/explore/people/:id/connect"
+              element={<SocialTabRedirect tab="people" />}
+            />
             <Route path="/explore/people/:id" element={<LegacyPersonRedirect />} />
             <Route path="/explore/groups" element={<SocialTabRedirect tab="groups" />} />
-            <Route path="/explore/groups/new" element={<LegacySocialRedirect to="/social/groups/new" />} />
+            <Route
+              path="/explore/groups/new"
+              element={<LegacySocialRedirect to="/social/groups/new" />}
+            />
             <Route path="/explore/groups/:id" element={<LegacyGroupRedirect />} />
             {/* `crew` was the name before `groups`. Pointed at the real
                 destination, not at another redirect — a chain would flash a
                 second navigation and is one more thing to keep true. */}
             <Route path="/explore/crew" element={<SocialTabRedirect tab="groups" />} />
-            <Route path="/explore/crew/new" element={<LegacySocialRedirect to="/social/groups/new" />} />
+            <Route
+              path="/explore/crew/new"
+              element={<LegacySocialRedirect to="/social/groups/new" />}
+            />
             <Route path="/operator/:id" element={<OperatorProfile />} />
             <Route path="/operator/:id/trip/:tripId" element={<TripDetail />} />
 
@@ -646,7 +664,10 @@ function LegacyPersonRedirect() {
   const { id } = useParams<{ id: string }>();
   const { search } = useLocation();
   return (
-    <Navigate to={id ? `/social/people/${encodeURIComponent(id)}${search}` : "/social?tab=people"} replace />
+    <Navigate
+      to={id ? `/social/people/${encodeURIComponent(id)}${search}` : "/social?tab=people"}
+      replace
+    />
   );
 }
 
@@ -655,7 +676,10 @@ function LegacyGroupRedirect() {
   const { id } = useParams<{ id: string }>();
   const { search } = useLocation();
   return (
-    <Navigate to={id ? `/social/groups/${encodeURIComponent(id)}${search}` : "/social?tab=groups"} replace />
+    <Navigate
+      to={id ? `/social/groups/${encodeURIComponent(id)}${search}` : "/social?tab=groups"}
+      replace
+    />
   );
 }
 
