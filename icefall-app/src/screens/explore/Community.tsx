@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   ChevronRight,
   Flag,
@@ -14,10 +14,10 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { Avatar, Card, Disclaimer } from "@/components/ui/primitives";
+import { Avatar, Card, Disclaimer, sharePage } from "@/components/ui/primitives";
 import { LogSummitSheet } from "@/components/domain/SummitLogKit";
 import { CreatePostSheet } from "@/components/domain/PostComposer";
-import { Sheet } from "@/components/ui/Sheet";
+import { Sheet, SheetRow } from "@/components/ui/Sheet";
 import { Rise, Screen, Stagger } from "@/components/layout/chrome";
 import { Comments } from "@/components/social/Comments";
 import { Composer } from "@/components/social/Composer";
@@ -192,9 +192,23 @@ function withPromotions(posts: Post[], placements: PromotedPlacement[]): FeedIte
 /* -------------------------------------------------------------------------- */
 
 export default function Community() {
-  const [filter, setFilter] = useState<FeedFilter>("for-you");
+  /* The filter and the create request both arrive from the Social header's
+     Instagram row via the URL — see `FeedMenu` and the + in Social.tsx. */
+  const [params, setParams] = useSearchParams();
+  const feedRaw = params.get("feed");
+  const filter: FeedFilter = FEED_FILTERS.some((f) => f.id === feedRaw)
+    ? (feedRaw as FeedFilter)
+    : "for-you";
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
+  const [sharing, setSharing] = useState<Post | null>(null);
+  useEffect(() => {
+    if (params.get("create") !== "1") return;
+    setCreating(true);
+    const next = new URLSearchParams(params);
+    next.delete("create");
+    setParams(next, { replace: true });
+  }, [params, setParams]);
   const [composing, setComposing] = useState(false);
   const [logging, setLogging] = useState(false);
   const [posting, setPosting] = useState(false);
@@ -225,10 +239,7 @@ export default function Community() {
 
   /* The mockup's chip, headline and stat trio, keyed by post id. Built from the
      same rows the feed is built from, so the two cannot drift apart. */
-  const details = useMemo(
-    () => new Map(all.map((p) => [p.id, feedDetail(p)] as const)),
-    [all],
-  );
+  const details = useMemo(() => new Map(all.map((p) => [p.id, feedDetail(p)] as const)), [all]);
   /** Whether the FEED is empty, as distinct from this filter matching nothing. */
   const feedEmpty = all.length === 0;
 
@@ -328,67 +339,6 @@ export default function Community() {
 
   return (
     <Screen padded={false}>
-      {/* ---- Search, then filter chips ------------------------------------
-          The chips are hidden while a search is running. "For You" and
-          "Following" slice the feed by who wrote something; a search already
-          answered that question with the query, and leaving the chips lit would
-          imply the results had been filtered by them as well. */}
-      <div className="sticky top-0 z-20 border-b border-hairline bg-obsidian/95 px-5 py-3 backdrop-blur">
-        <div className="relative">
-          <SearchIcon
-            size={15}
-            strokeWidth={1.8}
-            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-mist-dim"
-          />
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search people and posts"
-            aria-label="Search people and posts"
-            className={cn(
-              "h-10 w-full rounded-pill border border-hairline-strong bg-slate/60 pl-9 pr-9",
-              "text-[13.5px] text-snow placeholder:text-mist-dim",
-              "transition-colors focus:border-azure/50 focus:bg-slate",
-              // Safari draws its own clear button on type=search, next to ours.
-              "[&::-webkit-search-cancel-button]:hidden",
-            )}
-          />
-          {query && (
-            <button
-              type="button"
-              onClick={() => setQuery("")}
-              aria-label="Clear search"
-              className="absolute right-2.5 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-full text-mist-dim transition-colors hover:text-snow"
-            >
-              <X size={14} strokeWidth={2} />
-            </button>
-          )}
-        </div>
-
-        {!searching && (
-          <div className="no-scrollbar mt-3 overflow-x-auto">
-            <div className="flex w-max gap-2">
-              {FEED_FILTERS.map((f) => (
-                <button
-                  key={f.id}
-                  type="button"
-                  onClick={() => setFilter(f.id)}
-                  className={cn(
-                    "shrink-0 rounded-pill border px-3.5 py-1.5 text-[12px] transition-colors",
-                    filter === f.id
-                      ? "border-azure/55 bg-azure/[0.12] text-azure"
-                      : "border-hairline-strong text-mist hover:text-snow",
-                  )}
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
       {/* ---- Stories -------------------------------------------------------
           Under the header, above the feed. The rail renders its own honest
           empty state — two of them, in fact — so it needs no condition around
@@ -413,10 +363,10 @@ export default function Community() {
       {searching ? (
         <SearchResults query={query} results={results} now={now} />
       ) : (
-        <Stagger className="px-5 pb-24 pt-4">
+        <Stagger className="pb-6 pt-1">
           {items.map((item, i) =>
             item.kind === "promoted" ? (
-              <Rise key={`promoted:${item.placement.id}:${i}`} className="pt-3">
+              <Rise key={`promoted:${item.placement.id}:${i}`} className="px-5 pt-3">
                 <PromotedCard placement={item.placement} />
               </Rise>
             ) : (
@@ -428,6 +378,7 @@ export default function Community() {
                   onOpenComments={setCommenting}
                   onReport={(p) => setReporting(p.id)}
                   onLike={toggleLike}
+                  onShare={setSharing}
                 />
               </Rise>
             ),
@@ -501,24 +452,8 @@ export default function Community() {
         </Stagger>
       )}
 
-      {/* ---- Create -------------------------------------------------------
-          Portalled into the phone shell: `fixed` positions against the browser
-          viewport, which on desktop pinned this to the window's corner, well
-          outside the 430px phone frame. */}
-      {createPortal(
-        <button
-          type="button"
-          aria-label="Create a post"
-          onClick={() => setCreating(true)}
-          className="absolute right-5 z-30 grid h-14 w-14 place-items-center rounded-full bg-azure text-obsidian shadow-lg transition-colors hover:bg-azure-bright"
-          style={{
-            bottom: "calc(1.25rem + env(safe-area-inset-bottom, 0px) + var(--tabbar-clearance, 0px))",
-          }}
-        >
-          <Plus size={24} strokeWidth={2} />
-        </button>,
-        document.querySelector("[data-phone-shell]") ?? document.body,
-      )}
+      {/* No floating +: creating a post is the + in the Social header's
+          Instagram row (Social.tsx), which reaches this screen as `?create=1`. */}
 
       {creating && (
         <CreateSheet
@@ -550,6 +485,15 @@ export default function Community() {
       {posting && <CreatePostSheet onClose={() => setPosting(false)} />}
 
       {storyAt !== null && <StoryViewer startIndex={storyAt} onClose={() => setStoryAt(null)} />}
+      {/*
+        SHARE — the drawing's sheet has a search box, a grid of people and a
+        row of apps. Two of those are honest here: copy the link, and hand it
+        to the phone's own share sheet (which is where WhatsApp and the rest
+        live). The grid of people is not: sending a post to somebody inside
+        ICEFALL needs a message that actually goes, and messaging does not
+        send yet — so no row of faces that would do nothing when tapped.
+      */}
+      {sharing && <ShareSheet post={sharing} onClose={() => setSharing(null)} />}
       {commenting && <Comments post={commenting} onClose={() => setCommenting(null)} />}
       <ReportDialog postId={reporting} onClose={() => setReporting(null)} />
     </Screen>
@@ -586,6 +530,7 @@ function TappablePost({
   onOpenComments,
   onReport,
   onLike,
+  onShare,
 }: {
   post: Post;
   detail?: PostDetail;
@@ -593,6 +538,7 @@ function TappablePost({
   onOpenComments: (post: Post) => void;
   onReport: (post: Post) => void;
   onLike: (post: Post, next: boolean) => void;
+  onShare: (post: Post) => void;
 }) {
   return (
     <div
@@ -616,6 +562,7 @@ function TappablePost({
         onOpenComments={onOpenComments}
         onReport={onReport}
         onLike={onLike}
+        onShare={onShare}
       />
     </div>
   );
@@ -909,6 +856,36 @@ function CreateSheet({
           an account, and says so if you do not have one.
         </p>
       </div>
+    </Sheet>
+  );
+}
+
+function ShareSheet({ post, onClose }: { post: Post; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const url = `${window.location.origin}/social/post/${encodeURIComponent(post.id)}`;
+  const title = post.author.company?.name ?? post.author.name;
+  return (
+    <Sheet title="Share" onClose={onClose}>
+      <SheetRow
+        onClick={() => {
+          void navigator.clipboard?.writeText(url).then(
+            () => setCopied(true),
+            () => setCopied(false),
+          );
+        }}
+        title={copied ? "Link copied" : "Copy link"}
+        detail={url}
+      />
+      {typeof navigator.share === "function" && (
+        <SheetRow
+          onClick={() => {
+            sharePage(`${title} on ICEFALL`, url);
+            onClose();
+          }}
+          title="Share to…"
+          detail="WhatsApp, Messages, Snapchat — whatever this phone has."
+        />
+      )}
     </Sheet>
   );
 }

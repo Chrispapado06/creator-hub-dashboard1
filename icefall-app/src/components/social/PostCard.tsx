@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { BadgeCheck, Bookmark, Flag, MessageCircle, MoreHorizontal, Share2 } from "lucide-react";
-import { Avatar, Card } from "@/components/ui/primitives";
+import { Flag, MessageCircle, MoreHorizontal, Send, ShieldCheck } from "lucide-react";
+import { Avatar } from "@/components/ui/primitives";
 import { LikeButton } from "@/components/social/LikeButton";
 import { fmtRelative } from "@/lib/format";
 import { PERSON_ROUTE } from "@/search/people";
@@ -104,6 +104,7 @@ export function PostCard({
   onOpenComments,
   onReport,
   onLike,
+  onShare,
   className,
 }: {
   post: Post;
@@ -119,6 +120,9 @@ export function PostCard({
    * `@/social/types`). Pass one the moment there is somewhere to put it.
    */
   onLike?: (post: Post, next: boolean) => void;
+  /** Opens the share sheet. Without it there is no share control — never a
+      button that does nothing. */
+  onShare?: (post: Post) => void;
   className?: string;
 }) {
   const still = useReducedMotion();
@@ -230,6 +234,9 @@ export function PostCard({
    * NO CONTROL IS INSIDE IT. The timestamp and the options button are siblings
    * of this block, outside the link, which is what keeps the link legal.
    */
+  /* The drawing's byline: a small round photo, the name in bold with the
+     identity shield beside it, and one quiet line under it. */
+  const shownName = company ? headline : author.handle ? author.handle : headline;
   const identity = (
     <>
       {avatarUrl ? (
@@ -238,99 +245,57 @@ export function PostCard({
           alt=""
           aria-hidden
           loading="lazy"
-          className="h-10 w-10 shrink-0 rounded-full border border-hairline object-cover"
+          className="h-8 w-8 shrink-0 rounded-full border border-hairline object-cover"
         />
       ) : (
-        /* The monogram primitive, not a local one: it is the version that
-           reads three-part Sherpa names correctly. */
-        <Avatar name={headline} size={40} />
+        <Avatar name={headline} size={32} />
       )}
 
       <div className="min-w-0 flex-1">
         <p className="flex items-center gap-1.5">
-          <span className="min-w-0 truncate text-[13.5px] text-snow">{headline}</span>
+          <span className="min-w-0 truncate text-[14px] font-semibold text-snow">{shownName}</span>
           {author.identityVerified && !company && (
             <span className="shrink-0 text-mist" title="Identity verified by ICEFALL">
-              <BadgeCheck size={13} strokeWidth={2} aria-hidden />
+              <ShieldCheck size={13} strokeWidth={2} aria-hidden />
               <span className="sr-only">Identity verified by ICEFALL</span>
             </span>
           )}
           {author.kind === "guide" && (
-            /* Names the role the row actually holds — a guide profile
-               exists, which the insert policy enforces. NOT a statement
-               that anything of theirs has been checked; the credentials
-               claim has its own mark and its own sentence, and neither
-               belongs on a feed card. */
             <span className="shrink-0 rounded-pill border border-hairline-strong px-2 py-[2px] text-[9.5px] uppercase tracking-[0.1em] text-mist-dim">
               Guide
             </span>
           )}
         </p>
-
-        {/* Nothing to say here is a real state — a social signup has no
-            handle until it picks one and no location unless it typed one —
-            so the line is absent rather than an empty row holding space. */}
-        {meta && <p className="mt-0.5 truncate text-[11.5px] text-mist-dim">{meta}</p>}
+        {meta && <p className="truncate text-[11.5px] text-mist-dim">{meta}</p>}
       </div>
     </>
   );
 
-  /**
-   * The words, as one target.
-   *
-   * `hasWords` decides whether there is anything to link at all: an empty
-   * `<a>` is a tab stop that announces nothing and goes somewhere, which is
-   * worse for a keyboard than the tap being unavailable.
-   */
-  const hasWords = Boolean(
-    detail?.chip || detail?.title || detail?.stats?.length || post.body.trim().length > 0,
-  );
-
-  const words = (
+  const captionExtras = (
     <>
-      {/* ---- Kind, headline and the numbers ----------------------------- */}
       {detail?.chip && (
-        <p className="px-4 pt-3">
+        <p className="px-4 pt-2">
           <span className="inline-flex items-center rounded-pill border border-hairline px-2.5 py-1 text-[9.5px] uppercase tracking-[0.12em] text-mist">
             {detail.chip}
           </span>
         </p>
       )}
-
       {detail?.title && (
-        <p className="px-4 pt-2.5 text-[17px] leading-tight text-snow">{detail.title}</p>
+        <p className="px-4 pt-2 text-[16px] leading-tight text-snow">{detail.title}</p>
       )}
-
       {detail?.stats && detail.stats.length > 0 && (
-        <div className="flex gap-6 px-4 pt-3">
-          {detail.stats.map((s) => (
-            <div key={s.label}>
-              <p className="tnum text-[17px] font-light leading-none text-snow">{s.value}</p>
-              <p className="mt-1 text-[11px] text-mist-dim">{s.label}</p>
+        <div className="flex gap-6 px-4 pt-2.5">
+          {detail.stats.map((st) => (
+            <div key={st.label}>
+              <p className="tnum text-[16px] font-light leading-none text-snow">{st.value}</p>
+              <p className="mt-1 text-[11px] text-mist-dim">{st.label}</p>
             </div>
           ))}
         </div>
       )}
-
-      {/* ---- Body ------------------------------------------------------- */}
-      {post.body.trim().length > 0 && (
-        <p className="whitespace-pre-wrap px-4 pt-3 text-[13px] leading-relaxed text-snow">
-          {post.body}
-        </p>
-      )}
     </>
   );
 
-  /**
-   * The photograph.
-   *
-   * Alt text the author wrote, or nothing at all. An invented description of a
-   * photograph nobody has read is worse for a screen reader than an image
-   * announced as decorative — and when it IS described, the description stays
-   * inside the link rather than being replaced by an `aria-label` naming the
-   * destination, because the author's own words about their photograph are not
-   * the card's to overwrite. The destination is appended instead.
-   */
   const photo = media && (
     <img
       src={media.url}
@@ -342,176 +307,131 @@ export function PostCard({
   );
 
   return (
-    // The menu must sit OUTSIDE the card's `overflow-hidden`, or it is clipped
-    // by the very corners that let the media bleed to the edges.
+    /*
+     * THE DRAWING'S POST (Instagram, owner 2026-09-07): no card, no border.
+     * Byline, media edge to edge, the action row, then the caption with the
+     * name in bold and the time under it. The menu sits outside the flow so
+     * nothing clips it.
+     */
     <div ref={rootRef} className={cn("relative", className)}>
-      <Card inset={false} className="overflow-hidden">
-        {/* ---- Byline ----------------------------------------------------
-            The link and the plain block carry the SAME layout classes, so a
-            byline that cannot be linked sits exactly where a linked one does —
-            this is behaviour, not a redesign. The focus ring is the app's own:
-            `index.css` draws one on every `:focus-visible`, and the byline is
-            inset by `px-4`, so nothing here has to nudge it off a clipped
-            edge. */}
-        <div className="flex items-start gap-3 px-4 pt-4">
-          {personHref ? (
-            <Link to={personHref} className="flex min-w-0 flex-1 items-start gap-3">
-              {identity}
-              {/* Says where the link goes without taking the name, the mark or
-                  the handle out of what a screen reader reads. An `aria-label`
-                  here would replace all of it with three words. */}
-              <span className="sr-only">— open their ICEFALL profile</span>
+      <div className="flex items-center gap-3 px-4 py-2.5">
+        {personHref ? (
+          <Link to={personHref} className="flex min-w-0 flex-1 items-center gap-3">
+            {identity}
+            <span className="sr-only">— open their ICEFALL profile</span>
+          </Link>
+        ) : (
+          <div className="flex min-w-0 flex-1 items-center gap-3">{identity}</div>
+        )}
+        <button
+          type="button"
+          aria-label="Post options"
+          aria-haspopup="menu"
+          aria-expanded={menu}
+          onClick={() => setMenu((m) => !m)}
+          className="-mr-1 shrink-0 rounded-full p-1 text-snow transition-colors hover:text-mist focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-azure/60"
+        >
+          <MoreHorizontal size={20} strokeWidth={1.7} />
+        </button>
+      </div>
+
+      {story && (
+        <p className="px-4 pb-2">
+          <span
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-pill border px-2.5 py-1 text-[10px] uppercase tracking-[0.1em]",
+              story === "ended"
+                ? "border-hairline-strong text-mist-dim"
+                : "border-azure/45 bg-azure/[0.10] text-azure",
+            )}
+          >
+            {story === "ended" ? "Story ended" : `Story · ${story}`}
+          </span>
+        </p>
+      )}
+
+      {/* Media, edge to edge. A photograph opens the post; a video keeps its
+          own controls. The box is reserved from the uploader's dimensions when
+          there are any, and falls back to the drawing's 4:5 rather than a
+          guess. */}
+      {media && (
+        <div
+          className="relative w-full overflow-hidden bg-slate/40"
+          style={{ aspectRatio: sized ? `${media.width} / ${media.height}` : "4 / 5" }}
+        >
+          {media.kind === "video" ? (
+            <video
+              src={media.url}
+              controls
+              playsInline
+              preload="metadata"
+              aria-label={media.alt || "Video attached to this post"}
+              className="h-full w-full object-cover"
+            />
+          ) : postHref ? (
+            <Link to={postHref} className="block h-full w-full focus-visible:outline-offset-[-2px]">
+              {photo}
+              <span className="sr-only">Open this post and its comments</span>
             </Link>
           ) : (
-            <div className="flex min-w-0 flex-1 items-start gap-3">{identity}</div>
+            photo
           )}
+        </div>
+      )}
 
-          <span className="tnum mt-0.5 shrink-0 text-[11px] text-mist-dim">
-            {fmtRelative(post.createdAt)}
-          </span>
-
+      <div className="flex items-center gap-4 px-4 pt-2.5">
+        <LikeButton
+          postId={post.id}
+          liked={liked}
+          count={count}
+          onToggle={(next) => {
+            setLiked(next);
+            onLike?.(post, next);
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => onOpenComments(post)}
+          aria-label={post.commentCount ? `Comments, ${post.commentCount}` : "Comments"}
+          className="flex items-center gap-1.5 rounded-pill text-[13px] text-snow transition-colors hover:text-mist focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-azure/60"
+        >
+          <MessageCircle size={22} strokeWidth={1.6} aria-hidden />
+          {!!post.commentCount && (
+            <span aria-hidden className="tnum">
+              {post.commentCount}
+            </span>
+          )}
+        </button>
+        {onShare && postHref && (
           <button
             type="button"
-            aria-label="Post options"
-            aria-haspopup="menu"
-            aria-expanded={menu}
-            onClick={() => setMenu((m) => !m)}
-            className="-mr-1 mt-0.5 shrink-0 rounded-full p-1 text-mist-dim transition-colors hover:text-snow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-azure/60"
+            onClick={() => onShare(post)}
+            aria-label="Share post"
+            className="rounded-pill text-snow transition-colors hover:text-mist focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-azure/60"
           >
-            <MoreHorizontal size={17} strokeWidth={1.7} />
+            <Send size={21} strokeWidth={1.6} aria-hidden />
           </button>
-        </div>
+        )}
+      </div>
 
-        {/* ---- Story marker ----------------------------------------------
-            Only appears because `expires_at` is set on the row. A story that
-            has already passed says so rather than reading as a live post —
-            after the expiry only its author and staff can see it at all. */}
-        {story && (
-          <p className="mt-3 px-4">
-            <span
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-pill border px-2.5 py-1 text-[10px] uppercase tracking-[0.1em]",
-                story === "ended"
-                  ? "border-hairline-strong text-mist-dim"
-                  : "border-azure/45 bg-azure/[0.10] text-azure",
-              )}
-            >
-              {story === "ended" ? "Story ended" : `Story · ${story}`}
-            </span>
+      {/* The drawing's "username caption": the name in bold leads the body; a
+          summit log's chip, headline and figures follow underneath. */}
+      <div className="px-4 pb-1 pt-2">
+        {post.body.trim().length > 0 && (
+          <p className="whitespace-pre-wrap text-[13.5px] leading-relaxed text-snow">
+            <span className="font-semibold">{shownName}</span> {post.body}
           </p>
         )}
-
-        {/* ---- The post itself, as one target -----------------------------
-            A block-level `<a>` around blocks that keep their own padding: the
-            card is laid out exactly as it was, and every element inside is
-            inert. The focus ring is drawn INSIDE the edge, because the card
-            clips at its corners and an offset ring on a full-width link is a
-            ring nobody sees. */}
-        {postHref && hasWords ? (
-          <Link to={postHref} className="block focus-visible:outline-offset-[-2px]">
-            {words}
+        {postHref && (detail?.chip || detail?.title || detail?.stats?.length) ? (
+          <Link to={postHref} className="-mx-4 block focus-visible:outline-offset-[-2px]">
+            {captionExtras}
             <span className="sr-only">— open this post and its comments</span>
           </Link>
         ) : (
-          words
+          <div className="-mx-4">{captionExtras}</div>
         )}
-
-        {/* ---- Media ------------------------------------------------------
-            The box is reserved from the dimensions the uploader recorded when
-            there are any, so the feed does not jump as images arrive; without
-            them it falls back to a fixed band rather than guessing a ratio.
-
-            A PHOTOGRAPH OPENS THE POST; A VIDEO DOES NOT. `<video controls>`
-            is a control, and a control inside a link is the exact nesting this
-            card refuses — scrubbing would navigate. The video keeps its own
-            controls and the words above it stay the way in. */}
-        {media && (
-          <div
-            className={cn(
-              "relative mt-3.5 w-full overflow-hidden bg-slate/40",
-              !sized && "h-[190px]",
-            )}
-            style={sized ? { aspectRatio: `${media.width} / ${media.height}` } : undefined}
-          >
-            {media.kind === "video" ? (
-              <video
-                src={media.url}
-                controls
-                playsInline
-                preload="metadata"
-                aria-label={media.alt || "Video attached to this post"}
-                className="h-full w-full object-cover"
-              />
-            ) : postHref ? (
-              <Link
-                to={postHref}
-                className="block h-full w-full focus-visible:outline-offset-[-2px]"
-              >
-                {photo}
-                <span className="sr-only">Open this post and its comments</span>
-              </Link>
-            ) : (
-              photo
-            )}
-          </div>
-        )}
-
-        {/* ---- Engagement -------------------------------------------------- */}
-        <div className="mt-3 flex items-center gap-5 border-t border-hairline px-4 py-3">
-          <LikeButton
-            postId={post.id}
-            liked={liked}
-            count={count}
-            onToggle={(next) => {
-              setLiked(next);
-              onLike?.(post, next);
-            }}
-          />
-
-          <button
-            type="button"
-            onClick={() => onOpenComments(post)}
-            aria-label={post.commentCount ? `Comments, ${post.commentCount}` : "Comments"}
-            className="flex items-center gap-1.5 rounded-pill text-[12.5px] text-mist transition-colors hover:text-snow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-azure/60 focus-visible:ring-offset-2 focus-visible:ring-offset-graphite"
-          >
-            <MessageCircle size={15} strokeWidth={1.7} aria-hidden />
-            {/* `undefined` is "nobody counted", and prints nothing. A zero is
-                a counted zero and prints nothing either — there is no figure
-                worth the space until somebody has replied. */}
-            {!!post.commentCount && (
-              <span aria-hidden className="tnum">
-                {post.commentCount}
-              </span>
-            )}
-          </button>
-
-          {/*
-           * BOOKMARK AND SHARE, from the mockup — and neither is wired, because
-           * there is nowhere to wire them. No saved-posts table exists, and the
-           * share sheet is the activity share, which a feed post is not. They
-           * are marked disabled rather than left looking live: a bookmark that
-           * silently forgets is worse than one that says it cannot save yet.
-           */}
-          <span className="ml-auto flex items-center gap-4">
-            <button
-              type="button"
-              disabled
-              aria-label="Save post — saving is not built yet"
-              className="text-mist-dim/50"
-            >
-              <Bookmark size={15} strokeWidth={1.7} aria-hidden />
-            </button>
-            <button
-              type="button"
-              disabled
-              aria-label="Share post — sharing is not built yet"
-              className="text-mist-dim/50"
-            >
-              <Share2 size={15} strokeWidth={1.7} aria-hidden />
-            </button>
-          </span>
-        </div>
-      </Card>
+        <p className="tnum pt-1.5 text-[11px] text-mist-dim">{fmtRelative(post.createdAt)}</p>
+      </div>
 
       <AnimatePresence>
         {menu && (

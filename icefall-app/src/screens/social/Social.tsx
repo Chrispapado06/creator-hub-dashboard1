@@ -1,7 +1,10 @@
-import { lazy, Suspense } from "react";
-import { useSearchParams } from "react-router-dom";
-import { Loader2, Plus } from "lucide-react";
-import { ScreenHeader, SegmentedTabs } from "@/components/layout/chrome";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { useSearchParams, Link } from "react-router-dom";
+import { Loader2, Plus, Check, ChevronDown, Heart } from "lucide-react";
+import { SegmentedTabs } from "@/components/layout/chrome";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { FEED_FILTERS, type FeedFilter } from "@/social/community";
+import { cn } from "@/lib/utils";
 
 const Community = lazy(() => import("../explore/Community"));
 const Leaderboard = lazy(() => import("../explore/Leaderboard"));
@@ -110,6 +113,10 @@ export default function Social() {
   const [params, setParams] = useSearchParams();
   const raw = params.get("tab");
   const sub: Sub = isSub(raw) ? raw : "community";
+  const feedRaw = params.get("feed");
+  const feed: FeedFilter = FEED_FILTERS.some((f) => f.id === feedRaw)
+    ? (feedRaw as FeedFilter)
+    : "for-you";
 
   return (
     /*
@@ -170,25 +177,68 @@ export default function Social() {
               needing this button at all.
           Do not make it unconditional again without dealing with the Feed's +.
         */}
-        <ScreenHeader
-          title="Social"
-          large
-          /* NO `back`. This is a bottom-bar destination — there is nothing
-             behind it to go back to, and a chevron that pops you out of the
-             app or does nothing at all is worse than no chevron. */
-          action={
-            sub === "groups" ? (
-              <button
-                type="button"
-                aria-label="Create a group"
-                onClick={() => setParams({ tab: "groups", create: "1" })}
-                className="flex h-9 w-9 items-center justify-center rounded-full text-mist transition-colors hover:text-snow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-azure/60"
-              >
-                <Plus size={20} strokeWidth={1.8} aria-hidden="true" />
-              </button>
-            ) : undefined
-          }
-        />
+        {/*
+          THE INSTAGRAM ROW — the owner's reference for Social, 2026-09-07:
+          "+" on the left, the feed's name in the middle with a chevron that
+          opens the feed choices, the heart on the right.
+
+          Each of the three does something real: + creates a post on the Feed
+          tab and a group on the Groups tab (the only two things this screen
+          can create); the middle is the feed filter that used to be a row of
+          chips; the heart opens notifications. Nothing is drawn for a tab
+          that has nothing to create.
+        */}
+        <div className="flex h-12 items-center justify-between">
+          {sub === "community" || sub === "groups" ? (
+            <button
+              type="button"
+              aria-label={sub === "groups" ? "Create a group" : "Create a post"}
+              onClick={() =>
+                sub === "groups"
+                  ? setParams({ tab: "groups", create: "1" })
+                  : setParams((prev) => {
+                      const next = new URLSearchParams(prev);
+                      next.set("create", "1");
+                      return next;
+                    })
+              }
+              className="-ml-2 grid h-10 w-10 place-items-center rounded-full text-snow transition-colors hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-azure/60"
+            >
+              <Plus size={26} strokeWidth={1.6} aria-hidden="true" />
+            </button>
+          ) : (
+            <span className="w-10" aria-hidden />
+          )}
+
+          {sub === "community" ? (
+            <FeedMenu
+              value={feed}
+              onChange={(v) =>
+                setParams(
+                  (prev) => {
+                    const next = new URLSearchParams(prev);
+                    if (v === "for-you") next.delete("feed");
+                    else next.set("feed", v);
+                    return next;
+                  },
+                  { replace: true },
+                )
+              }
+            />
+          ) : (
+            <p className="text-[17px] font-semibold text-snow">
+              {SUBS.find((t) => t.value === sub)?.label}
+            </p>
+          )}
+
+          <Link
+            to="/notifications"
+            aria-label="Notifications"
+            className="-mr-2 grid h-10 w-10 place-items-center rounded-full text-snow transition-colors hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-azure/60"
+          >
+            <Heart size={24} strokeWidth={1.6} aria-hidden="true" />
+          </Link>
+        </div>
         <SegmentedTabs
           tabs={SUBS}
           value={tabFor(sub)}
@@ -213,6 +263,81 @@ export default function Social() {
           <Groups />
         )}
       </Suspense>
+    </div>
+  );
+}
+
+/**
+ * "For you ▾" — the feed filter as Instagram draws it. The choices are the
+ * same three the chip row used to offer; the value lives in the URL so the
+ * Feed tab reads it and a reload keeps it.
+ */
+function FeedMenu({ value, onChange }: { value: FeedFilter; onChange: (v: FeedFilter) => void }) {
+  const [open, setOpen] = useState(false);
+  const still = useReducedMotion();
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+  const current = FEED_FILTERS.find((f) => f.id === value) ?? FEED_FILTERS[0];
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1 rounded-full px-2 py-1 text-[17px] font-semibold text-snow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-azure/60"
+      >
+        {current.label}
+        <ChevronDown size={16} strokeWidth={2} aria-hidden className="mt-0.5 text-snow/70" />
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            role="menu"
+            aria-label="Feed"
+            initial={still ? { opacity: 0 } : { opacity: 0, scale: 0.96, y: -4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={still ? { opacity: 0 } : { opacity: 0, scale: 0.97, y: -3 }}
+            transition={{ duration: still ? 0 : 0.16, ease: [0.22, 1, 0.36, 1] }}
+            className="absolute left-1/2 top-full z-30 mt-1 w-44 -translate-x-1/2 overflow-hidden rounded-tile border border-hairline-strong bg-slate shadow-lg"
+          >
+            {FEED_FILTERS.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                role="menuitemradio"
+                aria-checked={f.id === value}
+                onClick={() => {
+                  onChange(f.id);
+                  setOpen(false);
+                }}
+                className={cn(
+                  "flex w-full items-center justify-between px-3.5 py-2.5 text-left text-[13.5px] transition-colors hover:bg-white/[0.05]",
+                  f.id === value ? "text-snow" : "text-mist",
+                )}
+              >
+                {f.label}
+                {f.id === value && <Check size={14} strokeWidth={2.2} aria-hidden />}
+              </button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

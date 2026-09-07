@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type JSX } from "react";
 import { Link } from "react-router-dom";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { BadgeCheck, Loader2, Trash2 } from "lucide-react";
+import { Loader2, Trash2, ShieldCheck } from "lucide-react";
 import { Avatar, AzureNotice, Button, Card, Disclaimer } from "@/components/ui/primitives";
 import { Sheet } from "@/components/ui/Sheet";
 import { BACKEND_NOT_CONNECTED, supabase } from "@/backend/client";
@@ -471,7 +471,7 @@ function ThreadList({
                 /* MIST, never azure — the three-marks ruling. Identity checked,
                    and nothing else claimed. Same treatment as `PostCard`. */
                 <span className="shrink-0 text-mist" title="Identity verified by ICEFALL">
-                  <BadgeCheck size={12} strokeWidth={2} aria-hidden />
+                  <ShieldCheck size={12} strokeWidth={2} aria-hidden />
                   <span className="sr-only">Identity verified by ICEFALL</span>
                 </span>
               )}

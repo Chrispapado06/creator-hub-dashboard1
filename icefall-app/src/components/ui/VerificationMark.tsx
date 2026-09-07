@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { BadgeCheck } from "lucide-react";
+import { BadgeCheck, ShieldCheck } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -31,10 +31,7 @@ import { cn } from "@/lib/utils";
  */
 export type MarkKind = "owner" | "credentials" | "member" | "identity";
 
-const MARKS: Record<
-  MarkKind,
-  { size: number; className: string; label: string; says: string }
-> = {
+const MARKS: Record<MarkKind, { size: number; className: string; label: string; says: string }> = {
   owner: {
     // Bigger than the other three on purpose, and the owner asked for it bigger
     // again on 2026-09-02. It is the only mark that is not a claim about the
@@ -89,13 +86,7 @@ const MARKS: Record<
  * modal over a profile to explain a 15px tick is heavier than the thing it
  * explains.
  */
-export function VerificationMark({
-  kind,
-  className,
-}: {
-  kind: MarkKind;
-  className?: string;
-}) {
+export function VerificationMark({ kind, className }: { kind: MarkKind; className?: string }) {
   const m = MARKS[kind];
   const [open, setOpen] = useState(false);
 
@@ -111,7 +102,14 @@ export function VerificationMark({
           className,
         )}
       >
-        <BadgeCheck size={m.size} strokeWidth={2} aria-hidden />
+        {/* The identity mark is the SHIELD (owner, 2026-09-07: "i want this to
+            be next to profile of people who verify their identity"); the other
+            three keep the badge. Same colours, same sentences. */}
+        {kind === "identity" ? (
+          <ShieldCheck size={m.size} strokeWidth={2} aria-hidden />
+        ) : (
+          <BadgeCheck size={m.size} strokeWidth={2} aria-hidden />
+        )}
         <span className="sr-only">{m.label} — tap to explain</span>
       </button>
 

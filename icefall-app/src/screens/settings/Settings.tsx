@@ -1,8 +1,25 @@
 import { Link } from "react-router-dom";
 import {
-  Award, Bell, BadgeCheck, CloudOff, Database, FileText, HeartPulse, Info, LifeBuoy, Lock,
-  LogOut, MapPin, Mountain as MountainIcon, Share2, ShieldCheck, Sparkles, User,
-  Link2, UserCog, Watch,
+  Award,
+  Bell,
+  BadgeCheck,
+  CloudOff,
+  ShieldCheck,
+  Database,
+  FileText,
+  HeartPulse,
+  Info,
+  LifeBuoy,
+  Lock,
+  LogOut,
+  MapPin,
+  Mountain as MountainIcon,
+  Share2,
+  Sparkles,
+  User,
+  Link2,
+  UserCog,
+  Watch,
 } from "lucide-react";
 import { Rise, Screen, ScreenHeader, Stagger } from "@/components/layout/chrome";
 import { Group, LinkRow } from "@/components/settings/kit";
@@ -47,8 +64,9 @@ export default function Settings() {
               <Link
                 to="/settings/profile"
                 aria-label="Change profile photo"
-                className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-full border border-hairline bg-slate text-[16px] text-mist">
-                {settings.avatar ?? user.avatar ? (
+                className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-full border border-hairline bg-slate text-[16px] text-mist"
+              >
+                {(settings.avatar ?? user.avatar) ? (
                   <img
                     src={settings.avatar ?? user.avatar}
                     alt=""
@@ -63,7 +81,7 @@ export default function Settings() {
                 <p className="truncate text-[17px] text-snow">{name}</p>
                 <p className="truncate text-[12px] text-mist-dim">@{handle}</p>
                 <p className="mt-1.5 flex items-center gap-1.5 text-[11.5px] text-mist">
-                  <BadgeCheck
+                  <ShieldCheck
                     size={13}
                     strokeWidth={1.8}
                     className={verified ? "text-azure" : "text-mist-dim"}
