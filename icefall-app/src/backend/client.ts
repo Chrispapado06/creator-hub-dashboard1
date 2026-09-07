@@ -57,6 +57,60 @@ const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
  * `loading` forever and the support screen would hang on "Checking your
  * account…". A client that does not exist cannot hang.
  */
+/**
+ * "REMEMBER ME" IS REAL, AND THIS IS WHERE IT LIVES.
+ *
+ * The sign-in screen's checkbox (owner's mockup, 2026-09-07) decides which
+ * browser store holds the session: `localStorage` survives closing the browser,
+ * `sessionStorage` does not. The choice is written under `REMEMBER_KEY` BEFORE
+ * sign-in (see `setRememberMe` in auth/account.ts), and this adapter reads it
+ * on every access, so the same client serves both answers.
+ *
+ * Reads consult both stores, preferring the chosen one, so flipping the box
+ * never strands a session that was written under the other rule; removes hit
+ * both, so sign-out is sign-out whichever way you came in. Default is to
+ * remember — the behaviour every existing session was created under.
+ */
+export const REMEMBER_KEY = "icefall.auth.remember";
+
+function stores(): [Storage, Storage] {
+  let remember = true;
+  try {
+    remember = localStorage.getItem(REMEMBER_KEY) !== "0";
+  } catch {
+    /* storage unavailable: fall through to localStorage-first */
+  }
+  return remember ? [localStorage, sessionStorage] : [sessionStorage, localStorage];
+}
+
+const authStorage = {
+  getItem(k: string): string | null {
+    try {
+      const [first, second] = stores();
+      return first.getItem(k) ?? second.getItem(k);
+    } catch {
+      return null;
+    }
+  },
+  setItem(k: string, v: string): void {
+    try {
+      const [first, second] = stores();
+      first.setItem(k, v);
+      second.removeItem(k);
+    } catch {
+      /* private mode */
+    }
+  },
+  removeItem(k: string): void {
+    try {
+      localStorage.removeItem(k);
+      sessionStorage.removeItem(k);
+    } catch {
+      /* private mode */
+    }
+  },
+};
+
 export const supabase: SupabaseClient<Database> | null =
   !DEMO && url && key
     ? createClient<Database>(url, key, {
@@ -64,6 +118,7 @@ export const supabase: SupabaseClient<Database> | null =
           persistSession: true,
           autoRefreshToken: true,
           detectSessionInUrl: true,
+          storage: authStorage,
         },
       })
     : null;

@@ -46,27 +46,48 @@ import { setMyLocation, signOut } from "@/auth/account";
  * country on a signup screen is a question nobody agreed to answer.
  */
 const COUNTRIES: { code: string; name: string }[] = [
-  { code: "AR", name: "Argentina" }, { code: "AT", name: "Austria" },
-  { code: "AU", name: "Australia" }, { code: "BE", name: "Belgium" },
-  { code: "BO", name: "Bolivia" }, { code: "BR", name: "Brazil" },
-  { code: "CA", name: "Canada" }, { code: "CH", name: "Switzerland" },
-  { code: "CL", name: "Chile" }, { code: "CN", name: "China" },
-  { code: "CZ", name: "Czechia" }, { code: "DE", name: "Germany" },
-  { code: "DK", name: "Denmark" }, { code: "EC", name: "Ecuador" },
-  { code: "ES", name: "Spain" }, { code: "FI", name: "Finland" },
-  { code: "FR", name: "France" }, { code: "GB", name: "United Kingdom" },
-  { code: "GR", name: "Greece" }, { code: "IE", name: "Ireland" },
-  { code: "IN", name: "India" }, { code: "IS", name: "Iceland" },
-  { code: "IT", name: "Italy" }, { code: "JP", name: "Japan" },
-  { code: "KE", name: "Kenya" }, { code: "KG", name: "Kyrgyzstan" },
-  { code: "MA", name: "Morocco" }, { code: "MX", name: "Mexico" },
-  { code: "NL", name: "Netherlands" }, { code: "NO", name: "Norway" },
-  { code: "NP", name: "Nepal" }, { code: "NZ", name: "New Zealand" },
-  { code: "PE", name: "Peru" }, { code: "PK", name: "Pakistan" },
-  { code: "PL", name: "Poland" }, { code: "PT", name: "Portugal" },
-  { code: "RO", name: "Romania" }, { code: "SE", name: "Sweden" },
-  { code: "SI", name: "Slovenia" }, { code: "SK", name: "Slovakia" },
-  { code: "TZ", name: "Tanzania" }, { code: "US", name: "United States" },
+  { code: "AR", name: "Argentina" },
+  { code: "AT", name: "Austria" },
+  { code: "AU", name: "Australia" },
+  { code: "BE", name: "Belgium" },
+  { code: "BO", name: "Bolivia" },
+  { code: "BR", name: "Brazil" },
+  { code: "CA", name: "Canada" },
+  { code: "CH", name: "Switzerland" },
+  { code: "CL", name: "Chile" },
+  { code: "CN", name: "China" },
+  { code: "CZ", name: "Czechia" },
+  { code: "DE", name: "Germany" },
+  { code: "DK", name: "Denmark" },
+  { code: "EC", name: "Ecuador" },
+  { code: "ES", name: "Spain" },
+  { code: "FI", name: "Finland" },
+  { code: "FR", name: "France" },
+  { code: "GB", name: "United Kingdom" },
+  { code: "GR", name: "Greece" },
+  { code: "IE", name: "Ireland" },
+  { code: "IN", name: "India" },
+  { code: "IS", name: "Iceland" },
+  { code: "IT", name: "Italy" },
+  { code: "JP", name: "Japan" },
+  { code: "KE", name: "Kenya" },
+  { code: "KG", name: "Kyrgyzstan" },
+  { code: "MA", name: "Morocco" },
+  { code: "MX", name: "Mexico" },
+  { code: "NL", name: "Netherlands" },
+  { code: "NO", name: "Norway" },
+  { code: "NP", name: "Nepal" },
+  { code: "NZ", name: "New Zealand" },
+  { code: "PE", name: "Peru" },
+  { code: "PK", name: "Pakistan" },
+  { code: "PL", name: "Poland" },
+  { code: "PT", name: "Portugal" },
+  { code: "RO", name: "Romania" },
+  { code: "SE", name: "Sweden" },
+  { code: "SI", name: "Slovenia" },
+  { code: "SK", name: "Slovakia" },
+  { code: "TZ", name: "Tanzania" },
+  { code: "US", name: "United States" },
   { code: "ZA", name: "South Africa" },
 ];
 
@@ -118,7 +139,9 @@ export function ChooseHandle() {
       } else if (claim.reason === "signed-out") {
         setError("Your session expired. Sign in again — nothing you typed is lost.");
       } else {
-        setError("Couldn't reach the account server. Your name isn't taken — try again in a moment.");
+        setError(
+          "Couldn't reach the account server. Your name isn't taken — try again in a moment.",
+        );
       }
       setBusy(false);
       return;
@@ -137,10 +160,10 @@ export function ChooseHandle() {
 
   return (
     <AuthScreen
-      eyebrow="One more thing"
+      progress={{ step: 2, total: 2 }}
+      hero="/img/private-hero.jpg"
       title={["Pick your", "name on the mountain."]}
       subtitle="Your username is how other climbers find you. It can't be changed often, so choose one you'll want."
-      art="/img/expedition-hero.jpg"
       footer={
         <button
           type="button"
@@ -202,9 +225,9 @@ export function ChooseHandle() {
         </Button>
 
         <Note>
-          A town or region only — ICEFALL has no field for an address, and this is
-          never turned into a map position. Leave the country blank if you'd rather
-          not say; nothing on the app depends on it.
+          A town or region only — ICEFALL has no field for an address, and this is never turned into
+          a map position. Leave the country blank if you'd rather not say; nothing on the app
+          depends on it.
         </Note>
       </div>
     </AuthScreen>

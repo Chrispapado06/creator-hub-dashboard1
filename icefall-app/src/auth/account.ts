@@ -19,7 +19,7 @@
  *    hour. `signUp` therefore reports whether confirmation is pending rather
  *    than saying "check your inbox" unconditionally.
  */
-import { supabase } from "@/backend/client";
+import { supabase, REMEMBER_KEY } from "@/backend/client";
 
 /**
  * Microsoft's provider id in Supabase is `azure`, NOT `microsoft`.
@@ -125,6 +125,26 @@ export async function signUpWithEmail(
   // distinction is the difference between "you're in" and "go and click a link",
   // and the screen must not guess.
   return { ok: true, needsEmailConfirmation: !data.session };
+}
+
+/**
+ * Decide, before signing in, whether the session outlives the browser. See
+ * `authStorage` in backend/client.ts for what each answer does.
+ */
+export function setRememberMe(remember: boolean): void {
+  try {
+    localStorage.setItem(REMEMBER_KEY, remember ? "1" : "0");
+  } catch {
+    /* storage unavailable: the client falls back to remembering */
+  }
+}
+
+export function rememberMePreference(): boolean {
+  try {
+    return localStorage.getItem(REMEMBER_KEY) !== "0";
+  } catch {
+    return true;
+  }
 }
 
 export async function signInWithEmail(email: string, password: string): Promise<AuthOutcome> {

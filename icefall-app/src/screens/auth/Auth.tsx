@@ -1,7 +1,17 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowLeft, Check, Eye, EyeOff, Mail } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  Eye,
+  EyeOff,
+  Lock,
+  type LucideIcon,
+  Mail,
+  User,
+} from "lucide-react";
 import { Button } from "@/components/ui/primitives";
 import { AppleMark, GoogleMark, MicrosoftMark } from "@/components/ui/BrandMarks";
 import { useEnabledProviders } from "@/auth/providers";
@@ -18,6 +28,8 @@ import {
   nextStepForSession,
   serverIdentity,
   storedOnboarding,
+  rememberMePreference,
+  setRememberMe,
 } from "@/auth/account";
 
 /**
@@ -60,22 +72,41 @@ const SERVER_NOTE =
 /* Shared chrome                                                              */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * THE AUTH SHELL — the owner's mockups, 2026-09-07.
+ *
+ * A photograph fills the screen; over it, three lines of small caps at the top
+ * left, the lockup at the top centre, and (on sign-in) the editorial line
+ * "Plan. Train. Climb." with its two sub-lines. The form lives in a dark glass
+ * card that sits in the lower half so the photograph reads above it.
+ *
+ * The photographs are the app's own credited ones (public/img/CREDITS.md):
+ * the mockups' dusk range and lone-climber silhouette have no licensed
+ * counterpart in the set, so the closest real frames stand in — the Matterhorn
+ * at night for sign-in, a starlit ridge for create-account.
+ */
 export function AuthScreen({
   eyebrow,
   title,
   subtitle,
   back,
-  art,
+  hero = "/img/home-hero.jpg",
+  tagline = false,
+  progress,
   children,
   footer,
 }: {
-  eyebrow: string;
+  eyebrow?: string;
   /** Two lines read better at this size; pass an array to control the break. */
   title: string | string[];
   subtitle?: string;
   back?: string;
-  /** A photograph bleeding in from the top-right corner. */
-  art?: string;
+  /** The full-bleed photograph behind everything. */
+  hero?: string;
+  /** The "Plan. Train. Climb." block above the card (sign-in only). */
+  tagline?: boolean;
+  /** "1 / 2" and the bar — only where the count is true. See SignUp. */
+  progress?: { step: number; total: number };
   children: React.ReactNode;
   footer?: React.ReactNode;
 }) {
@@ -83,51 +114,97 @@ export function AuthScreen({
 
   return (
     <div className="no-scrollbar relative h-full overflow-y-auto bg-obsidian">
-      {art && (
-        <div className="pointer-events-none absolute right-0 top-0 h-[240px] w-[62%] overflow-hidden">
-          <img src={art} alt="" aria-hidden className="h-full w-full object-cover" />
-          {/* Two scrims: one down, one across, so the photograph dissolves into
-              the canvas instead of ending on a visible edge. */}
-          <div className="absolute inset-0 bg-gradient-to-b from-obsidian/30 via-obsidian/80 to-obsidian" />
-          <div className="absolute inset-0 bg-gradient-to-r from-obsidian via-obsidian/50 to-transparent" />
-        </div>
-      )}
-
-      <div
-        className="relative px-6 pb-10"
-        style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 20px)" }}
-      >
-        {back && (
-          <Link
-            to={back}
-            aria-label="Back"
-            className="mb-8 grid h-9 w-9 place-items-center rounded-full text-mist transition-colors hover:text-snow"
-          >
-            <ArrowLeft size={19} strokeWidth={1.6} />
-          </Link>
-        )}
-
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
-        >
-          <p className="section-label text-azure/85">{eyebrow}</p>
-          <h1 className="display mt-3 text-[34px] leading-[1.08] text-snow">
-            {lines.map((l, i) => (
-              <span key={l} className="block">
-                {l}
-                {i < lines.length - 1 ? "" : ""}
-              </span>
-            ))}
-          </h1>
-          {subtitle && <p className="mt-3 text-[13px] leading-relaxed text-mist">{subtitle}</p>}
-
-          <div className="mt-8">{children}</div>
-        </motion.div>
+      {/* The photograph, and the scrims that let type sit on it. */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-[78%] overflow-hidden">
+        <img src={hero} alt="" aria-hidden className="h-full w-full object-cover" />
+        <div className="absolute inset-0 bg-gradient-to-b from-obsidian/70 via-obsidian/25 to-obsidian" />
       </div>
 
-      {footer && <div className="relative px-6 pb-8 text-center">{footer}</div>}
+      <div
+        className="relative flex min-h-full flex-col px-5 pb-8"
+        style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 18px)" }}
+      >
+        {/* ---- Top band: caps left, lockup centre ------------------------- */}
+        <div className="relative flex items-start justify-between">
+          <div>
+            {back && (
+              <Link
+                to={back}
+                aria-label="Back"
+                className="-ml-2 mb-3 grid h-9 w-9 place-items-center rounded-full text-snow/80 transition-colors hover:text-snow"
+              >
+                <ArrowLeft size={19} strokeWidth={1.6} />
+              </Link>
+            )}
+            <p className="text-[9.5px] uppercase leading-[1.7] tracking-[0.22em] text-snow/75">
+              Real mountains.
+              <br />
+              Real preparation.
+              <br />
+              No shortcuts.
+            </p>
+          </div>
+          <div className="absolute left-1/2 top-0 -translate-x-1/2">
+            <IcefallLockup size="sm" />
+          </div>
+          <span className="w-9" aria-hidden />
+        </div>
+
+        {/* ---- The editorial line (sign-in) -------------------------------- */}
+        {tagline && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+            className="mt-14 text-center"
+          >
+            <h1 className="display text-[36px] leading-[1.05] text-snow">Plan. Train. Climb.</h1>
+            <p className="mt-3 text-[13.5px] leading-relaxed text-snow/80">
+              The complete platform for modern mountaineers.
+              <br />
+              Guides. Expeditions. Training. Community.
+            </p>
+          </motion.div>
+        )}
+
+        {/* ---- The card ---------------------------------------------------- */}
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.46, ease: [0.22, 1, 0.36, 1], delay: 0.06 }}
+          className={cn(
+            "rounded-[18px] border border-white/10 bg-obsidian/80 p-6 shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-xl",
+            tagline ? "mt-12" : "mt-10",
+          )}
+        >
+          {progress && (
+            <div className="mb-5 flex items-center gap-3">
+              <span className="tnum text-[12px] text-mist">
+                {progress.step} / {progress.total}
+              </span>
+              <span className="relative h-[3px] flex-1 overflow-hidden rounded-full bg-white/10">
+                <span
+                  className="absolute inset-y-0 left-0 rounded-full bg-azure"
+                  style={{ width: `${(progress.step / progress.total) * 100}%` }}
+                />
+              </span>
+            </div>
+          )}
+          {eyebrow && <p className="section-label mb-2 text-azure/85">{eyebrow}</p>}
+          <h2 className="display text-[30px] leading-[1.08] text-snow">
+            {lines.map((l) => (
+              <span key={l} className="block">
+                {l}
+              </span>
+            ))}
+          </h2>
+          {subtitle && <p className="mt-2.5 text-[13.5px] leading-relaxed text-mist">{subtitle}</p>}
+
+          <div className="mt-6">{children}</div>
+
+          {footer && <div className="mt-6 text-center">{footer}</div>}
+        </motion.div>
+      </div>
     </div>
   );
 }
@@ -140,7 +217,10 @@ export function Field({
   placeholder,
   autoComplete,
   reveal,
+  icon: Icon,
 }: {
+  /** The accessible name. Drawn as the placeholder in the mockups' style, so
+      it is announced but not printed above the box. */
   label: string;
   type?: string;
   value: string;
@@ -149,40 +229,60 @@ export function Field({
   autoComplete?: string;
   /** Adds the show/hide toggle used on password fields. */
   reveal?: boolean;
+  /** The glyph at the left edge — user, mail, lock. */
+  icon?: LucideIcon;
 }) {
   const [shown, setShown] = useState(false);
   const resolved = reveal ? (shown ? "text" : "password") : type;
 
   return (
-    <label className="block">
-      <span className="section-label text-mist-dim">{label}</span>
-      <span className="relative mt-2 block">
-        <input
-          type={resolved}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-          autoComplete={autoComplete}
-          autoCapitalize={type === "email" ? "none" : undefined}
-          spellCheck={false}
-          className={cn(
-            "h-12 w-full rounded-tile border border-hairline bg-elevated/40 px-3.5 text-[14px] text-snow outline-none",
-            "placeholder:text-mist-dim focus:border-azure/50",
-            reveal && "pr-11",
-          )}
+    <label className="relative block">
+      <span className="sr-only">{label}</span>
+      {Icon && (
+        <Icon
+          size={17}
+          strokeWidth={1.6}
+          aria-hidden
+          className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-mist-dim"
         />
-        {reveal && (
-          <button
-            type="button"
-            onClick={() => setShown((s) => !s)}
-            aria-label={shown ? "Hide password" : "Show password"}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-mist-dim transition-colors hover:text-mist"
-          >
-            {shown ? <EyeOff size={17} strokeWidth={1.5} /> : <Eye size={17} strokeWidth={1.5} />}
-          </button>
+      )}
+      <input
+        type={resolved}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder ?? label}
+        autoComplete={autoComplete}
+        autoCapitalize={type === "email" ? "none" : undefined}
+        spellCheck={false}
+        className={cn(
+          "h-[52px] w-full rounded-[12px] border border-white/10 bg-white/[0.04] text-[14.5px] text-snow outline-none transition-colors",
+          "placeholder:text-mist-dim focus:border-azure/60 focus:bg-white/[0.06]",
+          Icon ? "pl-12" : "pl-4",
+          reveal ? "pr-12" : "pr-4",
         )}
-      </span>
+      />
+      {reveal && (
+        <button
+          type="button"
+          onClick={() => setShown((v) => !v)}
+          aria-label={shown ? "Hide password" : "Show password"}
+          className="absolute right-4 top-1/2 -translate-y-1/2 text-mist-dim transition-colors hover:text-mist"
+        >
+          {shown ? <EyeOff size={17} strokeWidth={1.5} /> : <Eye size={17} strokeWidth={1.5} />}
+        </button>
+      )}
     </label>
+  );
+}
+
+/** The "or" rule between the form and the provider buttons. */
+function OrRule() {
+  return (
+    <div className="my-5 flex items-center gap-3" aria-hidden>
+      <span className="h-px flex-1 bg-white/10" />
+      <span className="text-[11px] text-mist-dim">or</span>
+      <span className="h-px flex-1 bg-white/10" />
+    </div>
   );
 }
 
@@ -420,28 +520,10 @@ function SocialSignIn() {
 }
 
 export function CreateAccount() {
-  const navigate = useNavigate();
-  return (
-    <AuthScreen
-      eyebrow="Create account"
-      title={["Begin your", "mountain journey."]}
-      subtitle="Join ICEFALL and unlock your potential."
-      back="/welcome"
-      art="/img/expedition-hero.jpg"
-      footer={<AltLine text="Already have an account?" cta="Sign in" to="/auth/signin" />}
-    >
-      <div className="space-y-3">
-        <SocialSignIn />
-        <ProviderButton
-          icon={<Mail size={17} strokeWidth={1.6} />}
-          label="Continue with email"
-          onClick={() => navigate("/auth/signup")}
-        />
-      </div>
-
-      <Note>{SERVER_NOTE}</Note>
-    </AuthScreen>
-  );
+  /* The mockup's create-account page IS the form, with the provider buttons
+     under an "or" rule. The chooser this used to be — "Continue with email"
+     above the same providers — was one tap of nothing. */
+  return <SignUp />;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -459,6 +541,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 export function SignUp() {
   const navigate = useNavigate();
   const { createAccount } = useApp();
+  const providers = useEnabledProviders();
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -508,6 +591,7 @@ export function SignUp() {
         eyebrow="Almost there"
         title={["Check your", "email."]}
         subtitle={`We sent a link to ${email.trim().toLowerCase()}. Open it on this device and you'll pick your username next.`}
+        hero="/img/private-hero.jpg"
         back="/auth/create"
       >
         <Note>
@@ -520,42 +604,42 @@ export function SignUp() {
 
   return (
     <AuthScreen
-      eyebrow="Create account"
-      title={["Let's get", "started."]}
-      subtitle="Enter your details to create your account."
-      back="/auth/create"
+      title="Create your account"
+      subtitle="Join ICEFALL and get access to personalised training plans, AI coaching and more."
+      hero="/img/private-hero.jpg"
+      /*
+       * "1 / 2" IS TRUE ONLY OF THE ACCOUNT. Step two is the username
+       * (Handle.tsx shows "2 / 2"); the personalisation questions, the
+       * accounts page and the trial offer that follow are not account steps and
+       * carry no counter. A "1 / 4" here would be a number nobody measured.
+       */
+      progress={{ step: 1, total: 2 }}
       footer={<AltLine text="Already have an account?" cta="Sign in" to="/auth/signin" />}
     >
       <form
-        className="space-y-4"
+        className="space-y-3"
         onSubmit={(e) => {
           e.preventDefault();
           submit();
         }}
       >
+        <Field label="Full name" value={name} onChange={setName} autoComplete="name" icon={User} />
         <Field
-          label="Full name"
-          value={name}
-          onChange={setName}
-          placeholder="Alex Morin"
-          autoComplete="name"
-        />
-        <Field
-          label="Email"
+          label="Email address"
           type="email"
           value={email}
           onChange={setEmail}
-          placeholder="alex@icefall.com"
           autoComplete="email"
+          icon={Mail}
         />
         <div>
           <Field
             label="Password"
             value={password}
             onChange={setPassword}
-            placeholder="••••••••"
             autoComplete="new-password"
             reveal
+            icon={Lock}
           />
           <ul className="mt-3 space-y-1.5">
             {RULES.map((r) => {
@@ -603,12 +687,20 @@ export function SignUp() {
             </Link>
           </div>
         )}
-        <Button type="submit" className="w-full" disabled={!ready}>
+        <Button type="submit" size="lg" className="mt-2 w-full" disabled={!ready}>
           {busy ? "Creating…" : "Create account"}
+          {!busy && <ArrowRight size={16} strokeWidth={1.8} />}
         </Button>
       </form>
 
-      <Note>{SERVER_NOTE}</Note>
+      {/* The provider doors, only when a provider is actually switched on —
+          and the rule above them goes with them, or it points at nothing. */}
+      {providers.keys.length > 0 && (
+        <>
+          <OrRule />
+          <SocialSignIn />
+        </>
+      )}
     </AuthScreen>
   );
 }
@@ -623,8 +715,10 @@ export function SignIn() {
 
   const [email, setEmail] = useState(account?.email ?? "");
   const [password, setPassword] = useState("");
+  const [remember, setRemember] = useState(() => rememberMePreference());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const providers = useEnabledProviders();
   const ready = EMAIL_RE.test(email) && password.length > 0;
 
   async function submit() {
@@ -632,6 +726,9 @@ export function SignIn() {
     setBusy(true);
     setError(null);
 
+    /* Decided BEFORE the session is written, so the session lands in the
+       store the box asked for. */
+    setRememberMe(remember);
     const r = await signInWithEmail(email, password);
     if (!r.ok) {
       setError(r.message);
@@ -682,58 +779,74 @@ export function SignIn() {
 
   return (
     <AuthScreen
-      eyebrow="Sign in"
-      title="Welcome back."
-      subtitle="Nice to see you again."
-      back="/welcome"
-      footer={<AltLine text="Don't have an account?" cta="Create one" to="/auth/create" />}
+      title="Welcome back"
+      subtitle="Sign in to continue your journey."
+      tagline
+      footer={<AltLine text="Don't have an account?" cta="Sign up" to="/auth/create" />}
     >
-      {/* Above the password form, not below it: whoever signed up with a
-          provider has no password to type, and making them scroll past a field
-          they can never fill is how that person concludes they have no account. */}
-      <SocialSignIn />
-
       <form
-        className="mt-4 space-y-4"
+        className="space-y-3"
         onSubmit={(e) => {
           e.preventDefault();
           submit();
         }}
       >
         <Field
-          label="Email"
+          label="Email address"
           type="email"
           value={email}
           onChange={setEmail}
-          placeholder="alex@icefall.com"
           autoComplete="email"
+          icon={Mail}
         />
-        <div>
-          <Field
-            label="Password"
-            value={password}
-            onChange={setPassword}
-            placeholder="••••••••"
-            autoComplete="current-password"
-            reveal
-          />
-          <div className="mt-2 text-right">
-            <Link
-              to="/auth/forgot"
-              className="text-[12px] text-azure transition-colors hover:text-azure-bright"
+        <Field
+          label="Password"
+          value={password}
+          onChange={setPassword}
+          autoComplete="current-password"
+          reveal
+          icon={Lock}
+        />
+
+        <div className="flex items-center justify-between pt-1">
+          {/* A real control: unticked, the session ends when the browser is
+              closed. See `authStorage` in backend/client.ts. */}
+          <label className="flex cursor-pointer items-center gap-2.5 text-[12.5px] text-mist">
+            <input
+              type="checkbox"
+              checked={remember}
+              onChange={(e) => setRemember(e.target.checked)}
+              className="peer sr-only"
+            />
+            <span
+              aria-hidden
+              className="grid h-[18px] w-[18px] place-items-center rounded-[5px] border border-white/25 bg-white/[0.04] text-obsidian transition-colors peer-checked:border-azure peer-checked:bg-azure peer-focus-visible:ring-2 peer-focus-visible:ring-azure/60"
             >
-              Forgot password?
-            </Link>
-          </div>
+              {remember && <Check size={12} strokeWidth={3} />}
+            </span>
+            Remember me
+          </label>
+          <Link
+            to="/auth/forgot"
+            className="text-[12.5px] text-azure transition-colors hover:text-azure-bright"
+          >
+            Forgot password?
+          </Link>
         </div>
 
         {error && <p className="text-[12px] leading-relaxed text-danger">{error}</p>}
-        <Button type="submit" className="w-full" disabled={!ready || busy}>
-          Sign in
+        <Button type="submit" size="lg" className="mt-2 w-full" disabled={!ready || busy}>
+          {busy ? "Signing in…" : "Sign in"}
+          {!busy && <ArrowRight size={16} strokeWidth={1.8} />}
         </Button>
       </form>
 
-      <Note>{SERVER_NOTE}</Note>
+      {providers.keys.length > 0 && (
+        <>
+          <OrRule />
+          <SocialSignIn />
+        </>
+      )}
     </AuthScreen>
   );
 }
