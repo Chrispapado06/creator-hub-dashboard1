@@ -1,3 +1,5 @@
+import type { WatchProvider } from "@/watch/types";
+
 /**
  * Tracking domain model.
  *
@@ -5,6 +7,49 @@
  * plain class so the same logic can later run in a service worker, a native
  * shell, or against a Garmin/Apple Health import without rewriting the UI.
  */
+
+/* -------------------------------------------------------------------------- */
+/* Provenance                                                                  */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Where a `RecordedActivity` actually came from.
+ *
+ * REQUIRED, not optional — an optional field defaults to `undefined` on every
+ * existing record and on every new writer that forgets it, which is the same
+ * silence a missing field would be. Without this, an activity imported from a
+ * watch account and written with `simulated: false` would be indistinguishable
+ * from one ICEFALL actually recorded, and would silently count as verified
+ * effort on a leaderboard — see `src/social/leaderboard.ts`.
+ *
+ * `"icefall"` is the only origin `ActivityRecorder.toRecord()` may ever write.
+ * `"imported"` is written only by `watchActivityToRecorded` (`src/watch/map.ts`)
+ * and carries exactly what a leaderboard, a records check and an activity
+ * screen each need to tell the two apart without re-deriving it:
+ *   - `provider` / `providerActivityId` — which watch account, and its own id
+ *     for the activity, so a re-import can be de-duped.
+ *   - `deviceName` — the watch model as the vendor named it, for on-screen
+ *     attribution (required above the fold for Garmin's own brand guidelines,
+ *     and just honest for the other three).
+ *   - `importedAt` — when ICEFALL brought it across, not when it happened.
+ *   - `vendorEntered` — true only when the vendor itself flagged the activity
+ *     as manually entered or edited rather than sensor-recorded; null when the
+ *     vendor did not say. Never inferred.
+ *   - `movingSecMeasured` — false when the vendor gave one duration only, so
+ *     `RecordedActivity.movingSec` (which then equals `durationSec`) is never
+ *     displayed as if a pause had actually been measured.
+ */
+export type ActivityOrigin =
+  | { kind: "icefall" }
+  | {
+      kind: "imported";
+      provider: WatchProvider;
+      providerActivityId: string;
+      deviceName: string | null;
+      importedAt: string;
+      vendorEntered: boolean | null;
+      movingSecMeasured: boolean;
+    };
 
 /* -------------------------------------------------------------------------- */
 /* Activities                                                                  */
@@ -271,6 +316,7 @@ export interface RecordedActivity {
   startedAt: string;
   endedAt: string;
   simulated: boolean;
+  origin: ActivityOrigin;
 
   durationSec: number;
   movingSec: number;

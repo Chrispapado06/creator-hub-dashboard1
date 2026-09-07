@@ -56,6 +56,13 @@ export function SendToStrava({ activity }: { activity: RecordedActivity }) {
      person right now, and half a control is worse than none. */
   if (status.state !== "connected" && status.state !== "not-connected") return null;
 
+  /* An imported activity's track was recorded by the watch that produced it,
+     and that watch service has most likely already pushed it to Strava on its
+     own — ICEFALL holds no track to send, only a summary. Belt and braces:
+     `points: []` on every import already fails the usable-points check below;
+     this is what keeps that true if a future version ever imports a track. */
+  if (activity.origin.kind === "imported") return null;
+
   /* A track produced by the labelled simulator would land on a public profile
      as a real ascent. It is refused in `uploadToStrava` as well; refusing to
      draw the button is the honest half of the same rule. */

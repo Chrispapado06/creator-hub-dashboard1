@@ -26,17 +26,36 @@ import type { ReactElement } from "react";
 export function GoogleMark({ size = 17 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden focusable="false">
-      <path fill="#4285F4" d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z" />
-      <path fill="#34A853" d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z" />
-      <path fill="#FBBC05" d="M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24s.85 6.91 2.34 9.88l7.35-5.7z" />
-      <path fill="#EA4335" d="M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2 15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z" />
+      <path
+        fill="#4285F4"
+        d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z"
+      />
+      <path
+        fill="#34A853"
+        d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24s.85 6.91 2.34 9.88l7.35-5.7z"
+      />
+      <path
+        fill="#EA4335"
+        d="M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2 15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z"
+      />
     </svg>
   );
 }
 
 export function AppleMark({ size = 17 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden focusable="false">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden
+      focusable="false"
+    >
       <path d="M17.05 12.72c-.03-2.6 2.12-3.85 2.22-3.91-1.21-1.77-3.09-2.01-3.76-2.04-1.6-.16-3.12.94-3.93.94-.81 0-2.06-.92-3.39-.9-1.74.03-3.35 1.01-4.25 2.57-1.81 3.14-.46 7.79 1.3 10.34.86 1.25 1.89 2.65 3.24 2.6 1.3-.05 1.79-.84 3.36-.84 1.57 0 2.01.84 3.38.81 1.4-.02 2.28-1.27 3.13-2.53.99-1.45 1.4-2.86 1.42-2.93-.03-.01-2.72-1.05-2.75-4.15zM14.5 4.9c.71-.87 1.19-2.07 1.06-3.27-1.02.04-2.26.68-3 1.54-.66.77-1.24 2-1.08 3.18 1.14.09 2.3-.58 3.02-1.45z" />
     </svg>
   );
@@ -215,7 +234,20 @@ export type PlatformKey =
      above; the provenance note in the file header covers them. */
   | "strava"
   | "komoot"
-  | "alltrails";
+  | "alltrails"
+  /* Added 2026-09-07 for the watch-accounts feature. Garmin's own geometry,
+     held here because this is the one file that holds geometry — but it is
+     NOT rendered anywhere yet. See the entry below for the exact condition
+     that unlocks it.
+     ⚠️ THE TRAP: `simple-icons/icons/polars.svg` EXISTS, and it is NOT this
+     brand. It is Polars, the Rust/Python dataframe library (pola.rs,
+     #0075FF) — a different company that happens to alphabetize next to
+     "Polar" in a directory listing. Using it for the Polar Electro watch
+     tile would put a stranger's logo on a page about somebody's own watch,
+     which is worse than the plain-text fallback this file's own rule
+     prescribes. Polar Electro has no mark in this package at all (verified
+     by listing it) and ships as text, exactly like COROS and Suunto. */
+  | "garmin";
 
 export interface PlatformMarkData {
   /** The brand's own spelling. "X", not "Twitter". "TikTok", not "Tiktok". */
@@ -270,8 +302,10 @@ export const PLATFORM_MARKS: Record<PlatformKey, PlatformMarkData> = {
     label: "YouTube",
     path: "M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z",
     hex: "#FF0000",
-    guidelines: "https://www.youtube.com/howyoutubeworks/resources/brand-resources/#logos-icons-and-colors",
-    source: "https://www.youtube.com/howyoutubeworks/resources/brand-resources/#logos-icons-and-colors",
+    guidelines:
+      "https://www.youtube.com/howyoutubeworks/resources/brand-resources/#logos-icons-and-colors",
+    source:
+      "https://www.youtube.com/howyoutubeworks/resources/brand-resources/#logos-icons-and-colors",
     // 5.04:1 on the canvas, 3.85:1 on a chip. Both clear 3:1, so the brand colour is used unchanged.
     onDark: "#FF0000",
     contrastOnObsidian: 5.04,
@@ -365,6 +399,39 @@ export const PLATFORM_MARKS: Record<PlatformKey, PlatformMarkData> = {
     // filled with `hex` — which is legible (13.8:1) and is the brand's own colour.
     onDark: "currentColor",
     contrastOnObsidian: 1.28,
+  },
+  /* -------------------------------------------------------------------
+     GARMIN — added 2026-09-07 for the watch-accounts feature.
+
+     Verified against the source file at
+     ofm-workspace/node_modules/simple-icons/icons/garmin.svg
+     (simple-icons 16.27.1, CC0-1.0): the `d` string below is 3130
+     characters, sha256 0935c6c4a0cec8ffd1c6593831e1bc123495c3867d6031b6ac
+     55ac4a1ffb4629, begins "M6.265 12.024a.289.289 0 0 0-.236-.146h-" and
+     ends "9 0-.051-.045-.065-.091-.065h-.085v.134z".
+
+     THIS ENTRY IS NOT RENDERED ANYWHERE. Garmin's own API Brand Guidelines
+     forbid the Garmin tag logo "in instances where Garmin device-sourced
+     data is not present", and today no Garmin data is present anywhere in
+     ICEFALL — there is no Garmin adapter (registry.ts gate: "not-built").
+     The geometry belongs in the one file that holds geometry; the watch
+     tile does not get it — see WatchTile in watch/WatchTile.tsx, which
+     draws every provider with the same neutral lucide Watch glyph.
+     The exact condition that unlocks it: Garmin Activity API approval AND
+     Garmin data actually on the surface that draws it. Until then, calling
+     `PlatformMark({platform:"garmin"})` anywhere is the bug this comment
+     exists to prevent. */
+  garmin: {
+    label: "Garmin",
+    path: "M6.265 12.024a.289.289 0 0 0-.236-.146h-.182a.289.289 0 0 0-.234.146l-1.449 3.025c-.041.079.004.138.094.138h.335c.132 0 .193-.061.228-.134.037-.073.116-.234.13-.266.02-.045.083-.071.175-.071h1.559c.089 0 .148.016.175.071.018.035.098.179.136.256a.24.24 0 0 0 .234.142h.486c.089 0 .13-.069.098-.132-.034-.061-1.549-3.029-1.549-3.029zm-.914 2.224c-.089 0-.132-.067-.094-.148l.571-1.222c.039-.081.1-.081.136 0l.555 1.222c.037.081-.006.148-.096.148H5.351zm12.105-2.201v3.001c0 .083.073.138.163.138h.396c.089 0 .163-.057.163-.146v-2.998c0-.089-.059-.163-.148-.163h-.411c-.09-.001-.163.054-.163.168zm-6.631 1.88c-.051-.073-.022-.154.063-.181 0 0 .342-.102.506-.25.165-.146.246-.36.246-.636a1 1 0 0 0-.096-.457.787.787 0 0 0-.27-.303 1.276 1.276 0 0 0-.423-.171c-.165-.035-.386-.047-.386-.047a8.81 8.81 0 0 0-.325-.008H8.495a.164.164 0 0 0-.163.163v2.998c0 .089.073.146.163.146h.388c.089 0 .163-.057.163-.146v-1.193s.002 0 .002-.002l.738-.002c.089 0 .205.061.258.134l.766 1.077c.071.096.138.132.228.132h.508c.089 0 .104-.085.073-.128-.032-.038-.794-1.126-.794-1.126zm-.311-.61a1.57 1.57 0 0 1-.213.028 8.807 8.807 0 0 1-.325.006h-.763a.164.164 0 0 1-.163-.163v-.608c0-.089.073-.163.163-.163h.762c.089 0 .236.004.325.006 0 0 .114.004.213.028a.629.629 0 0 1 .24.098.358.358 0 0 1 .126.148.473.473 0 0 1 0 .374.352.352 0 0 1-.126.148.617.617 0 0 1-.239.098zm11.803-1.439c-.089 0-.163.059-.163.146v1.919c0 .089-.051.11-.114.047l-1.921-1.992a.376.376 0 0 0-.276-.118h-.362c-.114 0-.163.061-.163.122v3.068c0 .061.059.12.148.12h.362c.089 0 .152-.049.152-.132l.002-2.021c0-.089.051-.11.114-.045l2.004 2.082a.36.36 0 0 0 .279.116h.272a.164.164 0 0 0 .163-.163v-2.986a.164.164 0 0 0-.163-.163h-.334zm-7.835 1.87c-.043.079-.116.077-.159 0l-.939-1.724a.262.262 0 0 0-.236-.146h-.51a.164.164 0 0 0-.163.163v2.996c0 .089.059.15.163.15h.317c.089 0 .154-.057.154-.142 0-.041.002-2.179.004-2.179.004 0 1.173 2.177 1.173 2.177a.105.105 0 0 0 .189 0s1.179-2.173 1.181-2.173c.004 0 .002 2.11.002 2.173 0 .087.069.142.159.142h.364c.089 0 .163-.045.163-.163V12.04a.164.164 0 0 0-.163-.163h-.488a.265.265 0 0 0-.244.142l-.967 1.729zM0 13.529c0 1.616 1.653 1.697 1.984 1.697 1.098 0 1.561-.297 1.58-.309a.29.29 0 0 0 .152-.264v-1.116a.186.186 0 0 0-.187-.187H2.151c-.104 0-.171.083-.171.187v.116c0 .104.067.187.171.187h.797a.14.14 0 0 1 .14.14v.52c-.157.065-.874.274-1.451.136-.836-.199-.901-.89-.901-1.096 0-.173.053-1.043 1.079-1.13.831-.071 1.378.264 1.384.268.098.051.199.014.254-.089l.104-.209c.043-.085.028-.175-.077-.246-.006-.004-.59-.319-1.494-.319C.055 11.813 0 13.354 0 13.529zm22.134-2.478h-2.165c-.079 0-.148-.039-.187-.108s-.039-.146 0-.215l1.084-1.874a.21.21 0 0 1 .187-.108.21.21 0 0 1 .187.108l1.084 1.874a.203.203 0 0 1 0 .215.22.22 0 0 1-.19.108zm1.488 3.447c.207 0 .378.169.378.378a.379.379 0 0 1-.378.378.379.379 0 0 1-.378-.378.38.38 0 0 1 .378-.378zm.002.7c.173 0 .305-.14.305-.321s-.13-.321-.305-.321-.307.14-.307.321c0 .18.13.321.307.321zm-.146-.543h.169c.102 0 .152.041.152.124 0 .071-.045.122-.114.122l.126.195h-.077l-.124-.195h-.061v.195h-.073v-.441h.002zm.073.189h.085c.055 0 .091-.012.091-.069 0-.051-.045-.065-.091-.065h-.085v.134z",
+    hex: "#000000",
+    guidelines: "https://creative.garmin.com/styleguide/brand/",
+    source: "https://creative.garmin.com/styleguide/logo/",
+    // 1.04:1 on the canvas, 1.36:1 on a chip — the same measurement already
+    // recorded for TikTok, X and Threads, which publish the same black.
+    // Invisible here, so the mark inherits the row's ink.
+    onDark: "currentColor",
+    contrastOnObsidian: 1.04,
   },
 };
 
@@ -476,5 +543,6 @@ export function PlatformMark({
 export const PLATFORM_MARK_ATTRIBUTION =
   "Platform logos are from simple-icons (version 16.27.1), released under CC0-1.0. " +
   "Each is the platform's own glyph in a single colour, not its full-colour logo. " +
-  "They name the platforms you can pick when ICEFALL asks where you found it. " +
+  "They name the platforms you can pick when ICEFALL asks where you found it, " +
+  "and the watch services you can connect an account to. " +
   "ICEFALL is not affiliated with, endorsed by or sponsored by any of them.";

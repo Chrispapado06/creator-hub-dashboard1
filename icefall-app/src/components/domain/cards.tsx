@@ -20,6 +20,7 @@ import { MODE_ICON } from "@/components/tracker/activityIcons";
 import { MountainBackdrop } from "@/components/domain/MountainImage";
 import { Badge, Card } from "@/components/ui/primitives";
 import { ProgressRing } from "@/components/ui/charts";
+import { WATCH_PROVIDER_NAME } from "@/watch/types";
 import {
   DIFFICULTY_LABELS,
   MODE_LABELS,
@@ -164,7 +165,20 @@ export function ActivityCard({ activity }: { activity: Activity }) {
             })()}
           </span>
           <div className="min-w-0 flex-1">
-            <p className="section-label">{MODE_LABELS[activity.mode]}</p>
+            <div className="flex items-center gap-2">
+              <p className="section-label">{MODE_LABELS[activity.mode]}</p>
+              {/* Mutually exclusive by construction — an activity ICEFALL
+                  simulated and one a watch account handed across can never be
+                  the same row. `activity.origin` is optional on the display
+                  type (DEV fixtures carry none), never on `RecordedActivity`
+                  itself — this reads it only to label a card, never to decide
+                  a ranking, record or verification outcome. */}
+              {activity.simulated ? (
+                <Badge tone="alert">Simulated</Badge>
+              ) : activity.origin?.kind === "imported" ? (
+                <Badge>Imported · {WATCH_PROVIDER_NAME[activity.origin.provider]}</Badge>
+              ) : null}
+            </div>
             <h3 className="mt-1.5 truncate text-[15px] font-normal text-snow">{activity.title}</h3>
             <p className="mt-0.5 truncate text-[12px] text-mist-dim">
               {activity.location} · {fmtDate(activity.startedAt, { year: undefined })}

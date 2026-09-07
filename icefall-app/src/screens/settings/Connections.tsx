@@ -14,6 +14,18 @@ import {
   finalizeStravaConnect,
   useStravaStatus,
 } from "@/strava/connection";
+import {
+  beginWatchConnect,
+  disconnectWatch,
+  finalizeWatchConnect,
+  importWatchActivities,
+  useWatchStatus,
+  type ImportFailure,
+  type WatchConnection,
+  type WatchFinalizeOutcome,
+} from "@/watch/connection";
+import { WATCH_PROVIDERS, WATCH_PROVIDER_NAME, type WatchProvider } from "@/watch/types";
+import { WatchStatusMark, WatchTile } from "@/watch/WatchTile";
 
 /**
  * CONNECTED ACCOUNTS — other services this account is linked to.
@@ -103,6 +115,111 @@ const FINISHING: Outcome = {
 };
 
 /* -------------------------------------------------------------------------- */
+/* Watch accounts — the same doctrine, generalised to four vendors             */
+/* -------------------------------------------------------------------------- */
+
+function isWatchProvider(v: string | null): v is WatchProvider {
+  return !!v && (WATCH_PROVIDERS as readonly string[]).includes(v);
+}
+
+/** `declined | expired | failed` — descriptions of the trip, taken from the
+    address as-is, never a fact about whether anything is now connected. */
+function watchOutcomeForWord(word: string, name: string): Outcome | null {
+  switch (word) {
+    case "declined":
+      return {
+        tone: "plain",
+        title: "Not connected",
+        body: `You cancelled on ${name}'s screen, so nothing was linked and nothing was shared.`,
+      };
+    case "expired":
+      return {
+        tone: "warn",
+        title: "Connection request no longer valid",
+        body: "Each request lasts ten minutes and can be used once. Start it again.",
+      };
+    case "failed":
+      return {
+        tone: "warn",
+        title: `${name} did not complete the connection`,
+        body: "Nothing was linked. This is usually temporary — try again, and if it keeps happening it is on our side rather than yours.",
+      };
+    default:
+      return null;
+  }
+}
+
+const watchConnectedOutcome = (name: string): Outcome => ({
+  tone: "good",
+  title: `${name} connected`,
+  body: `ICEFALL can now bring across activities you record on your ${name} watch. Nothing arrives automatically — you choose when to check.`,
+});
+
+const watchPartialOutcome = (name: string): Outcome => ({
+  tone: "warn",
+  title: "Connected, but not permitted to read activities",
+  body: `${name} is linked, but permission to read your activities was not granted, so nothing can be brought across. Connect again and leave that permission ticked.`,
+});
+
+const watchFinishingOutcome = (name: string): Outcome => ({
+  tone: "plain",
+  title: "Finishing the connection…",
+  body: `${name} sent you back. ICEFALL is confirming the link against your account.`,
+});
+
+/** The eight sentences of `FINALIZE_COPY` (strava/connection.ts:277-295), with
+    "{NAME}" substituted for "Strava". */
+function watchFinalizeCopy(
+  name: string,
+): Record<Extract<WatchFinalizeOutcome, { ok: false }>["reason"], string> {
+  return {
+    "no-backend":
+      "This build of ICEFALL runs without a server, so no account can be linked from it.",
+    "signed-out": `You were signed out before ${name} sent you back, so this connection request could not be finished and cannot be resumed. Nothing was linked. Sign in and start the connection again.`,
+    "not-saved": `${name} granted the permission, but ICEFALL could not save the connection. Nothing is linked here — start it again in a moment.`,
+    "not-yours": `That ${name} consent was started from a different ICEFALL account, so it was not linked to this one. Nothing was stored. Start the connection again from here.`,
+    invalid:
+      "That connection request is no longer valid — each one can be used once. Start it again.",
+    expired:
+      "That connection request is no longer valid — each one lasts ten minutes. Start it again.",
+    vendor: `${name} did not complete the connection. Nothing was linked — try again in a moment.`,
+    unreachable:
+      "ICEFALL could not finish the connection. Nothing was linked — try again in a moment.",
+  };
+}
+
+/** One full sentence per import refusal, and every one names what was NOT
+    changed — the same doctrine as `FINALIZE_COPY` above. */
+const WATCH_IMPORT_COPY: Record<ImportFailure, (name: string) => string> = {
+  "no-backend": () =>
+    "This build of ICEFALL runs without a server, so nothing can be brought across.",
+  "signed-out": () => "You are signed out. Sign in and try again — nothing was changed.",
+  "not-connected": () => "That account is not connected any more. Nothing was brought across.",
+  "not-available": () => "This connection is not available in this build. Nothing was changed.",
+  revoked: (name) =>
+    `${name} no longer accepts this connection — it was most likely removed from your ${name} account. Connect it again.`,
+  "vendor-unreachable": (name) =>
+    `ICEFALL could not reach ${name}. Nothing was brought across, and nothing was changed.`,
+  "rate-limited": (name) =>
+    `${name} is limiting how often ICEFALL may ask. Nothing was brought across — try again in a few minutes.`,
+  "no-mapping": (name) =>
+    `ICEFALL cannot yet read the shape of the data ${name} returned, so nothing was brought across. Nothing was changed.`,
+  unreachable: () =>
+    "ICEFALL could not finish. Nothing was brought across, and nothing was changed.",
+};
+
+/** The reason a card with no availability has no control at all — verbatim,
+    keyed by the one vendor each currently applies to. */
+const WATCH_REASON_SENTENCE: Partial<Record<WatchProvider, string>> = {
+  polar:
+    "ICEFALL has not registered with Polar yet, so there is nothing here to connect to. Polar issues credentials to anyone who asks — no approval, no fee — so this is waiting on ICEFALL rather than on Polar. The connection itself is built; it appears here the day the registration is done.",
+  suunto:
+    "ICEFALL is not approved by Suunto. Suunto only issues API access to partners it has accepted and who have signed its API agreement, and ICEFALL has not been through that. Until it has, there is nothing here to connect to.",
+  garmin:
+    "ICEFALL is not approved by Garmin, and Garmin has taken the application form off its site — email is the only way in at the moment. Garmin also only sends activities by pushing them to a web address it has approved, which ICEFALL does not run, so this is two things away rather than one. There is nothing here to connect to.",
+};
+
+/* -------------------------------------------------------------------------- */
 
 export default function Connections() {
   const [params, setParams] = useSearchParams();
@@ -132,6 +249,38 @@ export default function Connections() {
      second connection on top of the one being finished. */
   const [finishing, setFinishing] = useState(pending);
 
+  const watch = useWatchStatus();
+  /* Same read-once-at-mount pattern as `arrival` above, generalised to the
+     watch callback's three params. `watch` carries the outcome word,
+     `provider` says which of the four vendors it is about, `ticket` is
+     shared with Strava's own param name — the two never collide because only
+     one vendor's callback lands on a given page load. */
+  const [watchArrival] = useState(() => {
+    const provider = params.get("provider");
+    return {
+      word: params.get("watch") ?? "",
+      provider: isWatchProvider(provider) ? provider : null,
+      ticket: params.get("ticket") ?? "",
+    };
+  });
+  const watchPending =
+    watchArrival.word === "pending" && !!watchArrival.provider && !!watchArrival.ticket;
+  const [watchOutcomeByProvider, setWatchOutcomeByProvider] = useState<
+    Partial<Record<WatchProvider, Outcome>>
+  >(() => {
+    if (!watchArrival.provider) return {};
+    const name = WATCH_PROVIDER_NAME[watchArrival.provider];
+    const initial = watchPending
+      ? watchFinishingOutcome(name)
+      : watchOutcomeForWord(watchArrival.word, name);
+    return initial ? { [watchArrival.provider]: initial } : {};
+  });
+  /* Which single card, if any, is mid-finalize — the watch equivalent of
+     `finishing` above, scoped to the one provider whose ticket this is. */
+  const [finishingWatchProvider, setFinishingWatchProvider] = useState<WatchProvider | null>(
+    watchPending ? watchArrival.provider : null,
+  );
+
   /*
    * The outcome is read once and then removed from the address.
    *
@@ -142,11 +291,66 @@ export default function Connections() {
    * and a reload must not present it twice.
    */
   useEffect(() => {
-    if (!params.get("strava") && !params.get("ticket")) return;
+    if (
+      !params.get("strava") &&
+      !params.get("watch") &&
+      !params.get("provider") &&
+      !params.get("ticket")
+    ) {
+      return;
+    }
     const next = new URLSearchParams(params);
     next.delete("strava");
+    next.delete("watch");
+    next.delete("provider");
     next.delete("ticket");
     setParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /*
+   * FINISH THE WATCH LINK, WITH THE SESSION THE CALLBACK DID NOT HAVE.
+   *
+   * Same shape as the Strava effect below: the server answers with what it
+   * actually wrote, and the card's banner is drawn from that answer alone.
+   */
+  useEffect(() => {
+    if (!watchPending || !watchArrival.ticket || !watchArrival.provider) return;
+    const provider = watchArrival.provider;
+    const name = WATCH_PROVIDER_NAME[provider];
+    let alive = true;
+    void finalizeWatchConnect(watchArrival.ticket).then((res) => {
+      if (!alive) return;
+      if (res.ok) {
+        setWatchOutcomeByProvider((prev) => ({
+          ...prev,
+          [provider]: res.canImport ? watchConnectedOutcome(name) : watchPartialOutcome(name),
+        }));
+        /* COROS opens a deeper-history window for roughly 24 hours after
+           authorization and never again without a reconnect — see
+           `importWatchActivities`'s doc comment. Fired once, right here,
+           immediately after a successful COROS finalize; not awaited, so a
+           slow first import never delays the card from settling. */
+        if (res.ok && provider === "coros") {
+          void importWatchActivities("coros", { deep: true }).then(() => watch.reload());
+        }
+      } else {
+        const copy = watchFinalizeCopy(name);
+        const body =
+          res.reason === "not-saved" && !res.revokedAtVendor
+            ? `${copy[res.reason]} ${name} may still list ICEFALL as connected until you remove it there or connect again.`
+            : copy[res.reason];
+        setWatchOutcomeByProvider((prev) => ({
+          ...prev,
+          [provider]: { tone: "warn", title: "Not connected", body },
+        }));
+      }
+      setFinishingWatchProvider(null);
+      watch.reload();
+    });
+    return () => {
+      alive = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -444,7 +648,302 @@ export default function Connections() {
           recorded the same outing. Powered by Strava.
         </Disclaimer>
       </Rise>
+
+      {/*
+        WATCH ACCOUNTS — the same doctrine as the Strava card above, generalised
+        to four vendors. One box per provider (the same exception the owner's
+        no-boxes rule leaves room for), in WATCH_PROVIDERS order: COROS first,
+        because it is the one that works.
+      */}
+      <Rise className="pt-8">
+        <SectionLabel>Watch accounts</SectionLabel>
+        <div className="mt-3 space-y-3">
+          {WATCH_PROVIDERS.map((provider) => (
+            <WatchCard
+              key={provider}
+              connection={watch.byProvider[provider]}
+              outcome={watchOutcomeByProvider[provider] ?? null}
+              finishing={finishingWatchProvider === provider}
+              reload={watch.reload}
+            />
+          ))}
+        </div>
+      </Rise>
+
+      <Rise className="pt-7">
+        <SectionLabel>What ICEFALL reads from a watch account</SectionLabel>
+        <div className="mt-3 space-y-3.5">
+          <Fact title="The summary of each activity">
+            Start time, duration, distance, ascent and descent, heart rate and calories, as your
+            watch service recorded them. ICEFALL does not recalculate any of it.
+          </Fact>
+          <Fact title="Which watch recorded it">
+            So an imported activity says where it came from, everywhere it appears.
+          </Fact>
+          <Fact title="Nothing else">
+            No sleep, no daily steps, no friends, no routes. And nothing arrives until you ask for
+            it.
+          </Fact>
+        </div>
+      </Rise>
+
+      <Rise className="pt-6">
+        <SectionLabel>What ICEFALL sends</SectionLabel>
+        <div className="mt-3">
+          <Fact title="Nothing">This connection only reads.</Fact>
+        </div>
+      </Rise>
+
+      <Rise className="pt-6">
+        <p className="text-[12px] leading-relaxed text-mist">
+          Your watch sign-in happens on the watch service's own site. ICEFALL never sees that
+          password, and the permission can be withdrawn from either end. An activity has to reach
+          your watch service's cloud before ICEFALL can see it, so it appears here after your watch
+          has synced, not the moment you stop recording.
+        </p>
+      </Rise>
     </SettingsPage>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* One watch provider's card                                                  */
+/* -------------------------------------------------------------------------- */
+
+function WatchCard({
+  connection,
+  outcome,
+  finishing,
+  reload,
+}: {
+  connection: WatchConnection;
+  /** The arrival banner for THIS provider only — never another card's. */
+  outcome: Outcome | null;
+  /** True only while this provider's ticket is mid-finalize. */
+  finishing: boolean;
+  reload: () => void;
+}) {
+  const provider = connection.provider;
+  const name = WATCH_PROVIDER_NAME[provider];
+  const [busy, setBusy] = useState(false);
+  const [confirmOff, setConfirmOff] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+  const [importMsg, setImportMsg] = useState<string | null>(null);
+
+  async function connect(region?: "eu" | "us") {
+    setBusy(true);
+    setFailure(null);
+    setImportMsg(null);
+    const res = await beginWatchConnect(provider, { returnTo: "/settings/connections", region });
+    if (res.ok) {
+      /* A full navigation, not a new tab — same reasoning as Strava's connect()
+         above: the vendor's consent page will not render inside an iframe and a
+         popup is blocked on most phone browsers. */
+      window.location.href = res.url;
+      return;
+    }
+    setBusy(false);
+    setFailure(
+      res.reason === "signed-out"
+        ? "Sign in first — the connection is stored against your account."
+        : res.reason === "no-backend"
+          ? "This build of ICEFALL has no server connection, so nothing can be linked."
+          : `ICEFALL could not reach ${name}. Nothing was changed.`,
+    );
+  }
+
+  async function disconnect() {
+    setBusy(true);
+    setFailure(null);
+    setImportMsg(null);
+    const res = await disconnectWatch(provider);
+    setBusy(false);
+    setConfirmOff(false);
+    if (!res.ok) {
+      setFailure("The connection could not be removed. Nothing was changed.");
+      return;
+    }
+    if (!res.revokedAtVendor) {
+      setFailure(
+        `ICEFALL has forgotten the connection, but could not confirm it with ${name}. Remove ICEFALL in your ${name} account settings to be certain.`,
+      );
+    }
+    reload();
+  }
+
+  async function checkForActivities() {
+    setBusy(true);
+    setFailure(null);
+    setImportMsg(null);
+    const res = await importWatchActivities(provider);
+    setBusy(false);
+    if (!res.ok) {
+      setFailure(WATCH_IMPORT_COPY[res.reason](name));
+      return;
+    }
+    setImportMsg(
+      res.imported > 0
+        ? `Brought across ${res.imported} ${res.imported === 1 ? "activity" : "activities"} from ${name}. They appear in your history and count toward your training — not toward leaderboards.`
+        : res.skipped > 0
+          ? `Nothing new. ICEFALL already had every activity ${name} returned.`
+          : `Nothing new since ${fmtDate(res.through)}.`,
+    );
+    reload();
+  }
+
+  return (
+    <div className="rounded-card border border-hairline bg-graphite p-4">
+      <div className="flex items-start gap-3.5">
+        <WatchTile />
+        <div className="min-w-0 flex-1">
+          <p className="text-[15px] text-snow">{name}</p>
+        </div>
+        <WatchStatusMark connection={connection} />
+      </div>
+
+      {outcome && (
+        <div className="mt-4 border-t border-hairline pt-3.5">
+          <p className="flex items-center gap-2 text-[13px] text-snow">
+            {outcome.tone === "good" ? (
+              <Check size={14} strokeWidth={2} className="shrink-0 text-summit" />
+            ) : outcome.tone === "warn" ? (
+              <TriangleAlert size={14} strokeWidth={1.8} className="shrink-0 text-azure" />
+            ) : null}
+            {outcome.title}
+          </p>
+          <p className="mt-1.5 text-[11.5px] leading-relaxed text-mist">{outcome.body}</p>
+        </div>
+      )}
+
+      {connection.state === "connected" && (
+        <div className="mt-4 space-y-1.5 border-t border-hairline pt-3.5 text-[12px] text-mist">
+          {connection.accountLabel ? (
+            <p>
+              Account <span className="text-snow">@{connection.accountLabel}</span>
+            </p>
+          ) : (
+            <p className="text-mist-dim">
+              {name} did not say which account this is. If you have more than one, check in the{" "}
+              {name} app.
+            </p>
+          )}
+          {connection.connectedAt && <p>Connected {fmtDate(connection.connectedAt)}</p>}
+          <p>
+            {connection.lastImportAt
+              ? `Last checked ${fmtDate(connection.lastImportAt)}`
+              : "Not checked yet"}
+          </p>
+          {!connection.canImport && (
+            <p className="text-azure">
+              Permission to read activities was not granted, so nothing can be brought across yet.
+            </p>
+          )}
+          <p className="text-mist-dim">
+            ICEFALL brings across each activity's summary — time, distance, ascent, heart rate. It
+            does not bring the GPS track, so an imported activity draws no map and cannot be sent on
+            to Strava.
+          </p>
+        </div>
+      )}
+
+      {/* THE CONTROL LADDER — no button where there is nothing to press. */}
+      {finishing ? (
+        <p className="mt-4 border-t border-hairline pt-3.5 text-[11.5px] leading-relaxed text-mist-dim">
+          Confirming the connection {name} just granted…
+        </p>
+      ) : connection.state === "unreachable" ? (
+        <div className="mt-4 border-t border-hairline pt-3.5">
+          <p className="text-[11.5px] leading-relaxed text-mist-dim">
+            ICEFALL could not check whether {name} is already connected, so nothing is offered until
+            it can.
+          </p>
+          <Button size="sm" variant="secondary" className="mt-3" onClick={reload}>
+            Check again
+          </Button>
+        </div>
+      ) : connection.state === "no-backend" || connection.state === "signed-out" ? (
+        <p className="mt-4 border-t border-hairline pt-3.5 text-[11.5px] leading-relaxed text-mist-dim">
+          {connection.state === "signed-out"
+            ? "Sign in to link a watch account — the connection is stored against your account, not this device."
+            : "This build of ICEFALL runs without a server, so no account can be linked from it."}
+        </p>
+      ) : connection.state === "not-built" ||
+        connection.state === "vendor-approval-required" ||
+        connection.state === "needs-registration" ? (
+        <p className="mt-4 border-t border-hairline pt-3.5 text-[11.5px] leading-relaxed text-mist-dim">
+          {WATCH_REASON_SENTENCE[provider]}
+        </p>
+      ) : connection.state === "connected" ? (
+        <div className="mt-4 flex gap-2 border-t border-hairline pt-3.5">
+          <Button
+            size="sm"
+            className="flex-1"
+            disabled={busy}
+            onClick={() => void checkForActivities()}
+          >
+            {busy ? (
+              <Loader2 size={14} strokeWidth={2} className="animate-spin" />
+            ) : (
+              "Check for new activities"
+            )}
+          </Button>
+          <Button
+            size="sm"
+            variant={confirmOff ? "danger" : "secondary"}
+            className="flex-1"
+            disabled={busy}
+            onClick={() => (confirmOff ? void disconnect() : setConfirmOff(true))}
+          >
+            {confirmOff ? "Tap again to disconnect" : "Disconnect"}
+          </Button>
+        </div>
+      ) : provider === "coros" ? (
+        <div className="mt-4 border-t border-hairline pt-3.5">
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              className="flex-1"
+              disabled={busy}
+              onClick={() => void connect("eu")}
+            >
+              Europe
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="flex-1"
+              disabled={busy}
+              onClick={() => void connect("us")}
+            >
+              United States
+            </Button>
+          </div>
+          <p className="mt-3 text-[11.5px] leading-relaxed text-mist-dim">
+            COROS keeps accounts in a regional data centre, and the connection has to point at the
+            right one. Pick where your COROS account is registered.
+          </p>
+        </div>
+      ) : (
+        <div className="mt-4 border-t border-hairline pt-3.5">
+          <Button
+            size="sm"
+            className="w-full"
+            disabled={busy || connection.state === "loading"}
+            onClick={() => void connect()}
+          >
+            {busy ? (
+              <Loader2 size={14} strokeWidth={2} className="animate-spin" />
+            ) : (
+              `Connect ${name}`
+            )}
+          </Button>
+        </div>
+      )}
+
+      {importMsg && <p className="mt-3 text-[11.5px] leading-relaxed text-mist">{importMsg}</p>}
+      {failure && <p className="mt-3 text-[11.5px] leading-relaxed text-azure">{failure}</p>}
+    </div>
   );
 }
 

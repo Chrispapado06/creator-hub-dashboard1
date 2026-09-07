@@ -52,10 +52,10 @@ export const CATEGORY_LABEL: Record<BoardCategory, string> = {
 /** What each category actually counts — printed under the table, not implied. */
 export const CATEGORY_MEANING: Record<BoardCategory, string> = {
   summits: "Summits reached during an activity recorded in ICEFALL.",
-  vertical: "Elevation gained across recorded activities.",
+  vertical: "Elevation gained across activities recorded in ICEFALL.",
   expeditions: "Expeditions completed with recorded activity.",
   diversity: "Distinct mountains reached — breadth, not repetition of one hill.",
-  countries: "Countries with at least one recorded ascent.",
+  countries: "Countries with at least one ascent recorded in ICEFALL.",
   progress: "Change against your own previous period. You are the only benchmark.",
 };
 
@@ -133,7 +133,9 @@ export function standingFor({
   const from = periodStart(period, now);
   const inPeriod = (iso: string) => (from ? new Date(iso) >= from : true);
 
-  const real = recorded.filter((r) => !r.simulated && inPeriod(r.startedAt));
+  const real = recorded.filter(
+    (r) => !r.simulated && r.origin?.kind === "icefall" && inPeriod(r.startedAt),
+  );
   const summits = verifiedSummits.filter((s) => inPeriod(s.date));
   const distinct = new Set(summits.map((s) => s.name.toLowerCase()));
 
@@ -149,6 +151,22 @@ export function standingFor({
     rank: null,
     outOf: null,
   };
+}
+
+/**
+ * How many imported activities fall in the period — not counted anywhere
+ * above, but the fact the board needs to decide whether to say so.
+ */
+export function importedInPeriod(
+  recorded: RecordedActivity[],
+  period: BoardPeriod,
+  now = new Date(),
+): number {
+  const from = periodStart(period, now);
+  const inPeriod = (iso: string) => (from ? new Date(iso) >= from : true);
+  return recorded.filter(
+    (r) => !r.simulated && r.origin?.kind === "imported" && inPeriod(r.startedAt),
+  ).length;
 }
 
 /** The figure a category actually shows, from a standing. */
@@ -222,4 +240,11 @@ export const RANKING_UPDATE_NOTICE =
   "Your standing recalculates the moment an activity finishes recording. Community rankings begin when there are verified athletes to rank against.";
 
 export const VERIFIED_ONLY_NOTICE =
-  "Leaderboards count only what ICEFALL recorded: a real activity whose track reached the summit. Summit logs and passport entries you typed yourself stay on your profile and are never ranked.";
+  "Leaderboards count only what ICEFALL recorded: a real activity whose track reached the summit. Summit logs and passport entries you typed yourself stay on your profile and are never ranked. Activities brought across from a watch account are not ranked either.";
+
+/**
+ * Said under a standing whenever it includes at least one imported activity in
+ * the period, so the exclusion above is SAID rather than silently applied.
+ */
+export const IMPORTED_NOT_RANKED =
+  "Activities brought across from a watch account are not ranked. ICEFALL did not record them, and the watch services it reads from cannot tell an activity a sensor measured from one somebody typed in — so they count toward your own training and totals, and never toward a table that ranks you against other people.";

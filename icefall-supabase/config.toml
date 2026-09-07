@@ -26,6 +26,13 @@ major_version = 15
 [functions.strava]
 verify_jwt = false
 
+# WATCH — same reasoning as [functions.strava] above, for the same reason.
+# /watch/<provider>/callback is a top-level browser redirect sent by Garmin,
+# COROS, Suunto or Polar: it carries no Authorization header and never can.
+# Every other route calls callerId() and refuses with 401 without a verified JWT.
+[functions.watch]
+verify_jwt = false
+
 # ---------------------------------------------------------------------------
 # Auth
 # ---------------------------------------------------------------------------

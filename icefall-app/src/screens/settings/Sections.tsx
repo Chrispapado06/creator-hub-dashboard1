@@ -3235,24 +3235,39 @@ function Devices() {
     // source, so listing it invited "ICEFALL will import my Strava history" when the
     // page only ever meant "your watch could feed this". Do not re-add it here if
     // an import is ever built; that belongs wherever accounts are connected.
+    //
+    // Garmin, COROS, Suunto and Polar were removed 2026-09-07, the day COROS
+    // connected — this screen would otherwise become a lie the moment it ships:
+    // it listed all three as "Not connected" under "None of these integrations
+    // exist yet" while a COROS watch account could, from that day, actually be
+    // linked. The four watch services are account links for the same reason
+    // Strava is: they are read from the watch service's cloud, not paired to
+    // this device, so they belong under Connected accounts, not here.
     "Apple Watch",
     "Apple Health",
-    "Garmin",
-    "COROS",
-    "Suunto",
     "Google Health",
   ];
   return (
     <SettingsPage title="Devices & apps" subtitle="Where your training data could come from.">
-      <Group>
-        {integrations.map((name) => (
-          <InfoRow key={name} icon={Watch} title={name} value="Not connected" tone="mist" />
-        ))}
-      </Group>
+      <LinkRow
+        to="/settings/connections"
+        icon={Watch}
+        title="Watch accounts"
+        detail="Garmin, COROS, Suunto and Polar — connected as accounts, not paired as devices."
+      />
+      <Rise className="pt-4">
+        <Group>
+          {integrations.map((name) => (
+            <InfoRow key={name} icon={Watch} title={name} value="Not connected" tone="mist" />
+          ))}
+        </Group>
+      </Rise>
       <Rise className="pt-4">
         <Disclaimer>
-          None of these integrations exist yet, so none of them are offered as a button that would
-          do nothing. ICEFALL records activity with the phone's own GPS in the meantime.
+          None of the integrations above exist yet, so none of them are offered as a button that
+          would do nothing. A Garmin, COROS, Suunto or Polar account is connected under Connected
+          accounts instead — that reads activities from the watch service's cloud rather than from
+          the watch itself. ICEFALL records activity with the phone's own GPS in the meantime.
         </Disclaimer>
       </Rise>
     </SettingsPage>

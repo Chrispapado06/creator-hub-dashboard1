@@ -1,3 +1,5 @@
+import type { ActivityOrigin } from "@/tracking/types";
+
 /**
  * ICEFALL domain model.
  *
@@ -106,6 +108,14 @@ export interface Activity {
    * they are fitter than they are, before a mountain.
    */
   simulated?: boolean;
+  /**
+   * Carried through from `RecordedActivity` for the same reason as
+   * `simulated` — but OPTIONAL here only, because seeded DEV fixtures have
+   * none. RULE: no ranking, record or verification decision may ever read
+   * this off the display type. Those decisions read `RecordedActivity.origin`
+   * (required, never optional) instead — see `src/tracking/types.ts`.
+   */
+  origin?: ActivityOrigin;
 }
 
 // ---------------------------------------------------------------------------

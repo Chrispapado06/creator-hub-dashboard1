@@ -1,6 +1,14 @@
 import { activityById } from "./activities";
 import type { RecordedActivity, TrackPointLive } from "./types";
 import type { Activity, SportMode, TrackPoint } from "@/types";
+import { WATCH_PROVIDER_NAME } from "@/watch/types";
+
+/** The provenance line for an imported activity's `Activity.location`. */
+function importedLabel(origin: Extract<RecordedActivity["origin"], { kind: "imported" }>): string {
+  return origin.deviceName
+    ? `Imported from ${WATCH_PROVIDER_NAME[origin.provider]} ${origin.deviceName}`
+    : `Imported from ${WATCH_PROVIDER_NAME[origin.provider]}`;
+}
 
 /**
  * Bridges a recorded activity into the app's display `Activity` shape, so the
@@ -69,9 +77,19 @@ export function recordedToActivity(r: RecordedActivity): Activity {
     // Carried, not dropped: every total, record and load figure downstream
     // needs to be able to exclude a simulated session.
     simulated: r.simulated,
+    // Carried the same way, and for the same reason — a ranking or a records
+    // check must be able to exclude an imported activity too, and it must read
+    // this, never the display type's `location` string, to decide that.
+    origin: r.origin,
     mode: FAMILY_TO_MODE[type.family] ?? "hiking",
     title: r.title,
-    location: r.location ?? (r.simulated ? "Simulated route" : "Recorded activity"),
+    location:
+      r.location ??
+      (r.simulated
+        ? "Simulated route"
+        : r.origin.kind === "imported"
+          ? importedLabel(r.origin)
+          : "Recorded activity"),
     startedAt: r.startedAt,
     durationSec: r.durationSec,
     distanceKm: r.distanceM / 1000,

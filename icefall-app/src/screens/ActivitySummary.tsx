@@ -1,4 +1,4 @@
-import { BarChart3, Play, Share2 } from "lucide-react";
+import { BarChart3, Play, Share2, Watch } from "lucide-react";
 import { Link, Navigate, useParams } from "react-router-dom";
 import { Badge, Button, Card, Divider, SectionLabel, Metric } from "@/components/ui/primitives";
 import { RouteMap } from "@/components/ui/RouteMap";
@@ -29,6 +29,7 @@ import { DEFAULT_BODY_MASS_KG, useApp } from "@/state/AppState";
 import { cn } from "@/lib/utils";
 import { SendToStrava } from "@/strava/SendToStrava";
 import { activityById as trackedType } from "@/tracking/activities";
+import { WATCH_PROVIDER_NAME } from "@/watch/types";
 
 /** Screen 05 — what the mountain gave back. Works for recorded and seeded activities alike. */
 export default function ActivitySummary() {
@@ -93,6 +94,36 @@ export default function ActivitySummary() {
             owner on 2026-08-31: "Nothing, no points." Nothing replaces it; the
             screen stops claiming progression rather than substituting another
             figure. */}
+
+        {/* IMPORTED PROVENANCE — flat, above the fold, never behind a tap.
+            Garmin's own brand guidelines will require exactly this placement
+            the day a Garmin adapter exists ("Never bury the Garmin
+            attribution in tooltips, footnotes or expandable containers"); for
+            the other three vendors it is just honesty about what ICEFALL did
+            and did not measure. */}
+        {recorded?.origin.kind === "imported" && (
+          <Rise className="pt-5">
+            <div className="flex items-start gap-2.5">
+              <Watch size={16} strokeWidth={1.8} className="mt-0.5 shrink-0 text-mist" />
+              <div className="min-w-0">
+                <p className="text-[13px] text-snow">
+                  Imported from {WATCH_PROVIDER_NAME[recorded.origin.provider]}
+                  {recorded.origin.deviceName ? ` ${recorded.origin.deviceName}` : ""}
+                </p>
+                <p className="mt-1 text-[11.5px] leading-relaxed text-mist-dim">
+                  ICEFALL did not record this activity. The figures are the ones your watch service
+                  reported.
+                </p>
+                {recorded.origin.vendorEntered === true && (
+                  <p className="mt-1 text-[11.5px] leading-relaxed text-mist-dim">
+                    {WATCH_PROVIDER_NAME[recorded.origin.provider]} marks this activity as entered
+                    or edited by hand.
+                  </p>
+                )}
+              </div>
+            </div>
+          </Rise>
+        )}
 
         {/* Headline metrics */}
         <Rise className="pt-5">
@@ -165,26 +196,36 @@ export default function ActivitySummary() {
         {/* Route */}
         <Rise className="pt-6">
           <SectionLabel>Route</SectionLabel>
-          <div className="mt-3 overflow-hidden rounded-card border border-hairline">
-            {recorded && recorded.points.length > 1 ? (
-              // Recorded activities carry real coordinates, so they get real
-              // terrain. Tilt it and the climb is visible in the landform.
-              <TerrainMap
-                track={recorded.points.map((p) => ({ lat: p.lat, lon: p.lon }))}
-                follow={false}
-                start3D
-                fallbackTrack={activity.track}
-                fallbackSeed={activity.id}
-                className="aspect-square w-full"
-              />
-            ) : (
-              <RouteMap
-                track={activity.track}
-                seed={activity.id}
-                className="aspect-square w-full"
-              />
-            )}
-          </div>
+          {recorded?.origin.kind === "imported" && recorded.points.length === 0 ? (
+            /* v1 imports NO TRACK — there is nothing to draw, real or seeded.
+               A synthetic route under a real imported activity would be a
+               fabricated map, not a fallback. */
+            <p className="mt-3 rounded-card border border-hairline bg-graphite p-4 text-[12px] leading-relaxed text-mist-dim">
+              No GPS track — ICEFALL brings across the summary of an imported activity, not the
+              route.
+            </p>
+          ) : (
+            <div className="mt-3 overflow-hidden rounded-card border border-hairline">
+              {recorded && recorded.points.length > 1 ? (
+                // Recorded activities carry real coordinates, so they get real
+                // terrain. Tilt it and the climb is visible in the landform.
+                <TerrainMap
+                  track={recorded.points.map((p) => ({ lat: p.lat, lon: p.lon }))}
+                  follow={false}
+                  start3D
+                  fallbackTrack={activity.track}
+                  fallbackSeed={activity.id}
+                  className="aspect-square w-full"
+                />
+              ) : (
+                <RouteMap
+                  track={activity.track}
+                  seed={activity.id}
+                  className="aspect-square w-full"
+                />
+              )}
+            </div>
+          )}
         </Rise>
 
         {/* Conditions — only when something actually recorded them. */}

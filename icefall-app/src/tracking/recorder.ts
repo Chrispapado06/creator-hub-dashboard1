@@ -404,7 +404,8 @@ export class ActivityRecorder {
     // on every held frame — a measured 1.20 m/s walker was displayed at
     // 0.17 m/s on a 32 m fix. `trustedDeviceSpeed` is the SAME rule the
     // movement machine applies, imported rather than restated.
-    const derived = res.derivedSpeed ?? trustedDeviceSpeed(sample.speed, sample.accuracy, this.movementCfg);
+    const derived =
+      res.derivedSpeed ?? trustedDeviceSpeed(sample.speed, sample.accuracy, this.movementCfg);
     if (derived !== null && Number.isFinite(derived)) {
       this.speed.push(sample.t, derived);
       this.lastSpeedAt = sample.t;
@@ -839,6 +840,7 @@ export class ActivityRecorder {
       startedAt: new Date(this.startedAt ?? Date.now()).toISOString(),
       endedAt: new Date(this.endedAt ?? Date.now()).toISOString(),
       simulated: this.opts.simulated,
+      origin: { kind: "icefall" },
 
       durationSec: Math.round(s.elapsedMs / 1000),
       movingSec: Math.round(s.movingMs / 1000),

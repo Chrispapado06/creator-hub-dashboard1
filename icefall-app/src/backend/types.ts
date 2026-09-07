@@ -338,6 +338,32 @@ export type Database = {
         }[];
       };
       strava_disconnect: { Args: Record<never, never>; Returns: undefined };
+      /**
+       * WATCH ACCOUNTS (COROS, Polar, Suunto, Garmin). Same two-call shape as
+       * `strava_status` / `strava_disconnect`, generalised to a table because
+       * a person can connect more than one watch service at once.
+       *
+       * `watch_status` returns a SET — one row per connected provider, empty
+       * when nothing is connected. Absence IS the answer, same as Strava:
+       * there is no `connected: false` row, and it carries no token material.
+       *
+       * `watch_disconnect` forgets one row, by provider. It CANNOT revoke at
+       * the vendor — only the Edge Function can, holding the client
+       * credentials — so it exists for the one case the function cannot
+       * serve: a token the vendor has already revoked.
+       */
+      watch_status: {
+        Args: Record<never, never>;
+        Returns: {
+          provider: "garmin" | "coros" | "suunto" | "polar";
+          provider_user_id: string | null;
+          account_label: string | null;
+          scope: string;
+          region: "eu" | "us" | null;
+          connected_at: string;
+        }[];
+      };
+      watch_disconnect: { Args: { p_provider: string }; Returns: undefined };
     };
     Enums: {
       icefall_role: IcefallRole;

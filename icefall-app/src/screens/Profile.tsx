@@ -22,7 +22,7 @@ import { useMemo, useRef, useState } from "react";
 import { countryName, useMyProfile } from "@/auth/useMyProfile";
 import { usePublicProfile } from "@/social/publicProfile";
 import { Link } from "react-router-dom";
-import { Card, Divider, SectionLabel, Stat, sharePage } from "@/components/ui/primitives";
+import { Badge, Card, Divider, SectionLabel, Stat, sharePage } from "@/components/ui/primitives";
 import { MonthlyVolume } from "@/components/ui/charts";
 import { VerificationMark } from "@/components/ui/VerificationMark";
 import { BadgeHex } from "@/components/domain/BadgeHex";
@@ -60,6 +60,8 @@ import {
 } from "@/tracking/feed";
 import { ACHIEVEMENT_CATALOGUE } from "@/tracking/records";
 import { loadMeta } from "@/tracking/store";
+import { importedInPeriod } from "@/social/leaderboard";
+import { WATCH_PROVIDER_NAME } from "@/watch/types";
 
 type Tab = "posts" | "summits" | "activities" | "passport" | "stats";
 
@@ -326,9 +328,7 @@ export default function Profile() {
   };
   const serverHandle = my.status === "ready" ? my.profile.username : null;
   const handle = serverHandle ?? settings.username ?? null;
-  const earnedBadges = BADGES.filter(
-    (b) => badgeState(b, settings, currentTier).kind === "earned",
-  );
+  const earnedBadges = BADGES.filter((b) => badgeState(b, settings, currentTier).kind === "earned");
 
   /* -- The tick and the pill. Both are claims about this person that ICEFALL
         would have to have checked, so both read from the same places the rest
@@ -510,7 +510,9 @@ export default function Profile() {
             try {
               patch({ cover: await readBanner(file) });
             } catch (err) {
-              setBannerError((err as { message?: string })?.message ?? "That image couldn't be read.");
+              setBannerError(
+                (err as { message?: string })?.message ?? "That image couldn't be read.",
+              );
             }
           }}
         />
@@ -663,7 +665,11 @@ export default function Profile() {
               ))}
               {settings.website.trim().length > 0 && (
                 <a
-                  href={/^https?:\/\//i.test(settings.website) ? settings.website : `https://${settings.website}`}
+                  href={
+                    /^https?:\/\//i.test(settings.website)
+                      ? settings.website
+                      : `https://${settings.website}`
+                  }
                   target="_blank"
                   rel="noreferrer noopener"
                   aria-label={`Website: ${settings.website}`}
@@ -709,7 +715,9 @@ export default function Profile() {
               hint={mine.followerCount === null ? NO_SOCIAL_GRAPH : FOLLOW_COUNTS_HINT}
             />
             <ProfileFigure
-              value={mine.followingCount === null ? "—" : mine.followingCount.toLocaleString("en-GB")}
+              value={
+                mine.followingCount === null ? "—" : mine.followingCount.toLocaleString("en-GB")
+              }
               label="Following"
               hint={mine.followingCount === null ? NO_SOCIAL_GRAPH : FOLLOW_COUNTS_HINT}
             />
@@ -923,10 +931,7 @@ export default function Profile() {
           </div>
 
           <div
-            className={cn(
-              "mt-2",
-              !passportOpen && "grid grid-cols-[45%_1fr] items-start gap-1.5",
-            )}
+            className={cn("mt-2", !passportOpen && "grid grid-cols-[45%_1fr] items-start gap-1.5")}
           >
             <PassportBook
               passport={passport}
@@ -1020,10 +1025,7 @@ export default function Profile() {
         {tab === "activities" && <ActivityTab recorded={recorded} />}
         {tab === "summits" && <SummitsTab summits={user.summits} />}
         {tab === "stats" && (
-          <StatsTab
-            stats={stats}
-            achievements={achievements}
-          />
+          <StatsTab stats={stats} achievements={achievements} recorded={recorded} />
         )}
         {tab === "passport" && (
           <Rise className="pt-5">
@@ -1037,7 +1039,11 @@ export default function Profile() {
         <Rise className="pt-7">
           <Card className="overflow-hidden p-0">
             {[
-              { to: "/goals", title: "Goals", detail: `${goals.filter((g) => g.status === "active").length} active` },
+              {
+                to: "/goals",
+                title: "Goals",
+                detail: `${goals.filter((g) => g.status === "active").length} active`,
+              },
               // `/daily` is not a route and never was: this row landed on the
               // off-route page, which mounts OUTSIDE the app shell, so the tab
               // bar disappeared and a full reload was the only way back. The
@@ -1148,9 +1154,7 @@ function ActivityTab({ recorded }: { recorded: ReturnType<typeof useRecordedActi
             to="/activity"
             className="flex items-center justify-between rounded-card border border-hairline bg-graphite px-4 py-3 text-[12.5px] text-mist transition-colors hover:border-azure/45 hover:text-snow"
           >
-            <span>
-              Showing your 8 most recent of {recorded.length}
-            </span>
+            <span>Showing your 8 most recent of {recorded.length}</span>
             <span className="text-azure">All activity</span>
           </Link>
         </Rise>
@@ -1174,7 +1178,17 @@ function ActivityTab({ recorded }: { recorded: ReturnType<typeof useRecordedActi
               <div className="absolute inset-0 bg-gradient-to-t from-graphite via-transparent to-transparent" />
             </div>
             <div className="p-4">
-              <p className="text-[15px] text-snow">{r.title}</p>
+              <div className="flex items-center gap-2">
+                <p className="text-[15px] text-snow">{r.title}</p>
+                {/* Mutually exclusive by construction — see ActivityCard's
+                    identical pairing. `r` is a `RecordedActivity` here, so
+                    `origin` is required, never optional. */}
+                {r.simulated ? (
+                  <Badge tone="alert">Simulated</Badge>
+                ) : r.origin.kind === "imported" ? (
+                  <Badge>Imported · {WATCH_PROVIDER_NAME[r.origin.provider]}</Badge>
+                ) : null}
+              </div>
               <p className="mt-0.5 text-[11.5px] text-mist-dim">
                 {fmtDate(r.startedAt, { day: "numeric" })}
               </p>
@@ -1195,7 +1209,11 @@ function ActivityTab({ recorded }: { recorded: ReturnType<typeof useRecordedActi
   );
 }
 
-function SummitsTab({ summits }: { summits: { name: string; date?: string; elevationM?: number }[] }) {
+function SummitsTab({
+  summits,
+}: {
+  summits: { name: string; date?: string; elevationM?: number }[];
+}) {
   if (summits.length === 0) {
     return (
       <Rise className="pt-5">
@@ -1211,7 +1229,10 @@ function SummitsTab({ summits }: { summits: { name: string; date?: string; eleva
         {summits.map((s, i) => (
           <div
             key={`${s.name}-${i}`}
-            className={cn("flex items-center gap-3 px-4 py-3.5", i > 0 && "border-t border-hairline")}
+            className={cn(
+              "flex items-center gap-3 px-4 py-3.5",
+              i > 0 && "border-t border-hairline",
+            )}
           >
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[14px] text-snow">{s.name}</span>
@@ -1249,12 +1270,17 @@ function SummitsTab({ summits }: { summits: { name: string; date?: string; eleva
 function StatsTab({
   stats,
   achievements,
+  recorded,
 }: {
   stats: ReturnType<typeof useAthleteTotals>;
   achievements: { id: string; name: string; locked: boolean }[];
+  recorded: ReturnType<typeof useRecordedActivities>;
 }) {
   const months = useMonthlyVolume(12);
   const recordedAnything = months.some((m) => m.activities > 0);
+  /* "All time" has no start date — `periodStart("all")` returns null, which
+     `importedInPeriod` already treats as "every activity counts". */
+  const importedEver = importedInPeriod(recorded, "all");
 
   return (
     <>
@@ -1266,8 +1292,8 @@ function StatsTab({
           /* An axis with twelve empty columns is a chart of nothing pretending
              to be a chart of something. Say it in words instead. */
           <p className="mt-2 text-[11.5px] leading-relaxed text-mist-dim">
-            Nothing recorded in the last twelve months. Record an activity and
-            your season builds here, month by month.
+            Nothing recorded in the last twelve months. Record an activity and your season builds
+            here, month by month.
           </p>
         )}
       </Rise>
@@ -1295,6 +1321,11 @@ function StatsTab({
               ? "Nothing recorded yet. These count what you record in ICEFALL — they do not include anything you climbed before installing it."
               : "Counted from what you have recorded in ICEFALL. Anything you climbed before installing it is not included."}
         </p>
+        {importedEver > 0 && (
+          <p className="mt-1 text-[11.5px] leading-relaxed text-mist-dim">
+            Includes activities brought across from your watch account.
+          </p>
+        )}
       </Rise>
 
       {/* PH-01 / D5 / PH-22 — NO PROGRESSION BLOCK, IN ANY BUILD.
@@ -1354,8 +1385,16 @@ function PostsTab({
   author: { name: string; region?: string; avatar?: string };
 }) {
   const stream = [
-    ...posts.map((p) => ({ at: p.createdAt, node: <OwnPostCard post={p} author={author} recorded={recorded} /> , key: p.id })),
-    ...logs.map((l) => ({ at: l.createdAt, node: <SummitLogCard log={l} author={author} />, key: l.id })),
+    ...posts.map((p) => ({
+      at: p.createdAt,
+      node: <OwnPostCard post={p} author={author} recorded={recorded} />,
+      key: p.id,
+    })),
+    ...logs.map((l) => ({
+      at: l.createdAt,
+      node: <SummitLogCard log={l} author={author} />,
+      key: l.id,
+    })),
   ].sort((a, b) => b.at.localeCompare(a.at));
 
   if (stream.length === 0) {
@@ -1392,8 +1431,8 @@ function PhotosTab() {
   return (
     <Rise className="pt-5">
       <p className="text-[12.5px] leading-relaxed text-mist-dim">
-        No photographs yet. Nothing is uploaded anywhere yet — when photo
-        support ships, pictures you attach to a session will collect here.
+        No photographs yet. Nothing is uploaded anywhere yet — when photo support ships, pictures
+        you attach to a session will collect here.
       </p>
       <Divider className="mt-4" />
     </Rise>

@@ -56,12 +56,7 @@ import type {
   MountainConditions,
   Reading,
 } from "@/services/conditions";
-import type {
-  Capabilities,
-  LiveSplit,
-  RecordedActivity,
-  TrackPointLive,
-} from "@/tracking/types";
+import type { Capabilities, LiveSplit, RecordedActivity, TrackPointLive } from "@/tracking/types";
 
 /* -------------------------------------------------------------------------- */
 /* Clock                                                                       */
@@ -213,8 +208,7 @@ function metresBetween(a: { lat: number; lon: number }, b: { lat: number; lon: n
   const dLon = ((b.lon - a.lon) * Math.PI) / 180;
   const la = (a.lat * Math.PI) / 180;
   const lb = (b.lat * Math.PI) / 180;
-  const h =
-    Math.sin(dLat / 2) ** 2 + Math.cos(la) * Math.cos(lb) * Math.sin(dLon / 2) ** 2;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(la) * Math.cos(lb) * Math.sin(dLon / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
@@ -264,8 +258,7 @@ function buildActivity(spec: ActivitySpec, seed: number): RecordedActivity {
   /** Half the route, converted to a degree offset at this latitude. */
   const reachM = spec.distanceM / 2;
   const dLat = ((Math.cos(rad) * reachM) / 111_320) * 1;
-  const dLon =
-    (Math.sin(rad) * reachM) / (111_320 * Math.cos((home.lat * Math.PI) / 180));
+  const dLon = (Math.sin(rad) * reachM) / (111_320 * Math.cos((home.lat * Math.PI) / 180));
 
   const points: TrackPointLive[] = [];
   let cumulative = 0;
@@ -284,8 +277,7 @@ function buildActivity(spec: ActivitySpec, seed: number): RecordedActivity {
     const lat = home.lat + dLat * along + jitterLat;
     const lon = home.lon + dLon * along + jitterLon;
     // Ease the climb so the profile has a shape instead of a ramp.
-    const altitude =
-      spec.startAltM + spec.gainM * Math.sin((along * Math.PI) / 2) ** 1.35;
+    const altitude = spec.startAltM + spec.gainM * Math.sin((along * Math.PI) / 2) ** 1.35;
 
     if (prev) cumulative += metresBetween(prev, { lat, lon });
     const climb = altitude - prevAlt;
@@ -320,7 +312,9 @@ function buildActivity(spec: ActivitySpec, seed: number): RecordedActivity {
     splits.push({
       index: k + 1,
       distanceM: 1000,
-      durationSec: Math.round((spec.movingSec / distanceM) * 1000 * (1 + wobble(seed + k, k) * 0.16)),
+      durationSec: Math.round(
+        (spec.movingSec / distanceM) * 1000 * (1 + wobble(seed + k, k) * 0.16),
+      ),
       elevationGainM: Math.round((gain / distanceM) * 1000 * (1 + wobble(seed + k, k + 2) * 0.5)),
       avgHr: Math.round(spec.avgHr + wobble(seed + k, k + 5) * 12),
     });
@@ -339,6 +333,7 @@ function buildActivity(spec: ActivitySpec, seed: number): RecordedActivity {
     // build, and the banner says so on every screen. Flagging them `simulated`
     // would additionally strike them out of every career total in the app.
     simulated: false,
+    origin: { kind: "icefall" },
     durationSec: spec.durationSec,
     movingSec: spec.movingSec,
     distanceM: Math.round(distanceM),
@@ -535,7 +530,14 @@ export const OFFLINE_ATHLETE_META = {
    */
   earnedAchievements: !DEMO
     ? []
-    : ["first-5k", "first-10k", "first-500-ascent", "first-1000-ascent", "above-3000", "alpine-start"],
+    : [
+        "first-5k",
+        "first-10k",
+        "first-500-ascent",
+        "first-1000-ascent",
+        "above-3000",
+        "alpine-start",
+      ],
 };
 
 /* -------------------------------------------------------------------------- */
@@ -1258,17 +1260,71 @@ export const OFFLINE_GUIDES: Guide[] = !DEMO
 export const OFFLINE_PLACES: Place[] = !DEMO
   ? []
   : [
-      { id: "s:chamonix", name: "Chamonix", region: "Haute-Savoie, France", lat: 45.9237, lon: 6.8694 },
-      { id: "s:argentiere", name: "Argentière", region: "Haute-Savoie, France", lat: 45.9836, lon: 6.9282 },
-      { id: "s:courmayeur", name: "Courmayeur", region: "Aosta Valley, Italy", lat: 45.7912, lon: 6.9694 },
+      {
+        id: "s:chamonix",
+        name: "Chamonix",
+        region: "Haute-Savoie, France",
+        lat: 45.9237,
+        lon: 6.8694,
+      },
+      {
+        id: "s:argentiere",
+        name: "Argentière",
+        region: "Haute-Savoie, France",
+        lat: 45.9836,
+        lon: 6.9282,
+      },
+      {
+        id: "s:courmayeur",
+        name: "Courmayeur",
+        region: "Aosta Valley, Italy",
+        lat: 45.7912,
+        lon: 6.9694,
+      },
       { id: "s:cogne", name: "Cogne", region: "Aosta Valley, Italy", lat: 45.6086, lon: 7.3556 },
-      { id: "s:zermatt", name: "Zermatt", region: "Valais, Switzerland", lat: 46.0207, lon: 7.7491 },
-      { id: "s:grindelwald", name: "Grindelwald", region: "Bern, Switzerland", lat: 46.6244, lon: 8.0411 },
-      { id: "s:interlaken", name: "Interlaken", region: "Bern, Switzerland", lat: 46.6863, lon: 7.8632 },
-      { id: "s:innsbruck", name: "Innsbruck", region: "Tyrol, Austria", lat: 47.2692, lon: 11.4041 },
+      {
+        id: "s:zermatt",
+        name: "Zermatt",
+        region: "Valais, Switzerland",
+        lat: 46.0207,
+        lon: 7.7491,
+      },
+      {
+        id: "s:grindelwald",
+        name: "Grindelwald",
+        region: "Bern, Switzerland",
+        lat: 46.6244,
+        lon: 8.0411,
+      },
+      {
+        id: "s:interlaken",
+        name: "Interlaken",
+        region: "Bern, Switzerland",
+        lat: 46.6863,
+        lon: 7.8632,
+      },
+      {
+        id: "s:innsbruck",
+        name: "Innsbruck",
+        region: "Tyrol, Austria",
+        lat: 47.2692,
+        lon: 11.4041,
+      },
       { id: "s:bovec", name: "Bovec", region: "Goriška, Slovenia", lat: 46.3378, lon: 13.5525 },
-      { id: "s:litochoro", name: "Litochoro", region: "Central Macedonia, Greece", lat: 40.1006, lon: 22.5006 },
-      { id: "s:imlil", name: "Imlil", region: "Marrakesh-Safi, Morocco", lat: 31.1361, lon: -7.9192 },
+      {
+        id: "s:litochoro",
+        name: "Litochoro",
+        region: "Central Macedonia, Greece",
+        lat: 40.1006,
+        lon: 22.5006,
+      },
+      {
+        id: "s:imlil",
+        name: "Imlil",
+        region: "Marrakesh-Safi, Morocco",
+        lat: 31.1361,
+        lon: -7.9192,
+      },
       { id: "s:kathmandu", name: "Kathmandu", region: "Bagmati, Nepal", lat: 27.7172, lon: 85.324 },
     ];
 
@@ -1435,7 +1491,7 @@ export function offlineTrailById(osmId: number): Trail | null {
 /* Conditions                                                                  */
 /* -------------------------------------------------------------------------- */
 
-const reading = <T,>(v: T): Reading<T> => ({ value: v });
+const reading = <T>(v: T): Reading<T> => ({ value: v });
 
 /**
  * A sample forecast.

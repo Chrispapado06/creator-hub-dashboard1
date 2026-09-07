@@ -15,6 +15,7 @@ import {
   Send,
   Settings2,
   ShieldCheck,
+  Watch,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -38,6 +39,17 @@ import {
   type ConsentWording,
   type HealthConsent,
 } from "@/health/consent";
+import {
+  beginWatchConnect,
+  finalizeWatchConnect,
+  useWatchStatus,
+  type WatchFinalizeOutcome,
+} from "@/watch/connection";
+import { WATCH_PROVIDER_NAME, type WatchProvider } from "@/watch/types";
+
+function isWatchProvider(v: string | null): v is WatchProvider {
+  return v === "coros" || v === "polar" || v === "suunto" || v === "garmin";
+}
 
 /**
  * CONNECT YOUR ACCOUNTS — the last page of sign-up.
@@ -121,7 +133,16 @@ import {
 /* Providers                                                                   */
 /* -------------------------------------------------------------------------- */
 
-type ProviderId = "strava" | "oura" | "apple-health" | "alltrails" | "komoot";
+type ProviderId =
+  | "strava"
+  | "oura"
+  | "apple-health"
+  | "alltrails"
+  | "komoot"
+  | "coros"
+  | "polar"
+  | "suunto"
+  | "garmin";
 
 interface Provider {
   id: ProviderId;
@@ -171,6 +192,19 @@ const PROVIDERS: readonly Provider[] = [
     short: "Komoot",
     blurb: "Your hiking and cycling routes and activities.",
     built: false,
+  },
+  /* Added 2026-09-07. COROS is the one watch service with a working, self-serve
+     connection today — Polar, Suunto and Garmin are NOT rows on this page: nine
+     rows with six dead ones buries Strava and Oura on the screen where somebody
+     first meets them. This row's PRESENCE, not just whether it can be tapped, is
+     derived from `useWatchStatus()` in `ListScreen` below — Polar becomes a row
+     here on its own the day its registration is done; nobody edits this file. */
+  {
+    id: "coros",
+    name: "COROS",
+    short: "COROS",
+    blurb: "Bring activities you recorded on a COROS watch into ICEFALL.",
+    built: true,
   },
 ];
 
@@ -235,6 +269,24 @@ function ProviderTile({ id, size = 44 }: { id: ProviderId; size?: number }) {
           <Circle size={inner} strokeWidth={2.75} />
         </span>
       );
+    case "coros":
+    case "polar":
+    case "suunto":
+    case "garmin":
+      /* No brand mark for any of the four — see `BrandMarks.tsx`. COROS's own
+         terms forbid its wordmark without written consent; Polar's and
+         Suunto's brand kits sit behind an agreement not yet signed; Garmin's
+         own guidelines forbid its tag logo wherever no Garmin data is present,
+         which today is everywhere in ICEFALL. One neutral treatment, so no
+         watch tile looks more official than another. */
+      return (
+        <span
+          className={base}
+          style={{ width: size, height: size, background: "var(--ice-elevated)" }}
+        >
+          <Watch size={inner} strokeWidth={1.8} className="text-mist" />
+        </span>
+      );
   }
 }
 
@@ -295,8 +347,11 @@ type Stage =
   | { kind: "connecting"; id: ProviderId }
   /** Strava sent us back with a ticket; the server has yet to confirm. */
   | { kind: "finishing"; ticket: string }
+  /** A watch provider sent us back with a ticket; same idea, generalised. */
+  | { kind: "watch-finishing"; ticket: string; provider: WatchProvider }
   | { kind: "connected"; id: "strava"; athleteUsername: string | null }
-  | { kind: "connected"; id: "oura" };
+  | { kind: "connected"; id: "oura" }
+  | { kind: "connected"; id: WatchProvider; accountLabel: string | null };
 
 /**
  * What a provider's own redirect said when it sent the athlete back.
@@ -344,6 +399,39 @@ function outcomeFromParams(params: URLSearchParams): { stage: Stage; note: strin
             : "Oura did not complete the connection. Nothing was stored — try again in a moment.";
     return { stage: { kind: "list" }, note };
   }
+
+  /* A watch provider's own redirect. Same shape as Strava's above, generalised
+     to four vendors — the outcome word is never trusted as a fact about
+     whether anything is connected; `pending` only ever moves to `finishing`,
+     which asks the server. */
+  const watch = params.get("watch");
+  const providerParam = params.get("provider");
+  const provider = isWatchProvider(providerParam) ? providerParam : null;
+  if (watch === "pending" && ticket && provider) {
+    return { stage: { kind: "watch-finishing", ticket, provider }, note: null };
+  }
+  if (watch && provider) {
+    const name = WATCH_PROVIDER_NAME[provider];
+    if (watch === "declined") {
+      return {
+        stage: { kind: "list" },
+        note: `You cancelled on ${name}'s screen, so nothing was linked.`,
+      };
+    }
+    if (watch === "expired") {
+      return {
+        stage: { kind: "list" },
+        note: "That connection request is no longer valid — each one lasts ten minutes and can be used once. Start it again.",
+      };
+    }
+    if (watch === "failed") {
+      return {
+        stage: { kind: "list" },
+        note: `${name} did not complete the connection. Nothing was linked — try again in a moment.`,
+      };
+    }
+  }
+
   return { stage: { kind: "list" }, note: null };
 }
 
@@ -359,10 +447,20 @@ export default function ConnectAccounts() {
   const [note, setNote] = useState<string | null>(initial.note);
 
   useEffect(() => {
-    if (!params.get("strava") && !params.get("oura") && !params.get("ticket")) return;
+    if (
+      !params.get("strava") &&
+      !params.get("oura") &&
+      !params.get("watch") &&
+      !params.get("provider") &&
+      !params.get("ticket")
+    ) {
+      return;
+    }
     const next = new URLSearchParams(params);
     next.delete("strava");
     next.delete("oura");
+    next.delete("watch");
+    next.delete("provider");
     next.delete("reason");
     next.delete("ticket");
     setParams(next, { replace: true });
@@ -386,16 +484,31 @@ export default function ConnectAccounts() {
     );
   }
 
+  if (stage.kind === "watch-finishing") {
+    const provider = stage.provider;
+    return (
+      <WatchFinishing
+        ticket={stage.ticket}
+        provider={provider}
+        onDone={(accountLabel) => setStage({ kind: "connected", id: provider, accountLabel })}
+        onFailed={backToList}
+        onClose={leave}
+      />
+    );
+  }
+
   if (stage.kind === "connecting") {
     return <Connecting id={stage.id} onBack={() => backToList(null)} onClose={leave} />;
   }
 
   if (stage.kind === "connected") {
-    return stage.id === "strava" ? (
-      <Connected id="strava" athleteUsername={stage.athleteUsername} onDone={leave} />
-    ) : (
-      <OuraConnected onDone={leave} onFailed={backToList} onClose={leave} />
-    );
+    if (stage.id === "strava") {
+      return <Connected id="strava" athleteUsername={stage.athleteUsername} onDone={leave} />;
+    }
+    if (stage.id === "oura") {
+      return <OuraConnected onDone={leave} onFailed={backToList} onClose={leave} />;
+    }
+    return <Connected id={stage.id} accountLabel={stage.accountLabel} onDone={leave} />;
   }
 
   return (
@@ -427,6 +540,7 @@ function ListScreen({
   const heading = useFocusOnMount<HTMLHeadingElement>();
   const strava = useStravaStatus();
   const ouraCan = ouraService.canConnect();
+  const watch = useWatchStatus();
 
   /*
    * Which rows can actually be tapped, and why the others cannot. Known before
@@ -443,9 +557,41 @@ function ListScreen({
         : null;
   const ouraWhy = ouraCan.ok ? null : ouraCan.error;
 
+  /**
+   * `watchWhy` is `stravaWhy`'s sibling: a session-specific reason a row that
+   * DOES exist cannot be tapped right now. It is not the same thing as the
+   * row not existing at all — that is decided below, by availability, before
+   * this is even asked.
+   */
+  function watchWhy(provider: WatchProvider): string | null {
+    const c = watch.byProvider[provider];
+    const name = WATCH_PROVIDER_NAME[provider];
+    return c.state === "no-backend"
+      ? `This build of ICEFALL runs without a server, so ${name} can't be linked from it.`
+      : c.state === "signed-out"
+        ? `Sign in to link ${name} — the connection is stored against your account.`
+        : null;
+  }
+  const corosWhy = watchWhy("coros");
+
+  /* COROS's ROW ITSELF is derived from availability, not hardcoded — a
+     `"not-built" | "vendor-approval-required" | "needs-registration"` state
+     means ICEFALL is not yet integrated with the vendor at all, which is a
+     different fact from "integrated, but can't be reached right now"
+     (`corosWhy`, above). The row disappears entirely for the first kind and
+     stays but reads "Unavailable" for the second — the same distinction
+     `Connections.tsx`'s per-vendor cards draw. */
+  const corosState = watch.byProvider.coros.state;
+  const corosIntegrated =
+    corosState !== "not-built" &&
+    corosState !== "vendor-approval-required" &&
+    corosState !== "needs-registration";
+  const activeProviders = PROVIDERS.filter((p) => p.id !== "coros" || corosIntegrated);
+
   const unavailable: Partial<Record<ProviderId, string>> = {
     ...(stravaWhy ? { strava: "Unavailable" } : {}),
     ...(ouraWhy ? { oura: "Unavailable" } : {}),
+    ...(corosWhy ? { coros: "Unavailable" } : {}),
     "apple-health": "Not yet",
     alltrails: "Not yet",
     komoot: "Not yet",
@@ -494,7 +640,7 @@ function ListScreen({
           )}
 
           <div className="mt-5 space-y-2">
-            {PROVIDERS.map((p) => (
+            {activeProviders.map((p) => (
               <ProviderRow
                 key={p.id}
                 provider={p}
@@ -509,9 +655,11 @@ function ListScreen({
               in THIS build or session. */}
           <p className="mt-3 text-[11.5px] leading-relaxed text-mist-dim">
             ICEFALL has no Apple Health, AllTrails or Komoot integration yet, so those rows can't be
-            tapped.
+            tapped. Polar, Suunto and Garmin watch accounts aren't connectable yet either — you can
+            see why under Settings → Connected accounts.
             {stravaWhy ? ` ${stravaWhy}` : ""}
             {ouraWhy ? ` ${ouraWhy}` : ""}
+            {corosWhy ? ` ${corosWhy}` : ""}
           </p>
           {/* A sentence that says "sign in" beside a control that signs you in.
               This page sits outside the shell, so a signed-out person can reach
@@ -641,43 +789,66 @@ function ProviderRow({
  * the drawing's "Real-time sync" is false for Strava and its "never shared" is
  * a promise this page is not in a position to make.
  */
-const REASSURANCE: Record<"strava" | "oura", { icon: LucideIcon; title: string; body: string }[]> =
-  {
-    strava: [
-      {
-        icon: Lock,
-        title: "Secure connection",
-        body: "You sign in on Strava's own site. ICEFALL never sees your Strava password.",
-      },
-      {
-        icon: MoveRight,
-        title: "One direction",
-        body: "ICEFALL sends activities to Strava when you choose. It reads nothing back.",
-      },
-      {
-        icon: ShieldCheck,
-        title: "You're in control",
-        body: `You can disconnect at any time in ${SETTINGS_STRAVA}.`,
-      },
-    ],
-    oura: [
-      {
-        icon: Lock,
-        title: "Secure connection",
-        body: "You sign in on Oura's own site. ICEFALL never sees your Oura password.",
-      },
-      {
-        icon: MoveRight,
-        title: "What is read",
-        body: "Sleep, heart rate, HRV, breathing rate, blood oxygen, temperature deviation and daily activity — each reading when the Oura app uploads it.",
-      },
-      {
-        icon: ShieldCheck,
-        title: "You're in control",
-        body: "Disconnecting deletes ICEFALL's copy of your measurements.",
-      },
-    ],
-  };
+const REASSURANCE: Record<
+  "strava" | "oura" | "coros",
+  { icon: LucideIcon; title: string; body: string }[]
+> = {
+  strava: [
+    {
+      icon: Lock,
+      title: "Secure connection",
+      body: "You sign in on Strava's own site. ICEFALL never sees your Strava password.",
+    },
+    {
+      icon: MoveRight,
+      title: "One direction",
+      body: "ICEFALL sends activities to Strava when you choose. It reads nothing back.",
+    },
+    {
+      icon: ShieldCheck,
+      title: "You're in control",
+      body: `You can disconnect at any time in ${SETTINGS_STRAVA}.`,
+    },
+  ],
+  oura: [
+    {
+      icon: Lock,
+      title: "Secure connection",
+      body: "You sign in on Oura's own site. ICEFALL never sees your Oura password.",
+    },
+    {
+      icon: MoveRight,
+      title: "What is read",
+      body: "Sleep, heart rate, HRV, breathing rate, blood oxygen, temperature deviation and daily activity — each reading when the Oura app uploads it.",
+    },
+    {
+      icon: ShieldCheck,
+      title: "You're in control",
+      body: "Disconnecting deletes ICEFALL's copy of your measurements.",
+    },
+  ],
+  /* Per-provider, not shared, for the same reason strava's and oura's are:
+     a shared list would put a false sentence on a screen. Generic across the
+     four watch vendors, not COROS-specific wording, because every one of
+     them is a read-only connection with the same shape. */
+  coros: [
+    {
+      icon: Lock,
+      title: "Secure connection",
+      body: "You sign in on COROS's own site. ICEFALL never sees your COROS password.",
+    },
+    {
+      icon: MoveRight,
+      title: "One direction — ICEFALL only reads",
+      body: "ICEFALL brings across activities you record on your watch when you choose. It sends nothing back.",
+    },
+    {
+      icon: ShieldCheck,
+      title: "You're in control",
+      body: `You can disconnect at any time in ${SETTINGS_STRAVA}.`,
+    },
+  ],
+};
 
 /** What the primary control is, decided by what is actually possible. */
 type Gate = { label: string; agree: boolean } | { blocked: string } | null;
@@ -695,6 +866,7 @@ function Connecting({
   const reduce = useReducedMotion();
   const heading = useFocusOnMount<HTMLHeadingElement>();
   const strava = useStravaStatus();
+  const watch = useWatchStatus();
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -734,6 +906,25 @@ function Connecting({
         : res.reason === "no-backend"
           ? "This build of ICEFALL runs without a server, so no account can be linked from it."
           : "ICEFALL could not reach Strava. Nothing was changed.",
+    );
+  }
+
+  async function goCoros(region: "eu" | "us") {
+    setBusy(true);
+    setProblem(null);
+    const res = await beginWatchConnect("coros", { returnTo: "/connect", region });
+    if (res.ok) {
+      /* A full navigation, same reasoning as goStrava/goOura above. */
+      window.location.assign(res.url);
+      return;
+    }
+    setBusy(false);
+    setProblem(
+      res.reason === "signed-out"
+        ? "Sign in first — the connection is stored against your account."
+        : res.reason === "no-backend"
+          ? "This build of ICEFALL runs without a server, so no account can be linked from it."
+          : "ICEFALL could not reach COROS. Nothing was changed.",
     );
   }
 
@@ -815,9 +1006,31 @@ function Connecting({
                       blocked: `You said no to storing health measurements. That decision is yours to change under ${SETTINGS_RING}.`,
                     };
 
-  const gate: Gate = stravaGate ?? ouraGate;
+  const corosConn = watch.byProvider.coros;
+  const corosGate: Gate =
+    id !== "coros"
+      ? null
+      : corosConn.state === "loading"
+        ? { blocked: "Checking your account…" }
+        : corosConn.state === "no-backend"
+          ? {
+              blocked:
+                "This build of ICEFALL runs without a server, so no account can be linked from it.",
+            }
+          : corosConn.state === "signed-out"
+            ? {
+                blocked:
+                  "Sign in to link a COROS account — the connection is stored against your account, not this device.",
+              }
+            : corosConn.state === "connected"
+              ? {
+                  blocked: `COROS is already connected to this account. You can manage it under ${SETTINGS_STRAVA}.`,
+                }
+              : { label: "Continue to COROS", agree: false };
+
+  const gate: Gate = stravaGate ?? ouraGate ?? corosGate;
   const blocked = gate && "blocked" in gate ? gate.blocked : null;
-  const marks = REASSURANCE[id === "oura" ? "oura" : "strava"];
+  const marks = REASSURANCE[id === "oura" ? "oura" : id === "coros" ? "coros" : "strava"];
 
   /* The title follows the real state: nothing is connecting until the button
      has been pressed. */
@@ -868,7 +1081,7 @@ function Connecting({
           >
             {title}
           </h1>
-          {!blocked && (
+          {!blocked && id !== "coros" && (
             <p className="mt-3 max-w-[30ch] text-[13px] leading-relaxed text-mist">
               You'll be taken to {provider.short} to authorise the connection.
             </p>
@@ -940,38 +1153,79 @@ function Connecting({
               {problem ?? blocked ?? ""}
             </p>
 
-            {!blocked && (
-              <Button
-                size="lg"
-                className="w-full"
-                disabled={busy}
-                aria-busy={busy}
-                onClick={() =>
-                  id === "oura"
-                    ? void goOura(gate !== null && "agree" in gate ? gate.agree : false)
-                    : void goStrava()
-                }
-              >
-                {busy ? (
-                  <>
-                    <Loader2
-                      size={16}
-                      strokeWidth={2}
-                      className="animate-spin"
-                      aria-hidden="true"
-                    />
-                    Opening {provider.short}…
-                  </>
-                ) : (
-                  <>
-                    {id === "strava" ? (
-                      <PlatformMark platform="strava" tone="current" size={15} />
-                    ) : null}
-                    {gate && "label" in gate ? gate.label : `Continue to ${provider.short}`}
-                    <ChevronRight size={16} strokeWidth={1.8} />
-                  </>
-                )}
-              </Button>
+            {/* COROS NEEDS A REAL REGION, NOT A DEFAULT.
+                COROS accounts are region-sharded and the connection has to
+                point at the right issuer — the server refuses a `begin` with
+                no region for this vendor. So where every other provider gets
+                one "Continue" button, COROS gets two, and the sentence that
+                explains why replaces "You'll be taken to…" above. */}
+            {!blocked && id === "coros" ? (
+              <>
+                <div className="flex gap-2">
+                  <Button
+                    size="lg"
+                    variant="secondary"
+                    className="flex-1"
+                    disabled={busy}
+                    aria-busy={busy}
+                    onClick={() => void goCoros("eu")}
+                  >
+                    {busy ? (
+                      <Loader2 size={16} strokeWidth={2} className="animate-spin" />
+                    ) : (
+                      "Europe"
+                    )}
+                  </Button>
+                  <Button
+                    size="lg"
+                    variant="secondary"
+                    className="flex-1"
+                    disabled={busy}
+                    aria-busy={busy}
+                    onClick={() => void goCoros("us")}
+                  >
+                    United States
+                  </Button>
+                </div>
+                <p className="mt-3 text-[11.5px] leading-relaxed text-mist-dim">
+                  COROS keeps accounts in a regional data centre, and the connection has to point at
+                  the right one. Pick where your COROS account is registered.
+                </p>
+              </>
+            ) : (
+              !blocked && (
+                <Button
+                  size="lg"
+                  className="w-full"
+                  disabled={busy}
+                  aria-busy={busy}
+                  onClick={() =>
+                    id === "oura"
+                      ? void goOura(gate !== null && "agree" in gate ? gate.agree : false)
+                      : void goStrava()
+                  }
+                >
+                  {busy ? (
+                    <>
+                      <Loader2
+                        size={16}
+                        strokeWidth={2}
+                        className="animate-spin"
+                        aria-hidden="true"
+                      />
+                      Opening {provider.short}…
+                    </>
+                  ) : (
+                    <>
+                      {id === "strava" ? (
+                        <PlatformMark platform="strava" tone="current" size={15} />
+                      ) : null}
+                      {gate && "label" in gate ? gate.label : `Continue to ${provider.short}`}
+                      <ChevronRight size={16} strokeWidth={1.8} />
+                    </>
+                  )}
+                </Button>
+              )
             )}
 
             <button
@@ -1059,6 +1313,95 @@ function Finishing({
 }
 
 /* -------------------------------------------------------------------------- */
+/* 2½b — finishing a watch consent                                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A watch provider sent the athlete back with a ticket. Same shape as
+ * `Finishing` above, generalised: the link is not made yet, the server
+ * finishes it only against this session, and whatever it answers is what the
+ * next screen shows.
+ */
+function WatchFinishing({
+  ticket,
+  provider,
+  onDone,
+  onFailed,
+  onClose,
+}: {
+  ticket: string;
+  provider: WatchProvider;
+  onDone: (accountLabel: string | null) => void;
+  onFailed: (why: string) => void;
+  onClose: () => void;
+}) {
+  const name = WATCH_PROVIDER_NAME[provider];
+
+  useEffect(() => {
+    let live = true;
+    void finalizeWatchConnect(ticket).then((res) => {
+      if (!live) return;
+      if (res.ok && res.canImport) onDone(res.accountLabel);
+      else if (res.ok) {
+        onFailed(
+          `${name} is linked, but permission to read your activities was not granted, so nothing can be brought across. Connect again and leave that permission ticked.`,
+        );
+      } else {
+        const copy: Record<Extract<WatchFinalizeOutcome, { ok: false }>["reason"], string> = {
+          "no-backend":
+            "This build of ICEFALL runs without a server, so no account can be linked from it.",
+          "signed-out": `You were signed out before ${name} sent you back, so this connection request could not be finished and cannot be resumed. Nothing was linked. Sign in and start the connection again.`,
+          "not-saved": `${name} granted the permission, but ICEFALL could not save the connection. Nothing is linked here — start it again in a moment.`,
+          "not-yours": `That ${name} consent was started from a different ICEFALL account, so it was not linked to this one. Nothing was stored. Start the connection again from here.`,
+          invalid:
+            "That connection request is no longer valid — each one can be used once. Start it again.",
+          expired:
+            "That connection request is no longer valid — each one lasts ten minutes. Start it again.",
+          vendor: `${name} did not complete the connection. Nothing was linked — try again in a moment.`,
+          unreachable:
+            "ICEFALL could not finish the connection. Nothing was linked — try again in a moment.",
+        };
+        onFailed(copy[res.reason]);
+      }
+    });
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ticket]);
+
+  return (
+    <div className="no-scrollbar relative flex h-full flex-col overflow-y-auto bg-obsidian">
+      <div className="relative flex flex-1 flex-col px-6">
+        <Header
+          right={
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="grid h-9 w-9 place-items-center rounded-full text-mist transition-colors hover:text-snow"
+            >
+              <X size={18} strokeWidth={1.6} />
+            </button>
+          }
+        />
+        <div className="flex flex-1 flex-col items-center justify-center text-center">
+          <Loader2
+            size={20}
+            strokeWidth={2}
+            className="animate-spin text-mist"
+            aria-hidden="true"
+          />
+          <p role="status" className="mt-4 text-[13px] text-mist">
+            {name} sent you back. Confirming the link against your account…
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
 /* 3 — connected                                                               */
 /* -------------------------------------------------------------------------- */
 
@@ -1067,7 +1410,10 @@ function Finishing({
  * rows promise the Coach will use the connection; neither connection feeds a
  * coach screen today, so these name the real next actions instead.
  */
-const NEXT_STEPS: Record<"strava" | "oura", { icon: LucideIcon; title: string; body: string }[]> = {
+const NEXT_STEPS: Record<
+  "strava" | "oura" | "watch",
+  { icon: LucideIcon; title: string; body: string }[]
+> = {
   strava: [
     {
       icon: Play,
@@ -1102,24 +1448,54 @@ const NEXT_STEPS: Record<"strava" | "oura", { icon: LucideIcon; title: string; b
       body: "Disconnecting deletes ICEFALL's copy of your measurements.",
     },
   ],
+  /* Generic across the four watch vendors — every one of them is a read-only
+     connection with the same shape, so one bucket serves them all. */
+  watch: [
+    {
+      icon: Watch,
+      title: "Sync your watch",
+      body: "Your watch service uploads an activity to its own cloud when it syncs — it has to arrive there before ICEFALL can read it.",
+    },
+    {
+      icon: Play,
+      title: "Check for new activities",
+      body: `Open ${SETTINGS_STRAVA} and tap Check for new activities. Nothing arrives until you ask.`,
+    },
+    {
+      icon: Settings2,
+      title: "Stay in control",
+      body: `Disconnect any time under ${SETTINGS_STRAVA}.`,
+    },
+  ],
 };
 
 function Connected({
   id,
   athleteUsername,
+  accountLabel,
   onDone,
 }: {
-  id: "strava" | "oura";
+  id: "strava" | "oura" | WatchProvider;
   athleteUsername?: string | null;
+  /** Watch providers only — the vendor's own label for the account, when it said. */
+  accountLabel?: string | null;
   onDone: () => void;
 }) {
   const navigate = useNavigate();
   const heading = useFocusOnMount<HTMLHeadingElement>();
-  const provider = byId(id);
+  const isWatch = id !== "strava" && id !== "oura";
+  /* `byId` only covers `PROVIDERS`, which holds COROS but not Polar, Suunto
+     or Garmin — none of which can actually reach this screen today (none of
+     the three has a working connection to finish), but the name is read from
+     `WATCH_PROVIDER_NAME` directly rather than through `byId` so this stays
+     correct the day one of them does. */
+  const name = isWatch ? WATCH_PROVIDER_NAME[id] : byId(id).name;
+  const identityLabel = isWatch ? accountLabel : athleteUsername;
   /* The row opens the page that manages this connection — the one exit on
      this screen that leaves sign-up, because "manage it" is what a chevron
      on a connected account means everywhere else in the app. Done, Skip and
-     the close control all lead on to the trial offer. */
+     the close control all lead on to the trial offer. Every watch provider
+     manages under the same page Strava does. */
   const settingsPath = id === "oura" ? "/settings/health-sources" : "/settings/connections";
 
   return (
@@ -1166,12 +1542,14 @@ function Connected({
             tabIndex={-1}
             className="display mt-6 text-center text-[30px] leading-[1.08] text-snow outline-none"
           >
-            {provider.name} connected!
+            {name} connected!
           </h1>
           <p className="mx-auto mt-3 max-w-[32ch] text-center text-[13px] leading-relaxed text-mist">
             {id === "oura"
               ? "Your ring's sleep, heart rate, HRV, breathing rate, blood oxygen, temperature deviation and daily activity can now be read by ICEFALL as the Oura app uploads them."
-              : "Activities you record here can now be sent to your Strava profile — one at a time, when you choose."}
+              : isWatch
+                ? `ICEFALL can now bring across activities you record on your ${name} watch. Nothing arrives automatically — you choose when to check.`
+                : "Activities you record here can now be sent to your Strava profile — one at a time, when you choose."}
           </p>
 
           <button
@@ -1181,12 +1559,12 @@ function Connected({
           >
             <ProviderTile id={id} />
             <span className="min-w-0 flex-1">
-              <span className="block text-[14px] text-snow">{provider.name}</span>
+              <span className="block text-[14px] text-snow">{name}</span>
               <span className="mt-0.5 flex items-center gap-1.5 text-[11.5px] text-mist-dim">
                 <span className="h-1.5 w-1.5 rounded-full bg-summit" />
                 Connected
                 {/* Which account — measured by the server, not typed by anyone. */}
-                {athleteUsername ? ` · @${athleteUsername}` : ""}
+                {identityLabel ? ` · @${identityLabel}` : ""}
               </span>
             </span>
             <ChevronRight size={17} strokeWidth={1.7} className="shrink-0 text-mist-dim" />
@@ -1194,19 +1572,21 @@ function Connected({
 
           <p className="section-label mt-7 text-azure/85">What's next?</p>
           <ul className="mt-4 space-y-4">
-            {NEXT_STEPS[id].map(({ icon: Icon, title, body }) => (
-              <li key={title} className="flex items-start gap-3.5">
-                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-hairline-strong bg-graphite">
-                  <Icon size={16} strokeWidth={1.6} className="text-snow" />
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-[13px] text-snow">{title}</span>
-                  <span className="mt-0.5 block max-w-[30ch] text-[11.5px] leading-relaxed text-mist-dim">
-                    {body}
+            {NEXT_STEPS[id === "strava" ? "strava" : id === "oura" ? "oura" : "watch"].map(
+              ({ icon: Icon, title, body }) => (
+                <li key={title} className="flex items-start gap-3.5">
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-hairline-strong bg-graphite">
+                    <Icon size={16} strokeWidth={1.6} className="text-snow" />
                   </span>
-                </span>
-              </li>
-            ))}
+                  <span className="min-w-0">
+                    <span className="block text-[13px] text-snow">{title}</span>
+                    <span className="mt-0.5 block max-w-[30ch] text-[11.5px] leading-relaxed text-mist-dim">
+                      {body}
+                    </span>
+                  </span>
+                </li>
+              ),
+            )}
           </ul>
 
           <div

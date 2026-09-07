@@ -22,12 +22,14 @@ import {
   EMPTY_BOARD_TITLE,
   EMPTY_MOUNTAIN_BOARD_BODY,
   EMPTY_MOUNTAIN_BOARD_TITLE,
+  IMPORTED_NOT_RANKED,
   PERIOD_LABEL,
   RANKING_UPDATE_NOTICE,
   SCOPE_LABEL,
   VERIFIED_ONLY_NOTICE,
   boardEntries,
   categoryValue,
+  importedInPeriod,
   standingFor,
   type BoardCategory,
   type BoardEntry,
@@ -94,9 +96,11 @@ export default function Leaderboard() {
         .filter((log) => {
           if (!log.activityId) return false;
           const activity = recorded.find((r) => r.id === log.activityId);
-          // The whole test: a real, non-simulated recording is attached. No
-          // part of the track is examined — see the note above.
-          return Boolean(activity) && !activity!.simulated;
+          // The whole test: a real, non-simulated recording ICEFALL itself
+          // made is attached. No part of the track is examined — see the note
+          // above. An imported watch activity fails this the same way a
+          // simulated one does (2026-09-07): ICEFALL did not record it.
+          return Boolean(activity) && !activity!.simulated && activity!.origin?.kind === "icefall";
         })
         .map((log) => ({ name: log.peakName, date: log.date })),
     [logs, recorded],
@@ -106,6 +110,12 @@ export default function Leaderboard() {
     () => standingFor({ recorded, verifiedSummits, period }),
     [recorded, verifiedSummits, period],
   );
+
+  /* Said under the standing rather than silently applied — the exclusion
+     `standingFor` already makes (imported activities are real effort but
+     ICEFALL did not measure it) is stated whenever it actually changed what
+     is shown, not on every load. */
+  const importedCount = useMemo(() => importedInPeriod(recorded, period), [recorded, period]);
 
   const entries = boardEntries();
   const country = settings.region?.split(",").pop()?.trim() || "Not set";
@@ -306,6 +316,12 @@ export default function Leaderboard() {
               Nothing verified yet. Record an activity with ICEFALL and reach a summit on it, and it
               counts here — a summit typed into your logbook does not.
             </p>
+          </Rise>
+        )}
+
+        {importedCount > 0 && (
+          <Rise className="pt-3">
+            <p className="text-[11.5px] leading-relaxed text-mist-dim">{IMPORTED_NOT_RANKED}</p>
           </Rise>
         )}
 

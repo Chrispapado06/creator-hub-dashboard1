@@ -56,9 +56,18 @@ export function loadActivities(): RecordedActivity[] {
     const parsed = JSON.parse(raw) as RecordedActivity[];
     if (!Array.isArray(parsed)) return [];
     return parsed.map((a) => {
-      const { points_awarded: _p, pointsBreakdown: _b, ...rest } =
-        a as RecordedActivity & LegacyPointsFields;
-      return rest as RecordedActivity;
+      const {
+        points_awarded: _p,
+        pointsBreakdown: _b,
+        origin,
+        ...rest
+      } = a as RecordedActivity & LegacyPointsFields & { origin?: RecordedActivity["origin"] };
+      // Same no-migration pattern, for the same reason: `origin` is REQUIRED on
+      // `RecordedActivity` (see tracking/types.ts), but every record already on
+      // a device predates the field. `{ kind: "icefall" }` is true of every one
+      // of them — nothing on this device was ever anything else — used only
+      // when the stored record has no origin of its own.
+      return { ...rest, origin: origin ?? { kind: "icefall" } } as RecordedActivity;
     });
   } catch {
     return [];

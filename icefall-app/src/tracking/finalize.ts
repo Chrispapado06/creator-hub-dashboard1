@@ -8,6 +8,7 @@ import { buildInsight } from "./insights";
 import { activeDaysThisWeek, loadActivities, loadMeta, saveActivity, saveMeta } from "./store";
 import { invalidateFeed } from "./feed";
 import type { RecordedActivity } from "./types";
+import { WATCH_PROVIDER_NAME } from "@/watch/types";
 
 /**
  * Everything that happens the moment an activity ends: score it, look for
@@ -39,15 +40,28 @@ export function finalizeActivity(raw: RecordedActivity): FinalizedActivity {
    *
    * THIS GUARD STAYS. It gated points as well as records and achievements;
    * points are gone (PH-01) and the guard is not.
+   *
+   * An IMPORTED activity joins it here, added 2026-09-07 when watch accounts
+   * landed, for the same reason applied a different way: ICEFALL did not
+   * record it. There is no track, no filtering history, no `capabilities`, and
+   * no way to tell a GPS fix a watch's sensor took from a distance somebody
+   * typed into their watch app by hand. It is real effort — unlike a simulated
+   * session it belongs in the athlete's own feed and totals, and the notes
+   * below say so — but "recorded in ICEFALL" is the definition `standingFor`
+   * (see `src/social/leaderboard.ts`) is built on, and an import does not meet
+   * it.
    */
   const simulated = raw.simulated === true;
+  const imported = raw.origin.kind === "imported";
 
   // History is filtered too: a simulated session must not raise the bar a later
   // real activity has to clear, nor count toward the weekly-consistency bonus.
-  const realHistory = history.filter((h) => !h.simulated);
+  // Imports are excluded from the comparison set for the same reason.
+  const ownHistory = history.filter((h) => !h.simulated && h.origin.kind === "icefall");
 
-  const records = simulated ? [] : detectRecords(raw, realHistory);
-  const achievements = simulated ? [] : detectAchievements(raw, meta.earnedAchievements);
+  const records = simulated || imported ? [] : detectRecords(raw, ownHistory);
+  const achievements =
+    simulated || imported ? [] : detectAchievements(raw, meta.earnedAchievements);
   const insight = buildInsight(raw);
 
   const activity: RecordedActivity = {
@@ -59,7 +73,7 @@ export function finalizeActivity(raw: RecordedActivity): FinalizedActivity {
 
   saveActivity(activity);
 
-  if (!simulated) {
+  if (!simulated && !imported) {
     saveMeta({
       earnedAchievements: [...meta.earnedAchievements, ...achievements.map((a) => a.id)],
     });
@@ -72,7 +86,11 @@ export function finalizeActivity(raw: RecordedActivity): FinalizedActivity {
     activity,
     notes: simulated
       ? ["Simulated session — not added to your records or totals."]
-      : [],
+      : imported && raw.origin.kind === "imported"
+        ? [
+            `Imported from ${WATCH_PROVIDER_NAME[raw.origin.provider]} — it counts toward your training, not toward records or leaderboards.`,
+          ]
+        : [],
     records,
     achievements,
   };
