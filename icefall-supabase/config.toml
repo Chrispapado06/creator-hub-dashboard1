@@ -66,8 +66,37 @@ verify_enabled = true
 [auth.email]
 enable_signup = true
 double_confirm_changes = true
-enable_confirmations = false
+# ON again as of 2026-09-07 (owner: "i want the email confirmation to work tho"),
+# because a real mail provider now sends the link — see [auth.email.smtp].
+enable_confirmations = true
 secure_password_change = false
 max_frequency = "1m0s"
 otp_length = 8
 otp_expiry = 3600
+
+# Resend, connected 2026-09-07. The password is the Resend API key and is read
+# from the shell at push time — `RESEND_API_KEY=… npx supabase config push` —
+# so it is never written into this file or the repository.
+#
+# SENDER ADDRESS: until theicefall.com is verified at Resend, the only address
+# Resend will send from is its own `onboarding@resend.dev`, and it will only
+# deliver to the Resend account owner's inbox. Once the domain's DNS records
+# are verified, change `admin_email` to an address on theicefall.com and push
+# again — that is the moment sign-up opens to everyone.
+[auth.email.smtp]
+enabled = true
+host = "smtp.resend.com"
+port = 465
+user = "resend"
+pass = "env(RESEND_API_KEY)"
+admin_email = "onboarding@resend.dev"
+sender_name = "ICEFALL"
+
+[auth.email.template.confirmation]
+subject = "Confirm your ICEFALL email"
+content_path = "./templates/confirmation.html"
+
+# Supabase's built-in mailer allowed 2 emails an hour. With our own provider
+# the ceiling is ours to set; 30 an hour is Supabase's own recommended figure.
+[auth.rate_limit]
+email_sent = 30
