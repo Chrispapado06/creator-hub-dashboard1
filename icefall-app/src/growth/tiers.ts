@@ -11,7 +11,21 @@
  * silently becomes false the first time someone edits a price.
  */
 
-export type TierId = "free" | "pro" | "elite";
+/**
+ * TWO TIERS, NOT THREE — the owner, 2026-09-06: "9.99 is our only
+ * subscription".
+ *
+ * There used to be `elite` ("Expedition", €29 / month) above `pro` (€15). Both
+ * are gone: there is one paid plan now and it costs €9.99 a month. Every
+ * feature that was Expedition-only moved onto the paid plan rather than being
+ * dropped — collapsing the ladder must not quietly take a feature away from
+ * somebody, and nothing here was ever charged for in the first place.
+ *
+ * NO ANNUAL PRICE. "One subscription" means one price; `derive` returns nulls
+ * for the equivalent and the saving, and the pricing screen prints neither
+ * rather than a computed discount on a plan that has no annual option.
+ */
+export type TierId = "free" | "pro";
 
 export interface Plan {
   id: TierId;
@@ -55,19 +69,11 @@ export const PLANS: Plan[] = [
   {
     id: "pro",
     name: "Pro",
-    tagline: "For dedicated mountaineers.",
-    monthlyEur: 15,
-    annualEur: 144, // 15 × 12 × 0.8 — a clean 20% for paying annually, computed below
-    ...derive(15, 144),
+    tagline: "Everything ICEFALL does.",
+    monthlyEur: 9.99,
+    annualEur: null,
+    ...derive(9.99, null),
     recommended: true,
-  },
-  {
-    id: "elite",
-    name: "Expedition",
-    tagline: "For expedition athletes.",
-    monthlyEur: 29,
-    annualEur: 278.4, // 29 × 12 × 0.8
-    ...derive(29, 278.4),
   },
 ];
 
@@ -109,10 +115,11 @@ export interface Feature {
 /**
  * Every entry below was checked against what this codebase actually does.
  *
- * Deliberately ABSENT: human expert review. It appears in the product brief for
- * Elite, but there is no coach, no reviewer and no process behind it. Listing it
- * — even as "coming soon" — against a €29.99 plan would be selling a person who
- * does not exist.
+ * Deliberately ABSENT: human expert review. It appeared in the product brief
+ * for the old Expedition tier, but there is no coach, no reviewer and no
+ * process behind it. Listing it — even as "coming soon" — against a paid plan
+ * would be selling a person who does not exist. That holds at €9.99 exactly as
+ * it held at €29.
  */
 export const FEATURES: Feature[] = [
   // ---- Objective -----------------------------------------------------------
@@ -120,25 +127,25 @@ export const FEATURES: Feature[] = [
     id: "objective.one",
     label: "One mountain objective",
     group: "Your objective",
-    tiers: ["free", "pro", "elite"],
+    tiers: ["free", "pro"],
   },
   {
     id: "objective.readiness",
     label: "Mountain Readiness score",
     group: "Your objective",
-    tiers: ["free", "pro", "elite"],
+    tiers: ["free", "pro"],
   },
   {
     id: "objective.profile",
     label: "Performance profile",
     group: "Your objective",
-    tiers: ["free", "pro", "elite"],
+    tiers: ["free", "pro"],
   },
   {
     id: "objective.countdown",
     label: "Summit countdown",
     group: "Your objective",
-    tiers: ["free", "pro", "elite"],
+    tiers: ["free", "pro"],
   },
   {
     id: "objective.multiple",
@@ -146,7 +153,7 @@ export const FEATURES: Feature[] = [
     label: "Multiple objectives",
     detail: "Train toward a primary and secondary mountain.",
     group: "Your objective",
-    tiers: ["pro", "elite"],
+    tiers: ["pro"],
   },
 
   // ---- Training ------------------------------------------------------------
@@ -154,7 +161,7 @@ export const FEATURES: Feature[] = [
     id: "training.preview",
     label: "7-day training preview",
     group: "Training",
-    tiers: ["free", "pro", "elite"],
+    tiers: ["free", "pro"],
   },
   {
     id: "training.full",
@@ -162,7 +169,7 @@ export const FEATURES: Feature[] = [
     label: "Full personalised plan",
     detail: "Built backwards from your summit date.",
     group: "Training",
-    tiers: ["pro", "elite"],
+    tiers: ["pro"],
   },
   {
     id: "training.adaptive",
@@ -170,7 +177,7 @@ export const FEATURES: Feature[] = [
     label: "Adaptive schedule",
     detail: "Sessions adjust to what you actually record.",
     group: "Training",
-    tiers: ["pro", "elite"],
+    tiers: ["pro"],
   },
   {
     id: "training.session",
@@ -178,7 +185,7 @@ export const FEATURES: Feature[] = [
     label: "Full session detail",
     detail: "Warm-up, main set and cool-down, with substitutions.",
     group: "Training",
-    tiers: ["pro", "elite"],
+    tiers: ["pro"],
   },
 
   // ---- Coach ---------------------------------------------------------------
@@ -188,14 +195,14 @@ export const FEATURES: Feature[] = [
     group: "Coach",
     tiers: ["free"],
   },
-  { id: "coach.unlimited", label: "Coach — unlimited", group: "Coach", tiers: ["pro", "elite"] },
+  { id: "coach.unlimited", label: "Coach — unlimited", group: "Coach", tiers: ["pro"] },
   {
     id: "coach.adapt",
     notYetEnforced: true,
     label: "Session adjustments",
     detail: "Shorten, swap equipment, or ease off when you're tired.",
     group: "Coach",
-    tiers: ["pro", "elite"],
+    tiers: ["pro"],
   },
 
   // ---- Data ----------------------------------------------------------------
@@ -204,27 +211,27 @@ export const FEATURES: Feature[] = [
     label: "Activity tracking",
     detail: "GPS and Bluetooth heart-rate straps.",
     group: "Data",
-    tiers: ["free", "pro", "elite"],
+    tiers: ["free", "pro"],
   },
   {
     id: "data.progress",
     label: "Progress tracking",
     group: "Data",
-    tiers: ["free", "pro", "elite"],
+    tiers: ["free", "pro"],
   },
   {
     id: "data.analytics",
     label: "Advanced analytics",
     detail: "Training load, trends and benchmarks.",
     group: "Data",
-    tiers: ["pro", "elite"],
+    tiers: ["pro"],
   },
   {
     id: "data.recovery",
     notYetEnforced: true,
     label: "Recovery analysis",
     group: "Data",
-    tiers: ["pro", "elite"],
+    tiers: ["pro"],
   },
 
   // ---- Conditions ----------------------------------------------------------
@@ -238,14 +245,14 @@ export const FEATURES: Feature[] = [
     label: "Current mountain conditions",
     detail: "Summit temperature, wind, visibility, precipitation and freezing level, plus today.",
     group: "Conditions",
-    tiers: ["free", "pro", "elite"],
+    tiers: ["free", "pro"],
   },
   {
     id: "conditions.detail",
     label: "Elevation breakdown and extended forecast",
     detail: "Conditions modelled per elevation band, seven days, and your expedition window.",
     group: "Conditions",
-    tiers: ["pro", "elite"],
+    tiers: ["pro"],
   },
 
   // ---- Fuelling ------------------------------------------------------------
@@ -253,7 +260,7 @@ export const FEATURES: Feature[] = [
     id: "fuel.basic",
     label: "Basic nutrition guidance",
     group: "Fuelling",
-    tiers: ["free", "pro", "elite"],
+    tiers: ["free", "pro"],
   },
   {
     id: "fuel.full",
@@ -261,7 +268,7 @@ export const FEATURES: Feature[] = [
     label: "Training-day fuelling",
     detail: "Before, during and after, scaled to the session.",
     group: "Fuelling",
-    tiers: ["pro", "elite"],
+    tiers: ["pro"],
   },
 
   // ---- Equipment -----------------------------------------------------------
@@ -273,27 +280,27 @@ export const FEATURES: Feature[] = [
     label: "Equipment checklist",
     detail: "The essentials for your objective, with what you have and what you still need.",
     group: "Equipment",
-    tiers: ["free", "pro", "elite"],
+    tiers: ["free", "pro"],
   },
   {
     id: "equipment.checklist.full",
     label: "Full mountain-specific kit list",
     detail: "Altitude, glacier and expedition items derived from the peak itself.",
     group: "Equipment",
-    tiers: ["pro", "elite"],
+    tiers: ["pro"],
   },
   {
     id: "equipment.pack",
     label: "Pack weight planner",
     detail: "Itemised weights split into base, consumables and water.",
     group: "Equipment",
-    tiers: ["pro", "elite"],
+    tiers: ["pro"],
   },
   {
     id: "equipment.documents",
     label: "Permits, insurance and documents",
     group: "Equipment",
-    tiers: ["pro", "elite"],
+    tiers: ["pro"],
   },
 
   // ---- Expedition — NONE of this is built ----------------------------------
@@ -301,35 +308,35 @@ export const FEATURES: Feature[] = [
     id: "exp.planning",
     label: "Expedition planning",
     group: "Expedition",
-    tiers: ["elite"],
+    tiers: ["pro"],
     comingSoon: true,
   },
   {
     id: "exp.acclimatisation",
     label: "Acclimatisation planning",
     group: "Expedition",
-    tiers: ["elite"],
+    tiers: ["pro"],
     comingSoon: true,
   },
   {
     id: "exp.weather",
     label: "Weather integration",
     group: "Expedition",
-    tiers: ["elite"],
+    tiers: ["pro"],
     comingSoon: true,
   },
   {
     id: "exp.route",
     label: "Route and GPX analysis",
     group: "Expedition",
-    tiers: ["elite"],
+    tiers: ["pro"],
     comingSoon: true,
   },
   {
     id: "exp.mode",
     label: "Expedition mode",
     group: "Expedition",
-    tiers: ["elite"],
+    tiers: ["pro"],
     comingSoon: true,
   },
 ];

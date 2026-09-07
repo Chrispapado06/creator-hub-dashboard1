@@ -665,10 +665,11 @@ export interface Account {
  * local dates for the processor's subscription record and the screens above it
  * do not change.
  *
- * The prices in `@/growth/tiers` — Free €0, Pro €14.99 a month or €119.99 a
- * year, Elite €29.99 a month or €249.99 a year — are what the plans WILL cost
- * when subscriptions go live. Not one of them has ever been charged to anyone,
- * and every surface that shows them says so.
+ * The prices live in `@/growth/tiers` and are NOT repeated here — this comment
+ * used to list them ("Pro €14.99 … Elite €29.99") and was wrong on every figure
+ * within a day of the plans changing. There is one paid plan now. Whatever that
+ * file says, it is what the plan WILL cost when subscriptions go live: nothing
+ * has ever been charged to anyone, and every surface that shows a price says so.
  *
  * Do not "complete" this by adding a card form. Collecting payment details into
  * a prototype with no processor is both useless and unsafe.

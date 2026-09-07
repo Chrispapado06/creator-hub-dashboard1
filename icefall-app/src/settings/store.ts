@@ -89,6 +89,28 @@ export interface SettingsState {
   languages: string;
   interests: string;
 
+  /*
+   * WHERE ELSE TO FIND THEM — the owner, 2026-09-07: "they can add their
+   * instagram accounts, facebook youtube etc".
+   *
+   * HANDLES, NOT URLS, for all five. The migration
+   * (20260907090000_profile_links.sql) refuses anything with a scheme, a slash
+   * or a colon in it, and the app builds the address — a public profile that
+   * renders a URL somebody typed is an open redirect with a face beside it, and
+   * this app puts strangers on glaciers together. `website` is the one URL,
+   * https only, for the same reason stated the other way round: there is no way
+   * to have a website field without one.
+   *
+   * NONE OF THESE ARE VERIFIED. A handle here is a claim its owner typed, like
+   * `region`. No surface may present one as checked.
+   */
+  website: string;
+  instagram: string;
+  facebook: string;
+  youtube: string;
+  tiktok: string;
+  strava: string;
+
   /* Visibility */
   profileVisibility: Visibility;
   passportVisibility: Visibility;
@@ -151,6 +173,12 @@ export const DEFAULT_SETTINGS: SettingsState = {
   region: "",
   languages: "",
   interests: "",
+  website: "",
+  instagram: "",
+  facebook: "",
+  youtube: "",
+  tiktok: "",
+  strava: "",
 
   profileVisibility: "connections",
   passportVisibility: "connections",

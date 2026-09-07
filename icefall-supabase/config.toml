@@ -3,3 +3,25 @@ project_id = "icefall"
 
 [db]
 major_version = 15
+
+# ---------------------------------------------------------------------------
+# Edge functions
+# ---------------------------------------------------------------------------
+
+# STRAVA — the platform's JWT gate is OFF, and the function does the check itself.
+#
+# THIS IS NOT A RELAXATION. `/strava/callback` is a TOP-LEVEL BROWSER REDIRECT
+# sent by Strava: it carries no Authorization header and never can, so with the
+# gateway's default `verify_jwt = true` every consent would be answered with a
+# 401 before a line of our code ran, and the connection could never complete.
+#
+# The other three routes are authenticated by `callerId()` inside the function,
+# which VERIFIES the caller's JWT by asking Supabase who it belongs to rather
+# than decoding it locally — the same check the gateway would have done, and
+# each route refuses with 401 without it.
+#
+# The callback is protected instead by the thing that actually fits it: a
+# single-use `state` minted server-side, bound to one user, consumed atomically
+# and expiring in ten minutes. See migration 20260907140000.
+[functions.strava]
+verify_jwt = false

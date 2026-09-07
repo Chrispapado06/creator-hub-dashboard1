@@ -209,7 +209,13 @@ export type PlatformKey =
   | "facebook"
   | "x"
   | "threads"
-  | "reddit";
+  | "reddit"
+  /* Added 2026-09-07 for the "Connect your accounts" page at the end of
+     sign-up. Same source, same version, same verbatim-copy rule as the seven
+     above; the provenance note in the file header covers them. */
+  | "strava"
+  | "komoot"
+  | "alltrails";
 
 export interface PlatformMarkData {
   /** The brand's own spelling. "X", not "Twitter". "TikTok", not "Tiktok". */
@@ -322,6 +328,43 @@ export const PLATFORM_MARKS: Record<PlatformKey, PlatformMarkData> = {
     // light surface to put it on, so the mark inherits the row's ink instead.
     onDark: "currentColor",
     contrastOnObsidian: 1.04,
+  },
+  /* ---- Connected-account providers ------------------------------------
+     Not "heard about" platforms. They label rows on the sign-up page where an
+     athlete links an account. Kept in this file because it is the one place
+     brand geometry lives — see the header. */
+  strava: {
+    label: "Strava",
+    path: "M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169",
+    hex: "#FC4C02",
+    // Strava publishes brand guidelines but no stable URL simple-icons records; the app-store listing is what it cites.
+    guidelines: null,
+    source: "https://itunes.apple.com/us/app/strava-running-and-cycling-gps/id426826309",
+    // 5.93:1 on the canvas, 4.53:1 on a chip. Both clear 3:1, so the brand colour is used unchanged.
+    onDark: "#FC4C02",
+    contrastOnObsidian: 5.93,
+  },
+  komoot: {
+    label: "Komoot",
+    path: "M9.8 14.829l2.2-3.43 2.2 3.43 5.962 5.962A11.946 11.946 0 0 1 12 24c-3.043 0-5.935-1.14-8.162-3.209zM0 12C0 5.385 5.385 0 12 0c6.62 0 12 5.385 12 12 0 2.663-.855 5.175-2.469 7.284l-6.018-6.018c.15-.412.226-.839.226-1.27A3.743 3.743 0 0 0 12 8.257a3.743 3.743 0 0 0-3.739 3.739c0 .431.075.858.226 1.27l-6.018 6.018A11.865 11.865 0 0 1 0 12Z",
+    hex: "#6AA127",
+    guidelines: "https://newsroom.komoot.com/media_kits/219423/",
+    source: "https://newsroom.komoot.com/media_kits/219423/",
+    // 6.47:1 on the canvas, 4.95:1 on a chip. Both clear 3:1, so the brand colour is used unchanged.
+    onDark: "#6AA127",
+    contrastOnObsidian: 6.47,
+  },
+  alltrails: {
+    label: "AllTrails",
+    path: "M19.441 8.451c-.653-1.247-1.158-1.841-1.813-1.841-.731 0-1.053.387-1.494 1.079-.357.464-.7 1.1-1.273 1.036-.604-.063-.954-1.491-1.41-2.686-.625-1.63-.985-3.322-2.024-3.322-.593 0-1.111.54-1.915 1.747l-8.301 12.73c-.954 1.593-1.753 2.704-.742 3.748 1.187 1.142 3.975-.857 5.883-2.063 1.908-1.205 3.859-2.38 6.615-2.316 3.71.085 5.512 3.808 7.76 4.516 1.526.487 2.926-.074 3.223-1.65.174-.866-.129-1.707-.547-2.604zm-.254 7.467c-.753.56-1.803-.339-2.481-.72-.72-.401-1.94-1.364-4.124-1.332-1.78.021-2.745.687-3.805 1.407-2.3 1.565-4.379 3.384-4.972 2.443-.382-.603.646-1.809 3.063-5.574 1.718-2.676 2.927-4.813 3.785-4.813.948 0 1 .93 1.145 1.883.272 1.518 1.014 2.308 1.978 2.433 1.08.146 2.014-.76 2.756-.751.693.014 1.15 1.018 1.722 2.065.725 1.301 1.482 2.546.933 2.959z",
+    hex: "#142800",
+    guidelines: null,
+    source: "https://www.alltrails.com/press?section=press-page-kit",
+    // 1.28:1 on the canvas, 1.02:1 on a chip. INVISIBLE on this ground, so the
+    // mark inherits the row's ink. The sign-up tiles paint it white on a tile
+    // filled with `hex` — which is legible (13.8:1) and is the brand's own colour.
+    onDark: "currentColor",
+    contrastOnObsidian: 1.28,
   },
 };
 

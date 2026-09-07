@@ -3,6 +3,8 @@ import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
 
 import { supabase } from "@/backend/client";
 import { withTimeout } from "@/lib/netTimeout";
+import { DEMO } from "@/offline/offline";
+import { OFFLINE_SOCIAL_NOTICES } from "@/offline/fixtures";
 import type { MarkKind } from "@/components/ui/VerificationMark";
 
 /**
@@ -13,28 +15,49 @@ import type { MarkKind } from "@/components/ui/VerificationMark";
  *
  * ── THIS IS THE HALF THAT COMES FROM A SERVER ────────────────────────────────
  *
- * `./feed.ts` computes its items from state already on this phone. Everything
- * here is the opposite: three tables, read live, each row written by somebody
- * else doing something to something of yours. Nothing below is derived,
- * inferred, or filled in.
+ * This module is the whole of the Notifications screen. Three tables, read
+ * live, each row written by somebody else doing something to something of
+ * yours. Nothing below is derived, inferred, or filled in.
  *
- * WHAT IS STILL TRUE OF BOTH HALVES: NOTHING IS PUSHED. There is a server now —
- * all 54 migrations are live — but there is no push certificate and no push
- * path, so these rows are FOUND WHEN YOU OPEN THE SCREEN and this screen will
- * not wake your phone. `NOTIFICATIONS_NOT_PUSHED` in `./feed.ts` is the one
- * sentence that says so, and it is deliberately not repeated here: two
- * constants would be two promises about the same thing.
+ * There used to be a second half — `./feed.ts`, which computed items from state
+ * already on this phone: unread threads, today's session, an objective
+ * countdown. It was deleted on 2026-09-06 when the owner asked for follows,
+ * likes and comments and "nothing else". Named here only because comments
+ * elsewhere in the codebase still point at it.
+ *
+ * NOTHING IS PUSHED. There is a server now — the migrations in
+ * `icefall-supabase/` are live — but there is no push certificate, no service
+ * worker registration and no Push API call anywhere in `src/`, so these rows
+ * are FOUND WHEN YOU OPEN THE SCREEN and this screen will not wake your phone.
+ * `NOTIFICATIONS_NOT_PUSHED`, below, is the one sentence that says so. It moved
+ * here on 2026-09-06 when `./feed.ts` was deleted; it is declared once, in this
+ * file, because two constants would be two promises about the same thing.
+ *
+ * (An earlier version of this paragraph counted the migrations. It said 54;
+ * there are more than that now. A number that has to be re-counted to stay true
+ * does not belong in a comment.)
  *
  * ── THE THREE READS, AND WHY THEY ARE ALLOWED ────────────────────────────────
  *
  * Checked against the live policies, not assumed:
  *
- *   `follows_select`        (20260831190000) — `follower_id = auth.uid() OR
- *                           followed_profile_id = auth.uid()`. The second arm
- *                           is this feature: you may see who followed YOU.
- *   `post_likes_select`     (20260902100000) — readable wherever the post is
- *                           readable.
- *   `post_comments_select`  (20260831190000) — the same rule.
+ *   `follows_select`        (20260831190000, REWRITTEN by 20260903010000) —
+ *                           `follower_id = auth.uid() OR followed_profile_id =
+ *                           auth.uid()` … AND neither end is in
+ *                           `blocked_ids()`. The second arm is this feature:
+ *                           you may see who followed YOU.
+ *   `post_likes_select`     (20260902100000, REWRITTEN by 20260903010000) —
+ *                           readable wherever the post is, unless the liker is
+ *                           blocked.
+ *   `post_comments_select`  (20260831190000, REWRITTEN by 20260903010000) —
+ *                           the same rule, on the comment's author.
+ *
+ * THE BLOCK ARMS ARE NOT DECORATION and this paragraph did not have them until
+ * 2026-09-06: it described the ORIGINAL policies, which
+ * `20260903010000_block_and_report.sql` replaced. They do not weaken the
+ * paragraph below — a blocked person's row and their profile row are hidden
+ * together, consistently — but the claim there now rests on a different
+ * sentence than the one this file used to cite.
  *
  * And `posts_select` opens with `author_id = auth.uid()`, so YOUR OWN POSTS ARE
  * ALWAYS VISIBLE TO YOU — including expired stories. That is what makes the two
@@ -45,14 +68,25 @@ import type { MarkKind } from "@/components/ui/VerificationMark";
  *
  * RLS FILTERS, IT DOES NOT ERROR — so on most surfaces in this app an empty
  * array is ambiguous between "nothing is there" and "you may not see it", and
- * several modules say so rather than claim the first. NOT HERE. Every row these
- * three queries can match is a row about the reader themselves, which the
- * policies above admit unconditionally. There is no hidden remainder.
+ * several modules say so rather than claim the first. Here the ambiguity is
+ * narrow: every row these three queries can match is a row about the reader
+ * themselves, and the policies admit those — EXCEPT where a block is in force,
+ * which hides the row and the actor's profile together, consistently and
+ * deliberately. A follow from somebody you have blocked not appearing is the
+ * feature working.
  *
- * So: DO NOT ADD A "MAY BE MORE THAN THIS" BRANCH TO THE EMPTY CASE. `state:
- * "ready"` with no notices is a measured, honest zero — nobody has followed
- * you, liked a post or commented — and softening it into a maybe would be an
- * invented doubt, which is the same failure as an invented number.
+ * So: DO NOT ADD A "MAY BE MORE THAN THIS" BRANCH TO THE EMPTY CASE for follows
+ * and comments. `state: "ready"` with none of those is a measured zero, and
+ * softening it into a maybe would be an invented doubt.
+ *
+ * LIKES ARE THE EXCEPTION AND THE SCREEN MUST SAY SO. Nothing in this app
+ * writes a `post_likes` row — `social/posts.ts` states it outright, and the
+ * heart on a post card is local to the session. The read below is correct and
+ * will render the moment a write path ships, but until then an empty like
+ * channel measures an unbuilt feature, not an absence of likes. Any sentence
+ * this screen prints about "nobody liked" would be a measured zero claimed over
+ * something that was never recorded, which is precisely the conflation this
+ * project forbids.
  *
  * ── NEVER YOUR OWN ACTION ────────────────────────────────────────────────────
  *
@@ -278,6 +312,26 @@ export const NOTICES_UNREACHABLE =
 export const NOTICES_REFUSED =
   "ICEFALL's server refused that read, so it cannot say who followed you or what happened to your posts. This is a refusal rather than an answer — the list may not be empty.";
 
+/**
+ * THE ONE SENTENCE ABOUT DELIVERY, and it covers the whole screen.
+ *
+ * Moved here from `./feed.ts` on 2026-09-06, when that module was deleted: the
+ * owner asked for a notifications tab that is follows, likes and comments and
+ * "nothing else", which took the device-derived half of the screen with it.
+ *
+ * It is worded for what is left. The old version had to cover two sources
+ * ("worked out from what is on this device, or read back from the server");
+ * everything on this screen now comes from the server, so the sentence says
+ * that and stops.
+ *
+ * WHAT MUST NOT BE SOFTENED OUT OF IT: a climber who believes this screen will
+ * wake their phone might rely on it for a weather change or a departure time,
+ * and it cannot do that. There is no service worker registration and no Push
+ * API call anywhere in this codebase.
+ */
+export const NOTIFICATIONS_NOT_PUSHED =
+  "Nothing here was pushed. ICEFALL has no push notifications, so this is read back from the server at the moment you open the screen. It is a summary, not an alert: it cannot wake your phone and it will not reach you on the mountain.";
+
 const MESSAGES: Record<Exclude<SocialNoticeState, "loading" | "ready">, string> = {
   "no-backend": NOTICES_NO_BACKEND,
   "signed-out": NOTICES_SIGNED_OUT,
@@ -321,6 +375,13 @@ const ACTOR_CHUNK = 100;
  */
 const NOTICES_TIMEOUT_MS = 8_000;
 
+/**
+ * SEPARATELY BUDGETED from the three reads, because it runs before them and
+ * their abort signal cannot reach it. Short: a session that has not answered in
+ * three seconds is not going to make the rest of this read useful.
+ */
+const SESSION_TIMEOUT_MS = 3_000;
+
 /** How much of a post's opening line stands in for it in a notice row. */
 const TITLE_MAX = 90;
 
@@ -358,7 +419,23 @@ function classify(error: PostgrestError | null): Failure {
   const code = error.code ?? "";
   if (code === "PGRST205" || code === "42P01") return "not-live";
   const message = (error.message ?? "").toLowerCase();
-  if (message.includes("fetch") || message.includes("abort") || message.includes("network")) {
+  /*
+   * "TIMED OUT" IS IN THE LIST, and its absence was a real bug. `withTimeout`
+   * builds its deadline from `AbortSignal.timeout`, which aborts with a
+   * **TimeoutError**, not an AbortError; postgrest-js renders that as
+   * "TimeoutError: signal timed out" — none of "fetch", "abort" or "network".
+   * So the exact case the deadline exists for, hut wifi that accepts the
+   * connection and never answers, fell through to `refused` and printed a claim
+   * about the server on the strength of the client giving up. "abort" is the
+   * word a CANCELLED CONTROLLER uses; the two are different events.
+   */
+  if (
+    message.includes("fetch") ||
+    message.includes("abort") ||
+    message.includes("network") ||
+    message.includes("timed out") ||
+    message.includes("timeout")
+  ) {
     return "unreachable";
   }
   return "refused";
@@ -512,8 +589,11 @@ function toActor(row: Record<string, unknown>): NoticeActor | null {
  * read on `profiles` has nothing to disambiguate and cannot acquire the problem
  * later. The second: somebody who followed you AND liked a post resolves once.
  *
- * `profiles_select` is `using (true)` for any signed-in reader, so this asks for
- * nothing the reader could not already open by tapping the name.
+ * `profiles_select` admits any signed-in reader for anybody they are not in a
+ * block with (`20260903010000_block_and_report.sql`; it was `using (true)` when
+ * this file was written), so this asks for nothing the reader could not already
+ * open by tapping the name — and an actor they are blocked with does not come
+ * back, which drops the notice, which is the correct outcome.
  */
 async function readActors(
   db: SupabaseClient,
@@ -601,8 +681,46 @@ type ReadResult =
 async function read(limit: number, signal: AbortSignal): Promise<ReadResult> {
   if (!supabase || !untyped) return { kind: "no-backend", uid: null };
 
-  const { data: auth } = await supabase.auth.getSession();
-  const me = auth.session?.user.id ?? null;
+  /*
+   * THE SESSION, ON ITS OWN DEADLINE — and this was a hang, not a precaution.
+   *
+   * `getSession()` refreshes an expired token over the network, and the
+   * `.abortSignal()` on the three queries below cannot protect a call made
+   * BEFORE them. With the network dead-but-not-absent — hut wifi, a captive
+   * portal — this line sat here indefinitely and the screen showed a spinner
+   * that never resolved. `lib/netTimeout.ts` records the same failure in
+   * `useMyProfile`; this is the notifications copy of it.
+   *
+   * A TIMEOUT IS `unreachable`, NOT `signed-out`. They are different sentences
+   * and the wrong one tells somebody they are signed out because a token
+   * refresh was slow.
+   */
+  let me: string | null = null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const auth = await Promise.race([
+      supabase.auth.getSession(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("session timeout")), SESSION_TIMEOUT_MS);
+      }),
+    ]);
+    /*
+     * READ THE ERROR. `getSession()` does NOT reject when a token refresh fails
+     * over the network — supabase-auth-js resolves with `{ session: null,
+     * error }`. Without this line the `catch` below never fires on the common
+     * failure and a signed-in athlete on hut wifi is told "ICEFALL has to be
+     * signed in to read them", with no retry offered, because their token
+     * happened to need refreshing. A genuinely signed-out reader gets
+     * `error: null`, so this cannot misread a real sign-out.
+     */
+    if (auth.error) return { kind: "unreachable", uid: null };
+    me = auth.data.session?.user.id ?? null;
+  } catch {
+    return { kind: "unreachable", uid: null };
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+  if (signal.aborted) return { kind: "unreachable", uid: null };
   // `AppShell` gates on a session, so this is a guard rather than a state to
   // design for. It is here so that nothing can report an empty list for it.
   if (!me) return { kind: "signed-out", uid: null };
@@ -801,7 +919,7 @@ function build(
 
 /**
  * NOTHING ON THE SERVER RECORDS WHEN YOU LAST LOOKED AT THIS SCREEN. There is
- * no `notifications_seen` table in any of the 54 migrations, and this module
+ * no `notifications_seen` table in any migration, and this module
  * does not add one — it owns no schema.
  *
  * So the mark is stored HERE, on this device, and the count derived from it is
@@ -889,27 +1007,67 @@ export function useSocialNotices(): SocialNotices {
   const seenNonce = useSeenRevision();
 
   useEffect(() => {
+    /*
+     * THE DEMO BUILD ANSWERS FROM FIXTURES, and the branch is here rather than
+     * in the screen so there is one definition of "what this hook returns".
+     *
+     * A DEMO build constructs no Supabase client at all (`backend/client.ts`),
+     * so `read` below would return `no-backend` before asking anything and the
+     * whole screen would be one grey paragraph — while the community feed two
+     * taps away is full of invented posts by invented people from the same
+     * file. That is not a more honest screen, it is an inconsistent one.
+     *
+     * `OFFLINE_SOCIAL_NOTICES` is `[]` unless `VITE_ICEFALL_DEMO` (or the
+     * offline flag) was set at BUILD time, so nothing here can reach a real
+     * bundle, and the people in it are the same four who already write
+     * `OFFLINE_COMMUNITY_POSTS`. `uid` stays null, so `unseen` is `null` — NOT
+     * MEASURED — and no invented "3 new" appears under the title.
+     */
+    if (DEMO) {
+      setNotices(OFFLINE_SOCIAL_NOTICES);
+      setMore(false);
+      setState("ready");
+      return;
+    }
+
     const controller = new AbortController();
     let alive = true;
     setState("loading");
 
-    void read(PAGE * pages, controller.signal).then((result) => {
-      if (!alive) return;
-      setUid(result.uid);
+    void read(PAGE * pages, controller.signal)
+      .then((result) => {
+        if (!alive) return;
+        setUid(result.uid);
 
-      if (result.kind === "ready") {
-        setNotices(result.notices);
-        setMore(result.more);
-        setState("ready");
-        return;
-      }
+        if (result.kind === "ready") {
+          setNotices(result.notices);
+          setMore(result.more);
+          setState("ready");
+          return;
+        }
 
-      // A failure shows NOTHING, not the last good list: a stale list under a
-      // failure sentence is a screen making two contradictory claims at once.
-      setNotices([]);
-      setMore(false);
-      setState(result.kind);
-    });
+        // A failure shows NOTHING, not the last good list: a stale list under a
+        // failure sentence is a screen making two contradictory claims at once.
+        setNotices([]);
+        setMore(false);
+        setState(result.kind);
+      })
+      /*
+       * `.catch` IS NOT OPTIONAL, and its absence was a real hang. `read`
+       * awaits `supabase.auth.getSession()`, which goes to the network to
+       * refresh a token; a rejection there escaped this chain entirely and left
+       * `state` on "loading" for ever — the never-resolving spinner every
+       * deadline in this file exists to prevent, on the one path that had none.
+       * `getSession` now has its own budget inside `read`; this is the belt to
+       * that pair of braces, because an unhandled rejection anywhere else in
+       * the chain would fail the same way.
+       */
+      .catch(() => {
+        if (!alive) return;
+        setNotices([]);
+        setMore(false);
+        setState("unreachable");
+      });
 
     return () => {
       alive = false;

@@ -200,7 +200,7 @@ export function Avatar({
   return (
     <div
       className={cn(
-        "grid shrink-0 place-items-center rounded-full border border-hairline-strong font-medium text-snow/90",
+        "grid shrink-0 place-items-center rounded-full border border-hairline-strong font-medium",
         className,
       )}
       style={{
@@ -208,6 +208,23 @@ export function Avatar({
         height: size,
         fontSize: size * 0.36,
         background: `linear-gradient(145deg, oklch(0.30 0.02 ${h}), oklch(0.22 0.012 ${(h + 40) % 360}))`,
+        /*
+         * A LITERAL, and it is the same exception `editorialPalette.ts` makes
+         * for text drawn over a photograph.
+         *
+         * This was `text-snow/90` and it was invisible in the light theme.
+         * `--ice-snow` is the app's PRIMARY TEXT token, so the light block
+         * redefines it to near-black — correct everywhere it sits on a light
+         * surface, and wrong here, because the plate under these initials is
+         * the hard-coded dark gradient on the line above and does NOT change
+         * with the theme. Near-black on `oklch(0.22)` is a blank circle, which
+         * is what every avatar on the notifications list drew until 2026-09-06.
+         *
+         * The rule this appears to break — never write a colour as a literal —
+         * is about colours that sit on a themed surface. A foreground whose
+         * background is a literal has to be one too, or the pair can disagree.
+         */
+        color: "rgba(255, 255, 255, 0.90)",
       }}
       aria-hidden="true"
     >

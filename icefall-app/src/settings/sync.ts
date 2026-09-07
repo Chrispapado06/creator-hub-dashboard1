@@ -287,7 +287,13 @@ export type ProfileFieldName =
   | "languages"
   | "interests"
   | "avatar"
-  | "banner";
+  | "banner"
+  | "website"
+  | "instagram"
+  | "facebook"
+  | "youtube"
+  | "tiktok"
+  | "strava";
 
 /**
  * What to save. ONLY THE KEYS PRESENT ARE TOUCHED — an absent key is "not being
@@ -315,6 +321,23 @@ export interface ProfileEdit {
   avatar?: string | null;
   /** `settings.cover`, same treatment. `null` removes. */
   banner?: string | null;
+
+  /*
+   * THE LINKS — `20260907090000_profile_links.sql`.
+   *
+   * HANDLES, NOT URLS, for the five social ones: the migration refuses anything
+   * carrying a scheme, a slash or a colon, and the app builds the address. A
+   * public profile that renders a URL somebody typed is an open redirect with a
+   * face beside it. `website` is the one URL, https only.
+   *
+   * "" clears, exactly like `bio`.
+   */
+  website?: string;
+  instagram?: string;
+  facebook?: string;
+  youtube?: string;
+  tiktok?: string;
+  strava?: string;
 }
 
 /**
@@ -1241,6 +1264,37 @@ function clearFromOutbox(saved: readonly ProfileFieldName[]): void {
 const LIVE_COLUMNS = "display_name, location_label, country_code, avatar_url";
 const PENDING_COLUMNS = "bio, languages, interests, banner_url";
 
+/**
+ * THE LINK COLUMNS — `20260907090000_profile_links.sql` — AND WHY THEY ARE A
+ * THIRD REQUEST RATHER THAN SIX MORE NAMES IN `PENDING_COLUMNS`.
+ *
+ * The module header states the rule this follows: a PostgREST UPDATE naming a
+ * column the server does not have is not partially satisfied — it comes back
+ * `PGRST204` and NOTHING is written. Two migrations are two independent facts
+ * about a server, so folding these in with `bio` would mean that until somebody
+ * runs `supabase db push` for the NEWER migration, saving a bio silently fails
+ * because the same request also mentioned Instagram.
+ *
+ * One request per migration. It is the same reasoning that split request one
+ * from request two, applied a third time, and it will need a fourth the next
+ * time a column is added by a migration that can land separately.
+ */
+const LINK_COLUMNS = "website, instagram, facebook, youtube, tiktok, strava";
+
+/** The link fields, in the order the form shows them. */
+const LINK_FIELDS = ["website", "instagram", "facebook", "youtube", "tiktok", "strava"] as const;
+
+/** `settings` key → `profiles` column. Identical today; named so it stays honest
+    if either side is ever renamed. */
+const LINK_COLUMN_OF: Record<(typeof LINK_FIELDS)[number], string> = {
+  website: "website",
+  instagram: "instagram",
+  facebook: "facebook",
+  youtube: "youtube",
+  tiktok: "tiktok",
+  strava: "strava",
+};
+
 type Row = Record<string, unknown>;
 
 type WriteOutcome =
@@ -1682,6 +1736,44 @@ export async function saveProfile(edit: ProfileEdit): Promise<SaveProfileResult>
               keptOnDevice: false,
               message: key === "banner" ? SYNC_PHOTO_NOT_KEPT : SYNC_NOT_KEPT,
             };
+      }
+    }
+  }
+
+  /* ---- Request three: the columns 20260907090000 adds --------------------- */
+
+  const linkValues: Row = {};
+  const linkFields: ProfileFieldName[] = [];
+  for (const key of LINK_FIELDS) {
+    const value = edit[key];
+    if (value === undefined) continue;
+    /* Trimmed here as well as in the trigger. The trigger is what makes it
+       true for every client; this is what stops a stray space being sent as an
+       edit and coming back "saved" with a different value than was typed. */
+    linkValues[LINK_COLUMN_OF[key]] = value.trim() === "" ? null : value.trim();
+    linkFields.push(key);
+  }
+
+  if (linkFields.length > 0) {
+    const deadline = withTimeout(WRITE_TIMEOUT_MS);
+    const query = session.loose
+      .from("profiles")
+      .update(linkValues)
+      .eq("id", session.uid)
+      .select(LINK_COLUMNS);
+    const result = await interpretWrite(
+      (deadline ? query.abortSignal(deadline) : query).maybeSingle(),
+    );
+    if (result.ok) {
+      for (const key of linkFields) {
+        fields[key] = saved(textOf(result.row, LINK_COLUMN_OF[key as (typeof LINK_FIELDS)[number]]));
+      }
+    } else {
+      const { kept } = keepOnDevice(edit, linkFields);
+      for (const key of linkFields) {
+        fields[key] = kept.has(key)
+          ? { state: result.state, keptOnDevice: true, message: result.message }
+          : { state: "failed", keptOnDevice: false, message: SYNC_NOT_KEPT };
       }
     }
   }

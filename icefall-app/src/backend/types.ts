@@ -306,6 +306,38 @@ export type Database = {
         };
         Returns: EnquiryOpened;
       };
+      /**
+       * STRAVA. Two calls, and both are deliberately tiny.
+       *
+       * `strava_status` returns a SET — Postgres `returns table`, so supabase-js
+       * hands back an array that is empty when nothing is connected. There is no
+       * "connected: false" row; absence IS the answer, which is why `Returns` is
+       * an array type here and every caller reads `data[0] ?? null`.
+       *
+       * IT CARRIES NO TOKEN, AND THIS TYPE IS PART OF THAT GUARANTEE. If a
+       * future change adds `access_token` to the SQL, this shape is the second
+       * place it would have to be added — see the header of
+       * `icefall-supabase/migrations/20260907140000_strava_connection.sql`.
+       *
+       * `strava_disconnect` forgets the row and nothing else. It CANNOT
+       * deauthorise at Strava — only the Edge Function can, holding the client
+       * secret — so a caller that uses it alone has revoked ICEFALL's copy of a
+       * token that Strava still honours. It exists for the one case the function
+       * cannot serve: a token Strava has already revoked, where deauthorising
+       * answers 401 forever and the row would otherwise be unremovable.
+       */
+      strava_status: {
+        Args: Record<never, never>;
+        Returns: {
+          connected: boolean;
+          /** NULL when Strava's token response did not identify the athlete. */
+          athlete_id: number | null;
+          athlete_username: string | null;
+          scope: string;
+          connected_at: string;
+        }[];
+      };
+      strava_disconnect: { Args: Record<never, never>; Returns: undefined };
     };
     Enums: {
       icefall_role: IcefallRole;

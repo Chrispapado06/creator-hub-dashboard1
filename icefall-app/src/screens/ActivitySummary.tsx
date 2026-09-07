@@ -21,6 +21,7 @@ import { useActivityById } from "@/tracking/feed";
 import { useRecordedActivities } from "@/tracking/feed";
 import { DEFAULT_BODY_MASS_KG, useApp } from "@/state/AppState";
 import { cn } from "@/lib/utils";
+import { SendToStrava } from "@/strava/SendToStrava";
 import { activityById as trackedType } from "@/tracking/activities";
 
 /** Screen 05 — what the mountain gave back. Works for recorded and seeded activities alike. */
@@ -193,6 +194,17 @@ export default function ActivitySummary() {
         {activity.insight && (
           <Rise className="pt-6">
             <CoachInsight>{activity.insight}</CoachInsight>
+          </Rise>
+        )}
+
+        {/* Sending to Strava lives HERE, on the activity it would send, rather
+            than in the sticky bar below: the bar is three ways of looking at
+            this recording, and this is the one control that leaves the app with
+            data attached. It draws nothing at all when Strava cannot work for
+            this person — see the component. */}
+        {recorded && (
+          <Rise className="pt-6">
+            <SendToStrava activity={recorded} />
           </Rise>
         )}
 

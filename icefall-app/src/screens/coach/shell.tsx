@@ -1,7 +1,6 @@
-import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Mountain as MountainIcon } from "lucide-react";
+import { Link } from "react-router-dom";
+import { ChevronLeft, Mountain as MountainIcon } from "lucide-react";
 
-import { SegmentedTabs } from "@/components/layout/chrome";
 import { fmtElevation } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { sync } from "@/services/repository";
@@ -9,16 +8,33 @@ import { usePrimaryGoal } from "@/state/AppState";
 import type { Goal, Mountain } from "@/types";
 
 /**
- * THE SHELL EVERY COACH PAGE SHARES — to the owner's Coach designs of
- * 2026-09-04: a large serif title, a subtitle, the current objective with a
- * "Change" action, then the internal strip TODAY · PLAN · FUEL · PROGRESS ·
- * CHAT, and only then the page's own content.
+ * THE SHELL EVERY COACH PAGE SHARES — a chevron back to the hub, a large serif
+ * title, a subtitle, and the current objective with a "Change" action. Then the
+ * page's own content.
  *
  * IT LIVES INSIDE EACH PAGE'S SCROLLER, NOT IN THE LAYOUT. The layout used to
- * pin the strip above the outlet, which is right for a compact header and
- * wrong for this one: the designs show the title scrolling away with the
- * page. So `CoachHead` renders at the top of each page's `Screen`, and the
- * layout keeps only what must be shared — the light surface and the swipe.
+ * pin a header above the outlet, which is right for a compact header and wrong
+ * for this one: the designs show the title scrolling away with the page. So
+ * `CoachHead` renders at the top of each page's `Screen`.
+ *
+ * THE STRIP IS GONE — 2026-09-06, the owner's Coach hub mockup. It used to be
+ * the last thing in this component: `SegmentedTabs` carrying TODAY · PLAN ·
+ * FUEL · PROGRESS · CHAT, rendered identically on all five pages because all
+ * five call `CoachHead`. `/coach` is now a hub of cards (see `CoachHub.tsx`)
+ * and the five pages are reached by tapping one, so a strip would be a second
+ * navigation model sitting under the first and disagreeing with it. Its
+ * dependants went with it — `COACH_TABS`, the `CoachTab` type, `activeCoachTab`
+ * and the five-tab swipe in `CoachLayout`. `noUnusedLocals` is false in this
+ * project, so none of that was going to be reported; it was removed by eye.
+ *
+ * WHAT REPLACED IT IS THE CHEVRON, and it goes in `CoachHead` rather than into
+ * each page for one structural reason worth knowing: on every Coach page
+ * `CoachHead` is the FIRST child of the page's `Stagger`, at the same inset and
+ * the same top offset, so a control put inside it lands in the same place on
+ * all five with no edit to any page's JSX. It also sidesteps the framer-motion
+ * trap — `Stagger` hands its variants to DIRECT children only, so a back row
+ * added as a new sibling between `Stagger` and the first `Rise` would leave the
+ * whole page at opacity 0, in the DOM, invisible, with tsc green.
  *
  * THE OBJECTIVE LINE. "Mont Blanc · Alpine climb" in the drawings. A goal
  * carries no discipline, so the second half is the curated mountain's own
@@ -111,29 +127,6 @@ export function useObjective(): ObjectiveContext {
 }
 
 /* -------------------------------------------------------------------------- */
-/* The strip                                                                   */
-/* -------------------------------------------------------------------------- */
-
-export const COACH_TABS = [
-  { value: "/coach/today", label: "Today" },
-  { value: "/coach/plan", label: "Plan" },
-  { value: "/coach/fuel", label: "Fuel" },
-  { value: "/coach/progress", label: "Progress" },
-  { value: "/coach/chat", label: "Chat" },
-] as const;
-
-export type CoachTab = (typeof COACH_TABS)[number]["value"];
-
-/** `/coach` is Today. Detail routes light the tab they were reached from. */
-export function activeCoachTab(pathname: string): CoachTab {
-  if (pathname === "/coach" || pathname === "/coach/") return "/coach/today";
-  const hit = [...COACH_TABS]
-    .sort((a, b) => b.value.length - a.value.length)
-    .find((t) => pathname === t.value || pathname.startsWith(`${t.value}/`));
-  return hit?.value ?? "/coach/today";
-}
-
-/* -------------------------------------------------------------------------- */
 /* The head                                                                    */
 /* -------------------------------------------------------------------------- */
 
@@ -142,6 +135,7 @@ export function CoachHead({
   subtitle,
   objective = "card",
   objectiveDetail = "countdown",
+  back = "/coach",
 }: {
   title: string;
   subtitle?: string;
@@ -152,26 +146,37 @@ export function CoachHead({
    * shows the days to go. Both are the goal's own figures.
    */
   objectiveDetail?: "countdown" | "elevation";
+  /**
+   * Where the chevron goes, or `false` on a page that IS the destination.
+   *
+   * A LINK TO A FIXED PATH, NOT `navigate(-1)`, and the difference is not
+   * cosmetic. Every Coach page is reachable from outside the section — Home's
+   * "View coach", the search screen, the notification feed's "/coach/today", a
+   * mountain page's "/coach/training" — and on those arrivals there is no hub
+   * behind them in history, so `-1` would throw the athlete back out of Coach
+   * to wherever they came from. The hub is a place, so the control names it.
+   *
+   * The bottom bar's COACH tab also returns here, but that is not a substitute:
+   * a tab reads as "go to Coach", not as "back", and a page reached by tapping
+   * a card with nothing that reads as back is a dead end.
+   */
+  back?: string | false;
 }) {
-  const { pathname } = useLocation();
-  const navigate = useNavigate();
-  const active = activeCoachTab(pathname);
-
   return (
     <div>
+      {back !== false && (
+        <Link
+          to={back}
+          className="-ml-1 mb-3 inline-flex items-center gap-1 text-[14px] text-mist transition-colors hover:text-snow"
+        >
+          <ChevronLeft size={18} strokeWidth={1.6} aria-hidden="true" />
+          Coach
+        </Link>
+      )}
       <h1 className="display text-[56px] leading-[0.95] text-snow">{title}</h1>
       {subtitle && <p className="mt-2 text-[17px] leading-snug text-mist">{subtitle}</p>}
 
       {objective !== "none" && <ObjectiveContextRow variant={objective} detail={objectiveDetail} />}
-
-      <div className="mt-5">
-        <SegmentedTabs
-          tabs={COACH_TABS}
-          value={active}
-          onChange={(v) => navigate(v)}
-          variant="section"
-        />
-      </div>
     </div>
   );
 }

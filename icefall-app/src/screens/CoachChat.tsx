@@ -1,6 +1,7 @@
 import { ArrowUp, Lock } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Disclaimer } from "@/components/ui/primitives";
 import { IcefallMark } from "@/components/ui/IcefallMark";
 import { ShiningText } from "@/components/ui/ShiningText";
@@ -25,7 +26,7 @@ import { ACCENT, CoachHead, Eyebrow, TINT } from "@/screens/coach/shell";
 export default function CoachChat() {
   const { coachInteractionsLeft, recordCoachInteraction, coachBudget, recordCoachSpend } = useApp();
   const coachCopy = useUpgradeCopy("coach");
-  // `coachInteractionsLeft` is null on an unlimited tier (Pro/Elite) — then it is
+  // `coachInteractionsLeft` is null on an unlimited tier (Pro) — then it is
   // never metered and never at a limit. On Free it is the monthly allowance.
   const metered = coachInteractionsLeft !== null;
   const budgetSpent = isExhausted(coachBudget);
@@ -68,6 +69,54 @@ export default function CoachChat() {
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages, thinking]);
+
+  /*
+   * A QUESTION ASKED FROM SOMEWHERE ELSE — the Coach hub's ask bar, which sends
+   * `navigate("/coach/chat", { state: { ask } })`.
+   *
+   * Until this existed the screen had no inbound path at all: the transcript is
+   * local state and `send` is a local closure, so nothing outside could ask it
+   * anything. The hub's bar would have had to fake it, which is precisely the
+   * "a control that looks like it works and does not" fault.
+   *
+   * ROUTER STATE RATHER THAN A `?q=` PARAMETER. The question is free text the
+   * athlete typed, and this is the one conversation in ICEFALL that is
+   * explicitly private — the screen says "Private · separate from Social" a few
+   * lines below. A query parameter puts that text in the URL, where it is
+   * screenshotted, shared and logged. State stays in memory. The cost is that a
+   * hard reload loses the question, which is the right way round: re-asking on
+   * refresh would spend an interaction the athlete never asked to spend.
+   *
+   * THE STATE IS CLEARED BEFORE THE SEND, not after. Without that, a
+   * back-then-forward — or any remount while the history entry is still on the
+   * stack — re-asks the same question and spends a second interaction.
+   * `firedRef` guards the same thing within one mount.
+   *
+   * IT DOES NOT FIRE WHEN THE ALLOWANCE IS SPENT, and it deliberately does not
+   * mark itself fired in that case either. `send` would silently drop the
+   * question (`if (!q || thinking || atLimit) return`), leaving the athlete on
+   * a screen that swallowed what they typed. The hub already blocks its own bar
+   * at the limit, so this is the race between the two — and holding the state
+   * means that if the tier changes while this screen is open, the question they
+   * asked is still the one that gets sent. What they see meanwhile is the
+   * upgrade prompt this screen already puts in place of the composer.
+   */
+  const location = useLocation();
+  const navigate = useNavigate();
+  const inbound = (location.state as { ask?: string } | null)?.ask;
+  const firedRef = useRef(false);
+
+  useEffect(() => {
+    if (typeof inbound !== "string" || !inbound.trim() || firedRef.current || atLimit) return;
+    firedRef.current = true;
+    navigate("/coach/chat", { replace: true, state: null });
+    void send(inbound);
+    // `send` is a fresh closure every render and adding it here would re-run
+    // this on every keystroke in the composer; `firedRef` is what actually
+    // guards the once-only, so the dependency list is the trigger, not the
+    // closure.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inbound, atLimit]);
 
   async function send(text: string) {
     const q = text.trim();

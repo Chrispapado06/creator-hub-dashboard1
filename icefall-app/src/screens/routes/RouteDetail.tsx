@@ -436,7 +436,7 @@ export default function RouteDetail() {
       {/* ---- Pinned save --------------------------------------------------- */}
       <div
         className="fixed inset-x-0 bottom-0 z-30 border-t border-hairline bg-obsidian/95 px-5 py-3 backdrop-blur"
-        style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom, 0px) + var(--tabbar-h, 0px))" }}
+        style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom, 0px) + var(--tabbar-clearance, 0px))" }}
       >
         <div className="flex items-center gap-2.5">
           <SaveButton

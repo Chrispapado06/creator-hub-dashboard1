@@ -78,7 +78,7 @@ export function SavedToast({
           exit={still ? { opacity: 0 } : { opacity: 0, y: 10, scale: 0.98 }}
           transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
           className="pointer-events-none fixed inset-x-0 z-50 flex justify-center px-5"
-          style={{ bottom: "calc(5.5rem + env(safe-area-inset-bottom, 0px) + var(--tabbar-h, 0px))" }}
+          style={{ bottom: "calc(5.5rem + env(safe-area-inset-bottom, 0px) + var(--tabbar-clearance, 0px))" }}
         >
           <div className="flex items-center gap-2.5 rounded-pill border border-azure/40 bg-graphite/95 px-4 py-2.5 shadow-lg backdrop-blur">
             <span className="grid h-5 w-5 place-items-center rounded-full bg-azure text-obsidian">

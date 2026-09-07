@@ -29,6 +29,7 @@ CC BY or CC BY-SA and **require the credit shown** wherever the image is display
 | `gran-paradiso-2.jpg` | Glacier tongue Gran Paradiso from Valnontey 20190913 t123237.jpg | CC BY 4.0 | Marie-Lan Taÿ Pamart | [source](https://commons.wikimedia.org/wiki/File:Glacier_tongue_Gran_Paradiso_from_Valnontey_20190913_t123237.jpg) |
 | `home-hero.jpg` | Mont Blanc (Unsplash t9z2J01P17o).jpg | CC0 | — | [source](https://commons.wikimedia.org/wiki/File:Mont_Blanc_(Unsplash_t9z2J01P17o).jpg) |
 | `matterhorn.jpg` | Switzerland-02082 - First View of the Matterhorn (22586306767).jpg | CC BY-SA 2.0 | Dennis G. Jarvis | [source](https://commons.wikimedia.org/wiki/File:Switzerland-02082_-_First_View_of_the_Matterhorn_(22586306767).jpg) |
+| `matterhorn-cutout.png` | *Derived from `matterhorn.jpg` above (sky removed, greyscale, cropped to the summit) — 2026-09-07, for the sign-up “Connect your accounts” page.* Same licence and credit apply; CC BY-SA requires the derivative be shared under the same terms. | CC BY-SA 2.0 | Dennis G. Jarvis | [source](https://commons.wikimedia.org/wiki/File:Switzerland-02082_-_First_View_of_the_Matterhorn_(22586306767).jpg) |
 | `mont-blanc.jpg` | Sommet du Mont Blanc 01.jpg | CC0 | — | [source](https://commons.wikimedia.org/wiki/File:Sommet_du_Mont_Blanc_01.jpg) |
 | `mont-blanc-2.jpg` | Aiguille de Rochefort.jpg | Public domain | — | [source](https://commons.wikimedia.org/wiki/File:Aiguille_de_Rochefort.jpg) |
 | `mont-blanc-3.jpg` | Mont Blanc @ Petit Bargy 01.jpg | CC BY-SA 4.0 | Rémih | [source](https://commons.wikimedia.org/wiki/File:Mont_Blanc_@_Petit_Bargy_01.jpg) |
@@ -44,6 +45,7 @@ CC BY or CC BY-SA and **require the credit shown** wherever the image is display
 | `toubkal-1.jpg` | Jebel Toubkal and a group of hikers.jpg | CC BY-SA 4.0 | Kurinurm | [source](https://commons.wikimedia.org/wiki/File:Jebel_Toubkal_and_a_group_of_hikers.jpg) |
 | `toubkal-2.jpg` | Jebel Toubkal in Atlas Mountains, 31.10.2022.jpg | CC BY-SA 4.0 | Kaur Virunurm | [source](https://commons.wikimedia.org/wiki/File:Jebel_Toubkal_in_Atlas_Mountains,_31.10.2022.jpg) |
 | `triglav.jpg` | Alps-2201165.jpg | CC0 | — | [source](https://commons.wikimedia.org/wiki/File:Alps-2201165.jpg) |
+| `coach-fuel.jpg` | Fruit and Honey French Oatmeal 2.jpg | CC0 | — | [source](https://commons.wikimedia.org/wiki/File:Fruit_and_Honey_French_Oatmeal_2.jpg) |
 
 
 ## Product imagery

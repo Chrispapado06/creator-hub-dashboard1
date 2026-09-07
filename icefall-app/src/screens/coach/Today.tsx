@@ -114,8 +114,13 @@ export default function Today() {
     <Screen padded={false}>
       <Stagger className="px-5 pb-10 pt-6">
         <Rise>
+          {/* "Today", not "Coach". This page used to be the section's landing
+              surface and carried the section's name; `/coach` is now the hub,
+              which owns that name and which `CoachHead` draws a chevron back
+              to. Left as "Coach" the page would read "← Coach" directly above a
+              56px serif "Coach", which looks like a rendering fault. */}
           <CoachHead
-            title="Coach"
+            title="Today"
             subtitle="Your preparation, one step at a time."
             objectiveDetail="elevation"
           />

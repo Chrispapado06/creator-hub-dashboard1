@@ -310,5 +310,23 @@
     "artist": "Iamsk21",
     "descUrl": "https://commons.wikimedia.org/wiki/File:Sanawar_Everest_Team.jpg",
     "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/a7/Sanawar_Everest_Team.jpg/1920px-Sanawar_Everest_Team.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail"
+  },
+  {
+    "slug": "coach-fuel",
+    "title": "Fruit and Honey French Oatmeal 2.jpg",
+    "license": "CC0",
+    "artist": "Bajinra",
+    "descUrl": "https://commons.wikimedia.org/wiki/File:Fruit_and_Honey_French_Oatmeal_2.jpg",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/b/b6/Fruit_and_Honey_French_Oatmeal_2.jpg"
+  },
+  {
+    "slug": "matterhorn-cutout",
+    "title": "Switzerland-02082 - First View of the Matterhorn (22586306767).jpg",
+    "license": "CC BY-SA 2.0",
+    "artist": "Dennis G. Jarvis",
+    "descUrl": "https://commons.wikimedia.org/wiki/File:Switzerland-02082_-_First_View_of_the_Matterhorn_(22586306767).jpg",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/1/18/Switzerland-02082_-_First_View_of_the_Matterhorn_%2822586306767%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+    "derivedFrom": "matterhorn",
+    "derivation": "sky removed (keyed), converted to greyscale with alpha, cropped to the summit; 2026-09-07"
   }
 ]

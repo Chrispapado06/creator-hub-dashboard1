@@ -203,7 +203,22 @@
 
   /* Layout */
   --shell-max: 430px;
-  --tabbar-h: 64px;
+  --tabbar-h: 52px;
+  /*
+   * HOW FAR UP FROM THE BOTTOM ANYTHING FLOATING MUST START.
+   *
+   * `--tabbar-h` is the height of the tab ROW and nothing else. The bar is a
+   * floating pill now: it has its own padding, and it is lifted clear of the
+   * bottom edge, so the row's height stopped describing the space it occupies.
+   * Four floating controls cleared themselves with `--tabbar-h` and every one
+   * of them ended up UNDER the pill — the Social composer's + sat directly on
+   * top of the Social tab.
+   *
+   * = row (52) + the pill's own vertical padding (2) + the lift (30). The
+   * safe-area inset is added by each call site, because only the call site
+   * knows whether it is already inside a container that cleared it.
+   */
+  --tabbar-clearance: 84px;
 }
 
 @theme inline {

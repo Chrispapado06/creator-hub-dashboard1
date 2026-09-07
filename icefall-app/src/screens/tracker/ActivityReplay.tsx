@@ -139,7 +139,7 @@ export default function ActivityReplay() {
         absolutely-positioned map had nothing to fill — the flyover rendered
         onto black with the overlay floating over it.
       */}
-      <div className="relative h-[calc(100vh-var(--tabbar-h)-160px)] min-h-[440px]">
+      <div className="relative h-[calc(100vh-var(--tabbar-clearance)-160px)] min-h-[440px]">
         {/* The track so far, so the line draws itself as the camera moves. */}
         <TerrainMap
           track={track.slice(0, index + 1)}

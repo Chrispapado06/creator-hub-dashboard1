@@ -2541,7 +2541,9 @@ export default function Onboarding() {
           // disabled one would just look broken.
           <span className="block h-[52px]" />
         ) : step === "payoff" ? (
-          <Button size="lg" className="w-full" onClick={() => navigate("/trial")}>
+          /* → the "Connect your accounts" page (owner, 2026-09-07), which
+             leads on to the trial offer itself. */
+          <Button size="lg" className="w-full" onClick={() => navigate("/connect")}>
             Continue
             <ArrowRight size={16} strokeWidth={1.8} />
           </Button>

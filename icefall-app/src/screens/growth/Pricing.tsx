@@ -63,7 +63,8 @@ const PRO = planFor("pro");
 const trialDays: number = TRIAL_DAYS;
 const TRIAL_LENGTH = `${trialDays} ${trialDays === 1 ? "day" : "days"}`;
 
-const TIER_ORDER: TierId[] = ["free", "pro", "elite"];
+/* Two tiers since 2026-09-06; see `growth/tiers.ts`. */
+const TIER_ORDER: TierId[] = ["free", "pro"];
 
 /**
  * What a tier adds over the one below it, counting only what is BUILT.
@@ -84,7 +85,6 @@ function builtAdditions(tier: TierId): Feature[] {
 const ADDITIONS: Record<TierId, Feature[]> = {
   free: builtAdditions("free"),
   pro: builtAdditions("pro"),
-  elite: builtAdditions("elite"),
 };
 
 /** Everything listed against a tier that has not been built. */
@@ -242,7 +242,6 @@ function PeriodSwitch({ value, onChange }: { value: Period; onChange: (p: Period
 const PLAN_IMG: Record<TierId, string> = {
   free: "/img/mount-olympus.jpg",
   pro: "/img/matterhorn.jpg",
-  elite: "/img/everest.jpg",
 };
 
 const CARD_LINES: { id: FeatureId; label: string }[] = [
@@ -318,9 +317,12 @@ function PlanColumn({
         })}
       </ul>
 
-      {plan.id === "elite" && soon.length > 0 && (
+      {/* The coming-soon count used to hang off the Expedition tier, which no
+          longer exists. It belongs to the paid plan now — those features were
+          listed against Expedition and moved onto Pro with everything else. */}
+      {plan.id === "pro" && soon.length > 0 && (
         <p className="mt-2 border-l border-azure/25 pl-2 text-[9px] leading-tight text-mist-dim">
-          + {soon.length} expedition features, coming soon
+          + {soon.length} more, coming soon
         </p>
       )}
 

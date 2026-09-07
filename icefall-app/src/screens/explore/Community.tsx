@@ -512,7 +512,7 @@ export default function Community() {
           onClick={() => setCreating(true)}
           className="absolute right-5 z-30 grid h-14 w-14 place-items-center rounded-full bg-azure text-obsidian shadow-lg transition-colors hover:bg-azure-bright"
           style={{
-            bottom: "calc(1.25rem + env(safe-area-inset-bottom, 0px) + var(--tabbar-h, 0px))",
+            bottom: "calc(1.25rem + env(safe-area-inset-bottom, 0px) + var(--tabbar-clearance, 0px))",
           }}
         >
           <Plus size={24} strokeWidth={2} />

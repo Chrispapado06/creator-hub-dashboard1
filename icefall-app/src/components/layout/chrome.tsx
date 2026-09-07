@@ -45,8 +45,13 @@ export function Screen({
       style={{ paddingTop: "var(--screen-safe-top, env(safe-area-inset-top, 0px))" }}
     >
       {children}
-      {/* Clears the raised Start control in the tab bar. */}
-      <div className="h-14" />
+      {/*
+        Clears the raised Start control AND the 24px the navigation is pulled up
+        by so its glass has something to blur (see `TabBar`). Grown from `h-14`
+        on 2026-09-06 in the same change; if the nav's `-mt-6` ever changes,
+        this changes with it or the last row of every screen goes under the bar.
+      */}
+      <div className="h-20" />
     </div>
   );
 }

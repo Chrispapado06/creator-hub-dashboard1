@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import {
-  Award, Bell, Building2, Copy, Download, ExternalLink, Flag, LifeBuoy, LogOut, MapPin,
-  Camera, Mountain as MountainIcon, Pickaxe, RotateCcw, ShieldCheck, Shuffle, Sparkles,
-  Trash2, Watch,
+  Activity, Award, Bell, Building2, Camera, Check, ChevronLeft, Copy, Download, ExternalLink, Facebook,
+  Flag, Globe, Instagram, LifeBuoy, LogOut, MapPin, Mountain as MountainIcon, Music2, Pickaxe,
+  RotateCcw, ShieldCheck, Shuffle, Sparkles, Trash2, Watch, X, Youtube,
 } from "lucide-react";
-import { Button, Card, Disclaimer, Stat, sharePage } from "@/components/ui/primitives";
+import type { LucideIcon } from "lucide-react";
+import { motion, useReducedMotion } from "framer-motion";
+import { Button, Card, Disclaimer, SectionLabel, Stat, sharePage } from "@/components/ui/primitives";
 import { Rise } from "@/components/layout/chrome";
 import {
   ActionRow, ChoiceRow, Group, InfoRow, LinkRow, SettingsPage, StatusPill,
@@ -20,7 +22,8 @@ import { useApp, usePrimaryGoal } from "@/state/AppState";
 import { planFor } from "@/growth/tiers";
 import { fmtDate } from "@/lib/format";
 import { encodeProfile, profileLink, type SharedProfile } from "@/profile/shareLink";
-import { readAvatar } from "@/lib/image";
+import { readAvatar, readBanner } from "@/lib/image";
+import { isBackendConfigured } from "@/backend/client";
 import { PROFILE_BANNERS, bannerFor, bannerIndex } from "@/profile/banners";
 import { BADGES, badgeState } from "@/badges/model";
 import { BadgeHex } from "@/components/domain/BadgeHex";
@@ -271,6 +274,15 @@ function storedText(
  * the caller's, because "what the server already holds" is a different question
  * for a live column and for one that does not exist yet.
  */
+/**
+ * NOTHING IS SAID ABOUT SENDING ON A BUILD THAT CANNOT SEND.
+ *
+ * Every field on this screen carries one of these, and on a build with no
+ * Supabase client they all said the same thing — that the profile is saved on
+ * this phone and nowhere else — six or seven times down one screen, each with a
+ * dead "Try again". That is not news, it is the permanent condition of the
+ * build, and it belongs in one sentence at the foot of the form.
+ */
 function SyncNote({
   field,
   sync,
@@ -289,7 +301,28 @@ function SyncNote({
   onSave: () => void;
   onRetry?: () => void;
 }) {
-  if (sync.kind === "untouched") return <>{resting}</>;
+  /*
+   * A FIELD NOBODY HAS TOUCHED SAYS NOTHING.
+   *
+   * `resting` used to print a paragraph under EVERY box — "NOT KNOWN — ICEFALL
+   * could not ask its server whether it can keep this…" — the same words six
+   * times down one screen. The owner, 2026-09-07: "remove all that text not
+   * needed like jesus ALL TEXT REMOVE." Correct: it was the sync machinery's
+   * internal state printed as body copy, and it made the screen unreadable.
+   *
+   * NOTHING HONEST IS LOST. Those paragraphs described the SCREEN's state, not
+   * the field's — one sentence at the foot of the form now covers it once. What
+   * this component still says, and must keep saying, is what happened to a box
+   * somebody actually edited: not sent, saving, saved, failed. That is a fact
+   * about their edit and it stays.
+   *
+   * `resting` is still accepted so the two callers that pass a genuinely
+   * field-specific fact can keep doing so; it is simply not rendered while the
+   * field is untouched.
+   */
+  if (sync.kind === "untouched") return null;
+  /* See the note above the component. */
+  if (!isBackendConfigured()) return null;
 
   if (sync.kind === "unsent") {
     return (
@@ -474,6 +507,8 @@ function EditableField({
   resting,
   tags,
   onRetry,
+  icon: Icon,
+  prefix,
   children,
 }: {
   label: string;
@@ -488,16 +523,48 @@ function EditableField({
   resting?: React.ReactNode;
   tags: InterestTag[];
   onRetry?: () => void;
+  /** The mockup's leading glyph. Decorative — the label is the accessible name. */
+  icon?: LucideIcon;
+  /** Fixed text inside the box before the value, e.g. `https://`, `@`. */
+  prefix?: string;
   children?: React.ReactNode;
 }) {
   const id = useId();
   const shared =
-    "mt-2 w-full bg-transparent text-[14px] text-snow outline-none placeholder:text-mist-dim";
+    "w-full bg-transparent text-[14px] text-snow outline-none placeholder:text-mist-dim";
   return (
-    <div className="border-t border-hairline px-4 py-3.5 first:border-t-0">
-      <label htmlFor={id} className="block text-[11px] uppercase tracking-[0.1em] text-mist-dim">
+    <div className="pt-4 first:pt-0">
+      {/*
+        THE MOCKUPS' FIELD, and it is a rebuild rather than a restyle — the
+        owner, 2026-09-07: "like the current edit profile delete everything
+        thats in it, re build it".
+
+        Label above in sentence case, then a rounded box holding a leading icon,
+        an optional fixed prefix and the input. The old version was a row inside
+        a bordered card, separated from its neighbours by hairlines, which is
+        the boxy treatment the owner has asked to be rid of everywhere.
+      */}
+      <label htmlFor={id} className="block text-[12.5px] font-medium text-snow">
         {label}
       </label>
+      <div
+        className={cn(
+          "mt-1.5 flex gap-2.5 rounded-[14px] border border-hairline-strong bg-slate px-3.5",
+          multiline ? "items-start py-3" : "items-center py-3",
+          "focus-within:border-azure/50",
+        )}
+      >
+        {Icon !== undefined && (
+          <Icon
+            size={16}
+            strokeWidth={1.7}
+            aria-hidden
+            className={cn("shrink-0 text-mist-dim", multiline && "mt-0.5")}
+          />
+        )}
+        {prefix !== undefined && (
+          <span className="shrink-0 text-[14px] text-mist-dim">{prefix}</span>
+        )}
       {multiline ? (
         <textarea
           id={id}
@@ -518,6 +585,7 @@ function EditableField({
           className={shared}
         />
       )}
+      </div>
       {hint && <p className="mt-1.5 text-[11px] leading-relaxed text-mist-dim">{hint}</p>}
       {children}
       <SyncNote
@@ -548,10 +616,13 @@ function NameField({
   profile,
   tags,
   onSettled,
+  onDirty,
 }: {
   profile: MyProfileState;
   tags: InterestTag[];
   onSettled: () => void;
+  /** Reports unsaved typing upward, so the screen's Save button knows. */
+  onDirty?: (dirty: boolean) => void;
 }) {
   const { user } = useApp();
   const { sync, send, touch, reset } = useFieldSync("displayName", onSettled);
@@ -567,6 +638,10 @@ function NameField({
     user.name ??
     "";
   const value = draft ?? base;
+  const nameDirty = draft !== null && draft !== base;
+  useEffect(() => {
+    onDirty?.(nameDirty);
+  }, [nameDirty, onDirty]);
   const dirty = tidy(value) !== tidy(base);
 
   const commit = useCallback(async () => {
@@ -598,23 +673,30 @@ function NameField({
     [],
   );
 
+  /* The mockup's card: label, one line of help, box, count. 80 is the real
+     limit — `profiles.display_name` is CHECKed at 1–80 characters — so the
+     number is measured rather than decorative. */
   return (
-    <EditableField
+    <MockField
       label="Display name"
-      field="displayName"
+      help="This is your name that others will see."
       value={value}
       onChange={(v) => {
         setDraft(v);
         touch();
       }}
       onCommit={() => void commit()}
+      max={80}
       placeholder="Your name"
-      hint="The name on your ICEFALL profile — what other climbers see. The name this phone shows you elsewhere in the app was set when you joined, and this screen cannot change that one yet."
-      sync={sync}
-      tags={tags}
-      resting={<LiveColumnResting profile={profile} matches={!dirty} />}
-      onRetry={() => void flushProfile()}
-    />
+    >
+      <SyncNote
+        field="displayName"
+        sync={sync}
+        tags={tags}
+        onSave={() => void commit()}
+        onRetry={() => void flushProfile()}
+      />
+    </MockField>
   );
 }
 
@@ -744,34 +826,50 @@ function HandleField({ profile }: { profile: MyProfileState }) {
   const line =
     problem && candidate.length > 0 ? PROBLEM_TEXT[problem] : availabilitySentence(avail);
 
+  /*
+   * THE MOCKUP'S CARD — label, one line of help, the box with a live count and
+   * a tick, and nothing else until something needs saying.
+   *
+   * WHAT CAME OUT, 2026-09-07: a three-line paragraph about how handles are
+   * claimed, and a permanent "NOT KNOWN — ICEFALL could not read the handle you
+   * hold…" note that showed on every demo build and every failed profile read.
+   * Both were true and neither belonged on screen before anybody had typed. The
+   * button below still says exactly what it is about to do, and the outcome
+   * still says exactly what happened — which is where those facts belong.
+   *
+   * WHAT STAYED, and must: the change is a SERVER CLAIM, so it happens on the
+   * button and not on blur, and the warning about old links breaking is shown
+   * before the button is pressed rather than after.
+   */
+  const ok = avail.state === "free" || avail.state === "current" || avail.state === "reclaim";
+
   return (
-    <div className="border-t border-hairline px-4 py-3.5 first:border-t-0">
-      <label htmlFor={id} className="block text-[11px] uppercase tracking-[0.1em] text-mist-dim">
+    <div>
+      <label htmlFor={id} className="block text-[13.5px] font-medium text-snow">
         Username
       </label>
-      <input
-        id={id}
-        value={value}
-        onChange={(e) => {
-          setDraft(normalise(e.target.value));
-          setOutcome(null);
-        }}
-        placeholder="christofis"
-        autoComplete="off"
-        className="mt-2 w-full bg-transparent text-[14px] text-snow outline-none placeholder:text-mist-dim"
-      />
-      <p className="mt-1.5 text-[11px] leading-relaxed text-mist-dim">
-        Letters, numbers, dots and underscores. A handle is claimed on ICEFALL’s server rather than
-        saved on this phone, so it only changes when you tap the button — leaving the box does
-        nothing.
-      </p>
+      <p className="mt-0.5 text-[11.5px] text-mist">This will be your unique handle on ICEFALL.</p>
 
-      {profile.status !== "ready" && (
-        <SyncLine tone="text-mist-dim" word="Not known">
-          ICEFALL could not read the handle you hold, so this is what this phone remembers. Changing
-          it still asks the server, and the server decides.
-        </SyncLine>
-      )}
+      <div className="relative mt-3 flex items-center gap-1.5 rounded-[12px] border border-hairline-strong bg-slate px-3.5 py-2.5 focus-within:border-azure/50">
+        <span className="shrink-0 text-[14px] text-mist-dim">@</span>
+        <input
+          id={id}
+          value={value}
+          onChange={(e) => {
+            setDraft(normalise(e.target.value));
+            setOutcome(null);
+          }}
+          placeholder="christofis"
+          autoComplete="off"
+          className="w-full bg-transparent pr-16 text-[14px] text-snow outline-none placeholder:text-mist-dim"
+        />
+        {ok && changing && (
+          <Check size={15} strokeWidth={2.4} className="absolute right-12 text-summit" aria-hidden />
+        )}
+        <span className="tnum pointer-events-none absolute right-3 text-[10.5px] text-mist-dim">
+          {value.length}/20
+        </span>
+      </div>
 
       {line && (
         <p
@@ -803,13 +901,12 @@ function HandleField({ profile }: { profile: MyProfileState }) {
 
       {changing && !problem && (
         <div className="mt-3 rounded-card border border-hairline-strong bg-slate/40 p-3">
+          {/* Shown only once somebody is actually changing it, which is the
+              only moment either sentence matters. */}
           <p className="text-[11.5px] leading-relaxed text-mist">
             {promise
               ? changeWarning(current, promise)
               : "ICEFALL is checking what happens to your old handle."}
-          </p>
-          <p className="mt-2 text-[11.5px] leading-relaxed text-mist">
-            {HANDLE_CHANGE_BREAKS_LINKS}
           </p>
           <button
             type="button"
@@ -1010,7 +1107,40 @@ function InterestChips({
  * flattened. The local copy is kept regardless: it is what the app draws
  * offline, and it is why the picture appears the instant it is chosen.
  */
-function AvatarPicker({
+/**
+ * THE COVER AND THE FACE — design 3, chosen by the owner on 2026-09-07 from the
+ * six mock-ups in `dev/ProfileEditOptions.tsx`: "3 looks good".
+ *
+ * A banner across the top with its own camera control, the avatar overlapping
+ * its lower-left corner with a camera badge of its own, and nothing else. It is
+ * the arrangement of the owner's first mockup and it is the right one for this
+ * screen for a reason beyond taste: these two controls edit the two things a
+ * profile shows AS a header, so editing them in that shape means you are
+ * looking at what you are changing.
+ *
+ * ── WHAT REPLACED WHAT ───────────────────────────────────────────────────────
+ *
+ * `AvatarPicker` was a row: a circle, then a paragraph explaining that tapping
+ * it chooses a photo, then two pill buttons, then a two-line note about whether
+ * the server holds one. Four blocks of copy for one control. The camera badge
+ * says all of it, and the honest part — whether the photograph reached the
+ * server — is still said, once, by `SyncNote` when there is something to say.
+ *
+ * ── TWO FIELDS, TWO SYNC HOOKS, ONE HEADER ───────────────────────────────────
+ *
+ * `avatar` is a LIVE column (`profiles.avatar_url`) and `banner` is a PENDING
+ * one (`banner_url`, from 20260903020000). They go to the server in different
+ * requests and can therefore succeed and fail independently — so they have
+ * separate hooks and separate notes, and a banner that could not be stored
+ * must never make the avatar look as though it failed too.
+ *
+ * ── LOCAL FIRST, ALWAYS ──────────────────────────────────────────────────────
+ *
+ * Both writers `patch()` the phone before they `send()`. The picture is on
+ * screen the instant it is chosen and stays there whatever the upload does,
+ * which is the behaviour somebody on a mountain with no signal needs.
+ */
+function PhotoHeader({
   deployment,
   tags,
   onSettled,
@@ -1021,16 +1151,18 @@ function AvatarPicker({
 }) {
   const { user } = useApp();
   const { settings, patch } = useSettings();
-  const { sync, send, touch } = useFieldSync("avatar", onSettled);
-  const resend = useCallback(
-    () => void send({ avatar: settings.avatar ?? null }),
-    [send, settings.avatar],
-  );
-  const input = useRef<HTMLInputElement | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const photo = settings.avatar;
 
-  async function choose(file: File | undefined) {
+  const avatar = useFieldSync("avatar", onSettled);
+  const banner = useFieldSync("banner", onSettled);
+
+  const avatarInput = useRef<HTMLInputElement | null>(null);
+  const bannerInput = useRef<HTMLInputElement | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const photo = settings.avatar;
+  const cover = settings.cover;
+
+  async function chooseAvatar(file: File | undefined) {
     if (!file) return;
     setError(null);
     let data: string;
@@ -1040,110 +1172,282 @@ function AvatarPicker({
       setError((e as { message?: string }).message ?? "That image couldn't be used.");
       return;
     }
-    // Local first: the picture is on screen before the upload starts, and stays
-    // there whatever the upload does.
     patch({ avatar: data });
-    touch();
-    await send({ avatar: data });
+    avatar.touch();
+    await avatar.send({ avatar: data });
   }
 
-  async function remove() {
-    patch({ avatar: undefined });
-    touch();
-    await send({ avatar: null });
+  async function chooseBanner(file: File | undefined) {
+    if (!file) return;
+    setError(null);
+    let data: string;
+    try {
+      data = await readBanner(file);
+    } catch (e) {
+      setError((e as { message?: string }).message ?? "That image couldn't be used.");
+      return;
+    }
+    patch({ cover: data });
+    banner.touch();
+    await banner.send({ banner: data });
   }
 
   return (
-    <div className="p-4">
-      <div className="flex items-center gap-4">
+    <div>
+      {/* ---- The cover -------------------------------------------------- */}
+      <div className="relative -mx-5 h-32 overflow-hidden bg-slate">
+        {cover !== undefined && (
+          <img src={cover} alt="" aria-hidden className="h-full w-full object-cover" />
+        )}
+        {/* A ground under the avatar even when there is no cover, so the face
+            does not sit on a hard seam. */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-b from-transparent to-obsidian"
+        />
         <button
           type="button"
-          onClick={() => input.current?.click()}
-          aria-label="Change profile photo"
-          className="group relative grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-full border border-hairline bg-slate text-[22px] text-mist transition-colors hover:border-azure/50"
+          onClick={() => bannerInput.current?.click()}
+          aria-label={cover !== undefined ? "Change cover photo" : "Add a cover photo"}
+          className="absolute right-4 top-3 grid h-9 w-9 place-items-center rounded-full border border-hairline-strong bg-obsidian/70 text-snow backdrop-blur transition-colors hover:border-azure/50"
         >
-          {photo ? (
-            <img src={photo} alt="" aria-hidden className="h-full w-full object-cover" />
-          ) : (
-            (user.name ?? "A").slice(0, 1).toUpperCase()
-          )}
-          <span className="absolute inset-x-0 bottom-0 grid h-7 place-items-center bg-obsidian/75 text-azure opacity-0 transition-opacity group-hover:opacity-100">
-            <Camera size={14} strokeWidth={1.8} />
+          <Camera size={15} strokeWidth={1.8} aria-hidden />
+        </button>
+      </div>
+
+      {/* ---- The face, overlapping it ------------------------------------ */}
+      <div className="relative -mt-9 flex items-end gap-3">
+        <button
+          type="button"
+          onClick={() => avatarInput.current?.click()}
+          aria-label={photo ? "Change profile photo" : "Add a profile photo"}
+          className="relative shrink-0 rounded-full"
+        >
+          <span className="grid h-[76px] w-[76px] place-items-center overflow-hidden rounded-full border-[3px] border-obsidian bg-slate text-[24px] text-mist">
+            {photo ? (
+              <img src={photo} alt="" aria-hidden className="h-full w-full object-cover" />
+            ) : (
+              (user.name ?? "A").slice(0, 1).toUpperCase()
+            )}
+          </span>
+          <span className="absolute bottom-0 right-0 grid h-7 w-7 place-items-center rounded-full border-2 border-obsidian bg-azure text-obsidian">
+            <Camera size={13} strokeWidth={2.1} aria-hidden />
           </span>
         </button>
 
-        <div className="min-w-0 flex-1">
-          <p className="text-[13.5px] text-snow">Profile photo</p>
-          <p className="mt-1 text-[11.5px] leading-relaxed text-mist-dim">
-            Tap the circle to choose one. It is scaled down before it is kept on this phone, and
-            sent to ICEFALL if there is somewhere to put it.
-          </p>
-          <div className="mt-2.5 flex gap-2">
-            <button
-              type="button"
-              onClick={() => input.current?.click()}
-              className="rounded-pill border border-azure/45 bg-azure/[0.10] px-3 py-2 text-[12px] text-azure"
-            >
-              {photo ? "Change photo" : "Add photo"}
-            </button>
-            {photo && (
-              <button
-                type="button"
-                onClick={() => void remove()}
-                className="rounded-pill border border-hairline-strong px-3 py-2 text-[12px] text-mist"
-              >
-                Remove
-              </button>
-            )}
-          </div>
-        </div>
+        {(photo !== undefined || cover !== undefined) && (
+          <button
+            type="button"
+            onClick={() => {
+              if (photo !== undefined) {
+                patch({ avatar: undefined });
+                avatar.touch();
+                void avatar.send({ avatar: null });
+              }
+              if (cover !== undefined) {
+                patch({ cover: undefined });
+                banner.touch();
+                void banner.send({ banner: null });
+              }
+            }}
+            className="pb-1.5 text-[12px] text-mist transition-colors hover:text-snow"
+          >
+            Remove
+          </button>
+        )}
       </div>
 
-      {error && <p className="mt-3 text-[11.5px] text-danger">{error}</p>}
-
-      <SyncNote
-        field="avatar"
-        sync={sync}
-        tags={tags}
-        onSave={resend}
-        onRetry={resend}
-        resting={
-          !photo ? (
-            // There is no picture, so there is nothing to report about one.
-            // What this screen genuinely does not know is whether the SERVER
-            // holds a photograph from signup: `useMyProfile` does not read
-            // `avatar_url`, so this says so instead of implying there is none.
-            <SyncLine tone="text-mist-dim" word="Not set">
-              This phone has no photograph for you. If ICEFALL’s server holds one from when you
-              joined, this screen does not read it.
-            </SyncLine>
-          ) : deployment.state === "absent" ? (
-            // The bucket ships in the same migration as the columns, so a
-            // server with no columns has no bucket either. This much IS
-            // measured.
-            <SyncLine tone="text-mist-dim" word="On this phone only">
-              {SYNC_NO_PHOTO_STORE}
-            </SyncLine>
-          ) : (
-            <SyncLine tone="text-mist-dim" word="Not known">
-              Whether ICEFALL’s server holds this picture is only known by sending it — tap Save and
-              this row will say where it got to.
-            </SyncLine>
-          )
-        }
-      />
-
       <input
-        ref={input}
+        ref={avatarInput}
         type="file"
         accept="image/*"
         className="hidden"
         onChange={(e) => {
-          void choose(e.target.files?.[0]);
-          // Reset, so picking the same file twice still fires a change.
+          void chooseAvatar(e.target.files?.[0]);
           e.target.value = "";
         }}
       />
+      <input
+        ref={bannerInput}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          void chooseBanner(e.target.files?.[0]);
+          e.target.value = "";
+        }}
+      />
+
+      {error && <p className="mt-2 text-[11.5px] text-danger">{error}</p>}
+
+      {/*
+        ONE NOTE FOR TWO PICTURES, AND NONE AT ALL WITHOUT A SERVER.
+        
+        This drew a `SyncNote` for the avatar and another for the banner. On a
+        build with no backend both said the identical sentence — "This build of
+        ICEFALL is not connected to a server…" — one under the other, each with
+        its own "Try again" button that could not possibly work. The owner saw
+        it and asked what it was: "and whats all this about?". Fair.
+        
+        Two rules came out of it, and they apply to every sync note on this
+        screen:
+        
+          1. NEVER THE SAME SENTENCE TWICE. The avatar and the banner fail
+             together far more often than separately, so one note covers both
+             and the second is only drawn when it genuinely differs.
+          2. NO RETRY WITHOUT SOMETHING TO RETRY. With no client there is no
+             request to repeat — `notifications/social.ts` learned this and
+             calls it `canRetry`. Here it is simpler: with no backend the whole
+             note goes, because "saved on this phone" is the normal, permanent
+             and unremarkable state of this build rather than news.
+      */}
+      {isBackendConfigured() && (
+        <>
+          <SyncNote
+            field="avatar"
+            sync={avatar.sync}
+            tags={tags}
+            onSave={() => void avatar.send({ avatar: settings.avatar ?? null })}
+            onRetry={() => void avatar.send({ avatar: settings.avatar ?? null })}
+          />
+          {/* Only when it is saying something the avatar's note did not. */}
+          {banner.sync.kind !== avatar.sync.kind && (
+            <SyncNote
+              field="banner"
+              sync={banner.sync}
+              tags={tags}
+              onSave={() => void banner.send({ banner: settings.cover ?? null })}
+              onRetry={() => void banner.send({ banner: settings.cover ?? null })}
+            />
+          )}
+          {/* The storage bucket ships in the same migration as the columns and
+              can be skipped independently, so a photograph is gated on it. */}
+          {deployment.state === "absent" && (
+            <p className="mt-1.5 text-[11px] leading-relaxed text-mist-dim">
+              Photographs stay on this phone for now — ICEFALL’s server has nowhere to put them yet.
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The five social accounts, and the address each handle becomes.
+ *
+ * ONE TABLE so the form, the profile page and the migration cannot disagree
+ * about which platforms exist. `href` is what turns a stored HANDLE into a
+ * link — the column never holds a URL, deliberately (see
+ * `20260907090000_profile_links.sql`), so this is the only place an address is
+ * built and the only place to audit.
+ *
+ * ICONS: lucide has marks for Instagram, Facebook and YouTube. It has none for
+ * TikTok or Strava, so those take neutral glyphs rather than a lookalike —
+ * drawing an approximation of somebody's trademark is worse than not drawing
+ * one, and the owner's mockup uses each platform's real full-colour logo, which
+ * ICEFALL has no licence to ship (`strip-local-assets.mjs` exists because that
+ * line has been crossed before).
+ */
+export const SOCIALS = [
+  { id: "instagram" as const, label: "Instagram", icon: Instagram, placeholder: "yourhandle",
+    href: (h: string) => `https://instagram.com/${encodeURIComponent(h)}` },
+  { id: "strava" as const, label: "Strava", icon: Activity, placeholder: "yourhandle",
+    href: (h: string) => `https://strava.com/athletes/${encodeURIComponent(h)}` },
+  { id: "youtube" as const, label: "YouTube", icon: Youtube, placeholder: "yourchannel",
+    href: (h: string) => `https://youtube.com/@${encodeURIComponent(h)}` },
+  { id: "tiktok" as const, label: "TikTok", icon: Music2, placeholder: "yourhandle",
+    href: (h: string) => `https://tiktok.com/@${encodeURIComponent(h)}` },
+  { id: "facebook" as const, label: "Facebook", icon: Facebook, placeholder: "yourpage",
+    href: (h: string) => `https://facebook.com/${encodeURIComponent(h)}` },
+];
+
+/**
+ * ONE FIELD, THE WAY THE OWNER'S MOCKUP DRAWS IT — a card holding a label, a
+ * one-line explanation, the box, and a character count in its corner.
+ *
+ * The count is the mockup's "10/50". It is a real limit in every case: 80 for a
+ * display name and 300 for a bio are what `profiles`' own CHECK constraints
+ * allow, so the number is measured rather than a design flourish. It turns red
+ * at the limit rather than silently truncating.
+ */
+function MockField({
+  label,
+  help,
+  value,
+  onChange,
+  onCommit,
+  max,
+  placeholder,
+  multiline,
+  prefix,
+  children,
+}: {
+  label: string;
+  help?: string;
+  value: string;
+  onChange: (v: string) => void;
+  onCommit: () => void;
+  max: number;
+  placeholder?: string;
+  multiline?: boolean;
+  prefix?: string;
+  children?: React.ReactNode;
+}) {
+  const id = useId();
+  const over = value.length > max;
+  /*
+   * NO CARD AROUND THE FIELD. The owner, 2026-09-07: "dont have everything in
+   * damn boxes I said, remove all boxes keep the data you change in boxes like
+   * the acc username".
+   *
+   * So exactly one box per field, and it is the box you type in. The label and
+   * the line of help sit on the page above it. What was here was a bordered
+   * card wrapping a label, a help line AND an input box — a box inside a box,
+   * which is what made the screen read as a stack of panels.
+   */
+  return (
+    <div>
+      <label htmlFor={id} className="block text-[13.5px] font-medium text-snow">
+        {label}
+      </label>
+      {help !== undefined && <p className="mt-0.5 text-[11.5px] text-mist">{help}</p>}
+      <div className="relative mt-3 rounded-[12px] border border-hairline-strong bg-slate px-3.5 py-2.5 focus-within:border-azure/50">
+        <div className="flex items-start gap-1.5">
+          {prefix !== undefined && (
+            <span className="shrink-0 pt-[1px] text-[14px] text-mist-dim">{prefix}</span>
+          )}
+          {multiline ? (
+            <textarea
+              id={id}
+              value={value}
+              onChange={(e) => onChange(e.target.value)}
+              onBlur={onCommit}
+              placeholder={placeholder}
+              rows={4}
+              className="w-full resize-none bg-transparent pr-12 text-[14px] leading-relaxed text-snow outline-none placeholder:text-mist-dim"
+            />
+          ) : (
+            <input
+              id={id}
+              value={value}
+              onChange={(e) => onChange(e.target.value)}
+              onBlur={onCommit}
+              placeholder={placeholder}
+              className="w-full bg-transparent pr-12 text-[14px] text-snow outline-none placeholder:text-mist-dim"
+            />
+          )}
+        </div>
+        <span
+          className={cn(
+            "tnum pointer-events-none absolute bottom-2 right-3 text-[10.5px]",
+            over ? "text-danger" : "text-mist-dim",
+          )}
+        >
+          {value.length}/{max}
+        </span>
+      </div>
+      {children}
     </div>
   );
 }
@@ -1157,6 +1461,12 @@ const FIELD_LABEL: Record<ProfileFieldName, string> = {
   interests: "Interests",
   avatar: "Profile photo",
   banner: "Profile banner",
+  website: "Website",
+  instagram: "Instagram",
+  facebook: "Facebook",
+  youtube: "YouTube",
+  tiktok: "TikTok",
+  strava: "Strava",
 };
 
 /**
@@ -1240,7 +1550,34 @@ function WaitingToSend({
   );
 }
 
+/** The mockup's three tabs, in its order. */
+const TABS = [
+  { id: "profile" as const, label: "Profile" },
+  { id: "links" as const, label: "Links & Social" },
+  { id: "settings" as const, label: "Settings" },
+];
+
+/**
+ * EACH PLATFORM'S OWN COLOUR, on a tile carrying lucide's outline glyph.
+ *
+ * The mockup uses the real full-colour logos. ICEFALL has no licence to ship
+ * third-party trademarks and this repo strips them out of every build on
+ * purpose (`scripts/strip-local-assets.mjs` exists because that line was
+ * crossed once already). A brand-coloured tile with our own glyph is as close
+ * as this can honestly get, and it reads the same at 36px.
+ */
+const BRAND: Record<string, string> = {
+  instagram: "linear-gradient(135deg, #F58529, #DD2A7B 55%, #8134AF)",
+  strava: "#FC4C02",
+  youtube: "#FF0000",
+  tiktok: "#111114",
+  facebook: "#1877F2",
+};
+
 function EditProfile() {
+  const navigate = useNavigate();
+  const reduce = useReducedMotion();
+  const [tab, setTab] = useState<(typeof TABS)[number]["id"]>("profile");
   const { user } = useApp();
   const { settings, patch } = useSettings();
   const profile = useMyProfile();
@@ -1254,6 +1591,14 @@ function EditProfile() {
   const region = useFieldSync("region", onSettled);
   const languages = useFieldSync("languages", onSettled);
   const interests = useFieldSync("interests", onSettled);
+  /* The links — `20260907090000_profile_links.sql`. Same machinery as every
+     other field: patch the phone on each keystroke, send on blur. */
+  const website = useFieldSync("website", onSettled);
+  const instagram = useFieldSync("instagram", onSettled);
+  const facebook = useFieldSync("facebook", onSettled);
+  const youtube = useFieldSync("youtube", onSettled);
+  const tiktok = useFieldSync("tiktok", onSettled);
+  const strava = useFieldSync("strava", onSettled);
 
   const serverRegion = profile.status === "ready" ? profile.profile.locationLabel : null;
   const [regionConfirmed, setRegionConfirmed] = useState<string | null>(null);
@@ -1295,6 +1640,88 @@ function EditProfile() {
     if (interests.sync.kind === "unsent") void interests.send({ interests: settings.interests });
   }, [interests, settings.interests]);
 
+  const commitWebsite = useCallback(() => {
+    if (website.sync.kind === "unsent") void website.send({ website: settings.website });
+  }, [website, settings.website]);
+  const commitInstagram = useCallback(() => {
+    if (instagram.sync.kind === "unsent") void instagram.send({ instagram: settings.instagram });
+  }, [instagram, settings.instagram]);
+  const commitFacebook = useCallback(() => {
+    if (facebook.sync.kind === "unsent") void facebook.send({ facebook: settings.facebook });
+  }, [facebook, settings.facebook]);
+  const commitYoutube = useCallback(() => {
+    if (youtube.sync.kind === "unsent") void youtube.send({ youtube: settings.youtube });
+  }, [youtube, settings.youtube]);
+  const commitTiktok = useCallback(() => {
+    if (tiktok.sync.kind === "unsent") void tiktok.send({ tiktok: settings.tiktok });
+  }, [tiktok, settings.tiktok]);
+  const commitStrava = useCallback(() => {
+    if (strava.sync.kind === "unsent") void strava.send({ strava: settings.strava });
+  }, [strava, settings.strava]);
+
+  /*
+   * SAVE CHANGES — the mockup's button, and it does not replace the blur-save.
+   *
+   * Both mockups end on a full-width Save, so there is one. What it does NOT do
+   * is become the only way to save: every box still sends when it is left, and
+   * the outbox still flushes on the way out, because a form that only saves on
+   * a button loses everything to a swipe-back with the keyboard open. This is
+   * the same flush as leaving, fired deliberately — so the button is honest
+   * ("send what has not been sent") rather than decorative.
+   */
+  /*
+   * IS THERE ANYTHING TO SAVE?
+   *
+   * The owner, 2026-09-07: "save changes button appears only after they made a
+   * change, not just be available for whenever common sense". Right — a Save
+   * that is always there is a button that usually does nothing, and a control
+   * that does nothing when pressed teaches people not to trust the ones that do.
+   *
+   * WHAT COUNTS AS A CHANGE. `sync.kind === "unsent"` is the field's own word
+   * for "typed and not yet sent", set by `touch()` on every keystroke and
+   * cleared when the server answers. The outbox counts too: an edit that FAILED
+   * to send is still unsaved, and Save is exactly the control that should retry
+   * it. `> 1` because every outbox entry carries an `at` timestamp of its own.
+   *
+   * PHOTOS ARE DELIBERATELY NOT IN HERE. Choosing one uploads it immediately —
+   * there is no moment where a picture is picked and unsaved — so counting them
+   * would make the button appear and never have anything to do.
+   */
+  const [nameDirty, setNameDirty] = useState(false);
+  const unsaved =
+    nameDirty ||
+    [bio, region, languages, interests, website, instagram, facebook, youtube, tiktok, strava].some(
+      (f) => f.sync.kind === "unsent",
+    ) ||
+    /*
+     * THE OUTBOX COUNTS ONLY WHERE IT CAN DRAIN.
+     *
+     * A failed edit is genuinely unsaved and Save is the right control to retry
+     * it — on a build that has a server. On one that does not, every edit ever
+     * made lands in the outbox and stays there, so counting it would pin the
+     * button on screen permanently with nothing it could ever accomplish. That
+     * is the exact "button available for whenever" this change exists to
+     * remove, arrived at from the other direction.
+     */
+    (isBackendConfigured() && pending !== null && Object.keys(pending).length > 1);
+
+  const saveAll = useCallback(() => {
+    void flushProfile();
+    commitBio();
+    commitLanguages();
+    commitInterests();
+    void commitRegion();
+    commitWebsite();
+    commitInstagram();
+    commitFacebook();
+    commitYoutube();
+    commitTiktok();
+    commitStrava();
+  }, [
+    commitBio, commitLanguages, commitInterests, commitRegion,
+    commitWebsite, commitInstagram, commitFacebook, commitYoutube, commitTiktok, commitStrava,
+  ]);
+
   /*
     ANYTHING LEFT UNSENT WHEN THE SCREEN CLOSES GOES ON THE WAY OUT.
 
@@ -1312,6 +1739,12 @@ function EditProfile() {
     ...(region.sync.kind === "unsent" && tidy(settings.region) !== tidy(regionBase)
       ? { region: settings.region }
       : {}),
+    ...(website.sync.kind === "unsent" ? { website: settings.website } : {}),
+    ...(instagram.sync.kind === "unsent" ? { instagram: settings.instagram } : {}),
+    ...(facebook.sync.kind === "unsent" ? { facebook: settings.facebook } : {}),
+    ...(youtube.sync.kind === "unsent" ? { youtube: settings.youtube } : {}),
+    ...(tiktok.sync.kind === "unsent" ? { tiktok: settings.tiktok } : {}),
+    ...(strava.sync.kind === "unsent" ? { strava: settings.strava } : {}),
   };
   useEffect(
     () => () => {
@@ -1320,142 +1753,383 @@ function EditProfile() {
     [],
   );
 
+  /*
+   * BUILT 1:1 TO THE OWNER'S MOCKUP, 2026-09-07 — the two-screen drawing with a
+   * tab strip, a banner card, an overlapping avatar, and cards carrying a
+   * label, a one-line explanation, an input and a character count.
+   *
+   * "use same colours, same buttons same everything", then, a minute later,
+   * "not the gold, replace with our blue". So: the LAYOUT is the mockup exactly
+   * and the ACCENT is ICEFALL's azure. That is the one deliberate departure and
+   * it is the owner's own call — a gold Save button would also have collided
+   * with `--ice-gilt`, which this app reserves for "somebody is selling you
+   * this".
+   *
+   * THREE TABS, as drawn: Profile · Links & Social · Settings.
+   *
+   * WHERE THE MOCKUP AND THIS APP DISAGREE, AND WHAT WON:
+   *
+   *   · "Connected" — the drawing shows every social row with a green
+   *     "Connected" and a chevron, which is OAuth. ICEFALL has no OAuth with
+   *     any of these platforms and cannot verify that an account is yours. So a
+   *     row shows the handle you typed, and says nothing about connection. A
+   *     green "Connected" against a handle somebody typed is the plainest
+   *     possible false claim.
+   *   · BRAND LOGOS — the drawing uses each platform's full-colour mark.
+   *     ICEFALL has no licence to ship those, and this repo strips
+   *     third-party trademarks out of every build on purpose
+   *     (`scripts/strip-local-assets.mjs`). The tiles use each brand's COLOUR
+   *     with lucide's own outline glyph, which is the closest thing that is
+   *     ours to ship.
+   *   · PROFILE VISIBILITY — drawn as a working control. The setting exists and
+   *     is stored, but there is no policy behind it on the server: every
+   *     signed-in account can read every profile today. It is shown, and the
+   *     one line under it says so, because a control that silently does nothing
+   *     is worse than one that admits it.
+   */
   return (
-    <SettingsPage title="Edit profile" subtitle="What other athletes see about you.">
-      <Group label="Photo">
-        <AvatarPicker deployment={deployment} tags={tags} onSettled={onSettled} />
-      </Group>
-
-      <Group label="About you">
-        <NameField profile={profile} tags={tags} onSettled={onSettled} />
-        <HandleField profile={profile} />
-        <EditableField
-          label="Bio"
-          field="bio"
-          value={settings.bio}
-          onChange={(v) => {
-            patch({ bio: v });
-            bio.touch();
-          }}
-          onCommit={commitBio}
-          placeholder="Mountain athlete. Training for big objectives."
-          multiline
-          hint="Up to 300 characters."
-          sync={bio.sync}
-          tags={tags}
-          resting={<PendingColumnResting deployment={deployment} />}
-          onRetry={() => void flushProfile()}
-        />
-        <EditableField
-          label="Town or region"
-          field="region"
-          value={settings.region}
-          onChange={(v) => {
-            patch({ region: v });
-            region.touch();
-          }}
-          onCommit={() => void commitRegion()}
-          placeholder="Chamonix"
-          hint="A town or region. Never an address — ICEFALL has no field for one."
-          sync={region.sync}
-          tags={tags}
-          resting={
-            <LiveColumnResting
-              profile={profile}
-              matches={tidy(settings.region) === tidy(regionBase)}
-              blank={tidy(settings.region).length === 0}
-            />
-          }
-          onRetry={() => void flushProfile()}
-        />
-        <CountryField profile={profile} tags={tags} onSettled={onSettled} />
-        <EditableField
-          label="Languages"
-          field="languages"
-          value={settings.languages}
-          onChange={(v) => {
-            patch({ languages: v });
-            languages.touch();
-          }}
-          onCommit={commitLanguages}
-          placeholder="English, Greek"
-          hint="Written as you like — ICEFALL stores them as language codes so a search matches the language rather than the spelling, and says which words it did not recognise."
-          sync={languages.sync}
-          tags={tags}
-          resting={<PendingColumnResting deployment={deployment} />}
-          onRetry={() => void flushProfile()}
-        />
-        <EditableField
-          label="Interests"
-          field="interests"
-          value={settings.interests}
-          onChange={(v) => {
-            patch({ interests: v });
-            interests.touch();
-          }}
-          onCommit={commitInterests}
-          placeholder="Ski touring, mountaineering"
-          hint={
-            tags.length > 0
-              ? "ICEFALL keeps interests as a fixed list so people can be found by them. Tap the words below, or type — anything not on the list stays in the box and is not saved as an interest."
-              : "ICEFALL keeps interests as a fixed list so people can be found by them. The list could not be read, so anything typed here may not match it."
-          }
-          sync={interests.sync}
-          tags={tags}
-          resting={<PendingColumnResting deployment={deployment} />}
-          onRetry={() => void flushProfile()}
+    /*
+     * THE OPENING — the owner, 2026-09-07: "make it when you click on it its an
+     * animation opening the page".
+     *
+     * The screen rises and scales up from just under full size, so it reads as
+     * the page opening OUT of the button that was tapped rather than sliding in
+     * from somewhere. `transformOrigin` at the top keeps the header still while
+     * the body expands, which is what makes it feel like an opening rather than
+     * a zoom.
+     *
+     * IT IS ON TOP OF the shell's own cross-fade, not instead of it — that fade
+     * is what every screen change does and removing it here would make this one
+     * arrive differently from everything else in the app.
+     *
+     * `useReducedMotion` is honoured: with it set, the screen simply appears.
+     * A scale-up is exactly the kind of movement that setting exists to stop.
+     */
+    <motion.div
+      initial={reduce ? false : { opacity: 0, scale: 0.965, y: 10 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
+      style={{ transformOrigin: "50% 12%" }}
+      className="no-scrollbar h-full overflow-y-auto px-5 pb-10"
+    >
+      {/* ---- Header ------------------------------------------------------ */}
+      <div className="flex items-start gap-3 pt-6">
+        <button
+          type="button"
+          onClick={() => navigate(-1)}
+          aria-label="Back"
+          className="mt-0.5 shrink-0 text-mist transition-colors hover:text-snow"
         >
-          {tags.length > 0 && (
-            <InterestChips
-              text={settings.interests}
-              tags={tags}
-              onToggle={(label) => {
-                const parts = settings.interests
-                  .split(",")
-                  .map((p) => p.trim())
-                  .filter(Boolean);
-                const at = parts.findIndex((p) => slugish(p) === slugish(label));
-                if (at >= 0) parts.splice(at, 1);
-                else parts.push(label);
-                patch({ interests: parts.join(", ") });
-                interests.touch();
-              }}
-            />
-          )}
-        </EditableField>
-      </Group>
+          <ChevronLeft size={22} strokeWidth={1.8} />
+        </button>
+        <div className="min-w-0 flex-1">
+          <h1 className="text-[22px] font-medium leading-tight text-snow">Edit Profile</h1>
+          <p className="mt-1 text-[12px] leading-snug text-mist">
+            Update your profile, banner and how you appear on ICEFALL.
+          </p>
+        </div>
+        {/* Only when there is something to send — see `unsaved` above. */}
+        {unsaved && (
+          <Button size="sm" className="shrink-0 rounded-pill px-4" onClick={saveAll}>
+            Save changes
+          </Button>
+        )}
+      </div>
 
-      {/* `> 1` because every entry carries `at`. An outbox holding only a
-          timestamp is nothing waiting, and would head a card with "0 edits". */}
-      {pending && Object.keys(pending).length > 1 && (
-        <Group label="Waiting to send">
-          <WaitingToSend pending={pending} onSettled={onSettled} tags={tags} />
-        </Group>
+      {/* ---- Tabs -------------------------------------------------------- */}
+      <div className="mt-4 flex items-center gap-6 border-b border-hairline">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setTab(t.id)}
+            className={cn(
+              "-mb-px border-b-2 pb-2.5 text-[13.5px] transition-colors",
+              tab === t.id
+                ? "border-azure font-medium text-azure"
+                : "border-transparent text-mist hover:text-snow",
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ================================================================== */}
+      {tab === "profile" && (
+        <div className="space-y-6 pt-5">
+          <PhotoHeader deployment={deployment} tags={tags} onSettled={onSettled} />
+
+          <NameField profile={profile} tags={tags} onSettled={onSettled} onDirty={setNameDirty} />
+
+          <HandleField profile={profile} />
+
+          <MockField
+            label="Bio"
+            help="Tell the community about yourself. Your bio will appear on your profile."
+            value={settings.bio}
+            onChange={(v) => {
+              patch({ bio: v });
+              bio.touch();
+            }}
+            onCommit={commitBio}
+            max={300}
+            multiline
+            placeholder="Mountaineer | Nepal"
+          >
+            <SyncNote
+              field="bio"
+              sync={bio.sync}
+              tags={tags}
+              onSave={commitBio}
+              onRetry={() => void flushProfile()}
+            />
+          </MockField>
+        </div>
       )}
 
-      <Group label="Experience">
-        <InfoRow
-          title="Mountaineering experience"
-          detail="Set during onboarding and used by the Coach. Change it in your training profile."
-          value={user.experience ?? "—"}
-          tone="mist"
-        />
-        <LinkRow
-          to="/settings/cv"
-          title="Verified achievements"
-          detail="Summits and skills come from what you recorded. They cannot be edited by hand."
-        />
-      </Group>
+      {/* ================================================================== */}
+      {tab === "links" && (
+        <div className="space-y-6 pt-5">
+          {/* ---- Bio links ------------------------------------------------ */}
+          <div>
+            <h2 className="text-[16px] font-medium text-snow">Bio Links</h2>
+            <p className="mt-0.5 text-[12px] text-mist">
+              Add a link to your website, blog or other profiles.
+            </p>
+            <div className="mt-3">
+              <MockField
+                label="Website"
+                value={settings.website}
+                onChange={(v) => {
+                  patch({ website: v });
+                  website.touch();
+                }}
+                onCommit={commitWebsite}
+                max={200}
+                prefix="https://"
+                placeholder="yoursite.com"
+              >
+                <SyncNote
+                  field="website"
+                  sync={website.sync}
+                  tags={tags}
+                  onSave={commitWebsite}
+                  onRetry={() => void flushProfile()}
+                />
+              </MockField>
+            </div>
+          </div>
 
-      <Rise className="pt-4">
-        <Disclaimer>
-          Your name, town, country and photograph have somewhere to live on ICEFALL’s server; your
-          bio, languages and interests do not yet. Either way, nothing on this screen calls itself
-          saved unless the server confirmed that field — the line under each box is the truth about
-          that box, and it is the only place to read it.
-        </Disclaimer>
-      </Rise>
-    </SettingsPage>
+          {/* ---- Social accounts ------------------------------------------ */}
+          <div>
+            <h2 className="text-[16px] font-medium text-snow">Social Media Links</h2>
+            <p className="mt-0.5 text-[12px] text-mist">
+              Your handles. ICEFALL builds the address and does not check the account is yours.
+            </p>
+            <div className="mt-3">
+              {SOCIALS.map((sc) => {
+                const st = {
+                  instagram: { s: instagram, c: commitInstagram },
+                  strava: { s: strava, c: commitStrava },
+                  youtube: { s: youtube, c: commitYoutube },
+                  tiktok: { s: tiktok, c: commitTiktok },
+                  facebook: { s: facebook, c: commitFacebook },
+                }[sc.id];
+                return (
+                  <div key={sc.id} className="py-3 first:pt-0">
+                    <div className="flex items-center gap-3">
+                      <span
+                        aria-hidden
+                        className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] text-white"
+                        style={{ background: BRAND[sc.id] }}
+                      >
+                        <sc.icon size={17} strokeWidth={2} />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[13.5px] text-snow">{sc.label}</span>
+                        <span className="mt-1 flex items-center gap-1">
+                          <span className="text-[13px] text-mist-dim">@</span>
+                          <input
+                            value={settings[sc.id]}
+                            onChange={(e) => {
+                              patch({ [sc.id]: e.target.value });
+                              st.s.touch();
+                            }}
+                            onBlur={st.c}
+                            placeholder={sc.placeholder}
+                            aria-label={`${sc.label} handle`}
+                            className="w-full bg-transparent text-[13px] text-snow outline-none placeholder:text-mist-dim"
+                          />
+                        </span>
+                      </span>
+                      {settings[sc.id].trim().length > 0 && (
+                        <button
+                          type="button"
+                          aria-label={`Remove ${sc.label}`}
+                          onClick={() => {
+                            patch({ [sc.id]: "" });
+                            st.s.touch();
+                            void st.s.send({ [sc.id]: "" } as ProfileEdit);
+                          }}
+                          className="shrink-0 text-mist-dim transition-colors hover:text-snow"
+                        >
+                          <X size={16} strokeWidth={2} />
+                        </button>
+                      )}
+                    </div>
+                    <SyncNote
+                      field={sc.id}
+                      sync={st.s.sync}
+                      tags={tags}
+                      onSave={st.c}
+                      onRetry={() => void flushProfile()}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ---- Visibility ------------------------------------------------ */}
+          <div>
+            <h2 className="text-[16px] font-medium text-snow">Profile Visibility</h2>
+            <p className="mt-0.5 text-[12px] text-mist">Choose who can see your profile.</p>
+            <div className="mt-3 flex items-center gap-3 rounded-[12px] border border-hairline-strong bg-slate px-3.5 py-2.5">
+              <Globe size={17} strokeWidth={1.7} className="shrink-0 text-mist" aria-hidden />
+              <span className="flex-1 text-[14px] text-snow">
+                {settings.profileVisibility === "private" ? "Private" : "Connections"}
+              </span>
+            </div>
+            {/* The one line that stops this being a lie. */}
+            <p className="mt-1.5 text-[11px] leading-relaxed text-mist-dim">
+              Not enforced yet — every signed-in ICEFALL account can currently read every profile,
+              whatever this says.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================== */}
+      {/* THE ONE SENTENCE. With no server the per-field notes say nothing, so
+          this is the only place the build's condition is stated — once. */}
+      {!isBackendConfigured() && (
+        <p className="pt-5 text-[11px] leading-relaxed text-mist-dim">
+          This build is not connected to a server, so your profile is saved on this phone and
+          nowhere else.
+        </p>
+      )}
+
+      {tab === "settings" && (
+        <div className="space-y-6 pt-5">
+          <MockField
+            label="Town or region"
+            help="A town or region. Never an address."
+            value={settings.region}
+            onChange={(v) => {
+              patch({ region: v });
+              region.touch();
+            }}
+            onCommit={() => void commitRegion()}
+            max={80}
+            placeholder="Chamonix"
+          >
+            <SyncNote
+              field="region"
+              sync={region.sync}
+              tags={tags}
+              onSave={() => void commitRegion()}
+              onRetry={() => void flushProfile()}
+            />
+          </MockField>
+
+          <CountryField profile={profile} tags={tags} onSettled={onSettled} />
+
+          <MockField
+            label="Languages"
+            help="Written as you like — ICEFALL stores them as language codes."
+            value={settings.languages}
+            onChange={(v) => {
+              patch({ languages: v });
+              languages.touch();
+            }}
+            onCommit={commitLanguages}
+            max={120}
+            placeholder="English, French"
+          >
+            <SyncNote
+              field="languages"
+              sync={languages.sync}
+              tags={tags}
+              onSave={commitLanguages}
+              onRetry={() => void flushProfile()}
+            />
+          </MockField>
+
+          <MockField
+            label="Interests"
+            help="Chosen from a fixed list so people can be found by them."
+            value={settings.interests}
+            onChange={(v) => {
+              patch({ interests: v });
+              interests.touch();
+            }}
+            onCommit={commitInterests}
+            max={200}
+            placeholder="Ski touring, mountaineering"
+          >
+            {tags.length > 0 && (
+              <InterestChips
+                text={settings.interests}
+                tags={tags}
+                onToggle={(label) => {
+                  const parts = settings.interests
+                    .split(",")
+                    .map((x) => x.trim())
+                    .filter(Boolean);
+                  const at = parts.findIndex((x) => slugish(x) === slugish(label));
+                  if (at >= 0) parts.splice(at, 1);
+                  else parts.push(label);
+                  patch({ interests: parts.join(", ") });
+                  interests.touch();
+                }}
+              />
+            )}
+            <SyncNote
+              field="interests"
+              sync={interests.sync}
+              tags={tags}
+              onSave={commitInterests}
+              onRetry={() => void flushProfile()}
+            />
+          </MockField>
+
+          {/* `> 1` because every entry carries `at`. */}
+          {pending && Object.keys(pending).length > 1 && (
+            <div>
+              <p className="text-[13.5px] font-medium text-snow">Waiting to send</p>
+              <div className="mt-2">
+                <WaitingToSend pending={pending} onSettled={onSettled} tags={tags} />
+              </div>
+            </div>
+          )}
+
+          <div className="pt-2">
+            <InfoRow
+              title="Mountaineering experience"
+              detail="Set during onboarding and used by the Coach."
+              value={user.experience ?? "—"}
+              tone="mist"
+            />
+            <LinkRow
+              to="/settings/cv"
+              title="Verified achievements"
+              detail="From what you recorded. Not editable by hand."
+            />
+          </div>
+        </div>
+      )}
+    </motion.div>
   );
 }
 

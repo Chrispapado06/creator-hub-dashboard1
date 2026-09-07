@@ -42,6 +42,8 @@ import type { Guide } from "@/guides/types";
 import type { CommunityPost } from "@/social/types";
 import type { OwnPost } from "@/social/posts";
 import type { SummitLog } from "@/social/summitLog";
+import type { SocialNotice } from "@/notifications/social";
+import type { SuggestedPerson } from "@/notifications/suggestions";
 import type { SettingsState } from "@/settings/store";
 import type { Conversation } from "@/screens/chat/data";
 import type { Peak, NearbyLiveResult } from "@/services/peaks";
@@ -585,6 +587,169 @@ export const OFFLINE_OWN_POSTS: OwnPost[] = !DEMO
         photos: [],
         privacy: "connections",
         createdAt: isoAgo(31, 17),
+      },
+    ];
+
+/* -------------------------------------------------------------------------- */
+/* Notifications — follows, likes and comments                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * THE FOUR PEOPLE BELOW ARE THE SAME FOUR WHO WRITE `OFFLINE_COMMUNITY_POSTS`.
+ *
+ * That is the whole point of doing it this way. A demo build already shows six
+ * posts by Ilse, Tomás, Nadia and Rafael; having *different* invented people
+ * turn up in the notifications would double the fiction for no gain. These ids
+ * (`oa-ilse`, `oa-tomas`, `oa-nadia`, `oa-rafael`) are the ones those posts
+ * already carry, so the demo reads as one small community rather than two.
+ *
+ * WHY A DEMO BUILD NEEDS THIS AT ALL. A DEMO build constructs no Supabase
+ * client (`backend/client.ts`), so `notifications/social.ts` returns
+ * `no-backend` before it asks anything, and the Notifications screen is one
+ * paragraph of grey text. Every other social surface in this build is populated
+ * from this file; leaving this one empty is not more honest, it is just
+ * inconsistent — and it makes the screen impossible to look at.
+ *
+ * WHAT IS DELIBERATELY NOT INVENTED HERE:
+ *
+ *   · `isOwner` and `identityVerified` are BOTH `null` on every actor, which
+ *     `noticeMark` reads as "not measured" and draws nothing for. A tick beside
+ *     an invented name would be a fabricated claim about authority or identity
+ *     — the one thing `social.ts` says must never be decidable in a component.
+ *   · No `avatarUrl`. The screen draws initials through `Avatar`, which exists
+ *     precisely so a real face is never attached to somebody who does not exist.
+ *   · The posts referenced are the demo athlete's OWN posts from
+ *     `OFFLINE_OWN_POSTS` above, and `title` is each post's real opening line
+ *     cut the way `social.ts` cuts it — not a summary written for this file.
+ */
+export const OFFLINE_SOCIAL_NOTICES: SocialNotice[] = !DEMO
+  ? []
+  : [
+      {
+        id: "follow:oa-ilse",
+        kind: "follow",
+        actor: {
+          id: "oa-ilse",
+          name: "Ilse Vandermolen",
+          handle: "ilse.v",
+          isOwner: null,
+          identityVerified: null,
+        },
+        at: hoursAgoIso(3),
+      },
+      {
+        id: "comment:odc-1",
+        kind: "comment",
+        actor: {
+          id: "oa-tomas",
+          name: "Tomás Arriaga",
+          handle: "tomas.arriaga",
+          isOwner: null,
+          identityVerified: null,
+        },
+        at: hoursAgoIso(9),
+        post: {
+          id: "op-1",
+          title: "Third carry of the block. Legs fine, shoulders less so — the 12 kg is going…",
+        },
+        body: "The Aiguillette belt sorted this out for me. Worth trying one on before the walk-in.",
+      },
+      {
+        id: "like:op-2:oa-nadia",
+        kind: "like",
+        actor: {
+          id: "oa-nadia",
+          name: "Nadia Quintrell",
+          handle: "nadia.q",
+          isOwner: null,
+          identityVerified: null,
+        },
+        at: hoursAgoIso(26),
+        post: { id: "op-2", title: "Booked the hut. Gran Paradiso in a little over three months." },
+      },
+      {
+        id: "follow:oa-rafael",
+        kind: "follow",
+        actor: {
+          id: "oa-rafael",
+          name: "Rafael Osterbrink",
+          handle: "rafael.o",
+          isOwner: null,
+          identityVerified: null,
+        },
+        at: isoAgo(3, 18, 40),
+      },
+      {
+        id: "comment:odc-2",
+        kind: "comment",
+        actor: {
+          id: "oa-nadia",
+          name: "Nadia Quintrell",
+          handle: "nadia.q",
+          isOwner: null,
+          identityVerified: null,
+        },
+        at: isoAgo(5, 7, 15),
+        post: {
+          id: "op-3",
+          title: "Crevasse rescue practice cancelled twice now. Writing it here so it stops…",
+        },
+        body: "We are running one on the Mer de Glace the weekend after next if you want a rope.",
+      },
+      {
+        id: "like:op-1:oa-tomas",
+        kind: "like",
+        actor: {
+          id: "oa-tomas",
+          name: "Tomás Arriaga",
+          handle: "tomas.arriaga",
+          isOwner: null,
+          identityVerified: null,
+        },
+        at: isoAgo(8, 20, 5),
+        post: {
+          id: "op-1",
+          title: "Third carry of the block. Legs fine, shoulders less so — the 12 kg is going…",
+        },
+      },
+    ];
+
+/**
+ * The same four, as people the demo athlete could follow.
+ *
+ * `basis` is not decoration: Wren Calloway's demo profile says Chamonix, so
+ * Ilse — the only one of the four whose region is Chamonix — is a `"place"`
+ * match and the other three are `"country"`. That is exactly the partition the
+ * real query makes, so the demo shows the real shape of the section rather than
+ * a tidier one. Rafael is in Zermatt, which is in Switzerland and therefore not
+ * a country match either; he is left out rather than mislabelled.
+ */
+export const OFFLINE_SUGGESTED_PEOPLE: SuggestedPerson[] = !DEMO
+  ? []
+  : [
+      {
+        id: "oa-ilse",
+        name: "Ilse Vandermolen",
+        handle: "ilse.v",
+        locationLabel: "Chamonix",
+        countryCode: "FR",
+        basis: "place",
+      },
+      {
+        id: "oa-nadia",
+        name: "Nadia Quintrell",
+        handle: "nadia.q",
+        locationLabel: "Grenoble",
+        countryCode: "FR",
+        basis: "country",
+      },
+      {
+        id: "oa-tomas",
+        name: "Tomás Arriaga",
+        handle: "tomas.arriaga",
+        locationLabel: "Annecy",
+        countryCode: "FR",
+        basis: "country",
       },
     ];
 

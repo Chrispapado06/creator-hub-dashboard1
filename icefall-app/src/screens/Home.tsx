@@ -24,6 +24,7 @@ import { useCoachIntel } from "@/coach/hooks";
 import { usePromotedHomeCard } from "@/social/promoted";
 import { parseDay } from "@/network/groups";
 import type { Score } from "@/coach/types";
+import { SubscribeSheet, useSubscribeSheet } from "@/components/growth/SubscribeSheet";
 import { cn } from "@/lib/utils";
 
 /**
@@ -130,6 +131,16 @@ function heroForToday(now: Date = new Date()): { src: string; flip: boolean } {
 export default function Home() {
   const { user, toggleSession } =
     useApp();
+  /*
+   * The subscription sheet, shown ONCE PER INSTALL on the first Home.
+   *
+   * Home rather than a route of its own, and after onboarding rather than
+   * before it: somebody who has not yet told ICEFALL what they are training for
+   * has been shown nothing worth paying for. `useSubscribeSheet` owns the
+   * once-only rule and the reasoning; see that file for why it is not on every
+   * launch.
+   */
+  const subscribe = useSubscribeSheet();
   const goal = usePrimaryGoalWithProgress();
   const weekly = useWeeklyProgress();
   const feed = useActivityFeed();
@@ -831,6 +842,7 @@ export default function Home() {
         )}
 
       </Stagger>
+      {subscribe.open && <SubscribeSheet onDismiss={subscribe.dismiss} />}
     </Screen>
   );
 }

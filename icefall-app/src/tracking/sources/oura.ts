@@ -106,6 +106,24 @@ const API_BASE = String(import.meta.env.VITE_ICEFALL_API_BASE || "").replace(/\/
 const RETURN_URL = String(import.meta.env.VITE_ICEFALL_OURA_RETURN_URL || "");
 
 /**
+ * The return address for a ring connected from the LAST PAGE OF SIGN-UP, so
+ * the person comes back to that page rather than being dropped in settings
+ * mid-flow. Derived from the configured address rather than from
+ * `window.location.origin`: a native shell's origin is not a web address, and
+ * the server only honours what is in its allowlist — which means this URL
+ * (`<same origin>/connect`) must be added to `OURA_APP_RETURN_URLS` alongside
+ * the settings one, or the server refuses the sign-up connection outright.
+ */
+export function signupReturnUrl(): string {
+  if (!RETURN_URL) return "";
+  try {
+    return new URL("/connect", RETURN_URL).toString();
+  } catch {
+    return "";
+  }
+}
+
+/**
  * How old a fetched summary may be before its values stop being shown.
  *
  * NOT the same thing as Oura's own freshness window. The server already refuses
@@ -178,7 +196,8 @@ export interface OuraMetricDef {
   format: (v: number) => string;
 }
 
-const minutes = (v: number) => `${Math.floor(v / 60)}h ${String(Math.round(v % 60)).padStart(2, "0")}m`;
+const minutes = (v: number) =>
+  `${Math.floor(v / 60)}h ${String(Math.round(v % 60)).padStart(2, "0")}m`;
 const round = (v: number) => String(Math.round(v));
 const oneDp = (v: number) => v.toFixed(1);
 
@@ -411,7 +430,8 @@ export const OURA_UNAVAILABLE_COPY: Record<OuraUnavailable, string> = {
     "ICEFALL can no longer read its own record of the connection. Connect again to replace it.",
   "consent-withdrawn": "You withdrew permission for health measurements, and they were deleted.",
   "no-data": "Your ring did not record this.",
-  "no-recent-data": "Nothing recent enough to show. The most recent reading is too old to be today's.",
+  "no-recent-data":
+    "Nothing recent enough to show. The most recent reading is too old to be today's.",
   unreachable: "ICEFALL could not reach the server, so there is nothing to show.",
 };
 
@@ -558,7 +578,10 @@ interface ApiResult<T> {
  * default and this app is expected to run on a mountain with a captive portal.
  * A request that hangs forever leaves a spinner where a sentence should be.
  */
-async function api<T>(path: string, init?: RequestInit & { auth?: boolean }): Promise<ApiResult<T>> {
+async function api<T>(
+  path: string,
+  init?: RequestInit & { auth?: boolean },
+): Promise<ApiResult<T>> {
   if (!API_BASE) {
     return { ok: false, status: 0, body: null, networkError: "not-configured" };
   }
@@ -893,9 +916,19 @@ export class OuraService {
    * through its own universal link. That seam is not solved here, and pretending
    * otherwise in a comment would be a guarantee this code does not keep.
    */
-  async connect(): Promise<{ ok: boolean; url?: string; error?: string }> {
+  /**
+   * Whether `connect()` could possibly succeed in this build — the two
+   * preconditions that are known BEFORE any request, hoisted so a screen can
+   * decline to draw a button rather than draw one that fails after the tap.
+   * No `OuraStatus` reflects a missing return address, which is why this is
+   * a separate question from `state.status`.
+   */
+  canConnect(): { ok: true } | { ok: false; error: string } {
     if (DEMO || !API_BASE) {
-      return { ok: false, error: this.stateValue.detail };
+      return {
+        ok: false,
+        error: this.stateValue.detail ?? OURA_UNAVAILABLE_COPY["not-configured"],
+      };
     }
     if (!RETURN_URL) {
       return {
@@ -904,11 +937,26 @@ export class OuraService {
           "This build has no allowlisted return address, so the connection could not be completed safely.",
       };
     }
+    return { ok: true };
+  }
+
+  /**
+   * `returnTo` is where Oura's consent sends the browser back to — an ABSOLUTE
+   * URL the server matches verbatim against its `OURA_APP_RETURN_URLS`
+   * allowlist. The default is the settings screen; the sign-up page passes
+   * `signupReturnUrl()`. A value the server has not allowlisted is refused
+   * there, in the server's own words, and nobody is sent anywhere.
+   */
+  async connect(
+    returnTo: string = RETURN_URL,
+  ): Promise<{ ok: boolean; url?: string; error?: string }> {
+    const can = this.canConnect();
+    if (!can.ok) return { ok: false, error: can.error };
 
     this.set({ busy: true });
     const res = await api<WireConnect>("/api/oura/connect", {
       method: "POST",
-      body: JSON.stringify({ returnTo: RETURN_URL }),
+      body: JSON.stringify({ returnTo }),
     });
     this.set({ busy: false });
 
@@ -924,8 +972,7 @@ export class OuraService {
         ok: false,
         // The server's own sentence, passed through. A refusal is not reworded.
         error:
-          res.body?.error ||
-          "ICEFALL could not start the connection just now. Please try again.",
+          res.body?.error || "ICEFALL could not start the connection just now. Please try again.",
       };
     }
 

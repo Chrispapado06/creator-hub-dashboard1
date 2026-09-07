@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/primitives";
 import { useSessionState } from "@/auth/session";
 import { useApp } from "@/state/AppState";
 import { DEMO } from "@/offline/offline";
+import { GlassFilterDefs } from "@/components/ui/LiquidGlassButton";
 import { OfflineRouteGuard } from "@/offline/OfflineRouteGuard";
 
 import Splash from "@/screens/Splash";
@@ -27,6 +28,7 @@ const BookReview = lazy(() => import("@/screens/booking/Review"));
    lives behind the new Progress tab as its activity history. The old Plan and
    Fuel screens survive the same way, wrapped as detail views in
    `coach/details.tsx`. */
+const CoachHub = lazy(() => import("@/screens/coach/CoachHub"));
 const CoachToday = lazy(() => import("@/screens/coach/Today"));
 const CoachPlanTab = lazy(() => import("@/screens/coach/Plan"));
 const CoachFuel = lazy(() => import("@/screens/coach/Fuel"));
@@ -65,6 +67,7 @@ const TrialStart = lazy(() =>
   import("@/screens/auth/Trial").then((m) => ({ default: m.TrialStart })),
 );
 const Paywall = lazy(() => import("@/screens/auth/Trial").then((m) => ({ default: m.Paywall })));
+const ConnectAccounts = lazy(() => import("@/screens/auth/Connect"));
 const ReadinessTest = lazy(() => import("@/screens/growth/ReadinessTest"));
 const ReadinessResult = lazy(() => import("@/screens/growth/ReadinessResult"));
 const ActivityHistory = lazy(() => import("@/screens/ActivityHistory"));
@@ -75,6 +78,7 @@ const Social = lazy(() => import("@/screens/social/Social"));
 const SettingsSection = lazy(() => import("@/screens/settings/Sections"));
 const Badges = lazy(() => import("@/screens/settings/Badges"));
 const HealthSources = lazy(() => import("@/screens/settings/HealthSources"));
+const Connections = lazy(() => import("@/screens/settings/Connections"));
 const PublicProfile = lazy(() => import("@/screens/PublicProfile"));
 const PostDetail = lazy(() => import("@/screens/social/PostDetail"));
 const HouseRulesScreen = lazy(() => import("@/screens/social/HouseRulesScreen"));
@@ -119,6 +123,8 @@ const Private = lazy(() => import("@/screens/Private"));
 const Profile = lazy(() => import("@/screens/Profile"));
 const SavedTrails = lazy(() => import("@/screens/SavedTrails"));
 const Notifications = lazy(() => import("@/screens/Notifications"));
+/* Dev-only workbench for picking a Start button. Deleted once one is chosen. */
+const StartOptions = lazy(() => import("@/screens/dev/StartOptions"));
 
 // Expedition network (climbers), distinct from the commercial trips above.
 const CrewExpeditions = lazy(() => import("@/screens/explore/Expeditions"));
@@ -206,6 +212,10 @@ function AppShell() {
           2026-09-04). It clears the notch, so everything below it must not:
           `--screen-safe-top: 0px` on the content wrapper is what stops the
           layouts and `Screen` clearing it a second time. See `AppTopBar`. */}
+      {/* The SVG filter every `LiquidGlassButton` refers to by id. Defined ONCE
+          here: two copies of one filter id is undefined behaviour, and the
+          second button silently loses its refraction. */}
+      <GlassFilterDefs />
       <AppTopBar />
       {/*
         `key={pathname}` IS ALSO THE SCROLL RESET, and that is a second reason
@@ -290,6 +300,13 @@ export default function App() {
               this is where you actually change the password. */}
           <Route path="/auth/new-password" element={<NewPassword />} />
           {/* Full-bleed, outside AppShell: they reserve no space for the TabBar. */}
+          {/* The last page of sign-up. After a Strava consent the strava Edge
+              Function sends the athlete back here with `?strava=`. Nothing about
+              this path is registered with Strava (that is STRAVA_REDIRECT_URI,
+              the function's own /strava/callback); renaming it means changing
+              RETURN_PATHS in the function, the CHECK on
+              strava_oauth_states.return_to, and StravaReturnPath in the app. */}
+          <Route path="/connect" element={<ConnectAccounts />} />
           <Route path="/trial" element={<TrialStart />} />
           <Route path="/subscribe" element={<Paywall />} />
           {/* Free, account-free top of the funnel — outside AppShell. */}
@@ -437,6 +454,11 @@ export default function App() {
             <Route path="/settings/badges" element={<Badges />} />
             {/* Above `:section`, which is a catch-all and would swallow it. */}
             <Route path="/settings/health-sources" element={<HealthSources />} />
+            {/* Where the strava Edge Function sends the athlete back after a
+                consent begun from settings. Not registered with Strava itself —
+                see the note on /connect above for the three places a rename
+                has to reach. */}
+            <Route path="/settings/connections" element={<Connections />} />
             <Route path="/settings/:section" element={<SettingsSection />} />
 
             <Route path="/goals" element={<Goals />} />
@@ -450,6 +472,16 @@ export default function App() {
             <Route path="/mountain/:goalId/benchmark" element={<Benchmark />} />
             {/* `new` before `:id` — otherwise the compose route is read as a thread id. */}
             <Route path="/notifications" element={<Notifications />} />
+            {/*
+              THE TWO WORKBENCHES. Dev servers and DEMO builds only — never a
+              production bundle. DEMO is included because the owner reviews on
+              the shared preview link rather than a dev server, and a picking
+              screen they cannot open is a picking screen that does not work.
+              Both are deleted once a design is chosen.
+            */}
+            {(import.meta.env.DEV || DEMO) && (
+              <Route path="/dev/start" element={<StartOptions />} />
+            )}
             <Route path="/messages" element={<Messages />} />
             <Route path="/messages/:id" element={<ChatThread />} />
             <Route path="/book" element={<BookGuide />} />
@@ -464,13 +496,24 @@ export default function App() {
             <Route path="/inbox/:id" element={<RedirectThread />} />
 
             <Route path="/coach" element={<CoachLayout />}>
-              {/* TODAY IS THE LANDING SURFACE — the owner's redesign brief says
-                  "Chat should not open first". /coach/chat stays valid for
-                  every link already pointing at it. The two old screens keep
-                  their paths as detail views behind the tabs that replaced
-                  them, so nothing linking to /coach/nutrition or expecting the
-                  full calendar lands on a missing page. */}
-              <Route index element={<CoachToday />} />
+              {/* THE HUB IS THE LANDING SURFACE — the owner's Coach mockup of
+                  2026-09-06. It is rendered HERE DIRECTLY rather than
+                  redirected to a `/coach/hub` path, which is the opposite of
+                  what the /explore block below does, and the difference is
+                  deliberate: `ExploreLayout` decides whether to draw its own
+                  header by testing `pathname === "/explore/hub"`, so that hub
+                  needs a path of its own; `CoachLayout` tests nothing. A
+                  redirect would also put this hub at a path NOTHING in the app
+                  links to — which is exactly how the Explore redesign shipped
+                  unreachable and came back as "new explore doesnt work".
+
+                  /coach/today keeps its own path and every link pointing at it.
+                  "Chat should not open first" still holds — /coach/chat is not
+                  first any more because nothing is: the hub is. The two old
+                  screens keep their paths as detail views, so nothing linking
+                  to /coach/nutrition or expecting the full calendar lands on a
+                  missing page. */}
+              <Route index element={<CoachHub />} />
               <Route path="today" element={<CoachToday />} />
               <Route path="chat" element={<CoachChat />} />
               <Route path="plan" element={<CoachPlanTab />} />

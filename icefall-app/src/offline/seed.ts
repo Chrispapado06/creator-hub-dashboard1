@@ -65,6 +65,31 @@ function seed() {
   if (!DEMO) return;
   if (typeof localStorage === "undefined") return;
 
+  /*
+   * ONCE PER BROWSER, NOT ONCE PER PAGE LOAD — and this was a real bug, not a
+   * tidy-up.
+   *
+   * `seed()` runs at import time, so before this guard it re-wrote the demo
+   * athlete's settings, app state, posts, activities and saved place on EVERY
+   * load. Anything typed into the app was therefore erased by the next
+   * navigation: the owner reported it as "add social media doesnt work", and it
+   * was true of the bio, the display name, the region and every other editable
+   * field as well — they all saved correctly to `localStorage` and were all
+   * flattened a moment later by this function.
+   *
+   * The demo is meant to OPEN populated, not to be un-editable. One marker, and
+   * a version in its value so a future fixture change can deliberately re-seed
+   * by bumping it.
+   */
+  const SEEDED_KEY = "icefall.offline.seeded.v1";
+  try {
+    if (localStorage.getItem(SEEDED_KEY) !== null) return;
+  } catch {
+    /* Storage refused. Fall through and seed: a demo that starts empty is
+       worse than one that re-seeds, and without storage nothing persists to be
+       overwritten anyway. */
+  }
+
   const memberSince = new Date(Date.now() - 720 * 86_400_000).toISOString();
 
   put(STATE_KEY, {
@@ -93,6 +118,14 @@ function seed() {
   put(POSTS_KEY, OFFLINE_OWN_POSTS);
   put(SUMMIT_LOGS_KEY, OFFLINE_SUMMIT_LOGS);
   put(LAST_PLACE_KEY, OFFLINE_HOME_PLACE);
+
+  /* Written LAST, so a seed interrupted half way through is retried on the next
+     load rather than leaving the demo half-populated and marked done. */
+  try {
+    localStorage.setItem(SEEDED_KEY, new Date().toISOString());
+  } catch {
+    /* Storage refused — it will seed again next load, which is harmless. */
+  }
 }
 
 seed();

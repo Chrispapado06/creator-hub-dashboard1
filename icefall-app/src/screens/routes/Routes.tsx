@@ -1,15 +1,17 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useMyProfile } from "@/auth/useMyProfile";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   ChevronDown, Clock, Compass, Loader2, MapPin, Mountain as MountainIcon,
-  MoveHorizontal, Navigation, Plus, Route as RouteIcon, RotateCw, Search,
+  Map as MapIcon, MoveHorizontal, Navigation, Plus, Route as RouteIcon, RotateCw, Search,
   SlidersHorizontal, Star, TrendingUp, Users, X,
 } from "lucide-react";
 import { Rise, Stagger } from "@/components/layout/chrome";
 import { useMountainImage } from "@/components/domain/MountainImage";
 import { IcefallMark } from "@/components/ui/IcefallMark";
 import { Sheet, SheetRow } from "@/components/ui/Sheet";
-import { MapBackdrop, MiniMap } from "@/components/domain/MiniMap";
+import { MiniMap } from "@/components/domain/MiniMap";
+import { AREA_MAP_HEIGHT, AreaMap } from "./AreaMap";
 import { fmtPeople, ratingFor } from "@/routes/ratings";
 import { fmtDistance, fmtElevation } from "@/lib/format";
 import { TRAINING_BANDS, routeRelevance, routesInBand } from "@/routes/relevance";
@@ -61,7 +63,29 @@ import { cn } from "@/lib/utils";
  */
 export default function Routes() {
   const ctx = useCoachContext();
+  const myProfile = useMyProfile();
+  /*
+   * WHICH PLACE THE SCREEN OPENS ON.
+   *
+   * The owner, 2026-09-06: "when you fresh open the explore page the search bar
+   * should be empty and showing you results based on your country location, you
+   * would only see others if you type".
+   *
+   * So a fresh open is NOT "wherever you last searched" any more. It is the
+   * place the athlete themselves put on their profile, resolved once by the
+   * effect below; `lastPlace()` is only the seed while that resolves, so the
+   * screen has real coordinates to draw from on the first frame rather than a
+   * spinner. If the profile carries no location, or the lookup does not land,
+   * the last place stands — which is the previous behaviour, unchanged.
+   */
   const [place, setPlace] = useState<Place>(() => lastPlace());
+  /*
+   * Has the athlete chosen this place, as opposed to it being their own home
+   * resolved for them? It decides ONE thing: whether the search bar reads as
+   * empty. An automatic default is not something they typed, so showing it in
+   * the field would be the field claiming a query nobody entered.
+   */
+  const [picked, setPicked] = useState(false);
   const [activity, setActivity] = useState<ActivityKind>("hiking");
   const [radiusKm, setRadiusKm] = useState(100);
   const [band, setBand] = useState<string | null>(null);
@@ -101,25 +125,222 @@ export default function Routes() {
   const searchFailed = trails.failed || peaks.failed;
   // Resolved for the whole list at once, so no two cards can show the same frame.
 
+  /*
+   * PARK THE SCROLL PAST THE MAP, ONCE, BEFORE THE FIRST PAINT.
+   *
+   * `useLayoutEffect` rather than `useEffect`: the browser paints between an
+   * effect and the next frame, so with `useEffect` the map flashes on screen
+   * and jumps away — measured, it is one clearly visible frame at 375pt.
+   *
+   * ONCE, AND ONLY ON MOUNT. Re-parking when `place` changes would yank the
+   * list out from under somebody who had deliberately pulled the map open to
+   * look at where they had just moved the search to.
+   *
+   * The guard matters on a short result set: if everything below the map is
+   * shorter than the viewport there is no scroll range to park in, and
+   * `scrollTop` silently clamps. `minHeight` on the content below is what
+   * guarantees the range exists — see the wrapper further down.
+   */
+  const scroller = useRef<HTMLDivElement | null>(null);
+  const parked = useRef(false);
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (!el || parked.current) return;
+    el.scrollTop = AREA_MAP_HEIGHT;
+    parked.current = true;
+  }, []);
+
+  /*
+   * THE ATHLETE'S OWN PLACE, resolved once on mount.
+   *
+   * `profiles.location_label` is free text somebody typed — "Chamonix",
+   * "Athens, Greece" — with NO COORDINATES behind it, deliberately (see
+   * `notifications/suggestions.ts` for the full argument). So it has to go
+   * through the same geocoder the search box uses to become a point, and the
+   * FIRST HIT is taken: this is the athlete's own words about where they are,
+   * not a guess about which of several Springfields they meant.
+   *
+   * IT NEVER OVERRIDES A CHOICE. If they have already picked somewhere by the
+   * time this lands, `picked` is true and the answer is dropped on the floor.
+   * A late network response yanking the map to another country while somebody
+   * is reading results is worse than not having resolved it at all.
+   *
+   * A DEMO BUILD HAS NO SERVER, so `useMyProfile` is `unavailable` and this
+   * never runs; the demo athlete's own valley is what `lastPlace()` seeds
+   * anyway, through `offline/seed.ts`.
+   */
+  useEffect(() => {
+    if (myProfile.status !== "ready") return;
+    const label = myProfile.profile.locationLabel;
+    if (label === null || label.trim().length === 0) return;
+
+    let alive = true;
+    const controller = new AbortController();
+    void searchPlaces(label.trim(), controller.signal)
+      .then((hits) => {
+        if (!alive || picked) return;
+        const first = hits[0];
+        if (first) setPlace(first);
+      })
+      .catch(() => {
+        /* No location resolved. `lastPlace()` stands — see the note above. */
+      });
+
+    return () => {
+      alive = false;
+      controller.abort();
+    };
+    // `picked` is read, not depended on: this must run once, and the check
+    // inside is what stops a late answer overriding a deliberate choice.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myProfile.status]);
+
+  /** Pull the map into view. The chip below is the discoverable way in. */
+  const showMap = useCallback(() => {
+    scroller.current?.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
+
+  /*
+   * Is the map already on screen?
+   *
+   * Only so the chip can get out of the way — a "Map" button sitting over a map
+   * is a control that does nothing, which is the thing this codebase keeps
+   * refusing to ship. Half the panel's height is the threshold: by then the map
+   * is unmistakably the subject and the chip has stopped being useful.
+   *
+   * Throttled to one read per frame. `scroll` fires far faster than that on a
+   * touch device and this handler reads `scrollTop`, which forces layout.
+   */
+  const [mapShown, setMapShown] = useState(false);
+
+  /*
+   * THE MAP SNAPS OPEN OR SHUT — it is never left half-drawn.
+   *
+   * The owner, 2026-09-06: "when you scroll up i want it to be instant to show
+   * map not have to scroll all the way … Barely go up map shows, barely touch
+   * the tip to slide it down then goes down."
+   *
+   * WHY IT IS DIRECTION-AWARE RATHER THAN A THRESHOLD. A position threshold
+   * cannot do what was asked. "Barely up opens" means a tiny drag from the
+   * closed position must commit to OPEN, and "barely down closes" means a tiny
+   * drag from the open position must commit to CLOSED — and those two are the
+   * same scroll position with opposite outcomes. Only the direction the finger
+   * moved tells them apart, so that is what is read.
+   *
+   * WHY NOT CSS SCROLL-SNAP. `scroll-snap-type: y mandatory` would snap the
+   * whole list, not just this band, so every result row would become a snap
+   * point and a flick through fifty trails would stutter at each one.
+   * `proximity` is the other way wrong: it only engages near a point, which is
+   * exactly the "scroll all the way" behaviour being complained about.
+   *
+   * IT ONLY ACTS INSIDE THE BAND. Past `AREA_MAP_HEIGHT` the list scrolls
+   * normally and nothing here fires — this must never yank somebody back while
+   * they are reading results.
+   *
+   * IT WAITS FOR THE SCROLL TO STOP. Snapping mid-gesture fights the finger. 90ms
+   * of quiet is long enough that momentum has settled and short enough that the
+   * snap still feels like part of the same movement.
+   */
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+
+    let last = el.scrollTop;
+    let settle = 0;
+    /* Set while a snap animation is running, so its own scroll events do not
+       feed back in and re-trigger it. */
+    let snapping = false;
+
+    const onScroll = () => {
+      const now = el.scrollTop;
+      const wentUp = now < last;
+      last = now;
+      if (snapping) return;
+
+      window.clearTimeout(settle);
+      settle = window.setTimeout(() => {
+        const at = el.scrollTop;
+        /* Outside the band, or already settled on one of the two ends. */
+        if (at <= 0 || at >= AREA_MAP_HEIGHT) return;
+        snapping = true;
+        el.scrollTo({ top: wentUp ? 0 : AREA_MAP_HEIGHT, behavior: "smooth" });
+        /* Long enough for a smooth scroll of at most AREA_MAP_HEIGHT. */
+        window.setTimeout(() => {
+          snapping = false;
+          last = el.scrollTop;
+        }, 420);
+      }, 90);
+    };
+
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      window.clearTimeout(settle);
+    };
+  }, []);
+
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    let frame = 0;
+    const onScroll = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        setMapShown(el.scrollTop < AREA_MAP_HEIGHT / 2);
+      });
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, []);
+
   function choose(next: Place) {
     setPlace(next);
+    setPicked(true);
     saveLastPlace(next);
     rememberPlace(next);
     setSheet(null);
   }
 
   return (
-    <div className="no-scrollbar relative h-full overflow-y-auto">
-      {/* ---- Search head ------------------------------------------------- */}
-      <div className="relative">
-        <div className="absolute inset-0 h-[210px] overflow-hidden">
-          {/* The map you are searching from — the reference's orientation cue,
-              and a real one: these are the actual tiles for this place. */}
-          <MapBackdrop lat={place.lat} lon={place.lon} />
-          <div className="absolute inset-0 bg-gradient-to-b from-obsidian/55 via-obsidian/55 to-obsidian" />
-        </div>
+    <div ref={scroller} className="no-scrollbar relative h-full overflow-y-auto">
+      {/*
+        THE MAP, ABOVE THE FOLD.
 
-        <div className="relative px-5 pb-3 pt-5">
+        It is the first thing in the scroller and the effect above parks the
+        scroll exactly past it, so the screen opens on the search bar as it
+        always has and pulling the list down reveals the map. See `AreaMap` for
+        why this is plain scrolling rather than a drag gesture.
+      */}
+      <AreaMap lat={place.lat} lon={place.lon} name={place.name} radiusKm={radiusKm} />
+
+      {/*
+        `minHeight: 100%` IS WHAT MAKES THE PARK ABOVE POSSIBLE.
+
+        `scrollTop` clamps to `scrollHeight - clientHeight`. On a search that
+        returns two results the content below the map is shorter than the
+        viewport, that difference is zero, and the effect's park silently does
+        nothing — the screen would open ON the map instead of on the search bar.
+        Holding this block to at least one viewport guarantees the range exists
+        whatever the search found.
+      */}
+      <div style={{ minHeight: "100%" }} className="relative bg-obsidian">
+        {/* ---- Search head ----------------------------------------------- */}
+        <div className="relative">
+          {/*
+            THE FAINT MAP WASH THAT USED TO BE HERE IS GONE. It was a 16%-opacity
+            tile grid behind this header, standing in for the orientation a real
+            map would give. There is now a real map directly above it, and two
+            maps a hundred pixels apart — one of them a ghost — read as a
+            rendering fault rather than as a design. `MapBackdrop` is still
+            exported from `components/domain/MiniMap.tsx`, but this was its only
+            call site — it is now dead code, kept rather than deleted because
+            it belongs to that component's file, not to this screen.
+          */}
+          <div className="relative px-5 pb-3 pt-5">
           <button
             type="button"
             onClick={() => setSheet("where")}
@@ -127,16 +348,36 @@ export default function Routes() {
           >
             <MapPin size={16} strokeWidth={1.7} className="shrink-0 text-azure" />
             <span className="min-w-0 flex-1">
-              <span className="section-label block text-[8px]">Where you are</span>
-              <span className="block truncate text-[13.5px] text-snow">
-                {place.name}
-                {(place.kind || place.region) && (
-                  <span className="text-mist-dim">
-                    {" · "}
-                    {[place.kind, place.region].filter(Boolean)[0]}
+              {/*
+                EMPTY UNTIL THEY TYPE. Until the athlete picks somewhere this is
+                a search box with nothing in it, because nothing has been
+                searched for — it was pre-filled with the place name, which read
+                as a query they had entered and made the screen look like it was
+                already showing results for somewhere else.
+
+                THE AREA IS STILL NAMED, one line down, by the results count:
+                "2,579 hiking routes near Chamonix". So nothing is hidden — the
+                field says what you asked for, and the count says what was
+                searched.
+              */}
+              {picked ? (
+                <>
+                  <span className="section-label block text-[8px]">Searching near</span>
+                  <span className="block truncate text-[13.5px] text-snow">
+                    {place.name}
+                    {(place.kind || place.region) && (
+                      <span className="text-mist-dim">
+                        {" · "}
+                        {[place.kind, place.region].filter(Boolean)[0]}
+                      </span>
+                    )}
                   </span>
-                )}
-              </span>
+                </>
+              ) : (
+                <span className="block truncate text-[13.5px] text-mist">
+                  Search a place or region
+                </span>
+              )}
             </span>
             <Search size={14} strokeWidth={1.8} className="shrink-0 text-mist-dim" />
           </button>
@@ -325,7 +566,40 @@ export default function Routes() {
           </>
         )}
 
-      </Stagger>
+        </Stagger>
+
+        {/*
+          THE MAP CHIP — AllTrails' floating pill, and the reason the pull is
+          discoverable at all.
+
+          Nobody finds a gesture on their own. AllTrails puts a "Map" pill in
+          the middle of its results list for exactly this reason, and this is
+          that: it scrolls the panel into view, so the gesture and the button do
+          the same thing and neither is the only way in.
+
+          `sticky bottom-6` rather than `fixed`: it belongs to this scroller and
+          nothing else, so it cannot end up floating over another screen if this
+          one unmounts mid-transition. The wrapper is `pointer-events-none` so
+          the strip of page either side of the pill still scrolls under a
+          finger — a full-width invisible bar that ate scrolls would be worse
+          than no chip.
+        */}
+        <div className="pointer-events-none sticky bottom-6 z-20 flex justify-center pb-2">
+          <button
+            type="button"
+            onClick={showMap}
+            aria-hidden={mapShown}
+            tabIndex={mapShown ? -1 : 0}
+            className={cn(
+              "pointer-events-auto flex items-center gap-2 rounded-pill border border-hairline-strong bg-graphite/95 px-4 py-2.5 text-[12.5px] font-medium text-snow shadow-[var(--ice-shadow-pop)] backdrop-blur transition-all duration-200",
+              mapShown && "pointer-events-none translate-y-2 opacity-0",
+            )}
+          >
+            <MapIcon size={14} strokeWidth={1.9} aria-hidden />
+            Map
+          </button>
+        </div>
+      </div>
 
       {/* ---- Sheets ------------------------------------------------------ */}
       {sheet === "where" && <WhereSheet current={place} onPick={choose} onClose={() => setSheet(null)} />}

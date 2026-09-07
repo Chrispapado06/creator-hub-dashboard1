@@ -1,8 +1,8 @@
 import { Link } from "react-router-dom";
 import {
-  Award, Bell, BadgeCheck, Database, FileText, HeartPulse, Info, LifeBuoy, Lock,
+  Award, Bell, BadgeCheck, CloudOff, Database, FileText, HeartPulse, Info, LifeBuoy, Lock,
   LogOut, MapPin, Mountain as MountainIcon, Share2, ShieldCheck, Sparkles, User,
-  UserCog, Watch,
+  Link2, UserCog, Watch,
 } from "lucide-react";
 import { Rise, Screen, ScreenHeader, Stagger } from "@/components/layout/chrome";
 import { Group, LinkRow } from "@/components/settings/kit";
@@ -223,9 +223,28 @@ export default function Settings() {
             title="Devices & apps"
             detail="Watches, health apps and anything else that could send data in."
           />
+          {/* Separate from "Devices & apps" on purpose: that row is about data
+              coming IN from a watch, this one is about an account ICEFALL sends
+              activities OUT to. Same group, because both are "where else your
+              training lives", but never the same row. */}
+          <LinkRow
+            to="/settings/connections"
+            icon={Link2}
+            title="Connected accounts"
+            detail="Strava and other services linked to this account."
+          />
+          {/* The one place the ring's permission and readings live. It was
+              reachable only from the Daily screen and Search, so every sentence
+              that said "in Settings" about it was pointing at nothing. */}
+          <LinkRow
+            to="/settings/health-sources"
+            icon={HeartPulse}
+            title="Ring and health data"
+            detail="Your Oura ring, its readings, and your permission for storing them."
+          />
           <LinkRow
             to="/settings/offline"
-            icon={HeartPulse}
+            icon={CloudOff}
             title="Offline data"
             detail="What's stored on this device for use without a signal."
           />

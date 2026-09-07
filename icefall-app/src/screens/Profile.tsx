@@ -3,6 +3,7 @@ import {
   Camera,
   ChevronRight,
   Compass,
+  Globe,
   Info,
   Lock,
   MapPin,
@@ -25,6 +26,10 @@ import { Card, Divider, SectionLabel, Stat, sharePage } from "@/components/ui/pr
 import { MonthlyVolume } from "@/components/ui/charts";
 import { VerificationMark } from "@/components/ui/VerificationMark";
 import { BadgeHex } from "@/components/domain/BadgeHex";
+import { AwardBadge } from "@/components/domain/AwardWreath";
+import { LiquidGlassButton } from "@/components/ui/LiquidGlassButton";
+import { SOCIALS } from "@/screens/settings/Sections";
+import { DEMO } from "@/offline/offline";
 import { MountainThumb } from "@/components/domain/MountainImage";
 import { TrailShape } from "@/components/domain/TrailShape";
 import { MountainCvSheet, passportSpreads } from "@/components/passport/PassportPages";
@@ -222,6 +227,11 @@ export default function Profile() {
   const { settings, patch } = useSettings();
   const bannerInput = useRef<HTMLInputElement | null>(null);
   const [bannerError, setBannerError] = useState<string | null>(null);
+
+  /* Only the platforms this athlete actually filled in, in the edit screen's
+     own order so the two screens agree. `SOCIALS` is the single table both
+     read — see `screens/settings/Sections.tsx`. */
+  const social = SOCIALS.filter((sc) => settings[sc.id].trim().length > 0);
   const [avatarBroken, setAvatarBroken] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [readyInfo, setReadyInfo] = useState(false);
@@ -542,7 +552,7 @@ export default function Profile() {
             </Link>
           </div>
 
-          <div className="mt-4 flex items-center gap-1.5">
+          <div className="mt-4 flex items-center gap-2">
             {/* `min-w-0` + `truncate` on the name and `shrink-0` on the mark:
                 when the two cannot both fit, the NAME gives way, never the mark.
                 A half-drawn tick reads as a rendering bug; a shortened name
@@ -566,6 +576,26 @@ export default function Profile() {
             */}
             {isOwner && <VerificationMark kind="owner" className="mt-1" />}
             {!isOwner && verified && <VerificationMark kind="identity" className="mt-2" />}
+            {/*
+              THE AWARD, DIRECTLY NEXT TO THE NAME — the owner, 2026-09-06:
+              "Slightly smaller, and directly next to username."
+
+              In the row with the other marks, following their rule: `shrink-0`,
+              so when the row cannot fit everything the NAME gives way and the
+              marks do not. It is the same composition as the full award,
+              scaled — nothing redrawn — and tapping it opens that full version,
+              which is where the tier, what it was for and the year are actually
+              legible. DEMO-gated; see the note further down.
+            */}
+            {DEMO && (
+              <AwardBadge
+                title="WINNER"
+                subtitle="Most mountains climbed"
+                recipient={user.name}
+                date="2026"
+                level="gold"
+              />
+            )}
           </div>
           {handle ? (
             <p className="mt-0.5 text-[14px] text-mist">@{handle}</p>
@@ -591,6 +621,78 @@ export default function Profile() {
             <p className="mt-2.5 text-[12.5px] leading-relaxed text-mist">{settings.bio}</p>
           )}
           {bannerError && <p className="mt-2 text-[11.5px] text-danger">{bannerError}</p>}
+
+          {/*
+            THE SOCIAL ACCOUNTS, when there are any — the owner, 2026-09-07: "I
+            want it to display on profile if they add social media in white
+            version of company logo without background".
+
+            SO: THE GLYPH ALONE, IN INK, NO TILE. The edit screen gives each
+            platform a brand-coloured tile because there it is a form row that
+            has to be told apart at a glance; here they are a quiet line under a
+            bio and six coloured squares would shout louder than the person's
+            own name. `text-mist` rather than pure white so they sit behind the
+            name in the reading order, and they take the theme's ink so they
+            work on the light canvas too.
+
+            ONLY THE ONES THAT ARE FILLED IN. An empty row for a platform
+            somebody does not use is an invitation to nothing.
+
+            THESE ARE UNVERIFIED CLAIMS. `SOCIALS[].href` builds the address
+            from a stored HANDLE — the column cannot hold a URL, by constraint —
+            so this cannot become a link to somewhere the person did not name.
+            What it is not is proof the account is theirs, and nothing here says
+            otherwise.
+
+            `rel="noreferrer"` and `target="_blank"`: an outbound link from a
+            profile should not hand the destination a window handle back.
+          */}
+          {social.length > 0 && (
+            <div className="mt-3 flex items-center gap-4">
+              {social.map((sc) => (
+                <a
+                  key={sc.id}
+                  href={sc.href(settings[sc.id])}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  aria-label={`${sc.label}: @${settings[sc.id]}`}
+                  className="text-mist transition-colors hover:text-snow"
+                >
+                  <sc.icon size={19} strokeWidth={1.7} aria-hidden />
+                </a>
+              ))}
+              {settings.website.trim().length > 0 && (
+                <a
+                  href={/^https?:\/\//i.test(settings.website) ? settings.website : `https://${settings.website}`}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  aria-label={`Website: ${settings.website}`}
+                  className="text-mist transition-colors hover:text-snow"
+                >
+                  <Globe size={19} strokeWidth={1.7} aria-hidden />
+                </a>
+              )}
+            </div>
+          )}
+
+          {/*
+            EDIT PROFILE — the owner, 2026-09-07: "there should be edit profile
+            button on the users profile", with the liquid-glass reference.
+
+            HERE, under the bio, rather than in the header row: the header
+            already carries settings, save, share and more, and a fifth icon
+            there would be a fifth unlabelled glyph. This is a labelled control
+            in the block it edits.
+
+            It is glass on purpose and it is the one place in the app that can
+            be — the banner photograph is directly behind it, which is what the
+            refraction has to bend. On a flat panel the same button is an
+            expensive way to draw a rounded rectangle.
+          */}
+          <LiquidGlassButton to="/settings/profile?from=/profile" className="mt-3.5">
+            <Pencil size={13} strokeWidth={1.9} aria-hidden />
+            Edit profile
+          </LiquidGlassButton>
         </Rise>
 
         {/* ---- The six figures --------------------------------------------- */}
@@ -739,6 +841,13 @@ export default function Profile() {
             State comes from `badgeState` and nowhere else: no badge is earned
             on this device, and the row only ever DISPLAYS what that model says.
             Unearned reads as a dimmed, desaturated hexagon. */}
+        {/* The AWARDS SECTION THAT WAS HERE moved into the name row above, at
+            mark scale (`AwardMark`), on 2026-09-06. The full `AwardWreath` is
+            still exported and still the design — it is a 190px centrepiece, so
+            it belongs on an award's own page rather than a third of the way
+            down a profile, and there is no such page yet because nothing grants
+            an award. What has to be true before any of this is real is written
+            at the top of `components/domain/AwardWreath.tsx`. */}
         <Rise className="pt-7">
           <div className="flex items-center justify-between">
             <SectionLabel>Badges</SectionLabel>

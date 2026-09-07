@@ -57,7 +57,13 @@ import { supabase } from "@/backend/client";
 export const HEALTH_CONSENT_PURPOSE = "health-metrics";
 
 /** Where the decision was taken. Constrained by the database's own check. */
-export type ConsentRoute = "app-settings" | "app-disconnect";
+/**
+ * How a decision reached the database. `app-onboarding` is the "Connect your
+ * accounts" page at the end of sign-up (migration 20260907150000); it is its own
+ * value rather than a reuse of `app-settings` because the route is evidence of
+ * how considered the decision was, and the event log is owed the true one.
+ */
+export type ConsentRoute = "app-settings" | "app-onboarding" | "app-disconnect";
 
 export type ConsentDecision = "granted" | "declined" | "withdrawn";
 
