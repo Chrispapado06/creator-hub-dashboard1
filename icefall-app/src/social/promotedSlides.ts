@@ -81,14 +81,10 @@ export interface PromotionCadence {
 }
 
 /** One slide of a story run: somebody's story, or a labelled promotion. */
-export type StorySlideOf<S, P> =
-  | { kind: "story"; story: S }
-  | { kind: "promoted"; placement: P };
+export type StorySlideOf<S, P> = { kind: "story"; story: S } | { kind: "promoted"; placement: P };
 
 /** One entry in a scrolling feed: somebody's post, or a labelled promotion. */
-export type FeedItemOf<T, P> =
-  | { kind: "post"; post: T }
-  | { kind: "promoted"; placement: P };
+export type FeedItemOf<T, P> = { kind: "post"; post: T } | { kind: "promoted"; placement: P };
 
 /** One person and their stories, oldest first — the order they were lived. */
 export interface StoryGroup<A, S> {
@@ -205,9 +201,9 @@ function nth<P>(placements: readonly P[], n: number): P {
  * that returns `NaN` leaves the order to the engine, which is not a decision
  * anybody made; equal at least keeps the stories in the order they arrived.
  */
-export function groupStoriesByAuthor<
-  S extends { author: { id: string }; createdAt: string },
->(stories: readonly S[]): StoryGroup<S["author"], S>[] {
+export function groupStoriesByAuthor<S extends { author: { id: string }; createdAt: string }>(
+  stories: readonly S[],
+): StoryGroup<S["author"], S>[] {
   const order: string[] = [];
   const byId = new Map<string, StoryGroup<S["author"], S>>();
 
@@ -297,10 +293,7 @@ export function interleaveStoryRun<A, S, P>(
  * `groupStoriesByAuthor` and `interleaveStoryRun` in one call — the shape the
  * rail actually needs from a flat list of stories.
  */
-export function planStoryRun<
-  S extends { author: { id: string }; createdAt: string },
-  P,
->(
+export function planStoryRun<S extends { author: { id: string }; createdAt: string }, P>(
   stories: readonly S[],
   placements: readonly P[],
   cadence: PromotionCadence,
@@ -360,9 +353,7 @@ export function interleaveFeed<T, P>(
  * count of people, of screens or of anybody seeing anything: it is a count of
  * entries in a list this device built.
  */
-export function countPromotions(
-  entries: readonly ({ kind: string } | undefined)[],
-): number {
+export function countPromotions(entries: readonly ({ kind: string } | undefined)[]): number {
   let n = 0;
   for (const entry of entries) if (entry?.kind === "promoted") n += 1;
   return n;

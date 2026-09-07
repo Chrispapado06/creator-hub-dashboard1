@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Link, useSearchParams } from "react-router-dom";
 import {
@@ -23,7 +23,12 @@ import { Comments } from "@/components/social/Comments";
 import { Composer } from "@/components/social/Composer";
 import { PostCard, type PostDetail } from "@/components/social/PostCard";
 import { ReportDialog } from "@/components/social/ReportDialog";
-import { StoryRail, useStories, type PromotedPlacement } from "@/components/social/StoryRail";
+import {
+  DEMO_PROMOTIONS,
+  StoryRail,
+  demoMayStandIn,
+  type PromotedPlacement,
+} from "@/components/social/StoryRail";
 import { StoryViewer } from "@/components/social/StoryViewer";
 import {
   COMMUNITY_DEMO_NOTICE,
@@ -33,11 +38,17 @@ import {
   communityPosts,
   type FeedFilter,
 } from "@/social/community";
+import {
+  PROMOTED_DISMISS_IS_FOREVER,
+  inAppImage,
+  toStoryPlacement,
+  usePromotedFeedPlacements,
+} from "@/social/promoted";
+import { interleaveFeed } from "@/social/promotedSlides";
 import { CREATE_OPTIONS, type CommunityPost, type Post, type PostKind } from "@/social/types";
 import { searchSocial } from "@/social/search";
 import { useFollowing } from "@/profile/following";
 import { useApp } from "@/state/AppState";
-import { cn } from "@/lib/utils";
 
 /**
  * SOCIAL → FEED. (It was EXPLORE → SOCIAL → COMMUNITY; Social left Explore on
@@ -168,23 +179,27 @@ function feedPost(post: CommunityPost, now: number): Post {
 
 type FeedItem = { kind: "post"; post: Post } | { kind: "promoted"; placement: PromotedPlacement };
 
-/** Lays the promotions into the scroll: one every N posts, never on the end. */
-function withPromotions(posts: Post[], placements: PromotedPlacement[]): FeedItem[] {
-  const items: FeedItem[] = [];
-  let placed = 0;
-
-  posts.forEach((post, i) => {
-    items.push({ kind: "post", post });
-
-    const due = (i + 1) % POSTS_BETWEEN_PROMOTIONS === 0;
-    const somethingFollows = i + 1 < posts.length;
-    if (due && somethingFollows && placements.length > 0) {
-      items.push({ kind: "promoted", placement: placements[placed % placements.length] });
-      placed += 1;
-    }
-  });
-
-  return items;
+/**
+ * Lays the promotions into the scroll: one every N posts, never on the end.
+ *
+ * THE ARITHMETIC IS NOT HERE ANY MORE. It used to be, in a second copy of the
+ * loop the story run keeps — which is how a "never last" rule ends up true on
+ * one surface and false on the other after somebody edits one of them.
+ * `interleaveFeed` is that rule once, and it holds "never first" and "never two
+ * in a row" structurally rather than by checking for them: a promotion is only
+ * ever emitted AFTER a post, and the counter runs over POSTS, so however many
+ * placements are available they cannot bunch.
+ *
+ * The cadence stays on this screen, in `POSTS_BETWEEN_PROMOTIONS`, with the
+ * owner's "a little bit" written above it. How often this app shows
+ * advertisements is not a question a helper function gets to answer.
+ *
+ * THE POSTS PASSED IN ARE THE FILTERED ONES, which is the one thing the caller
+ * owes: a promotion placed against the unfiltered list lands at the wrong count,
+ * and on a filter that matched two posts it lands on the end.
+ */
+function withPromotions(posts: Post[], placements: readonly PromotedPlacement[]): FeedItem[] {
+  return interleaveFeed(posts, placements, { every: POSTS_BETWEEN_PROMOTIONS }).items;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -218,9 +233,8 @@ export default function Community() {
   /** The reader's own likes. Session-only, on purpose — see the header. */
   const [liked, setLiked] = useState<ReadonlySet<string>>(() => new Set<string>());
 
-  const { goals } = useApp();
+  const { goals, currentTier } = useApp();
   const { people: saved } = useFollowing();
-  const { slides } = useStories();
 
   /**
    * Frozen at mount rather than read per render.
@@ -286,23 +300,53 @@ export default function Community() {
   );
 
   /**
-   * The placements the story run was given, reused for the scroll.
+   * The promotions running ON THIS SURFACE.
    *
-   * Deliberately not a second source: `useStories` is where the two schema
-   * rules already live — premium members are excluded from promotion delivery,
-   * and the demo placements may only name an INVENTED company — so taking the
-   * rows from there means the feed cannot disagree with the stories about
-   * either. When a read of `promoted_placements` exists, both surfaces call it.
+   * It used to be whatever the story run had been given, sifted back out of its
+   * assembled slides. That was the right answer while there was one gated demo
+   * row and no read of the table; it is the wrong answer now, because
+   * `promoted_placements.surfaces` says where a campaign runs and the column
+   * defaults to NOWHERE precisely so that one advertisement cannot appear on
+   * Home, in the story run and in the feed at once. A campaign that bought the
+   * feed is a different list from one that bought the stories, and this asks for
+   * the feed's.
+   *
+   * EVERY RULE ABOUT WHETHER THIS ATHLETE MAY SEE ONE IS ALREADY APPLIED. The
+   * server refuses a draft or an expired campaign; `social/promoted.ts` applies
+   * the subscriber rule, the targeting, the dismissals and the surface. Nothing
+   * on this screen re-decides any of it: `placements` is empty in all eight of
+   * the silent states, so an unready feed places nothing and the scroll is
+   * simply a scroll of posts. No skeleton, no reserved height, no message — a
+   * failure to deliver an advertisement is not news the climber came for.
+   *
+   * `state` IS read, for exactly one thing and never for a climber: telling the
+   * measured zero apart from the seven silences, so the gated demo drawing
+   * stands in only for "nobody is advertising". See `demoMayStandIn`.
+   *
+   * `placements` rather than the hook's `slots`, and the property `slots` exists
+   * to protect is kept anyway: `interleaveFeed` emits the same `{ kind:
+   * "promoted", placement }` arm, so nothing enters this list without naming
+   * what it is, and no branch can draw an advertisement believing it is drawing
+   * somebody's post.
    */
-  const placements = useMemo(() => {
-    const out: PromotedPlacement[] = [];
-    for (const slide of slides) {
-      if (slide.kind !== "promoted") continue;
-      if (out.some((p) => p.id === slide.placement.id)) continue;
-      out.push(slide.placement);
-    }
-    return out;
-  }, [slides]);
+  const promoted = usePromotedFeedPlacements();
+  const placements = useMemo<readonly PromotedPlacement[]>(() => {
+    /* The second refusal, kept for the reason the story rail keeps its own: the
+       fetch has already declined to ask on a paid plan, and two independent
+       refusals to advertise at a paying member is the right number. */
+    if (currentTier !== "free") return [];
+    /* THE REAL ROWS WIN WHENEVER THERE ARE ANY. `DEMO_PROMOTIONS` is a drawing
+       of the design for a build with no campaign running — the env gate lives
+       inside `buildDemoPromotions`, so it is `[]` and out of the bundle in an
+       ordinary build. It is not a stand-in for a campaign that failed to load,
+       and `demoMayStandIn` is what makes that true rather than only stated: an
+       empty list is empty in all eight silent states, so testing emptiness
+       alone had a timed-out query drawing the invented advertisement. The story
+       rail applies the same test to the same constant. */
+    const live = promoted.placements.map(toStoryPlacement);
+    if (live.length > 0) return live;
+    return demoMayStandIn(promoted.state) ? DEMO_PROMOTIONS : [];
+  }, [currentTier, promoted.placements, promoted.state]);
 
   /*
    * FILTERING HAPPENS ON THE DEMO SHAPE, BEFORE THE ADAPTER RUNS.
@@ -367,7 +411,11 @@ export default function Community() {
           {items.map((item, i) =>
             item.kind === "promoted" ? (
               <Rise key={`promoted:${item.placement.id}:${i}`} className="px-5 pt-3">
-                <PromotedCard placement={item.placement} />
+                <PromotedCard
+                  placement={item.placement}
+                  onDismiss={promoted.dismiss}
+                  onShown={promoted.markShown}
+                />
               </Rise>
             ) : (
               <Rise key={item.post.id} className="pt-3">
@@ -584,32 +632,143 @@ function TappablePost({
  * count, nothing that would let it borrow the shape of something a person
  * wrote.
  *
- * WHY THE READER IS SEEING IT is stated on the card. `audience_mode` is the
- * schema's own column, and the two values mean genuinely different things to
- * the person reading: 'general' means nothing about them was consulted, and
- * 'targeted' means an objective they declared themselves named this. Neither
- * sentence is inferred, because the migration forbids targeting on anything
- * that would be.
+ * WHY THE READER IS SEEING IT is stated on the card, in three branches because
+ * there are three truths. `audience_mode` is the schema's own column and its
+ * two values mean genuinely different things to the person reading — but
+ * `countries` is applied to EVERY campaign, targeted or not, so a 'general'
+ * placement scoped to GB reached only GB profiles and this card used to tell
+ * them "nothing you have told ICEFALL decided that you saw it". Their own
+ * declared country did. `PromotedCard.tsx` on Home was corrected for exactly
+ * that; `countryScoped` is the field both cards read. Nothing here is inferred,
+ * because the migration forbids targeting on anything that would be.
+ *
+ * ── THE CARD IS NO LONGER ONE BIG LINK ───────────────────────────────────────
+ *
+ * It was, and that left nowhere to put the x: a button inside an anchor is not
+ * something HTML allows, and a whole-card tap target that also has to host a
+ * dismiss control is a mis-tap waiting to happen. The destination is now a
+ * control at the bottom, the x is at the top, and they are the height of the
+ * copy apart — the same arrangement, and the same reasoning, as Home's card.
  */
-function PromotedCard({ placement }: { placement: PromotedPlacement }) {
-  const body = (
-    <>
+function PromotedCard({
+  placement,
+  onDismiss,
+  onShown,
+}: {
+  placement: PromotedPlacement;
+  /** Close this placement for good. See `PROMOTED_DISMISS_IS_FOREVER`. */
+  onDismiss: (placementId: string) => void;
+  /**
+   * Called ONCE per placement, when this card is actually on screen.
+   *
+   * Not an impression and not a delivery — ICEFALL cannot see a screen. It
+   * records that a client asked to record a view. See `recordPromotedView`.
+   */
+  onShown: (placementId: string) => void;
+}) {
+  /*
+   * A SCROLL POSITION IS NOT A VIEW, WHICH IS WHY THIS IS AN OBSERVER.
+   *
+   * On Home the card is the only promotion on the screen and rendering it is
+   * enough — `PromotedCard.tsx` records on render for that reason. A feed is
+   * different in kind: React has mounted every card in the list, including the
+   * promotion eleven posts below the fold that the athlete may never reach and
+   * may never even scroll past. Recording on render there would count a view of
+   * something nobody could have seen, and "a client asked to record a view" is
+   * the only claim this app is entitled to make.
+   *
+   * So the card reports itself when it is genuinely in the viewport, and half of
+   * it has to be: `threshold: 0.5` means a card clipped to a sliver at the edge
+   * of the screen during a fast scroll does not count. It is still not proof
+   * anybody looked, and nothing downstream calls it one.
+   *
+   * ONCE PER PLACEMENT, guarded here and again in `recordPromotedView`, so
+   * scrolling the same card back into view is one view rather than a tally that
+   * drifts upward — which is what the primary key on `(placement_id,
+   * profile_id)` is about too.
+   */
+  const holder = useRef<HTMLDivElement | null>(null);
+  const recorded = useRef<string | null>(null);
+  const { id, demo } = placement;
+  useEffect(() => {
+    /* A demo row has no placement behind it: there is nothing on the server to
+       record a view against, and writing one would be a figure about a campaign
+       nobody bought. */
+    if (demo || !id) return;
+    if (recorded.current === id) return;
+    const node = holder.current;
+    if (!node || typeof IntersectionObserver === "undefined") return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((e) => e.isIntersecting)) return;
+        if (recorded.current === id) return;
+        recorded.current = id;
+        observer.disconnect();
+        onShown(id);
+      },
+      { threshold: 0.5 },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [id, demo, onShown]);
+
+  /* See the band below: an advertiser's reference, refused unless it is a path
+     inside this app, and dropped entirely if it fails to load. */
+  const [imageBroken, setImageBroken] = useState(false);
+  const imageSrc = imageBroken ? null : inAppImage(placement.creativePath);
+
+  return (
+    <div ref={holder} className="overflow-hidden rounded-card border border-hairline bg-graphite">
+      {/* ---- The label, and the x beside it ------------------------------- */}
       <div className="flex items-center gap-2 border-b border-hairline px-4 py-2.5">
         <span className="rounded-pill border border-hairline-strong bg-slate/70 px-2 py-[3px] text-[9.5px] uppercase tracking-[0.12em] text-mist">
           Promoted
         </span>
-        <span className="min-w-0 truncate text-[11.5px] text-mist-dim">
+        <span className="min-w-0 flex-1 truncate text-[11.5px] text-mist-dim">
           {placement.companyName}
         </span>
+
+        {/*
+          THE X IS OFFERED ONLY WHERE IT CAN KEEP ITS PROMISE. A demo row is not
+          a placement anybody can close — there is no server row to write a
+          dismissal against, and the local mirror would quietly delete the one
+          advertisement a DEV build has to review. `UpgradePrompt.tsx:16` forbids
+          "an x that dismisses a thing which then returns tomorrow", and an x
+          that closes an invented campaign for ever is the same broken promise
+          from the other end.
+        */}
+        {!placement.demo && (
+          <button
+            type="button"
+            onClick={() => onDismiss(placement.id)}
+            aria-label={`Close this promotion from ${placement.companyName}. Closing it is permanent.`}
+            className="-mr-2 grid h-11 w-11 shrink-0 place-items-center rounded-full text-mist-dim transition-colors hover:bg-white/[0.06] hover:text-snow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-azure/60"
+          >
+            <X size={16} strokeWidth={1.8} />
+          </button>
+        )}
       </div>
 
-      {placement.creativePath && (
+      {/*
+        THE PICTURE, HELD TO `PromotedCard.tsx`'S RULE, because it is the same
+        picture from the same column. `creativePath` is
+        `promoted_placements.creative_path` — a string an ADVERTISER wrote, and
+        a reference rather than a URL — so `inAppImage` accepts one shape, a
+        path inside this app, and a storage key is not guessed at and
+        `https://…` is not fetched from somebody else's host on a climber's
+        phone. The whole band is gated on it, and `onError` removes it: a
+        150px empty rectangle inside a card labelled Promoted is exactly the
+        placeholder advertisement this surface must never draw.
+      */}
+      {imageSrc && (
         <div className="h-[150px] w-full overflow-hidden bg-slate/40">
           <img
-            src={placement.creativePath}
+            src={imageSrc}
             alt=""
             aria-hidden
             loading="lazy"
+            onError={() => setImageBroken(true)}
             className="h-full w-full object-cover"
           />
         </div>
@@ -618,32 +777,45 @@ function PromotedCard({ placement }: { placement: PromotedPlacement }) {
       <p className="px-4 pt-3.5 text-[13px] leading-relaxed text-snow">{placement.headline}</p>
 
       {placement.href && (
-        <p className="flex items-center gap-1 px-4 pt-2 text-[12px] text-azure">
-          View company
+        <Link
+          to={placement.href}
+          aria-label={`${placement.ctaLabel} — promoted by ${placement.companyName}`}
+          className="mt-2 flex items-center gap-1 px-4 pb-1 text-[12px] text-azure"
+        >
+          {/* The advertiser's own words. `creative_cta_href` may point at a
+              route, a trek or an expedition as easily as at a company, so
+              ICEFALL naming the destination itself would be ICEFALL getting it
+              wrong — on the one line that says where an advertisement leads. */}
+          {placement.ctaLabel}
           <ChevronRight size={14} strokeWidth={1.8} />
-        </p>
+        </Link>
       )}
 
-      <p className="mt-3 border-t border-hairline px-4 py-2.5 text-[10.5px] leading-relaxed text-mist-dim">
-        {placement.audienceMode === "targeted"
-          ? "You are seeing this because an objective you set names it. ICEFALL targets on the goals you declared yourself and on nothing it worked out about you."
-          : "A general placement — shown to everyone who is not on a paid plan. Nothing you have told ICEFALL decided that you saw it."}
-      </p>
-    </>
-  );
-
-  const shell = "block overflow-hidden rounded-card border border-hairline bg-graphite";
-
-  return placement.href ? (
-    <Link
-      to={placement.href}
-      aria-label={`Promoted by ${placement.companyName}`}
-      className={cn(shell, "transition-colors hover:border-hairline-strong")}
-    >
-      {body}
-    </Link>
-  ) : (
-    <div className={shell}>{body}</div>
+      <div className="mt-3 border-t border-hairline px-4 py-2.5">
+        <p className="text-[10.5px] leading-relaxed text-mist-dim">
+          Paid placement by {placement.companyName}. ICEFALL does not endorse it, does not vet it,
+          and takes no part in anything you book.{" "}
+          {placement.audienceMode === "targeted"
+            ? "You are seeing it because of an objective you set yourself — ICEFALL targets on the goals you declared and on nothing it worked out about you."
+            : placement.countryScoped
+              ? "You are seeing it because of the country on your profile. Nothing else about you was used."
+              : "Nothing about you was used to choose it."}
+        </p>
+        {/* Said BEFORE the x is tapped, not discovered after — and only where
+            the x is actually offered. */}
+        {!placement.demo && (
+          <p className="mt-1.5 text-[10.5px] leading-relaxed text-mist-dim">
+            {PROMOTED_DISMISS_IS_FOREVER}
+          </p>
+        )}
+        {placement.demo && (
+          <p className="mt-1.5 text-[10.5px] leading-relaxed text-mist-dim">
+            Nobody has bought this. The company is invented, the picture is ICEFALL&apos;s own, and
+            campaigns need an account nobody has — this shows what a promoted post looks like.
+          </p>
+        )}
+      </div>
+    </div>
   );
 }
 

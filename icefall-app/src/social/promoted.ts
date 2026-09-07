@@ -5,11 +5,15 @@
  * ── WHAT WAS MISSING ─────────────────────────────────────────────────────────
  *
  * `public.promoted_placements` has been live since 20260831190000 and no line of
- * this app has ever read it. `StoryRail.tsx` says so in its own words — "this
- * app has no read of `promoted_placements` … so a promotion cannot appear" —
- * and fills the gap with one gated demo row. This module is the read. Nothing
- * else about the arrangement changes: the schema still decides what a climber
- * may see, and this file still decides nothing about that.
+ * this app read it. `StoryRail.tsx` said so in its own words — "this app has no
+ * read of `promoted_placements` … so a promotion cannot appear" — and filled
+ * the gap with one gated demo row. This module is the read, and all three
+ * surfaces now take their promotions from it: Home through
+ * `usePromotedHomeCard`, the story run through `usePromotedStorySlides`, the
+ * feed through `usePromotedFeedPlacements`. The demo row survives on the two
+ * social surfaces as a DEV fallback and nowhere else. Nothing else about the
+ * arrangement changes: the schema still decides what a climber may see, and
+ * this file still decides nothing about that.
  *
  * ── THE SERVER IS THE BOUNDARY, AND THIS FILE IS NOT ─────────────────────────
  *
@@ -804,6 +808,42 @@ function inAppPath(value: unknown): string | null {
 }
 
 /**
+ * A `creative_path` this app can actually load, or null.
+ *
+ * MOVED HERE FROM `components/domain/PromotedCard.tsx`, which held the only
+ * copy. That was safe while Home was the only screen drawing an advertiser's
+ * picture; the story run and the feed made the same string reachable by two
+ * more `<img src>`, and a refusal that lives inside one component is a refusal
+ * the next component does not inherit. It sits beside `inAppPath` because it is
+ * the same refusals for the same reason.
+ *
+ * `imagePath` is a REFERENCE, not a URL — this module says so where the field
+ * is declared, and does not resolve it. So this accepts one shape, an absolute
+ * path inside this app, and refuses everything else: a scheme, a
+ * protocol-relative `//host/…` (a remote origin wearing a leading slash),
+ * whitespace, and a storage key such as `creatives/abc.jpg`, which returns null
+ * rather than being guessed at — this app does not know the bucket, and an
+ * advertisement whose picture is a broken frame is worse than one without a
+ * picture.
+ *
+ * THE REMOTE REFUSAL IS THE ONE THAT MATTERS. An advertiser writes that column,
+ * and `promoted_placements.creative_path` carries no CHECK — only
+ * `creative_cta_href` does. Drawn raw, `https://…/px.gif` would make a
+ * climber's phone fetch a file from a host of the advertiser's choosing,
+ * carrying its address and its user agent: a per-reader tracking pixel inside
+ * the one module whose header says nothing anywhere asks who. Nothing else
+ * would stop it — this app ships no content-security policy.
+ */
+export function inAppImage(path: string | null): string | null {
+  if (!path) return null;
+  const trimmed = path.trim();
+  if (trimmed.length > 300) return null;
+  if (!trimmed.startsWith("/") || trimmed.startsWith("//")) return null;
+  if (/\s/.test(trimmed)) return null;
+  return trimmed;
+}
+
+/**
  * A row pair — base fields and creative fields — as a drawable promotion, or
  * null if it is not one.
  *
@@ -962,7 +1002,11 @@ function isLive(row: Row, today: string): boolean {
 
 /** Lower case, single-spaced, with the local `curated:` prefix taken off. */
 function normaliseGoal(value: string): string {
-  return value.trim().toLowerCase().replace(/^curated:/, "").replace(/\s+/g, " ");
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/^curated:/, "")
+    .replace(/\s+/g, " ");
 }
 
 /**
@@ -985,7 +1029,10 @@ function normaliseGoal(value: string): string {
  * column default, and it is the same "the default is silence, not a guess"
  * ruling the migration makes about `surfaces`.
  */
-function matchesGoals(placementGoals: readonly string[], declaredGoals: readonly string[]): boolean {
+function matchesGoals(
+  placementGoals: readonly string[],
+  declaredGoals: readonly string[],
+): boolean {
   if (placementGoals.length === 0 || declaredGoals.length === 0) return false;
   const mine = new Set(declaredGoals);
   return placementGoals.some((goal) => mine.has(normaliseGoal(goal)));
@@ -1432,7 +1479,9 @@ export async function dismissPromotion(placementId: string): Promise<void> {
       }
     }
     if (!uid) return;
-    await untyped.from("promoted_dismissals").insert({ placement_id: placementId, profile_id: uid });
+    await untyped
+      .from("promoted_dismissals")
+      .insert({ placement_id: placementId, profile_id: uid });
   } catch {
     /* Not pushed yet, or unreachable. The mirror already holds the promise on
        this device; the server row is what would carry it to the next one. */
@@ -1582,13 +1631,35 @@ export function usePromotedHomeCard(): PromotedCardResult {
 }
 
 /**
- * ONE PROMOTION AS A STORY SLIDE.
+ * ONE PROMOTION AS A SOCIAL SLIDE.
  *
- * The rail's shape carries no body and no button label — a story slide is a
- * full-screen image with one line on it — so those are dropped rather than
- * folded into the headline. `creativePath` is `imagePath` unchanged: it is a
- * reference, and turning it into a URL is the viewer's job, because only the
- * viewer knows which bucket it is reading from.
+ * The rail's shape carries no body — a story slide is a full-screen image with
+ * one line on it — so that is dropped rather than folded into the headline.
+ *
+ * THE BUTTON'S LABEL IS CARRIED, and dropping it was a bug. Both social
+ * surfaces then printed the fixed words "View company" above a
+ * `creative_cta_href` that may be any in-app path, so a campaign pointing at a
+ * route, a trek or an expedition described its own button falsely on two
+ * screens while describing it honestly on Home, which prints `ctaLabel`. The
+ * advertiser's own words are the only ones that can be true of every
+ * destination the column allows.
+ *
+ * `creativePath` is `imagePath` PUT THROUGH `inAppImage` — the one place it can
+ * be narrowed for both social surfaces at once. `imagePath` itself stays the
+ * raw reference this module promises it is; what a RENDERER is handed is the
+ * narrower thing, because an advertiser writes that column and no surface
+ * should be able to turn it into an outbound request.
+ *
+ * THE FEED USES THIS SHAPE TOO, and the name is a historical one rather than a
+ * scope. `Community.tsx` draws its promoted post from the same
+ * `PromotedPlacement`, so one conversion serves both social surfaces and
+ * neither can end up holding a field the other does not.
+ *
+ * `demo: false` IS THE POINT OF THAT FIELD. A row that came off
+ * `promoted_placements` is a row somebody bought, so the "nobody has bought
+ * this" footnote the demo path prints must not be attached to it. The field is
+ * required on the rail's shape precisely so this function has to say which kind
+ * of thing it is making.
  */
 export function toStoryPlacement(card: PromotedCreative): StoryPromotedPlacement {
   return {
@@ -1596,25 +1667,34 @@ export function toStoryPlacement(card: PromotedCreative): StoryPromotedPlacement
     companyId: card.companyId,
     companyName: card.companyName,
     audienceMode: card.audienceMode,
-    creativePath: card.imagePath,
+    countryScoped: card.countryScoped,
+    creativePath: inAppImage(card.imagePath),
     headline: card.headline,
     href: card.ctaHref,
+    ctaLabel: card.ctaLabel,
+    demo: false,
   };
 }
 
 /**
  * THE STORY RAIL'S PROMOTIONS, in the shape the rail already declares.
  *
- * `StoryRail.tsx` currently builds `DEMO_PROMOTIONS` from an invented operator
- * behind a dev gate. This replaces the SOURCE, not the arrangement: the
- * interleaving, the "never last" rule and — most importantly — StoryViewer's
- * structural label all stay exactly as they are, which is why this returns the
- * rail's own `PromotedPlacement` rather than something it would have to adapt.
+ * `StoryRail.tsx` builds `DEMO_PROMOTIONS` from an invented operator behind a
+ * dev gate, and `useStories` there prefers THIS whenever it returns anything.
+ * This replaced the SOURCE, not the arrangement: the interleaving, the "never
+ * last" rule and — most importantly — StoryViewer's structural label all stayed
+ * exactly as they were, which is why this returns the rail's own
+ * `PromotedPlacement` rather than something it would have to adapt.
  *
- * The rail's own tier check becomes redundant when it uses this (the fetch
- * already refuses to ask on a paid plan) and it should still be left in place.
- * Two independent refusals to show an advertisement to a paying member is the
- * right number.
+ * The rail's own tier check is redundant now that it uses this (the fetch
+ * already refuses to ask on a paid plan) and it is still in place. Two
+ * independent refusals to show an advertisement to a paying member is the right
+ * number.
+ *
+ * THE VIEW IS NOT RECORDED HERE, and not by the rail either. A face on a rail
+ * is not a screen an advertisement was on. `StoryViewer` records one when the
+ * promoted slide is the slide being shown — see `recordPromotedView` for what
+ * that row does and does not claim.
  */
 export function usePromotedStorySlides(): PromotedStoryResult {
   const { placements, state, message } = usePromotedSurface("story");
@@ -1629,7 +1709,9 @@ export function usePromotedStorySlides(): PromotedStoryResult {
  * that knows how many posts it has. Two rules the feed owes, both of which the
  * story rail already keeps and neither of which this module can enforce from
  * here: a promotion is never the first thing in the feed, and never two in a
- * row.
+ * row. `Community.tsx` keeps them by calling `interleaveFeed` in
+ * `social/promotedSlides.ts`, where both are structural rather than checked —
+ * the same function the story run uses, with a different cadence.
  *
  * `slots` is the form to interleave — `{ kind: "promoted", placement }` — so a
  * promotion cannot end up in a list of posts without the branch that draws it

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ChevronRight, Globe, Megaphone, ShieldOff, Target, X, XCircle } from "lucide-react";
 import { Button, Card } from "@/components/ui/primitives";
-import { PROMOTED_DISMISS_IS_FOREVER, type PromotedCreative } from "@/social/promoted";
+import { PROMOTED_DISMISS_IS_FOREVER, inAppImage, type PromotedCreative } from "@/social/promoted";
 import { cn } from "@/lib/utils";
 
 /**
@@ -134,12 +134,18 @@ export function PromotedCard({
    *
    * `imagePath` is a REFERENCE, not a URL: the fetch module says outright that
    * it "does not turn it into a URL and does not know which bucket it belongs
-   * to". So this file resolves only the case it can resolve honestly — a path
-   * inside this app — and draws nothing for a storage key it would have to
-   * guess a bucket and a signing scheme for. A guessed URL is a broken image
-   * frame at the top of an advertisement, and the alternative some codebases
-   * reach for — a stock mountain photograph standing in — would be ICEFALL
-   * supplying imagery for a business it does not vet.
+   * to". So only the case that can be resolved honestly — a path inside this
+   * app — is drawn, and a storage key whose bucket and signing scheme would
+   * have to be guessed draws nothing. A guessed URL is a broken image frame at
+   * the top of an advertisement, and the alternative some codebases reach for —
+   * a stock mountain photograph standing in — would be ICEFALL supplying
+   * imagery for a business it does not vet.
+   *
+   * `inAppImage` NOW LIVES IN `social/promoted.ts`, beside `inAppPath`, and it
+   * is the same function this file used to keep to itself. It moved the day the
+   * story run and the feed began drawing advertisers' pictures too: a refusal
+   * held inside one component is a refusal the next component does not
+   * inherit.
    *
    * A card with no picture is a card with no picture. The layout below expects
    * that as the ordinary case, not as a degraded one.
@@ -291,9 +297,7 @@ function Identity({ card }: { card: PromotedCreative }) {
       <p className="mt-1.5 text-[14px] leading-snug text-snow/90">{card.headline}</p>
 
       {/* Optional by contract, and absent is ordinary — never a reserved line. */}
-      {card.body && (
-        <p className="mt-2 text-[12.5px] leading-relaxed text-mist">{card.body}</p>
-      )}
+      {card.body && <p className="mt-2 text-[12.5px] leading-relaxed text-mist">{card.body}</p>}
     </div>
   );
 }
@@ -310,22 +314,4 @@ function Fact({ icon: Icon, text }: { icon: typeof Megaphone; text: string }) {
       <p className="min-w-0 flex-1 text-[11.5px] leading-relaxed text-mist">{text}</p>
     </div>
   );
-}
-
-/**
- * An `imagePath` this app can actually load, or null.
- *
- * Accepts one shape — an absolute path inside this app — and refuses everything
- * else, including a protocol-relative `//host/…`, which is a remote origin
- * wearing a leading slash. A storage key like `creatives/abc.jpg` returns null
- * rather than being guessed at: this file does not know the bucket, and an
- * advertisement whose picture is a broken frame is worse than one without a
- * picture.
- */
-function inAppImage(path: string | null): string | null {
-  if (!path) return null;
-  const trimmed = path.trim();
-  if (!trimmed.startsWith("/") || trimmed.startsWith("//")) return null;
-  if (/\s/.test(trimmed)) return null;
-  return trimmed;
 }

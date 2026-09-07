@@ -5,6 +5,7 @@ import { animate, motion, useMotionValue, useReducedMotion } from "framer-motion
 import { ChevronRight, Heart, Pause, Send, X } from "lucide-react";
 import { Avatar } from "@/components/ui/primitives";
 import { agoLabel } from "@/social/community";
+import { inAppImage, recordPromotedView } from "@/social/promoted";
 import { storyTimeLeft, type Story } from "@/social/types";
 import { cn } from "@/lib/utils";
 import {
@@ -64,7 +65,31 @@ export function StoryViewer({
   startIndex: number;
   onClose(): void;
 }): React.JSX.Element {
-  const { slides, demo } = useStories();
+  /*
+   * THE RUN IS FROZEN FOR AS LONG AS THIS VIEWER IS OPEN, and that is not an
+   * optimisation.
+   *
+   * `startIndex` is a coordinate in ONE index space — the flat slide list the
+   * rail computed when the face was tapped, promotions counted (see
+   * `StoryRailEntry`). That list used to be a pure function of module
+   * constants, so it could not move. It is a FETCH now: in an ordinary build
+   * the run holds no promotions until the request answers, and the request can
+   * answer several seconds after this viewer has opened.
+   *
+   * Splicing a promotion into the run at that moment shifts every slide after
+   * the third, underneath somebody who is already reading one. The athlete
+   * tapped the fourth face; the slide they are looking at silently becomes the
+   * advertisement that was just inserted in front of it, and the effect below
+   * would record a view for an advertisement nobody chose to open. The reverse
+   * — the run shrinking — walks them onto a different person's story, or off
+   * the end of the list entirely.
+   *
+   * So the viewer keeps the run it was opened against. The rail carries on
+   * updating; the next time this opens, it opens against the newer one.
+   */
+  const live = useStories();
+  const opened = useRef(live);
+  const { slides, demo } = opened.current;
   const reduce = useReducedMotion();
   const root = viewerRoot();
 
@@ -104,6 +129,38 @@ export function StoryViewer({
 
   useEffect(() => {
     if (slide?.kind === "story") markStorySeen(slide.story.id);
+  }, [slide]);
+
+  /* ---- The promoted view ------------------------------------------------ */
+
+  /*
+   * RECORDED WHEN THE PROMOTED SLIDE IS THE SLIDE ON SCREEN. Not when the rail
+   * drew a face, and not when the run was assembled: a rail is not a screen the
+   * advertisement was on, and a plan that placed a promotion three slides ahead
+   * is a plan, not a view. This effect runs on the slide the athlete is
+   * actually looking at, which is the closest thing to a view this app can
+   * honestly observe.
+   *
+   * AND THAT IS ALL THE ROW CLAIMS. Not an impression, not a reach, not a
+   * delivery — ICEFALL cannot see a screen. It can see that a client asked to
+   * record a view. `recordPromotedView` says the same thing at more length.
+   *
+   * The ref is `PromotedCard.tsx`'s guard, for its reason: once per PLACEMENT,
+   * which is what the primary key on `(placement_id, profile_id)` is about too.
+   * Tapping back and forth over the same promotion is one view; a second
+   * campaign later in the same run is its own.
+   */
+  const viewsRecorded = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (slide?.kind !== "promoted") return;
+    const { id, demo } = slide.placement;
+    /* A demo row has no placement behind it — there is nothing on the server to
+       record a view against, and writing one would be a figure about a campaign
+       nobody bought. */
+    if (demo || !id) return;
+    if (viewsRecorded.current.has(id)) return;
+    viewsRecorded.current.add(id);
+    void recordPromotedView(id);
   }, [slide]);
 
   /* ---- The timer -------------------------------------------------------- */
@@ -299,7 +356,7 @@ export function StoryViewer({
       {/* ---- The slide ---------------------------------------------------- */}
       <div className="absolute inset-0">
         {slide.kind === "promoted" ? (
-          <PromotedSlideView promo={slide.placement} demo={demo} onFollowLink={onFollowLink} />
+          <PromotedSlideView promo={slide.placement} onFollowLink={onFollowLink} />
         ) : (
           <StorySlideView story={slide.story} />
         )}
@@ -419,35 +476,35 @@ export function StoryViewer({
             grow by a line on a reduced-motion device, so no offset is right for
             every case. Sharing one container makes the overlap impossible. */}
         <div className="pointer-events-auto mb-3">
-        <div className="flex items-center gap-3">
-          <input
-            readOnly
-            value=""
-            placeholder="Send message…"
-            aria-label="Reply to this story — messaging is not connected yet"
-            title="Messaging is not connected yet"
-            className="h-11 min-w-0 flex-1 cursor-not-allowed rounded-pill border border-hairline bg-obsidian/60 px-4 text-[13.5px] text-mist-dim outline-none backdrop-blur placeholder:text-mist-dim"
-          />
-          <button
-            type="button"
-            disabled
-            aria-label="Like this story — messaging is not connected yet"
-            className="shrink-0 text-mist-dim/60"
-          >
-            <Heart size={20} strokeWidth={1.7} aria-hidden />
-          </button>
-          <button
-            type="button"
-            disabled
-            aria-label="Send — messaging is not connected yet"
-            className="shrink-0 text-mist-dim/60"
-          >
-            <Send size={20} strokeWidth={1.7} aria-hidden />
-          </button>
-        </div>
-        <p className="mt-2 text-[10px] leading-relaxed text-mist-dim">
-          Replies are not connected yet — nothing typed here would reach anyone.
-        </p>
+          <div className="flex items-center gap-3">
+            <input
+              readOnly
+              value=""
+              placeholder="Send message…"
+              aria-label="Reply to this story — messaging is not connected yet"
+              title="Messaging is not connected yet"
+              className="h-11 min-w-0 flex-1 cursor-not-allowed rounded-pill border border-hairline bg-obsidian/60 px-4 text-[13.5px] text-mist-dim outline-none backdrop-blur placeholder:text-mist-dim"
+            />
+            <button
+              type="button"
+              disabled
+              aria-label="Like this story — messaging is not connected yet"
+              className="shrink-0 text-mist-dim/60"
+            >
+              <Heart size={20} strokeWidth={1.7} aria-hidden />
+            </button>
+            <button
+              type="button"
+              disabled
+              aria-label="Send — messaging is not connected yet"
+              className="shrink-0 text-mist-dim/60"
+            >
+              <Send size={20} strokeWidth={1.7} aria-hidden />
+            </button>
+          </div>
+          <p className="mt-2 text-[10px] leading-relaxed text-mist-dim">
+            Replies are not connected yet — nothing typed here would reach anyone.
+          </p>
         </div>
 
         {reduce && (
@@ -543,7 +600,8 @@ function StorySlideView({ story }: { story: Story }) {
       <div /* 5.5rem cleared the footnotes alone. The reply bar now sits above them
              in the same stack, so the slide's own words need the taller
              clearance or they run behind it — measured at ~172px of footer. */
-          className="absolute inset-x-0 bottom-0 px-5 pb-[11.5rem]">
+        className="absolute inset-x-0 bottom-0 px-5 pb-[11.5rem]"
+      >
         <p className="whitespace-pre-line text-[15px] font-light leading-relaxed text-snow">
           {story.body}
         </p>
@@ -568,25 +626,56 @@ function StorySlideView({ story }: { story: Story }) {
  * `audience_mode` is reported rather than hidden. "General" means nothing about
  * this athlete chose it; "targeted" means an objective they DECLARED did —
  * their own words, never an inference, which is the rule the schema carries.
+ *
+ * ── THREE BRANCHES, BECAUSE THERE ARE THREE TRUTHS ───────────────────────────
+ *
+ * `audienceMode` alone read two ways and told a lie in one of them, and
+ * `PromotedCard.tsx` was corrected for it first: `countries` is applied to
+ * EVERY campaign, not only targeted ones, so a "general" placement scoped to GB
+ * reached only GB profiles and this paragraph then said "Nothing about you was
+ * used to choose it" — when the reader's own declared country is exactly what
+ * was used. On the one sentence of the slide whose whole job is to be true.
+ *
+ * ── WHOSE DEMO IT IS ─────────────────────────────────────────────────────────
+ *
+ * The footnote comes off THE PLACEMENT, not off the run. The run's `demo` flag
+ * is about the STORIES; a run can now hold demo stories and a placement
+ * somebody actually paid for at once, and printing "nobody has bought this"
+ * under the latter would be a false statement about a real business.
  */
 function PromotedSlideView({
   promo,
-  demo,
   onFollowLink,
 }: {
   promo: PromotedPlacement;
-  demo: boolean;
   onFollowLink(e: React.MouseEvent): void;
 }) {
+  /*
+   * The picture, held to `PromotedCard.tsx`'s rule because it is the same
+   * picture. `creativePath` is `promoted_placements.creative_path` — a string
+   * an ADVERTISER wrote, and a reference rather than a URL. `inAppImage`
+   * accepts one shape, a path inside this app, so a storage key is not guessed
+   * at and `https://…` is not fetched from somebody else's host on a climber's
+   * phone. `toStoryPlacement` already narrowed it; this is the same refusal at
+   * the pixel, where a future source of a `PromotedPlacement` cannot get past
+   * it.
+   *
+   * A promotion with no picture is the ordinary case, not a degraded one — the
+   * branch below is the slide's real background, not a placeholder.
+   */
+  const [imageBroken, setImageBroken] = useState(false);
+  const imageSrc = imageBroken ? null : inAppImage(promo.creativePath);
+
   return (
     <div className="relative h-full w-full">
-      {promo.creativePath ? (
+      {imageSrc ? (
         <>
           <img
-            src={promo.creativePath}
+            src={imageSrc}
             alt=""
             aria-hidden
             draggable={false}
+            onError={() => setImageBroken(true)}
             className="h-full w-full object-cover"
           />
           <div className="absolute inset-0 bg-gradient-to-b from-obsidian/75 via-obsidian/25 to-obsidian/90" />
@@ -607,7 +696,8 @@ function PromotedSlideView({
       <div /* 5.5rem cleared the footnotes alone. The reply bar now sits above them
              in the same stack, so the slide's own words need the taller
              clearance or they run behind it — measured at ~172px of footer. */
-          className="absolute inset-x-0 bottom-0 px-5 pb-[11.5rem]">
+        className="absolute inset-x-0 bottom-0 px-5 pb-[11.5rem]"
+      >
         <p className="text-[11px] uppercase tracking-[0.1em] text-mist">{promo.companyName}</p>
         <p className="mt-1.5 text-[16px] font-light leading-snug text-snow">{promo.headline}</p>
 
@@ -617,7 +707,11 @@ function PromotedSlideView({
             onClick={onFollowLink}
             className="relative z-20 mt-3 inline-flex items-center gap-1 rounded-pill border border-azure/50 px-3.5 py-1.5 text-[12px] text-azure transition-colors hover:bg-azure/10"
           >
-            View company
+            {/* The advertiser's own words. `creative_cta_href` may point at a
+                route, a trek or an expedition as easily as at a company, so
+                ICEFALL naming the destination itself would be ICEFALL getting
+                it wrong. */}
+            {promo.ctaLabel}
             <ChevronRight size={14} strokeWidth={1.8} />
           </Link>
         )}
@@ -627,9 +721,11 @@ function PromotedSlideView({
           takes no part in anything you book.{" "}
           {promo.audienceMode === "targeted"
             ? "You are seeing it because of an objective you set yourself — nothing was inferred about you."
-            : "Nothing about you was used to choose it."}
+            : promo.countryScoped
+              ? "You are seeing it because of the country on your profile. Nothing else about you was used."
+              : "Nothing about you was used to choose it."}
         </p>
-        {demo && (
+        {promo.demo && (
           <p className="mt-1.5 text-[10.5px] leading-relaxed text-mist-dim">
             Nobody has bought this. The company is invented, the picture is ICEFALL's own, and
             campaigns need an account nobody has — this shows what a promoted story looks like.

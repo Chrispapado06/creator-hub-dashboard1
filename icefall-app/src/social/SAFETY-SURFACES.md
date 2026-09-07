@@ -89,9 +89,13 @@ now. "device" = it exists but only writes `localStorage`.
   always; ICEFALL has no customers and publishes no review.
 - `components/social/Composer.tsx`, `PublishSummit.tsx`, `CreateHighlight.tsx` —
   your own words on the way out.
-- `screens/explore/Community.tsx:416-419` `PromotedCard` — a placement, not a
-  person. If a promoted card ever carries free text an operator wrote, it joins
-  row #12.
+- `screens/explore/Community.tsx` `PromotedCard` — a placement, not a person.
+  **That condition is now met and this line is a to-do, not an exemption.**
+  Since `social/promoted.ts` began reading `promoted_placements`, the headline
+  on a promoted post and a promoted story slide is `creative_headline` — free
+  text a company wrote, delivered to a climber. It has no report control on
+  either surface. The x on the feed card closes the placement for good but
+  reports nothing to anybody, so this belongs in row #12.
 
 ### One structural warning for whoever implements this
 
