@@ -22,9 +22,7 @@ import { supabase } from "@/backend/client";
  * App.tsx exempts them before it ever reads this.
  */
 export function useSessionState(): Session | null | undefined {
-  const [session, setSession] = useState<Session | null | undefined>(
-    supabase ? undefined : null,
-  );
+  const [session, setSession] = useState<Session | null | undefined>(supabase ? undefined : null);
 
   useEffect(() => {
     if (!supabase) return;
@@ -36,9 +34,23 @@ export function useSessionState(): Session | null | undefined {
 
     /* Sign-out in another tab, a token refresh failing, an expiry mid-session:
        all of them arrive here, so the gate closes on its own rather than
-       waiting for the next full page load. */
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
-      if (live) setSession(next ?? null);
+       waiting for the next full page load.
+
+       The event is a WAKE-UP, not a source of truth. auth-js relays SIGNED_IN
+       across tabs over BroadcastChannel whatever store holds the session, and
+       with Remember me off that store is another tab's sessionStorage, which
+       this tab cannot read — storing the payload would open the gate on a
+       session every query then runs without. `getSession()` goes through the
+       storage adapter, so it answers for this tab only. Deferred, because
+       auth-js fires the callback inside its own lock and a synchronous
+       getSession() there can deadlock. */
+    const { data: sub } = supabase.auth.onAuthStateChange(() => {
+      setTimeout(() => {
+        if (!live) return;
+        supabase!.auth.getSession().then(({ data }) => {
+          if (live) setSession(data.session ?? null);
+        });
+      }, 0);
     });
 
     return () => {

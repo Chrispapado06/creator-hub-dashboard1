@@ -20,15 +20,8 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/primitives";
 import { supabase } from "@/backend/client";
-import { AuthScreen, Field, Note } from "./Auth";
+import { AuthScreen, Field, Note, RULES } from "./Auth";
 import { nextStepForSession } from "@/auth/account";
-
-/** The same rules the sign-up form states, so the two cannot disagree. */
-const RULES = [
-  { label: "At least 8 characters", test: (v: string) => v.length >= 8 },
-  { label: "One number", test: (v: string) => /\d/.test(v) },
-  { label: "One special character", test: (v: string) => /[^A-Za-z0-9]/.test(v) },
-];
 
 export function NewPassword() {
   const navigate = useNavigate();
@@ -98,17 +91,15 @@ export function NewPassword() {
           ))}
         </ul>
 
-        {error && (
-          <p className="text-[12px] leading-relaxed text-danger">{error}</p>
-        )}
+        {error && <p className="text-[12px] leading-relaxed text-danger">{error}</p>}
 
         <Button type="submit" className="w-full" disabled={!ok || busy}>
           {busy ? "Saving…" : "Save password"}
         </Button>
 
         <Note>
-          This link signed you in. Until you set a password here, the old one is
-          still the one that works.
+          This link signed you in. Until you set a password here, the old one is still the one that
+          works.
         </Note>
       </form>
     </AuthScreen>

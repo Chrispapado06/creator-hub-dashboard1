@@ -61,8 +61,12 @@ const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
  * "REMEMBER ME" IS REAL, AND THIS IS WHERE IT LIVES.
  *
  * The sign-in screen's checkbox (owner's mockup, 2026-09-07) decides which
- * browser store holds the session: `localStorage` survives closing the browser,
- * `sessionStorage` does not. The choice is written under `REMEMBER_KEY` BEFORE
+ * browser store holds the session: `localStorage` is shared by every tab and
+ * survives restarts; `sessionStorage` belongs to this one tab and is gone when
+ * the tab is closed or the browser starts fresh — browsers that restore tabs
+ * (Chrome/Edge "continue where you left off", Firefox session restore, Safari)
+ * restore it too, and no client-side store can promise more than that. The
+ * choice is written under `REMEMBER_KEY` BEFORE
  * sign-in (see `setRememberMe` in auth/account.ts), and this adapter reads it
  * on every access, so the same client serves both answers.
  *
@@ -110,6 +114,27 @@ const authStorage = {
     }
   },
 };
+
+/**
+ * HOW THE BROWSER ARRIVED, read once before the client can rewrite the URL.
+ *
+ * auth-js consumes `#access_token=…&type=recovery` and then clears the hash —
+ * after a network round-trip to Supabase. The lazily loaded Callback screen
+ * can mount after that, see no `type`, and route a password-reset arrival
+ * into the app with the forgotten password still in place. Capturing here,
+ * above `createClient`, is the one place guaranteed to run first: imports are
+ * hoisted, so this module runs before any statement in main.tsx.
+ */
+export const ARRIVED_AS: string | null = (() => {
+  try {
+    return (
+      new URLSearchParams(window.location.hash.slice(1)).get("type") ??
+      new URLSearchParams(window.location.search).get("type")
+    );
+  } catch {
+    return null;
+  }
+})();
 
 export const supabase: SupabaseClient<Database> | null =
   !DEMO && url && key

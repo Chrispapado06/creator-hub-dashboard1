@@ -23,7 +23,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { LoaderCircle } from "lucide-react";
 import { Button } from "@/components/ui/primitives";
-import { supabase } from "@/backend/client";
+import { supabase, ARRIVED_AS } from "@/backend/client";
 import { nextStepForSession } from "@/auth/account";
 
 const GIVE_UP_MS = 12_000;
@@ -58,11 +58,14 @@ export function AuthCallback() {
       the app instead — which the first version did — makes "forgot password"
       restore access once and leave the forgotten password in place.
 
-      Checked two ways because either alone can miss: the URL carries
-      `type=recovery`, and Supabase fires PASSWORD_RECOVERY when it consumes the
-      token — but only if we are already listening, which a slow mount can lose.
+      Checked three ways because each alone can miss: `ARRIVED_AS` is the URL
+      as it was at boot, before auth-js clears the fragment (it does so after
+      its round-trip to Supabase, which can beat this lazy chunk); the live URL
+      still carries `type=recovery` on a fast mount; and Supabase fires
+      PASSWORD_RECOVERY when it consumes the token — but only if we are already
+      listening.
     */
-    if (params.get("type") === "recovery") {
+    if (ARRIVED_AS === "recovery" || params.get("type") === "recovery") {
       done = true;
       navigate("/auth/new-password", { replace: true });
       return;
@@ -73,10 +76,20 @@ export function AuthCallback() {
       const step = await nextStepForSession();
       if (done) return;
       switch (step) {
-        case "handle": done = true; navigate("/auth/handle", { replace: true }); break;
-        case "onboarding": done = true; navigate("/onboarding", { replace: true }); break;
-        case "home": done = true; navigate("/home", { replace: true }); break;
-        case "signed-out": break; // keep waiting — the client may still be exchanging
+        case "handle":
+          done = true;
+          navigate("/auth/handle", { replace: true });
+          break;
+        case "onboarding":
+          done = true;
+          navigate("/onboarding", { replace: true });
+          break;
+        case "home":
+          done = true;
+          navigate("/home", { replace: true });
+          break;
+        case "signed-out":
+          break; // keep waiting — the client may still be exchanging
         case "offline":
           done = true;
           setFailed("Signed in, but ICEFALL can't reach the server to load your profile.");

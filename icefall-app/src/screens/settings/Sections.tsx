@@ -70,7 +70,7 @@ import { PROFILE_BANNERS, bannerFor, bannerIndex } from "@/profile/banners";
 import { BADGES, badgeState } from "@/badges/model";
 import { BadgeHex } from "@/components/domain/BadgeHex";
 import { supabase } from "@/backend/client";
-import { sendPasswordReset } from "@/auth/account";
+import { sendPasswordReset, signOut as signOutServer, signOutEverywhere } from "@/auth/account";
 import SupportRequest from "./SupportRequest";
 import { SUPPORT_ABUSE_IS_SEPARATE, SUPPORT_NO_RESPONSE_TIME } from "@/support/tickets";
 import { Listbox } from "@/components/ui/Listbox";
@@ -3670,27 +3670,67 @@ function About() {
 /* ========================================================================== */
 
 function ManageAccount() {
-  const { resetAll } = useApp();
+  const { resetAll, signOut: forgetLocalAccount } = useApp();
   const navigate = useNavigate();
   const [confirming, setConfirming] = useState(false);
+  const [leaving, setLeaving] = useState<"this" | "all" | null>(null);
+  const [leaveError, setLeaveError] = useState<string | null>(null);
+  const connected = isBackendConfigured();
+
+  /* Two sign-outs, both real. The local one keeps every recorded activity on
+     the phone on purpose (see `signOut` in AppState); the server one ends the
+     session so the gate closes. "All devices" asks the server to revoke every
+     refresh token, which this device is one of. */
+  async function leave(scope: "this" | "all") {
+    if (leaving) return;
+    setLeaving(scope);
+    setLeaveError(null);
+    if (scope === "all") {
+      const r = await signOutEverywhere();
+      if (!r.ok) {
+        setLeaveError(r.message);
+        setLeaving(null);
+        return;
+      }
+    } else {
+      await signOutServer();
+    }
+    forgetLocalAccount();
+    navigate("/", { replace: true });
+  }
 
   return (
     <SettingsPage title="Account management" subtitle="Signing out and deleting.">
       <Group label="Session">
-        <InfoRow
-          icon={LogOut}
-          title="Sign out"
-          detail="There is no account to sign out of yet."
-          value="Unavailable"
-          tone="mist"
-        />
-        <InfoRow
-          title="Sign out of all devices"
-          detail="Nothing is signed in anywhere else."
-          value="Unavailable"
-          tone="mist"
-        />
+        {connected ? (
+          <>
+            <ActionRow
+              icon={LogOut}
+              title="Sign out"
+              detail="Your recorded activities stay on this phone."
+              disabled={leaving !== null}
+              onClick={() => void leave("this")}
+            />
+            <ActionRow
+              title="Sign out of all devices"
+              detail="Ends every session, including this one."
+              disabled={leaving !== null}
+              onClick={() => void leave("all")}
+            />
+          </>
+        ) : (
+          <InfoRow
+            icon={LogOut}
+            title="Sign out"
+            detail="This build isn't connected to an account server, so there is no session to end."
+            value="Unavailable"
+            tone="mist"
+          />
+        )}
       </Group>
+      {leaveError && (
+        <p className="px-1 pt-2 text-[12px] leading-relaxed text-danger">{leaveError}</p>
+      )}
 
       <Rise className="pt-6">
         <div className="rounded-card border border-danger/40 bg-danger/[0.05] p-4">

@@ -59,15 +59,6 @@ import {
  * account, claiming a handle and syncing need the network.
  */
 
-/**
- * Replaces the old LOCAL_ONLY note, which said the profile stayed on this
- * device. It no longer does, and leaving that sentence up would have been the
- * same failure as the old button that did nothing — a screen making a promise
- * the code stopped keeping.
- */
-const SERVER_NOTE =
-  "Your account lives on ICEFALL's server so it follows you to a new phone. Your training data stays on this device and syncs when you have signal.";
-
 /* -------------------------------------------------------------------------- */
 /* Shared chrome                                                              */
 /* -------------------------------------------------------------------------- */
@@ -90,6 +81,7 @@ export function AuthScreen({
   title,
   subtitle,
   back,
+  onBack,
   hero = "/img/home-hero.jpg",
   tagline = false,
   progress,
@@ -101,6 +93,10 @@ export function AuthScreen({
   title: string | string[];
   subtitle?: string;
   back?: string;
+  /** Back as an action instead of a route — for a screen that is a STATE of
+      the route it is already on (SignUp's "check your email"), where a Link to
+      the same path re-renders nothing and the arrow would do nothing. */
+  onBack?: () => void;
   /** The full-bleed photograph behind everything. */
   hero?: string;
   /** The "Plan. Train. Climb." block above the card (sign-in only). */
@@ -127,7 +123,16 @@ export function AuthScreen({
         {/* ---- Top band: caps left, lockup centre ------------------------- */}
         <div className="relative flex items-start justify-between">
           <div>
-            {back && (
+            {onBack ? (
+              <button
+                type="button"
+                onClick={onBack}
+                aria-label="Back"
+                className="-ml-2 mb-3 grid h-9 w-9 place-items-center rounded-full text-snow/80 transition-colors hover:text-snow"
+              >
+                <ArrowLeft size={19} strokeWidth={1.6} />
+              </button>
+            ) : back ? (
               <Link
                 to={back}
                 aria-label="Back"
@@ -135,7 +140,7 @@ export function AuthScreen({
               >
                 <ArrowLeft size={19} strokeWidth={1.6} />
               </Link>
-            )}
+            ) : null}
             <p className="text-[9.5px] uppercase leading-[1.7] tracking-[0.22em] text-snow/75">
               Real mountains.
               <br />
@@ -191,13 +196,13 @@ export function AuthScreen({
             </div>
           )}
           {eyebrow && <p className="section-label mb-2 text-azure/85">{eyebrow}</p>}
-          <h2 className="display text-[30px] leading-[1.08] text-snow">
+          <h1 className="display text-[30px] leading-[1.08] text-snow">
             {lines.map((l) => (
               <span key={l} className="block">
                 {l}
               </span>
             ))}
-          </h2>
+          </h1>
           {subtitle && <p className="mt-2.5 text-[13.5px] leading-relaxed text-mist">{subtitle}</p>}
 
           <div className="mt-6">{children}</div>
@@ -434,7 +439,7 @@ function ProviderButton({
  * and it has to say something, or a tapped button that does nothing looks like a
  * dead app.
  */
-function SocialSignIn() {
+function SocialSignIn({ remember = true }: { remember?: boolean }) {
   const [pending, setPending] = useState<ProviderKey | null>(null);
   const [providerError, setProviderError] = useState<string | null>(null);
   const providers = useEnabledProviders();
@@ -442,6 +447,9 @@ function SocialSignIn() {
   async function go(key: ProviderKey) {
     setPending(key);
     setProviderError(null);
+    // Written BEFORE the redirect: the callback's session lands in the store
+    // the box asked for (sign-in), or the default where there is no box.
+    setRememberMe(remember);
     const r = await signInWithProvider(key);
     if (!r.ok) {
       setProviderError(`${PROVIDERS[key].label}: ${r.message}`);
@@ -530,7 +538,8 @@ export function CreateAccount() {
 /* 03 — Sign up                                                               */
 /* -------------------------------------------------------------------------- */
 
-const RULES: { id: string; label: string; test: (p: string) => boolean }[] = [
+/** Shared with NewPassword, so a reset cannot accept what sign-up refused. */
+export const RULES: { id: string; label: string; test: (p: string) => boolean }[] = [
   { id: "len", label: "At least 8 characters", test: (p) => p.length >= 8 },
   { id: "num", label: "One number", test: (p) => /\d/.test(p) },
   { id: "sym", label: "One special character", test: (p) => /[^\w\s]/.test(p) },
@@ -562,6 +571,9 @@ export function SignUp() {
     setBusy(true);
     setError(null);
 
+    // No Remember-me box here, so the documented default — and the
+    // confirmation link opened later on this device inherits it.
+    setRememberMe(true);
     const r = await signUpWithEmail(name, email, password);
     if (!r.ok) {
       setError(r.message);
@@ -592,7 +604,7 @@ export function SignUp() {
         title={["Check your", "email."]}
         subtitle={`We sent a link to ${email.trim().toLowerCase()}. Open it on this device and you'll pick your username next.`}
         hero="/img/private-hero.jpg"
-        back="/auth/create"
+        onBack={() => setConfirmSent(false)}
       >
         <Note>
           The link proves the address is yours. Until it's opened the account can't be used — that's
@@ -726,10 +738,11 @@ export function SignIn() {
     setBusy(true);
     setError(null);
 
-    /* Decided BEFORE the session is written, so the session lands in the
-       store the box asked for. */
-    setRememberMe(remember);
-    const r = await signInWithEmail(email, password);
+    /* The box travels with the call: `signInWithEmail` writes the preference
+       BEFORE the session is stored, and puts the previous answer back if the
+       password is wrong — a failed attempt must not move a live session
+       between stores. */
+    const r = await signInWithEmail(email, password, remember);
     if (!r.ok) {
       setError(r.message);
       setBusy(false);
@@ -809,8 +822,10 @@ export function SignIn() {
         />
 
         <div className="flex items-center justify-between pt-1">
-          {/* A real control: unticked, the session ends when the browser is
-              closed. See `authStorage` in backend/client.ts. */}
+          {/* A real control: unticked, the session is held by this tab only and
+              is dropped when the tab closes or the browser starts fresh
+              (tab-restoring browsers bring it back). See `authStorage` in
+              backend/client.ts. */}
           <label className="flex cursor-pointer items-center gap-2.5 text-[12.5px] text-mist">
             <input
               type="checkbox"
@@ -844,7 +859,7 @@ export function SignIn() {
       {providers.keys.length > 0 && (
         <>
           <OrRule />
-          <SocialSignIn />
+          <SocialSignIn remember={remember} />
         </>
       )}
     </AuthScreen>
@@ -859,6 +874,7 @@ export function ForgotPassword() {
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   return (
     <AuthScreen
@@ -877,8 +893,16 @@ export function ForgotPassword() {
           // for "no such user" turns this form into a way to test whether
           // somebody is a member.
           setBusy(true);
-          await sendPasswordReset(email);
+          setError(null);
+          // The recovery link shows no Remember-me box, so it gets the
+          // documented default rather than whatever the last sign-in left.
+          setRememberMe(true);
+          const r = await sendPasswordReset(email);
           setBusy(false);
+          if (!r.ok) {
+            setError(r.message);
+            return;
+          }
           setSent(true);
         }}
       >
@@ -893,18 +917,16 @@ export function ForgotPassword() {
         <Button type="submit" className="w-full" disabled={!EMAIL_RE.test(email) || busy}>
           {busy ? "Sending…" : "Send reset link"}
         </Button>
+        {error && <p className="text-[12px] leading-relaxed text-danger">{error}</p>}
       </form>
 
-      {sent ? (
+      {/* Deliberately the same sentence whether or not the address has an
+          account — see the comment on submit. In a build with no account
+          server the send fails first and `error` carries the OFFLINE line. */}
+      {sent && (
         <Note>
-          No email was sent. ICEFALL has no account server and therefore no way to deliver a reset
-          link — this screen is the design, not a working flow. Your profile on this device does not
-          have a password to reset.
-        </Note>
-      ) : (
-        <Note>
-          ICEFALL can't actually send this yet — there's no account server behind it. Nothing on
-          this device is locked behind a password.
+          If there's an ICEFALL account for {email.trim().toLowerCase()}, a reset link is on its way
+          — open it on this device to choose a new password.
         </Note>
       )}
     </AuthScreen>

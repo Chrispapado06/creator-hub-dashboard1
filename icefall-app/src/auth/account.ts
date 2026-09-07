@@ -128,7 +128,8 @@ export async function signUpWithEmail(
 }
 
 /**
- * Decide, before signing in, whether the session outlives the browser. See
+ * Decide, before signing in, whether the session is shared across tabs and
+ * restarts (localStorage) or held by this tab only (sessionStorage). See
  * `authStorage` in backend/client.ts for what each answer does.
  */
 export function setRememberMe(remember: boolean): void {
@@ -147,14 +148,30 @@ export function rememberMePreference(): boolean {
   }
 }
 
-export async function signInWithEmail(email: string, password: string): Promise<AuthOutcome> {
+/**
+ * `remember` is written BEFORE the session so it lands in the right store, and
+ * put back on failure: the storage adapter re-reads the flag on every access,
+ * so a flipped flag left behind by a wrong password would move a live session
+ * between stores on the next token refresh.
+ */
+export async function signInWithEmail(
+  email: string,
+  password: string,
+  remember?: boolean,
+): Promise<AuthOutcome> {
   if (!supabase) return { ok: false, message: OFFLINE };
+
+  const previous = rememberMePreference();
+  if (remember !== undefined) setRememberMe(remember);
 
   const { error } = await supabase.auth.signInWithPassword({
     email: email.trim().toLowerCase(),
     password,
   });
-  if (error) return { ok: false, message: friendly(error.message) };
+  if (error) {
+    if (remember !== undefined) setRememberMe(previous);
+    return { ok: false, message: friendly(error.message) };
+  }
   return { ok: true, needsEmailConfirmation: false };
 }
 
@@ -186,6 +203,26 @@ export async function sendPasswordReset(email: string): Promise<AuthOutcome> {
 
 export async function signOut(): Promise<void> {
   await supabase?.auth.signOut();
+  // The next sign-in screen opens with the documented default, not with
+  // whatever the last person on this browser left ticked.
+  try {
+    localStorage.removeItem(REMEMBER_KEY);
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+/** Every device, not just this one: the server revokes all refresh tokens. */
+export async function signOutEverywhere(): Promise<AuthOutcome> {
+  if (!supabase) return { ok: false, message: OFFLINE };
+  const { error } = await supabase.auth.signOut({ scope: "global" });
+  try {
+    localStorage.removeItem(REMEMBER_KEY);
+  } catch {
+    /* storage unavailable */
+  }
+  if (error) return { ok: false, message: friendly(error.message) };
+  return { ok: true, needsEmailConfirmation: false };
 }
 
 /**
