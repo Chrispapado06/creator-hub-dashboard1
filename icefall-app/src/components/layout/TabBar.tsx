@@ -338,22 +338,25 @@ export function TabBar() {
        * AllTrails, 2026-09-06, and this is its shape: inset from both edges,
        * lifted off the bottom, rounded all the way round.
        *
-       * THE NAV IS STILL IN FLOW, and that is deliberate. It is `shrink-0` in
-       * the shell's flex column exactly as the full-width bar was. Making it
-       * `fixed` would take its height out of the layout entirely, and NINETEEN
-       * screens in this app run their own scroller rather than `Screen` — every
-       * one of them would need its own bottom padding, found by hand, and the
-       * ones that were missed would hide their last row under the bar.
+       * THE NAV IS AN OVERLAY (owner, 2026-09-07: "under navigation its full
+       * dark, i want the page to continue"). It used to sit in the shell's flex
+       * column, pulled 24px up into the page; everything below that was the
+       * bare canvas, and a floating pill over a solid dark strip is a pill
+       * with nothing to float over. Now the page runs to the bottom edge and
+       * the pill sits on top of it, so the glass blurs real content all the
+       * way down and the rounded corners have a page to be rounded against.
        *
-       * `-mt-6` IS WHAT MAKES THE GLASS REAL. A translucent pane with the app's
-       * own canvas behind it is just a flat colour — `backdrop-blur` needs
-       * something to blur. So the nav is pulled 24px up into the content above
-       * it, the page scrolls underneath the top of the pill, and `Screen`'s
-       * bottom spacer grew by the same 24px so nothing is hidden by it. Small
-       * enough that the custom scrollers, which all carry `pb-8` or more, need
-       * no change.
+       * THE COST, PAID EXPLICITLY: the bar's height no longer reserves space,
+       * so every scroller has to end with `TABBAR_CLEAR` of room or its last
+       * row is hidden under the pill. `Screen` does it itself; the screens that
+       * run their own scroller carry it by hand, and pinned bottom bars rest
+       * `TABBAR_STICKY_BOTTOM` up from the edge. Grep those two constants
+       * before adding a screen with its own scroller.
+       *
+       * `pointer-events-none` on the nav and `auto` on the pill: the gutters
+       * either side of the pill are page, and a tap there reaches the page.
        */
-      className="relative z-20 -mt-6 shrink-0 bg-transparent px-4 pb-2"
+      className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-4 pb-2"
       /*
        * LIFTED OFF THE BOTTOM (owner, 2026-09-06: "add the navigation now
        * slightly more above from where it is, not completely at the bottom").
@@ -401,7 +404,7 @@ export function TabBar() {
          * navigation that cannot be read over a hero image is not a trade worth
          * making for a nicer pane.
          */
-        className="relative overflow-visible rounded-[24px] border border-hairline-strong bg-[color-mix(in_oklab,var(--ice-graphite)_24%,transparent)] shadow-[var(--ice-shadow-pop)] backdrop-blur-2xl backdrop-saturate-150"
+        className="pointer-events-auto relative overflow-visible rounded-[24px] border border-hairline-strong bg-[color-mix(in_oklab,var(--ice-graphite)_24%,transparent)] shadow-[var(--ice-shadow-pop)] backdrop-blur-2xl backdrop-saturate-150"
       >
         {/* Both the light and the ripple are clipped to the pill, so the cone
             and the circle respect its rounded corners — the wrapper owns the
@@ -417,39 +420,39 @@ export function TabBar() {
         </span>
 
         <ul className="relative flex h-[var(--tabbar-h)] items-stretch">
-        {TABS.map((tab, i) => {
-          if (!tab) {
-            return (
-              <li key="start" className="relative flex-1">
-                <button
-                  type="button"
-                  onPointerDown={strike}
-                  onClick={() => navigate("/activity/select")}
-                  aria-label="Start an activity"
-                  className="group absolute left-1/2 top-0 -translate-x-1/2 -translate-y-[9px]"
-                >
-                  {/* Obsidian ring punches the button through the bar. */}
-                  <span className="grid h-[56px] w-[56px] place-items-center rounded-full bg-obsidian">
-                    <span
-                      className={cn(
-                        /* Named tokens, not `text-snow` and not the azure pair.
+          {TABS.map((tab, i) => {
+            if (!tab) {
+              return (
+                <li key="start" className="relative flex-1">
+                  <button
+                    type="button"
+                    onPointerDown={strike}
+                    onClick={() => navigate("/activity/select")}
+                    aria-label="Start an activity"
+                    className="group absolute left-1/2 top-0 -translate-x-1/2 -translate-y-[9px]"
+                  >
+                    {/* Obsidian ring punches the button through the bar. */}
+                    <span className="grid h-[56px] w-[56px] place-items-center rounded-full bg-obsidian">
+                      <span
+                        className={cn(
+                          /* Named tokens, not `text-snow` and not the azure pair.
                            `snow` is the primary TEXT colour and only happens to
                            be white on a dark canvas — on a light one it is dark
                            ink, which turned the arrow black. See --ice-start-from
                            in index.css. */
-                        "grid h-[48px] w-[48px] place-items-center rounded-full",
-                        "text-[color:var(--ice-on-accent)]",
-                        "bg-[linear-gradient(to_bottom,var(--ice-start-from),var(--ice-start-to))]",
-                        "transition-all duration-200 ease-[cubic-bezier(.22,1,.36,1)]",
-                        "group-active:scale-95",
-                        // The glow is the control's whole presence in the bar.
-                        "shadow-[0_8px_28px_-6px_var(--ice-azure-glow)]",
-                      )}
-                    >
-                      <Play size={18} strokeWidth={2} className="ml-0.5" fill="currentColor" />
+                          "grid h-[48px] w-[48px] place-items-center rounded-full",
+                          "text-[color:var(--ice-on-accent)]",
+                          "bg-[linear-gradient(to_bottom,var(--ice-start-from),var(--ice-start-to))]",
+                          "transition-all duration-200 ease-[cubic-bezier(.22,1,.36,1)]",
+                          "group-active:scale-95",
+                          // The glow is the control's whole presence in the bar.
+                          "shadow-[0_8px_28px_-6px_var(--ice-azure-glow)]",
+                        )}
+                      >
+                        <Play size={18} strokeWidth={2} className="ml-0.5" fill="currentColor" />
+                      </span>
                     </span>
-                  </span>
-                  {/*
+                    {/*
                     NO LABEL (owner, 2026-09-06: "remove the text start and take
                     button under"). The word sat under the disc and, with the
                     button lowered into the bar, it had nowhere to go that was
@@ -462,17 +465,17 @@ export function TabBar() {
                     nothing else. It says "Start an activity" and must not be
                     removed with the visible text.
                   */}
-                </button>
-              </li>
-            );
-          }
+                  </button>
+                </li>
+              );
+            }
 
-          const active = tab.to === activeTabPath(pathname);
-          const Icon = tab.icon;
+            const active = tab.to === activeTabPath(pathname);
+            const Icon = tab.icon;
 
-          return (
-            <li key={tab.to} className="flex-1">
-              {/*
+            return (
+              <li key={tab.to} className="flex-1">
+                {/*
                 A PLAIN `Link`, NOT `NavLink`, and the reason is the whole point
                 of the matcher above. `NavLink` runs its OWN prefix matcher and
                 stamps `aria-current="page"` from it — passing `undefined` does
@@ -490,16 +493,16 @@ export function TabBar() {
                 A `Link` has no opinion. One computation, one winner.
                 (Found by the ICEFALL 001 variant, which hit it first.)
               */}
-              <Link
-                to={tab.to}
-                onPointerDown={strike}
-                className="group relative flex h-full flex-col items-center justify-center gap-[3px]"
-                aria-current={active ? "page" : undefined}
-              >
-                {/* The old `layoutId` underline lived here. The summit line is
+                <Link
+                  to={tab.to}
+                  onPointerDown={strike}
+                  className="group relative flex h-full flex-col items-center justify-center gap-[3px]"
+                  aria-current={active ? "page" : undefined}
+                >
+                  {/* The old `layoutId` underline lived here. The summit line is
                     the indicator now, and two sliding markers for one selection
                     is one more than the eye can follow. */}
-                {/*
+                  {/*
                   TYPE AND COLOUR, MEASURED OFF THE REFERENCE — the owner put
                   the two bars side by side on 2026-09-06 and the difference was
                   not the shape, it was this.
@@ -517,26 +520,26 @@ export function TabBar() {
                   mark. Spending it on "which tab am I on" as well left nothing
                   to distinguish them.
                 */}
-                <Icon
-                  size={21}
-                  strokeWidth={active ? 1.8 : 1.5}
-                  className={cn(
-                    "transition-colors duration-200",
-                    active ? "text-snow" : "text-mist group-hover:text-snow",
-                  )}
-                />
-                <span
-                  className={cn(
-                    "text-[10.5px] leading-none transition-colors duration-200",
-                    active ? "font-medium text-snow" : "text-mist group-hover:text-snow",
-                  )}
-                >
-                  {tab.label}
-                </span>
-              </Link>
-            </li>
-          );
-        })}
+                  <Icon
+                    size={21}
+                    strokeWidth={active ? 1.8 : 1.5}
+                    className={cn(
+                      "transition-colors duration-200",
+                      active ? "text-snow" : "text-mist group-hover:text-snow",
+                    )}
+                  />
+                  <span
+                    className={cn(
+                      "text-[10.5px] leading-none transition-colors duration-200",
+                      active ? "font-medium text-snow" : "text-mist group-hover:text-snow",
+                    )}
+                  >
+                    {tab.label}
+                  </span>
+                </Link>
+              </li>
+            );
+          })}
         </ul>
       </div>
     </nav>

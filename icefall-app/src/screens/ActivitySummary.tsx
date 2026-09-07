@@ -3,7 +3,13 @@ import { Link, Navigate, useParams } from "react-router-dom";
 import { Badge, Button, Card, Divider, SectionLabel, Metric } from "@/components/ui/primitives";
 import { RouteMap } from "@/components/ui/RouteMap";
 import { TerrainMap } from "@/components/map/TerrainMap";
-import { Rise, Screen, ScreenHeader, Stagger } from "@/components/layout/chrome";
+import {
+  Rise,
+  Screen,
+  ScreenHeader,
+  Stagger,
+  TABBAR_STICKY_BOTTOM,
+} from "@/components/layout/chrome";
 import { CoachInsight, WeatherStrip } from "@/components/domain/cards";
 import { UpgradePrompt } from "@/components/growth/UpgradePrompt";
 import { useUpgradeCopy } from "@/growth/upgradeCopy";
@@ -92,8 +98,18 @@ export default function ActivitySummary() {
         <Rise className="pt-5">
           <Card>
             <div className="grid grid-cols-3 gap-3">
-              <Metric size="md" value={fmtDistance(activity.distanceKm)} unit="km" label="Distance" />
-              <Metric size="md" value={fmtElevation(activity.elevationGainM)} unit="m" label="Ascent" />
+              <Metric
+                size="md"
+                value={fmtDistance(activity.distanceKm)}
+                unit="km"
+                label="Distance"
+              />
+              <Metric
+                size="md"
+                value={fmtElevation(activity.elevationGainM)}
+                unit="m"
+                label="Ascent"
+              />
               <Metric size="md" value={fmtDuration(activity.durationSec)} label="Time" />
             </div>
             <Divider className="my-4" />
@@ -112,12 +128,12 @@ export default function ActivitySummary() {
                 label={
                   recorded?.caloriesForKg
                     ? bodyMassKgSet === null
-                      // The stored `caloriesForKg` is whatever the recorder was
-                      // handed, and the recorder is handed the DEFAULTED mass —
-                      // so a figure computed for a body nobody described reads
-                      // identically to one computed for a real weight. Said
-                      // plainly rather than dressed as a measurement.
-                      ? `Energy · est. for an assumed ${recorded.caloriesForKg} kg`
+                      ? // The stored `caloriesForKg` is whatever the recorder was
+                        // handed, and the recorder is handed the DEFAULTED mass —
+                        // so a figure computed for a body nobody described reads
+                        // identically to one computed for a real weight. Said
+                        // plainly rather than dressed as a measurement.
+                        `Energy · est. for an assumed ${recorded.caloriesForKg} kg`
                       : `Energy · est. for ${recorded.caloriesForKg} kg`
                     : "Energy · estimate"
                 }
@@ -221,8 +237,9 @@ export default function ActivitySummary() {
           have scrolled. Withheld when the recording carries no track. */}
       {recorded && recorded.points.length > 1 && (
         <div
-          className="sticky bottom-0 z-20 flex gap-2 border-t border-hairline bg-obsidian/95 px-5 pb-5 pt-3 backdrop-blur"
-          style={{ paddingBottom: "calc(1.25rem + env(safe-area-inset-bottom, 0px))" }}
+          className="sticky z-20 flex gap-2 border-t border-hairline bg-obsidian/95 px-5 pb-5 pt-3 backdrop-blur"
+          /* Rests just above the floating tab bar, not under it. */
+          style={{ bottom: TABBAR_STICKY_BOTTOM }}
         >
           <Button asChild className="flex-1">
             <Link to={`/activity/${activity.id}/replay`}>
@@ -247,5 +264,3 @@ export default function ActivitySummary() {
     </Screen>
   );
 }
-
-

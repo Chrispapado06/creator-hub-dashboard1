@@ -24,7 +24,14 @@ import {
   Wind,
 } from "lucide-react";
 import { Badge, Button, Card, Disclaimer, SectionLabel } from "@/components/ui/primitives";
-import { Rise, Screen, ScreenHeader, SegmentedTabs, Stagger } from "@/components/layout/chrome";
+import {
+  Rise,
+  Screen,
+  ScreenHeader,
+  SegmentedTabs,
+  Stagger,
+  TABBAR_STICKY_BOTTOM,
+} from "@/components/layout/chrome";
 import { MountainBackdrop } from "@/components/domain/MountainImage";
 import { fmtDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -453,7 +460,10 @@ export default function GuideProfile() {
           drawing has no rate at the foot, but it also has no screen where the
           day rate could otherwise be missed, and a price is the thing an
           athlete must not have to hunt for. -------------------------------- */}
-      <div className="sticky bottom-0 -mx-5 mt-8 border-t border-hairline bg-obsidian/95 px-5 pb-4 pt-3 backdrop-blur">
+      <div
+        className="sticky -mx-5 mt-8 border-t border-hairline bg-obsidian/95 px-5 pb-4 pt-3 backdrop-blur"
+        style={{ bottom: TABBAR_STICKY_BOTTOM }}
+      >
         <div className="flex items-baseline gap-3">
           <GuideRateBadge guide={guide} />
           <p className="min-w-0 flex-1 text-right text-[10px] leading-tight text-mist-dim">

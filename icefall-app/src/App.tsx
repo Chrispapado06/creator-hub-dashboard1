@@ -210,7 +210,8 @@ function AppShell() {
   const bare = pathname === "/settings/profile";
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    /* `relative`: the tab bar is an overlay positioned against this box. */
+    <div className="relative flex h-full min-h-0 flex-col">
       {/* The top bar, on every screen that has the bottom navigation (owner,
           2026-09-04). It clears the notch, so everything below it must not:
           `--screen-safe-top: 0px` on the content wrapper is what stops the

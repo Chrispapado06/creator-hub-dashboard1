@@ -1,23 +1,45 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
-  Bookmark, ChevronLeft, ChevronRight, ExternalLink, Loader2, MapPin, MoreHorizontal,
-  Navigation, Route as RouteIcon, Share2, Star, Users, X,
+  Bookmark,
+  ChevronLeft,
+  ChevronRight,
+  ExternalLink,
+  Loader2,
+  MapPin,
+  MoreHorizontal,
+  Navigation,
+  Route as RouteIcon,
+  Share2,
+  Star,
+  Users,
+  X,
   Download,
 } from "lucide-react";
-import { Card, Disclaimer, HeroCircleButton, IconAction, Stat, sharePage } from "@/components/ui/primitives";
+import {
+  Card,
+  Disclaimer,
+  HeroCircleButton,
+  IconAction,
+  Stat,
+  sharePage,
+} from "@/components/ui/primitives";
 import { CompanyMark } from "@/components/domain/CompanyMark";
 import { Sheet, SheetRow } from "@/components/ui/Sheet";
-import { Rise, Stagger, scrollContentToTop } from "@/components/layout/chrome";
+import { Rise, Stagger, scrollContentToTop, TABBAR_CLEAR } from "@/components/layout/chrome";
 import { MapBackdrop, MiniMap } from "@/components/domain/MiniMap";
 import { TrailShape, useTrailLine } from "@/components/domain/TrailShape";
 import {
-  NETWORK_LABEL, SAC_LABEL, TRAIL_ATTRIBUTION, VISIBILITY_LABEL, lengthOf, trailById,
-  type LatLon, type Trail,
+  NETWORK_LABEL,
+  SAC_LABEL,
+  TRAIL_ATTRIBUTION,
+  VISIBILITY_LABEL,
+  lengthOf,
+  trailById,
+  type LatLon,
+  type Trail,
 } from "@/services/trails";
-import {
-  ofCaption, photosOfNamed, type PlacePhoto,
-} from "@/services/placePhotos";
+import { ofCaption, photosOfNamed, type PlacePhoto } from "@/services/placePhotos";
 import { RATING_NOTICE, fmtPeople, ratingFor } from "@/routes/ratings";
 import { operatorsFor } from "@/services/operators";
 import { TrailImage } from "@/components/domain/TrailImage";
@@ -32,8 +54,18 @@ import { SAVED_NOTICE, isTrailSaved, saveTrail, unsaveTrail } from "@/services/s
 import { SaveAction, SaveButton, SavedToast, useSaveFlash } from "@/components/ui/SaveControl";
 import { BreakdownBar, ElevationProfile } from "@/components/domain/TrailProfile";
 import {
-  elevationOf, formatHours, hardestGrade, lineSegments, surfaceBreakdown, toGpx,
-  trailLengthKm, trailWays, walkingHours, type Elevation, type TrailWay, waytypeBreakdown,
+  elevationOf,
+  formatHours,
+  hardestGrade,
+  lineSegments,
+  surfaceBreakdown,
+  toGpx,
+  trailLengthKm,
+  trailWays,
+  walkingHours,
+  type Elevation,
+  type TrailWay,
+  waytypeBreakdown,
 } from "@/services/trailProfile";
 import { cn } from "@/lib/utils";
 
@@ -64,9 +96,14 @@ function useTrailFacts(osmId: number | undefined) {
         const e = await elevationOf(osmId, w, ctrl.signal);
         if (live) setElevation(e);
       })
-      .finally(() => { if (live) setLoading(false); });
+      .finally(() => {
+        if (live) setLoading(false);
+      });
 
-    return () => { live = false; ctrl.abort(); };
+    return () => {
+      live = false;
+      ctrl.abort();
+    };
   }, [osmId]);
 
   return { ways, elevation, loading };
@@ -87,9 +124,16 @@ function useTrailWaypoints(osmId: number | undefined, enabled: boolean) {
     const ctrl = new AbortController();
     setLoading(true);
     trailWaypoints(osmId)
-      .then((p) => { if (live) setPoints(p); })
-      .finally(() => { if (live) setLoading(false); });
-    return () => { live = false; ctrl.abort(); };
+      .then((p) => {
+        if (live) setPoints(p);
+      })
+      .finally(() => {
+        if (live) setLoading(false);
+      });
+    return () => {
+      live = false;
+      ctrl.abort();
+    };
   }, [osmId, enabled, points]);
 
   return { points, loading };
@@ -148,9 +192,11 @@ export default function TrailDetail() {
   const [heroCaption, setHeroCaption] = useState(TRAIL_PLATE_CAPTION);
   const [heroPhoto, setHeroPhoto] = useState<TrailPhoto | null>(null);
 
-  const { line, loading: lineLoading, failed: lineFailed } = useTrailLine(
-    Number.isFinite(osmId) ? osmId : undefined,
-  );
+  const {
+    line,
+    loading: lineLoading,
+    failed: lineFailed,
+  } = useTrailLine(Number.isFinite(osmId) ? osmId : undefined);
   /*
    * Gated on the line being ready, not just on the tab being open.
    *
@@ -280,7 +326,10 @@ export default function TrailDetail() {
   };
 
   return (
-    <div className="no-scrollbar relative h-full overflow-y-auto">
+    <div
+      className="no-scrollbar relative h-full overflow-y-auto"
+      style={{ paddingBottom: TABBAR_CLEAR }}
+    >
       {/* ---- Hero -------------------------------------------------------- */}
       <div className="relative h-[330px] bg-slate">
         {/* Plate instantly, satellite imagery of the real ground, then a
@@ -323,7 +372,11 @@ export default function TrailDetail() {
             icon={Navigation}
             onClick={() => openMaps(mapsDirectionsUrl(spot))}
           />
-          <HeroCircleButton label="Share" icon={Share2} onClick={() => sharePage(`${trail.name} · ICEFALL`)} />
+          <HeroCircleButton
+            label="Share"
+            icon={Share2}
+            onClick={() => sharePage(`${trail.name} · ICEFALL`)}
+          />
           <HeroCircleButton label="More" icon={MoreHorizontal} onClick={() => setOptions(true)} />
         </div>
 
@@ -402,9 +455,7 @@ export default function TrailDetail() {
 
           <Rise className="pt-3.5">
             <h1 className="text-[23px] font-light leading-tight text-snow">{trail.name}</h1>
-            {trail.localName && (
-              <p className="mt-1 text-[13px] text-mist-dim">{trail.localName}</p>
-            )}
+            {trail.localName && <p className="mt-1 text-[13px] text-mist-dim">{trail.localName}</p>}
             {rating && (
               <div className="mt-2.5 flex items-center gap-3.5 text-[12.5px]">
                 <span className="flex items-center gap-1.5 text-snow">
@@ -432,7 +483,11 @@ export default function TrailDetail() {
                 label="Directions"
                 onClick={() => openMaps(mapsDirectionsUrl(spot))}
               />
-              <IconAction icon={Share2} label="Share" onClick={() => sharePage(`${trail.name} · ICEFALL`)} />
+              <IconAction
+                icon={Share2}
+                label="Share"
+                onClick={() => sharePage(`${trail.name} · ICEFALL`)}
+              />
             </div>
           </Rise>
 
@@ -458,106 +513,114 @@ export default function TrailDetail() {
             <div className="pt-4">
               {tab === "trail" && (
                 <div className="space-y-2.5">
-                {/* The figures belong to the TRAIL tab, not to the page.
+                  {/* The figures belong to the TRAIL tab, not to the page.
           They used to sit between the actions and the tab strip, which put
           a screen of statistics between "Save / Directions / Share" and the
           three things those actions are about — and left the numbers on
           screen while you were looking at the map or the photographs, where
           they answer nothing. */}
-                <Rise className="pt-4">
-                  {/* Two columns on a phone, four when there is room.
+                  <Rise className="pt-4">
+                    {/* Two columns on a phone, four when there is room.
                       Four cells across 390 px leaves ~82 px each, and `Stat`
                       sets its value and unit on one baseline — so "85.8 km"
                       plus "measured" wrapped onto three ragged lines and the
                       labels stopped lining up. Pre-existing; visible now that
                       the figures sit inside the tab. */}
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-4 border-b border-hairline py-4 sm:grid-cols-4 sm:gap-2">
-                    <Stat
-                      label="Moving time"
-                      value={
-                        trail.durationH
-                          ? formatHours(trail.durationH)
-                          : movingH
-                            ? formatHours(movingH)
-                            : facts.loading
-                              ? "…"
-                              : "—"
-                      }
-                      unit={trail.durationH ? "as mapped" : movingH ? "DIN 33466" : "not known"}
-                    />
-                    <Stat
-                      label="Length"
-                      value={km ? `${km.toFixed(1)} km` : facts.loading ? "…" : "—"}
-                      unit={
-                        trail.lengthKm ? "as mapped" : computedKm ? "measured" : km ? "measured" : undefined
-                      }
-                    />
-                    <Stat
-                      label="Ascent"
-                      value={
-                        trail.ascentM
-                          ? `${trail.ascentM.toLocaleString()} m`
-                          : facts.elevation
-                            ? `${facts.elevation.ascentM.toLocaleString()} m`
-                            : facts.loading
-                              ? "…"
-                              : "—"
-                      }
-                      unit={trail.ascentM ? "as mapped" : facts.elevation ? "computed" : "not known"}
-                    />
-                    <Stat
-                      label="Grade"
-                      value={grade ? (SAC_LABEL[grade]?.split(" · ")[0] ?? "—") : "—"}
-                      unit={
-                        grade
-                          ? trail.sacScale
-                            ? SAC_LABEL[grade]?.split(" · ")[1]
-                            : "hardest section"
-                          : "not graded"
-                      }
-                    />
-                  </div>
-
-                  {/* ---- The vertical story ------------------------------------ */}
-                  {facts.elevation && km && (
-                    <div className="mt-5">
-                      <div className="flex items-baseline justify-between">
-                        <p className="section-label text-mist">Elevation</p>
-                        <p className="tnum text-[11.5px] text-mist">
-                          ↑ {facts.elevation.ascentM.toLocaleString()} m · ↓{" "}
-                          {facts.elevation.descentM.toLocaleString()} m
-                        </p>
-                      </div>
-                      <ElevationProfile
-                        className="mt-2.5"
-                        elevation={facts.elevation}
-                        lengthKm={km}
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-4 border-b border-hairline py-4 sm:grid-cols-4 sm:gap-2">
+                      <Stat
+                        label="Moving time"
+                        value={
+                          trail.durationH
+                            ? formatHours(trail.durationH)
+                            : movingH
+                              ? formatHours(movingH)
+                              : facts.loading
+                                ? "…"
+                                : "—"
+                        }
+                        unit={trail.durationH ? "as mapped" : movingH ? "DIN 33466" : "not known"}
+                      />
+                      <Stat
+                        label="Length"
+                        value={km ? `${km.toFixed(1)} km` : facts.loading ? "…" : "—"}
+                        unit={
+                          trail.lengthKm
+                            ? "as mapped"
+                            : computedKm
+                              ? "measured"
+                              : km
+                                ? "measured"
+                                : undefined
+                        }
+                      />
+                      <Stat
+                        label="Ascent"
+                        value={
+                          trail.ascentM
+                            ? `${trail.ascentM.toLocaleString()} m`
+                            : facts.elevation
+                              ? `${facts.elevation.ascentM.toLocaleString()} m`
+                              : facts.loading
+                                ? "…"
+                                : "—"
+                        }
+                        unit={
+                          trail.ascentM ? "as mapped" : facts.elevation ? "computed" : "not known"
+                        }
+                      />
+                      <Stat
+                        label="Grade"
+                        value={grade ? (SAC_LABEL[grade]?.split(" · ")[0] ?? "—") : "—"}
+                        unit={
+                          grade
+                            ? trail.sacScale
+                              ? SAC_LABEL[grade]?.split(" · ")[1]
+                              : "hardest section"
+                            : "not graded"
+                        }
                       />
                     </div>
-                  )}
 
-                  {/* ---- What it is made of ------------------------------------ */}
-                  {facts.ways && (
-                    <>
-                      <BreakdownBar
-                        className="mt-5"
-                        title="Underfoot"
-                        segments={surfaceBreakdown(facts.ways)}
-                      />
-                      <BreakdownBar
-                        className="mt-5"
-                        title="Way type"
-                        segments={waytypeBreakdown(facts.ways)}
-                      />
-                    </>
-                  )}
+                    {/* ---- The vertical story ------------------------------------ */}
+                    {facts.elevation && km && (
+                      <div className="mt-5">
+                        <div className="flex items-baseline justify-between">
+                          <p className="section-label text-mist">Elevation</p>
+                          <p className="tnum text-[11.5px] text-mist">
+                            ↑ {facts.elevation.ascentM.toLocaleString()} m · ↓{" "}
+                            {facts.elevation.descentM.toLocaleString()} m
+                          </p>
+                        </div>
+                        <ElevationProfile
+                          className="mt-2.5"
+                          elevation={facts.elevation}
+                          lengthKm={km}
+                        />
+                      </div>
+                    )}
 
-                  {/* Shorter than it was. The point — these are OSM's numbers, not
+                    {/* ---- What it is made of ------------------------------------ */}
+                    {facts.ways && (
+                      <>
+                        <BreakdownBar
+                          className="mt-5"
+                          title="Underfoot"
+                          segments={surfaceBreakdown(facts.ways)}
+                        />
+                        <BreakdownBar
+                          className="mt-5"
+                          title="Way type"
+                          segments={waytypeBreakdown(facts.ways)}
+                        />
+                      </>
+                    )}
+
+                    {/* Shorter than it was. The point — these are OSM's numbers, not
                       ICEFALL's — survives; the paragraph explaining it twice does not. */}
-                  <p className="mt-3 text-[11px] text-mist-dim">
-                    Figures as mapped in OpenStreetMap. Blank where nobody recorded it.
-                  </p>
-                </Rise>
+                    <p className="mt-3 text-[11px] text-mist-dim">
+                      Figures as mapped in OpenStreetMap. Blank where nobody recorded it.
+                    </p>
+                  </Rise>
                   {trail.description && (
                     <Card>
                       <p className="section-label">Description</p>
@@ -584,8 +647,8 @@ export default function TrailDetail() {
                         {VISIBILITY_LABEL[trail.visibility]}
                       </p>
                       <p className="mt-1.5 text-[11.5px] leading-relaxed text-mist-dim">
-                        How easy the path was to follow when it was last surveyed — not today,
-                        and not under snow.
+                        How easy the path was to follow when it was last surveyed — not today, and
+                        not under snow.
                       </p>
                     </Card>
                   )}
@@ -663,9 +726,9 @@ export default function TrailDetail() {
                     </Card>
                   )}
                   <Disclaimer>
-                    {TRAIL_ATTRIBUTION}. ICEFALL has not walked or surveyed this trail, and
-                    knows nothing about its condition today — snow, washouts and closures are
-                    not in this data.
+                    {TRAIL_ATTRIBUTION}. ICEFALL has not walked or surveyed this trail, and knows
+                    nothing about its condition today — snow, washouts and closures are not in this
+                    data.
                   </Disclaimer>
                 </div>
               )}
@@ -748,19 +811,22 @@ export default function TrailDetail() {
                         )
                       )}
                       <Disclaimer className="mt-3">
-                        The real line as mapped in OpenStreetMap, simplified for drawing. Start
-                        and end are the ends of the relation, not necessarily a trailhead.
+                        The real line as mapped in OpenStreetMap, simplified for drawing. Start and
+                        end are the ends of the relation, not necessarily a trailhead.
                         {orderedStops.length > 0
                           ? " Numbered stops are real points OpenStreetMap has tagged along the way — not every trail has any, and this one may not have all of them."
                           : ""}
                       </Disclaimer>
                     </>
                   )}
-                  {!haveLine && !lineLoading && !facts.loading && (lineFailed || facts.ways?.length === 0) && (
-                    <p className="py-8 text-center text-[12.5px] text-mist-dim">
-                      Couldn't load the line. This is a connection problem, not an empty map.
-                    </p>
-                  )}
+                  {!haveLine &&
+                    !lineLoading &&
+                    !facts.loading &&
+                    (lineFailed || facts.ways?.length === 0) && (
+                      <p className="py-8 text-center text-[12.5px] text-mist-dim">
+                        Couldn't load the line. This is a connection problem, not an empty map.
+                      </p>
+                    )}
                 </div>
               )}
 
@@ -782,7 +848,13 @@ export default function TrailDetail() {
                       }}
                       className="overflow-hidden rounded-tile border border-hairline text-left"
                     >
-                      <img src={p.src} alt="" aria-hidden loading="lazy" className="h-28 w-full object-cover" />
+                      <img
+                        src={p.src}
+                        alt=""
+                        aria-hidden
+                        loading="lazy"
+                        className="h-28 w-full object-cover"
+                      />
                       <span className="block truncate px-2 py-1.5 text-[9.5px] text-mist-dim">
                         {p.credit}
                       </span>
@@ -842,9 +914,7 @@ export default function TrailDetail() {
             <Navigation size={17} strokeWidth={1.8} />
           </button>
         </div>
-        {saved && (
-          <p className="mt-1.5 text-center text-[10.5px] text-mist-dim">{SAVED_NOTICE}</p>
-        )}
+        {saved && <p className="mt-1.5 text-center text-[10.5px] text-mist-dim">{SAVED_NOTICE}</p>}
       </div>
 
       <SavedToast show={flash} label="Saved to your trails" detail="on this device" />
@@ -855,7 +925,6 @@ export default function TrailDetail() {
 }
 
 /* -------------------------------------------------------------------------- */
-
 
 function OptionsSheet({
   trail,
@@ -921,7 +990,13 @@ function downloadGpx(name: string, line: LatLon[]) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `${name.replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-").toLowerCase() || "trail"}.gpx`;
+  a.download = `${
+    name
+      .replace(/[^\w\s-]/g, "")
+      .trim()
+      .replace(/\s+/g, "-")
+      .toLowerCase() || "trail"
+  }.gpx`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -947,7 +1022,11 @@ function downloadGpx(name: string, line: LatLon[]) {
  * product. The copy says so, because a list of companies under a route reads as
  * an endorsement unless it is told not to.
  */
-function GuidedBy({ peakName, elevationM, country }: {
+function GuidedBy({
+  peakName,
+  elevationM,
+  country,
+}: {
   peakName: string;
   elevationM: number;
   country?: string;

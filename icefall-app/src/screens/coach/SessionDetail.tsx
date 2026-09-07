@@ -11,7 +11,7 @@ import {
   Undo2,
 } from "lucide-react";
 import { Avatar, Badge, Button, Card, Disclaimer, SectionLabel } from "@/components/ui/primitives";
-import { Rise, Screen, Stagger } from "@/components/layout/chrome";
+import { Rise, Screen, Stagger, TABBAR_STICKY_BOTTOM } from "@/components/layout/chrome";
 import { DifficultyDots } from "@/components/domain/cards";
 import { useMountainImage } from "@/components/domain/MountainImage";
 // `UNAVAILABLE_COPY` exists in both DataState and @/coach/types with different
@@ -1148,7 +1148,10 @@ function StickyAction({
     session.focus === "recovery";
 
   return (
-    <div className="sticky bottom-0 -mx-5 mt-8 border-t border-hairline bg-obsidian/95 px-5 pb-4 pt-3 backdrop-blur">
+    <div
+      className="sticky -mx-5 mt-8 border-t border-hairline bg-obsidian/95 px-5 pb-4 pt-3 backdrop-blur"
+      style={{ bottom: TABBAR_STICKY_BOTTOM }}
+    >
       {recorded && !session.isRest && (
         <p className="mb-2.5 text-[11px] leading-relaxed text-mist-dim">
           An activity you recorded on this date already satisfies this session.

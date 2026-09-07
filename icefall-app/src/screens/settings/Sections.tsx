@@ -1,21 +1,63 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import {
-  Activity, Award, Bell, Building2, Camera, Check, ChevronLeft, Copy, Download, ExternalLink, Facebook,
-  Flag, Globe, Instagram, LifeBuoy, LogOut, MapPin, Mountain as MountainIcon, Music2, Pickaxe,
-  RotateCcw, ShieldCheck, Shuffle, Sparkles, Trash2, Watch, X, Youtube,
+  Activity,
+  Award,
+  Bell,
+  Building2,
+  Camera,
+  Check,
+  ChevronLeft,
+  Copy,
+  Download,
+  ExternalLink,
+  Facebook,
+  Flag,
+  Globe,
+  Instagram,
+  LifeBuoy,
+  LogOut,
+  MapPin,
+  Mountain as MountainIcon,
+  Music2,
+  Pickaxe,
+  RotateCcw,
+  ShieldCheck,
+  Shuffle,
+  Sparkles,
+  Trash2,
+  Watch,
+  X,
+  Youtube,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { motion, useReducedMotion } from "framer-motion";
-import { Button, Card, Disclaimer, SectionLabel, Stat, sharePage } from "@/components/ui/primitives";
-import { Rise } from "@/components/layout/chrome";
 import {
-  ActionRow, ChoiceRow, Group, InfoRow, LinkRow, SettingsPage, StatusPill,
+  Button,
+  Card,
+  Disclaimer,
+  SectionLabel,
+  Stat,
+  sharePage,
+} from "@/components/ui/primitives";
+import { Rise, TABBAR_CLEAR } from "@/components/layout/chrome";
+import {
+  ActionRow,
+  ChoiceRow,
+  Group,
+  InfoRow,
+  LinkRow,
+  SettingsPage,
+  StatusPill,
   ToggleRow,
 } from "@/components/settings/kit";
 import {
-  POST_VISIBILITY_OPTIONS, VISIBILITY_OPTIONS, memberId, useSettings,
-  type PostVisibility, type Visibility,
+  POST_VISIBILITY_OPTIONS,
+  VISIBILITY_OPTIONS,
+  memberId,
+  useSettings,
+  type PostVisibility,
+  type Visibility,
 } from "@/settings/store";
 import { LOCATION_NOTICE, SAFETY_REMINDER, approxDistanceLabel } from "@/network/privacy";
 import { useApp, usePrimaryGoal } from "@/state/AppState";
@@ -35,15 +77,34 @@ import { Listbox } from "@/components/ui/Listbox";
 import { cn } from "@/lib/utils";
 import { countryName, useMyProfile, type MyProfileState } from "@/auth/useMyProfile";
 import {
-  COUNTRY_IS_NEVER_PARSED, SYNC_NOT_DEPLOYED, SYNC_NO_PHOTO_STORE, fetchInterestTags,
-  flushProfile, pendingProfileEdit, saveProfile,
-  type FieldResult, type FieldState, type InterestTag, type ProfileEdit, type ProfileFieldName,
+  COUNTRY_IS_NEVER_PARSED,
+  SYNC_NOT_DEPLOYED,
+  SYNC_NO_PHOTO_STORE,
+  fetchInterestTags,
+  flushProfile,
+  pendingProfileEdit,
+  saveProfile,
+  type FieldResult,
+  type FieldState,
+  type InterestTag,
+  type ProfileEdit,
+  type ProfileFieldName,
   type SaveProfileResult,
 } from "@/settings/sync";
 import {
-  HANDLE_CHANGE_BREAKS_LINKS, PROBLEM_TEXT, availabilitySentence, changeFailureSentence,
-  changeUsername, changeWarning, checkAvailability, fetchHoldPromise, formatProblem, normalise,
-  releasedSentence, type Availability, type HoldPromise,
+  HANDLE_CHANGE_BREAKS_LINKS,
+  PROBLEM_TEXT,
+  availabilitySentence,
+  changeFailureSentence,
+  changeUsername,
+  changeWarning,
+  checkAvailability,
+  fetchHoldPromise,
+  formatProblem,
+  normalise,
+  releasedSentence,
+  type Availability,
+  type HoldPromise,
 } from "@/auth/username";
 
 /**
@@ -62,30 +123,54 @@ export default function SettingsSection() {
   const { section } = useParams<{ section: string }>();
 
   switch (section) {
-    case "profile": return <EditProfile />;
-    case "share": return <ShareProfile />;
-    case "verification": return <Verification />;
-    case "passport": return <PassportSettings />;
-    case "account": return <Account />;
-    case "security": return <Security />;
-    case "privacy": return <Privacy />;
-    case "location": return <Location />;
-    case "safety": return <Safety />;
-    case "professional": return <Professional />;
-    case "mountains": return <MyMountains />;
-    case "cv": return <MountainCV />;
-    case "data": return <DataActivity />;
-    case "devices": return <Devices />;
-    case "offline": return <OfflineData />;
-    case "membership": return <Membership />;
-    case "referrals": return <Referrals />;
-    case "notifications": return <Notifications />;
-    case "support": return <Support />;
-    case "contact": return <SupportRequest />;
-    case "legal": return <Legal />;
-    case "about": return <About />;
-    case "manage": return <ManageAccount />;
-    default: return <Navigate to="/settings" replace />;
+    case "profile":
+      return <EditProfile />;
+    case "share":
+      return <ShareProfile />;
+    case "verification":
+      return <Verification />;
+    case "passport":
+      return <PassportSettings />;
+    case "account":
+      return <Account />;
+    case "security":
+      return <Security />;
+    case "privacy":
+      return <Privacy />;
+    case "location":
+      return <Location />;
+    case "safety":
+      return <Safety />;
+    case "professional":
+      return <Professional />;
+    case "mountains":
+      return <MyMountains />;
+    case "cv":
+      return <MountainCV />;
+    case "data":
+      return <DataActivity />;
+    case "devices":
+      return <Devices />;
+    case "offline":
+      return <OfflineData />;
+    case "membership":
+      return <Membership />;
+    case "referrals":
+      return <Referrals />;
+    case "notifications":
+      return <Notifications />;
+    case "support":
+      return <Support />;
+    case "contact":
+      return <SupportRequest />;
+    case "legal":
+      return <Legal />;
+    case "about":
+      return <About />;
+    case "manage":
+      return <ManageAccount />;
+    default:
+      return <Navigate to="/settings" replace />;
   }
 }
 
@@ -565,26 +650,26 @@ function EditableField({
         {prefix !== undefined && (
           <span className="shrink-0 text-[14px] text-mist-dim">{prefix}</span>
         )}
-      {multiline ? (
-        <textarea
-          id={id}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          onBlur={onCommit}
-          placeholder={placeholder}
-          rows={3}
-          className={cn(shared, "resize-none")}
-        />
-      ) : (
-        <input
-          id={id}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          onBlur={onCommit}
-          placeholder={placeholder}
-          className={shared}
-        />
-      )}
+        {multiline ? (
+          <textarea
+            id={id}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            onBlur={onCommit}
+            placeholder={placeholder}
+            rows={3}
+            className={cn(shared, "resize-none")}
+          />
+        ) : (
+          <input
+            id={id}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            onBlur={onCommit}
+            placeholder={placeholder}
+            className={shared}
+          />
+        )}
       </div>
       {hint && <p className="mt-1.5 text-[11px] leading-relaxed text-mist-dim">{hint}</p>}
       {children}
@@ -864,7 +949,12 @@ function HandleField({ profile }: { profile: MyProfileState }) {
           className="w-full bg-transparent pr-16 text-[14px] text-snow outline-none placeholder:text-mist-dim"
         />
         {ok && changing && (
-          <Check size={15} strokeWidth={2.4} className="absolute right-12 text-summit" aria-hidden />
+          <Check
+            size={15}
+            strokeWidth={2.4}
+            className="absolute right-12 text-summit"
+            aria-hidden
+          />
         )}
         <span className="tnum pointer-events-none absolute right-3 text-[10.5px] text-mist-dim">
           {value.length}/20
@@ -1350,16 +1440,41 @@ function PhotoHeader({
  * line has been crossed before).
  */
 export const SOCIALS = [
-  { id: "instagram" as const, label: "Instagram", icon: Instagram, placeholder: "yourhandle",
-    href: (h: string) => `https://instagram.com/${encodeURIComponent(h)}` },
-  { id: "strava" as const, label: "Strava", icon: Activity, placeholder: "yourhandle",
-    href: (h: string) => `https://strava.com/athletes/${encodeURIComponent(h)}` },
-  { id: "youtube" as const, label: "YouTube", icon: Youtube, placeholder: "yourchannel",
-    href: (h: string) => `https://youtube.com/@${encodeURIComponent(h)}` },
-  { id: "tiktok" as const, label: "TikTok", icon: Music2, placeholder: "yourhandle",
-    href: (h: string) => `https://tiktok.com/@${encodeURIComponent(h)}` },
-  { id: "facebook" as const, label: "Facebook", icon: Facebook, placeholder: "yourpage",
-    href: (h: string) => `https://facebook.com/${encodeURIComponent(h)}` },
+  {
+    id: "instagram" as const,
+    label: "Instagram",
+    icon: Instagram,
+    placeholder: "yourhandle",
+    href: (h: string) => `https://instagram.com/${encodeURIComponent(h)}`,
+  },
+  {
+    id: "strava" as const,
+    label: "Strava",
+    icon: Activity,
+    placeholder: "yourhandle",
+    href: (h: string) => `https://strava.com/athletes/${encodeURIComponent(h)}`,
+  },
+  {
+    id: "youtube" as const,
+    label: "YouTube",
+    icon: Youtube,
+    placeholder: "yourchannel",
+    href: (h: string) => `https://youtube.com/@${encodeURIComponent(h)}`,
+  },
+  {
+    id: "tiktok" as const,
+    label: "TikTok",
+    icon: Music2,
+    placeholder: "yourhandle",
+    href: (h: string) => `https://tiktok.com/@${encodeURIComponent(h)}`,
+  },
+  {
+    id: "facebook" as const,
+    label: "Facebook",
+    icon: Facebook,
+    placeholder: "yourpage",
+    href: (h: string) => `https://facebook.com/${encodeURIComponent(h)}`,
+  },
 ];
 
 /**
@@ -1718,8 +1833,16 @@ function EditProfile() {
     commitTiktok();
     commitStrava();
   }, [
-    commitBio, commitLanguages, commitInterests, commitRegion,
-    commitWebsite, commitInstagram, commitFacebook, commitYoutube, commitTiktok, commitStrava,
+    commitBio,
+    commitLanguages,
+    commitInterests,
+    commitRegion,
+    commitWebsite,
+    commitInstagram,
+    commitFacebook,
+    commitYoutube,
+    commitTiktok,
+    commitStrava,
   ]);
 
   /*
@@ -1809,8 +1932,8 @@ function EditProfile() {
       initial={reduce ? false : { opacity: 0, scale: 0.965, y: 10 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
       transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
-      style={{ transformOrigin: "50% 12%" }}
-      className="no-scrollbar h-full overflow-y-auto px-5 pb-10"
+      style={{ transformOrigin: "50% 12%", paddingBottom: TABBAR_CLEAR }}
+      className="no-scrollbar h-full overflow-y-auto px-5"
     >
       {/* ---- Header ------------------------------------------------------ */}
       <div className="flex items-start gap-3 pt-6">
@@ -2311,15 +2434,26 @@ function ShareProfile() {
   );
 }
 
-
 function Verification() {
   const { settings, applyVerification } = useSettings();
   const { currentTier } = useApp();
 
   const kinds = [
-    { id: "identity" as const, name: "Identity verified", detail: "Confirms you are who you say you are." },
-    { id: "history" as const, name: "Expedition history verified", detail: "Confirms the expeditions on your profile happened." },
-    { id: "professional" as const, name: "Professional verified", detail: "Confirms a guiding or instructing qualification." },
+    {
+      id: "identity" as const,
+      name: "Identity verified",
+      detail: "Confirms you are who you say you are.",
+    },
+    {
+      id: "history" as const,
+      name: "Expedition history verified",
+      detail: "Confirms the expeditions on your profile happened.",
+    },
+    {
+      id: "professional" as const,
+      name: "Professional verified",
+      detail: "Confirms a guiding or instructing qualification.",
+    },
   ];
 
   return (
@@ -2388,8 +2522,18 @@ function PassportSettings() {
   return (
     <SettingsPage title="Mountain Passport" subtitle="Your own record of what you have climbed.">
       <Group>
-        <LinkRow to="/profile" icon={Award} title="Open Passport" detail="It lives inside your profile." />
-        <LinkRow to="/settings/cv" icon={MountainIcon} title="Mountain CV" detail="The same record, written as a CV." />
+        <LinkRow
+          to="/profile"
+          icon={Award}
+          title="Open Passport"
+          detail="It lives inside your profile."
+        />
+        <LinkRow
+          to="/settings/cv"
+          icon={MountainIcon}
+          title="Mountain CV"
+          detail="The same record, written as a CV."
+        />
       </Group>
       <Group label="Visibility">
         <ChoiceRow
@@ -2453,7 +2597,9 @@ function Account() {
       // `providers` is what the account was actually created with. Reading it
       // rather than listing Apple and Google as permanently "Not connected".
       const raw = (u.app_metadata as { providers?: unknown } | undefined)?.providers;
-      const providers = Array.isArray(raw) ? raw.filter((x): x is string => typeof x === "string") : [];
+      const providers = Array.isArray(raw)
+        ? raw.filter((x): x is string => typeof x === "string")
+        : [];
       setSession({ state: "in", email: u.email ?? "", providers });
     })();
     return () => {
@@ -2475,10 +2621,15 @@ function Account() {
                 ? "The address this account signs in with."
                 : "No account is attached to this device."
           }
-          value={session.state === "loading" ? "—" : signedIn ? (session.email || "Set") : "Not set"}
+          value={session.state === "loading" ? "—" : signedIn ? session.email || "Set" : "Not set"}
           tone={signedIn ? undefined : "mist"}
         />
-        <InfoRow title="Phone" detail="Optional, and only ever used for sign-in." value="Not set" tone="mist" />
+        <InfoRow
+          title="Phone"
+          detail="Optional, and only ever used for sign-in."
+          value="Not set"
+          tone="mist"
+        />
         <InfoRow
           title="Password"
           detail={signedIn ? "Change it from Security." : "Set when you create an account."}
@@ -2495,7 +2646,12 @@ function Account() {
           {session.providers
             .filter((p) => p !== "email")
             .map((p) => (
-              <InfoRow key={p} title={p[0]!.toUpperCase() + p.slice(1)} value="Connected" tone="azure" />
+              <InfoRow
+                key={p}
+                title={p[0]!.toUpperCase() + p.slice(1)}
+                value="Connected"
+                tone="azure"
+              />
             ))}
         </Group>
       )}
@@ -2578,14 +2734,30 @@ function Security() {
               : "Sign in first — a reset link needs an address to go to."
           }
           value={
-            sent === "sending" ? "Sending…" : sent === "sent" ? "Link sent" : sent === "failed" ? "Failed" : undefined
+            sent === "sending"
+              ? "Sending…"
+              : sent === "sent"
+                ? "Link sent"
+                : sent === "failed"
+                  ? "Failed"
+                  : undefined
           }
           tone={sent === "sent" ? "azure" : undefined}
           onClick={() => void resetPassword()}
           disabled={sent === "sending"}
         />
-        <InfoRow title="Passkeys" detail="Sign in with Face ID or a security key." value="Not built" tone="mist" />
-        <InfoRow title="Two-factor authentication" detail="A second step when signing in somewhere new." value="Not built" tone="mist" />
+        <InfoRow
+          title="Passkeys"
+          detail="Sign in with Face ID or a security key."
+          value="Not built"
+          tone="mist"
+        />
+        <InfoRow
+          title="Two-factor authentication"
+          detail="A second step when signing in somewhere new."
+          value="Not built"
+          tone="mist"
+        />
       </Group>
       <Rise className="pt-4">
         <Disclaimer>
@@ -2652,20 +2824,32 @@ function Privacy() {
         />
         <ChoiceRow
           title="Who can send me a connection"
-          options={[
-            { value: "everyone", label: "Anyone" },
-            { value: "same-mountain", label: "Same mountain", detail: "Only athletes with an objective you share." },
-            { value: "nobody", label: "Nobody" },
-          ] as const}
+          options={
+            [
+              { value: "everyone", label: "Anyone" },
+              {
+                value: "same-mountain",
+                label: "Same mountain",
+                detail: "Only athletes with an objective you share.",
+              },
+              { value: "nobody", label: "Nobody" },
+            ] as const
+          }
           value={settings.whoCanConnect}
           onChange={(v) => patch({ whoCanConnect: v })}
         />
         <ChoiceRow
           title="Who can add me to a group"
-          options={[
-            { value: "connections", label: "Connections", detail: "Only people whose connection you accepted." },
-            { value: "nobody", label: "Nobody" },
-          ] as const}
+          options={
+            [
+              {
+                value: "connections",
+                label: "Connections",
+                detail: "Only people whose connection you accepted.",
+              },
+              { value: "nobody", label: "Nobody" },
+            ] as const
+          }
           value={settings.whoCanAddToGroups}
           onChange={(v) => patch({ whoCanAddToGroups: v })}
         />
@@ -2721,8 +2905,17 @@ function Location() {
       </Group>
 
       <Group label="What other people see">
-        <InfoRow title="A distance band" detail="Never a coordinate, an address or a precise figure." value={approxDistanceLabel(38)} />
-        <InfoRow title="Never" detail="Your exact position, your home, or where you are right now." value="—" tone="mist" />
+        <InfoRow
+          title="A distance band"
+          detail="Never a coordinate, an address or a precise figure."
+          value={approxDistanceLabel(38)}
+        />
+        <InfoRow
+          title="Never"
+          detail="Your exact position, your home, or where you are right now."
+          value="—"
+          tone="mist"
+        />
       </Group>
 
       <Rise className="pt-4">
@@ -2759,15 +2952,17 @@ function Safety() {
         <ChoiceRow
           title="Your age band"
           detail="Never shown to anyone. Used only to keep adult and under-18 accounts apart."
-          options={[
-            { value: "unset", label: "Not set" },
-            { value: "under-18", label: "Under 18" },
-            { value: "18-24", label: "18–24" },
-            { value: "25-34", label: "25–34" },
-            { value: "35-44", label: "35–44" },
-            { value: "45-54", label: "45–54" },
-            { value: "55-plus", label: "55+" },
-          ] as const}
+          options={
+            [
+              { value: "unset", label: "Not set" },
+              { value: "under-18", label: "Under 18" },
+              { value: "18-24", label: "18–24" },
+              { value: "25-34", label: "25–34" },
+              { value: "35-44", label: "35–44" },
+              { value: "45-54", label: "45–54" },
+              { value: "55-plus", label: "55+" },
+            ] as const
+          }
           value={settings.ageBand}
           onChange={(v) => patch({ ageBand: v })}
         />
@@ -2792,8 +2987,18 @@ function Safety() {
       </Group>
 
       <Group label="Report">
-        <LinkRow to="/settings/support" icon={Flag} title="Report a safety issue" detail="Something that puts someone at risk." />
-        <LinkRow to="/settings/legal" icon={ShieldCheck} title="Community guidelines" detail="What is expected of everyone here." />
+        <LinkRow
+          to="/settings/support"
+          icon={Flag}
+          title="Report a safety issue"
+          detail="Something that puts someone at risk."
+        />
+        <LinkRow
+          to="/settings/legal"
+          icon={ShieldCheck}
+          title="Community guidelines"
+          detail="What is expected of everyone here."
+        />
       </Group>
 
       <Rise className="pt-4">
@@ -2810,7 +3015,10 @@ function Safety() {
 function Professional() {
   const { settings } = useSettings();
   return (
-    <SettingsPage title="Professional Centre" subtitle="Guiding, expeditions and mountain standing.">
+    <SettingsPage
+      title="Professional Centre"
+      subtitle="Guiding, expeditions and mountain standing."
+    >
       <Group>
         <LinkRow
           to="/settings/professional/guide"
@@ -2867,7 +3075,10 @@ function MyMountains() {
     <SettingsPage title="My mountains" subtitle="Your objectives and their dates.">
       <Group label="Active">
         {active.length === 0 ? (
-          <InfoRow title="No objective set" detail="Pick a mountain and the whole app orients around it." />
+          <InfoRow
+            title="No objective set"
+            detail="Pick a mountain and the whole app orients around it."
+          />
         ) : (
           active.map((g, i) => (
             <LinkRow
@@ -2892,7 +3103,11 @@ function MyMountains() {
       )}
 
       <Group label="Manage">
-        <LinkRow to="/goals" title="Add or change an objective" detail="Objectives are edited on the Goals screen." />
+        <LinkRow
+          to="/goals"
+          title="Add or change an objective"
+          detail="Objectives are edited on the Goals screen."
+        />
       </Group>
 
       <Rise className="pt-4">
@@ -2960,12 +3175,26 @@ function DataActivity() {
             setDone(true);
           }}
         />
-        <LinkRow to="/activity" title="Activity history" detail="Every session you have recorded. Only you can see it." />
+        <LinkRow
+          to="/activity"
+          title="Activity history"
+          detail="Every session you have recorded. Only you can see it."
+        />
       </Group>
 
       <Group label="Permissions">
-        <LinkRow to="/settings/location" icon={MapPin} title="Location" detail="Approximate position, off by default." />
-        <LinkRow to="/settings/devices" icon={Watch} title="Devices & health apps" detail="Nothing is connected." />
+        <LinkRow
+          to="/settings/location"
+          icon={MapPin}
+          title="Location"
+          detail="Approximate position, off by default."
+        />
+        <LinkRow
+          to="/settings/devices"
+          icon={Watch}
+          title="Devices & health apps"
+          detail="Nothing is connected."
+        />
       </Group>
 
       <Rise className="pt-4">
@@ -3006,7 +3235,12 @@ function Devices() {
     // source, so listing it invited "ICEFALL will import my Strava history" when the
     // page only ever meant "your watch could feed this". Do not re-add it here if
     // an import is ever built; that belongs wherever accounts are connected.
-    "Apple Watch", "Apple Health", "Garmin", "COROS", "Suunto", "Google Health",
+    "Apple Watch",
+    "Apple Health",
+    "Garmin",
+    "COROS",
+    "Suunto",
+    "Google Health",
   ];
   return (
     <SettingsPage title="Devices & apps" subtitle="Where your training data could come from.">
@@ -3030,10 +3264,30 @@ function OfflineData() {
   return (
     <SettingsPage title="Offline data" subtitle="What works without a signal.">
       <Group label="On this device">
-        <InfoRow title="The app itself" detail="Every screen loads with no connection." value="Installed" tone="azure" />
-        <InfoRow title="Peak catalogue" detail="4,193 Alpine summits, bundled with the app." value="Bundled" tone="azure" />
-        <InfoRow title="Map tiles & photos" detail="Cached as you use them." value="Cached" tone="azure" />
-        <InfoRow title="Recording" detail="GPS, distance and ascent all work offline." value="Always on" tone="azure" />
+        <InfoRow
+          title="The app itself"
+          detail="Every screen loads with no connection."
+          value="Installed"
+          tone="azure"
+        />
+        <InfoRow
+          title="Peak catalogue"
+          detail="4,193 Alpine summits, bundled with the app."
+          value="Bundled"
+          tone="azure"
+        />
+        <InfoRow
+          title="Map tiles & photos"
+          detail="Cached as you use them."
+          value="Cached"
+          tone="azure"
+        />
+        <InfoRow
+          title="Recording"
+          detail="GPS, distance and ascent all work offline."
+          value="Always on"
+          tone="azure"
+        />
       </Group>
 
       <Group label="Manage">
@@ -3046,7 +3300,9 @@ function OfflineData() {
               ?.keys()
               .then((keys) =>
                 Promise.all(
-                  keys.filter((k) => /icefall-(images|map-tiles|terrain|conditions|peak)/.test(k)).map((k) => caches.delete(k)),
+                  keys
+                    .filter((k) => /icefall-(images|map-tiles|terrain|conditions|peak)/.test(k))
+                    .map((k) => caches.delete(k)),
                 ),
               )
               .catch(() => {});
@@ -3088,9 +3344,24 @@ function Membership() {
       </Rise>
 
       <Group label="Manage">
-        <LinkRow to="/pricing" icon={Award} title="Change plan" detail="Compare what each plan includes." />
-        <InfoRow title="Billing history" detail="Available once payments are connected." value="Unavailable" tone="mist" />
-        <InfoRow title="Restore purchases" detail="For an App Store or Play subscription." value="Unavailable" tone="mist" />
+        <LinkRow
+          to="/pricing"
+          icon={Award}
+          title="Change plan"
+          detail="Compare what each plan includes."
+        />
+        <InfoRow
+          title="Billing history"
+          detail="Available once payments are connected."
+          value="Unavailable"
+          tone="mist"
+        />
+        <InfoRow
+          title="Restore purchases"
+          detail="For an App Store or Play subscription."
+          value="Unavailable"
+          tone="mist"
+        />
       </Group>
 
       <Rise className="pt-4">
@@ -3123,7 +3394,11 @@ function Referrals() {
       </Group>
 
       <Group label="Progress">
-        <InfoRow title="Qualified referrals" detail="People who joined and became paying Pro members." value="0" />
+        <InfoRow
+          title="Qualified referrals"
+          detail="People who joined and became paying Pro members."
+          value="0"
+        />
         <InfoRow title="Pending" detail="Signed up, not yet qualified." value="0" tone="mist" />
         <InfoRow title="Pro months earned" value="0" />
       </Group>
@@ -3148,13 +3423,24 @@ function Notifications() {
   const { settings, patch } = useSettings();
 
   const all =
-    notifications.training && notifications.recovery && notifications.goal && notifications.conditions &&
-    settings.notifyCommunity && settings.notifyConnections && settings.notifyGroups && settings.notifyBookings;
+    notifications.training &&
+    notifications.recovery &&
+    notifications.goal &&
+    notifications.conditions &&
+    settings.notifyCommunity &&
+    settings.notifyConnections &&
+    settings.notifyGroups &&
+    settings.notifyBookings;
 
   const setAll = (on: boolean) => {
-    (["training", "recovery", "goal", "conditions"] as const).forEach((k) => setNotification(k, on));
+    (["training", "recovery", "goal", "conditions"] as const).forEach((k) =>
+      setNotification(k, on),
+    );
     patch({
-      notifyCommunity: on, notifyConnections: on, notifyGroups: on, notifyBookings: on,
+      notifyCommunity: on,
+      notifyConnections: on,
+      notifyGroups: on,
+      notifyBookings: on,
     });
   };
 
@@ -3171,17 +3457,57 @@ function Notifications() {
       </Group>
 
       <Group label="Training">
-        <ToggleRow title="Training reminders" detail="The session you planned for today." checked={notifications.training} onChange={(v) => setNotification("training", v)} />
-        <ToggleRow title="Coach updates" detail="When the plan changes or you should ease off." checked={notifications.recovery} onChange={(v) => setNotification("recovery", v)} />
-        <ToggleRow title="Objective" detail="Countdown and preparation milestones." checked={notifications.goal} onChange={(v) => setNotification("goal", v)} />
-        <ToggleRow title="Mountain conditions" detail="Weather that changes your plans." checked={notifications.conditions} onChange={(v) => setNotification("conditions", v)} />
+        <ToggleRow
+          title="Training reminders"
+          detail="The session you planned for today."
+          checked={notifications.training}
+          onChange={(v) => setNotification("training", v)}
+        />
+        <ToggleRow
+          title="Coach updates"
+          detail="When the plan changes or you should ease off."
+          checked={notifications.recovery}
+          onChange={(v) => setNotification("recovery", v)}
+        />
+        <ToggleRow
+          title="Objective"
+          detail="Countdown and preparation milestones."
+          checked={notifications.goal}
+          onChange={(v) => setNotification("goal", v)}
+        />
+        <ToggleRow
+          title="Mountain conditions"
+          detail="Weather that changes your plans."
+          checked={notifications.conditions}
+          onChange={(v) => setNotification("conditions", v)}
+        />
       </Group>
 
       <Group label="People & groups">
-        <ToggleRow title="Connection requests" detail="Someone wants to connect." checked={settings.notifyConnections} onChange={(v) => patch({ notifyConnections: v })} />
-        <ToggleRow title="Group activity" detail="Updates in a group you are in." checked={settings.notifyGroups} onChange={(v) => patch({ notifyGroups: v })} />
-        <ToggleRow title="Community" detail="Replies to your posts." checked={settings.notifyCommunity} onChange={(v) => patch({ notifyCommunity: v })} />
-        <ToggleRow title="Bookings & guides" detail="Anything about an expedition you booked." checked={settings.notifyBookings} onChange={(v) => patch({ notifyBookings: v })} />
+        <ToggleRow
+          title="Connection requests"
+          detail="Someone wants to connect."
+          checked={settings.notifyConnections}
+          onChange={(v) => patch({ notifyConnections: v })}
+        />
+        <ToggleRow
+          title="Group activity"
+          detail="Updates in a group you are in."
+          checked={settings.notifyGroups}
+          onChange={(v) => patch({ notifyGroups: v })}
+        />
+        <ToggleRow
+          title="Community"
+          detail="Replies to your posts."
+          checked={settings.notifyCommunity}
+          onChange={(v) => patch({ notifyCommunity: v })}
+        />
+        <ToggleRow
+          title="Bookings & guides"
+          detail="Anything about an expedition you booked."
+          checked={settings.notifyBookings}
+          onChange={(v) => patch({ notifyBookings: v })}
+        />
       </Group>
 
       <Group label="From ICEFALL">
@@ -3281,7 +3607,13 @@ function Legal() {
     <SettingsPage title="Legal" subtitle="Terms and policies.">
       <Group>
         {docs.map((d) => (
-          <InfoRow key={d.title} title={d.title} detail={d.detail} value="Not written" tone="mist" />
+          <InfoRow
+            key={d.title}
+            title={d.title}
+            detail={d.detail}
+            value="Not written"
+            tone="mist"
+          />
         ))}
       </Group>
       <Rise className="pt-4">
@@ -3300,15 +3632,34 @@ function About() {
     <SettingsPage title="About ICEFALL" subtitle="Version, credits and sources.">
       <Group label="This build">
         <InfoRow title="Version" value="0.1.0" />
-        <InfoRow title="Platform" detail="Runs in the browser and installs to your home screen." value="Web / PWA" />
+        <InfoRow
+          title="Platform"
+          detail="Runs in the browser and installs to your home screen."
+          value="Web / PWA"
+        />
       </Group>
       <Group label="Where the data comes from">
-        <InfoRow icon={MountainIcon} title="Peaks, trails and places" detail="OpenStreetMap contributors, ODbL." />
-        <InfoRow icon={Award} title="Photographs & facts" detail="Wikimedia Commons and Wikidata, each credited where shown." />
+        <InfoRow
+          icon={MountainIcon}
+          title="Peaks, trails and places"
+          detail="OpenStreetMap contributors, ODbL."
+        />
+        <InfoRow
+          icon={Award}
+          title="Photographs & facts"
+          detail="Wikimedia Commons and Wikidata, each credited where shown."
+        />
         <InfoRow icon={MapPin} title="Weather" detail="Open-Meteo." />
       </Group>
       <Group label="Links">
-        <ActionRow icon={ExternalLink} title="OpenStreetMap" detail="openstreetmap.org/copyright" onClick={() => window.open("https://www.openstreetmap.org/copyright", "_blank", "noopener")} />
+        <ActionRow
+          icon={ExternalLink}
+          title="OpenStreetMap"
+          detail="openstreetmap.org/copyright"
+          onClick={() =>
+            window.open("https://www.openstreetmap.org/copyright", "_blank", "noopener")
+          }
+        />
       </Group>
     </SettingsPage>
   );
@@ -3326,8 +3677,19 @@ function ManageAccount() {
   return (
     <SettingsPage title="Account management" subtitle="Signing out and deleting.">
       <Group label="Session">
-        <InfoRow icon={LogOut} title="Sign out" detail="There is no account to sign out of yet." value="Unavailable" tone="mist" />
-        <InfoRow title="Sign out of all devices" detail="Nothing is signed in anywhere else." value="Unavailable" tone="mist" />
+        <InfoRow
+          icon={LogOut}
+          title="Sign out"
+          detail="There is no account to sign out of yet."
+          value="Unavailable"
+          tone="mist"
+        />
+        <InfoRow
+          title="Sign out of all devices"
+          detail="Nothing is signed in anywhere else."
+          value="Unavailable"
+          tone="mist"
+        />
       </Group>
 
       <Rise className="pt-6">

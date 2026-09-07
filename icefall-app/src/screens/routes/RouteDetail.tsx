@@ -1,16 +1,37 @@
 import { useMemo, useState } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import {
-  Bookmark, CalendarPlus, ChevronLeft, ChevronRight, Download, Map as MapIcon, MountainSnow,
-  MoreHorizontal, Navigation, Share2, Star, Users,
+  Bookmark,
+  CalendarPlus,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  Map as MapIcon,
+  MountainSnow,
+  MoreHorizontal,
+  Navigation,
+  Share2,
+  Star,
+  Users,
 } from "lucide-react";
-import { Card, Disclaimer, HeroCircleButton, IconAction, Stat, sharePage } from "@/components/ui/primitives";
+import {
+  Card,
+  Disclaimer,
+  HeroCircleButton,
+  IconAction,
+  Stat,
+  sharePage,
+} from "@/components/ui/primitives";
 import { Sheet, SheetRow } from "@/components/ui/Sheet";
 import { ElevationProfile } from "@/components/ui/charts";
-import { Rise, Stagger, scrollContentToTop } from "@/components/layout/chrome";
+import { Rise, Stagger, scrollContentToTop, TABBAR_CLEAR } from "@/components/layout/chrome";
 import { fmtDistance, fmtElevation } from "@/lib/format";
 import {
-  DEMAND_LEVEL_LABEL, ROUTE_DEMAND_DISCLAIMER, routeById, routeDemands, routePhoto,
+  DEMAND_LEVEL_LABEL,
+  ROUTE_DEMAND_DISCLAIMER,
+  routeById,
+  routeDemands,
+  routePhoto,
 } from "@/routes/model";
 import { routeRelevance } from "@/routes/relevance";
 import { paceFor } from "@/routes/search";
@@ -91,7 +112,8 @@ export default function RouteDetail() {
     return Array.from({ length: n }, (_, i): TrackPoint => {
       const t = i / (n - 1);
       // Steeper in the middle third, the usual shape of an alpine ascent.
-      const eased = t < 0.25 ? t * 0.7 : t < 0.75 ? 0.175 + (t - 0.25) * 1.45 : 0.9 + (t - 0.75) * 0.4;
+      const eased =
+        t < 0.25 ? t * 0.7 : t < 0.75 ? 0.175 + (t - 0.25) * 1.45 : 0.9 + (t - 0.75) * 0.4;
       return {
         x: t,
         y: 1 - Math.min(1, eased),
@@ -110,7 +132,10 @@ export default function RouteDetail() {
   const flash = useSaveFlash(saved);
 
   return (
-    <div className="no-scrollbar relative h-full overflow-y-auto pb-24">
+    <div
+      className="no-scrollbar relative h-full overflow-y-auto"
+      style={{ paddingBottom: TABBAR_CLEAR }}
+    >
       {/* ---- Gallery ----------------------------------------------------- */}
       <div className="relative h-[330px]">
         <img
@@ -181,7 +206,12 @@ export default function RouteDetail() {
           <Rise>
             <div className="flex items-center gap-3">
               <span className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full border border-hairline">
-                <img src={mountainFace.src} alt="" aria-hidden className="h-full w-full object-cover" />
+                <img
+                  src={mountainFace.src}
+                  alt=""
+                  aria-hidden
+                  className="h-full w-full object-cover"
+                />
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[13.5px] text-snow">
@@ -191,7 +221,11 @@ export default function RouteDetail() {
                   {route.range} · {route.country} · {fmtElevation(route.mountainElevationM)} m
                 </span>
               </span>
-              <MiniMap lat={route.mountainLat} lon={route.mountainLon} className="h-10 w-10 shrink-0" />
+              <MiniMap
+                lat={route.mountainLat}
+                lon={route.mountainLon}
+                className="h-10 w-10 shrink-0"
+              />
             </div>
           </Rise>
 
@@ -238,7 +272,11 @@ export default function RouteDetail() {
             <div className="flex items-center justify-around border-b border-hairline pb-3.5">
               <SaveAction saved={saved} onToggle={() => setSaved((v) => !v)} />
               <IconAction icon={CalendarPlus} label="Train" onClick={() => navigate("/coach")} />
-              <IconAction icon={Share2} label="Share" onClick={() => sharePage(`${route.name} · ICEFALL`)} />
+              <IconAction
+                icon={Share2}
+                label="Share"
+                onClick={() => sharePage(`${route.name} · ICEFALL`)}
+              />
             </div>
           </Rise>
 
@@ -254,7 +292,10 @@ export default function RouteDetail() {
                     from training you have recorded, not a judgement about this route.
                   </p>
                 )}
-                <Link to="/coach" className="mt-3 inline-flex items-center gap-1 text-[12.5px] text-azure">
+                <Link
+                  to="/coach"
+                  className="mt-3 inline-flex items-center gap-1 text-[12.5px] text-azure"
+                >
                   Train for this route <ChevronRight size={14} strokeWidth={1.8} />
                 </Link>
               </div>
@@ -285,7 +326,9 @@ export default function RouteDetail() {
                 <div className="space-y-2.5">
                   <Card>
                     <p className="section-label">The line</p>
-                    <p className="mt-2 text-[12.5px] leading-relaxed text-mist">{route.description}</p>
+                    <p className="mt-2 text-[12.5px] leading-relaxed text-mist">
+                      {route.description}
+                    </p>
                   </Card>
                   <Card>
                     <p className="section-label">Summit</p>
@@ -309,7 +352,9 @@ export default function RouteDetail() {
                 <div>
                   <ElevationProfile track={profile} height={120} />
                   <div className="tnum mt-3 flex items-center justify-between text-[11.5px] text-mist">
-                    <span>{fmtElevation(route.mountainElevationM - route.elevationGainM)} m start</span>
+                    <span>
+                      {fmtElevation(route.mountainElevationM - route.elevationGainM)} m start
+                    </span>
                     <span className="text-azure">+{fmtElevation(route.elevationGainM)} m</span>
                     <span>{fmtElevation(route.mountainElevationM)} m summit</span>
                   </div>
@@ -328,7 +373,9 @@ export default function RouteDetail() {
                       <div className="flex items-center justify-between gap-3">
                         <p className="text-[13.5px] text-snow">{d.label}</p>
                         <span className="flex items-center gap-2">
-                          <span className="text-[11.5px] text-azure">{DEMAND_LEVEL_LABEL[d.level]}</span>
+                          <span className="text-[11.5px] text-azure">
+                            {DEMAND_LEVEL_LABEL[d.level]}
+                          </span>
                           <span className="flex gap-1">
                             {[1, 2, 3].map((i) => (
                               <span
@@ -370,7 +417,13 @@ export default function RouteDetail() {
                       }}
                       className="overflow-hidden rounded-tile border border-hairline text-left"
                     >
-                      <img src={p} alt="" aria-hidden loading="lazy" className="h-28 w-full object-cover" />
+                      <img
+                        src={p}
+                        alt=""
+                        aria-hidden
+                        loading="lazy"
+                        className="h-28 w-full object-cover"
+                      />
                       <span className="block truncate px-2 py-1.5 text-[9.5px] text-mist-dim">
                         {gallery.captions[i]}
                       </span>
@@ -378,8 +431,8 @@ export default function RouteDetail() {
                   ))}
                   <p className="col-span-2 mt-1 text-[11px] leading-relaxed text-mist-dim">
                     Photographs of {route.mountainName} — ICEFALL's own, then Wikimedia's, each
-                    credited to whoever took it. Photographs from other athletes need accounts and
-                    a backend, and are not invented in the meantime.
+                    credited to whoever took it. Photographs from other athletes need accounts and a
+                    backend, and are not invented in the meantime.
                   </p>
                 </div>
               )}
@@ -436,7 +489,10 @@ export default function RouteDetail() {
       {/* ---- Pinned save --------------------------------------------------- */}
       <div
         className="fixed inset-x-0 bottom-0 z-30 border-t border-hairline bg-obsidian/95 px-5 py-3 backdrop-blur"
-        style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom, 0px) + var(--tabbar-clearance, 0px))" }}
+        style={{
+          paddingBottom:
+            "calc(0.75rem + env(safe-area-inset-bottom, 0px) + var(--tabbar-clearance, 0px))",
+        }}
       >
         <div className="flex items-center gap-2.5">
           <SaveButton
@@ -479,13 +535,12 @@ const KIND_VERB: Record<string, string> = {
   training: "Training line",
 };
 
-
-
-
-
 function Pending({ icon: Icon, label }: { icon: typeof MapIcon; label: string }) {
   return (
-    <div className="rounded-tile border border-dashed border-hairline-strong px-2 py-3 text-center opacity-55" aria-disabled>
+    <div
+      className="rounded-tile border border-dashed border-hairline-strong px-2 py-3 text-center opacity-55"
+      aria-disabled
+    >
       <Icon size={16} strokeWidth={1.6} className="mx-auto text-mist-dim" />
       <p className="mt-1.5 text-[11px] text-mist-dim">{label}</p>
       <p className="text-[9px] text-mist-dim">Not connected</p>

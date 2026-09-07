@@ -1,17 +1,35 @@
 import { useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
-  BarChart3, Bed, CalendarDays, ChevronRight, ClipboardList, Clock, Heart,
-  MapPin, MessageSquare, Mountain as MountainIcon, Salad, Share2, Shield, Star,
-  TriangleAlert, Users, Wind,
+  BarChart3,
+  Bed,
+  CalendarDays,
+  ChevronRight,
+  ClipboardList,
+  Clock,
+  Heart,
+  MapPin,
+  MessageSquare,
+  Mountain as MountainIcon,
+  Salad,
+  Share2,
+  Shield,
+  Star,
+  TriangleAlert,
+  Users,
+  Wind,
 } from "lucide-react";
 import { Button, Card, Disclaimer, SectionLabel } from "@/components/ui/primitives";
 import { CompanyMark } from "@/components/domain/CompanyMark";
-import { Rise, Screen, Stagger } from "@/components/layout/chrome";
+import { Rise, Screen, Stagger, TABBAR_STICKY_BOTTOM } from "@/components/layout/chrome";
 import { cn } from "@/lib/utils";
 import { fmtElevation, fmtPrice } from "@/lib/format";
 import {
-  DEMO_NOTICE, SHOW_DEMO_OPERATORS, operatorById, type Operator, type Trip,
+  DEMO_NOTICE,
+  SHOW_DEMO_OPERATORS,
+  operatorById,
+  type Operator,
+  type Trip,
 } from "@/services/operators";
 
 /**
@@ -73,15 +91,7 @@ export default function TripDetail() {
   return <Detail operator={operator} trip={trip} country={params.get("country") ?? undefined} />;
 }
 
-function Detail({
-  operator,
-  trip,
-  country,
-}: {
-  operator: Operator;
-  trip: Trip;
-  country?: string;
-}) {
+function Detail({ operator, trip, country }: { operator: Operator; trip: Trip; country?: string }) {
   const [tab, setTab] = useState<TabId>("Overview");
 
   const enquiry = `/inbox/new?${new URLSearchParams({
@@ -218,8 +228,8 @@ function Detail({
               </Link>
             </Button>
             <p className="mt-2.5 text-[10.5px] leading-relaxed text-mist-dim">
-              Opens an enquiry draft. ICEFALL takes no payment, holds no dates and reserves nothing —
-              availability comes from the operator.
+              Opens an enquiry draft. ICEFALL takes no payment, holds no dates and reserves nothing
+              — availability comes from the operator.
             </p>
           </Card>
         </Rise>
@@ -432,8 +442,9 @@ function Detail({
 
       {/* ---- The two actions, pinned ------------------------------------- */}
       <div
-        className="sticky bottom-0 border-t border-hairline bg-obsidian/95 px-5 pt-3 backdrop-blur"
-        style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom, 0px))" }}
+        className="sticky border-t border-hairline bg-obsidian/95 px-5 pb-3 pt-3 backdrop-blur"
+        /* Rests just above the floating tab bar, not under it. */
+        style={{ bottom: TABBAR_STICKY_BOTTOM }}
       >
         <div className="flex gap-2.5">
           <Button asChild variant="secondary" className="h-11 flex-1">
@@ -562,8 +573,8 @@ function Departures({ trip, enquiry }: { trip: Trip; enquiry: string }) {
       <Rise className="pt-3">
         <p className="text-[10.5px] leading-relaxed text-mist-dim">
           Dates and places are placeholder figures for this layout — nobody counted them, and
-          nothing here is held or reservable. A real departure comes from the operator's own
-          booking system.
+          nothing here is held or reservable. A real departure comes from the operator's own booking
+          system.
         </p>
       </Rise>
     </>
@@ -585,9 +596,8 @@ function NoTrip() {
           <TriangleAlert size={22} strokeWidth={1.6} className="text-azure" />
           <h1 className="mt-4 text-[19px] font-light text-snow">No such expedition</h1>
           <p className="mt-2 text-[13px] leading-relaxed text-mist">
-            ICEFALL has no operator partnerships and sells no trips, so it publishes no
-            itineraries, prices or departure dates. Find a real IFMGA-certified operator and ask
-            them directly.
+            ICEFALL has no operator partnerships and sells no trips, so it publishes no itineraries,
+            prices or departure dates. Find a real IFMGA-certified operator and ask them directly.
           </p>
         </Rise>
         <Rise className="pt-6">

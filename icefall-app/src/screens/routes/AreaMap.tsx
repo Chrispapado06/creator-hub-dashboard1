@@ -1,67 +1,61 @@
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
-import { Maximize2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Loader2, LocateFixed } from "lucide-react";
 import { Map as MapLibreMap, Marker } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 
-import { attributionFor, icefallMapStyle } from "@/components/map/icefallStyle";
+import { attributionFor, savedMapStyle, styleFor } from "@/components/map/icefallStyle";
 import { OFFLINE } from "@/offline/offline";
+import { cn } from "@/lib/utils";
 
 /**
- * THE MAP ABOVE FIND'S RESULTS — the panel you pull down to.
+ * THE FIND MAP — full-bleed, behind the results sheet.
  *
- * The owner, 2026-09-06: "when you click on find a new trail and you are on
- * that page i want it so if you scroll down when you are the top then a map of
- * your location is seen. 1:1 like all trails".
+ * The owner, 2026-09-07, with a recording of AllTrails' Explore tab: "1:1 like
+ * alltrails please". In that recording the map is the whole screen and the
+ * results are a sheet drawn over its lower half; drag the sheet up and it
+ * covers the map, drag it down and the map is back. This is the map half of
+ * that. The sheet is `Routes.tsx`.
  *
- * ── HOW THE GESTURE WORKS, AND WHY IT IS NOT A GESTURE ───────────────────────
+ * It replaces a 260px panel that was parked off the top of the list and
+ * revealed by pulling down. That panel was `interactive: false` — a picture of
+ * a map with a "Full map" link on it. This one pans and zooms, because on the
+ * reference the map IS the control: it is where you look to see where the
+ * trails are.
  *
- * There is no drag handler anywhere in this feature, and that is the whole
- * trick. This panel is simply the FIRST CHILD of Find's scroller, and Find sets
- * `scrollTop` to exactly this panel's height on mount — so the screen opens
- * looking as it always did, with the search bar at the top, and the map is
- * sitting just above the fold. Pulling the list down scrolls it into view with
- * the browser's own scrolling: no touch listeners, no `preventDefault`, no
- * rubber-band fight, and it works identically with a mouse wheel, a trackpad,
- * a keyboard and a screen reader.
+ * ── CREATED ONCE, MOVED THEREAFTER ──────────────────────────────────────────
+ * The old panel tore the map down and rebuilt it on every change of place or
+ * radius. Here it is created on mount and `easeTo`'d when the place changes,
+ * which is what makes choosing a new town feel like the map travelling there
+ * rather than a new map appearing.
  *
- * The alternative — a pointer-driven reveal with a spring — needs non-passive
- * touch listeners on a scrolling element, which is precisely the combination
- * that stutters on iOS and blocks the compositor.
+ * ── IT SAYS WHEN IT IS STILL LOADING ────────────────────────────────────────
+ * The owner's own phone showed a black rectangle where this map should have
+ * been — tiles that had not arrived over a weak signal, on a dark style, with
+ * nothing on screen to say so. A map that has not loaded now says "Loading
+ * map…", and one that cannot load says that instead of staying black.
  *
- * ── THE MAP DOES NOT PAN, AND THAT IS DELIBERATE ─────────────────────────────
- *
- * `interactive: false`. A pannable map inside a vertical scroller swallows the
- * drag that was meant to close it, so the panel would be a trap: you pull it
- * open and cannot push it shut. AllTrails does not have this problem because
- * there the map IS the page and the results are a sheet over it. Here the
- * results are the page.
- *
- * So this is an ORIENTATION VIEW — real tiles, the real place, at a zoom that
- * matches the radius being searched — and the whole panel is a link into
- * `/explore/map`, which is the map that does pan.
- *
- * ── WHAT IS PINNED ───────────────────────────────────────────────────────────
- *
- * ONE PIN: the place the search is centred on. Nothing else, because nothing
- * else on this screen has a position ICEFALL is willing to assert — the trail
- * and summit results carry coordinates, but they arrive and change as the
- * search reruns, and a map that redrew its pins under you while you were
- * reading it is worse than a map that shows you where you are looking.
+ * ── PINS ARE THE RESULTS ─────────────────────────────────────────────────────
+ * Every trail and summit in the list below is a pin here, and tapping a pin
+ * opens the same page the card opens. Nothing is pinned that is not in the
+ * list, so the map never shows a trail the list cannot name.
  */
 
-/** How tall the panel is. Enough to read as a map, short enough to pull past. */
-export const AREA_MAP_HEIGHT = 260;
+export interface MapPin {
+  id: string;
+  lat: number;
+  lon: number;
+  name: string;
+  href: string;
+}
 
 /**
  * Zoom for the radius being searched, so the circle you asked for roughly fills
- * the panel rather than being a dot in an ocean or a street corner.
- *
- * Measured against web-mercator: at zoom z one tile spans 40075/2^z km at the
- * equator. The panel is ~260px tall, so it shows about one tile; matching the
- * DIAMETER (2 × radius) to that gives z = log2(40075 / (2·r)). Clamped so a
- * 1 km search does not zoom into a car park and a 500 km one does not show the
- * whole hemisphere.
+ * the visible half of the map rather than being a dot in an ocean or a street
+ * corner. Web-mercator: at zoom z one tile spans 40075/2^z km at the equator;
+ * matching the DIAMETER (2 × radius) to roughly one tile gives z = log2(40075 /
+ * (2·r)). Clamped so a 1 km search does not zoom into a car park and a 500 km
+ * one does not show the whole hemisphere.
  */
 function zoomForRadius(radiusKm: number | null): number {
   if (radiusKm === null || !Number.isFinite(radiusKm) || radiusKm <= 0) return 9;
@@ -69,21 +63,33 @@ function zoomForRadius(radiusKm: number | null): number {
   return Math.min(12, Math.max(4, Math.round(z * 2) / 2));
 }
 
-export function AreaMap({
+export function FindMap({
   lat,
   lon,
-  name,
   radiusKm,
+  pins,
+  visibleFraction,
+  locating,
+  onLocate,
+  locateNote,
 }: {
   lat: number;
   lon: number;
-  name: string;
   radiusKm: number | null;
+  pins: readonly MapPin[];
+  /** How much of the map the sheet leaves uncovered at rest, 0–1. Controls sit above that line. */
+  visibleFraction: number;
+  locating: boolean;
+  onLocate: () => void;
+  /** Why the last locate did not land, in a sentence — or null. */
+  locateNote: string | null;
 }) {
   const holder = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [status, setStatus] = useState<"loading" | "ready" | "failed">("loading");
+  const navigate = useNavigate();
 
+  /* ---- The map, once ------------------------------------------------------ */
   useEffect(() => {
     if (OFFLINE || !holder.current) return;
 
@@ -91,54 +97,78 @@ export function AreaMap({
     try {
       map = new MapLibreMap({
         container: holder.current,
-        style: icefallMapStyle,
+        style: styleFor(savedMapStyle()),
         center: [lon, lat],
         zoom: zoomForRadius(radiusKm),
         attributionControl: false,
-        /* See the header. The panel is a link, not a canvas. */
-        interactive: false,
+        /* Pan and pinch, no rotate or tilt: a rotated map under a results list
+           is disorienting and nothing on this screen needs it. */
+        dragRotate: false,
+        pitchWithRotate: false,
+        touchPitch: false,
       });
     } catch {
-      setFailed(true);
+      setStatus("failed");
       return;
     }
+    map.touchZoomRotate.disableRotation();
     mapRef.current = map;
 
+    let ready = false;
+    map.once("load", () => {
+      ready = true;
+      setStatus("ready");
+    });
     /*
-     * A DOT, NOT A LABEL. `ExploreMap` labels its pins because each one is a
-     * different mountain and the name is the point. Here there is one pin and
-     * the place is already named twice on the screen above it — in the search
-     * bar and in the results count — so a third copy floating on the map is
-     * clutter, and it would cover the ground it is meant to be showing.
+     * "Failed" is only declared when nothing has loaded after a long wait. A
+     * single tile 404 also fires `error`, and calling the whole map broken on
+     * one missing tile would be wrong far more often than right.
      */
-    const el = document.createElement("div");
-    el.className = "h-3.5 w-3.5 rounded-full border-2 border-obsidian bg-azure shadow-lg";
-    el.setAttribute("aria-hidden", "true");
-    const marker = new Marker({ element: el }).setLngLat([lon, lat]).addTo(map);
+    const giveUp = window.setTimeout(() => {
+      if (!ready) setStatus("failed");
+    }, 20_000);
 
-    /*
-     * The panel starts ABOVE the fold, so the map is laid out inside a
-     * container the browser has never shown. MapLibre measures its canvas on
-     * creation; `resize` on the first idle catches the case where that
-     * measurement happened before the scroller settled.
-     */
-    map.once("idle", () => map.resize());
+    /* The stage this sits in changes height with the viewport; MapLibre only
+       measures its canvas on creation. */
+    const ro = new ResizeObserver(() => map.resize());
+    ro.observe(holder.current);
 
     return () => {
-      marker.remove();
+      window.clearTimeout(giveUp);
+      ro.disconnect();
       map.remove();
       mapRef.current = null;
     };
+    // Created once; the place is followed by the effect below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /* ---- Follow the place ---------------------------------------------------- */
+  useEffect(() => {
+    mapRef.current?.easeTo({ center: [lon, lat], zoom: zoomForRadius(radiusKm), duration: 650 });
   }, [lat, lon, radiusKm]);
+
+  /* ---- Pins ------------------------------------------------------------------ */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const markers = pins.map((p) => {
+      const el = document.createElement("button");
+      el.type = "button";
+      el.setAttribute("aria-label", p.name);
+      el.className =
+        "h-3.5 w-3.5 rounded-full border-2 border-obsidian bg-azure shadow-lg transition-transform hover:scale-125 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-azure/60";
+      el.addEventListener("click", () => navigate(p.href));
+      return new Marker({ element: el }).setLngLat([p.lon, p.lat]).addTo(map);
+    });
+    return () => markers.forEach((m) => m.remove());
+  }, [pins, navigate]);
 
   if (OFFLINE) {
     return (
-      <div
-        style={{ height: AREA_MAP_HEIGHT }}
-        className="flex flex-col justify-end bg-slate px-5 pb-5"
-      >
+      <div className="absolute inset-0 flex flex-col justify-start bg-slate px-5 pt-24">
         <p className="text-[13px] text-snow">The map needs a connection.</p>
-        <p className="mt-1 text-[11.5px] leading-relaxed text-mist">
+        <p className="mt-1 max-w-[30ch] text-[11.5px] leading-relaxed text-mist">
           This is the offline bundle and tiles are fetched as you pan, so there is nothing to draw
           here rather than a grey rectangle pretending to be a map.
         </p>
@@ -147,47 +177,64 @@ export function AreaMap({
   }
 
   return (
-    <div style={{ height: AREA_MAP_HEIGHT }} className="relative overflow-hidden bg-slate">
+    <div className="absolute inset-0 overflow-hidden bg-slate">
       <div ref={holder} className="absolute inset-0" />
 
-      {/* The bottom of the map fades into the page so the search bar below it
-          has a ground to sit on rather than a hard seam across the screen. */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-b from-transparent to-obsidian"
-      />
-
-      {failed ? (
-        <div className="absolute inset-0 grid place-items-center px-8 text-center">
-          <p className="text-[12.5px] leading-relaxed text-mist">
-            The map could not start on this device. The results below are unaffected.
+      {/* Said while it is true, and gone the moment it is not. */}
+      {status !== "ready" && (
+        <div
+          className="pointer-events-none absolute inset-x-0 flex justify-center"
+          style={{ top: `calc(${visibleFraction * 100}% / 2)` }}
+        >
+          <p className="flex items-center gap-2 rounded-pill bg-obsidian/70 px-3.5 py-2 text-[12px] text-mist backdrop-blur">
+            {status === "loading" ? (
+              <>
+                <Loader2 size={13} strokeWidth={2} className="animate-spin" aria-hidden />
+                Loading map…
+              </>
+            ) : (
+              "The map could not load on this device. The list below is unaffected."
+            )}
           </p>
         </div>
-      ) : (
-        <>
-          {/* The way out to the map that DOES pan. A link over the whole panel
-              would swallow a scroll that started on the map, so it is a chip. */}
-          <Link
-            to="/explore/map"
-            className="absolute right-3 top-3 flex items-center gap-1.5 rounded-pill border border-hairline-strong bg-obsidian/80 px-3 py-1.5 text-[11.5px] text-snow backdrop-blur transition-colors hover:border-azure/50"
-          >
-            <Maximize2 size={12} strokeWidth={1.9} aria-hidden />
-            Full map
-          </Link>
-
-          <p className="absolute left-3 top-3 max-w-[55%] truncate rounded-pill border border-hairline-strong bg-obsidian/80 px-3 py-1.5 text-[11.5px] text-snow backdrop-blur">
-            {name}
-          </p>
-
-          {/* OpenFreeMap and OpenStreetMap are credited because their licences
-              require it, and `attributionFor` is the style's own markup so the
-              credit always matches the tiles actually drawn. */}
-          <p
-            className="absolute bottom-1 right-2 text-[9px] text-mist-dim [&_a]:underline"
-            dangerouslySetInnerHTML={{ __html: attributionFor("icefall") }}
-          />
-        </>
       )}
+
+      {/* Controls sit on the part of the map the sheet leaves uncovered. */}
+      <div
+        className="absolute right-4 flex flex-col items-end gap-2"
+        style={{ top: `calc(${visibleFraction * 100}% - 64px)` }}
+      >
+        {locateNote && (
+          <p className="max-w-[220px] rounded-tile bg-obsidian/85 px-3 py-2 text-right text-[11px] leading-relaxed text-mist backdrop-blur">
+            {locateNote}
+          </p>
+        )}
+        <button
+          type="button"
+          onClick={onLocate}
+          disabled={locating}
+          aria-label="Search around my location"
+          className={cn(
+            "grid h-11 w-11 place-items-center rounded-full border border-hairline-strong bg-obsidian/85 text-snow shadow-[var(--ice-shadow-pop)] backdrop-blur transition-colors hover:border-azure/50",
+            locating && "text-azure",
+          )}
+        >
+          {locating ? (
+            <Loader2 size={17} strokeWidth={2} className="animate-spin" aria-hidden />
+          ) : (
+            <LocateFixed size={17} strokeWidth={1.8} aria-hidden />
+          )}
+        </button>
+      </div>
+
+      {/* OpenFreeMap and OpenStreetMap are credited because their licences
+          require it, and `attributionFor` is the style's own markup so the
+          credit always matches the tiles actually drawn. */}
+      <p
+        className="pointer-events-auto absolute left-3 text-[9px] text-mist-dim [&_a]:underline"
+        style={{ top: `calc(${visibleFraction * 100}% - 22px)` }}
+        dangerouslySetInnerHTML={{ __html: attributionFor(savedMapStyle()) }}
+      />
     </div>
   );
 }

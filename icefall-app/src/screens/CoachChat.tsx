@@ -15,6 +15,7 @@ import { useUpgradeCopy } from "@/growth/upgradeCopy";
 import type { CoachMessage } from "@/types";
 import { DEMO } from "@/offline/offline";
 import { ACCENT, CoachHead, Eyebrow, TINT } from "@/screens/coach/shell";
+import { TABBAR_STICKY_BOTTOM } from "@/components/layout/chrome";
 
 /**
  * Screen 08 — ICEFALL Coach.
@@ -286,16 +287,20 @@ export default function CoachChat() {
       {atLimit ? (
         <div
           className="shrink-0 border-t border-hairline bg-obsidian px-5 py-4"
-          // The TabBar below already pads the bottom inset; counting it here too
-          // pushed the composer up by the inset on notched phones.
-          style={{ paddingBottom: "1rem" }}
+          /* The tab bar floats over the bottom of this column now, so the
+             composer clears it itself — pill, inset and all. */
+          style={{ paddingBottom: `calc(${TABBAR_STICKY_BOTTOM} + 1rem)` }}
         >
-          <UpgradePrompt featureId="coach.unlimited" title={coachCopy.title} body={coachCopy.body} />
+          <UpgradePrompt
+            featureId="coach.unlimited"
+            title={coachCopy.title}
+            body={coachCopy.body}
+          />
         </div>
       ) : (
         <div
           className="shrink-0 border-t border-hairline bg-obsidian px-5 py-3"
-          style={{ paddingBottom: "0.75rem" }}
+          style={{ paddingBottom: `calc(${TABBAR_STICKY_BOTTOM} + 0.75rem)` }}
         >
           <p className="mb-1.5 px-1 text-[11px] text-mist-dim">
             Coach conversations are private · Not shared to Social
@@ -317,7 +322,8 @@ export default function CoachChat() {
               <p className="text-[11px] text-mist-dim">Saved guidance · more tomorrow</p>
             ) : (
               <p className="tnum text-[11px] text-mist-dim">
-                {creditsLeft(coachBudget)} coach {creditsLeft(coachBudget) === 1 ? "credit" : "credits"} today
+                {creditsLeft(coachBudget)} coach{" "}
+                {creditsLeft(coachBudget) === 1 ? "credit" : "credits"} today
               </p>
             )}
           </div>

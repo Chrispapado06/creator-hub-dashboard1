@@ -1,11 +1,26 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
-  ArrowLeft, Backpack, ChevronRight, CloudSun, Compass, Flag, Footprints, Gauge, Heart,
-  MessageCircle, Mountain, Route as RouteIcon, Salad, Search as SearchIcon,
-  Settings as SettingsIcon, ShoppingBag, Target, Users,
+  ArrowLeft,
+  Backpack,
+  ChevronRight,
+  CloudSun,
+  Compass,
+  Flag,
+  Footprints,
+  Gauge,
+  Heart,
+  MessageCircle,
+  Mountain,
+  Route as RouteIcon,
+  Salad,
+  Search as SearchIcon,
+  Settings as SettingsIcon,
+  ShoppingBag,
+  Target,
+  Users,
 } from "lucide-react";
-import { Rise, Stagger } from "@/components/layout/chrome";
+import { Rise, Stagger, TABBAR_CLEAR } from "@/components/layout/chrome";
 import { fmtDistance, fmtElevation } from "@/lib/format";
 import { loadPeakCatalogue, type Peak } from "@/services/peaks";
 import { TRAIL_ATTRIBUTION } from "@/services/trails";
@@ -14,7 +29,10 @@ import { DEMO_OPERATORS, allOperators } from "@/services/operators";
 import { DISCOVERABLE_ATHLETES, matchesAthlete } from "@/network/directory";
 import { TREKS } from "@/treks";
 import {
-  PEOPLE_NO_MATCH, PEOPLE_SOURCE_NOTE, usePeopleSearch, type SearchHit,
+  PEOPLE_NO_MATCH,
+  PEOPLE_SOURCE_NOTE,
+  usePeopleSearch,
+  type SearchHit,
 } from "@/search/people";
 import { useGroupSearch, useTrekSearch } from "@/search/treksAndGroups";
 import { useTrailSearch } from "@/search/trails";
@@ -73,35 +91,179 @@ interface Place {
 
 /** Every destination worth reaching directly, named the way a person says it. */
 const PLACES: Place[] = [
-  { label: "Today's session", detail: "Coach · your plan for today", to: "/coach/today", icon: Target, keywords: "workout training plan session" },
-  { label: "Ask the coach", detail: "Coach · chat", to: "/coach", icon: MessageCircle, keywords: "chat ask question advice" },
-  { label: "Training plan", detail: "Coach · the full build", to: "/coach/plan", icon: Target, keywords: "weeks schedule programme" },
-  { label: "Progress", detail: "Coach · how the build is going", to: "/coach/progress", icon: Gauge, keywords: "trend load" },
-  { label: "Readiness", detail: "Coach · today's read, and why", to: "/coach/readiness", icon: Gauge, keywords: "score analysis" },
-  { label: "Daily check-in", detail: "Coach · sleep, soreness, stress", to: "/coach/check-in", icon: Heart, keywords: "recovery wellness" },
-  { label: "Recovery", detail: "Coach · what your body is saying", to: "/coach/recovery", icon: Heart, keywords: "rest fatigue" },
-  { label: "Nutrition", detail: "Coach · fuelling for the session", to: "/coach/nutrition", icon: Salad, keywords: "food eat carbs hydration" },
-  { label: "Activity history", detail: "Everything you've recorded", to: "/activity", icon: Mountain, keywords: "past runs hikes log" },
-  { label: "Start an activity", detail: "Record a new one", to: "/activity/select", icon: Mountain, keywords: "track record gps" },
-  { label: "Objectives", detail: "The mountains you're training for", to: "/goals", icon: Flag, keywords: "goals summit target" },
-  { label: "Mountain library", detail: "Every peak ICEFALL holds", to: "/explore/mountains", icon: Compass, keywords: "peaks explore browse search" },
-  { label: "Treks", detail: "Multi-day walking routes", to: "/explore/treks", icon: Footprints, keywords: "trek trekking hike walking camino tour" },
-  { label: "Groups", detail: "Parties heading for a mountain", to: "/social?tab=groups", icon: Users, keywords: "group party team partners" },
-  { label: "Gear", detail: "The system for your objective", to: "/gear", icon: ShoppingBag, keywords: "kit equipment boots" },
-  { label: "Health", detail: "What ICEFALL reads, and from where", to: "/health", icon: Heart, keywords: "sensors heart rate" },
-  { label: "Ring and health data", detail: "Connect an Oura ring, and your permission for it", to: "/settings/health-sources", icon: Heart, keywords: "oura ring sleep hrv consent gdpr disconnect delete" },
-  { label: "Expedition network", detail: "People and groups", to: "/social?tab=people", icon: Users, keywords: "partners climbers friends" },
-  { label: "Settings", detail: "Units, notifications, privacy", to: "/settings", icon: SettingsIcon, keywords: "preferences account privacy" },
-  { label: "Plans & pricing", detail: "What each plan includes", to: "/pricing", icon: Target, keywords: "subscription upgrade pro billing" },
+  {
+    label: "Today's session",
+    detail: "Coach · your plan for today",
+    to: "/coach/today",
+    icon: Target,
+    keywords: "workout training plan session",
+  },
+  {
+    label: "Ask the coach",
+    detail: "Coach · chat",
+    to: "/coach",
+    icon: MessageCircle,
+    keywords: "chat ask question advice",
+  },
+  {
+    label: "Training plan",
+    detail: "Coach · the full build",
+    to: "/coach/plan",
+    icon: Target,
+    keywords: "weeks schedule programme",
+  },
+  {
+    label: "Progress",
+    detail: "Coach · how the build is going",
+    to: "/coach/progress",
+    icon: Gauge,
+    keywords: "trend load",
+  },
+  {
+    label: "Readiness",
+    detail: "Coach · today's read, and why",
+    to: "/coach/readiness",
+    icon: Gauge,
+    keywords: "score analysis",
+  },
+  {
+    label: "Daily check-in",
+    detail: "Coach · sleep, soreness, stress",
+    to: "/coach/check-in",
+    icon: Heart,
+    keywords: "recovery wellness",
+  },
+  {
+    label: "Recovery",
+    detail: "Coach · what your body is saying",
+    to: "/coach/recovery",
+    icon: Heart,
+    keywords: "rest fatigue",
+  },
+  {
+    label: "Nutrition",
+    detail: "Coach · fuelling for the session",
+    to: "/coach/nutrition",
+    icon: Salad,
+    keywords: "food eat carbs hydration",
+  },
+  {
+    label: "Activity history",
+    detail: "Everything you've recorded",
+    to: "/activity",
+    icon: Mountain,
+    keywords: "past runs hikes log",
+  },
+  {
+    label: "Start an activity",
+    detail: "Record a new one",
+    to: "/activity/select",
+    icon: Mountain,
+    keywords: "track record gps",
+  },
+  {
+    label: "Objectives",
+    detail: "The mountains you're training for",
+    to: "/goals",
+    icon: Flag,
+    keywords: "goals summit target",
+  },
+  {
+    label: "Mountain library",
+    detail: "Every peak ICEFALL holds",
+    to: "/explore/mountains",
+    icon: Compass,
+    keywords: "peaks explore browse search",
+  },
+  {
+    label: "Treks",
+    detail: "Multi-day walking routes",
+    to: "/explore/treks",
+    icon: Footprints,
+    keywords: "trek trekking hike walking camino tour",
+  },
+  {
+    label: "Groups",
+    detail: "Parties heading for a mountain",
+    to: "/social?tab=groups",
+    icon: Users,
+    keywords: "group party team partners",
+  },
+  {
+    label: "Gear",
+    detail: "The system for your objective",
+    to: "/gear",
+    icon: ShoppingBag,
+    keywords: "kit equipment boots",
+  },
+  {
+    label: "Health",
+    detail: "What ICEFALL reads, and from where",
+    to: "/health",
+    icon: Heart,
+    keywords: "sensors heart rate",
+  },
+  {
+    label: "Ring and health data",
+    detail: "Connect an Oura ring, and your permission for it",
+    to: "/settings/health-sources",
+    icon: Heart,
+    keywords: "oura ring sleep hrv consent gdpr disconnect delete",
+  },
+  {
+    label: "Expedition network",
+    detail: "People and groups",
+    to: "/social?tab=people",
+    icon: Users,
+    keywords: "partners climbers friends",
+  },
+  {
+    label: "Settings",
+    detail: "Units, notifications, privacy",
+    to: "/settings",
+    icon: SettingsIcon,
+    keywords: "preferences account privacy",
+  },
+  {
+    label: "Plans & pricing",
+    detail: "What each plan includes",
+    to: "/pricing",
+    icon: Target,
+    keywords: "subscription upgrade pro billing",
+  },
 ];
 
 /** Destinations that only exist once there is an objective to hang them on. */
 function objectivePlaces(goalId: string, goalName: string): Place[] {
   return [
-    { label: `${goalName} — command centre`, detail: "Everything held on this objective", to: `/mountain/${goalId}`, icon: Compass, keywords: "mountain intelligence overview" },
-    { label: `${goalName} — conditions`, detail: "Forecast by elevation band", to: `/mountain/${goalId}/conditions`, icon: CloudSun, keywords: "weather forecast wind snow temperature" },
-    { label: `${goalName} — kit & documents`, detail: "What this peak demands", to: `/mountain/${goalId}/checklist`, icon: Backpack, keywords: "checklist equipment permits insurance packing" },
-    { label: `${goalName} — benchmark`, detail: "Your record against it", to: `/mountain/${goalId}/benchmark`, icon: Gauge, keywords: "compare readiness gap" },
+    {
+      label: `${goalName} — command centre`,
+      detail: "Everything held on this objective",
+      to: `/mountain/${goalId}`,
+      icon: Compass,
+      keywords: "mountain intelligence overview",
+    },
+    {
+      label: `${goalName} — conditions`,
+      detail: "Forecast by elevation band",
+      to: `/mountain/${goalId}/conditions`,
+      icon: CloudSun,
+      keywords: "weather forecast wind snow temperature",
+    },
+    {
+      label: `${goalName} — kit & documents`,
+      detail: "What this peak demands",
+      to: `/mountain/${goalId}/checklist`,
+      icon: Backpack,
+      keywords: "checklist equipment permits insurance packing",
+    },
+    {
+      label: `${goalName} — benchmark`,
+      detail: "Your record against it",
+      to: `/mountain/${goalId}/benchmark`,
+      icon: Gauge,
+      keywords: "compare readiness gap",
+    },
   ];
 }
 
@@ -314,7 +476,10 @@ export default function Search() {
   const searching = query.length > 0 && nothing && busy;
 
   return (
-    <div className="no-scrollbar relative h-full overflow-y-auto bg-obsidian">
+    <div
+      className="no-scrollbar relative h-full overflow-y-auto bg-obsidian"
+      style={{ paddingBottom: TABBAR_CLEAR }}
+    >
       {/* Search bar */}
       <div
         className="sticky top-0 z-10 border-b border-hairline bg-obsidian/95 px-5 pb-3 backdrop-blur"
@@ -391,7 +556,11 @@ export default function Search() {
                   to={`/mountain/${g.id}`}
                   icon={Flag}
                   title={g.name}
-                  detail={g.elevationM ? `${fmtElevation(g.elevationM)} m · your objective` : "Your objective"}
+                  detail={
+                    g.elevationM
+                      ? `${fmtElevation(g.elevationM)} m · your objective`
+                      : "Your objective"
+                  }
                 />
               ))}
             </div>

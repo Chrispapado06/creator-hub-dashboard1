@@ -1,4 +1,6 @@
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import { ChevronLeft } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { ScreenHeader, SegmentedTabs } from "@/components/layout/chrome";
 import { useTabSwipe } from "@/hooks/useTabSwipe";
 
@@ -147,9 +149,75 @@ export default function ExploreLayout() {
     );
   }
 
+  /*
+   * FIND HAS NO HEADER. The owner's reference for it (AllTrails' Explore,
+   * 2026-09-07) is a map from the top of the screen down, with the results in
+   * a sheet over it — there is no title row and no tab strip above the map,
+   * because the map is the point of the screen and a header would be the one
+   * thing on it that is not map. The three tabs still have to be reachable, so
+   * they float over the map's top edge as a glass strip, with the chevron back
+   * to the hub beside them. Expeditions and Guides keep the shared header.
+   */
+  if (pathname === "/explore/routes") {
+    return (
+      <div
+        className="relative flex h-full flex-col"
+        style={{ "--screen-safe-top": "0px" } as React.CSSProperties}
+      >
+        <div className="flex min-h-0 flex-1 flex-col" {...swipe.bind}>
+          <Outlet />
+        </div>
+        <div
+          className="pointer-events-none absolute inset-x-0 top-0 z-30 flex items-center gap-2 px-4"
+          style={{
+            paddingTop: "calc(var(--screen-safe-top, env(safe-area-inset-top, 0px)) + 10px)",
+          }}
+        >
+          {back && (
+            <button
+              type="button"
+              onClick={() => navigate(HUB)}
+              aria-label="Back to Explore"
+              className="pointer-events-auto grid h-9 w-9 shrink-0 place-items-center rounded-full border border-hairline-strong bg-obsidian/70 text-snow backdrop-blur-xl"
+            >
+              <ChevronLeft size={18} strokeWidth={1.8} />
+            </button>
+          )}
+          <div
+            role="tablist"
+            aria-label="Explore sections"
+            className="pointer-events-auto flex items-center gap-0.5 rounded-full border border-hairline-strong bg-obsidian/70 p-1 backdrop-blur-xl"
+          >
+            {TABS.map((t) => {
+              const on = t.value === active;
+              return (
+                <button
+                  key={t.value}
+                  type="button"
+                  role="tab"
+                  aria-selected={on}
+                  onClick={() => navigate(t.value)}
+                  className={cn(
+                    "rounded-full px-3.5 py-1.5 text-[12.5px] transition-colors",
+                    on ? "bg-white/[0.14] text-snow" : "text-mist hover:text-snow",
+                  )}
+                >
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     // This header clears the notch, so nested `Screen`s must not clear it again.
-    <div className="flex h-full flex-col" style={{ "--screen-safe-top": "0px" } as React.CSSProperties}>
+    <div
+      className="flex h-full flex-col"
+      style={{ "--screen-safe-top": "0px" } as React.CSSProperties}
+    >
       <div className="shrink-0 px-5" style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
         {/* The chevron is the way back to the hub from a tab. Without it the
             hub would be reachable only by leaving Explore and returning. */}

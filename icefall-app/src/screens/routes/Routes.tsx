@@ -1,35 +1,77 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMyProfile } from "@/auth/useMyProfile";
 import { Link, useSearchParams } from "react-router-dom";
 import {
-  ChevronDown, Clock, Compass, Loader2, MapPin, Mountain as MountainIcon,
-  Map as MapIcon, MoveHorizontal, Navigation, Plus, Route as RouteIcon, RotateCw, Search,
-  SlidersHorizontal, Star, TrendingUp, Users, X,
+  ChevronDown,
+  Clock,
+  Compass,
+  Loader2,
+  MapPin,
+  Mountain as MountainIcon,
+  Map as MapIcon,
+  MoveHorizontal,
+  Navigation,
+  Plus,
+  Route as RouteIcon,
+  RotateCw,
+  Search,
+  SlidersHorizontal,
+  Star,
+  TrendingUp,
+  Users,
+  X,
 } from "lucide-react";
-import { Rise, Stagger } from "@/components/layout/chrome";
+import { Rise, Stagger, TABBAR_CLEAR, TABBAR_STICKY_BOTTOM } from "@/components/layout/chrome";
 import { useMountainImage } from "@/components/domain/MountainImage";
 import { IcefallMark } from "@/components/ui/IcefallMark";
 import { Sheet, SheetRow } from "@/components/ui/Sheet";
 import { MiniMap } from "@/components/domain/MiniMap";
-import { AREA_MAP_HEIGHT, AreaMap } from "./AreaMap";
+import { FindMap, type MapPin as FindPin } from "./AreaMap";
+import { SaveCircle } from "@/components/ui/SaveControl";
+import { isTrailSaved, saveTrail, unsaveTrail } from "@/services/savedTrails";
 import { fmtPeople, ratingFor } from "@/routes/ratings";
 import { fmtDistance, fmtElevation } from "@/lib/format";
 import { TRAINING_BANDS, routeRelevance, routesInBand } from "@/routes/relevance";
 import { routePhoto } from "@/routes/model";
 import {
-  ACTIVITY_BANDS, ACTIVITY_OPTIONS, MAX_RADIUS_KM, RADIUS_OPTIONS, activityOption,
-  paceFor, searchRoutes, type ActivityKind, type RouteHit,
+  ACTIVITY_BANDS,
+  ACTIVITY_OPTIONS,
+  MAX_RADIUS_KM,
+  RADIUS_OPTIONS,
+  activityOption,
+  paceFor,
+  searchRoutes,
+  type ActivityKind,
+  type RouteHit,
 } from "@/routes/search";
 import {
-  SUGGESTED_PLACES, areaIdFor, isWidePlace, lastPlace, locateMe, recentPlaces,
-  rememberPlace, saveLastPlace, searchPlaces, type LocateError, type Place,
+  SUGGESTED_PLACES,
+  areaIdFor,
+  isWidePlace,
+  lastPlace,
+  locateMe,
+  recentPlaces,
+  rememberPlace,
+  saveLastPlace,
+  searchPlaces,
+  type LocateError,
+  type Place,
 } from "@/routes/places";
 import {
-  mergePeaks, nearbyFromCatalogue, nearbyLive, rememberPeaks, type Peak,
+  mergePeaks,
+  nearbyFromCatalogue,
+  nearbyLive,
+  rememberPeaks,
+  type Peak,
 } from "@/services/peaks";
 import { enrichPeaks } from "@/services/peakWikidata";
 import {
-  NETWORK_LABEL, SAC_LABEL, cachedLengthKm, measureLength, nearbyTrails, type Trail,
+  NETWORK_LABEL,
+  SAC_LABEL,
+  cachedLengthKm,
+  measureLength,
+  nearbyTrails,
+  type Trail,
 } from "@/services/trails";
 import { FIND_TIMEOUT_MS, withTimeout } from "@/lib/netTimeout";
 import { TrailImage } from "@/components/domain/TrailImage";
@@ -104,7 +146,8 @@ export default function Routes() {
   );
 
   const activityInfo = activityOption(activity);
-  const radiusLabel = RADIUS_OPTIONS.find((r) => r.value === radiusKm)?.label ?? `within ${radiusKm} km`;
+  const radiusLabel =
+    RADIUS_OPTIONS.find((r) => r.value === radiusKm)?.label ?? `within ${radiusKm} km`;
   // You are near a town; you are in a country. Getting this wrong is small and
   // it is the kind of small that makes a screen read as machine-generated.
   const placeIn = isWidePlace(place) ? "in" : "near";
@@ -119,36 +162,19 @@ export default function Routes() {
   // Named, waymarked trails from OpenStreetMap. Only for the activities they
   // actually answer — a hiking relation is not a mountaineering objective.
   const trails = useNearbyTrails(place, radiusKm, activity !== "mountaineering");
-  const peaks = useNearbyPeaks(place, activity, radiusKm, hits.length === 0 && trails.list.length === 0);
+  const peaks = useNearbyPeaks(
+    place,
+    activity,
+    radiusKm,
+    hits.length === 0 && trails.list.length === 0,
+  );
   // Either half of the search going down means the screen knows nothing, and
   // must not report nothing as a finding.
   const searchFailed = trails.failed || peaks.failed;
   // Resolved for the whole list at once, so no two cards can show the same frame.
 
-  /*
-   * PARK THE SCROLL PAST THE MAP, ONCE, BEFORE THE FIRST PAINT.
-   *
-   * `useLayoutEffect` rather than `useEffect`: the browser paints between an
-   * effect and the next frame, so with `useEffect` the map flashes on screen
-   * and jumps away — measured, it is one clearly visible frame at 375pt.
-   *
-   * ONCE, AND ONLY ON MOUNT. Re-parking when `place` changes would yank the
-   * list out from under somebody who had deliberately pulled the map open to
-   * look at where they had just moved the search to.
-   *
-   * The guard matters on a short result set: if everything below the map is
-   * shorter than the viewport there is no scroll range to park in, and
-   * `scrollTop` silently clamps. `minHeight` on the content below is what
-   * guarantees the range exists — see the wrapper further down.
-   */
   const scroller = useRef<HTMLDivElement | null>(null);
-  const parked = useRef(false);
-  useLayoutEffect(() => {
-    const el = scroller.current;
-    if (!el || parked.current) return;
-    el.scrollTop = AREA_MAP_HEIGHT;
-    parked.current = true;
-  }, []);
+  const spacer = useRef<HTMLDivElement | null>(null);
 
   /*
    * THE ATHLETE'S OWN PLACE, resolved once on mount.
@@ -195,89 +221,25 @@ export default function Routes() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [myProfile.status]);
 
-  /** Pull the map into view. The chip below is the discoverable way in. */
-  const showMap = useCallback(() => {
-    scroller.current?.scrollTo({ top: 0, behavior: "smooth" });
-  }, []);
-
   /*
-   * Is the map already on screen?
+   * THE SHEET, AND WHERE IT IS.
    *
-   * Only so the chip can get out of the way — a "Map" button sitting over a map
-   * is a control that does nothing, which is the thing this codebase keeps
-   * refusing to ship. Half the panel's height is the threshold: by then the map
-   * is unmistakably the subject and the chip has stopped being useful.
+   * There is no drag gesture code here at all. The results are a sheet inside
+   * a native scroller whose first child is a transparent spacer the height of
+   * the map's visible portion. Dragging the sheet up is scrolling; the spacer
+   * carries `scroll-snap-align: start` and so does the sheet, so a release
+   * anywhere between the two settles on one or the other — map showing, or
+   * sheet at the top — and past the sheet's top the list scrolls freely. That
+   * is the AllTrails movement, done by the browser's own snapping rather than
+   * by timers, and it is why the handle-drag, the list-drag and the Map button
+   * all end in exactly the same two places.
    *
-   * Throttled to one read per frame. `scroll` fires far faster than that on a
-   * touch device and this handler reads `scrollTop`, which forces layout.
+   * `atTop` is the one thing read back from it: whether the sheet has covered
+   * the map, which is when the Map button has a job.
    */
-  const [mapShown, setMapShown] = useState(false);
-
-  /*
-   * THE MAP SNAPS OPEN OR SHUT — it is never left half-drawn.
-   *
-   * The owner, 2026-09-06: "when you scroll up i want it to be instant to show
-   * map not have to scroll all the way … Barely go up map shows, barely touch
-   * the tip to slide it down then goes down."
-   *
-   * WHY IT IS DIRECTION-AWARE RATHER THAN A THRESHOLD. A position threshold
-   * cannot do what was asked. "Barely up opens" means a tiny drag from the
-   * closed position must commit to OPEN, and "barely down closes" means a tiny
-   * drag from the open position must commit to CLOSED — and those two are the
-   * same scroll position with opposite outcomes. Only the direction the finger
-   * moved tells them apart, so that is what is read.
-   *
-   * WHY NOT CSS SCROLL-SNAP. `scroll-snap-type: y mandatory` would snap the
-   * whole list, not just this band, so every result row would become a snap
-   * point and a flick through fifty trails would stutter at each one.
-   * `proximity` is the other way wrong: it only engages near a point, which is
-   * exactly the "scroll all the way" behaviour being complained about.
-   *
-   * IT ONLY ACTS INSIDE THE BAND. Past `AREA_MAP_HEIGHT` the list scrolls
-   * normally and nothing here fires — this must never yank somebody back while
-   * they are reading results.
-   *
-   * IT WAITS FOR THE SCROLL TO STOP. Snapping mid-gesture fights the finger. 90ms
-   * of quiet is long enough that momentum has settled and short enough that the
-   * snap still feels like part of the same movement.
-   */
-  useEffect(() => {
-    const el = scroller.current;
-    if (!el) return;
-
-    let last = el.scrollTop;
-    let settle = 0;
-    /* Set while a snap animation is running, so its own scroll events do not
-       feed back in and re-trigger it. */
-    let snapping = false;
-
-    const onScroll = () => {
-      const now = el.scrollTop;
-      const wentUp = now < last;
-      last = now;
-      if (snapping) return;
-
-      window.clearTimeout(settle);
-      settle = window.setTimeout(() => {
-        const at = el.scrollTop;
-        /* Outside the band, or already settled on one of the two ends. */
-        if (at <= 0 || at >= AREA_MAP_HEIGHT) return;
-        snapping = true;
-        el.scrollTo({ top: wentUp ? 0 : AREA_MAP_HEIGHT, behavior: "smooth" });
-        /* Long enough for a smooth scroll of at most AREA_MAP_HEIGHT. */
-        window.setTimeout(() => {
-          snapping = false;
-          last = el.scrollTop;
-        }, 420);
-      }, 90);
-    };
-
-    el.addEventListener("scroll", onScroll, { passive: true });
-    return () => {
-      el.removeEventListener("scroll", onScroll);
-      window.clearTimeout(settle);
-    };
-  }, []);
+  const [atTop, setAtTop] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [locateNote, setLocateNote] = useState<string | null>(null);
 
   useEffect(() => {
     const el = scroller.current;
@@ -287,15 +249,69 @@ export default function Routes() {
       if (frame) return;
       frame = requestAnimationFrame(() => {
         frame = 0;
-        setMapShown(el.scrollTop < AREA_MAP_HEIGHT / 2);
+        const top = spacer.current?.offsetHeight ?? 0;
+        /* A little slack: proximity snapping settles a few px either side of
+           the exact snap line, and the button must be there at that line. */
+        setAtTop(el.scrollTop >= top - STRIP_H - 16);
       });
     };
     el.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
     return () => {
       el.removeEventListener("scroll", onScroll);
       if (frame) cancelAnimationFrame(frame);
     };
   }, []);
+
+  /** Bring the map back: the Map button and nothing else calls this. */
+  const showMap = useCallback(() => {
+    scroller.current?.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
+
+  /* The map's locate control: the same fix the place picker uses, so the two
+     cannot disagree about where "here" is. */
+  async function locateHere() {
+    setLocating(true);
+    setLocateNote(null);
+    try {
+      choose(await locateMe());
+    } catch (e) {
+      const why = (e as LocateError) ?? "unavailable";
+      setLocateNote(
+        why === "denied"
+          ? "Location permission was refused, so the search stays where it is."
+          : why === "insecure"
+            ? "Location needs a secure connection."
+            : "Couldn't get a fix just now. The search stays where it is.",
+      );
+    } finally {
+      setLocating(false);
+    }
+  }
+
+  /* Every result the list can name, as a pin. Memoised: a new array each
+     render would rebuild every marker on every keystroke. */
+  const pins = useMemo<FindPin[]>(
+    () => [
+      ...trails.list.map((t) => ({
+        id: t.id,
+        lat: t.lat,
+        lon: t.lon,
+        name: t.name,
+        href: `/explore/trail/${t.osmId}`,
+      })),
+      ...(hits.length === 0 && trails.list.length === 0
+        ? peaks.list.map((pk) => ({
+            id: pk.id,
+            lat: pk.lat,
+            lon: pk.lon,
+            name: pk.name,
+            href: peakHref(pk),
+          }))
+        : []),
+    ],
+    [trails.list, peaks.list, hits.length],
+  );
 
   function choose(next: Place) {
     setPlace(next);
@@ -306,64 +322,72 @@ export default function Routes() {
   }
 
   return (
-    <div ref={scroller} className="no-scrollbar relative h-full overflow-y-auto">
+    /*
+     * THE STAGE. The map fills it; the scroller floats over it; the Map button
+     * floats over both. `overflow-hidden` because the stage itself never
+     * scrolls — only the sheet's scroller does.
+     */
+    <div className="relative h-full overflow-hidden bg-obsidian">
+      <FindMap
+        lat={place.lat}
+        lon={place.lon}
+        radiusKm={radiusKm}
+        pins={pins}
+        visibleFraction={MAP_VISIBLE}
+        locating={locating}
+        onLocate={() => void locateHere()}
+        locateNote={locateNote}
+      />
+
       {/*
-        THE MAP, ABOVE THE FOLD.
-
-        It is the first thing in the scroller and the effect above parks the
-        scroll exactly past it, so the screen opens on the search bar as it
-        always has and pulling the list down reveals the map. See `AreaMap` for
-        why this is plain scrolling rather than a drag gesture.
+        THE SCROLLER IS TRANSPARENT TO THE FINGER; THE SHEET IS NOT.
+        `pointer-events-none` on the scroller lets a touch on the map's visible
+        half reach the map (pan, pinch, a pin); `pointer-events-auto` on the
+        sheet lets a touch on the sheet scroll it. Scrolling is decided by the
+        touched element's nearest scrollable ancestor, which is still this
+        scroller, so dragging the sheet moves the sheet.
       */}
-      <AreaMap lat={place.lat} lon={place.lon} name={place.name} radiusKm={radiusKm} />
+      <div
+        ref={scroller}
+        className="no-scrollbar pointer-events-none absolute inset-0 overflow-y-auto overscroll-contain"
+        style={{ scrollSnapType: "y proximity", scrollPaddingTop: STRIP_H }}
+      >
+        {/* The map shows through this. Its height is the sheet's resting position. */}
+        <div
+          ref={spacer}
+          aria-hidden
+          style={{ height: `${MAP_VISIBLE * 100}%`, scrollSnapAlign: "start" }}
+        />
 
-      {/*
-        `minHeight: 100%` IS WHAT MAKES THE PARK ABOVE POSSIBLE.
+        <div
+          className="pointer-events-auto relative min-h-full rounded-t-[22px] bg-obsidian shadow-[0_-12px_40px_rgba(0,0,0,0.45)]"
+          style={{ scrollSnapAlign: "start" }}
+        >
+          {/* Handle, search and chips travel with the sheet, then hold at the
+              strip line while the cards scroll under them. */}
+          <div className="sticky z-10 rounded-t-[22px] bg-obsidian" style={{ top: STRIP_H }}>
+            {/* The handle — the drawing's grab affordance. Decorative: the whole
+              sheet drags. */}
+            <div className="flex justify-center pb-1 pt-2.5" aria-hidden>
+              <span className="h-1 w-9 rounded-full bg-white/25" />
+            </div>
 
-        `scrollTop` clamps to `scrollHeight - clientHeight`. On a search that
-        returns two results the content below the map is shorter than the
-        viewport, that difference is zero, and the effect's park silently does
-        nothing — the screen would open ON the map instead of on the search bar.
-        Holding this block to at least one viewport guarantees the range exists
-        whatever the search found.
-      */}
-      <div style={{ minHeight: "100%" }} className="relative bg-obsidian">
-        {/* ---- Search head ----------------------------------------------- */}
-        <div className="relative">
-          {/*
-            THE FAINT MAP WASH THAT USED TO BE HERE IS GONE. It was a 16%-opacity
-            tile grid behind this header, standing in for the orientation a real
-            map would give. There is now a real map directly above it, and two
-            maps a hundred pixels apart — one of them a ghost — read as a
-            rendering fault rather than as a design. `MapBackdrop` is still
-            exported from `components/domain/MiniMap.tsx`, but this was its only
-            call site — it is now dead code, kept rather than deleted because
-            it belongs to that component's file, not to this screen.
-          */}
-          <div className="relative px-5 pb-3 pt-5">
-          <button
-            type="button"
-            onClick={() => setSheet("where")}
-            className="flex w-full items-center gap-2.5 rounded-tile border border-hairline bg-graphite/90 px-3.5 py-2.5 text-left backdrop-blur transition-colors hover:border-hairline-strong"
-          >
-            <MapPin size={16} strokeWidth={1.7} className="shrink-0 text-azure" />
-            <span className="min-w-0 flex-1">
-              {/*
-                EMPTY UNTIL THEY TYPE. Until the athlete picks somewhere this is
-                a search box with nothing in it, because nothing has been
-                searched for — it was pre-filled with the place name, which read
-                as a query they had entered and made the screen look like it was
-                already showing results for somewhere else.
-
-                THE AREA IS STILL NAMED, one line down, by the results count:
-                "2,579 hiking routes near Chamonix". So nothing is hidden — the
-                field says what you asked for, and the count says what was
-                searched.
+            {/* ---- Search ------------------------------------------------------ */}
+            <div className="px-4 pb-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setSheet("where")}
+                className="flex w-full items-center gap-3 rounded-full bg-white/[0.08] px-4 py-3.5 text-left transition-colors hover:bg-white/[0.11]"
+              >
+                <Search size={17} strokeWidth={1.9} className="shrink-0 text-snow/80" />
+                {/*
+                EMPTY UNTIL THEY TYPE. Until the athlete picks somewhere this is a
+                search box with nothing in it, because nothing has been searched
+                for. The area is still named, one line down, by the results
+                count — "150 trails near Larnaca" — so nothing is hidden.
               */}
-              {picked ? (
-                <>
-                  <span className="section-label block text-[8px]">Searching near</span>
-                  <span className="block truncate text-[13.5px] text-snow">
+                {picked ? (
+                  <span className="block min-w-0 flex-1 truncate text-[15px] text-snow">
                     {place.name}
                     {(place.kind || place.region) && (
                       <span className="text-mist-dim">
@@ -372,266 +396,322 @@ export default function Routes() {
                       </span>
                     )}
                   </span>
-                </>
-              ) : (
-                <span className="block truncate text-[13.5px] text-mist">
-                  Search a place or region
-                </span>
-              )}
-            </span>
-            <Search size={14} strokeWidth={1.8} className="shrink-0 text-mist-dim" />
-          </button>
+                ) : (
+                  <span className="block min-w-0 flex-1 truncate text-[15px] text-mist">
+                    Find a place or region
+                  </span>
+                )}
+              </button>
 
-          {/* What / radius / filters */}
-          <div className="no-scrollbar mt-2.5 -mx-5 overflow-x-auto px-5">
-            <div className="flex w-max items-center gap-2">
-              <Pill onClick={() => setSheet("what")} icon={MountainIcon} caret active>
-                {activityInfo.label}
-              </Pill>
-              <Pill onClick={() => setSheet("radius")} icon={MoveHorizontal} caret active={radiusKm !== null}>
-                {radiusLabel}
-              </Pill>
-              <Pill onClick={() => setSheet("filters")} icon={SlidersHorizontal} active={Boolean(band)}>
-                {band ? TRAINING_BANDS.find((b) => b.id === band)?.label : "Filters"}
-              </Pill>
+              {/* What / radius / filters — the drawing's chip row. */}
+              <div className="no-scrollbar -mx-4 mt-3 overflow-x-auto px-4">
+                <div className="flex w-max items-center gap-2">
+                  <Pill onClick={() => setSheet("what")} icon={MountainIcon} caret active>
+                    {activityInfo.label}
+                  </Pill>
+                  <Pill
+                    onClick={() => setSheet("radius")}
+                    icon={MoveHorizontal}
+                    caret
+                    active={radiusKm !== null}
+                  >
+                    {radiusLabel}
+                  </Pill>
+                  <Pill
+                    onClick={() => setSheet("filters")}
+                    icon={SlidersHorizontal}
+                    active={Boolean(band)}
+                  >
+                    {band ? TRAINING_BANDS.find((b) => b.id === band)?.label : "Filters"}
+                  </Pill>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
 
-      {/* ---- Count -------------------------------------------------------
-          Silent when the search failed. "0 hiking routes near
-          Chamonix-Mont-Blanc" is a claim about the Alps; what had actually
-          happened was that Overpass did not answer. */}
-      {!(searchFailed && hits.length + trails.total === 0) && (
-        <div className="px-5 pb-1 text-center">
-          <p className="tnum text-[12.5px] text-mist">
-            {hits.length + trails.total} {activityInfo.label.toLowerCase()}
-            {hits.length + trails.total === 1 ? " route" : " routes"} {placeIn} {place.name}
-          </p>
-        </div>
-      )}
+          {/* ---- Count ------------------------------------------------------
+            Silent when the search failed. "0 hiking routes near Chamonix" is a
+            claim about the Alps; what had actually happened was that Overpass
+            did not answer. No "Most relevant" control beside it: there is no
+            sort to choose from, and a caret that opens nothing is a lie. */}
+          {!(searchFailed && hits.length + trails.total === 0) && (
+            <div className="px-4 pb-1 pt-1">
+              <p className="tnum text-[14px] font-medium text-snow">
+                {hits.length + trails.total} {activityInfo.label.toLowerCase()}
+                {hits.length + trails.total === 1 ? " route" : " routes"}{" "}
+                <span className="font-normal text-mist">
+                  {placeIn} {place.name}
+                </span>
+              </p>
+            </div>
+          )}
 
-      {/* ---- Results ----------------------------------------------------- */}
-      <Stagger className="px-5 pb-8">
-        {hits.map((r) => (
-          <Rise key={r.id} className="pt-3">
-            <RouteResultCard hit={r} reason={routeRelevance(r, ctx).reason} />
-          </Rise>
-        ))}
-
-        {/* Real trails, from OpenStreetMap. These are the answer to "where can I
-            walk near here" almost everywhere on earth — ICEFALL's own catalogue
-            documents twelve alpine lines and nothing else. */}
-        {trails.list.length > 0 && (
-          <>
-            {hits.length > 0 && (
-              <Rise className="pb-1 pt-7">
-                <p className="section-label text-mist">Trails {placeIn} {place.name}</p>
-              </Rise>
-            )}
-            {trails.list.map((t, i) => (
-              <Rise key={t.id} className="pt-3">
-                <TrailCard trail={t} />
+          {/* ---- Results --------------------------------------------------- */}
+          <Stagger className="px-4 pb-4">
+            {hits.map((r) => (
+              <Rise key={r.id} className="pt-3">
+                <RouteResultCard hit={r} reason={routeRelevance(r, ctx).reason} />
               </Rise>
             ))}
-            {trails.hasMore && (
-              <Rise className="pt-3">
-                <LoadMore
-                  onClick={trails.loadMore}
-                  shown={trails.list.length}
-                  total={trails.total}
-                  noun="trails"
-                />
-              </Rise>
-            )}
-            <Rise className="pt-3">
-              <p className="text-[10.5px] leading-relaxed text-mist-dim">
-                Named, waymarked trails from OpenStreetMap — the line, the length and the
-                waymark are as mapped by the people who walk them. ICEFALL has not surveyed
-                them and does not know today's conditions.
-              </p>
-            </Rise>
-          </>
-        )}
 
-        {/* While the summits are still coming in, the loader IS the empty state —
+            {/* Real trails, from OpenStreetMap. These are the answer to "where can I
+            walk near here" almost everywhere on earth — ICEFALL's own catalogue
+            documents twelve alpine lines and nothing else. */}
+            {trails.list.length > 0 && (
+              <>
+                {hits.length > 0 && (
+                  <Rise className="pb-1 pt-7">
+                    <p className="section-label text-mist">
+                      Trails {placeIn} {place.name}
+                    </p>
+                  </Rise>
+                )}
+                {trails.list.map((t, i) => (
+                  <Rise key={t.id} className="pt-3">
+                    <TrailCard trail={t} near={place.name} />
+                  </Rise>
+                ))}
+                {trails.hasMore && (
+                  <Rise className="pt-3">
+                    <LoadMore
+                      onClick={trails.loadMore}
+                      shown={trails.list.length}
+                      total={trails.total}
+                      noun="trails"
+                    />
+                  </Rise>
+                )}
+                <Rise className="pt-3">
+                  <p className="text-[10.5px] leading-relaxed text-mist-dim">
+                    Named, waymarked trails from OpenStreetMap — the line, the length and the
+                    waymark are as mapped by the people who walk them. ICEFALL has not surveyed them
+                    and does not know today's conditions.
+                  </p>
+                </Rise>
+              </>
+            )}
+
+            {/* While the summits are still coming in, the loader IS the empty state —
             stacking "no routes here" on top of a spinner reads as a dead end
             when the screen is in fact still filling. */}
-        {hits.length === 0 && (trails.loading || peaks.loading) && trails.list.length === 0 && (
-          <SearchingSummits
-            place={`${placeIn} ${place.name}`}
-            stage={trails.loading ? "trails" : peaks.stage}
-          />
-        )}
+            {hits.length === 0 && (trails.loading || peaks.loading) && trails.list.length === 0 && (
+              <SearchingSummits
+                place={`${placeIn} ${place.name}`}
+                stage={trails.loading ? "trails" : peaks.stage}
+              />
+            )}
 
-        {/* `NoRoutes` asserts an absence, so it may only be shown when the
+            {/* `NoRoutes` asserts an absence, so it may only be shown when the
             search actually SUCCEEDED and came back empty. `trails.failed` was
             computed and never read: an Overpass outage rendered as "No hiking
             routes within 100 km of Chamonix-Mont-Blanc" — a statement about the
             world, made from a network error. */}
-        {hits.length === 0 && trails.list.length === 0 && !trails.loading && !peaks.loading &&
-          !trails.failed && !peaks.failed && (
-          <NoRoutes place={place} activity={activity} radiusLabel={radiusLabel} />
-        )}
+            {hits.length === 0 &&
+              trails.list.length === 0 &&
+              !trails.loading &&
+              !peaks.loading &&
+              !trails.failed &&
+              !peaks.failed && (
+                <NoRoutes place={place} activity={activity} radiusLabel={radiusLabel} />
+              )}
 
-        {hits.length === 0 && trails.list.length === 0 && !trails.loading && trails.failed && (
-          <Rise className="pt-4">
-            <div className="rounded-card border border-hairline bg-graphite p-4">
-              <p className="text-[13px] text-snow">
-                {trails.timedOut
-                  ? "That search was taking too long."
-                  : "Couldn't reach the trail database."}
-              </p>
-              <p className="mt-1.5 text-[11.5px] leading-relaxed text-mist-dim">
-                {trails.timedOut
-                  ? `The walks around ${place.name} come from OpenStreetMap, and it had not answered after five seconds, so the search was stopped. It says nothing about what is actually near you — a wider area takes longer, and trying again often lands on a faster server.`
-                  : `The walks around ${place.name} come from OpenStreetMap, and it did not answer. This is a connection problem, not an empty map — it says nothing about what is actually near you.`}
-              </p>
-              <button
-                type="button"
-                onClick={trails.retry}
-                className="mt-3 flex items-center gap-2 rounded-pill border border-azure/45 bg-azure/[0.08] px-3.5 py-2 text-[12.5px] text-azure transition-colors hover:bg-azure/[0.14]"
-              >
-                <RotateCw size={13} strokeWidth={1.9} />
-                Try again
-              </button>
-            </div>
-          </Rise>
-        )}
+            {hits.length === 0 && trails.list.length === 0 && !trails.loading && trails.failed && (
+              <Rise className="pt-4">
+                <div className="rounded-card border border-hairline bg-graphite p-4">
+                  <p className="text-[13px] text-snow">
+                    {trails.timedOut
+                      ? "That search was taking too long."
+                      : "Couldn't reach the trail database."}
+                  </p>
+                  <p className="mt-1.5 text-[11.5px] leading-relaxed text-mist-dim">
+                    {trails.timedOut
+                      ? `The walks around ${place.name} come from OpenStreetMap, and it had not answered after five seconds, so the search was stopped. It says nothing about what is actually near you — a wider area takes longer, and trying again often lands on a faster server.`
+                      : `The walks around ${place.name} come from OpenStreetMap, and it did not answer. This is a connection problem, not an empty map — it says nothing about what is actually near you.`}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={trails.retry}
+                    className="mt-3 flex items-center gap-2 rounded-pill border border-azure/45 bg-azure/[0.08] px-3.5 py-2 text-[12.5px] text-azure transition-colors hover:bg-azure/[0.14]"
+                  >
+                    <RotateCw size={13} strokeWidth={1.9} />
+                    Try again
+                  </button>
+                </div>
+              </Rise>
+            )}
 
-        {hits.length === 0 && trails.list.length === 0 && !trails.failed &&
-          !peaks.loading && peaks.failed && peaks.list.length === 0 && (
-          <Rise className="pt-4">
-            <div className="rounded-card border border-hairline bg-graphite p-4">
-              <p className="text-[13px] text-snow">
-                {peaks.timedOut
-                  ? "That search was taking too long."
-                  : "Couldn't reach the summit database."}
-              </p>
-              <p className="mt-1.5 text-[11.5px] leading-relaxed text-mist-dim">
-                {peaks.timedOut
-                  ? `The peaks around ${place.name} come from OpenStreetMap, and it had not answered after five seconds, so the search was stopped. It says nothing about what is actually near you — a wider area takes longer, and trying again often lands on a faster server.`
-                  : `The peaks around ${place.name} come from OpenStreetMap, and it did not answer. This is a connection problem, not an empty map — it says nothing about what is actually near you.`}
-              </p>
-              <button
-                type="button"
-                onClick={peaks.retry}
-                className="mt-3 flex items-center gap-2 rounded-pill border border-azure/45 bg-azure/[0.08] px-3.5 py-2 text-[12.5px] text-azure transition-colors hover:bg-azure/[0.14]"
-              >
-                <RotateCw size={13} strokeWidth={1.9} />
-                Try again
-              </button>
-            </div>
-          </Rise>
-        )}
+            {hits.length === 0 &&
+              trails.list.length === 0 &&
+              !trails.failed &&
+              !peaks.loading &&
+              peaks.failed &&
+              peaks.list.length === 0 && (
+                <Rise className="pt-4">
+                  <div className="rounded-card border border-hairline bg-graphite p-4">
+                    <p className="text-[13px] text-snow">
+                      {peaks.timedOut
+                        ? "That search was taking too long."
+                        : "Couldn't reach the summit database."}
+                    </p>
+                    <p className="mt-1.5 text-[11.5px] leading-relaxed text-mist-dim">
+                      {peaks.timedOut
+                        ? `The peaks around ${place.name} come from OpenStreetMap, and it had not answered after five seconds, so the search was stopped. It says nothing about what is actually near you — a wider area takes longer, and trying again often lands on a faster server.`
+                        : `The peaks around ${place.name} come from OpenStreetMap, and it did not answer. This is a connection problem, not an empty map — it says nothing about what is actually near you.`}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={peaks.retry}
+                      className="mt-3 flex items-center gap-2 rounded-pill border border-azure/45 bg-azure/[0.08] px-3.5 py-2 text-[12.5px] text-azure transition-colors hover:bg-azure/[0.14]"
+                    >
+                      <RotateCw size={13} strokeWidth={1.9} />
+                      Try again
+                    </button>
+                  </div>
+                </Rise>
+              )}
 
-        {/* Anywhere on earth: the summits actually around this point, even where
+            {/* Anywhere on earth: the summits actually around this point, even where
             ICEFALL holds no documented line. */}
-        {hits.length === 0 && trails.list.length === 0 && peaks.list.length > 0 && (
-          <>
-            <Rise className="pb-1 pt-7">
-              <p className="section-label text-mist">Mountains {placeIn} {place.name}</p>
-              <p className="mt-1 text-[11.5px] leading-relaxed text-mist-dim">
-                Real summits from OpenStreetMap, with their own photographs. No route is
-                documented on these yet — elevation and position are facts, the way up is not.
-              </p>
-            </Rise>
-            {peaks.list.map((p, i) => (
-              <Rise key={p.id} className="pt-3">
-                <PeakCard peak={p} variant={i} />
-              </Rise>
-            ))}
-            {peaks.hasMore && (
-              <Rise className="pt-3">
-                <LoadMore
-                  onClick={peaks.loadMore}
-                  shown={peaks.list.length}
-                  total={peaks.total}
-                  noun="summits"
-                />
-              </Rise>
-            )}
-            {/* Said out loud, because a list that quietly stops at an arbitrary
+            {hits.length === 0 && trails.list.length === 0 && peaks.list.length > 0 && (
+              <>
+                <Rise className="pb-1 pt-7">
+                  <p className="section-label text-mist">
+                    Mountains {placeIn} {place.name}
+                  </p>
+                  <p className="mt-1 text-[11.5px] leading-relaxed text-mist-dim">
+                    Real summits from OpenStreetMap, with their own photographs. No route is
+                    documented on these yet — elevation and position are facts, the way up is not.
+                  </p>
+                </Rise>
+                {peaks.list.map((p, i) => (
+                  <Rise key={p.id} className="pt-3">
+                    <PeakCard peak={p} variant={i} />
+                  </Rise>
+                ))}
+                {peaks.hasMore && (
+                  <Rise className="pt-3">
+                    <LoadMore
+                      onClick={peaks.loadMore}
+                      shown={peaks.list.length}
+                      total={peaks.total}
+                      noun="summits"
+                    />
+                  </Rise>
+                )}
+                {/* Said out loud, because a list that quietly stops at an arbitrary
                 radius looks like a list of everything there is. */}
-            {peaks.narrowedToKm != null && (
-              <Rise className="pt-3">
-                <p className="text-[11px] leading-relaxed text-mist-dim">
-                  There are more named summits around {place.name} than one search can carry, so
-                  this covers the nearest {peaks.narrowedToKm} km rather than the full radius.
-                  Move the pin or narrow the radius to search further out.
-                </p>
-              </Rise>
+                {peaks.narrowedToKm != null && (
+                  <Rise className="pt-3">
+                    <p className="text-[11px] leading-relaxed text-mist-dim">
+                      There are more named summits around {place.name} than one search can carry, so
+                      this covers the nearest {peaks.narrowedToKm} km rather than the full radius.
+                      Move the pin or narrow the radius to search further out.
+                    </p>
+                  </Rise>
+                )}
+              </>
             )}
-          </>
-        )}
+          </Stagger>
 
-        </Stagger>
-
-        {/*
-          THE MAP CHIP — AllTrails' floating pill, and the reason the pull is
-          discoverable at all.
-
-          Nobody finds a gesture on their own. AllTrails puts a "Map" pill in
-          the middle of its results list for exactly this reason, and this is
-          that: it scrolls the panel into view, so the gesture and the button do
-          the same thing and neither is the only way in.
-
-          `sticky bottom-6` rather than `fixed`: it belongs to this scroller and
-          nothing else, so it cannot end up floating over another screen if this
-          one unmounts mid-transition. The wrapper is `pointer-events-none` so
-          the strip of page either side of the pill still scrolls under a
-          finger — a full-width invisible bar that ate scrolls would be worse
-          than no chip.
-        */}
-        <div className="pointer-events-none sticky bottom-6 z-20 flex justify-center pb-2">
-          <button
-            type="button"
-            onClick={showMap}
-            aria-hidden={mapShown}
-            tabIndex={mapShown ? -1 : 0}
-            className={cn(
-              "pointer-events-auto flex items-center gap-2 rounded-pill border border-hairline-strong bg-graphite/95 px-4 py-2.5 text-[12.5px] font-medium text-snow shadow-[var(--ice-shadow-pop)] backdrop-blur transition-all duration-200",
-              mapShown && "pointer-events-none translate-y-2 opacity-0",
-            )}
-          >
-            <MapIcon size={14} strokeWidth={1.9} aria-hidden />
-            Map
-          </button>
+          {/* The tab bar floats over the end of this list. */}
+          <div aria-hidden style={{ height: TABBAR_CLEAR }} />
         </div>
       </div>
 
+      {/*
+        THE MAP BUTTON — the drawing's floating pill, shown once the sheet has
+        covered the map. It scrolls the sheet back down; the drag does the same
+        thing, so neither is the only way back.
+      */}
+      <div
+        className="pointer-events-none absolute inset-x-0 z-20 flex justify-center"
+        style={{ bottom: `calc(${TABBAR_STICKY_BOTTOM} + 14px)` }}
+      >
+        <button
+          type="button"
+          onClick={showMap}
+          aria-hidden={!atTop}
+          tabIndex={atTop ? 0 : -1}
+          className={cn(
+            "pointer-events-auto flex items-center gap-2 rounded-pill bg-azure px-4 py-2.5 text-[13px] font-medium text-obsidian shadow-[var(--ice-shadow-pop)] transition-all duration-200",
+            !atTop && "pointer-events-none translate-y-2 opacity-0",
+          )}
+        >
+          <MapIcon size={15} strokeWidth={2} aria-hidden />
+          Map
+        </button>
+      </div>
+
       {/* ---- Sheets ------------------------------------------------------ */}
-      {sheet === "where" && <WhereSheet current={place} onPick={choose} onClose={() => setSheet(null)} />}
+      {sheet === "where" && (
+        <WhereSheet current={place} onPick={choose} onClose={() => setSheet(null)} />
+      )}
 
       {sheet && sheet !== "where" && (
         <Sheet
           title={
-            sheet === "what" ? "What are you doing?"
-              : sheet === "radius" ? "How far will you travel?"
-              : "Filters"
+            sheet === "what"
+              ? "What are you doing?"
+              : sheet === "radius"
+                ? "How far will you travel?"
+                : "Filters"
           }
           onClose={() => setSheet(null)}
         >
           {sheet === "what" &&
             ACTIVITY_OPTIONS.map((a) => (
-              <SheetRow key={a.id} active={a.id === activity} onClick={() => { setActivity(a.id); setSheet(null); }}
-                   title={a.label} detail={a.detail} />
+              <SheetRow
+                key={a.id}
+                active={a.id === activity}
+                onClick={() => {
+                  setActivity(a.id);
+                  setSheet(null);
+                }}
+                title={a.label}
+                detail={a.detail}
+              />
             ))}
 
           {sheet === "radius" &&
             RADIUS_OPTIONS.map((r) => (
-              <SheetRow key={r.label} active={r.value === radiusKm} onClick={() => { setRadiusKm(r.value); setSheet(null); }}
-                   title={r.label} detail={r.value === null ? "Every route ICEFALL holds" : `Straight-line from ${place.name}`} />
+              <SheetRow
+                key={r.label}
+                active={r.value === radiusKm}
+                onClick={() => {
+                  setRadiusKm(r.value);
+                  setSheet(null);
+                }}
+                title={r.label}
+                detail={
+                  r.value === null
+                    ? "Every route ICEFALL holds"
+                    : `Straight-line from ${place.name}`
+                }
+              />
             ))}
 
           {sheet === "filters" && (
             <>
-              <SheetRow active={band === null} onClick={() => { setBand(null); setSheet(null); }}
-                   title="Any vertical" detail="No training filter" />
+              <SheetRow
+                active={band === null}
+                onClick={() => {
+                  setBand(null);
+                  setSheet(null);
+                }}
+                title="Any vertical"
+                detail="No training filter"
+              />
               {TRAINING_BANDS.map((b) => (
-                <SheetRow key={b.id} active={band === b.id} onClick={() => { setBand(b.id); setSheet(null); }}
-                     title={b.label} detail={b.detail} />
+                <SheetRow
+                  key={b.id}
+                  active={band === b.id}
+                  onClick={() => {
+                    setBand(b.id);
+                    setSheet(null);
+                  }}
+                  title={b.label}
+                  detail={b.detail}
+                />
               ))}
             </>
           )}
@@ -646,9 +726,13 @@ export default function Routes() {
 /* -------------------------------------------------------------------------- */
 
 function WhereSheet({
-  current, onPick, onClose,
+  current,
+  onPick,
+  onClose,
 }: {
-  current: Place; onPick: (p: Place) => void; onClose: () => void;
+  current: Place;
+  onPick: (p: Place) => void;
+  onClose: () => void;
 }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Place[]>([]);
@@ -691,7 +775,10 @@ function WhereSheet({
           setSearching(false);
         });
     }, 250);
-    return () => { clearTimeout(t); ctrl.abort(); };
+    return () => {
+      clearTimeout(t);
+      ctrl.abort();
+    };
   }, [query]);
 
   async function useHere() {
@@ -735,7 +822,11 @@ function WhereSheet({
           disabled={locating}
           className="mt-2.5 flex w-full items-center gap-2.5 rounded-tile border border-azure/40 bg-azure/[0.07] px-3 py-2.5 text-left text-[13px] text-azure transition-colors hover:bg-azure/[0.12] disabled:opacity-60"
         >
-          {locating ? <Loader2 size={15} className="animate-spin" /> : <Compass size={15} strokeWidth={1.8} />}
+          {locating ? (
+            <Loader2 size={15} className="animate-spin" />
+          ) : (
+            <Compass size={15} strokeWidth={1.8} />
+          )}
           {locating ? "Finding you…" : "Use my location"}
         </button>
 
@@ -838,6 +929,18 @@ function LoadMore({
 /** How many results a page reveals. A country has more than five walks in it. */
 const PAGE = 10;
 
+/** How much of the stage the map keeps at rest — the drawing's proportion. */
+const MAP_VISIBLE = 0.55;
+
+/**
+ * The floating tab strip's height plus its gap (see ExploreLayout). The sheet's
+ * top snap point sits this far below the stage's top edge, so a fully raised
+ * sheet parks UNDER the strip rather than behind it — the strip stayed on top
+ * of the search field the first time round. The search head is sticky at the
+ * same line, so it stays put while the cards scroll under it.
+ */
+const STRIP_H = 58;
+
 function useNearbyTrails(place: Place, radiusKm: number | null, enabled: boolean) {
   const [all, setAll] = useState<Trail[]>([]);
   const [shown, setShown] = useState(PAGE);
@@ -855,7 +958,7 @@ function useNearbyTrails(place: Place, radiusKm: number | null, enabled: boolean
       // summits behind it never appeared.
       setLoading(false);
       setFailed(false);
-    setTimedOut(false);
+      setTimedOut(false);
       return;
     }
     let live = true;
@@ -1023,61 +1126,44 @@ function useTrailLength(trail: Trail): { km: number | null; measuring: boolean }
   return { km, measuring };
 }
 
-function TrailCard({ trail }: { trail: Trail }) {
+function TrailCard({ trail, near }: { trail: Trail; near: string }) {
   // Set by `TrailImage`, because only it knows which layer actually won.
   const [caption, setCaption] = useState(TRAIL_PLATE_CAPTION);
   const length = useTrailLength(trail);
+  const [saved, setSaved] = useState(() => isTrailSaved(trail.osmId));
 
+  const away =
+    trail.distanceM === undefined
+      ? null
+      : trail.distanceM < 1000
+        ? "here"
+        : `${(trail.distanceM / 1000).toFixed(trail.distanceM < 10_000 ? 1 : 0)} km away`;
+
+  /*
+   * THE DRAWING'S CARD: a big photograph with two round controls in its corner,
+   * then the name, then where, then the facts in one line. What the drawing
+   * puts in that line — a star rating and a review count — is not here,
+   * because nobody has rated a trail on ICEFALL and a figure nobody measured
+   * is not shown. Difficulty, length and climb are as mapped, and are.
+   */
   return (
     <Link to={`/explore/trail/${trail.osmId}`} className="block">
-      <div className="overflow-hidden rounded-card border border-hairline bg-graphite transition-colors hover:border-hairline-strong">
-        <div className="relative h-[170px] bg-slate">
-          {/*
-            The plate is ALWAYS painted, and painted first — it needs no network,
-            so there is no state in which this card is blank or grey. A verified
-            photograph fades in over the top of it if and when one arrives; if
-            none does, the plate is what the card keeps, and it is not pretending
-            to be a photograph of anywhere.
-          */}
-          <TrailImage
-            osmId={trail.osmId}
-            lat={trail.lat}
-            lon={trail.lon}
-            name={trail.name}
-            onCaption={setCaption}
-            className="absolute inset-0 h-full w-full"
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-graphite/95 via-transparent to-obsidian/40" />
+      <div className="relative aspect-[16/10] overflow-hidden rounded-[16px] bg-slate">
+        {/* The plate is ALWAYS painted, and painted first — it needs no
+            network, so there is no state in which this card is blank. A
+            verified photograph fades in over it if and when one arrives. */}
+        <TrailImage
+          osmId={trail.osmId}
+          lat={trail.lat}
+          lon={trail.lon}
+          name={trail.name}
+          onCaption={setCaption}
+          className="absolute inset-0 h-full w-full"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-obsidian/55 via-transparent to-transparent" />
 
-          {trail.network && (
-            <span
-              className={cn(
-                "absolute left-3 top-3 rounded-pill border border-hairline-strong bg-obsidian/75 px-2.5 py-1 text-[10.5px] backdrop-blur",
-                NETWORK_COLOUR[trail.network] ?? "text-snow",
-              )}
-            >
-              {NETWORK_LABEL[trail.network]}
-            </span>
-          )}
-          {trail.distanceM !== undefined && (
-            <span className="tnum absolute left-3 top-11 flex items-center gap-1 rounded-pill bg-obsidian/70 px-2 py-1 text-[10.5px] text-snow backdrop-blur">
-              <MapPin size={11} strokeWidth={1.9} className="text-azure" />
-              {trail.distanceM < 1000
-                ? "here"
-                : `${(trail.distanceM / 1000).toFixed(trail.distanceM < 10_000 ? 1 : 0)} km away`}
-            </span>
-          )}
-          {trail.ref && (
-            <span className="absolute right-3 top-3 rounded-pill border border-azure/45 bg-obsidian/75 px-2.5 py-1 text-[10.5px] text-azure backdrop-blur">
-              {trail.ref}
-            </span>
-          )}
-
-          <span className="absolute bottom-3 left-3 right-20 truncate text-[10px] text-mist">
-            {caption}
-          </span>
-
-          {/* Straight to the phone's maps app, pinned at the trail. */}
+        {/* Save, and directions — both real. */}
+        <div className="absolute right-3 top-3 flex items-center gap-2">
           <button
             type="button"
             aria-label={`Directions to ${trail.name}`}
@@ -1086,50 +1172,80 @@ function TrailCard({ trail }: { trail: Trail }) {
               e.stopPropagation();
               openMaps(mapsDirectionsUrl({ lat: trail.lat, lon: trail.lon }));
             }}
-            className="absolute bottom-3 right-3 grid h-11 w-11 place-items-center rounded-full border border-azure/45 bg-obsidian/80 text-azure backdrop-blur transition-colors hover:bg-azure/20"
+            className="grid h-9 w-9 place-items-center rounded-full border border-hairline-strong bg-obsidian/70 text-snow backdrop-blur transition-colors hover:border-azure/50"
           >
-            <Navigation size={16} strokeWidth={1.8} />
+            <Navigation size={15} strokeWidth={1.8} />
           </button>
+          <span
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+          >
+            <SaveCircle
+              saved={saved}
+              onToggle={() => {
+                if (saved) unsaveTrail(trail.osmId);
+                else saveTrail(trail);
+                setSaved(!saved);
+              }}
+            />
+          </span>
         </div>
 
-        <div className="p-4">
-          <h3 className="text-[15.5px] leading-snug text-snow">{trail.name}</h3>
-          {(trail.localName || trail.description) && (
-            <p className="mt-1 line-clamp-2 text-[11.5px] leading-relaxed text-mist-dim">
-              {trail.description ?? trail.localName}
-            </p>
-          )}
-          <div className="tnum mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-mist">
-            {trail.durationH && (
-              <span className="flex items-center gap-1.5">
-                <Clock size={12} strokeWidth={1.7} className="text-mist-dim" />
-                {trail.durationH % 1 === 0
-                  ? `${trail.durationH} h`
-                  : `${Math.floor(trail.durationH)}h ${Math.round((trail.durationH % 1) * 60)}m`}
-              </span>
-            )}
-            <span className="tnum flex items-center gap-1.5">
-              <RouteIcon size={12} strokeWidth={1.7} className="text-mist-dim" />
-              {length.km != null
-                ? `${length.km.toFixed(1)} km`
-                : length.measuring
-                  ? "Measuring…"
-                  : "Length unavailable"}
+        {trail.ref && (
+          <span className="absolute bottom-3 right-3 rounded-pill border border-azure/45 bg-obsidian/75 px-2.5 py-1 text-[10.5px] text-azure backdrop-blur">
+            {trail.ref}
+          </span>
+        )}
+        <span className="absolute bottom-3 left-3 right-20 truncate text-[10px] text-mist">
+          {caption}
+        </span>
+      </div>
+
+      <h3 className="mt-3 text-[17px] font-medium leading-snug text-snow">{trail.name}</h3>
+      <p className="mt-0.5 truncate text-[13px] text-mist-dim">
+        {[trail.localName !== trail.name ? trail.localName : null, away, `near ${near}`]
+          .filter(Boolean)
+          .join(" · ")}
+      </p>
+      <div className="tnum mt-1 flex flex-wrap items-center gap-x-2 text-[13px] text-mist">
+        {trail.sacScale && SAC_LABEL[trail.sacScale] && (
+          <>
+            <span className="flex items-center gap-1.5">
+              <MountainIcon size={13} strokeWidth={1.7} className="text-mist-dim" />
+              {SAC_LABEL[trail.sacScale].split(" · ")[0]}
             </span>
-            {trail.ascentM && (
-              <span className="flex items-center gap-1.5">
-                <TrendingUp size={12} strokeWidth={1.7} className="text-mist-dim" />
-                {fmtElevation(trail.ascentM)} m
-              </span>
-            )}
-            {trail.sacScale && SAC_LABEL[trail.sacScale] && (
-              <span className="flex items-center gap-1.5">
-                <MountainIcon size={12} strokeWidth={1.7} className="text-mist-dim" />
-                {SAC_LABEL[trail.sacScale].split(" · ")[0]}
-              </span>
-            )}
-          </div>
-        </div>
+            <span className="text-mist-dim">·</span>
+          </>
+        )}
+        <span>
+          {length.km != null
+            ? `${length.km.toFixed(1)} km`
+            : length.measuring
+              ? "Measuring…"
+              : "Length unavailable"}
+        </span>
+        {trail.ascentM && (
+          <>
+            <span className="text-mist-dim">·</span>
+            <span className="flex items-center gap-1">
+              <TrendingUp size={12} strokeWidth={1.7} className="text-mist-dim" />
+              {fmtElevation(trail.ascentM)} m
+            </span>
+          </>
+        )}
+        {trail.durationH && (
+          <>
+            <span className="text-mist-dim">·</span>
+            <span className="flex items-center gap-1">
+              <Clock size={12} strokeWidth={1.7} className="text-mist-dim" />
+              {trail.durationH % 1 === 0
+                ? `${trail.durationH} h`
+                : `${Math.floor(trail.durationH)}h ${Math.round((trail.durationH % 1) * 60)}m`}
+            </span>
+          </>
+        )}
       </div>
     </Link>
   );
@@ -1149,7 +1265,12 @@ function TrailCard({ trail }: { trail: Trail }) {
  */
 export type SearchStage = "catalogue" | "osm" | "photos" | "trails";
 
-function useNearbyPeaks(place: Place, activity: ActivityKind, radiusKm: number | null, enabled: boolean) {
+function useNearbyPeaks(
+  place: Place,
+  activity: ActivityKind,
+  radiusKm: number | null,
+  enabled: boolean,
+) {
   const [list, setList] = useState<Peak[]>([]);
   // Everything found, so "Load more" is instant rather than another round trip.
   const [all, setAll] = useState<Peak[]>([]);
@@ -1171,7 +1292,12 @@ function useNearbyPeaks(place: Place, activity: ActivityKind, radiusKm: number |
   useEffect(() => {
     // Same trap as the trail hook: a search still in flight cannot clear this
     // itself once the effect has been torn down.
-    if (!enabled) { setList([]); setLoading(false); setFailed(false); return; }
+    if (!enabled) {
+      setList([]);
+      setLoading(false);
+      setFailed(false);
+      return;
+    }
     let live = true;
     const ctrl = new AbortController();
     const radiusM = Math.min(radiusKm ?? MAX_RADIUS_KM, MAX_RADIUS_KM) * 1000;
@@ -1201,9 +1327,7 @@ function useNearbyPeaks(place: Place, activity: ActivityKind, radiusKm: number |
      */
     const wide = isWidePlace(place);
     const order = (a: Peak, b: Peak) =>
-      wide
-        ? b.elevationM - a.elevationM
-        : (a.distanceM ?? Infinity) - (b.distanceM ?? Infinity);
+      wide ? b.elevationM - a.elevationM : (a.distanceM ?? Infinity) - (b.distanceM ?? Infinity);
 
     setLoading(true);
     setStage("catalogue");
@@ -1260,9 +1384,14 @@ function useNearbyPeaks(place: Place, activity: ActivityKind, radiusKm: number |
         }
         if (live) setFailed(true);
       })
-      .finally(() => { if (live) setLoading(false); });
+      .finally(() => {
+        if (live) setLoading(false);
+      });
 
-    return () => { live = false; ctrl.abort(); };
+    return () => {
+      live = false;
+      ctrl.abort();
+    };
   }, [enabled, place.lat, place.lon, place.osmId, place.kind, activity, radiusKm, attempt]);
 
   /** Reveal the next page, enriching only what is about to be seen. */
@@ -1338,8 +1467,14 @@ function SearchingSummits({ place, stage }: { place: string; stage: SearchStage 
           />
 
           {/* Fixed hairline graticule, so the sweep has something to sweep over. */}
-          <span aria-hidden className="absolute h-[88px] w-[88px] rounded-full border border-hairline" />
-          <span aria-hidden className="absolute h-[46px] w-[46px] rounded-full border border-hairline" />
+          <span
+            aria-hidden
+            className="absolute h-[88px] w-[88px] rounded-full border border-hairline"
+          />
+          <span
+            aria-hidden
+            className="absolute h-[46px] w-[46px] rounded-full border border-hairline"
+          />
 
           <IcefallMark className="icefall-breathe relative h-5 text-azure" />
         </div>
@@ -1368,7 +1503,10 @@ function SearchingSummits({ place, stage }: { place: string; stage: SearchStage 
           >
             <span className="h-[52px] w-[52px] shrink-0 rounded-[10px] bg-slate" />
             <span className="min-w-0 flex-1">
-              <span className="block h-3 rounded-full bg-slate" style={{ width: `${58 - i * 8}%` }} />
+              <span
+                className="block h-3 rounded-full bg-slate"
+                style={{ width: `${58 - i * 8}%` }}
+              />
               <span className="mt-2 block h-2.5 w-[38%] rounded-full bg-slate/70" />
             </span>
           </div>
@@ -1426,7 +1564,7 @@ function PeakCard({ peak, variant = 0 }: { peak: Peak; variant?: number }) {
             loading="lazy"
             // No dimming any more. The 55% wash existed to hold back a
             // photograph of the wrong mountain; a plate has nothing to hold back.
-            className="h-full w-full object-cover transition-opacity duration-500" 
+            className="h-full w-full object-cover transition-opacity duration-500"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-graphite/95 via-transparent to-obsidian/40" />
 
@@ -1445,9 +1583,7 @@ function PeakCard({ peak, variant = 0 }: { peak: Peak; variant?: number }) {
           {/* The picture is either of this summit or it is not, and the card is
               never allowed to leave that ambiguous. */}
           <span className="absolute bottom-3 left-3 right-20 truncate text-[10px] text-mist">
-            {image.real
-              ? credit
-              : "Terrain of this altitude — not a photograph of this summit"}
+            {image.real ? credit : "Terrain of this altitude — not a photograph of this summit"}
           </span>
 
           <MiniMap lat={peak.lat} lon={peak.lon} className="absolute bottom-3 right-3 h-14 w-14" />
@@ -1478,12 +1614,21 @@ function PeakCard({ peak, variant = 0 }: { peak: Peak; variant?: number }) {
   );
 }
 
-function NoRoutes({ place, activity, radiusLabel }: { place: Place; activity: ActivityKind; radiusLabel: string }) {
+function NoRoutes({
+  place,
+  activity,
+  radiusLabel,
+}: {
+  place: Place;
+  activity: ActivityKind;
+  radiusLabel: string;
+}) {
   return (
     <Rise className="pt-4">
       <div className="rounded-card border border-hairline bg-graphite p-4">
         <p className="text-[13px] text-snow">
-          No {activityOption(activity).label.toLowerCase()} routes {radiusLabel.replace("within ", "within ")} of {place.name}.
+          No {activityOption(activity).label.toLowerCase()} routes{" "}
+          {radiusLabel.replace("within ", "within ")} of {place.name}.
         </p>
         <p className="mt-1.5 text-[11.5px] leading-relaxed text-mist-dim">
           ICEFALL documents lines on its curated mountains only. Route-by-route coverage of the
@@ -1515,7 +1660,13 @@ export function RouteResultCard({ hit, reason }: { hit: RouteHit; reason?: strin
     <Link to={`/explore/route/${hit.id}`} className="block">
       <div className="overflow-hidden rounded-card border border-hairline bg-graphite transition-colors hover:border-hairline-strong">
         <div className="relative h-[190px]">
-          <img src={image.src} alt="" aria-hidden loading="lazy" className="h-full w-full object-cover" />
+          <img
+            src={image.src}
+            alt=""
+            aria-hidden
+            loading="lazy"
+            className="h-full w-full object-cover"
+          />
           <div className="absolute inset-0 bg-gradient-to-t from-graphite/95 via-transparent to-obsidian/40" />
 
           {/* difficulty word, top-left — where a consumer app puts a level */}
@@ -1593,24 +1744,30 @@ export function RouteResultCard({ hit, reason }: { hit: RouteHit; reason?: strin
 }
 
 function Pill({
-  children, active, onClick, icon: Icon, caret,
+  children,
+  active,
+  onClick,
+  icon: Icon,
+  caret,
 }: {
-  children: React.ReactNode; active?: boolean; onClick: () => void;
-  icon: typeof MapPin; caret?: boolean;
+  children: React.ReactNode;
+  active?: boolean;
+  onClick: () => void;
+  icon: typeof MapPin;
+  caret?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        "flex shrink-0 items-center gap-1.5 rounded-pill border px-3 py-2 text-[12px] backdrop-blur transition-colors",
-        active ? "border-azure/50 bg-azure/[0.10] text-azure" : "border-hairline-strong bg-graphite/85 text-mist hover:text-snow",
+        "flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-2 text-[13px] transition-colors",
+        active ? "bg-white/[0.12] text-snow" : "bg-white/[0.07] text-mist hover:text-snow",
       )}
     >
-      <Icon size={13} strokeWidth={1.7} />
+      <Icon size={13} strokeWidth={1.8} className={active ? "text-azure" : "text-mist-dim"} />
       {children}
-      {caret && <ChevronDown size={12} strokeWidth={1.8} className="opacity-70" />}
+      {caret && <ChevronDown size={13} strokeWidth={1.9} className="opacity-70" />}
     </button>
   );
 }
-

@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft } from "lucide-react";
-import { animate, motion, useMotionValue, useMotionValueEvent, type MotionValue } from "framer-motion";
+import {
+  animate,
+  motion,
+  useMotionValue,
+  useMotionValueEvent,
+  type MotionValue,
+} from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { tabStripScrollLeft } from "./tabStripScroll";
@@ -10,6 +16,28 @@ export { scrollContentToTop } from "./tabStripScroll";
 /* -------------------------------------------------------------------------- */
 /* Screen — scroll container with safe-area aware padding                     */
 /* -------------------------------------------------------------------------- */
+
+/**
+ * HOW MUCH ROOM A SCROLLER LEAVES AT ITS END SO ITS LAST ROW CLEARS THE TAB BAR.
+ *
+ * The bar is an overlay now (owner, 2026-09-07: "under navigation its full
+ * dark, i want the page to continue"): it floats over the page, the page runs
+ * on underneath it to the bottom edge, and the glass blurs whatever is there.
+ * The cost of that is that NOTHING at the end of a scroller is visible until
+ * the scroller can move it above the pill — so every scroller ends with this
+ * much space. `Screen` adds it itself; the screens that run their own scroller
+ * apply it by hand (grep for the constant), and a bar pinned to the bottom of
+ * a screen sits `TABBAR_STICKY_BOTTOM` up from the edge for the same reason.
+ *
+ * = the pill's clearance (row + padding + lift) + the home-indicator inset +
+ * 12px of breathing room.
+ */
+export const TABBAR_CLEAR =
+  "calc(var(--tabbar-clearance) + env(safe-area-inset-bottom, 0px) + 12px)";
+
+/** Where a `sticky bottom` bar rests: just above the pill, never under it. */
+export const TABBAR_STICKY_BOTTOM =
+  "calc(var(--tabbar-clearance) + env(safe-area-inset-bottom, 0px))";
 
 export function Screen({
   children,
@@ -45,13 +73,9 @@ export function Screen({
       style={{ paddingTop: "var(--screen-safe-top, env(safe-area-inset-top, 0px))" }}
     >
       {children}
-      {/*
-        Clears the raised Start control AND the 24px the navigation is pulled up
-        by so its glass has something to blur (see `TabBar`). Grown from `h-14`
-        on 2026-09-06 in the same change; if the nav's `-mt-6` ever changes,
-        this changes with it or the last row of every screen goes under the bar.
-      */}
-      <div className="h-20" />
+      {/* The tab bar floats over this scroller's tail; this is what keeps the
+          last row above it. See `TABBAR_CLEAR`. */}
+      <div aria-hidden style={{ height: TABBAR_CLEAR }} />
     </div>
   );
 }
@@ -221,7 +245,6 @@ export function SegmentedTabs<T extends string>({
     return () => ro.disconnect();
   }, [tracking, tabs]);
 
-
   /*
    * Position driven IMPERATIVELY, and this is a correction rather than a style
    * preference.
@@ -311,9 +334,7 @@ export function SegmentedTabs<T extends string>({
               onClick={() => onChange(t.value)}
               className={cn(
                 "relative shrink-0 pb-3 font-medium uppercase transition-colors",
-                section
-                  ? "text-[12px] tracking-[0.1em]"
-                  : "text-[10px] tracking-[0.12em]",
+                section ? "text-[12px] tracking-[0.1em]" : "text-[10px] tracking-[0.12em]",
                 active
                   ? section
                     ? "text-azure"
