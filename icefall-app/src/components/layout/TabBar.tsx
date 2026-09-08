@@ -1,7 +1,7 @@
 import { Compass, House, MessageCircle, Play, Users } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { animate, motion, useMotionValue, useReducedMotion } from "framer-motion";
+import { animate, motion, useMotionValue, useReducedMotion, useTransform } from "framer-motion";
 import { cn } from "@/lib/utils";
 
 /**
@@ -109,16 +109,29 @@ const TABS = [
  * selection would be the second announcement of one fact.
  */
 /**
- * NARROWER THAN THE MOCKUP'S, and the reason is the corners.
+ * THE LENS IS WIDER THAN THE LAMP IT REPLACED, and the corner rule still holds.
  *
- * The light is clipped to the pill, so on the first and last tab a wide cone
- * loses whatever falls outside the rounded corner and the beam reads as cut in
- * half — the owner, 2026-09-06: "make the light white slightly smaller in size
- * so if its on corners pages still looks good". At 42 the emitter and its cone
- * both sit inside the straight part of the top edge at every slot on a 375pt
- * screen, so all five look like the same lamp.
+ * The owner's reference, 2026-09-08, is Strava's tab bar: a glass lens sitting
+ * OVER the selected tab, wide enough to overlap its neighbours, that travels
+ * when you switch. The old marker was a lamp on the pill's rim — an emitter, a
+ * cone and a pool of light below it. It is gone, and the paragraphs describing
+ * it went with it rather than being left to describe a thing that is not there.
+ *
+ * 64 is chosen against the slot, not against the mockup: on a 375pt screen the
+ * pill is ~343 wide, so a slot is ~68. A lens of 64 fills its slot and laps a
+ * little into the next, which is the reference's look, while still sitting
+ * inside the straight part of the top edge on the first and last tab — the
+ * constraint the owner set for the lamp on 2026-09-06 ("if its on corners pages
+ * still looks good") and which a clipped shape has to respect whatever it is.
  */
-const BEAM_W = 42;
+const LENS_W = 64;
+
+/**
+ * Short of the pill's full height on purpose: the lens has to sit INSIDE the
+ * bar with the rim visible above and below it, or it stops reading as an object
+ * resting on the glass and starts reading as a segment of the bar itself.
+ */
+const LENS_H = 46;
 
 /**
  * THE LIGHT IS THE THEME'S OWN INK, not white — and this is not pedantry, the
@@ -139,63 +152,125 @@ const LIGHT = "var(--ice-snow)";
 const lit = (alpha: number) =>
   `color-mix(in oklab, var(--ice-snow) ${Math.round(alpha * 100)}%, transparent)`;
 
-function ActiveLight({ index, width }: { index: number | null; width: number }) {
+function ActiveLens({ index, width }: { index: number | null; width: number }) {
   const reduce = useReducedMotion();
   const x = useMotionValue(0);
   const placed = useRef(false);
+  /*
+   * THE SQUASH IS WHAT MAKES IT READ AS LIQUID RATHER THAN AS A SLIDING BOX.
+   *
+   * A pane of glass that merely translates looks like a selection rectangle. A
+   * lens that stretches along its direction of travel and thins across it, then
+   * settles, reads as something with mass moving through a fluid — which is the
+   * whole of the reference's character. It is a separate motion value from `x`
+   * on purpose: it is driven by the START of a move and released on its own
+   * curve, so it recovers while the lens is still travelling instead of
+   * snapping back at the end.
+   */
+  const stretch = useMotionValue(1);
+  /* Derived ABOVE the early return: a hook after `if (centre === null) return`
+     runs in a different order on the render where no tab matches, which is the
+     rules-of-hooks violation that renders a stale lens on the next match. */
+  const squeeze = useTransform(stretch, (v) => 1 / v);
 
   const slot = width === 0 ? 0 : width / 5;
   const centre = index === null || width === 0 ? null : index * slot + slot / 2;
 
   useEffect(() => {
     if (centre === null) return;
-    const left = centre - BEAM_W / 2;
+    const left = centre - LENS_W / 2;
+
+    /* First placement, and every placement under reduced motion, is a jump:
+       there is no journey to describe, so describing one is noise. */
     if (!placed.current || reduce) {
       placed.current = true;
       x.set(left);
+      stretch.set(1);
       return;
     }
-    const controls = animate(x, left, { type: "spring", stiffness: 420, damping: 38, mass: 0.7 });
-    return () => controls.stop();
-  }, [centre, reduce, x]);
+
+    const distance = Math.abs(left - x.get());
+    /* Proportional to the distance and capped: a hop to the neighbouring tab
+       should deform less than a jump across the whole bar, and nothing should
+       ever look like it is being pulled apart. */
+    const peak = 1 + Math.min(distance / width, 0.35) * 0.5;
+
+    const travel = animate(x, left, {
+      type: "spring",
+      stiffness: 420,
+      damping: 38,
+      mass: 0.7,
+    });
+    const deform = animate(stretch, [peak, 1], {
+      duration: 0.42,
+      ease: [0.22, 1, 0.36, 1],
+      times: [0.25, 1],
+    });
+    return () => {
+      travel.stop();
+      deform.stop();
+    };
+  }, [centre, reduce, width, x, stretch]);
 
   if (centre === null) return null;
 
   return (
     <motion.span
       aria-hidden="true"
-      className="pointer-events-none absolute left-0 top-0 h-full"
-      style={{ x, width: BEAM_W }}
+      /*
+       * `overflow-hidden` on the wrapper above clips this to the pill's rounded
+       * corners, which is what keeps the lens from spilling past the rim on the
+       * first and last tab.
+       */
+      className="pointer-events-none absolute top-1/2 left-0"
+      style={{
+        x,
+        width: LENS_W,
+        height: LENS_H,
+        marginTop: -LENS_H / 2,
+        scaleX: stretch,
+        /* The counter-scale: volume is conserved, so widening thins it. Without
+           this the lens simply grows, which reads as a zoom rather than as a
+           squash. */
+        scaleY: squeeze,
+      }}
     >
-      {/* The cone. Clipped from a box twice the emitter's width so it can widen
-          past it, and `overflow-hidden` on the wrapper below keeps it inside
-          the pill's rounded corners. */}
+      {/*
+        THE GLASS ITSELF, and it is four things that only work together.
+
+        1. A SECOND BACKDROP FILTER over the pill's own. The pill is already
+           glass; a lens that only tinted would read as a coloured patch. Taking
+           the blurred content and blurring it AGAIN, more, with more saturation
+           and a touch of brightness, is what makes the lens look like it is
+           refracting the bar rather than painted on it.
+        2. A FILL THAT IS ALMOST NOT THERE. Anything solid enough to see kills
+           the refraction; this is the same argument, and the same floor, as the
+           pill's own 24% — see the note on the pill.
+        3. A RIM THAT IS BRIGHTER AT THE TOP than at the bottom, because that is
+           where a real curved edge catches the light, and it is the single
+           cheapest cue that the shape has depth.
+        4. AN INNER HIGHLIGHT just inside the top edge, which is the reflection
+           of the same light on the inside of the glass.
+      */}
       <span
-        className="absolute left-1/2 top-0 h-[44px] -translate-x-1/2"
+        className="absolute inset-0 rounded-full backdrop-blur-md backdrop-saturate-[1.6] backdrop-brightness-110"
         style={{
-          width: BEAM_W * 1.85,
-          background: `linear-gradient(to bottom, ${lit(0.34)} 0%, ${lit(0.13)} 42%, ${lit(0)} 100%)`,
-          clipPath: `polygon(${50 - (BEAM_W / (BEAM_W * 1.85)) * 50}% 0%, ${50 + (BEAM_W / (BEAM_W * 1.85)) * 50}% 0%, 100% 100%, 0% 100%)`,
+          background: `linear-gradient(to bottom, ${lit(0.14)} 0%, ${lit(0.05)} 55%, ${lit(0.09)} 100%)`,
+          boxShadow: [
+            `inset 0 1px 0 0 ${lit(0.5)}`,
+            `inset 0 -1px 0 0 ${lit(0.14)}`,
+            `inset 0 0 12px 0 ${lit(0.1)}`,
+            `0 6px 18px -6px ${lit(0.22)}`,
+          ].join(", "),
+          border: `1px solid ${lit(0.22)}`,
         }}
       />
-
-      {/* The pool of light where the cone lands. */}
+      {/* The specular streak. Kept to the upper third and well inside the rim,
+          because a highlight that reaches the edge reads as a border. */}
       <span
-        className="absolute left-1/2 top-[20px] h-12 w-[86px] -translate-x-1/2"
+        className="absolute inset-x-[14%] top-[10%] h-[26%] rounded-full"
         style={{
-          background: `radial-gradient(closest-side, ${lit(0.16)} 0%, ${lit(0)} 100%)`,
-        }}
-      />
-
-      {/* The emitter, on the pill's own edge. `-top-[2px]` sits it half over
-          the border so the bar looks like it is set INTO the rim rather than
-          resting on top of it. */}
-      <span
-        className="absolute -top-[2px] left-1/2 h-[4px] -translate-x-1/2 rounded-full"
-        style={{
-          width: BEAM_W,
-          backgroundColor: LIGHT,
-          boxShadow: `0 0 11px 1px ${lit(0.8)}`,
+          background: `linear-gradient(to bottom, ${lit(0.28)} 0%, ${lit(0)} 100%)`,
         }}
       />
     </motion.span>
@@ -415,7 +490,7 @@ export function TabBar() {
           aria-hidden
           className="pointer-events-none absolute inset-0 overflow-hidden rounded-[24px]"
         >
-          <ActiveLight index={activeIndex} width={width} />
+          <ActiveLens index={activeIndex} width={width} />
           <Ripple at={ripple} />
         </span>
 
