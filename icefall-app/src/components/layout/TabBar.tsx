@@ -149,6 +149,35 @@ const LENS_H = 46;
  * than a lamp shining down, which is the honest translation of the idea.
  */
 const LIGHT = "var(--ice-snow)";
+
+/**
+ * A TAP THAT THE HAND FEELS — WHERE THE HAND CAN FEEL IT, AND NOWHERE ELSE.
+ *
+ * The owner asked for "subtle haptic feedback" on a tab change. On the web
+ * there is exactly one way to ask for that, `navigator.vibrate`, and the
+ * platform this app is actually installed on — iOS, added to the home screen —
+ * DOES NOT IMPLEMENT IT. Safari has never shipped the Vibration API on any
+ * iPhone, and no permission, gesture or manifest entry changes that.
+ *
+ * So this fires on Android and on nothing else, and it is written that way on
+ * purpose rather than pretending: the capability is tested, the call is
+ * guarded, and a browser that does not have it is not asked twice. It must not
+ * grow into a haptics package — a dependency that also cannot vibrate an
+ * iPhone is a dependency that has bought nothing.
+ *
+ * 8ms is a tick, not a buzz. Anything longer reads as an error on Android.
+ */
+function tick(): void {
+  if (typeof navigator === "undefined") return;
+  const v = (navigator as Navigator & { vibrate?: (p: number | number[]) => boolean }).vibrate;
+  if (typeof v !== "function") return;
+  try {
+    v.call(navigator, [8]);
+  } catch {
+    /* Some engines throw on a gesture-less call. A missing tick is not worth an
+       error boundary. */
+  }
+}
 const lit = (alpha: number) =>
   `color-mix(in oklab, var(--ice-snow) ${Math.round(alpha * 100)}%, transparent)`;
 
@@ -440,6 +469,12 @@ export function TabBar() {
   /* Which slot a finger is down on. Cleared on up, on cancel, and on leave, so
      a drag off the bar releases the swell rather than leaving it inflated. */
   const [pressedIndex, setPressedIndex] = useState<number | null>(null);
+  const reduceMotion = useReducedMotion();
+  /* Read inside `strike` so the tick fires only on a CHANGE of tab. A ref, not
+     the value, because `strike` is re-created on every render otherwise and the
+     pointer handler identity churns for nothing. */
+  const activeIndexRef = useRef<number | null>(null);
+  activeIndexRef.current = activeIndex;
   const rippleTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(rippleTimer.current), []);
 
@@ -452,7 +487,13 @@ export function TabBar() {
     /* The Start button passes no slot: it is not a tab, it has no lens position,
        and swelling the lens towards a control that never becomes the selection
        would be the marker lying about where you are going. */
-    if (slot !== undefined) setPressedIndex(slot);
+    if (slot !== undefined) {
+      setPressedIndex(slot);
+      /* On press, not on arrival: the reference's feel is that the bar answers
+         the finger, and a tick that waits for the route lands after the eye has
+         already moved on. */
+      if (slot !== activeIndexRef.current) tick();
+    }
   };
   useEffect(() => {
     const el = pill.current;
@@ -664,22 +705,54 @@ export function TabBar() {
                   mark. Spending it on "which tab am I on" as well left nothing
                   to distinguish them.
                 */}
-                  <Icon
-                    size={21}
-                    strokeWidth={active ? 1.8 : 1.5}
-                    className={cn(
-                      "transition-colors duration-200",
-                      active ? "text-snow" : "text-mist group-hover:text-snow",
-                    )}
-                  />
-                  <span
-                    className={cn(
-                      "text-[10.5px] leading-none transition-colors duration-200",
-                      active ? "font-medium text-snow" : "text-mist group-hover:text-snow",
-                    )}
+                  {/*
+                    THE ICON HAS THREE STATES AND THEY ARE ONE ANIMATION.
+                    
+                    Pressed it compresses to 0.94; selected it settles at 1 by
+                    way of a small overshoot; and selected it also sits 1.5px
+                    higher, which is what stops the lens looking like it is
+                    resting ON the icon rather than around it.
+                    
+                    `animate` carries all three because a CSS transition cannot
+                    overshoot — it can only ease between two values, and the
+                    spring's job here is the little bounce past 1 and back. The
+                    spring is stiffer and less damped than the lens's own so the
+                    icon arrives FIRST: the glass settling a beat after the
+                    thing it surrounds is what makes the two read as one
+                    movement rather than two.
+                  */}
+                  <motion.span
+                    className="flex flex-col items-center gap-[3px]"
+                    initial={false}
+                    animate={{
+                      scale: pressedIndex === i ? 0.94 : 1,
+                      y: active ? -1.5 : 0,
+                    }}
+                    transition={
+                      reduceMotion
+                        ? { duration: 0 }
+                        : { type: "spring", stiffness: 640, damping: 20, mass: 0.5 }
+                    }
                   >
-                    {tab.label}
-                  </span>
+                    <Icon
+                      size={21}
+                      strokeWidth={active ? 1.8 : 1.5}
+                      className={cn(
+                        "transition-colors duration-200",
+                        active ? "text-snow" : "text-mist group-hover:text-snow",
+                      )}
+                    />
+                    <span
+                      className={cn(
+                        "text-[10.5px] leading-none transition-[color,opacity] duration-200",
+                        active
+                          ? "font-medium text-snow opacity-100"
+                          : "text-mist opacity-[0.82] group-hover:text-snow group-hover:opacity-100",
+                      )}
+                    >
+                      {tab.label}
+                    </span>
+                  </motion.span>
                 </Link>
               </li>
             );
