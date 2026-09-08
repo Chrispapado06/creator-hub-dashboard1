@@ -2355,6 +2355,9 @@ function ShareProfile() {
     v: 1,
     name: user.name,
     handle,
+    // The account behind the handle, so the link survives a handle change. See
+    // `SharedProfile.id`; absent when the server has not answered.
+    id: myProfile.status === "ready" ? myProfile.profile.id : undefined,
     bio: settings.bio || undefined,
     region: settings.region || undefined,
     avatar: settings.avatar,

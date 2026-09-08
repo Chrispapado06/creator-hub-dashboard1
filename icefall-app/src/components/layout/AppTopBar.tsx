@@ -2,8 +2,8 @@ import { Link, useLocation } from "react-router-dom";
 import { Bell, MessageCircle, Search } from "lucide-react";
 
 import { Avatar } from "@/components/ui/primitives";
+import { useUnreadTotal } from "@/messaging";
 import { useSocialNotices } from "@/notifications/social";
-import { useConversations } from "@/screens/chat/useConversations";
 import { useSettings } from "@/settings/store";
 import { useApp } from "@/state/AppState";
 
@@ -12,8 +12,11 @@ import { useApp } from "@/state/AppState";
  * never touched, only this string, and every caller passes the real number to
  * `aria-label` separately.
  */
-function badgeText(n: number): string {
-  return n > 9 ? "9+" : String(n);
+function badgeText(n: number, exact = true): string {
+  if (n > 9) return "9+";
+  // A count ICEFALL could only prove a floor for wears the same "+" — it is
+  // "at least this many", which is exactly what the cap above already means.
+  return exact ? String(n) : `${n}+`;
 }
 
 /** One badge, so the two cannot drift in size, colour or ring. */
@@ -64,14 +67,41 @@ export function AppTopBar() {
   /* The same stored photo the profile draws (owner, 2026-09-07: "if you add a
      profile then it needs to show the profile on top left as well"). */
   const { settings } = useSettings();
-  const conversations = useConversations();
   /* The name beside the photo everywhere EXCEPT Home (owner, 2026-09-07: "if
      you are not on home page, next to profile i want it to display the users
      name"). Home already greets the person by name in its hero a few lines
      below, and saying it twice on one screen is noise. */
   const { pathname } = useLocation();
   const showName = pathname !== "/home";
-  const unread = conversations.reduce((n, c) => n + c.unread, 0);
+
+  /*
+   * THE MESSAGES BADGE IS NOW A REAL COUNT, AND THE PARAGRAPH BELOW USED TO SAY
+   * IT COULD NEVER BE.
+   *
+   * It summed `useConversations()`, which is a mixed list: every real thread was
+   * hard-coded `unread: 0` because nothing read a server, and the only non-zero
+   * numbers in it came from `chat/data.ts` fixtures. So the badge was drawn
+   * entirely from invented threads — a number over the messages icon that no
+   * message anywhere had produced.
+   *
+   * `thread_participants.last_read_at` is a real per-person, trigger-guarded
+   * timestamp, and `messaging/` derives the count from it: messages in a thread
+   * you are in, from somebody else, after your own read mark. That is a fact
+   * about what has actually arrived.
+   *
+   * `null` MEANS NOT MEASURED and draws nothing — the same rule the bell below
+   * already follows, and for the same reason. It is null with no server, signed
+   * out, before the first read answers, and whenever a count could not be
+   * proved. It is never coerced to 0.
+   *
+   * `exact` is false when at least one thread's count is a FLOOR rather than a
+   * total (see THE WINDOW in `messaging/conversations.ts`). The 15px circle
+   * already caps its drawing at "9+", so a floor below ten gains a "+" of its
+   * own and anything above it is capped anyway; the aria-label carries the
+   * qualification in words.
+   */
+  const messages = useUnreadTotal();
+  const unread = messages.count;
 
   /*
    * THE BELL'S COUNT, AND WHY IT IS THIS HOOK AND NOT A NEW ONE.
@@ -136,13 +166,19 @@ export function AppTopBar() {
 
         <Link
           to="/messages"
-          aria-label={unread > 0 ? `Messages, ${unread} unread` : "Messages"}
+          aria-label={
+            unread !== null && unread > 0
+              ? `Messages, ${unread}${messages.exact ? "" : " or more"} unread`
+              : "Messages"
+          }
           className="relative grid h-9 w-9 place-items-center rounded-full text-snow/90 transition-colors hover:bg-white/[0.07] hover:text-snow"
         >
           <MessageCircle size={18} strokeWidth={1.5} />
           {/* A real count, and only when there is one to show. Drawn "9+" past
               nine; the `aria-label` above still says twelve when it is twelve. */}
-          {unread > 0 && <span className={BADGE}>{badgeText(unread)}</span>}
+          {unread !== null && unread > 0 && (
+            <span className={BADGE}>{badgeText(unread, messages.exact)}</span>
+          )}
         </Link>
 
         <Link

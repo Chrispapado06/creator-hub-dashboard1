@@ -48,6 +48,17 @@ export interface Conversation {
   id: string;
   name: string;
   kind: Counterparty;
+  /**
+   * THE DISCRIMINATOR BETWEEN A REAL CONVERSATION AND AN INVENTED ONE.
+   *
+   * Present only on a thread that came back from ICEFALL's server
+   * (`messaging/conversations.ts`). Absent means this row lives on the device:
+   * an operator enquiry the athlete typed, or one of the dev-only fixtures
+   * below. Screens branch on it rather than on the id's shape, and `isLocked`
+   * and the composer both turn on it — a server thread is governed by row-level
+   * security, and no rule in this file may be applied to one.
+   */
+  serverThreadId?: string;
   /** Guides and companies only — drives the verified tick. */
   credential?: string;
   verifiedOn?: string;
@@ -58,7 +69,15 @@ export interface Conversation {
   /** Groups only — an ICEFALL peak photograph, never a member's own. */
   photo?: string;
   pinned?: boolean;
-  unread: number;
+  /**
+   * `null` MEANS NOT MEASURED and must be drawn as nothing — never as a zero.
+   * A server thread's count comes from `thread_participants.last_read_at`; a
+   * device thread's is 0 because nothing can arrive at one; a fixture's is
+   * invented and stays behind its env gate.
+   */
+  unread: number | null;
+  /** False when `unread` is a floor rather than a total. Draw it with a "+". */
+  unreadExact?: boolean;
   /**
    * A guide channel opens on a PAID BOOKING; a company channel opens on a
    * QUALIFIED ENQUIRY. The two are different because the money is different — a
@@ -78,6 +97,18 @@ export const ME = "You";
  * channels are never locked. One function, so no screen can decide differently.
  */
 export function isLocked(c: Conversation): boolean {
+  /*
+   * A REAL CONVERSATION IS NEVER LOCKED BY THIS FILE.
+   *
+   * The rules above — pay to open a guide, enquire to open a company — describe
+   * the FIXTURES. A thread that exists on ICEFALL's server is governed by
+   * `messages_insert`, which decides in Postgres whether the athlete may write
+   * into it and refuses the insert if not. Applying a second, client-side gate
+   * to one would hide a conversation the server is perfectly willing to carry,
+   * and it would do it on the strength of a `booking` field the server thread
+   * does not have and never will.
+   */
+  if (c.serverThreadId !== undefined) return false;
   if (c.kind === "guide") return !c.booking; // pay to open
   if (c.kind === "company") return !c.introduction; // qualified enquiry to open
   return false; // group and peer channels are never gated
@@ -121,7 +152,11 @@ export const DEMO_CONVERSATIONS: Conversation[] = import.meta.env.DEV
         verifiedOn: "5 Jun 2026",
         peak: "Matterhorn",
         unread: 2,
-        booking: { ref: "ICE-4471", peak: "Matterhorn — Hörnli ridge", dateLabel: "18–20 Jul 2027" },
+        booking: {
+          ref: "ICE-4471",
+          peak: "Matterhorn — Hörnli ridge",
+          dateLabel: "18–20 Jul 2027",
+        },
         messages: [
           {
             id: "m0",

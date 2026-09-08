@@ -46,10 +46,12 @@ import { cn } from "@/lib/utils";
  * four are gone and `feed.ts` is deleted. Checked one by one before deleting,
  * because "nothing else" is not a reason to drop something an athlete needs:
  *
- *   · UNREAD THREADS — `chat/useConversations.ts` hard-codes `unread: 0` for
- *     every real thread, so this band could only ever come from fixtures. The
- *     count also already sits on the messages icon in `AppTopBar`, on every
- *     screen, and per-row in `Messages`.
+ *   · UNREAD THREADS — at the time, `chat/useConversations.ts` hard-coded
+ *     `unread: 0` for every real thread, so this band could only ever have come
+ *     from fixtures. (That is no longer true: `messaging/` now derives a real
+ *     count from `thread_participants.last_read_at`. The DECISION still holds —
+ *     the count sits on the messages icon in `AppTopBar`, on every screen, and
+ *     per-row in `Messages`, which is where the owner asked for it.)
  *   · MESSAGES WAITING TO SEND — the only chat message anywhere in this
  *     codebase with `state: "queued"` is one invented row in `chat/data.ts`,
  *     behind `import.meta.env.DEV`. Real outgoing messages are mapped to

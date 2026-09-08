@@ -67,31 +67,47 @@ export const CARD_GROUP_LABEL: Record<CardStyleGroup, string> = {
   photo: "Photo",
 };
 
-export const CARD_STYLES: { id: CardStyle; label: string; note: string; group: CardStyleGroup }[] = [
-  {
-    id: "transparent",
-    label: "Overlay · white",
-    note: "White type and every figure — pair it with any background",
-    group: "transparent",
-  },
-  {
-    id: "transparent-light",
-    label: "Overlay · black",
-    note: "Black type, for a bright photo or the light ground",
-    group: "transparent",
-  },
-  { id: "mountain", label: "Cinematic", note: "The peak takes the frame", group: "cinematic" },
-  { id: "summit", label: "Summit", note: "The altitude, cinematic", group: "cinematic" },
-  { id: "editorial", label: "Editorial", note: "Black and azure, very little else", group: "cinematic" },
-  { id: "performance", label: "Performance", note: "Metrics first", group: "performance" },
-  { id: "minimal", label: "Minimal dark", note: "Typography only", group: "performance" },
-  { id: "light", label: "Clean light", note: "Bright, for light feeds", group: "performance" },
-  { id: "route", label: "Route", note: "The line you walked, drawn large", group: "route" },
-  { id: "elevation", label: "Elevation", note: "The climb, drawn", group: "elevation" },
-  { id: "passport", label: "Passport", note: "A stamped page from your record", group: "passport" },
-  { id: "classic", label: "Classic", note: "Photography, route and the essentials", group: "photo" },
-  { id: "poster", label: "Adventure poster", note: "The mountains build you", group: "photo" },
-];
+export const CARD_STYLES: { id: CardStyle; label: string; note: string; group: CardStyleGroup }[] =
+  [
+    {
+      id: "transparent",
+      label: "Overlay · white",
+      note: "White type and every figure — pair it with any background",
+      group: "transparent",
+    },
+    {
+      id: "transparent-light",
+      label: "Overlay · black",
+      note: "Black type, for a bright photo or the light ground",
+      group: "transparent",
+    },
+    { id: "mountain", label: "Cinematic", note: "The peak takes the frame", group: "cinematic" },
+    { id: "summit", label: "Summit", note: "The altitude, cinematic", group: "cinematic" },
+    {
+      id: "editorial",
+      label: "Editorial",
+      note: "Black and azure, very little else",
+      group: "cinematic",
+    },
+    { id: "performance", label: "Performance", note: "Metrics first", group: "performance" },
+    { id: "minimal", label: "Minimal dark", note: "Typography only", group: "performance" },
+    { id: "light", label: "Clean light", note: "Bright, for light feeds", group: "performance" },
+    { id: "route", label: "Route", note: "The line you walked, drawn large", group: "route" },
+    { id: "elevation", label: "Elevation", note: "The climb, drawn", group: "elevation" },
+    {
+      id: "passport",
+      label: "Passport",
+      note: "A stamped page from your record",
+      group: "passport",
+    },
+    {
+      id: "classic",
+      label: "Classic",
+      note: "Photography, route and the essentials",
+      group: "photo",
+    },
+    { id: "poster", label: "Adventure poster", note: "The mountains build you", group: "photo" },
+  ];
 
 export const CARD_FORMATS: { id: CardFormat; label: string; w: number; h: number }[] = [
   { id: "9:16", label: "Story", w: 1080, h: 1920 },
@@ -214,6 +230,25 @@ function setFont(
   (ctx as unknown as { letterSpacing?: string }).letterSpacing = `${tracking}px`;
 }
 
+/**
+ * One line, elided rather than allowed to run off the card.
+ *
+ * The wrapping helpers below solve this for prose. These are the SHORT strings —
+ * an objective's name, "@handle · region" — that are usually well inside the
+ * frame and occasionally are not: "Cerro Torre, Southeast Ridge · Feb 2028" is a
+ * plausible objective, and a card that lets it run off the edge loses the DATE
+ * at the end rather than a few letters of the name. Assumes the font is set,
+ * because measurement depends on it.
+ */
+function fitLine(ctx: CanvasRenderingContext2D, text: string, maxWidth?: number): string {
+  if (maxWidth === undefined || ctx.measureText(text).width <= maxWidth) return text;
+  let cut = text;
+  while (cut.length > 1 && ctx.measureText(`${cut.trimEnd()}…`).width > maxWidth) {
+    cut = cut.slice(0, -1);
+  }
+  return `${cut.trimEnd()}…`;
+}
+
 function label(
   ctx: CanvasRenderingContext2D,
   text: string,
@@ -221,10 +256,12 @@ function label(
   y: number,
   size = 20,
   color = MIST,
+  /** Elides rather than overflowing. Omitted everywhere the text is fixed copy. */
+  maxWidth?: number,
 ) {
   setFont(ctx, { size, weight: 500, tracking: size * 0.16 });
   ctx.fillStyle = color;
-  ctx.fillText(text.toUpperCase(), x, y);
+  ctx.fillText(fitLine(ctx, text.toUpperCase(), maxWidth), x, y);
   (ctx as unknown as { letterSpacing?: string }).letterSpacing = "0px";
 }
 
@@ -723,11 +760,7 @@ function drawSummit(c: Ctx) {
   ctx.fillText(d.activityLabel.toUpperCase(), W / 2, H - PAD - 310);
   setFont(ctx, { size: 28, weight: 300 });
   ctx.fillStyle = MIST;
-  ctx.fillText(
-    [d.dateLabel, d.locationLabel].filter(Boolean).join("  ·  "),
-    W / 2,
-    H - PAD - 262,
-  );
+  ctx.fillText([d.dateLabel, d.locationLabel].filter(Boolean).join("  ·  "), W / 2, H - PAD - 262);
 
   ctx.textAlign = "left";
   statRow(
@@ -1136,11 +1169,7 @@ function drawTransparentInk(c: Ctx, ink: string, muted: string, haloColor: strin
     }
     setFont(ctx, { size: 24, weight: 400 });
     ctx.fillStyle = muted;
-    ctx.fillText(
-      [d.locationLabel, d.dateLabel].filter(Boolean).join("  ·  "),
-      W / 2,
-      H - PAD - 12,
-    );
+    ctx.fillText([d.locationLabel, d.dateLabel].filter(Boolean).join("  ·  "), W / 2, H - PAD - 12);
     ctx.textAlign = "left";
   }, 10);
 
@@ -1274,7 +1303,16 @@ function drawLight(c: Ctx) {
     ctx.clip();
     drawCover(ctx, photo, PAD, plateY, W - PAD * 2, plateH);
     ctx.restore();
-    drawRoute(ctx, d.track, PAD + 60, plateY + 60, W - PAD * 2 - 120, plateH - 120, AZURE_BRIGHT, 7);
+    drawRoute(
+      ctx,
+      d.track,
+      PAD + 60,
+      plateY + 60,
+      W - PAD * 2 - 120,
+      plateH - 120,
+      AZURE_BRIGHT,
+      7,
+    );
   } else {
     drawRoute(
       ctx,
@@ -1793,7 +1831,10 @@ export async function renderReadinessCard(
 
   const needsPhoto =
     background === "photo" ||
-    style === "classic" || style === "mountain" || style === "summit" || style === "poster" ||
+    style === "classic" ||
+    style === "mountain" ||
+    style === "summit" ||
+    style === "poster" ||
     style === "light";
   const photo = needsPhoto && data.photoSrc ? await loadImage(data.photoSrc) : null;
 
@@ -1848,7 +1889,10 @@ export async function renderShareCard(
 
   const needsPhoto =
     background === "photo" ||
-    style === "classic" || style === "mountain" || style === "summit" || style === "poster" ||
+    style === "classic" ||
+    style === "mountain" ||
+    style === "summit" ||
+    style === "poster" ||
     style === "light";
   const photo = needsPhoto && data.photoSrc ? await loadImage(data.photoSrc) : null;
 
@@ -1868,4 +1912,873 @@ export async function renderShareCard(
 
 export function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob | null> {
   return new Promise((resolve) => canvas.toBlob(resolve, "image/png", 0.96));
+}
+
+/* -------------------------------------------------------------------------- */
+/* Profile card                                                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * THE ATHLETE, not an outing and not an assessment.
+ *
+ * The third card family, and it exists because the profile share button used to
+ * hand over a bare URL. A link is a promise that something is worth opening; an
+ * image is the thing itself, and a mountaineer sending their profile to a
+ * climbing partner is sending a person rather than an address.
+ *
+ * WHAT IS DELIBERATELY NOT ON IT — every one of these was available and was
+ * left off on purpose:
+ *
+ *   · THE PREPARATION PERCENTAGE. It sits on the profile screen behind an (i)
+ *     that explains it measures a training plan and clears nobody to attempt
+ *     anything. That explanation cannot travel inside a PNG, and "82% ready"
+ *     read by somebody who has never seen ICEFALL is the single most misleading
+ *     sentence this product could export. There is already a card that carries
+ *     a composite figure honestly — `renderReadinessCard` draws its provenance
+ *     and its caveat on every style, without exception — so the figure has a
+ *     home, and this is not it. The objective's NAME and DATE are facts about
+ *     what the athlete intends and travel freely.
+ *   · THE MOUNTAIN PASSPORT. The owner removed it from the shared surface on
+ *     2 Sep. An exported image is more shareable than the page that ruling was
+ *     made about, not less.
+ *   · ANY LOCATION FINER THAN A REGION. There is no field here for a
+ *     coordinate, an address, an email or a phone number, so no layout can
+ *     leak one.
+ *
+ * Every figure that IS here is self-logged, and the footer says so on every
+ * style — see `drawProfileFooter`.
+ */
+export interface ProfileCardData {
+  name: string;
+  /** Without the "@". Absent when the athlete has not claimed one; never slugged from a name. */
+  handle?: string;
+  /** A town or region. Never an address, never a coordinate. */
+  region?: string;
+  bio?: string;
+  /** Name and target month of the active objective. No percentage — see above. */
+  objective?: { name: string; when: string };
+  /**
+   * Summits the athlete logged themselves. ICEFALL verifies none of them, which
+   * the footer states. Undefined rather than 0: nought logged summits is an
+   * absence, and a proud layout printing "0 SUMMITS" is worse than a shorter one.
+   */
+  summitsLogged?: number;
+  /** Highest elevation among those logged summits. Undefined when none carries one. */
+  highestLoggedM?: number;
+  /** Badges actually granted. Nothing here can print one that was not earned. */
+  badgeNames?: string[];
+  /** Drawn as a circle. Falls back to the initial, exactly as the profile does. */
+  avatarSrc?: string;
+  /** The ground, when the chosen background is a photograph. */
+  photoSrc?: string;
+  /** Stamped on the passport layout only, and only when supplied. */
+  issuedLabel?: string;
+}
+
+/**
+ * The designs offered for a profile, with notes written about a PERSON.
+ *
+ * A separate list rather than a filter over `CARD_STYLES`, because those notes
+ * describe an outing — "The line you walked, drawn large" is meaningless on a
+ * profile. The ids are shared so the type, the renderer table and the format
+ * picker stay one system.
+ */
+export const PROFILE_CARD_STYLES: {
+  id: CardStyle;
+  label: string;
+  note: string;
+  group: CardStyleGroup;
+}[] = [
+  { id: "classic", label: "Portrait", note: "Your photograph, your name over it", group: "photo" },
+  {
+    id: "mountain",
+    label: "Cinematic",
+    note: "Centred, the mountain behind you",
+    group: "cinematic",
+  },
+  {
+    id: "editorial",
+    label: "Editorial",
+    note: "Serif and azure, very little else",
+    group: "cinematic",
+  },
+  { id: "minimal", label: "Minimal dark", note: "Typography only", group: "performance" },
+  { id: "light", label: "Clean light", note: "Bright, for light feeds", group: "performance" },
+  {
+    id: "passport",
+    label: "Passport",
+    note: "An identity page from your record",
+    group: "passport",
+  },
+  {
+    id: "transparent",
+    label: "Overlay · white",
+    note: "White type on alpha — drop it over your own Story",
+    group: "transparent",
+  },
+  {
+    id: "transparent-light",
+    label: "Overlay · black",
+    note: "Black type, for a bright background",
+    group: "transparent",
+  },
+];
+
+/** Space held at the foot of every profile layout for the self-logged note. */
+const PROFILE_NOTE_H = 82;
+const PROFILE_BARE_H = 30;
+
+/**
+ * Drawn on every profile card that carries a self-logged figure, by the entry
+ * point rather than by the layouts — so no style can lose it and a style added
+ * later cannot forget it. Same rule, same reason, as the readiness footer.
+ */
+const PROFILE_SELF_LOGGED_NOTE = "Summits and altitudes are self-logged. ICEFALL verifies none.";
+
+interface PCtx {
+  ctx: CanvasRenderingContext2D;
+  W: number;
+  H: number;
+  d: ProfileCardData;
+  photo: HTMLImageElement | null;
+  avatar: HTMLImageElement | null;
+  bg?: CardBackground;
+  /** The baseline the layout must build upwards from. */
+  base: number;
+}
+
+/**
+ * The figures, and ONLY the ones that exist.
+ *
+ * Two at most, both self-logged. There is no third: a follower count belongs to
+ * an account rather than to a climber, and a training percentage needs a
+ * paragraph of provenance the image cannot carry.
+ */
+function profileFigures(d: ProfileCardData): { value: string; unit?: string; label: string }[] {
+  const out: { value: string; unit?: string; label: string }[] = [];
+  if (d.summitsLogged) {
+    out.push({ value: d.summitsLogged.toLocaleString("en-GB"), label: "Summits logged" });
+  }
+  if (d.highestLoggedM) {
+    out.push({ value: fmtElevation(d.highestLoggedM), unit: "m", label: "Highest logged" });
+  }
+  return out;
+}
+
+/** "@handle · Chamonix", with whichever halves exist. */
+function profileMeta(d: ProfileCardData): string {
+  return [d.handle ? `@${d.handle}` : null, d.region].filter(Boolean).join("  ·  ");
+}
+
+/** At most three earned badges, named. Never a badge the athlete does not hold. */
+function profileBadgeLine(d: ProfileCardData): string | null {
+  const names = (d.badgeNames ?? []).slice(0, 3);
+  return names.length ? names.join("  ·  ") : null;
+}
+
+/**
+ * The circular portrait, or the initial underneath it.
+ *
+ * The initial is drawn as the FILL and the photograph clipped over it, the same
+ * order `screens/Profile.tsx` stacks them in — an avatar that fails to decode
+ * falls back to a letter rather than to a hole in the card.
+ */
+function drawAvatar(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement | null,
+  name: string,
+  cx: number,
+  cy: number,
+  r: number,
+  { ink, ring, plate }: { ink: string; ring: string; plate: string },
+) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.closePath();
+  ctx.fillStyle = plate;
+  ctx.fill();
+  if (img) {
+    ctx.clip();
+    drawCover(ctx, img, cx - r, cy - r, r * 2, r * 2);
+  } else {
+    ctx.textAlign = "center";
+    setFont(ctx, { size: r * 0.86, weight: 300 });
+    ctx.fillStyle = ink;
+    ctx.fillText(name.slice(0, 1).toUpperCase(), cx, cy + r * 0.3);
+  }
+  ctx.restore();
+
+  ctx.save();
+  ctx.strokeStyle = ring;
+  ctx.lineWidth = Math.max(2, r * 0.05);
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/**
+ * PORTRAIT — the athlete's own photograph with their name set over it.
+ *
+ * Built strictly from the bottom up, the way the readiness classic card is: a
+ * two-line name, a long bio or a missing figure changes the height of the stack,
+ * and anchoring from the top would push whichever block grew straight through
+ * the one below it.
+ */
+function drawProfileClassic(c: PCtx) {
+  const { ctx, W, H, d, base } = c;
+  paintBackground(ctx, W, H, c.bg ?? "photo", c.photo);
+  scrim(ctx, W, H, 0.12);
+  scrimTop(ctx, W, H, 0.24);
+
+  drawMark(ctx, PAD, PAD, 56);
+  drawWordmark(ctx, PAD + 74, PAD + 32, 28);
+
+  const figures = profileFigures(d);
+  let y = base - 34;
+
+  if (figures.length) {
+    statRow({ ctx, W }, figures, y, 46);
+    y -= 122;
+  }
+
+  if (d.objective) {
+    setFont(ctx, { size: 32, weight: 300 });
+    ctx.fillStyle = SNOW;
+    ctx.fillText(fitLine(ctx, `${d.objective.name}  ·  ${d.objective.when}`, W - PAD * 2), PAD, y);
+    label(ctx, "Next objective", PAD, y - 40, 21);
+    y -= 104;
+  }
+
+  const badges = profileBadgeLine(d);
+  if (badges) {
+    label(ctx, badges, PAD, y, 21, AZURE, W - PAD * 2);
+    y -= 58;
+  }
+
+  if (d.bio) {
+    setFont(ctx, { size: 27, weight: 300 });
+    ctx.fillStyle = MIST;
+    y = drawWrappedUp(ctx, d.bio, PAD, y, W - PAD * 2, 36, 2) - 56;
+  }
+
+  const meta = profileMeta(d);
+  if (meta) {
+    setFont(ctx, { size: 28, weight: 300 });
+    ctx.fillStyle = MIST;
+    ctx.fillText(fitLine(ctx, meta, W - PAD * 2), PAD, y);
+    y -= 60;
+  }
+
+  const nameSize = Math.min(76, W * 0.075);
+  setFont(ctx, { size: nameSize, weight: 300 });
+  ctx.fillStyle = SNOW;
+  y = drawWrappedUp(ctx, d.name, PAD, y, W - PAD * 2, nameSize * 1.12, 2);
+
+  // The portrait, only where the stack has actually left room for it. A card
+  // that would draw it through the wordmark simply does not draw it.
+  const r = 64;
+  const cy = y - nameSize * 0.76 - 34 - r;
+  if (cy - r > PAD + 96) {
+    drawAvatar(ctx, c.avatar, d.name, PAD + r, cy, r, {
+      ink: SNOW,
+      ring: "rgba(234,238,245,0.30)",
+      plate: "rgba(8,11,13,0.72)",
+    });
+  }
+}
+
+/** MINIMAL — the name, the handle and the figures, on nothing but obsidian. */
+function drawProfileMinimal(c: PCtx) {
+  const { ctx, W, H, d, base } = c;
+  paintBackground(ctx, W, H, c.bg ?? "solid", c.photo);
+
+  label(ctx, "ICEFALL athlete", PAD, PAD + 40, 24);
+
+  const r = 58;
+  drawAvatar(ctx, c.avatar, d.name, PAD + r, PAD + 120 + r, r, {
+    ink: SNOW,
+    ring: "rgba(234,238,245,0.28)",
+    plate: "#12161C",
+  });
+
+  const nameSize = Math.min(84, W * 0.082);
+  setFont(ctx, { size: nameSize, weight: 200 });
+  ctx.fillStyle = SNOW;
+  let y = drawWrapped(ctx, d.name, PAD, PAD + 300, W - PAD * 2, nameSize * 1.12, 2) + 62;
+
+  const meta = profileMeta(d);
+  if (meta) {
+    setFont(ctx, { size: 30, weight: 300 });
+    ctx.fillStyle = MIST;
+    ctx.fillText(fitLine(ctx, meta, W - PAD * 2), PAD, y);
+    y += 56;
+  }
+
+  if (d.bio) {
+    setFont(ctx, { size: 27, weight: 300 });
+    ctx.fillStyle = MIST_DIM;
+    y = drawWrapped(ctx, d.bio, PAD, y, W - PAD * 2, 36, 2) + 30;
+  }
+
+  // The figures as stacked rows rather than a grid: two of them across a story
+  // frame leaves a hole where a third would be, and the hole reads as a fault.
+  const markY = base - 80;
+  const figures = profileFigures(d);
+  let fy = Math.max(y + 80, markY - 60 - figures.length * 104);
+  for (const f of figures) {
+    setFont(ctx, { size: 62, weight: 200 });
+    ctx.fillStyle = SNOW;
+    ctx.fillText(f.value, PAD, fy);
+    if (f.unit) {
+      const w = ctx.measureText(f.value).width;
+      setFont(ctx, { size: 28, weight: 300 });
+      ctx.fillStyle = AZURE;
+      ctx.fillText(f.unit, PAD + w + 12, fy);
+    }
+    label(ctx, f.label, PAD, fy + 32, 20);
+    fy += 104;
+  }
+
+  if (d.objective) {
+    label(
+      ctx,
+      `Next · ${d.objective.name} · ${d.objective.when}`,
+      PAD,
+      markY - 24,
+      20,
+      AZURE,
+      W - PAD * 2,
+    );
+  }
+
+  drawMark(ctx, PAD, markY, 46);
+  drawWordmark(ctx, PAD + 62, markY + 28, 22, MIST);
+}
+
+/** CINEMATIC — centred over the photograph, the way the summit card is. */
+function drawProfileMountain(c: PCtx) {
+  const { ctx, W, H, d, base } = c;
+  paintBackground(ctx, W, H, c.bg ?? "photo", c.photo);
+  scrimTop(ctx, W, H, 0.44);
+  scrim(ctx, W, H, 0.28);
+
+  ctx.textAlign = "center";
+  drawMark(ctx, W / 2 - 27, PAD, 54);
+  setFont(ctx, { size: 30, weight: 300, tracking: 11 });
+  ctx.fillStyle = SNOW;
+  ctx.fillText("I C E F A L L", W / 2, PAD + 108);
+
+  const r = Math.min(96, W * 0.1);
+  drawAvatar(ctx, c.avatar, d.name, W / 2, H * 0.4 - r * 0.4, r, {
+    ink: SNOW,
+    ring: "rgba(234,238,245,0.34)",
+    plate: "rgba(8,11,13,0.7)",
+  });
+
+  const nameSize = Math.min(64, W * 0.062);
+  setFont(ctx, { size: nameSize, weight: 300, tracking: 5 });
+  ctx.fillStyle = SNOW;
+  let y = drawWrapped(
+    ctx,
+    d.name.toUpperCase(),
+    W / 2,
+    H * 0.4 + r * 0.7 + 78,
+    W - PAD * 2,
+    nameSize * 1.18,
+    2,
+  );
+  (ctx as unknown as { letterSpacing?: string }).letterSpacing = "0px";
+
+  const meta = profileMeta(d);
+  if (meta) {
+    y += 54;
+    setFont(ctx, { size: 28, weight: 300 });
+    ctx.fillStyle = MIST;
+    ctx.fillText(fitLine(ctx, meta, W - PAD * 2), W / 2, y);
+  }
+
+  if (d.objective) {
+    y += 56;
+    label(
+      ctx,
+      `Next · ${d.objective.name} · ${d.objective.when}`,
+      W / 2,
+      y,
+      21,
+      AZURE_BRIGHT,
+      W - PAD * 2,
+    );
+  }
+  ctx.textAlign = "left";
+
+  const figures = profileFigures(d);
+  if (figures.length) statRow({ ctx, W }, figures, base - 40, 48);
+}
+
+/** EDITORIAL — serif, centred, azure. The quietest of the five. */
+function drawProfileEditorial(c: PCtx) {
+  const { ctx, W, H, d, base } = c;
+  paintBackground(ctx, W, H, c.bg ?? "solid", c.photo);
+
+  ctx.textAlign = "center";
+  label(ctx, "ICEFALL", W / 2, PAD + 66, 22, AZURE);
+
+  const r = Math.min(84, W * 0.088);
+  drawAvatar(ctx, c.avatar, d.name, W / 2, PAD + 150 + r, r, {
+    ink: AZURE_BRIGHT,
+    ring: "rgba(75,155,255,0.45)",
+    plate: "#0C1119",
+  });
+
+  const nameSize = Math.min(82, W * 0.078);
+  setFont(ctx, { size: nameSize, weight: 400, family: SERIF });
+  ctx.fillStyle = AZURE_BRIGHT;
+  let y = drawWrapped(
+    ctx,
+    d.name,
+    W / 2,
+    PAD + 190 + r * 2 + nameSize,
+    W - PAD * 2,
+    nameSize * 1.1,
+    2,
+  );
+
+  const meta = profileMeta(d);
+  if (meta) {
+    y += 56;
+    setFont(ctx, { size: 27, weight: 300 });
+    ctx.fillStyle = MIST;
+    ctx.fillText(fitLine(ctx, meta, W - PAD * 2), W / 2, y);
+  }
+
+  if (d.bio) {
+    y += 58;
+    setFont(ctx, { size: 27, weight: 300, family: SERIF });
+    ctx.fillStyle = SNOW;
+    y = drawWrapped(ctx, d.bio, W / 2, y, W - PAD * 2.4, 38, 2);
+  }
+
+  if (d.objective) {
+    y += 66;
+    label(ctx, "Next objective", W / 2, y, 20, AZURE);
+    setFont(ctx, { size: 36, weight: 300, family: SERIF });
+    ctx.fillStyle = SNOW;
+    ctx.fillText(
+      fitLine(ctx, `${d.objective.name} · ${d.objective.when}`, W - PAD * 2),
+      W / 2,
+      y + 52,
+    );
+  }
+
+  const figures = profileFigures(d);
+  let fy = base - 46 - (figures.length - 1) * 84;
+  for (const f of figures) {
+    setFont(ctx, { size: 42, weight: 300 });
+    ctx.fillStyle = SNOW;
+    ctx.fillText(`${f.value}${f.unit ? ` ${f.unit}` : ""}`, W / 2, fy);
+    label(ctx, f.label, W / 2, fy + 30, 19);
+    fy += 84;
+  }
+
+  ctx.textAlign = "left";
+}
+
+/**
+ * PASSPORT — an identity page, not a poster.
+ *
+ * The one layout where the tabulated rows are the design, so it is also the one
+ * that has to be most careful about which rows it prints: a blank "HIGHEST —"
+ * on a document-shaped card reads as an official nil return rather than as an
+ * absence. Missing rows are not drawn at all.
+ */
+function drawProfilePassport(c: PCtx) {
+  const { ctx, W, H, d, base } = c;
+
+  ctx.fillStyle = "#E9E2D0";
+  ctx.fillRect(0, 0, W, H);
+  const vg = ctx.createRadialGradient(W / 2, H / 2, H * 0.25, W / 2, H / 2, H * 0.75);
+  vg.addColorStop(0, "rgba(83,70,50,0)");
+  vg.addColorStop(1, "rgba(83,70,50,0.16)");
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, W, H);
+
+  const INK = "#26221B";
+  const INK_SOFT = "#6B6353";
+
+  /*
+   * The rule frame stops at `base`, not at the card's edge.
+   *
+   * This layout is the only one with a drawn border, and the self-logged note
+   * the entry point adds afterwards sits BELOW that border — a line of type
+   * crossing the frame of a document reads as a printing fault, and the note is
+   * the one thing on the card that must not look like one.
+   */
+  ctx.strokeStyle = INK_SOFT;
+  ctx.lineWidth = 3;
+  ctx.strokeRect(PAD - 24, PAD - 24, W - (PAD - 24) * 2, base - 6 - (PAD - 24));
+
+  drawMark(ctx, PAD, PAD, 52, INK);
+  setFont(ctx, { size: 25, weight: 500, tracking: 8 });
+  ctx.fillStyle = INK;
+  ctx.fillText("ICEFALL", PAD + 72, PAD + 38);
+  ctx.textAlign = "right";
+  label(ctx, "Mountain athlete", W - PAD, PAD + 34, 19, INK_SOFT);
+  ctx.textAlign = "left";
+
+  const r = 78;
+  drawAvatar(ctx, c.avatar, d.name, PAD + r, PAD + 130 + r, r, {
+    ink: INK,
+    ring: "rgba(38,34,27,0.45)",
+    plate: "#D8CFB8",
+  });
+
+  setFont(ctx, { size: 62, weight: 500, family: SERIF });
+  ctx.fillStyle = INK;
+  const nameBottom = drawWrapped(
+    ctx,
+    d.name,
+    PAD + r * 2 + 40,
+    PAD + 190,
+    W - PAD * 2 - r * 2 - 40,
+    72,
+    2,
+  );
+  const meta = profileMeta(d);
+  if (meta) {
+    label(ctx, meta, PAD + r * 2 + 40, nameBottom + 48, 21, INK_SOFT, W - PAD * 2 - r * 2 - 40);
+  }
+
+  // The stamp stamps a date it was actually given, and nothing else.
+  if (d.issuedLabel) {
+    const sx = W - PAD - 110;
+    const sy = PAD + 400;
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.rotate(-0.22);
+    ctx.strokeStyle = "#8A4B3A";
+    ctx.globalAlpha = 0.82;
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.arc(0, 0, 92, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(0, 0, 75, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#8A4B3A";
+    setFont(ctx, { size: 25, weight: 600, tracking: 2 });
+    ctx.fillText(d.issuedLabel.toUpperCase(), 0, -8);
+    setFont(ctx, { size: 19, weight: 500, tracking: 3 });
+    ctx.fillText("ISSUED", 0, 26);
+    ctx.restore();
+    ctx.globalAlpha = 1;
+    ctx.textAlign = "left";
+  }
+
+  if (d.bio) {
+    setFont(ctx, { size: 28, weight: 400, family: SERIF });
+    ctx.fillStyle = INK_SOFT;
+    drawWrapped(ctx, d.bio, PAD, PAD + 400, W - PAD * 2 - 250, 38, 2);
+  }
+
+  // Only the rows that exist. See the note above this function.
+  const rows: [string, string][] = [];
+  if (d.objective) rows.push(["Next objective", `${d.objective.name} · ${d.objective.when}`]);
+  if (d.summitsLogged) rows.push(["Summits logged", d.summitsLogged.toLocaleString("en-GB")]);
+  if (d.highestLoggedM) rows.push(["Highest logged", `${fmtElevation(d.highestLoggedM)} m`]);
+  const badges = profileBadgeLine(d);
+  if (badges) rows.push(["Badges", badges]);
+
+  let y = base - rows.length * 58;
+  for (const [k, v] of rows) {
+    label(ctx, k, PAD, y, 21, INK_SOFT);
+    ctx.textAlign = "right";
+    setFont(ctx, { size: 34, weight: 500 });
+    ctx.fillStyle = INK;
+    // Half the row, so a long objective cannot reach back over its own label.
+    ctx.fillText(fitLine(ctx, v, (W - PAD * 2) * 0.62), W - PAD, y);
+    ctx.textAlign = "left";
+    ctx.strokeStyle = "rgba(107,99,83,0.35)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(PAD, y + 16);
+    ctx.lineTo(W - PAD, y + 16);
+    ctx.stroke();
+    y += 58;
+  }
+}
+
+/** CLEAN LIGHT — paper white, for feeds where the dark cards sink. */
+function drawProfileLight(c: PCtx) {
+  const { ctx, W, H, d, base } = c;
+  const INK = "#1C1D20";
+  const SOFT = "#8A8E93";
+
+  ctx.fillStyle = "#F4F2ED";
+  ctx.fillRect(0, 0, W, H);
+
+  drawMark(ctx, PAD, PAD, 48, INK);
+  setFont(ctx, { size: 25, weight: 500, tracking: 8 });
+  ctx.fillStyle = INK;
+  ctx.fillText("ICEFALL", PAD + 68, PAD + 36);
+
+  const r = 76;
+  drawAvatar(ctx, c.avatar, d.name, PAD + r, PAD + 140 + r, r, {
+    ink: INK,
+    ring: "rgba(28,29,32,0.18)",
+    plate: "#E4E1DA",
+  });
+
+  const nameSize = Math.min(76, W * 0.074);
+  setFont(ctx, { size: nameSize, weight: 400, family: SERIF });
+  ctx.fillStyle = INK;
+  let y =
+    drawWrapped(ctx, d.name, PAD, PAD + 190 + r * 2 + 40, W - PAD * 2, nameSize * 1.14, 2) + 56;
+
+  const meta = profileMeta(d);
+  if (meta) {
+    setFont(ctx, { size: 28, weight: 300 });
+    ctx.fillStyle = SOFT;
+    ctx.fillText(fitLine(ctx, meta, W - PAD * 2), PAD, y);
+    y += 56;
+  }
+
+  if (d.bio) {
+    setFont(ctx, { size: 27, weight: 400 });
+    ctx.fillStyle = SOFT;
+    y = drawWrapped(ctx, d.bio, PAD, y, W - PAD * 2, 36, 2) + 30;
+  }
+
+  if (d.objective) {
+    label(ctx, "Next objective", PAD, y + 40, 20, SOFT);
+    setFont(ctx, { size: 36, weight: 500 });
+    ctx.fillStyle = INK;
+    ctx.fillText(
+      fitLine(ctx, `${d.objective.name} · ${d.objective.when}`, W - PAD * 2),
+      PAD,
+      y + 88,
+    );
+  }
+
+  // Ink on paper, so the figures are set by hand rather than through `statRow`,
+  // which writes light on dark.
+  const figures = profileFigures(d);
+  if (figures.length) {
+    const colW = (W - PAD * 2) / figures.length;
+    figures.forEach((f, i) => {
+      const x = PAD + i * colW;
+      setFont(ctx, { size: 50, weight: 500 });
+      ctx.fillStyle = INK;
+      ctx.fillText(f.value, x, base - 46);
+      const vw = ctx.measureText(f.value).width;
+      if (f.unit) {
+        setFont(ctx, { size: 26, weight: 400 });
+        ctx.fillStyle = SOFT;
+        ctx.fillText(f.unit, x + vw + 8, base - 46);
+      }
+      label(ctx, f.label, x, base - 8, 19, SOFT);
+    });
+  }
+}
+
+/**
+ * OVERLAY — the athlete on nothing at all, so the PNG keeps its alpha channel.
+ *
+ * Everything is drawn with a halo of the opposite colour, for the same reason
+ * the activity overlay is: white type on transparent vanishes against a bright
+ * sky photograph, which is the background a mountaineer is most likely to put
+ * behind it.
+ */
+function drawProfileTransparentInk(c: PCtx, ink: string, muted: string, haloColor: string) {
+  const { ctx, W, d, base } = c;
+  // No fillRect. That absence is the entire feature.
+
+  const halo = (draw: () => void, blur = 14) => {
+    ctx.save();
+    ctx.shadowColor = haloColor;
+    ctx.shadowBlur = blur;
+    draw();
+    ctx.restore();
+  };
+
+  ctx.textAlign = "center";
+
+  halo(() => {
+    drawMark(ctx, W / 2 - 25, PAD, 50, ink);
+  }, 12);
+
+  const r = Math.min(92, W * 0.095);
+  halo(() => {
+    drawAvatar(ctx, c.avatar, d.name, W / 2, PAD + 150 + r, r, {
+      ink,
+      ring: haloColor,
+      plate: haloColor,
+    });
+  }, 12);
+
+  const nameSize = Math.min(74, W * 0.072);
+  let y = PAD + 190 + r * 2 + nameSize;
+  halo(() => {
+    setFont(ctx, { size: nameSize, weight: 400 });
+    ctx.fillStyle = ink;
+    y = drawWrapped(ctx, d.name, W / 2, y, W - PAD * 2, nameSize * 1.14, 2);
+
+    const meta = profileMeta(d);
+    if (meta) {
+      y += 56;
+      setFont(ctx, { size: 28, weight: 400 });
+      ctx.fillStyle = muted;
+      ctx.fillText(fitLine(ctx, meta, W - PAD * 2), W / 2, y);
+    }
+
+    if (d.objective) {
+      y += 58;
+      setFont(ctx, { size: 30, weight: 500 });
+      ctx.fillStyle = ink;
+      ctx.fillText(
+        fitLine(ctx, `${d.objective.name}  ·  ${d.objective.when}`, W - PAD * 2),
+        W / 2,
+        y,
+      );
+    }
+  }, 12);
+
+  const figures = profileFigures(d);
+  halo(() => {
+    let fy = base - 46 - (figures.length - 1) * 96;
+    for (const f of figures) {
+      setFont(ctx, { size: 56, weight: 500 });
+      ctx.fillStyle = ink;
+      ctx.fillText(`${f.value}${f.unit ? ` ${f.unit}` : ""}`, W / 2, fy);
+      setFont(ctx, { size: 24, weight: 400 });
+      ctx.fillStyle = muted;
+      ctx.fillText(f.label, W / 2, fy + 34);
+      fy += 96;
+    }
+  }, 12);
+
+  ctx.textAlign = "left";
+}
+
+function drawProfileTransparent(c: PCtx) {
+  drawProfileTransparentInk(c, SNOW, "rgba(255,255,255,0.72)", "rgba(0,0,0,0.85)");
+}
+
+function drawProfileTransparentLight(c: PCtx) {
+  drawProfileTransparentInk(c, "#0B0D0F", "rgba(11,13,15,0.66)", "rgba(255,255,255,0.9)");
+}
+
+/**
+ * The self-logged note, drawn after the layout on every profile card that
+ * carries one of those figures.
+ *
+ * Haloed in both directions rather than coloured per style: this line has to
+ * survive the paper cards, the obsidian cards AND the transparent one, whose
+ * ground is whatever the athlete drops it onto and therefore unknowable here.
+ */
+function drawProfileFooter(
+  ctx: CanvasRenderingContext2D,
+  W: number,
+  H: number,
+  d: ProfileCardData,
+  ink: string,
+  halo: string,
+) {
+  if (!d.summitsLogged && !d.highestLoggedM) return;
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.shadowColor = halo;
+  ctx.shadowBlur = 10;
+  setFont(ctx, { size: 22, weight: 400 });
+  ctx.fillStyle = ink;
+  drawWrapped(ctx, PROFILE_SELF_LOGGED_NOTE, W / 2, H - 44, W - PAD, 28, 2);
+  ctx.restore();
+  ctx.textAlign = "left";
+}
+
+const PROFILE_RENDERERS: Record<CardStyle, (c: PCtx) => void> = {
+  classic: drawProfileClassic,
+  minimal: drawProfileMinimal,
+  mountain: drawProfileMountain,
+  editorial: drawProfileEditorial,
+  passport: drawProfilePassport,
+  light: drawProfileLight,
+  transparent: drawProfileTransparent,
+  "transparent-light": drawProfileTransparentLight,
+  /*
+   * A profile has no track and no single outing, so the four templates built
+   * around one alias to the closest profile layout rather than rendering an
+   * empty route box. `PROFILE_CARD_STYLES` offers only the eight above — these
+   * exist so the type stays whole and a deep link to an old style still draws.
+   */
+  route: drawProfileMinimal,
+  elevation: drawProfileMinimal,
+  performance: drawProfileMinimal,
+  summit: drawProfileMountain,
+  poster: drawProfileClassic,
+};
+
+/** Which of the two footer palettes a style's ground calls for. */
+const PROFILE_PAPER_STYLES: CardStyle[] = ["passport", "light", "transparent-light"];
+
+export async function renderProfileCard(
+  data: ProfileCardData,
+  style: CardStyle,
+  format: CardFormat,
+  background: CardBackground = "photo",
+): Promise<HTMLCanvasElement> {
+  const fmt = CARD_FORMATS.find((f) => f.id === format) ?? CARD_FORMATS[0];
+  const canvas = document.createElement("canvas");
+  canvas.width = fmt.w;
+  canvas.height = fmt.h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas 2D context unavailable");
+
+  try {
+    await document.fonts.ready;
+  } catch {
+    /* proceed with whatever is loaded */
+  }
+
+  const needsPhoto =
+    background === "photo" ||
+    style === "classic" ||
+    style === "mountain" ||
+    style === "summit" ||
+    style === "poster";
+  const [photo, avatar] = await Promise.all([
+    needsPhoto && data.photoSrc ? loadImage(data.photoSrc) : Promise.resolve(null),
+    data.avatarSrc ? loadImage(data.avatarSrc) : Promise.resolve(null),
+  ]);
+
+  ctx.textBaseline = "alphabetic";
+  // The foot is reserved BEFORE the layout runs, so a layout can never lay a
+  // figure over the line that qualifies it.
+  const base =
+    fmt.h - (data.summitsLogged || data.highestLoggedM ? PROFILE_NOTE_H : PROFILE_BARE_H);
+  PROFILE_RENDERERS[style]({
+    ctx,
+    W: fmt.w,
+    H: fmt.h,
+    d: data,
+    photo,
+    avatar,
+    bg: background,
+    base,
+  });
+
+  const paper = PROFILE_PAPER_STYLES.includes(style);
+  drawProfileFooter(
+    ctx,
+    fmt.w,
+    fmt.h,
+    data,
+    paper ? "#6B6353" : MIST,
+    paper ? "rgba(255,255,255,0.75)" : "rgba(0,0,0,0.8)",
+  );
+
+  return canvas;
 }

@@ -155,6 +155,14 @@ export type OperatorProfile = {
   updated_at: string;
 };
 
+/**
+ * `threads.kind` — 20260818090000_chat.sql.
+ *
+ * PINNED AT CREATION. `threads_guard` refuses any UPDATE that changes it, so
+ * this is decided once, by whoever inserts the row, and never again.
+ */
+export type ThreadKind = "direct" | "group" | "enquiry";
+
 export type Thread = {
   id: string;
   peak_name: string | null;
@@ -166,6 +174,10 @@ export type Thread = {
   created_by: string;
   created_at: string;
   last_message_at: string;
+  /** Added 20260818090000. Defaults to 'enquiry' — a person-to-person thread must say so. */
+  kind: ThreadKind;
+  /** Groups only. `threads_guard` raises on a retitle of anything else. */
+  title: string | null;
 };
 
 export type ThreadParticipant = {
@@ -175,12 +187,28 @@ export type ThreadParticipant = {
   joined_at: string;
 };
 
+export type MessageKind = "text" | "image" | "voice" | "file" | "system";
+
 export type Message = {
   id: string;
   thread_id: string;
   sender_id: string;
-  body: string;
+  /**
+   * NULLABLE since 20260818090000. `messages_body_present` requires words on a
+   * text message and an attachment on anything else, so a picture has no body.
+   */
+  body: string | null;
   created_at: string;
+  kind: MessageKind;
+  /**
+   * THE DEVICE'S OWN ID, minted before the first send attempt and kept across
+   * retries. A partial unique index on `(sender_id, client_id)` is what makes
+   * an offline queue safe: the second attempt conflicts instead of duplicating.
+   * Null on a server-generated system message, which needs no such key.
+   */
+  client_id: string | null;
+  attachment_path: string | null;
+  attachment_meta: Record<string, unknown> | null;
 };
 
 type Table<Row, Insert = Partial<Row>, Update = Partial<Row>> = {
@@ -205,13 +233,50 @@ export type Database = {
         ThreadParticipant,
         Pick<ThreadParticipant, "thread_id" | "profile_id">
       >;
-      messages: Table<Message, Pick<Message, "thread_id" | "sender_id" | "body">>;
+      messages: Table<Message, Pick<Message, "thread_id" | "sender_id"> & Partial<Message>>;
     };
     Views: Record<never, never>;
     Functions: {
       is_admin: { Args: Record<never, never>; Returns: boolean };
       my_role: { Args: Record<never, never>; Returns: IcefallRole };
       is_thread_participant: { Args: { t: string }; Returns: boolean };
+      /**
+       * MESSAGING. Three calls, and none of them decides who may talk to whom —
+       * `messages_insert` does, with all four of its conjuncts (yourself, a
+       * thread you are in, no block between you, and decision 19: a guide or
+       * operator may reply but never open).
+       *
+       * `send_message` is SECURITY INVOKER on purpose, so the insert inside it
+       * passes through that policy exactly as a raw insert would. What it adds
+       * is what a policy cannot: an IDEMPOTENT RESEND — a retry carrying the
+       * same `p_client_id` returns the message that already arrived instead of
+       * a duplicate — and it stamps the sender's own read receipt, so your own
+       * message can never sit unread at you.
+       *
+       * `mark_thread_read` returns the new stamp, or NULL when the caller is
+       * not a participant — which says nothing about whether the thread exists.
+       *
+       * `open_direct_thread` is NOT DEPLOYED YET. It is written in
+       * 20260908090000_direct_threads.sql and declared here so the one call
+       * site type-checks; a server without it answers PGRST202, which
+       * `classifyBackendError` reports as "not-provisioned" and
+       * `messaging/send.ts` handles by searching and creating under the
+       * existing policies instead.
+       */
+      send_message: {
+        Args: {
+          p_thread_id: string;
+          p_body: string;
+          p_client_id?: string | null;
+          p_kind?: MessageKind;
+          p_attachment_path?: string | null;
+          p_attachment_meta?: Record<string, unknown> | null;
+        };
+        Returns: Message;
+      };
+      mark_thread_read: { Args: { p_thread_id: string }; Returns: string | null };
+      /** The thread id, or NULL when the two are in a block. */
+      open_direct_thread: { Args: { p_other: string }; Returns: string | null };
       /**
        * ADVISORY. Stale the moment it returns — two people can both be told a
        * name is free. `claim_username` is the one that decides.

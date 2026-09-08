@@ -25,6 +25,22 @@ export interface SharedProfile {
   v: 1;
   name: string;
   handle: string;
+  /**
+   * `public.profiles.id` — WHO the card is of, as opposed to what they are
+   * called.
+   *
+   * OPTIONAL BECAUSE OLD LINKS EXIST AND MUST STILL OPEN. It is here because a
+   * handle is not a person: `profiles_update_self` lets somebody change theirs,
+   * and a given-up handle can later be claimed by a different account — so a
+   * card whose only identifier is a handle can, months later, send a reader to
+   * a stranger's profile. `PublicProfile` sends a signed-in reader on to the
+   * live profile, and that destination now carries a Message control, which
+   * turns "the wrong page" into "the wrong recipient".
+   *
+   * A uuid costs 36 of the 2,000-character budget and the measured card is 481,
+   * so it never competes with the prose `encodeProfile` drops.
+   */
+  id?: string;
   bio?: string;
   /** A town or region — never an address. */
   region?: string;

@@ -1,15 +1,23 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
-  Check, CloudOff, Lock, Mountain as MountainIcon, Pin,
-  Plus, Search, SlidersHorizontal, User, Users,
+  Check,
+  CloudOff,
+  Lock,
+  Mountain as MountainIcon,
+  Pin,
+  Plus,
+  Search,
+  SlidersHorizontal,
+  User,
+  Users,
 } from "lucide-react";
 import { Rise, Screen, Stagger } from "@/components/layout/chrome";
 import { Avatar, Card, Disclaimer } from "@/components/ui/primitives";
 import { CompanyMark } from "@/components/domain/CompanyMark";
 import { fmtDay, isLocked, lastMessage, type Conversation } from "./data";
-import { useConversations } from "./useConversations";
-import { BACKEND_NOT_CONNECTED } from "@/backend/client";
+import { useConversations, useConversationsState } from "./useConversations";
+import { MESSAGING_IS_A_SNAPSHOT } from "@/messaging";
 import { cn } from "@/lib/utils";
 
 /**
@@ -22,14 +30,25 @@ import { cn } from "@/lib/utils";
  * "things that pinged", and the company you are mid-negotiation with ends up
  * below a photography club because somebody posted a picture.
  *
- * ── WHAT IS REAL HERE ───────────────────────────────────────────────────────
+ * ── WHAT IS REAL HERE, AND THIS PARAGRAPH USED TO SAY "NOTHING" ─────────────
  *
- * Nothing arrives. ICEFALL has no server, so no message sends, no reply comes
- * back and no unread count is real — `BACKEND_NOT_CONNECTED` says so at the
- * foot of the screen, and it is not moved off it. The threads in this list are
- * `DEMO_CONVERSATIONS`, which is gated on `import.meta.env.DEV` and therefore
- * cannot reach a deployment at all: four of them carry real companies' names,
- * and the words attributed to them were written by ICEFALL.
+ * It said: "Nothing arrives. ICEFALL has no server, so no message sends, no
+ * reply comes back and no unread count is real." That was true and is no
+ * longer. `messaging/` reads `threads`, `thread_participants` and `messages`
+ * from ICEFALL's server, sends through `send_message`, and derives the unread
+ * number from `last_read_at`. Those rows are real people and real words.
+ *
+ * WHAT IS STILL NOT TRUE, and is now the sentence at the foot of the screen:
+ * NOTHING IS PUSHED. There is no notification certificate and no live socket,
+ * so this list is a still taken when the screen opened — see
+ * `MESSAGING_IS_A_SNAPSHOT`. The old `BACKEND_NOT_CONNECTED` came OFF this
+ * screen in the same change that made sending work, which is the condition
+ * `backend/client.ts` set for removing it.
+ *
+ * The fixtures have not gone: `DEMO_CONVERSATIONS` is still gated on
+ * `import.meta.env.DEV` and `useConversations` now adds a second gate — they
+ * are hidden entirely once the server has answered, so an invented guide can
+ * never sit under a real climber in the same list.
  *
  * ── DELIBERATELY ABSENT ─────────────────────────────────────────────────────
  *
@@ -38,10 +57,20 @@ import { cn } from "@/lib/utils";
  * reachable when nobody is. It is not drawn.
  */
 
-type Filter = "all" | "company" | "guide" | "group";
+type Filter = "all" | "company" | "guide" | "group" | "athlete";
 
+/**
+ * PEOPLE IS A TAB BECAUSE PEOPLE ARE NOW A KIND OF CONVERSATION.
+ *
+ * The four tabs were written when the only rows were companies, guides and
+ * groups, and a direct conversation between two climbers was drawn once, in a
+ * People section that only "All" rendered. That is the one kind this app can
+ * now create — so an athlete whose only conversation was a direct one had a
+ * filter row in which no tab could show it.
+ */
 const TABS: { value: Filter; label: string; icon: typeof User }[] = [
   { value: "all", label: "All", icon: MountainIcon },
+  { value: "athlete", label: "People", icon: User },
   { value: "guide", label: "Guides", icon: User },
   { value: "group", label: "Groups", icon: Users },
   { value: "company", label: "Companies", icon: MountainIcon },
@@ -51,6 +80,11 @@ export default function Messages() {
   const [tab, setTab] = useState<Filter>("all");
   const [q, setQ] = useState("");
   const conversations = useConversations();
+  /* Why the list is what it is. `state` is `ready` only when the server
+     actually answered for this account; every other value carries a sentence
+     that says what is missing and why, and none of them is "you have no
+     messages". */
+  const { state, message, reload } = useConversationsState();
 
   const needle = q.trim().toLowerCase();
   const matching = useMemo(
@@ -84,11 +118,30 @@ export default function Messages() {
   const companies = of("company");
   const guides = of("guide");
   const groups = of("group");
-  // Peers have no section of their own in this design, so they ride with the
-  // rest rather than vanishing from a list they are genuinely in.
-  const others = matching.filter((c) => c.kind === "athlete").sort(byRecency);
+  const others = of("athlete");
 
   const showAll = tab === "all";
+  const tabLabel = TABS.find((t) => t.value === tab)?.label ?? "All";
+
+  /*
+   * HOW MANY ROWS THIS TAB ACTUALLY DRAWS — which is not `matching.length`.
+   *
+   * `matching` is filtered by the search box and never by the tab, so the empty
+   * state was computed from rows that were not on screen: selecting a tab with
+   * nothing in it made every `Section` return null AND suppressed the sentence
+   * that would have said why, leaving a heading, a search box, five tabs and
+   * nothing else — the exact "cannot tell empty from broken" case the rest of
+   * this screen is arranged to avoid.
+   */
+  const shownCount = showAll
+    ? matching.length
+    : tab === "company"
+      ? companies.length
+      : tab === "guide"
+        ? guides.length
+        : tab === "group"
+          ? groups.length
+          : others.length;
 
   return (
     <Screen>
@@ -171,26 +224,57 @@ export default function Messages() {
           </Section>
         )}
 
-        {showAll && others.length > 0 && (
+        {(showAll || tab === "athlete") && (
           <Section title="People" icon={User} count={others.length}>
             <RowCard rows={others} />
           </Section>
         )}
 
-        {matching.length === 0 && (
+        {shownCount === 0 && (
           <Rise className="pt-6">
-            <Card>
-              <p className="text-[13px] leading-relaxed text-mist">
-                {conversations.length === 0
-                  ? "No conversations yet. Open a mountain, find a guide or an expedition company, and write to them."
-                  : `Nothing matches “${q.trim()}”.`}
-              </p>
-            </Card>
+            {/* NOT A CARD. An explanation is not an object — see the house rule
+                on boxes — and wrapping one sentence in a bordered panel makes
+                the emptiest screen in the app the busiest-looking. */}
+            <p className="text-[13px] leading-relaxed text-mist">
+              {needle !== "" && conversations.length > 0
+                ? showAll
+                  ? `Nothing matches “${q.trim()}”.`
+                  : `Nothing under ${tabLabel} matches “${q.trim()}”.`
+                : conversations.length > 0
+                  ? /* The list is not empty — this filter is. Said that way
+                       round, because "no conversations" would be false and the
+                       reader can see the tab they pressed. */
+                    `No conversations under ${tabLabel}. The ones you have are under All.`
+                  : state === "loading"
+                    ? "Looking…"
+                    : (message ??
+                      "No conversations yet. Open somebody’s profile and write to them, or send an enquiry to an expedition company.")}
+            </p>
+            {/* A retry only where retrying is the answer. A build with no
+                server, or nobody signed in, is not fixed by asking again. */}
+            {(state === "unreachable" || state === "refused") && (
+              <button
+                type="button"
+                onClick={reload}
+                className="mt-3 rounded-pill border border-hairline-strong px-3.5 py-2 text-[12px] text-mist transition-colors hover:text-snow"
+              >
+                Try again
+              </button>
+            )}
           </Rise>
         )}
 
         <Rise className="pt-7">
-          <Disclaimer>{BACKEND_NOT_CONNECTED}</Disclaimer>
+          {/* The honest sentence, and it changed meaning in this release.
+              Messages now genuinely send; what does not happen is a push. When
+              the server had something else to report, that is said instead —
+              a snapshot notice over an empty list that failed to load would be
+              answering a question nobody asked. */}
+          <Disclaimer>
+            {state === "ready" || state === "loading"
+              ? MESSAGING_IS_A_SNAPSHOT
+              : (message ?? MESSAGING_IS_A_SNAPSHOT)}
+          </Disclaimer>
         </Rise>
       </Stagger>
     </Screen>
@@ -295,11 +379,20 @@ function RowCard({ rows }: { rows: Conversation[] }) {
                       {last ? fmtDay(last.at) : ""}
                     </span>
                     {c.pinned === true && (
-                      <Pin size={12} strokeWidth={1.8} aria-label="Pinned" className="text-mist-dim" />
+                      <Pin
+                        size={12}
+                        strokeWidth={1.8}
+                        aria-label="Pinned"
+                        className="text-mist-dim"
+                      />
                     )}
-                    {c.unread > 0 && (
+                    {/* `null` is NOT MEASURED and draws nothing. A count that
+                        could only be proved a floor wears a "+" — see
+                        `unreadExact`. Neither is ever rendered as a zero. */}
+                    {c.unread !== null && c.unread > 0 && (
                       <span className="tnum grid h-[18px] min-w-[18px] place-items-center rounded-full bg-azure px-1.5 text-[10px] font-medium text-obsidian">
                         {c.unread}
+                        {c.unreadExact === false ? "+" : ""}
                       </span>
                     )}
                   </span>
@@ -336,9 +429,10 @@ function GuideStrip({ guides }: { guides: Conversation[] }) {
                   <p className="truncate text-[10.5px] text-mist-dim">{c.credential}</p>
                 )}
               </div>
-              {c.unread > 0 && (
+              {c.unread !== null && c.unread > 0 && (
                 <span className="tnum grid h-[18px] min-w-[18px] shrink-0 place-items-center rounded-full bg-azure px-1.5 text-[10px] font-medium text-obsidian">
                   {c.unread}
+                  {c.unreadExact === false ? "+" : ""}
                 </span>
               )}
             </div>

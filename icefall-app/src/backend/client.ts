@@ -9,20 +9,29 @@ import { DEMO } from "@/offline/offline";
  * for its whole life, so every surface built on this module must keep working
  * without a backend rather than white-screening on a missing key.
  *
- * A PROJECT NOW EXISTS (2026-08-29) AND THIS APP STILL SENDS NOTHING. Since
- * `.env.local` was written, `isBackendConfigured()` returns **true** — the
- * credentials are real and the client object is real. What does not exist is a
- * single query: there is no `.from(`, no `.rpc(` and no write path anywhere in
- * `src/`. So the predicate is honest about what it measures (a client exists)
- * and would be a lie if read as "messages can be sent".
+ * A PROJECT NOW EXISTS (2026-08-29). Since `.env.local` was written,
+ * `isBackendConfigured()` returns **true** — the credentials are real and the
+ * client object is real. The predicate is honest about what it measures (a
+ * client exists) and would still be a lie if read as "messages can be sent":
+ * a configured client says nothing about whether a given feature has a write
+ * path, and most of this app still has none.
  *
- * THIS IS WHY THE CHAT SCREENS MUST NOT START BRANCHING ON IT. `Messages.tsx`
- * and `Thread.tsx` render `BACKEND_NOT_CONNECTED` UNCONDITIONALLY, and that is
- * correct and must stay until a send path exists. Wrapping those in
- * `{!isBackendConfigured() && ...}` today would remove the one honest sentence
- * on the screen and leave a climber believing a message reached a guide, on the
- * strength of a variable rather than a delivery. The notice comes off in the
- * same change that makes sending work, not before.
+ * MESSAGING NOW DOES, AND THIS PARAGRAPH USED TO FORBID WHAT FOLLOWED. It said
+ * `Messages.tsx` and `Thread.tsx` must render `BACKEND_NOT_CONNECTED`
+ * UNCONDITIONALLY, and set the condition for changing its mind: "the notice
+ * comes off in the same change that makes sending work, not before." That
+ * change is `src/messaging/` (2026-09-08), which reads `threads`,
+ * `thread_participants` and `messages` and sends through `send_message`. So on
+ * a REAL SERVER THREAD those screens now say `MESSAGING_IS_A_SNAPSHOT`
+ * instead — messages genuinely arrive; what does not happen is a push.
+ *
+ * THE OLD SENTENCE HAS NOT GONE ANYWHERE, and the rule behind it still stands
+ * for every other surface. `Thread.tsx` still renders it, unchanged, for an
+ * on-device operator enquiry — a thread with nothing behind it — and the
+ * branch that draws that kind of thread is the branch that draws the notice.
+ * Nothing anywhere may swap it for a claim of delivery on the strength of
+ * `isBackendConfigured()` alone: a client existing is not a message arriving,
+ * which is the whole lesson this paragraph was written to record.
  *
  * The sibling app `icefall-admin` learned this the hard way the same day: its
  * settings screen gated on the env vars directly and flipped itself to

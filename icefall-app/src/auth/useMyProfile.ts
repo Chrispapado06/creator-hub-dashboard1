@@ -21,6 +21,16 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/backend/client";
 
 export type MyProfile = {
+  /**
+   * `public.profiles.id` — THE ACCOUNT.
+   *
+   * Carried because a handle is not a person: `profiles_update_self` lets
+   * somebody change theirs, and a given-up handle can later be claimed by a
+   * different account. Anything that must still point at THIS climber a month
+   * from now — a shared card's link, a messaging call — takes this and never
+   * the handle.
+   */
+  id: string;
   username: string | null;
   displayName: string;
   locationLabel: string | null;
@@ -50,7 +60,7 @@ export function useMyProfile(): MyProfileState {
       }
       const { data, error } = await supabase
         .from("profiles")
-        .select("username, display_name, location_label, country_code")
+        .select("id, username, display_name, location_label, country_code")
         .eq("id", sess.session.user.id)
         .maybeSingle();
 
@@ -62,6 +72,7 @@ export function useMyProfile(): MyProfileState {
       setState({
         status: "ready",
         profile: {
+          id: data.id,
           username: data.username,
           displayName: data.display_name,
           locationLabel: data.location_label,

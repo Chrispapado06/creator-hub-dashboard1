@@ -2,9 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
 import {
+  Ban,
   ChevronLeft,
+  Flag,
   Link2,
   MapPin,
+  MessageCircle,
   MoreHorizontal,
   Mountain,
   MountainSnow,
@@ -33,13 +36,16 @@ import { HighlightViewer } from "@/components/social/HighlightViewer";
 import { Comments } from "@/components/social/Comments";
 import { PostCard } from "@/components/social/PostCard";
 import { ReportDialog } from "@/components/social/ReportDialog";
+import { ReportSheet } from "@/components/social/ReportSheet";
 import { BADGES } from "@/badges/model";
 import { supabase } from "@/backend/client";
 import { countryName } from "@/auth/useMyProfile";
 import { useSessionState } from "@/auth/session";
 import { fmtDate, fmtElevation } from "@/lib/format";
 import { withTimeout } from "@/lib/netTimeout";
+import { canMessage, messageRouteFor, useDirectConversation } from "@/messaging";
 import { FOLLOW_MEANING, useFollow } from "@/social/follow";
+import { BLOCK_NOT_ENFORCED_YET, block, unblock, useBlocked, useIsBlocked } from "@/social/safety";
 import type { Author, Post, PostAuthorKind, PostMedia } from "@/social/types";
 import {
   CONNECTIONS_ARE_LOCAL,
@@ -75,7 +81,7 @@ import { cn } from "@/lib/utils";
  *
  *   REAL          name, handle, avatar, the place they typed, the month they
  *                 joined, their follower and following counts, their highlights,
- *                 their posts, the mark beside their name, and Follow.
+ *                 their posts, the mark beside their name, Follow, and Message.
  *   NOT READABLE  a bio (no column on `profiles`), a cover photograph (no
  *                 column either), their objective, their connections, their
  *                 summits, their highest altitude, their activities, and any
@@ -118,15 +124,28 @@ import { cn } from "@/lib/utils";
  * shared page on 2 Sep — "just remove passport when sharing the profile". It
  * stays on `screens/Profile.tsx`, the athlete's own page.
  *
- * REPORT AND BLOCK. `reports.subject_id` and the `blocks` table would both take
- * a person, so neither is impossible — but `ReportDialog` is keyed by post and
- * nothing writes a block, so both would be a control that does nothing. The
- * overflow menu carries only what actually happens.
- *
  * A "VIEW ALL" BESIDE THE SECTION LABELS. The mockup has three of them. There
  * is no badge page, no achievements page and no post archive for a person who
  * is not you, and a link to your OWN badges from a stranger's profile is worse
  * than no link at all.
+ *
+ * ── WHAT IS NO LONGER ABSENT: REPORT AND BLOCK ───────────────────────────────
+ *
+ * This paragraph used to say the overflow menu carried neither, because nothing
+ * in `src/` had ever written a block and `ReportDialog` is keyed by a post. That
+ * was defensible while nobody could message anybody. It stopped being
+ * defensible the day this screen grew a Message control: a stranger can now put
+ * words in front of somebody, and the person receiving them has to have
+ * somewhere to stop it — otherwise the only two safety branches on this page
+ * (`MESSAGE_YOU_BLOCKED`, and `iBlocked.blocked === true`) are unreachable code
+ * describing a state no path can produce.
+ *
+ * So the menu now calls `block()` / `unblock()` and opens `ReportSheet` with
+ * `kind: "profile"`. Both are `social/safety.ts`'s, both work against the LIVE
+ * schema — `blocks` since 20260818090000, `reports.subject_id` today — and both
+ * print that module's own sentence rather than one composed here, including
+ * `BLOCK_NOT_ENFORCED_YET` so that no screen claims a blocked person's posts
+ * are hidden before 20260903010000 is pushed.
  */
 
 /* -------------------------------------------------------------------------- */
@@ -180,6 +199,93 @@ const LIKE_NOTICE =
   "Liking marks a post for you, for this session. ICEFALL has no likes table yet, so nothing is sent, no author is told and no total is kept.";
 
 /* -------------------------------------------------------------------------- */
+/* Messaging them                                                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * THE OWNER, 2026-09-08: "an option to message someone if you see their
+ * profile". This is that option, and everything behind it already existed —
+ * `threads.kind = 'direct'` since 20260818090000, and `@/messaging` since
+ * 20260908090000. This screen contributes the button and nothing else: it holds
+ * no send logic, no thread id and no copy about what a message does.
+ *
+ * ── WHAT IT DOES ON TAP ──────────────────────────────────────────────────────
+ *
+ * It navigates. `messageRouteFor` resolves to `/messages/with/:profileId`,
+ * which opens the existing conversation if there is one and an empty one if
+ * there is not — so there is NO round trip on the tap, no spinner on a pill,
+ * and NOTHING IS CREATED UNTIL SOMETHING IS SAID. Backing out of a profile you
+ * opened by accident leaves no empty thread in a stranger's inbox.
+ *
+ * ── THE ID IS THE ACCOUNT ────────────────────────────────────────────────────
+ *
+ * `profile.id` is `public.profiles.id`, the uuid — the same value `useFollow`
+ * writes to `follows.followed_profile_id` and the same one `shareUrl` is built
+ * from. The route parameter this screen was opened with may be a HANDLE, and a
+ * handle is not a person: `profiles_update_self` lets somebody change theirs.
+ * The handle must never be what is handed to the messaging layer.
+ *
+ * ── WHEN IT IS NOT DRAWN, AND THE ONE CASE THAT SAYS WHY ─────────────────────
+ *
+ * `canMessage` is the same stance as `useFollow`'s hidden pill: a control that
+ * cannot work must not appear. It answers false with no client, no session, no
+ * id, or on your own profile. THE FIRST TWO CANNOT HAPPEN HERE — `profiles_select`
+ * grants `to authenticated`, so `usePublicProfile` never renders a body without
+ * a session, and this file is reached through a client. That leaves your own
+ * profile, which already carries its own line about being your account, so it
+ * needs no second sentence about messaging yourself.
+ *
+ * YOU BLOCKED THEM is the one withholding worth explaining, because otherwise a
+ * control the reader saw on every other profile silently disappears on this one.
+ * `useIsBlocked` answers it from `social/safety.ts`'s one cached read of YOUR
+ * OWN block list.
+ *
+ * THE OTHER DIRECTION IS NOT ASKED AND MUST NEVER BE. `blocks_own` is
+ * `using (blocker_id = auth.uid())`, so somebody who blocked YOU is invisible
+ * here by design — telling a person they have been blocked is how a block turns
+ * into an escalation. `messaging/send.ts` refuses the same probe in its own
+ * header. So the Message control IS drawn for somebody who has blocked you, the
+ * server refuses the message, and the thread screen says so in `SEND_REFUSED`
+ * without naming which rule bit. That is deliberate: the alternative is either
+ * leaking the block or showing a message as sent when it was not.
+ */
+const MESSAGE_YOU_BLOCKED =
+  "You blocked this person, so ICEFALL will not open a conversation with them.";
+
+/* -------------------------------------------------------------------------- */
+/* Blocking them                                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * WHAT A BLOCK DID, and there are three answers because `useBlocked().enforcement`
+ * has three values and they are not interchangeable.
+ *
+ * `social/safety.ts` owns the fourth — `BLOCK_NOT_ENFORCED_YET`, for `not-live`
+ * — and it is imported rather than restated. These two are the other two cases,
+ * and every clause in them is taken from that module's header: the exclusion is
+ * symmetric, the other person is never told, and NOTHING IS DELETED.
+ */
+const BLOCK_DONE_LIVE =
+  "Blocked. ICEFALL stops showing the two of you to each other, and they are not told. Nothing has been deleted — unblocking brings all of it back.";
+
+/**
+ * `unknown` is NOT `not-live`. It means the probe had nothing to measure or its
+ * read failed, so this says what was written and refuses to say what the server
+ * is doing about it.
+ */
+const BLOCK_DONE_UNMEASURED =
+  "Blocked, and saved to your account. ICEFALL could not check whether the server is yet hiding people you block, so you may still see them. Nothing you do here needs repeating.";
+
+const UNBLOCK_DONE =
+  "Unblocked. Their posts, comments and profile come back on the next read, exactly as they were — nothing was deleted while the block was on.";
+
+/** Drawn, withheld with a reason, or simply absent. */
+type MessageOption =
+  | { kind: "open"; to: string; label: string }
+  | { kind: "withheld"; reason: string }
+  | { kind: "none" };
+
+/* -------------------------------------------------------------------------- */
 /* Follows                                                                     */
 /* -------------------------------------------------------------------------- */
 
@@ -191,7 +297,6 @@ const LIKE_NOTICE =
  * `20260831190000_social.sql` by hand.
  */
 const untyped = supabase as unknown as SupabaseClient | null;
-
 
 /* -------------------------------------------------------------------------- */
 /* Their posts                                                                 */
@@ -493,6 +598,20 @@ function ProfileBody({ idOrUsername, onRetry }: { idOrUsername: string; onRetry:
   const mark = profile ? markKindFor(profile) : null;
   const posts = usePublicPosts(profile?.id ?? null);
 
+  /*
+   * MESSAGING THEM. Both hooks are called unconditionally and before the early
+   * returns below — an id that is not there yet is `""` / `null` and answers
+   * "no" rather than moving a hook out of the render.
+   *
+   * Neither costs a request of its own. `useIsBlocked` reads the one cached
+   * block list `social/safety.ts` keeps for the whole app, and
+   * `useDirectConversation` reads the conversation store `AppTopBar`'s unread
+   * count has already loaded. See the "Messaging them" section above for what
+   * each may and may not know.
+   */
+  const iBlocked = useIsBlocked(profile?.id ?? "");
+  const direct = useDirectConversation(profile?.id ?? null);
+
   if (state === "loading") return <LookingUp />;
   if (state === "not-found") return <NoClimberHere message={message} />;
   if (profile === null) return <CouldNotLook state={state} message={message} onRetry={onRetry} />;
@@ -509,6 +628,39 @@ function ProfileBody({ idOrUsername, onRetry }: { idOrUsername: string; onRetry:
    */
   const shareUrl = `${window.location.origin}/social/people/${profile.id}`;
   const shareProfile = () => sharePage(`${profile.displayName} · ICEFALL`, shareUrl);
+
+  /*
+   * THE MESSAGE CONTROL, RESOLVED IN ONE PLACE so the pill and the sentence
+   * under it can never disagree about whether a conversation can be opened.
+   *
+   * `blocked === true` only. `useIsBlocked` returns `null` for NOT MEASURED —
+   * before the list arrives, or when that read failed — and treating that as a
+   * block would hide a working control on a slow connection. Treating it as
+   * "not blocked" is the honest fallback here, because the server refuses the
+   * message anyway and the thread screen carries the refusal.
+   *
+   * The visible label stays "Message" at every width; the ACCESSIBLE name is
+   * where the distinction between a new conversation and one that already
+   * exists is told, since `useDirectConversation` can only make that claim on a
+   * `ready` snapshot and a pill has no room to hedge.
+   *
+   * BOTH NAMES BEGIN WITH THE VISIBLE WORD, and that is a rule rather than a
+   * style: WCAG 2.5.3 asks that a control's accessible name contain its visible
+   * label, because somebody driving the phone by voice says "tap Message" and
+   * gets nothing if the name the system matches on has dropped the word.
+   */
+  const messageOption: MessageOption = !canMessage(profile.id, myId)
+    ? { kind: "none" }
+    : iBlocked.blocked === true
+      ? { kind: "withheld", reason: MESSAGE_YOU_BLOCKED }
+      : {
+          kind: "open",
+          to: messageRouteFor(profile.id),
+          label:
+            direct.state === "ready" && direct.conversation
+              ? `Message ${firstName}, in the conversation you already have`
+              : `Message ${firstName}`,
+        };
 
   /**
    * The byline every post card carries. Built here, from the profile this page
@@ -533,6 +685,7 @@ function ProfileBody({ idOrUsername, onRetry }: { idOrUsername: string; onRetry:
   return (
     <Screen padded={false}>
       <CoverBand
+        profileId={profile.id}
         name={profile.displayName}
         isYou={isYou}
         shareUrl={shareUrl}
@@ -557,11 +710,16 @@ function ProfileBody({ idOrUsername, onRetry }: { idOrUsername: string; onRetry:
             mark={mark}
             isYou={isYou}
             follows={follows}
+            message={messageOption}
           />
         </Rise>
 
         <Rise className="pt-5">
-          <Figures profile={profile} summitCount={summits.summitCount} highestM={summits.highestM} />
+          <Figures
+            profile={profile}
+            summitCount={summits.summitCount}
+            highestM={summits.highestM}
+          />
         </Rise>
 
         {/* ---- Highlights ---------------------------------------------------
@@ -599,7 +757,11 @@ function ProfileBody({ idOrUsername, onRetry }: { idOrUsername: string; onRetry:
         </Rise>
 
         <Rise className="pt-7">
-          <Achievements highestM={summits.highestM} byYear={summits.byYear} message={summits.message} />
+          <Achievements
+            highestM={summits.highestM}
+            byYear={summits.byYear}
+            message={summits.message}
+          />
         </Rise>
 
         <Rise className="pt-7">
@@ -630,9 +792,7 @@ function ProfileBody({ idOrUsername, onRetry }: { idOrUsername: string; onRetry:
       {openHighlight !== null && (
         <HighlightViewer highlightId={openHighlight} onClose={() => setOpenHighlight(null)} />
       )}
-      {commenting !== null && (
-        <Comments post={commenting} onClose={() => setCommenting(null)} />
-      )}
+      {commenting !== null && <Comments post={commenting} onClose={() => setCommenting(null)} />}
       <ReportDialog postId={reporting} onClose={() => setReporting(null)} />
     </Screen>
   );
@@ -663,11 +823,14 @@ const SAFE_TOP = "var(--screen-safe-top, env(safe-area-inset-top, 0px))";
  * person's name would be a fact about them that ICEFALL made up.
  */
 function CoverBand({
+  profileId,
   name,
   isYou,
   shareUrl,
   onShare,
 }: {
+  /** The ACCOUNT — what a block row and a report both name. Never the handle. */
+  profileId: string;
   name: string;
   isYou: boolean;
   shareUrl: string;
@@ -676,6 +839,57 @@ function CoverBand({
   const navigate = useNavigate();
   const [menu, setMenu] = useState(false);
   const [copied, setCopied] = useState<null | "done" | "failed">(null);
+  const [reporting, setReporting] = useState<string | null>(null);
+  /**
+   * What the last block or unblock actually did, in the words `social/safety.ts`
+   * chose. Never composed here: that module is the only thing that knows
+   * whether the row was written and whether the server is yet acting on it.
+   */
+  const [blockNote, setBlockNote] = useState<string | null>(null);
+  const [blockBusy, setBlockBusy] = useState(false);
+  const blocked = useIsBlocked(profileId);
+  const { enforcement } = useBlocked();
+
+  /*
+   * BLOCK AND UNBLOCK, WIRED TO THE CALLS THAT ALREADY WORK.
+   *
+   * `block()` writes one row to `public.blocks`, which has been live since
+   * 20260818090000 — and until 20260903010000 is pushed that row hides nothing,
+   * which is why `enforcement` is read and `BLOCK_NOT_ENFORCED_YET` is printed
+   * rather than a claim that this person's posts are gone. The module's own
+   * sentence is shown for every failure too.
+   *
+   * WHY IT IS HERE AT ALL NOW. The menu carried neither control, on the stated
+   * grounds that nothing in the app wrote a block — a defensible position while
+   * nobody could message anybody. Person-to-person messaging changed that: a
+   * stranger can now put words in front of somebody, and the person on the
+   * receiving end must have somewhere to stop it. This is that somewhere, and
+   * `Thread.tsx`'s header links here so it is reachable from the message.
+   */
+  const toggleBlock = async () => {
+    if (blockBusy) return;
+    setBlockBusy(true);
+    setBlockNote(null);
+    const result = blocked.blocked === true ? await unblock(profileId) : await block(profileId);
+    setBlockBusy(false);
+    if (!result.ok) {
+      setBlockNote(result.message);
+      return;
+    }
+    /* WHAT HAPPENED, MATCHED TO WHAT WAS MEASURED. `blocked.blocked` still
+       holds the state from BEFORE this call — the shared list has not been
+       re-read into this render yet — so it is what says which of the two
+       actions ran. */
+    setBlockNote(
+      blocked.blocked === true
+        ? UNBLOCK_DONE
+        : result.enforcement === "live"
+          ? BLOCK_DONE_LIVE
+          : result.enforcement === "not-live"
+            ? BLOCK_NOT_ENFORCED_YET
+            : BLOCK_DONE_UNMEASURED,
+    );
+  };
 
   const copy = async () => {
     try {
@@ -703,6 +917,16 @@ function CoverBand({
     >
       {/* Fades into the canvas at the lower edge rather than stopping at it. */}
       <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-obsidian to-transparent" />
+
+      {/* `subject_id` is a live column on `public.reports`, so a report about a
+          PERSON reaches moderation today. The sheet prints where it went. */}
+      <ReportSheet
+        kind="profile"
+        id={reporting}
+        title={`Report ${name}`}
+        intro="Pick the closest reason, then say what happened."
+        onClose={() => setReporting(null)}
+      />
 
       {menu && (
         <button
@@ -780,12 +1004,56 @@ function CoverBand({
                   Your own profile
                 </Link>
               )}
-              {/* NO REPORT AND NO BLOCK. `reports.subject_id` and the `blocks`
-                  table would both take a person, so neither is impossible — but
-                  `ReportDialog` is keyed by a post and nothing in this app
-                  writes a block, so both would be a menu item that does nothing.
-                  A report a climber believes they have filed is worse than a
-                  menu that is one item shorter. */}
+              {/* BLOCK AND REPORT, on your own profile neither of which is a
+                  thing you do to yourself. `blocks_not_self` and the report's
+                  own subject would both refuse it. */}
+              {!isYou && (
+                <>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={blockBusy}
+                    onClick={() => void toggleBlock()}
+                    className="flex w-full items-center gap-2.5 border-t border-hairline px-3.5 py-3 text-left text-[13px] text-snow transition-colors hover:bg-slate/60 disabled:opacity-60"
+                  >
+                    <Ban size={14} strokeWidth={1.7} className="shrink-0 text-mist" />
+                    {blockBusy
+                      ? "Working…"
+                      : blocked.blocked === true
+                        ? `Unblock ${name}`
+                        : `Block ${name}`}
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenu(false);
+                      setReporting(profileId);
+                    }}
+                    className="flex w-full items-center gap-2.5 border-t border-hairline px-3.5 py-3 text-left text-[13px] text-snow transition-colors hover:bg-slate/60"
+                  >
+                    <Flag size={14} strokeWidth={1.7} className="shrink-0 text-mist" />
+                    Report {name}
+                  </button>
+                </>
+              )}
+
+              {/* WHAT THE BLOCK ACTUALLY DID, in the module's words. It sits in
+                  the menu rather than in a toast because a person who has just
+                  blocked somebody is owed a sentence they can read twice. */}
+              {blockNote !== null && (
+                <p className="border-t border-hairline px-3.5 py-3 text-[11.5px] leading-relaxed text-mist">
+                  {blockNote}
+                </p>
+              )}
+              {/* A block made on a previous visit, on a server that is not yet
+                  acting on it. `not-live` only: `unknown` has measured nothing
+                  and has nothing to report. */}
+              {blocked.blocked === true && blockNote === null && enforcement === "not-live" && (
+                <p className="border-t border-hairline px-3.5 py-3 text-[11.5px] leading-relaxed text-mist">
+                  {BLOCK_NOT_ENFORCED_YET}
+                </p>
+              )}
             </div>
           )}
         </div>
@@ -832,11 +1100,13 @@ function Identity({
   mark,
   isYou,
   follows,
+  message,
 }: {
   profile: PublicProfile;
   mark: ReturnType<typeof markKindFor>;
   isYou: boolean;
   follows: ReturnType<typeof useFollow>;
+  message: MessageOption;
 }) {
   const place = useMemo(() => placeOf(profile), [profile]);
   const since = useMemo(() => memberSinceLabel(profile.memberSince), [profile.memberSince]);
@@ -867,30 +1137,54 @@ function Identity({
             is a claim nobody at ICEFALL has made about anybody. */}
         {mark && <VerificationMark kind={mark} className="mt-0.5" />}
 
-        {follows.state.kind === "ready" && (
-          <span className="ml-auto shrink-0 pl-2">
-            <Button
-              variant={follows.state.following ? "secondary" : "primary"}
-              size="sm"
-              className="rounded-full px-4"
-              disabled={follows.busy}
-              onClick={() =>
-                void (follows.state.kind === "ready" && follows.state.following
-                  ? follows.unfollow()
-                  : follows.follow())
-              }
-            >
-              {follows.state.following ? (
-                <UserRoundCheck size={14} strokeWidth={1.8} />
-              ) : (
-                <UserRoundPlus size={14} strokeWidth={1.8} />
-              )}
-              {/* The label says what the state IS, not what the tap will do —
-                  "Following" on a quiet control is how every app this athlete
-                  already uses reads, and a button saying "Unfollow" is a screen
-                  shouting an action at somebody who is only checking. */}
-              {follows.busy ? "Saving…" : follows.state.following ? "Following" : "Follow"}
-            </Button>
+        {/* The two actions, side by side and right-aligned. The group is drawn
+            only when it holds something: an empty one still carries `pl-2` and
+            would push the name 8px short of the edge for no reason. */}
+        {(follows.state.kind === "ready" || message.kind === "open") && (
+          <span className="ml-auto flex shrink-0 items-center gap-2 pl-2">
+            {follows.state.kind === "ready" && (
+              <Button
+                variant={follows.state.following ? "secondary" : "primary"}
+                size="sm"
+                className="rounded-full px-4"
+                disabled={follows.busy}
+                onClick={() =>
+                  void (follows.state.kind === "ready" && follows.state.following
+                    ? follows.unfollow()
+                    : follows.follow())
+                }
+              >
+                {follows.state.following ? (
+                  <UserRoundCheck size={14} strokeWidth={1.8} />
+                ) : (
+                  <UserRoundPlus size={14} strokeWidth={1.8} />
+                )}
+                {/* The label says what the state IS, not what the tap will do —
+                    "Following" on a quiet control is how every app this athlete
+                    already uses reads, and a button saying "Unfollow" is a screen
+                    shouting an action at somebody who is only checking. */}
+                {follows.busy ? "Saving…" : follows.state.following ? "Following" : "Follow"}
+              </Button>
+            )}
+
+            {/* MESSAGE. A LINK, not a button with a handler: it navigates and
+                nothing more, so it must behave like every other link on the
+                phone — long-press, open in a new tab, and a destination the
+                browser shows before the tap. `asChild` keeps it the same pill
+                as Follow rather than a second shape beside it.
+
+                `secondary` because `primitives.tsx` allows one azure call to
+                action per screen and Follow is already it. Not a claim that
+                messaging matters less — a second filled pill would just make
+                neither of them read as the primary action. */}
+            {message.kind === "open" && (
+              <Button asChild variant="secondary" size="sm" className="rounded-full px-3.5">
+                <Link to={message.to} aria-label={message.label}>
+                  <MessageCircle size={14} strokeWidth={1.8} />
+                  Message
+                </Link>
+              </Button>
+            )}
           </span>
         )}
       </div>
@@ -929,6 +1223,14 @@ function Identity({
       )}
       {follows.state.kind === "ready" && (
         <p className="mt-3 text-[11px] leading-relaxed text-mist-dim">{FOLLOW_MEANING}</p>
+      )}
+
+      {/* THE ONE WITHHOLDING WORTH EXPLAINING. Every other reason the Message
+          pill is absent draws nothing, because there is no true sentence to
+          write — see the "Messaging them" section. A control that vanishes on
+          one profile and nowhere else is the case that needs a line. */}
+      {message.kind === "withheld" && (
+        <p className="mt-3 text-[11px] leading-relaxed text-mist-dim">{message.reason}</p>
       )}
 
       {isYou && (

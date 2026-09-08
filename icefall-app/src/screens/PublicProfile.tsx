@@ -1,7 +1,13 @@
 import { useMemo, useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
-  ArrowRight, BookmarkCheck, Check, Download, Share2, Smartphone, UserPlus,
+  ArrowRight,
+  BookmarkCheck,
+  Check,
+  Download,
+  Share2,
+  Smartphone,
+  UserPlus,
 } from "lucide-react";
 import { Button, Disclaimer, Stat, sharePage } from "@/components/ui/primitives";
 import { Rise, Screen, Stagger } from "@/components/layout/chrome";
@@ -23,6 +29,30 @@ import { fmtElevation } from "@/lib/format";
  * CARD, not a profile: there is no feed, no message box and no way to reach the
  * person from here, because a link anyone can forward must not be a channel
  * into somebody's inbox.
+ *
+ * ── NO MESSAGE BUTTON, CHECKED RATHER THAN ASSUMED (2026-09-08) ──────────────
+ *
+ * `@/messaging` landed and `AthleteProfile` gained a Message pill, so this page
+ * was asked the same question. It cannot have one, for two reasons and either
+ * is enough:
+ *
+ *   THERE IS NO SENDER. `messages_insert` is `sender_id = auth.uid()`. Whoever
+ *     is reading this card has no session — anybody who does is redirected to
+ *     the live profile a few lines below, before the card ever paints.
+ *
+ *   AND IT WOULD BE THE WRONG PRODUCT ANYWAY. A card is forwardable; a button
+ *     on it is a channel into somebody's inbox opened by whoever the link
+ *     reached last. The two disclaimers at the foot of this page have promised
+ *     the opposite since before there was a messaging layer to break it with.
+ *
+ * The honest route is the one already here: sign in, land on the real profile,
+ * and message from there. Nothing on this page should offer a shortcut past it.
+ *
+ * (The third reason this paragraph used to give — that the link carries a
+ * handle and a handle is not a person — was true of the link and NOT of the
+ * redirect below, which was sending signed-in readers to a profile keyed by
+ * that same handle. `SharedProfile.id` now carries the account and the redirect
+ * uses it; the two arguments agree again.)
  */
 export default function PublicProfile() {
   const { hash } = useLocation();
@@ -51,11 +81,26 @@ export default function PublicProfile() {
    * `replace` so the card does not sit in history: tapping back from the profile
    * should leave, not bounce through a frozen copy of the same person.
    */
+  /*
+   * ON THE ACCOUNT ID WHERE THE CARD CARRIES ONE, AND ONLY THEN.
+   *
+   * `/social/people/:id` takes either, and they are not equivalent: a handle
+   * link points at a NAME and an id link points at a PERSON. A card is
+   * forwardable and outlives the reason it was shared, so an old link whose
+   * handle has since been given up and re-claimed would land a signed-in reader
+   * on a STRANGER'S profile — which now carries a Message control, turning the
+   * wrong page into the wrong recipient. `SharedProfile.id` closes that for
+   * every card made from now on.
+   *
+   * A card made before the id existed keeps the card. It is frozen and it says
+   * so, which is a smaller wrong than sending somebody to a profile that may
+   * not be the person they were shown, with a way to write to them on it.
+   */
   useEffect(() => {
-    if (session && profile?.handle) {
-      navigate(`/social/people/${encodeURIComponent(profile.handle)}`, { replace: true });
+    if (session && profile?.id) {
+      navigate(`/social/people/${encodeURIComponent(profile.id)}`, { replace: true });
     }
-  }, [session, profile?.handle, navigate]);
+  }, [session, profile?.id, navigate]);
   const [copied, setCopied] = useState(false);
   const { mode, install } = useInstall();
   const { isSaved, save, forget } = useFollowing();
@@ -80,7 +125,12 @@ export default function PublicProfile() {
           <div className="rounded-card border border-azure/30 bg-graphite">
             {/* ---- Card head --------------------------------------------- */}
             <div className="relative h-[170px] overflow-hidden rounded-t-card">
-              <img src={banner} alt="" aria-hidden className="h-full w-full object-cover opacity-60" />
+              <img
+                src={banner}
+                alt=""
+                aria-hidden
+                className="h-full w-full object-cover opacity-60"
+              />
               <div className="absolute inset-0 bg-gradient-to-t from-graphite via-graphite/50 to-transparent" />
               <IcefallLockup className="absolute left-4 top-4 h-7 text-snow/85" />
             </div>
@@ -88,7 +138,12 @@ export default function PublicProfile() {
             <div className="relative -mt-10 px-5 pb-5">
               <span className="grid h-[72px] w-[72px] place-items-center overflow-hidden rounded-full border-[3px] border-graphite bg-slate text-[22px] text-mist shadow-lg">
                 {profile.avatar ? (
-                  <img src={profile.avatar} alt="" aria-hidden className="h-full w-full object-cover" />
+                  <img
+                    src={profile.avatar}
+                    alt=""
+                    aria-hidden
+                    className="h-full w-full object-cover"
+                  />
                 ) : (
                   profile.name.slice(0, 1).toUpperCase()
                 )}
@@ -136,7 +191,11 @@ export default function PublicProfile() {
 
               {/* ---- Record ---------------------------------------------- */}
               <div className="mt-4 grid grid-cols-3 gap-2 border-t border-hairline pt-4">
-                <Stat size="lg" label="Summits" value={profile.summits != null ? String(profile.summits) : "—"} />
+                <Stat
+                  size="lg"
+                  label="Summits"
+                  value={profile.summits != null ? String(profile.summits) : "—"}
+                />
                 <Stat
                   size="lg"
                   label="Highest"
@@ -165,7 +224,11 @@ export default function PublicProfile() {
               className="w-full"
               onClick={() => (saved ? forget(profile.handle) : save(profile))}
             >
-              {saved ? <BookmarkCheck size={15} strokeWidth={1.9} /> : <UserPlus size={15} strokeWidth={1.8} />}
+              {saved ? (
+                <BookmarkCheck size={15} strokeWidth={1.9} />
+              ) : (
+                <UserPlus size={15} strokeWidth={1.8} />
+              )}
               {/*
                 SAVE, NOT FOLLOW. `profile/following.ts` states the rule in its own
                 header — "the card is SAVED, not followed" — and this label had
@@ -177,7 +240,7 @@ export default function PublicProfile() {
                 redirected to the live profile before they ever reach this card —
                 so "Follow" here could only ever name something that did not happen.
               */}
-            {saved ? "Card saved" : `Save ${profile.name.split(" ")[0]}'s card`}
+              {saved ? "Card saved" : `Save ${profile.name.split(" ")[0]}'s card`}
             </Button>
 
             {mode === "installed" ? (
@@ -210,7 +273,11 @@ export default function PublicProfile() {
                   if (!navigator.share) setCopied(true);
                 }}
               >
-                {copied ? <Check size={15} strokeWidth={2} /> : <Share2 size={15} strokeWidth={1.8} />}
+                {copied ? (
+                  <Check size={15} strokeWidth={2} />
+                ) : (
+                  <Share2 size={15} strokeWidth={1.8} />
+                )}
                 {copied ? "Copied" : "Share"}
               </Button>
               <Button variant="secondary" className="flex-1" onClick={() => saveCard(profile)}>
@@ -220,7 +287,9 @@ export default function PublicProfile() {
             </div>
           </div>
 
-          {saved && <p className="mt-2.5 text-[11px] leading-relaxed text-mist-dim">{FOLLOW_NOTICE}</p>}
+          {saved && (
+            <p className="mt-2.5 text-[11px] leading-relaxed text-mist-dim">{FOLLOW_NOTICE}</p>
+          )}
 
           {mode === "manual-ios" && (
             <div className="mt-3 rounded-tile border border-hairline bg-graphite p-3.5">
@@ -228,15 +297,17 @@ export default function PublicProfile() {
                 <Smartphone size={14} strokeWidth={1.8} className="text-azure" />
                 Get ICEFALL on this iPhone
               </p>
-              <p className="mt-1.5 text-[11.5px] leading-relaxed text-mist-dim">{IOS_INSTALL_STEPS}</p>
+              <p className="mt-1.5 text-[11.5px] leading-relaxed text-mist-dim">
+                {IOS_INSTALL_STEPS}
+              </p>
             </div>
           )}
         </Rise>
 
         <Rise className="pt-5">
           <Disclaimer>
-            This card travelled inside the link itself, so it opens anywhere and was never sent to
-            a server. It is a snapshot from{" "}
+            This card travelled inside the link itself, so it opens anywhere and was never sent to a
+            server. It is a snapshot from{" "}
             {new Date(profile.at).toLocaleDateString(undefined, {
               day: "numeric",
               month: "short",
@@ -257,7 +328,6 @@ export default function PublicProfile() {
   );
 }
 
-
 /** Saves the card as a small JSON file — the only export that needs no server. */
 function saveCard(profile: SharedProfile) {
   const blob = new Blob([JSON.stringify(profile, null, 2)], { type: "application/json" });
@@ -277,9 +347,9 @@ function Unreadable() {
           <IcefallLockup className="h-8 text-snow/80" />
           <h1 className="mt-6 text-[22px] font-light text-snow">This card can't be read.</h1>
           <p className="mt-2 text-[12.5px] leading-relaxed text-mist">
-            A shared ICEFALL profile carries its contents inside the link, so the link has to
-            arrive whole. Messaging apps sometimes cut long links in half — ask for it again, or
-            have it sent as an attachment rather than as text.
+            A shared ICEFALL profile carries its contents inside the link, so the link has to arrive
+            whole. Messaging apps sometimes cut long links in half — ask for it again, or have it
+            sent as an attachment rather than as text.
           </p>
           <Link to="/" className="mt-5 inline-block">
             <Button>Open ICEFALL</Button>

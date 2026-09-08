@@ -22,7 +22,7 @@ import { useMemo, useRef, useState } from "react";
 import { countryName, useMyProfile } from "@/auth/useMyProfile";
 import { usePublicProfile } from "@/social/publicProfile";
 import { Link } from "react-router-dom";
-import { Badge, Card, Divider, SectionLabel, Stat, sharePage } from "@/components/ui/primitives";
+import { Badge, Card, Divider, SectionLabel, Stat } from "@/components/ui/primitives";
 import { MonthlyVolume } from "@/components/ui/charts";
 import { VerificationMark } from "@/components/ui/VerificationMark";
 import { BadgeHex } from "@/components/domain/BadgeHex";
@@ -48,7 +48,8 @@ import { BADGES, badgeById, badgeState } from "@/badges/model";
 import { useSettings } from "@/settings/store";
 import { readBanner } from "@/lib/image";
 import { useFollowing } from "@/profile/following";
-import { encodeProfile, profileLink, type SharedProfile } from "@/profile/shareLink";
+import { encodeProfile } from "@/profile/shareLink";
+import { useProfileCard } from "@/profile/useProfileCard";
 import { cn } from "@/lib/utils";
 import { fmtDate, fmtDistance, fmtElevation, fmtHours } from "@/lib/format";
 import { useApp } from "@/state/AppState";
@@ -360,24 +361,17 @@ export default function Profile() {
       : null;
   const location = serverLocation || settings.region || user.homeBase || undefined;
 
-  const shared: SharedProfile = {
-    v: 1,
-    name: user.name,
-    handle: handle ?? "",
-    bio: settings.bio || undefined,
-    region: settings.region || user.homeBase || undefined,
-    objective: objective
-      ? {
-          name: objective.name,
-          when: fmtDate(objective.targetDate, { day: undefined }),
-          preparationPct: objective.preparation,
-        }
-      : undefined,
-    summits: user.summits.length,
-    highestM: highestM || undefined,
-    badges: earnedBadges.map((b) => b.id),
-    at: new Date().toISOString(),
-  };
+  /*
+   * THE SHARED CARD IS NO LONGER ASSEMBLED HERE.
+   *
+   * It was built inline, and `screens/profile/ShareProfile.tsx` — which draws
+   * the same athlete as an image — would have had to assemble a second copy of
+   * the same twelve fields from the same four hooks. That arrangement is how
+   * this screen and `explore/AthleteProfile` ended up printing different
+   * follower counts for one person. `useProfileCard` is now the single builder;
+   * this screen consumes the link half, the share screen consumes both.
+   */
+  const { shared } = useProfileCard();
 
   return (
     <Screen padded={false}>
@@ -438,14 +432,16 @@ export default function Profile() {
             >
               <Bookmark size={16} strokeWidth={1.7} />
             </Link>
-            <button
-              type="button"
-              onClick={() => sharePage(`${user.name} · ICEFALL`, profileLink(shared))}
+            {/* The SAME destination as the share row further down. These two
+                used to be two calls to `sharePage` with a bare link, which was
+                one behaviour but not a good one; they must never become two. */}
+            <Link
+              to="/profile/share"
               aria-label="Share profile"
               className="grid h-9 w-9 place-items-center rounded-full border border-white/10 bg-obsidian/55 text-snow backdrop-blur transition-colors hover:bg-obsidian/80"
             >
               <Share2 size={16} strokeWidth={1.7} />
-            </button>
+            </Link>
             <button
               type="button"
               onClick={() => setMenuOpen((v) => !v)}
@@ -828,9 +824,9 @@ export default function Profile() {
         {/* ---- Share ------------------------------------------------------- */}
         <Rise className="pt-3">
           <ActionRow
-            onClick={() => sharePage(`${user.name} · ICEFALL`, profileLink(shared))}
+            to="/profile/share"
             title="Share Profile"
-            detail="Let others follow your journey"
+            detail="A card of you, or the link — both from one screen"
             lead={
               <span className="grid h-[44px] w-[44px] shrink-0 place-items-center rounded-tile border border-azure/35 bg-azure/[0.07] text-azure">
                 <Share2 size={17} strokeWidth={1.7} />

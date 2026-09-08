@@ -122,6 +122,7 @@ const GearDetail = lazy(() => import("@/screens/Gear").then((m) => ({ default: m
 const Private = lazy(() => import("@/screens/Private"));
 const Profile = lazy(() => import("@/screens/Profile"));
 const SavedTrails = lazy(() => import("@/screens/SavedTrails"));
+const ShareProfile = lazy(() => import("@/screens/profile/ShareProfile"));
 const Notifications = lazy(() => import("@/screens/Notifications"));
 /* Dev-only workbench for picking a Start button. Deleted once one is chosen. */
 const StartOptions = lazy(() => import("@/screens/dev/StartOptions"));
@@ -503,6 +504,15 @@ export default function App() {
             )}
             <Route path="/messages" element={<Messages />} />
             <Route path="/messages/:id" element={<ChatThread />} />
+            {/* A CONVERSATION NAMED BY THE PERSON, NOT BY THE THREAD.
+                Where a Message control on somebody's profile points
+                (`messaging/send.ts` → `messageRouteFor`). It resolves to the
+                existing conversation with that climber if there is one and to
+                an empty one if there is not — so the tap costs no round trip,
+                and NOTHING IS CREATED UNTIL SOMETHING IS SAID. Declared above
+                `/messages/new`'s neighbours for readability only; React Router
+                ranks static segments over dynamic ones regardless of order. */}
+            <Route path="/messages/with/:profileId" element={<ChatThread />} />
             <Route path="/book" element={<BookGuide />} />
             <Route path="/book/payment" element={<BookPayment />} />
             <Route path="/book/review" element={<BookReview />} />
@@ -612,6 +622,11 @@ export default function App() {
             <Route path="/private" element={<Private />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/profile/saved" element={<SavedTrails />} />
+            {/* Both share controls on the profile lead here, so there is one
+                share behaviour rather than two. Inside the shell, beside the
+                profile it shares — the same place `/activity/:id/share` sits
+                relative to the activity it shares. */}
+            <Route path="/profile/share" element={<ShareProfile />} />
           </Route>
 
           <Route path="*" element={<NotFound />} />

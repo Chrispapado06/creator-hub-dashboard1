@@ -132,6 +132,18 @@ export const PEOPLE_SOURCE_NOTE =
  * changed or given up; `profiles.id` is the account. A search result is also
  * one of the two places (the other being a share link) where the id is already
  * in hand, so there is nothing to gain by spending the mutable key.
+ *
+ * NO MESSAGE ACTION ON THE ROW, AND IT IS A CHOICE (2026-09-08). `SearchHit.id`
+ * IS a `profiles.id`, so `messageRouteFor(hit.id)` would genuinely work here —
+ * this is not the "it cannot be wired" refusal that `PublicProfile` carries.
+ * It is left off for two reasons. A row is one destination: a second control
+ * inside a `Link` is a nested tap target, and the two are a millimetre apart on
+ * a phone, so the miss lands somebody in a conversation with a stranger they
+ * meant only to look at. And a search result shows a name, a handle and a
+ * place — it is where you find out WHO somebody is, not where you decide to
+ * write to them. The profile is one tap away and carries the Message control
+ * beside the person's own page. If this changes, the row must become a row with
+ * an explicit second action rather than a link with a button hidden in it.
  */
 export const PERSON_ROUTE = "/social/people/";
 
@@ -335,9 +347,17 @@ export async function searchPeople(
   const pattern = `%${needle}%`;
 
   const [byHandle, byName] = await Promise.all([
-    client.from("profiles").select(COLUMNS).ilike("username", pattern).limit(FETCH_LIMIT)
+    client
+      .from("profiles")
+      .select(COLUMNS)
+      .ilike("username", pattern)
+      .limit(FETCH_LIMIT)
       .abortSignal(deadline),
-    client.from("profiles").select(COLUMNS).ilike("display_name", pattern).limit(FETCH_LIMIT)
+    client
+      .from("profiles")
+      .select(COLUMNS)
+      .ilike("display_name", pattern)
+      .limit(FETCH_LIMIT)
       .abortSignal(deadline),
   ]);
 
