@@ -152,7 +152,16 @@ const LIGHT = "var(--ice-snow)";
 const lit = (alpha: number) =>
   `color-mix(in oklab, var(--ice-snow) ${Math.round(alpha * 100)}%, transparent)`;
 
-function ActiveLens({ index, width }: { index: number | null; width: number }) {
+function ActiveLens({
+  index,
+  width,
+  pressedIndex,
+}: {
+  index: number | null;
+  width: number;
+  /** The slot a finger is CURRENTLY down on, or null. See `swell`. */
+  pressedIndex: number | null;
+}) {
   const reduce = useReducedMotion();
   const x = useMotionValue(0);
   const placed = useRef(false);
@@ -168,13 +177,56 @@ function ActiveLens({ index, width }: { index: number | null; width: number }) {
    * snapping back at the end.
    */
   const stretch = useMotionValue(1);
+  /*
+   * THE SWELL — the lens grows under the finger and settles when the page lands.
+   *
+   * The owner, 2026-09-08, on the reference: "when you have it selected with
+   * your figner it increases size and then looks natural if page is selected".
+   * That is a PRESS state, and the first version of this lens had none at all:
+   * it only reacted once the route had already changed, so the bar felt inert
+   * for the whole of the touch.
+   *
+   * It swells on pointer-down rather than on navigation because those are
+   * different moments — a tap on the tab you are already on never changes the
+   * route, and a tap you drag off cancels. Both must still feel answered.
+   */
+  const swell = useMotionValue(1);
+
+  useEffect(() => {
+    const to = pressedIndex === null ? 1 : 1.14;
+    if (reduce) {
+      swell.set(1);
+      return;
+    }
+    /* Down is quick and eager; the release is softer and slightly springy, which
+       is what makes it read as glass settling rather than a button popping. */
+    const controls = animate(swell, to, {
+      type: "spring",
+      stiffness: pressedIndex === null ? 260 : 520,
+      damping: pressedIndex === null ? 26 : 30,
+      mass: 0.6,
+    });
+    return () => controls.stop();
+  }, [pressedIndex, reduce, swell]);
+
   /* Derived ABOVE the early return: a hook after `if (centre === null) return`
      runs in a different order on the render where no tab matches, which is the
      rules-of-hooks violation that renders a stale lens on the next match. */
-  const squeeze = useTransform(stretch, (v) => 1 / v);
+  const scaleX = useTransform([stretch, swell], ([a, b]: number[]) => a * b);
+  /* Volume is conserved for the SQUASH only: the swell is a genuine change of
+     size, so it multiplies both axes rather than being cancelled on one. */
+  const scaleY = useTransform([stretch, swell], ([a, b]: number[]) => (1 / a) * b);
 
   const slot = width === 0 ? 0 : width / 5;
-  const centre = index === null || width === 0 ? null : index * slot + slot / 2;
+  /*
+   * A PRESSED SLOT WINS OVER THE ROUTE'S SLOT, so the lens leaves for the tab
+   * under the finger on touch-down instead of waiting for the screen to mount.
+   * On a slow screen that wait was the whole of the delay — the bar looked
+   * broken for as long as the route took. If the touch is cancelled, this falls
+   * back to `index` and the lens returns on its own spring.
+   */
+  const shown = pressedIndex ?? index;
+  const centre = shown === null || width === 0 ? null : shown * slot + slot / 2;
 
   useEffect(() => {
     if (centre === null) return;
@@ -228,11 +280,14 @@ function ActiveLens({ index, width }: { index: number | null; width: number }) {
         width: LENS_W,
         height: LENS_H,
         marginTop: -LENS_H / 2,
-        scaleX: stretch,
+        /* Two independent effects on one axis: the travel squash and the press
+           swell. Multiplied rather than one overriding the other, so a tap
+           during a move still answers instead of being swallowed. */
+        scaleX: scaleX,
         /* The counter-scale: volume is conserved, so widening thins it. Without
            this the lens simply grows, which reads as a zoom rather than as a
            squash. */
-        scaleY: squeeze,
+        scaleY: scaleY,
       }}
     >
       {/*
@@ -382,15 +437,22 @@ export function TabBar() {
    * cannot reappear when the bar re-renders for an unrelated reason.
    */
   const [ripple, setRipple] = useState<{ x: number; y: number; key: number } | null>(null);
+  /* Which slot a finger is down on. Cleared on up, on cancel, and on leave, so
+     a drag off the bar releases the swell rather than leaving it inflated. */
+  const [pressedIndex, setPressedIndex] = useState<number | null>(null);
   const rippleTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(rippleTimer.current), []);
 
-  const strike = (e: ReactPointerEvent<HTMLElement>) => {
+  const strike = (e: ReactPointerEvent<HTMLElement>, slot?: number) => {
     const box = pill.current?.getBoundingClientRect();
     if (!box) return;
     setRipple({ x: e.clientX - box.left, y: e.clientY - box.top, key: Date.now() });
     clearTimeout(rippleTimer.current);
     rippleTimer.current = setTimeout(() => setRipple(null), 600);
+    /* The Start button passes no slot: it is not a tab, it has no lens position,
+       and swelling the lens towards a control that never becomes the selection
+       would be the marker lying about where you are going. */
+    if (slot !== undefined) setPressedIndex(slot);
   };
   useEffect(() => {
     const el = pill.current;
@@ -451,6 +513,13 @@ export function TabBar() {
     >
       <div
         ref={pill}
+        /* RELEASED HERE, NOT ON EACH TAB. A pointer that goes down on a tab and
+           up somewhere else — a drag off, a cancelled gesture, the system
+           taking the touch for a back-swipe — never fires that tab's own up
+           handler, and the lens would stay swollen. The pill sees all three. */
+        onPointerUp={() => setPressedIndex(null)}
+        onPointerCancel={() => setPressedIndex(null)}
+        onPointerLeave={() => setPressedIndex(null)}
         /*
          * `overflow-visible` is load-bearing twice over: the raised Start
          * control and the summit peak both stand proud of this box, and
@@ -490,7 +559,7 @@ export function TabBar() {
           aria-hidden
           className="pointer-events-none absolute inset-0 overflow-hidden rounded-[24px]"
         >
-          <ActiveLens index={activeIndex} width={width} />
+          <ActiveLens index={activeIndex} width={width} pressedIndex={pressedIndex} />
           <Ripple at={ripple} />
         </span>
 
@@ -570,7 +639,7 @@ export function TabBar() {
               */}
                 <Link
                   to={tab.to}
-                  onPointerDown={strike}
+                  onPointerDown={(e) => strike(e, i)}
                   className="group relative flex h-full flex-col items-center justify-center gap-[3px]"
                   aria-current={active ? "page" : undefined}
                 >
