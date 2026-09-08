@@ -28,10 +28,7 @@ export default defineConfig({
       name: "icefall-offline-strip-webfonts",
       transformIndexHtml(html: string) {
         if (process.env.VITE_ICEFALL_OFFLINE !== "1") return html;
-        return html.replace(
-          /\s*<link\b[^>]*fonts\.(?:googleapis|gstatic)\.com[^>]*>/g,
-          "",
-        );
+        return html.replace(/\s*<link\b[^>]*fonts\.(?:googleapis|gstatic)\.com[^>]*>/g, "");
       },
     },
     /**
@@ -83,6 +80,29 @@ export default defineConfig({
             options: {
               cacheName: "icefall-images",
               expiration: { maxEntries: 80, maxAgeSeconds: 90 * 24 * 3600 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          {
+            /*
+             * THE ATHLETE'S OWN FACE, AND THIS RULE IS WHY IT SURVIVES NO
+             * SIGNAL.
+             *
+             * `settings/hydrate.ts` fills `settings.avatar` and `settings.cover`
+             * from `public.profiles`, and what the column holds is an https URL
+             * into the public `profile-media` bucket rather than the data URL
+             * the phone used to keep. Without this rule the profile screen would
+             * fall back to an initial the first time the app opened offline —
+             * the exact behaviour the local-first design exists to prevent.
+             * CacheFirst: a profile picture that changed is worth showing a day
+             * late, and a picture that is not there at all is not.
+             */
+            urlPattern:
+              /^https:\/\/[a-z0-9-]+\.supabase\.co\/storage\/v1\/object\/public\/profile-media\/.*/i,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "icefall-profile-media",
+              expiration: { maxEntries: 60, maxAgeSeconds: 90 * 24 * 3600 },
               cacheableResponse: { statuses: [0, 200] },
             },
           },

@@ -55,6 +55,18 @@ export const AVATAR_PX = 512;
 export const BANNER_W = 1024;
 export const BANNER_H = 384;
 
+/**
+ * The JPEG rate a banner is stored at, and why it is not the avatar's 0.82.
+ *
+ * A banner is four times the area of an avatar out of the same localStorage
+ * budget, and it is scenery seen behind a gradient rather than a face somebody
+ * looks at. 0.78 is the number `readBanner` below has always used; it is named
+ * here because `PhotoAdjuster` now encodes the banner instead, in two separate
+ * screens, and the same number typed three times is a number that will one day
+ * be three different numbers.
+ */
+export const BANNER_QUALITY = 0.78;
+
 /** Above this, the result is refused rather than quietly filling the quota. */
 export const MAX_STORED_BYTES = 400_000;
 
@@ -143,11 +155,20 @@ export function readAvatar(file: File, size = AVATAR_PX): Promise<string> {
 }
 
 /**
- * The same treatment for a wide profile banner.
+ * The same treatment for a wide picture, cropped without being asked.
  *
  * Cropped to the banner's aspect from the CENTRE-TOP rather than the middle:
  * people photograph mountains with the sky in the upper half and the summit
  * near the top third, and a centre crop cuts the peak off.
+ *
+ * NO PROFILE BANNER COMES THROUGH HERE ANY MORE. Both places a cover photo can
+ * be set — the settings header and the profile screen's own "…" menu — open
+ * `PhotoAdjuster` instead, because the guess above is exactly backwards for a
+ * photograph taken FROM a summit, where the ridge is along the bottom, and
+ * there was no way to say so. What still calls this is the post and summit-log
+ * composers, whose pictures are not profile pictures; the guess is unchanged
+ * for them, and wiring them to the adjuster is the same four props if somebody
+ * decides it should be.
  */
 export function readBanner(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -186,7 +207,7 @@ export function readBanner(file: File): Promise<string> {
         ctx.imageSmoothingQuality = "high";
         ctx.drawImage(img, sx, sy, sw, sh, 0, 0, BANNER_W, BANNER_H);
 
-        const dataUrl = canvas.toDataURL("image/jpeg", 0.78);
+        const dataUrl = canvas.toDataURL("image/jpeg", BANNER_QUALITY);
         if (dataUrl.length > MAX_STORED_BYTES) {
           reject(fail("too-large"));
           return;

@@ -51,7 +51,8 @@ export const POST_VISIBILITY_OPTIONS: readonly {
   {
     value: "followers",
     label: "Followers",
-    detail: "People who follow you. ICEFALL has no followers yet — nobody can follow anybody until accounts can see each other.",
+    detail:
+      "People who follow you. ICEFALL has no followers yet — nobody can follow anybody until accounts can see each other.",
   },
   {
     value: "connections",
@@ -214,7 +215,9 @@ const KEY = "icefall.settings.v1";
 function read(): SettingsState {
   try {
     const raw = localStorage.getItem(KEY);
-    return raw ? { ...DEFAULT_SETTINGS, ...(JSON.parse(raw) as Partial<SettingsState>) } : DEFAULT_SETTINGS;
+    return raw
+      ? { ...DEFAULT_SETTINGS, ...(JSON.parse(raw) as Partial<SettingsState>) }
+      : DEFAULT_SETTINGS;
   } catch {
     return DEFAULT_SETTINGS;
   }
@@ -235,6 +238,28 @@ function write(next: SettingsState) {
     /* private mode — the controls still work for this session */
   }
   listeners.forEach((l) => l(next));
+}
+
+/**
+ * THE SAME STORE, FOR CODE THAT IS NOT A COMPONENT.
+ *
+ * `settings/hydrate.ts` seeds this store from the server while the app is
+ * opening, which is not a render and has no hook to hang off. These two are the
+ * whole of that access: they go through the same `current` and the same
+ * `write()` as `useSettings`, so a screen that is already open sees the change
+ * immediately through the subscriber list above, and there is no second copy of
+ * the state to drift.
+ *
+ * `patchSettings` IS NOT A BACK DOOR ROUND `patch()`. It is the identical
+ * operation; what makes hydration safe is the merge rule in `hydrate.ts`, not
+ * a narrower writer here.
+ */
+export function currentSettings(): SettingsState {
+  return current;
+}
+
+export function patchSettings(p: Partial<SettingsState>): void {
+  write({ ...current, ...p });
 }
 
 export function useSettings() {

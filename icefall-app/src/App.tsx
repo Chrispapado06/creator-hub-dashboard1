@@ -8,6 +8,7 @@ import { TabBar } from "@/components/layout/TabBar";
 import { IcefallMark } from "@/components/ui/IcefallMark";
 import { Button } from "@/components/ui/primitives";
 import { useSessionState } from "@/auth/session";
+import { useProfileHydration } from "@/settings/hydrate";
 import { useApp } from "@/state/AppState";
 import { DEMO } from "@/offline/offline";
 import { GlassFilterDefs } from "@/components/ui/LiquidGlassButton";
@@ -200,6 +201,26 @@ function AppShell() {
   const { pathname } = useLocation();
   const { onboarded } = useApp();
   const session = useSessionState();
+
+  /*
+   * THE PROFILE FOLLOWS THE PERSON, AND THIS IS THE ONE PLACE IT IS FETCHED.
+   *
+   * Everything about a profile used to be written to the server and never read
+   * back, so signing in on a second phone showed an athlete an empty profile —
+   * their photograph is in `avatar_url` the whole time and nothing asked for it.
+   * `settings/hydrate.ts` asks, once per account per app load, and states in
+   * full what it does when the server and the phone disagree.
+   *
+   * HERE RATHER THAN IN `Auth.tsx` BECAUSE THERE IS MORE THAN ONE WAY IN. A
+   * password sign-in, a provider redirect, a session restored on a cold start
+   * and a session that arrives from another tab all end at this shell — the
+   * sign-in screens are outside it, so reaching `/home` mounts this component —
+   * whereas hanging it off the password form would have covered one of the
+   * four. It runs BEFORE the gate below returns, because a hook cannot be
+   * called after a conditional return; `undefined` (not yet known) and `null`
+   * (nobody) are both no-ops inside it.
+   */
+  useProfileHydration(session === undefined ? undefined : (session?.user.id ?? null));
 
   if (!DEMO) {
     if (session === undefined) return <PageLoader />;

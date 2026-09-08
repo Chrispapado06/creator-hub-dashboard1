@@ -64,7 +64,7 @@ import { useApp, usePrimaryGoal } from "@/state/AppState";
 import { planFor } from "@/growth/tiers";
 import { fmtDate } from "@/lib/format";
 import { encodeProfile, profileLink, type SharedProfile } from "@/profile/shareLink";
-import { AVATAR_PX, readBanner } from "@/lib/image";
+import { AVATAR_PX, BANNER_H, BANNER_QUALITY, BANNER_W } from "@/lib/image";
 import { isBackendConfigured } from "@/backend/client";
 import { PROFILE_BANNERS, bannerFor, bannerIndex } from "@/profile/banners";
 import { BADGES, badgeState } from "@/badges/model";
@@ -83,8 +83,11 @@ import {
   SYNC_NO_PHOTO_STORE,
   fetchInterestTags,
   flushProfile,
+  forgetUnsentField,
+  noteUnsentField,
   pendingProfileEdit,
   saveProfile,
+  unsentProfileFields,
   type FieldResult,
   type FieldState,
   type InterestTag,
@@ -238,7 +241,20 @@ const tidy = (v: string | null | undefined) => (v ?? "").trim().replace(/\s+/g, 
  * signup screen's availability check guards against, with worse consequences.
  */
 function useFieldSync(field: ProfileFieldName, onSettled?: () => void) {
-  const [sync, setSync] = useState<FieldSync>({ kind: "untouched" });
+  /*
+   * A BOX THAT WAS TYPED INTO AND NEVER SENT OPENS SAYING SO.
+   *
+   * The mark survives the app being killed (see `touch`), and a field still
+   * carrying one is a real, unfinished thing: the words are on this phone and
+   * nobody has been told. Starting at `untouched` would have shown that person
+   * a silent box and no Save — and the mark, having nothing to clear it, would
+   * have kept `settings/hydrate.ts` from ever fetching that field again. This
+   * way the state the mark describes is on the screen, with the control that
+   * ends it.
+   */
+  const [sync, setSync] = useState<FieldSync>(() =>
+    unsentProfileFields().includes(field) ? { kind: "unsent" } : { kind: "untouched" },
+  );
   const seq = useRef(0);
 
   const send = useCallback(
@@ -247,6 +263,11 @@ function useFieldSync(field: ProfileFieldName, onSettled?: () => void) {
       setSync({ kind: "saving" });
       const result = await saveProfile(edit);
       const one = result.fields[field];
+      /* The send has happened, so `sync.ts`'s outbox is now the record of what
+         did or did not get through — whichever it was. The typed-and-never-sent
+         mark has done its job and must go, or `settings/hydrate.ts` would treat
+         this field as unsent for ever and could never fetch it again. */
+      forgetUnsentField(field);
       onSettled?.();
       if (seq.current !== mine) return one;
       setSync(one ? { kind: "done", result: one } : { kind: "untouched" });
@@ -255,11 +276,22 @@ function useFieldSync(field: ProfileFieldName, onSettled?: () => void) {
     [field, onSettled],
   );
 
-  /** Somebody typed. Whatever the last answer said is now about an older value. */
+  /**
+   * Somebody typed. Whatever the last answer said is now about an older value.
+   *
+   * AND IT IS WRITTEN DOWN WHERE A RELOAD CAN STILL SEE IT. The words are
+   * already safe — `patch()` puts them in `settings/store.ts`, which persists —
+   * but the fact that NOBODY HAS BEEN TOLD lived only in this component's
+   * state, and a phone that killed the app between typing and blurring came
+   * back with the words in the box and no record that they were unsent. The
+   * next app open would then take the server's older value over them. One field
+   * name in `localStorage` closes it; see `noteUnsentField`.
+   */
   const touch = useCallback(() => {
     seq.current++;
+    noteUnsentField(field);
     setSync({ kind: "unsent" });
-  }, []);
+  }, [field]);
 
   /**
    * Typed, then typed it back. There is nothing to send and nothing to report,
@@ -268,8 +300,9 @@ function useFieldSync(field: ProfileFieldName, onSettled?: () => void) {
    */
   const reset = useCallback(() => {
     seq.current++;
+    forgetUnsentField(field);
     setSync({ kind: "untouched" });
-  }, []);
+  }, [field]);
 
   return { sync, send, touch, reset };
 }
@@ -515,9 +548,19 @@ function PendingColumnResting({ deployment }: { deployment: Deployment }) {
         </SyncLine>
       );
     case "ready":
-      // NOT "not sent yet" — this screen has never read a bio back, so it does
-      // not know whether a previous session's save is already on the server.
-      // Asserting either way would be inventing a fact about somebody's row.
+      /*
+       * NOT "not sent yet". This screen does not read a bio back, so it cannot
+       * say whether a previous session's save is already on the server, and
+       * asserting either way would be inventing a fact about somebody's row.
+       *
+       * `settings/hydrate.ts` DOES read one, on app open, and where its patch
+       * landed the box genuinely is the server's copy — but it is a different
+       * moment from this one, it is skipped for a field the device is holding
+       * unsent, and it says nothing about what has been typed since. So the
+       * sentence stays as it is rather than borrowing a certainty from another
+       * module's earlier answer. It is also, as it happens, not rendered:
+       * `SyncNote` shows nothing at all until a field is touched.
+       */
       return (
         <SyncLine tone="text-mist-dim" word="Not checked">
           ICEFALL’s server can keep this now. Whether it already holds what is in the box is only
@@ -1198,9 +1241,10 @@ function InterestChips({
  * flattened. The local copy is kept regardless: it is what the app draws
  * offline, and it is why the picture appears the instant it is chosen.
  *
- * AND THE PERSON NOW CHOOSES THE CROP. Tapping the face opens `PhotoAdjuster`
- * before anything is uploaded, so the head is where they put it rather than
- * where a centre-crop happened to leave it. "The instant it is chosen" above
+ * AND THE PERSON NOW CHOOSES THE CROP — of BOTH pictures. Tapping either the
+ * face or the cover opens `PhotoAdjuster` before anything is uploaded, so the
+ * head is where they put it and the ridgeline is where they left it, rather
+ * than where a centre-crop happened to fall. "The instant it is chosen" above
  * still holds — it now means the instant they confirm the framing, and until
  * they do, nothing local or remote has changed at all.
  */
@@ -1254,7 +1298,6 @@ function PhotoHeader({
 
   const avatarInput = useRef<HTMLInputElement | null>(null);
   const bannerInput = useRef<HTMLInputElement | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   /*
    * THE PHOTOGRAPH THEY PICKED, NOT YET THE PHOTOGRAPH THEY HAVE.
@@ -1266,8 +1309,14 @@ function PhotoHeader({
    * is open, and NOTHING is patched or sent until they confirm. That is what
    * makes Cancel free: the profile has not been touched, so there is nothing
    * to put back.
+   *
+   * IT CARRIES WHICH PICTURE IT IS, because both go through the same sheet
+   * now. The alternative — two `File | null` states — would let both be set at
+   * once and leave the component deciding which sheet wins; one field cannot.
    */
-  const [adjusting, setAdjusting] = useState<File | null>(null);
+  const [adjusting, setAdjusting] = useState<{ file: File; target: "avatar" | "banner" } | null>(
+    null,
+  );
 
   const photo = settings.avatar;
   const cover = settings.cover;
@@ -1281,22 +1330,21 @@ function PhotoHeader({
    */
   async function commitAvatar(data: string) {
     setAdjusting(null);
-    setError(null);
     patch({ avatar: data });
     avatar.touch();
     await avatar.send({ avatar: data });
   }
 
-  async function chooseBanner(file: File | undefined) {
-    if (!file) return;
-    setError(null);
-    let data: string;
-    try {
-      data = await readBanner(file);
-    } catch (e) {
-      setError((e as { message?: string }).message ?? "That image couldn't be used.");
-      return;
-    }
+  /*
+   * The banner's writer, now the mirror image of the avatar's rather than a
+   * different shape of thing. It used to take the FILE and call `readBanner`,
+   * which cropped a quarter down the frame on the theory that summits sit high
+   * — a guess that is right often enough to be maddening when it is wrong. It
+   * takes a data URL now because the person has already framed it, and the two
+   * writers differ in exactly one thing: which column it goes to.
+   */
+  async function commitBanner(data: string) {
+    setAdjusting(null);
     patch({ cover: data });
     banner.touch();
     await banner.send({ banner: data });
@@ -1379,8 +1427,7 @@ function PhotoHeader({
           // fires a change event.
           e.target.value = "";
           if (!file) return;
-          setError(null);
-          setAdjusting(file);
+          setAdjusting({ file, target: "avatar" });
         }}
       />
       <input
@@ -1389,41 +1436,73 @@ function PhotoHeader({
         accept="image/*"
         className="hidden"
         onChange={(e) => {
-          void chooseBanner(e.target.files?.[0]);
+          const file = e.target.files?.[0];
+          // Cleared first, for the same reason as the avatar's: cancelling the
+          // adjuster and picking the same file again must still fire.
           e.target.value = "";
+          if (!file) return;
+          setAdjusting({ file, target: "banner" });
         }}
       />
 
       {/*
-        THE ADJUST STEP, AND ONLY FOR THE FACE.
-        
-        `PhotoAdjuster` takes its mask, aspect and output size as arguments
-        precisely so the banner could use it too — the banner has the same
-        problem in the other direction, since `readBanner` guesses a quarter
-        down the frame on the theory that summits sit high in a photograph.
-        THE BANNER IS DELIBERATELY NOT WIRED YET: it is a second gesture
-        surface to test on a real phone, and shipping it untested alongside
-        the avatar would risk both rather than one. It is a prop change, not a
-        rewrite, when the owner has tried this one.
-        
-        `AVATAR_PX` rather than a number typed here: `lib/image.ts` owns the
-        stored size, because it also owns the localStorage budget that size is
-        chosen against.
-      */}
-      {adjusting !== null && (
-        <PhotoAdjuster
-          file={adjusting}
-          title="Position your photo"
-          mask="circle"
-          aspect={1}
-          outputWidth={AVATAR_PX}
-          confirmLabel="Use photo"
-          onCancel={() => setAdjusting(null)}
-          onConfirm={(data) => void commitAvatar(data)}
-        />
-      )}
+        THE ADJUST STEP, NOW FOR BOTH PICTURES.
 
-      {error && <p className="mt-2 text-[11.5px] text-danger">{error}</p>}
+        It was the face only, and the note here said the banner was "a prop
+        change, not a rewrite, when the owner has tried this one". They have,
+        and this is that prop change: one sheet, one set of gestures, one Reset
+        and one Cancel, and the only difference between the two pictures is the
+        shape of the hole you are looking through.
+
+        WHY THE BANNER NEEDED IT AS MUCH AS THE FACE. `readBanner` cropped a
+        quarter down the frame because summits sit high in a photograph — true
+        of a photograph OF a mountain, and wrong for a photograph taken from
+        one, where the ridge is at the bottom and the crop keeps the sky. There
+        was no way to say so. Now there is, and `readBanner` is left in
+        `lib/image.ts` for the callers that are genuinely not profile pictures.
+
+        EVERY NUMBER COMES FROM `lib/image.ts`, none is typed here: that file
+        owns the stored sizes because it owns the localStorage budget they are
+        chosen against. The banner's aspect is the ratio of the two constants
+        rather than "8/3" written out, so a change to either cannot leave the
+        frame on screen disagreeing with the file that gets stored — the crop
+        is taken from what the mask showed, so those two disagreeing is a
+        picture cut somewhere the person never saw.
+
+        THE QUALITY IS THE BANNER'S OWN — `BANNER_QUALITY`, lower than the
+        face's, because a banner is four times the area out of the same budget
+        and is scenery behind a gradient rather than a face somebody studies.
+        Passing nothing would silently re-encode it at the avatar's rate.
+
+        Errors belong to the sheet: whatever the file turns out to be — HEIC,
+        unreadable, too big to keep — it is said inside the adjuster, next to
+        the frame, in one place for both pictures.
+      */}
+      {adjusting !== null &&
+        (adjusting.target === "avatar" ? (
+          <PhotoAdjuster
+            file={adjusting.file}
+            title="Position your photo"
+            mask="circle"
+            aspect={1}
+            outputWidth={AVATAR_PX}
+            confirmLabel="Use photo"
+            onCancel={() => setAdjusting(null)}
+            onConfirm={(data) => void commitAvatar(data)}
+          />
+        ) : (
+          <PhotoAdjuster
+            file={adjusting.file}
+            title="Position your cover photo"
+            mask="rect"
+            aspect={BANNER_W / BANNER_H}
+            outputWidth={BANNER_W}
+            quality={BANNER_QUALITY}
+            confirmLabel="Use photo"
+            onCancel={() => setAdjusting(null)}
+            onConfirm={(data) => void commitBanner(data)}
+          />
+        ))}
 
       {/*
         ONE NOTE FOR TWO PICTURES, AND NONE AT ALL WITHOUT A SERVER.

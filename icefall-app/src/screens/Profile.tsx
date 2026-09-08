@@ -21,6 +21,8 @@ import type { LucideIcon } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { countryName, useMyProfile } from "@/auth/useMyProfile";
 import { usePublicProfile } from "@/social/publicProfile";
+import { useProfileHydrationState } from "@/settings/hydrate";
+import { isBackendConfigured } from "@/backend/client";
 import { Link } from "react-router-dom";
 import { Badge, Card, Divider, SectionLabel, Stat } from "@/components/ui/primitives";
 import { MonthlyVolume } from "@/components/ui/charts";
@@ -46,7 +48,22 @@ import { usePassport } from "@/passport/usePassport";
 import { Rise, Screen, Stagger } from "@/components/layout/chrome";
 import { BADGES, badgeById, badgeState } from "@/badges/model";
 import { useSettings } from "@/settings/store";
-import { readBanner } from "@/lib/image";
+/*
+ * Renamed on the way in, because this file already has a `BANNER_H` and the
+ * two are not the same measurement: the one below is how TALL this screen
+ * draws the photograph in CSS pixels, and these are the pixel dimensions the
+ * picture is STORED at. The stored rectangle is wider than the hole this
+ * screen draws it in — `object-cover` takes the middle of it — so framing at
+ * the stored aspect is framing what the server keeps and what every other
+ * surface reads, not what this one screen happens to show.
+ */
+import {
+  BANNER_H as STORED_BANNER_H,
+  BANNER_QUALITY,
+  BANNER_W as STORED_BANNER_W,
+} from "@/lib/image";
+import { PhotoAdjuster } from "@/components/settings/PhotoAdjuster";
+import { saveProfile } from "@/settings/sync";
 import { useFollowing } from "@/profile/following";
 import { encodeProfile } from "@/profile/shareLink";
 import { useProfileCard } from "@/profile/useProfileCard";
@@ -228,8 +245,51 @@ function PassportRow({
 export default function Profile() {
   const { user, goals, resetAll, currentTier } = useApp();
   const { settings, patch } = useSettings();
+  const hydration = useProfileHydrationState();
   const bannerInput = useRef<HTMLInputElement | null>(null);
-  const [bannerError, setBannerError] = useState<string | null>(null);
+
+  /*
+   * THE COVER PHOTO, FRAMED HERE TOO — AND SENT, WHICH IT WAS NOT.
+   *
+   * This screen has its own "Change banner" control in the "…" menu, and it
+   * was the one place a profile picture could be set that did neither of the
+   * things the settings header does. It cropped with `readBanner`'s guess —
+   * a quarter down the frame, on the theory that summits sit high, which is
+   * exactly backwards for a photograph taken FROM one — and it wrote the
+   * result to this device and stopped there.
+   *
+   * Local-only is not merely incomplete here, it UNDOES ITSELF. `settings/
+   * hydrate.ts` rule 2 hands the server's value to the device whenever the
+   * server holds one, so a cover set on this screen was replaced by the older
+   * one from the settings screen the next time the app opened, with nothing
+   * anywhere to say why. So this now goes through the same adjuster and the
+   * same `saveProfile` as every other profile edit — same shape, same output
+   * size, same sheet.
+   *
+   * `adjusting` holds the picked file while the sheet is open. Nothing is
+   * patched or sent until they confirm, which is what makes Cancel free.
+   */
+  const [adjusting, setAdjusting] = useState<File | null>(null);
+
+  /**
+   * The one sentence about where the cover actually got to.
+   *
+   * Only ever set from a `FieldResult` that is not `saved` — those messages are
+   * written to be printed as they stand — so a save that reached the server
+   * says nothing at all rather than congratulating anybody.
+   */
+  const [bannerNote, setBannerNote] = useState<string | null>(null);
+
+  /* Local first, as everywhere else: the picture is on the screen before the
+     request goes out and stays there whatever the request does. */
+  async function commitBanner(data: string | null) {
+    setAdjusting(null);
+    setBannerNote(null);
+    patch({ cover: data ?? undefined });
+    const result = await saveProfile({ banner: data });
+    const one = result.fields.banner;
+    if (one && one.state !== "saved") setBannerNote(one.message);
+  }
 
   /* Only the platforms this athlete actually filled in, in the edit screen's
      own order so the two screens agree. `SOCIALS` is the single table both
@@ -472,7 +532,11 @@ export default function Profile() {
                     type="button"
                     onClick={() => {
                       setMenuOpen(false);
-                      patch({ cover: undefined });
+                      // Removing is a change to the profile like any other, so
+                      // it goes the same way. It used to clear the device only,
+                      // which meant the banner came back off the server on the
+                      // next app open and the control looked broken.
+                      void commitBanner(null);
                     }}
                     className="flex w-full items-center gap-2.5 border-t border-hairline px-3.5 py-3 text-left text-[13px] text-snow transition-colors hover:bg-slate/60"
                   >
@@ -498,20 +562,41 @@ export default function Profile() {
           type="file"
           accept="image/*"
           className="hidden"
-          onChange={async (e) => {
+          onChange={(e) => {
             const file = e.target.files?.[0];
+            // Cleared before anything else, so picking the same file again
+            // after cancelling the adjuster still fires a change event.
             e.target.value = "";
             if (!file) return;
-            setBannerError(null);
-            try {
-              patch({ cover: await readBanner(file) });
-            } catch (err) {
-              setBannerError(
-                (err as { message?: string })?.message ?? "That image couldn't be read.",
-              );
-            }
+            setAdjusting(file);
           }}
         />
+
+        {/*
+          THE SAME SHEET THE SETTINGS HEADER USES, with the same four numbers
+          — every one of them from `lib/image.ts`, which owns the stored sizes
+          because it owns the localStorage budget they are chosen against.
+          Nothing about the crop is decided on this screen; if it were, this
+          screen and the settings screen could frame the same photograph two
+          different ways.
+
+          Whatever the file turns out to be — HEIC, unreadable, too large to
+          keep — the adjuster says so inside the sheet, which is why there is
+          no error line of this screen's own any more.
+        */}
+        {adjusting !== null && (
+          <PhotoAdjuster
+            file={adjusting}
+            title="Position your cover photo"
+            mask="rect"
+            aspect={STORED_BANNER_W / STORED_BANNER_H}
+            outputWidth={STORED_BANNER_W}
+            quality={BANNER_QUALITY}
+            confirmLabel="Use photo"
+            onCancel={() => setAdjusting(null)}
+            onConfirm={(data) => void commitBanner(data)}
+          />
+        )}
       </div>
 
       <Stagger className="px-5 pb-6">
@@ -618,7 +703,51 @@ export default function Profile() {
           {settings.bio && (
             <p className="mt-2.5 text-[12.5px] leading-relaxed text-mist">{settings.bio}</p>
           )}
-          {bannerError && <p className="mt-2 text-[11.5px] text-danger">{bannerError}</p>}
+
+          {/*
+            WHY THE PROFILE MIGHT NOT BE THE ONE ON THE SERVER.
+
+            This screen draws the athlete's own photograph, region and bio out of
+            `settings/store.ts`, which is this phone. On a new phone that store
+            starts empty and is filled by `settings/hydrate.ts` from the server
+            row — so when that fetch fails, what is on this screen is whatever
+            this device happened to hold, and somebody looking at a blank space
+            where their face should be deserves to know which of the two it is.
+            ONE SENTENCE, AND ONLY WHERE THE ABSENCE IS VISIBLE. `tell` is false
+            for a build with no server and for a session that is not signed in,
+            because neither is news on this screen — see `ProfileHydration`. And
+            it is drawn only while there is no photograph on this phone, which
+            is the case the owner actually named: an athlete who signed in on a
+            new phone and found their face gone. Somebody whose profile IS on
+            this device is looking at their own profile and has nothing to
+            wonder about, and a line about a failed fetch every time they open
+            the app in a hut with no signal would be a warning about nothing.
+          */}
+          {hydration.kind === "failed" && hydration.tell && !settings.avatar && (
+            <p className="mt-2.5 text-[11.5px] leading-relaxed text-mist-dim">
+              {hydration.message}
+            </p>
+          )}
+          {/*
+            WHERE THE COVER GOT TO, WHEN IT DID NOT GET TO THE SERVER.
+
+            Silence means saved and read back — the only thing `saveProfile`
+            calls saved. Anything else has a reason and the reason is printed
+            in `sync.ts`'s own words, because the difference between "no signal,
+            it is queued" and "this phone had no room, choose it again" is the
+            difference between doing nothing and doing it again.
+
+            AND NOTHING AT ALL ON A BUILD WITH NO SERVER. Without a client every
+            save comes back "queued" carrying `SYNC_NO_BACKEND`, so changing the
+            cover on a demo build printed a paragraph about a server ICEFALL has
+            not got — the same sentence the settings screen was made to stop
+            saying, in the same words, after the owner asked what it was. The
+            hydration sentence above is gated for this reason too (`tell` is
+            false for `no-backend`); this is the same gate stated the same way.
+          */}
+          {isBackendConfigured() && bannerNote !== null && (
+            <p className="mt-2 text-[11.5px] leading-relaxed text-mist-dim">{bannerNote}</p>
+          )}
 
           {/*
             THE SOCIAL ACCOUNTS, when there are any — the owner, 2026-09-07: "I

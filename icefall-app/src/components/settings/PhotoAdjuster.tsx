@@ -29,12 +29,19 @@ import { cropToDataUrl, prepareImage, type CropRect, type PreparedImage } from "
  * ── WHY THE MASK IS A PROP ───────────────────────────────────────────────────
  *
  * The profile header edits two pictures, a circular avatar and a wide banner,
- * and the banner has the same problem in the other direction (`readBanner`
- * guesses a quarter down the frame because summits sit high). Hard-coding a
- * circle would mean writing this twice. So the shape, the aspect and the
- * output size are all arguments. TODAY ONLY THE AVATAR IS WIRED — the banner
- * still goes through `readBanner`'s guess, because changing both at once would
- * have meant shipping the banner path untested on a phone.
+ * and the banner had the same problem in the other direction (`readBanner`
+ * guessed a quarter down the frame because summits sit high — which is wrong
+ * for every photograph taken FROM a summit). Hard-coding a circle would mean
+ * writing this twice. So the shape, the aspect, the output size and the JPEG
+ * quality are all arguments.
+ *
+ * BOTH PICTURES ARE NOW WIRED, in both places a profile can be edited: the
+ * settings header (`screens/settings/Sections.tsx`, face and cover) and the
+ * profile screen's own cover control (`screens/Profile.tsx`). Three call
+ * sites, one component, and the differences between them are four props. If a
+ * fourth surface ever wants a different shape, that is a prop too — never a
+ * second cropper, because two croppers is two sets of gestures to learn and
+ * two places for the crop to disagree with what was on screen.
  *
  * ── THE ONE GUARANTEE ────────────────────────────────────────────────────────
  *

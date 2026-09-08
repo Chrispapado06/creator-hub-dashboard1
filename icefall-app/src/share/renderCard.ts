@@ -167,13 +167,37 @@ const SERIF = '"Instrument Serif", Georgia, serif';
 /* Primitives                                                                  */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * ASKED FOR AS A CORS REQUEST, BECAUSE THE CARD IS READ BACK OUT OF THE CANVAS.
+ *
+ * A card is drawn and then exported with `canvas.toDataURL`, and an image drawn
+ * from another origin without `crossOrigin` TAINTS the canvas — the drawing
+ * succeeds and the export throws `SecurityError`, which the share screen can
+ * only render as "this browser could not draw the card". That used to be
+ * unreachable here because every photograph was either a bundled `/img/...`
+ * path or a data URL. It is reachable now: `settings/hydrate.ts` fills the
+ * avatar and the cover from `public.profiles`, and those are https URLs into
+ * the public `profile-media` bucket — so the athletes whose picture is on the
+ * server would be exactly the ones who could no longer share a card.
+ *
+ * THE SECOND ATTEMPT IS NOT BELT AND BRACES. A CORS request fails outright
+ * against anything that does not answer with the header — a data URL is fine
+ * either way, and same-origin is fine either way, but a host that serves the
+ * bytes and no `access-control-allow-origin` would go from "card without a
+ * photograph" to "no card at all". So a refused CORS load is retried plainly:
+ * the picture is drawn, the export may then fail, and that is the same outcome
+ * as before this guard rather than a worse one.
+ */
 function loadImage(src: string): Promise<HTMLImageElement | null> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => resolve(null);
-    img.src = src;
-  });
+  const attempt = (anonymous: boolean) =>
+    new Promise<HTMLImageElement | null>((resolve) => {
+      const img = new Image();
+      if (anonymous) img.crossOrigin = "anonymous";
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = src;
+    });
+  return attempt(true).then((img) => img ?? attempt(false));
 }
 
 /** Draws an image cover-style into a rect. */

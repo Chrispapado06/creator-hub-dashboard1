@@ -538,7 +538,9 @@ function slugify(text: string): string {
  * 300 characters is NOT truncated: cutting somebody's words in half and calling
  * it saved is precisely the lie this module exists to prevent.
  */
-function checkBio(raw: string): { ok: true; value: string | null } | { ok: false; message: string } {
+function checkBio(
+  raw: string,
+): { ok: true; value: string | null } | { ok: false; message: string } {
   const text = raw
     .replace(/\r\n?/g, "\n")
     // A tab is refused by the column too, and a bio pasted out of a note is
@@ -734,8 +736,9 @@ export async function fetchInterestTags(): Promise<
 
   const tags = (Array.isArray(data) ? data : [])
     .map((row) => row as { slug?: unknown; label?: unknown })
-    .filter((row): row is { slug: string; label: string } =>
-      typeof row.slug === "string" && typeof row.label === "string",
+    .filter(
+      (row): row is { slug: string; label: string } =>
+        typeof row.slug === "string" && typeof row.label === "string",
     )
     .map(({ slug, label }) => ({ slug, label }));
 
@@ -764,10 +767,7 @@ export async function fetchInterestTags(): Promise<
  * they meant, printed on their profile as if they had said it. It is reported
  * as not stored, and the fix is a picker rather than a cleverer matcher.
  */
-function interestSlugs(
-  text: string,
-  tags: InterestTag[],
-): { slugs: string[]; dropped: string[] } {
+function interestSlugs(text: string, tags: InterestTag[]): { slugs: string[]; dropped: string[] } {
   const index = new Map<string, string>();
   for (const tag of tags) {
     index.set(tag.slug, tag.slug);
@@ -889,7 +889,9 @@ function readMediaMemo(): MediaMemo {
     // otherwise hand `remove()` an `undefined` path, or match a picture against
     // a missing hash and reuse a URL that is not the one on the row.
     for (const kind of ["avatar", "banner"] as const) {
-      const entry = (parsed as Record<string, unknown>)[kind] as Partial<MediaMemoEntry> | undefined;
+      const entry = (parsed as Record<string, unknown>)[kind] as
+        | Partial<MediaMemoEntry>
+        | undefined;
       if (
         entry &&
         typeof entry.hash === "string" &&
@@ -1005,9 +1007,10 @@ async function uploadPicture(
    * policy's regex would happily accept the shape, and the person would never
    * learn that their picture was reachable.
    */
-  const name = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-    ? crypto.randomUUID()
-    : null;
+  const name =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : null;
   if (!name) {
     return {
       ok: false,
@@ -1045,8 +1048,7 @@ async function uploadPicture(
     // A bare "not found" is deliberately NOT matched: on an upload it would
     // almost always be the bucket, and "almost always" is how a refusal ends up
     // described to somebody as a missing feature.
-    const noBucket =
-      status === 404 || (text.includes("bucket") && text.includes("not found"));
+    const noBucket = status === 404 || (text.includes("bucket") && text.includes("not found"));
     if (noBucket) {
       return { ok: false, state: "not-yet-on-server", message: SYNC_NO_PHOTO_STORE };
     }
@@ -1127,9 +1129,57 @@ async function removeSupersededPicture(
  */
 const OUTBOX_KEY = "icefall.profile.outbox.v1";
 
+/**
+ * WHICH ACCOUNT THIS DEVICE'S PROFILE AND OUTBOX BELONG TO.
+ *
+ * It lives here rather than in `settings/hydrate.ts`, where it was first
+ * written, because the outbox is here and the outbox is what it protects.
+ * `flushProfile()` sends whatever is queued to WHOEVER IS SIGNED IN, and on a
+ * shared phone that is not necessarily the person who typed it — so every entry
+ * is stamped with its owner (below) and every send checks the stamp. A record
+ * of the owner that a screen keeps and this module cannot read would leave the
+ * one function that can do the damage unable to tell.
+ *
+ * IT CAN FAIL, and the failure is not silently better or worse: a phone that
+ * cannot write this has no owner recorded, and an unstamped entry is treated as
+ * belonging to whoever is signed in — which is the assumption the whole app
+ * made before any of this existed, and the only one available.
+ */
+const OWNER_KEY = "icefall.settings.owner.v1";
+
+/** The account this device's profile fields describe, if it has been recorded. */
+export function profileOwner(): string | null {
+  try {
+    const raw = localStorage.getItem(OWNER_KEY);
+    return raw && raw.length > 0 ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Returns whether the claim was actually recorded. See `OWNER_KEY`. */
+export function rememberProfileOwner(uid: string): boolean {
+  try {
+    localStorage.setItem(OWNER_KEY, uid);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 interface PendingEdit extends ProfileEdit {
   /** When the person made the edit. ISO. Not when it will be sent. */
   at: string;
+  /**
+   * WHOSE EDIT THIS IS, when the phone knew at the time it was queued.
+   *
+   * `undefined` means it was queued by a build that did not stamp it, or on a
+   * phone with no owner recorded. That is read as "this account's" — see
+   * `OWNER_KEY` — because refusing to send every legacy entry would strand
+   * work that in the overwhelming case belongs to the only person who has ever
+   * used the phone.
+   */
+  uid?: string;
 }
 
 export function pendingProfileEdit(): PendingEdit | null {
@@ -1160,8 +1210,20 @@ function writeOutbox(entry: PendingEdit | null): boolean {
   }
 }
 
-/** Only keys the caller actually set. `undefined` is "not editing this";
-    `null` is "clear this", and the two must not be confused by a merge. */
+/**
+ * Only keys the caller actually set. `undefined` is "not editing this";
+ * `null` is "clear this", and the two must not be confused by a merge.
+ *
+ * EVERY FIELD NAME BELONGS IN THIS LIST, INCLUDING THE LINKS. The first draft
+ * left the six link fields out, and the omission was not cosmetic: `saveProfile`
+ * uses this as its list of fields worth attempting, so an edit containing only
+ * an Instagram handle — which is exactly what the edit screen sends on blur —
+ * returned before touching the network and reported nothing at all. The handle
+ * stayed on the phone, the column stayed null, and the screen said the field
+ * was untouched. `clearFromOutbox` and `runFlush` ask the same question, so a
+ * queued link was dropped from the outbox as well. Anything added to
+ * `ProfileFieldName` has to be added here in the same edit.
+ */
 function present(edit: ProfileEdit): ProfileFieldName[] {
   const keys: ProfileFieldName[] = [
     "displayName",
@@ -1172,6 +1234,7 @@ function present(edit: ProfileEdit): ProfileFieldName[] {
     "interests",
     "avatar",
     "banner",
+    ...LINK_FIELDS,
   ];
   return keys.filter((key) => edit[key] !== undefined);
 }
@@ -1197,11 +1260,35 @@ function keepOnDevice(
   edit: ProfileEdit,
   keys: readonly ProfileFieldName[],
 ): { kept: Set<ProfileFieldName> } {
-  const previous = pendingProfileEdit();
+  const owner = profileOwner();
+  let previous = pendingProfileEdit();
+
+  /*
+   * A QUEUED EDIT BELONGING TO SOMEBODY ELSE IS NEVER MERGED INTO.
+   *
+   * `settings/hydrate.ts` parks the previous account's edit when the account
+   * changes, so this is the case where that park could not be written. Merging
+   * this person's bio into a stranger's entry would produce one edit with two
+   * authors and one stamp — and whichever stamp it kept, half of it would be
+   * sent to the wrong row or thrown away. So the stranger's entry is parked
+   * here instead, and if it cannot be parked this reports keeping NOTHING,
+   * which is the honest answer: the phone has no room to hold this safely.
+   */
+  if (previous && previous.uid !== undefined && owner !== null && previous.uid !== owner) {
+    if (parkPendingProfileEdit(previous.uid) !== "parked") return { kept: new Set() };
+    previous = null;
+  }
+
+  /* The stamp `runFlush` checks. `previous.uid` first so an entry that already
+     knows whose it is cannot be quietly re-attributed; `undefined` when this
+     phone has no owner recorded, which is a state with its own reading. */
+  const stamp = previous?.uid ?? owner ?? undefined;
+
   const merged: PendingEdit = {
     ...(previous ?? {}),
     ...pick(edit, keys),
     at: new Date().toISOString(),
+    uid: stamp,
   };
 
   if (writeOutbox(merged)) return { kept: new Set(keys) };
@@ -1223,10 +1310,84 @@ function keepOnDevice(
       ...(previous ?? {}),
       ...pick(edit, textOnly),
       at: new Date().toISOString(),
+      uid: stamp,
     };
     if (writeOutbox(smaller)) return { kept: new Set(textOnly) };
   }
   return { kept: new Set() };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Typed and not yet sent — the window the outbox cannot see                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * FIELD NAMES ONLY, AND THAT IS ENOUGH.
+ *
+ * The outbox records what FAILED to go. It records nothing about text that has
+ * been typed and not yet sent at all — the edit screen patches the phone on
+ * every keystroke and sends when the box is left, so between those two moments
+ * the new words are in `settings/store.ts` and nowhere else. Reload the app in
+ * that window and `settings/hydrate.ts` would take the server's older value,
+ * with nothing anywhere to restore the typed one from.
+ *
+ * WHY THE NAME IS ENOUGH AND THE VALUE IS NOT NEEDED: the value is already
+ * persisted — `settings/store.ts` writes the whole store to `localStorage` on
+ * every patch, so the words survive the reload. The only thing missing is the
+ * KNOWLEDGE that they are unsent, and that is one short field name.
+ *
+ * IT IS CLEARED THE MOMENT A SEND HAS BEEN ATTEMPTED, whatever the answer:
+ * after an attempt the outbox is the record — a failure is queued there and a
+ * refusal has been reported to the person — so a mark that outlived the attempt
+ * would block that field from ever being fetched again on this phone.
+ */
+const UNSENT_KEY = "icefall.profile.unsent.v1";
+
+function readUnsent(): ProfileFieldName[] {
+  try {
+    const raw = localStorage.getItem(UNSENT_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : null;
+    return Array.isArray(parsed)
+      ? (parsed.filter((v) => typeof v === "string") as ProfileFieldName[])
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeUnsent(fields: readonly ProfileFieldName[]): void {
+  try {
+    if (fields.length === 0) localStorage.removeItem(UNSENT_KEY);
+    else localStorage.setItem(UNSENT_KEY, JSON.stringify(fields));
+  } catch {
+    /* No room for a list of field names. Nothing is claimed on the strength of
+       it — `hydrate` simply has one fewer reason to keep a device value, which
+       is the behaviour before this record existed. */
+  }
+}
+
+/** Somebody has typed into this field and nothing has been sent. */
+export function noteUnsentField(field: ProfileFieldName): void {
+  const fields = readUnsent();
+  if (fields.includes(field)) return;
+  writeUnsent([...fields, field]);
+}
+
+/** A send has been attempted for this field, so the outbox now speaks for it. */
+export function forgetUnsentField(field: ProfileFieldName): void {
+  const fields = readUnsent();
+  if (!fields.includes(field)) return;
+  writeUnsent(fields.filter((f) => f !== field));
+}
+
+/** Fields typed on this phone and not yet sent to anybody. */
+export function unsentProfileFields(): readonly ProfileFieldName[] {
+  return readUnsent();
+}
+
+/** The marks describe one person's typing. On an account change they go. */
+export function forgetAllUnsentFields(): void {
+  writeUnsent([]);
 }
 
 /** Drop the fields that made it, keep the rest waiting. */
@@ -1261,7 +1422,14 @@ function clearFromOutbox(saved: readonly ProfileFieldName[]): void {
  * is wrapped in its own exception handler. An avatar whose upload failed is
  * simply absent from the payload, so the name beside it still saves.
  */
-const LIVE_COLUMNS = "display_name, location_label, country_code, avatar_url";
+/*
+ * `username` IS READ AND NEVER WRITTEN. A handle is given away by changing it,
+ * so it is claimed through `claim_username` and never through an UPDATE — but
+ * `settings/hydrate.ts` CLEARS the device's copy on an account change, and a
+ * field that is cleared and never refilled is a field the share card falls back
+ * to guessing from a display name. So it rides along with the read.
+ */
+const LIVE_COLUMNS = "display_name, location_label, country_code, avatar_url, username";
 const PENDING_COLUMNS = "bio, languages, interests, banner_url";
 
 /**
@@ -1490,6 +1658,17 @@ export async function saveProfile(edit: ProfileEdit): Promise<SaveProfileResult>
 
   if (edit.avatar !== undefined) attempt.push("avatar");
   if (edit.banner !== undefined) attempt.push("banner");
+
+  /*
+   * THE LINKS COUNT AS AN ATTEMPT TOO, and leaving them out of this list was
+   * the second half of the same bug as `present()`. `attempt` is what the guard
+   * below tests and what `queueAll` queues — so with the links missing, a
+   * handle typed with no signal reached neither the server nor the outbox, and
+   * the screen reported nothing. Nothing is validated here: the trimming and
+   * the shape of a handle are settled at request three, against the migration's
+   * own constraint rather than a second copy of it written in this file.
+   */
+  for (const key of LINK_FIELDS) if (edit[key] !== undefined) attempt.push(key);
 
   if (attempt.length === 0) {
     return {
@@ -1766,7 +1945,9 @@ export async function saveProfile(edit: ProfileEdit): Promise<SaveProfileResult>
     );
     if (result.ok) {
       for (const key of linkFields) {
-        fields[key] = saved(textOf(result.row, LINK_COLUMN_OF[key as (typeof LINK_FIELDS)[number]]));
+        fields[key] = saved(
+          textOf(result.row, LINK_COLUMN_OF[key as (typeof LINK_FIELDS)[number]]),
+        );
       }
     } else {
       const { kept } = keepOnDevice(edit, linkFields);
@@ -1803,8 +1984,28 @@ export async function saveProfile(edit: ProfileEdit): Promise<SaveProfileResult>
   // store the value is still a field the caller asked about, and `allSaved` must
   // be false while one of them is unsaved.
   const savedKeys = asked.filter((key) => fields[key]?.state === "saved");
+
+  /*
+   * A VALUE THE SERVER WILL NEVER TAKE DOES NOT WAIT IN THE QUEUE FOR EVER.
+   *
+   * `not-storable` means, by that state's own definition, that retrying changes
+   * nothing — the words are not on the interests list, the code is not two
+   * letters. An entry that can never be sent and is never removed sits in the
+   * outbox permanently, and `settings/hydrate.ts` reads the outbox as "the
+   * device is holding this unsent", so that field could never be fetched from
+   * the server on this phone again — including the correct value the athlete
+   * later set from another one.
+   *
+   * WHAT THIS COSTS, SAID PLAINLY: the words stay in the box on this phone —
+   * nothing is deleted from `settings/store.ts` — but they stop being retried,
+   * and a later fetch may replace them with what the server holds. The person
+   * has been told, in `FieldResult.message`, exactly why they were not saved.
+   */
+  const settledKeys = asked.filter(
+    (key) => fields[key]?.state === "saved" || fields[key]?.state === "not-storable",
+  );
+  if (settledKeys.length > 0) clearFromOutbox(settledKeys);
   if (savedKeys.length > 0) {
-    clearFromOutbox(savedKeys);
     // The server has just proved it takes writes, which is the only moment this
     // module has evidence that draining is worth attempting. Fire and forget:
     // the edit the person is waiting on has already succeeded and must not be
@@ -1853,13 +2054,396 @@ export async function flushProfile(): Promise<SaveProfileResult | null> {
 async function runFlush(): Promise<SaveProfileResult | null> {
   const entry = pendingProfileEdit();
   if (!entry) return null;
-  const { at, ...edit } = entry;
+
+  /*
+   * A QUEUE HAS AN OWNER, AND THIS IS THE ONE PLACE THAT CAN ENFORCE IT.
+   *
+   * `saveProfile` writes `.eq("id", session.uid)` — whoever is signed in NOW.
+   * So an edit typed by the previous person on a shared phone would be written
+   * onto the arriving person's row, silently, on the arriving person's first
+   * successful save. `settings/hydrate.ts` parks the previous account's edit
+   * when it notices the change, but it cannot be the only guard: it runs once
+   * per app load, and its park can fail on a phone with no room. The stamp is
+   * checked here because here is where the send happens.
+   *
+   * A stranger's entry is parked under its own owner rather than deleted — the
+   * same reasoning as `parkPendingProfileEdit`. If the park cannot be written
+   * it stays where it is and this refuses again next time, which is the safe
+   * direction to be stuck in.
+   */
+  if (entry.uid !== undefined) {
+    const session = await gate();
+    if (session.ok && session.uid !== entry.uid) {
+      parkPendingProfileEdit(entry.uid);
+      return null;
+    }
+  }
+
+  const { at, uid, ...edit } = entry;
   void at;
+  void uid;
   if (present(edit).length === 0) {
     writeOutbox(null);
     return null;
   }
   return saveProfile(edit);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Reading — the half of this module that did not exist                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * THE PROFILE FOLLOWS THE PERSON, NOT THE PHONE.
+ *
+ * ── THE BUG THIS EXISTS TO END, WHICH IS THE MIRROR OF THE ONE ABOVE ────────
+ *
+ * Everything above this line SENDS. Nothing in this module — and nothing in
+ * `src/` outside the identity header — ever ASKED the server what this athlete's
+ * profile says. The only round trip that read these columns was the `.select()`
+ * on the end of an `.update()`, which reads back what it has just written.
+ *
+ * So: somebody sets their photograph, their region and their bio on one phone,
+ * every one of them reaches `public.profiles`, and then they sign in on a second
+ * phone and their face is gone. `avatar_url` is a LIVE column and has held the
+ * URL the whole time; nothing was ever fetched. `auth/useMyProfile.ts` reads the
+ * handle and the display name for the identity header, and `Auth.tsx` reads a
+ * name and an email — neither seeds `settings/store.ts`, which is what actually
+ * draws the athlete's own avatar, cover, region, bio, languages, interests and
+ * links.
+ *
+ * ── ONE REQUEST PER MIGRATION, EXACTLY AS THE WRITE PATH DOES ───────────────
+ *
+ * A select naming a column the server does not have fails with `42703` and
+ * returns NOTHING — the same all-or-nothing the module header describes for an
+ * update. Folding `bio` into the live select would therefore mean that on a
+ * deployment missing one migration, an athlete's PHOTOGRAPH does not come back
+ * because the same request also asked for their bio. So the read is split on
+ * the same three seams the write is split on, the three run in parallel, and a
+ * seam that fails costs its own fields and nothing else.
+ *
+ * ── AND `undefined` IS NOT `null` HERE EITHER ───────────────────────────────
+ *
+ * On `ServerProfile`, `null` is a MEASURED empty — the row was read and that
+ * column holds nothing — while `undefined` means NOT ANSWERED: the column is
+ * not on this deployment, or that one request failed. The merge must never
+ * clear a field on the strength of a question that was never answered, which is
+ * the read-side form of the rule that a missing error is not a save.
+ */
+
+/** One row of four to fourteen small columns. Shorter than a write: nothing is
+    typed into a box while this runs, so a long wait is a blank screen rather
+    than a saved edit. */
+const READ_TIMEOUT_MS = 6_000;
+
+/** No signal at all. The device keeps rendering what it holds. */
+export const PROFILE_NOT_FETCHED_OFFLINE =
+  "No signal, so ICEFALL could not fetch your profile from its server. What you can see is what this phone was already holding.";
+
+/** The request went out and did not come back. */
+export const PROFILE_NOT_FETCHED_UNREACHABLE =
+  "ICEFALL could not reach its server, so your profile has not been fetched. What you can see is what this phone was already holding — nothing has been lost, and nothing has been checked either.";
+
+/** The server answered and would not hand the row over. */
+export const PROFILE_NOT_FETCHED_REFUSED =
+  "ICEFALL's server would not hand over your profile, so it has not been fetched. Signing out and in again is the thing most likely to fix it; until then this is what this phone was holding.";
+
+/**
+ * The select ran and matched no row. Stated separately from a refusal, because
+ * they are different facts and only one of them is about the account's rules.
+ */
+export const PROFILE_NOT_ON_SERVER =
+  "ICEFALL's server holds no profile for this account, so there was nothing to fetch. Anything you can see here is what this phone was holding.";
+
+/** Answered, and not in any way this module recognises. */
+export const PROFILE_FETCH_FAILED =
+  "ICEFALL could not fetch your profile and its server did not say why. What you can see is what this phone was already holding.";
+
+/**
+ * WHY A FETCH DID NOT HAPPEN. `no-backend` and `signed-out` are conditions of
+ * the build and the session rather than faults, and a screen should say nothing
+ * about either — see `useProfileHydration` in `settings/hydrate.ts`, which is
+ * the one place that decides what is worth telling somebody.
+ */
+export type ProfileFetchFailure =
+  | "no-backend"
+  | "signed-out"
+  | "offline"
+  | "unreachable"
+  | "refused"
+  | "no-row"
+  | "unknown";
+
+/**
+ * THIS ATHLETE'S ROW, AS THE SERVER HOLDS IT.
+ *
+ * Named as `settings/store.ts` names things rather than as the database does,
+ * for the same reason `ProfileEdit` is: the translation belongs in this module
+ * and in one direction only, so a screen never learns that `region` is
+ * `location_label`.
+ */
+export interface ServerProfile {
+  /** LIVE columns. Always answered when the fetch is `ok`; `null` is measured. */
+  displayName: string | null;
+  region: string | null;
+  countryCode: string | null;
+  /**
+   * The claimed handle. READ-ONLY on this path — there is no `username` on
+   * `ProfileEdit` and there must not be; see `LIVE_COLUMNS`.
+   */
+  username: string | null;
+  /**
+   * `avatar_url` — AN https URL INTO THE PUBLIC `profile-media` BUCKET, never a
+   * data URL. `uploadPicture` is what guarantees that and 20260903020000 adds a
+   * constraint that refuses anything else. It goes into `settings.avatar`
+   * unchanged: every surface in the app puts that value straight into an
+   * `<img src>`, which takes either form.
+   *
+   * IT REPLACES A DATA URL WITH A NETWORK URL, WHICH IS ONLY SAFE BECAUSE THE
+   * SERVICE WORKER KEEPS IT. On the athlete's own phone `settings.avatar` used
+   * to be a self-contained data URL that always rendered; a bucket URL renders
+   * only if the bytes are somewhere. `vite.config.ts` has a CacheFirst rule for
+   * `*.supabase.co/storage/v1/object/public/profile-media/*` for exactly this
+   * reason — the face is on screen in a hut with no signal because it was
+   * cached the first time it loaded. That rule and this line are one fact
+   * written in two places; neither may be removed alone.
+   * See `PROFILE_MEDIA_BUCKET`.
+   */
+  avatar: string | null;
+  /** 20260903020000. `undefined` — the key absent — means NOT ANSWERED. */
+  bio?: string | null;
+  languages?: string[];
+  interests?: string[];
+  banner?: string | null;
+  /** 20260907090000. Same rule: absent is not an answer. */
+  website?: string | null;
+  instagram?: string | null;
+  facebook?: string | null;
+  youtube?: string | null;
+  tiktok?: string | null;
+  strava?: string | null;
+}
+
+export type FetchProfileResult =
+  | { ok: true; uid: string; profile: ServerProfile }
+  | { ok: false; failure: ProfileFetchFailure; message: string };
+
+/** A Postgres failure on a READ, as one of the failures above plus its sentence.
+    `not-provisioned` cannot reach here for the live select — those four columns
+    have been on `profiles` from the start — so it is folded into `unknown`
+    rather than given a sentence claiming the athlete's own profile is a feature
+    that has not shipped. */
+function readFailureFor(error: PostgrestError): { failure: ProfileFetchFailure; message: string } {
+  switch (classifyBackendError(error)) {
+    case "refused":
+      return { failure: "refused", message: PROFILE_NOT_FETCHED_REFUSED };
+    case "unreachable":
+      return { failure: "unreachable", message: PROFILE_NOT_FETCHED_UNREACHABLE };
+    default:
+      return { failure: "unknown", message: PROFILE_FETCH_FAILED };
+  }
+}
+
+/**
+ * Fetch the signed-in athlete's own profile row.
+ *
+ * It never throws, for the same reason `saveProfile` does not: this runs while
+ * the app is opening, and a rejected promise there is a screen that never
+ * settles.
+ *
+ * IT WRITES NOTHING — not the store, not the outbox, not the media memo. What
+ * to do with a server value that disagrees with the device is a decision with
+ * an athlete's unsent work on the other side of it, and it is made in exactly
+ * one place: `settings/hydrate.ts`.
+ */
+export async function fetchMyProfile(): Promise<FetchProfileResult> {
+  const session = await gate();
+  if (!session.ok) {
+    if (session.failure === "unreachable") {
+      return { ok: false, failure: "unreachable", message: PROFILE_NOT_FETCHED_UNREACHABLE };
+    }
+    /* `no-backend` and `signed-out` keep the gate's own sentences, which are
+       written for a SAVE ("it is kept on this phone in the meantime"). That is
+       the wrong voice for a read, and it is deliberately not fixed here with a
+       second pair of near-identical constants: the only caller
+       (`settings/hydrate.ts`) marks both as not worth telling anybody, because
+       one is the permanent condition of a demo build and the other is a state
+       the route gate has already handled. A caller that ever DOES want to print
+       these needs read-side copy written for it. */
+    return { ok: false, failure: session.failure, message: session.message };
+  }
+
+  // Same check, same reason as the write path: `navigator.onLine` is honest
+  // about exactly one thing, and it is better than whatever a dropped fetch
+  // happens to look like on this engine.
+  if (typeof navigator !== "undefined" && navigator.onLine === false) {
+    return { ok: false, failure: "offline", message: PROFILE_NOT_FETCHED_OFFLINE };
+  }
+
+  /* ONE deadline across all three, not three budgets: this is one act from the
+     athlete's point of view, and `publicProfile.ts` shares its deadline across
+     its parallel reads for the same reason. */
+  const deadline = withTimeout(READ_TIMEOUT_MS);
+
+  /* TYPED for the live half — those four columns are in `backend/types.ts` and
+     on the database, so a typo here is a compile error rather than a profile
+     that silently comes back short. UNTYPED for the other two, because that
+     file does not describe their columns and must not be made to claim it does.
+     The same split, and the same reasons, as the three writes above. */
+  const live = session.client.from("profiles").select(LIVE_COLUMNS).eq("id", session.uid);
+  const pending = session.loose.from("profiles").select(PENDING_COLUMNS).eq("id", session.uid);
+  const links = session.loose.from("profiles").select(LINK_COLUMNS).eq("id", session.uid);
+
+  const [liveRes, pendingRes, linkRes] = await Promise.all([
+    (deadline ? live.abortSignal(deadline) : live).maybeSingle(),
+    (deadline ? pending.abortSignal(deadline) : pending).maybeSingle(),
+    (deadline ? links.abortSignal(deadline) : links).maybeSingle(),
+  ]);
+
+  if (liveRes.error) return { ok: false, ...readFailureFor(liveRes.error) };
+  /*
+   * NO ROW IS NOT AN EMPTY PROFILE. `maybeSingle` answers `null` for a select
+   * that matched nothing, which here means a suspended account, a policy that
+   * refused without saying so, or a row signup never created. Returning an
+   * all-null `ServerProfile` from this branch would let the merge below clear a
+   * photograph off a phone on the strength of a row that does not exist.
+   */
+  if (!liveRes.data) return { ok: false, failure: "no-row", message: PROFILE_NOT_ON_SERVER };
+
+  const row = liveRes.data as Row;
+  const profile: ServerProfile = {
+    displayName: textOf(row, "display_name"),
+    region: textOf(row, "location_label"),
+    countryCode: textOf(row, "country_code"),
+    username: textOf(row, "username"),
+    avatar: textOf(row, "avatar_url"),
+  };
+
+  /* A failed request here leaves these keys ABSENT rather than null — the
+     difference between "this athlete has no bio" and "nobody asked". The day
+     20260903020000 is pushed, this request starts succeeding and the fields
+     start arriving with no other change anywhere. */
+  if (!pendingRes.error && pendingRes.data) {
+    const pendingRow = pendingRes.data as Row;
+    profile.bio = textOf(pendingRow, "bio");
+    profile.languages = listOf(pendingRow, "languages");
+    profile.interests = listOf(pendingRow, "interests");
+    profile.banner = textOf(pendingRow, "banner_url");
+  }
+
+  if (!linkRes.error && linkRes.data) {
+    const linkRow = linkRes.data as Row;
+    for (const key of LINK_FIELDS) profile[key] = textOf(linkRow, LINK_COLUMN_OF[key]);
+  }
+
+  return { ok: true, uid: session.uid, profile };
+}
+
+/* -------------------------------------------------------------------------- */
+/* The outbox when the ACCOUNT changes — a queue has an owner                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * WHY A QUEUED EDIT HAS TO BE PUT SOMEWHERE WHEN SOMEBODY ELSE SIGNS IN.
+ *
+ * `OUTBOX_KEY` holds one edit and says nothing about whose it is, and
+ * `saveProfile` fires `flushProfile()` after any successful write. So on a
+ * shared phone — which `AppState.signOut` deliberately supports by keeping
+ * everything on the device — the first person's unsent bio would be sent to the
+ * SECOND person's profile the moment they saved anything of their own. Nobody
+ * would see it happen, on either side.
+ *
+ * DELETING IT WOULD BE THE OTHER FAILURE. That edit is on this phone because
+ * this module told its owner, in `SYNC_OFFLINE`, that it "will be sent the next
+ * time a save succeeds". Discarding it to make room for the new account would
+ * break that promise silently, which is the same class of lie as a "Saved" that
+ * was never read back.
+ *
+ * So it is PARKED under the account it belongs to, and handed back if that
+ * account signs in on this phone again. Neither sent to a stranger nor thrown
+ * away.
+ */
+const PARKED_OUTBOX_PREFIX = "icefall.profile.outbox.parked.";
+
+/**
+ * Move whatever is queued out of the live outbox and file it under `uid`.
+ *
+ * Returns what actually happened, and `not-kept` is not decoration: if the park
+ * cannot be written the queued edit is STILL LIVE and would be flushed to the
+ * next account to save. The caller has to be able to say so.
+ */
+export function parkPendingProfileEdit(uid: string): "parked" | "nothing" | "not-kept" {
+  const entry = pendingProfileEdit();
+  if (!entry) return "nothing";
+  try {
+    localStorage.setItem(PARKED_OUTBOX_PREFIX + uid, JSON.stringify(entry));
+  } catch {
+    /*
+     * No room for the copy. The live outbox is left exactly as it is: losing
+     * the edit here would be worse than the caller having to report a failure.
+     *
+     * BUT IT IS AT LEAST MADE IDENTIFIABLE. The entry stays live, so the one
+     * thing that must never happen — sending it to whoever signs in next — is
+     * now down to the stamp `runFlush` reads. Writing the owner ONTO the entry
+     * costs a few bytes against a copy that needed the whole thing, so it can
+     * succeed where the park did not; if it also fails, this is unchanged and
+     * the caller is told the same thing either way.
+     */
+    if (entry.uid === undefined) writeOutbox({ ...entry, uid });
+    return "not-kept";
+  }
+  return writeOutbox(null) ? "parked" : "not-kept";
+}
+
+/**
+ * Hand back an edit parked for `uid`, if there is one.
+ *
+ * IT REFUSES TO OVERWRITE A LIVE OUTBOX. Something queued right now is this
+ * account's current work and is newer than anything parked; the parked copy is
+ * left where it is rather than merged over it, so nothing is lost either way
+ * and the next sign-in can still find it.
+ */
+export function restoreParkedProfileEdit(uid: string): "restored" | "nothing" | "not-kept" {
+  const key = PARKED_OUTBOX_PREFIX + uid;
+  let raw: string | null = null;
+  try {
+    raw = localStorage.getItem(key);
+  } catch {
+    return "nothing";
+  }
+  if (!raw) return "nothing";
+  if (pendingProfileEdit()) return "nothing";
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return "nothing";
+    const entry = parsed as PendingEdit;
+    if (typeof entry.at !== "string") return "nothing";
+    if (!writeOutbox(entry)) return "not-kept";
+    localStorage.removeItem(key);
+    return "restored";
+  } catch {
+    return "not-kept";
+  }
+}
+
+/**
+ * Forget which files THIS DEVICE uploaded for the account that was signed in.
+ *
+ * The memo matches a picture by a hash of its bytes and answers with a URL
+ * under the previous owner's uid. Two people who happen to choose the same
+ * photograph — a team picture, a flag, an app icon — would otherwise have the
+ * second one's row pointed at the first one's file, and the first one's file
+ * deleted underneath them when the second changed their picture. The cost of
+ * clearing it is one re-upload; nothing is lost.
+ */
+export function forgetProfileMedia(): void {
+  try {
+    localStorage.removeItem(MEDIA_MEMO_KEY);
+  } catch {
+    /* Storage refused a removal. The memo stays and the case above stays
+       possible; there is nothing further this can do about it. */
+  }
 }
 
 /* -------------------------------------------------------------------------- */
