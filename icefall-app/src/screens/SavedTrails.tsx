@@ -5,6 +5,7 @@ import { Screen, ScreenHeader, Rise, Stagger } from "@/components/layout/chrome"
 import { TrailImage } from "@/components/domain/TrailImage";
 import { savedTrails, unsaveTrail, type SavedTrail } from "@/services/savedTrails";
 import { NETWORK_LABEL } from "@/services/trails";
+import { PLATE_CAPTION } from "@/services/trailImagery";
 import { fmtDistance } from "@/lib/format";
 import { mapsDirectionsUrl, openMaps } from "@/lib/maps";
 import { cn } from "@/lib/utils";
@@ -52,6 +53,24 @@ export default function SavedTrails() {
 }
 
 function SavedTrailCard({ trail, onUnsave }: { trail: SavedTrail; onUnsave: () => void }) {
+  /*
+   * THE CAPTION IS NOT OPTIONAL HERE — IT IS THE LICENCE.
+   *
+   * This screen rendered `TrailImage` with no `onCaption` and no `onPhoto`, and
+   * carried no attribution string anywhere in the file. Measured on screen
+   * 2026-09-08: its top two cards were showing CC BY-SA photographs from
+   * Wikimedia Commons — the same file the trail page captions
+   * "Adonis - Smigies · Fry72, Karel Frydrýšek · CC BY-SA 4.0 · Wikimedia
+   * Commons" — with no credit rendered at all, and every other card was showing
+   * Esri tiles without `SATELLITE_CREDIT`. Both are licence breaches, not
+   * cosmetic gaps: CC BY-SA owes the photographer and the licence PER PHOTO,
+   * and Esri's terms require its copyright line wherever its imagery appears.
+   *
+   * `TrailImage` already computes the exact right sentence for whichever layer
+   * won. All this screen had to do was ask for it and print it.
+   */
+  const [caption, setCaption] = useState(PLATE_CAPTION);
+
   return (
     <Link to={`/explore/trail/${trail.osmId}`} className="block">
       <div className="overflow-hidden rounded-card border border-hairline bg-graphite transition-colors hover:border-hairline-strong">
@@ -61,6 +80,10 @@ function SavedTrailCard({ trail, onUnsave }: { trail: SavedTrail; onUnsave: () =
             lat={trail.lat}
             lon={trail.lon}
             name={trail.localName ?? trail.name}
+            /* Saved trails carry the length they were saved with, so the
+               mosaic is framed to the walk. See `zoomFor`. */
+            lengthKm={trail.lengthKm}
+            onCaption={setCaption}
             className="absolute inset-0 h-full w-full"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-graphite/95 via-transparent to-obsidian/30" />
@@ -107,7 +130,12 @@ function SavedTrailCard({ trail, onUnsave }: { trail: SavedTrail; onUnsave: () =
         </div>
 
         <div className="p-4">
-          <h3 className="text-[15px] leading-snug text-snow">{trail.localName ?? trail.name}</h3>
+          {/* Two lines, because a full CC BY-SA credit is routinely wider than
+              one — see the note on the same caption in Routes.tsx. */}
+          <p className="clamp-2 text-[10px] leading-[1.35] text-mist-dim">{caption}</p>
+          <h3 className="mt-1.5 text-[15px] leading-snug text-snow">
+            {trail.localName ?? trail.name}
+          </h3>
           <div className="mt-1.5 flex items-center gap-3 text-[11.5px] text-mist-dim">
             {trail.lengthKm != null && (
               <span className="tnum flex items-center gap-1">

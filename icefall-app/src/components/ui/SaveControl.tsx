@@ -1,6 +1,7 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Bookmark, Check } from "lucide-react";
 import { useEffect, useState } from "react";
+import { GlassLayers } from "@/components/ui/LiquidGlassButton";
 import { cn } from "@/lib/utils";
 
 /**
@@ -78,7 +79,10 @@ export function SavedToast({
           exit={still ? { opacity: 0 } : { opacity: 0, y: 10, scale: 0.98 }}
           transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
           className="pointer-events-none fixed inset-x-0 z-50 flex justify-center px-5"
-          style={{ bottom: "calc(5.5rem + env(safe-area-inset-bottom, 0px) + var(--tabbar-clearance, 0px))" }}
+          style={{
+            bottom:
+              "calc(5.5rem + env(safe-area-inset-bottom, 0px) + var(--tabbar-clearance, 0px))",
+          }}
         >
           <div className="flex items-center gap-2.5 rounded-pill border border-azure/40 bg-graphite/95 px-4 py-2.5 shadow-lg backdrop-blur">
             <span className="grid h-5 w-5 place-items-center rounded-full bg-azure text-obsidian">
@@ -190,14 +194,30 @@ export function SaveAction({
   );
 }
 
-/** The small circular one that sits on a hero photograph. */
+/**
+ * The small circular one that sits on a hero photograph.
+ *
+ * `glass` makes it the same pane as the discs beside it — see `GlassLayers`,
+ * which is imported rather than rebuilt precisely so this control cannot end up
+ * with its own private version of the treatment. Charlie's reference
+ * (2026-09-08) has all four hero controls as glass discs; his "glass the button
+ * except save" was about the ROW AT THE BOTTOM, where save is the one committing
+ * action and needs to be the only solid thing on it.
+ *
+ * The spring and the ring are why this is not simply a `LiquidGlassCircle`.
+ * Saving is the one act on this page with a consequence, and it earns the
+ * moment; a plain glass disc with a bookmark in it would have been the cheaper
+ * substitution and would have quietly dropped it.
+ */
 export function SaveCircle({
   saved,
   onToggle,
+  glass = false,
   className,
 }: {
   saved: boolean;
   onToggle: () => void;
+  glass?: boolean;
   className?: string;
 }) {
   const flash = useSaveFlash(saved);
@@ -208,12 +228,22 @@ export function SaveCircle({
       aria-pressed={saved}
       aria-label={saved ? "Remove from saved" : "Save"}
       className={cn(
-        "relative grid h-9 w-9 place-items-center rounded-full border bg-obsidian/70 backdrop-blur transition-colors",
-        saved ? "border-azure/50 text-azure" : "border-hairline-strong text-snow hover:border-azure/50",
+        "relative grid place-items-center rounded-full transition-colors",
+        glass
+          ? // `isolate`, and no border or background of its own: the pane brings
+            // both, and its layers sit at -z-10 inside this stacking context.
+            // `type-scrim` for the same reason its neighbours carry it: a pale
+            // mark on a pale pane over snow needs the canvas colour behind it.
+            "type-scrim isolate h-10 w-10 rounded-pill"
+          : "h-9 w-9 border bg-obsidian/70 backdrop-blur",
+        saved
+          ? cn("text-azure", !glass && "border-azure/50")
+          : cn("text-snow", !glass && "border-hairline-strong hover:border-azure/50"),
         className,
       )}
     >
-      <Burst show={flash} size={36} />
+      {glass && <GlassLayers />}
+      <Burst show={flash} size={glass ? 40 : 36} />
       <Mark saved={saved} size={16} />
     </button>
   );

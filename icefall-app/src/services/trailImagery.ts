@@ -47,13 +47,86 @@ const latToY = (lat: number, z: number) => {
 };
 
 /**
- * Zoom 12 — roughly 10 km across a tile at mid latitudes.
+ * THE MOSAIC'S ZOOM IS CHOSEN PER TRAIL, not fixed.
  *
- * Low enough that a whole day's walk sits inside the frame with its landforms
- * legible, high enough that ridges and valleys read as terrain rather than as a
- * brown smudge. At z14 a card shows one hillside and every trail looks alike.
+ * It used to be a constant 12 — "roughly 10 km across a tile at mid latitudes",
+ * low enough that a whole day's walk sits inside the frame and high enough that
+ * ridges read as terrain. That is a good answer for a day walk and only for a
+ * day walk. A 2x2 mosaic at z12 spans `2 x 40075 x cos(lat) / 4096` km, which
+ * is 15.7 km at 35°N and 8.5 km above 60°N — so the further north the trail,
+ * the less of it fits, and a long route did not fit at all. Measured on 440
+ * trails with their real OSM bounding boxes: 84.6% of trails under 2 km fitted
+ * the frame entirely, 31.0% of 10-25 km trails, 4.9% of 25-100 km trails and
+ * 0.0% of the 13 trails over 100 km. Monarch's Way (990 km) had 0 of its
+ * 29,740 mapped vertices inside the picture its own card was showing.
+ *
+ * So the span is sized to the trail. `zoomFor` picks the CLOSEST zoom whose
+ * mosaic still contains the trail's mapped length, which both puts more detail
+ * on a short walk (a 400 m circuit gets z14, ~4 km across, instead of a 16 km
+ * smudge) and pulls back far enough for a long one to be in frame.
+ *
+ * The clamps are the honest part:
+ *
+ *   MAX 14   past this a card shows one hillside and every trail looks alike —
+ *            the reason the constant was 12 rather than 15 in the first place.
+ *   MIN 10   ~39 km across at 45°N. Below this the picture stops being a place
+ *            and becomes a region: at z8 a card is a weather map. A trail
+ *            longer than the z10 mosaic therefore does NOT get zoomed out to
+ *            fit; it gets z10 and a caption that says the imagery is near the
+ *            route rather than of it. `satelliteFramesWholeRoute` is what the
+ *            caption asks, so that claim and this clamp can never drift apart.
  */
-const ZOOM = 12;
+const MIN_ZOOM = 10;
+const MAX_ZOOM = 14;
+const DEFAULT_ZOOM = 12;
+
+/** Equatorial circumference, km — the width of the whole tile grid at z0. */
+const EARTH_KM = 40075.017;
+
+/** How wide the 2x2 mosaic is on the ground, in km, at this latitude and zoom. */
+export function mosaicSpanKm(lat: number, zoom: number): number {
+  return (2 * EARTH_KM * Math.cos((lat * Math.PI) / 180)) / 2 ** zoom;
+}
+
+/**
+ * The closest zoom whose mosaic still holds the whole trail.
+ *
+ * `lengthKm` is a path length, not a diameter, so using it as the span to cover
+ * over-estimates what is needed for anything that bends — deliberately. Erring
+ * wide costs a little detail; erring tight puts the trail outside its own
+ * picture, which is the failure being fixed.
+ *
+ * With no measured length — OSM records one on a minority of relations — this
+ * returns the old constant unchanged, so a trail whose length ICEFALL does not
+ * know looks exactly as it did before.
+ */
+export function zoomFor(lat: number, lengthKm?: number | null): number {
+  if (lengthKm == null || !Number.isFinite(lengthKm) || lengthKm <= 0) return DEFAULT_ZOOM;
+  const wanted = Math.max(1.5, lengthKm * 1.15);
+  for (let z = MAX_ZOOM; z > MIN_ZOOM; z--) {
+    if (mosaicSpanKm(lat, z) >= wanted) return z;
+  }
+  return MIN_ZOOM;
+}
+
+/**
+ * Does the mosaic actually contain the whole route?
+ *
+ * FALSE is not a failure — it is the difference between "here is the ground
+ * this trail crosses" and "here is ground somewhere along it", and the caption
+ * has to say which, for exactly the reason `kind` distinguishes "of" from
+ * "near" further down this file. It is doubly true here because the coordinate
+ * the mosaic is centred on is the centre of the relation's BOUNDING BOX
+ * (`scripts/build-trail-index.mjs` stores Overpass `el.center`), which for an
+ * L-shaped or very long route is frequently not a point on the route at all.
+ *
+ * Unknown length answers TRUE, because a claim needs evidence to be withdrawn
+ * as much as to be made, and every trail behaved this way before.
+ */
+export function satelliteFramesWholeRoute(lat: number, lengthKm?: number | null): boolean {
+  if (lengthKm == null || !Number.isFinite(lengthKm) || lengthKm <= 0) return true;
+  return mosaicSpanKm(lat, zoomFor(lat, lengthKm)) >= lengthKm;
+}
 
 /** Esri World Imagery. Keyless, CORS `*`, and note the y/x order in the path. */
 const esri = (z: number, x: number, y: number) =>
@@ -66,14 +139,14 @@ const esri = (z: number, x: number, y: number) =>
  * random position inside it — sometimes dead centre, sometimes against an edge.
  * Taking the containing tile plus its right, lower and lower-right neighbours
  * and centring the grid puts the coordinates near the middle of the card every
- * time, at ~64 KB total.
+ * time, at ~64 KB total (42-80 KB measured).
  */
-export function satelliteTiles(lat: number, lon: number): string[] {
+export function satelliteTiles(lat: number, lon: number, lengthKm?: number | null): string[] {
   // Streamed from Esri, so there is nothing to return offline. Every caller
   // already treats an unloaded tile as "keep showing the plate underneath".
   if (OFFLINE) return [];
 
-  const z = ZOOM;
+  const z = zoomFor(lat, lengthKm);
   const x = lonToX(lon, z);
   const y = latToY(lat, z);
   const max = 2 ** z - 1;
@@ -86,6 +159,20 @@ export function satelliteTiles(lat: number, lon: number): string[] {
     esri(z, cx + 1, cy + 1),
   ];
 }
+
+/**
+ * The same tile, asked for again after it failed.
+ *
+ * A dropped connection is the ordinary case on a phone, and an <img> that
+ * errored will not retry itself. Re-requesting the identical URL can be served
+ * straight back out of the HTTP cache — including, in some browsers, a cached
+ * failure — so the attempt number rides along as a query parameter. Verified
+ * against Esri 2026-09-08: `?icefall_retry=1` returns the same HTTP 200 and the
+ * same 21,151 bytes as the bare URL, so the parameter changes the cache key and
+ * nothing else.
+ */
+export const tileAttemptUrl = (src: string, attempt: number) =>
+  attempt === 0 ? src : `${src}?icefall_retry=${attempt}`;
 
 /**
  * ⚠️ RUNNING ON THE FREE KEYLESS ESRI TIER — WHICH IS NONCOMMERCIAL-USE-ONLY.
@@ -112,6 +199,57 @@ export function satelliteTiles(lat: number, lon: number): string[] {
  * changed to credit "Vantor" — Maxar's 2026 rebrand — not "Maxar".
  */
 export const SATELLITE_CREDIT = "Satellite imagery · Esri, Vantor, Earthstar Geographics";
+
+/**
+ * The same imagery, when the mosaic demonstrably does not hold the whole route.
+ *
+ * `SATELLITE_CREDIT` reads as a picture OF the trail, and for a walk that fits
+ * inside the frame it is one. For a 990 km waymarked route it is a square of
+ * real ground somewhere along — or, because the centre point is a bounding-box
+ * centre, possibly just beside — the line. Saying "near the route" costs three
+ * words and is the difference between a caption and a claim. Esri's credit is
+ * carried identically either way: the licence is owed on the pixels, not on how
+ * confidently they are described.
+ */
+export const SATELLITE_CREDIT_NEAR =
+  "Satellite imagery near the route · Esri, Vantor, Earthstar Geographics";
+
+/** The satellite caption this trail has actually earned. */
+export const satelliteCredit = (lat: number, lengthKm?: number | null) =>
+  satelliteFramesWholeRoute(lat, lengthKm) ? SATELLITE_CREDIT : SATELLITE_CREDIT_NEAR;
+
+/* -------------------------------------------------------------------------- */
+/* What the plate is, in words                                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * THE PLATE IS A DRAWING, AND THE CAPTIONS HERE SAY SO.
+ *
+ * The terminal caption used to read "Contours from elevation data — no imagery
+ * for this area", which is not true of this app. `TrailPlate` takes one input,
+ * `seed={osmId}`, and draws closed rings from a seeded PRNG; it reads no
+ * elevation model, no geometry and no coordinate. It is deterministic and
+ * distinct per trail, which is why it looks like data, and it is exactly that
+ * resemblance that made the old wording easy to write and impossible to defend.
+ * Naming a source the picture does not have is the same class of error as
+ * captioning a photograph of one valley with the name of another.
+ *
+ * Three states, and none of them is allowed to be "loading" forever:
+ *
+ *   BEFORE   the tiles have not been asked for, because the card is not near
+ *            the viewport yet. Honest, and it resolves the instant it scrolls
+ *            into range — so it must not promise imagery it has not requested.
+ *   DURING   the request is genuinely in flight. This one may say "loading",
+ *            because something is loading.
+ *   AFTER    every tile answered and too few arrived. The picture is the
+ *            drawing, permanently, and the caption says why.
+ */
+export const PLATE_CAPTION = "Contours drawn on the device";
+export const PLATE_CAPTION_LOADING = "Contours — imagery loading";
+export const PLATE_CAPTION_NO_IMAGERY =
+  "Contours drawn on the device — no aerial imagery for this point";
+export const PLATE_CAPTION_OFFLINE =
+  "Contours drawn on the device — imagery needs a connection";
 
 /* -------------------------------------------------------------------------- */
 /* Verified photographs — two sources, two different claims                   */

@@ -296,24 +296,57 @@ export function Stat({
   unit,
   label,
   size = "md",
+  stacked = false,
   className,
 }: {
-  value: string;
+  /**
+   * `ReactNode`, not `string`, so a column whose figure IS a glyph can say so —
+   * a route's shape is a loop or a line, and the reference draws it rather than
+   * spelling it. Every existing caller passes a string and is unaffected.
+   */
+  value: React.ReactNode;
+  /**
+   * WHERE THE FIGURE CAME FROM. This app prints "12.0 km as mapped" rather than
+   * "12.0 km", so this is not decoration and is not optional in spirit.
+   */
   unit?: string;
   label: string;
   size?: "sm" | "md" | "lg";
+  /**
+   * THREE LINES INSTEAD OF TWO, FOR A ROW THAT HAS TO GO FOUR ACROSS A PHONE.
+   *
+   * The default puts the figure and its provenance on one baseline, which is
+   * right in a two-column block and impossible at ~82px a column: "85.8 km"
+   * plus "measured" wrapped into three ragged lines and the labels below them
+   * stopped agreeing. Stacked, each line owns its own row — figure, then the
+   * label, then the provenance — which is the reference's own hierarchy with
+   * the provenance this app owes underneath it.
+   */
+  stacked?: boolean;
   className?: string;
 }) {
   const valueCls = size === "lg" ? "text-[19px]" : size === "sm" ? "text-[14px]" : "text-[15.5px]";
+  const labelCls = "text-[10px] uppercase tracking-[0.08em] text-mist-dim";
+
+  if (stacked) {
+    return (
+      <div className={cn("min-w-0", className)}>
+        <p className={cn("tnum font-light text-snow", valueCls)}>{value}</p>
+        <p className={cn("mt-1", labelCls)}>{label}</p>
+        {/* Not truncated, unlike the label. A provenance that has been cut to
+            "estimated · DIN…" is a provenance that has stopped being one. */}
+        {unit && <p className="mt-0.5 text-[10.5px] leading-tight text-mist-dim">{unit}</p>}
+      </div>
+    );
+  }
+
   return (
     <div className={cn("min-w-0", className)}>
       <p className="flex items-baseline gap-1">
         <span className={cn("tnum font-light text-snow", valueCls)}>{value}</span>
         {unit && <span className="text-[11px] text-mist-dim">{unit}</span>}
       </p>
-      <p className="mt-0.5 truncate text-[10px] uppercase tracking-[0.08em] text-mist-dim">
-        {label}
-      </p>
+      <p className={cn("mt-0.5 truncate", labelCls)}>{label}</p>
     </div>
   );
 }

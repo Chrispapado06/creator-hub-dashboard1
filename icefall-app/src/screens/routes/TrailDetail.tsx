@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, Navigate, useParams, useSearchParams } from "react-router-dom";
 import {
   ChevronLeft,
   ChevronRight,
@@ -12,14 +12,17 @@ import {
   MapPin,
   Maximize2,
   MoreHorizontal,
+  MoveRight,
   Navigation,
+  Repeat,
   Share2,
   X,
 } from "lucide-react";
-import { Disclaimer, HeroCircleButton, Stat, sharePage } from "@/components/ui/primitives";
+import { Disclaimer, Stat, sharePage } from "@/components/ui/primitives";
 import { CompanyMark } from "@/components/domain/CompanyMark";
 import { Sheet, SheetRow } from "@/components/ui/Sheet";
-import { Rise, Stagger, TABBAR_STICKY_BOTTOM } from "@/components/layout/chrome";
+import { Rise, Stagger, useDetailBack } from "@/components/layout/chrome";
+import { LiquidGlassButton, LiquidGlassCircle } from "@/components/ui/LiquidGlassButton";
 import { TrailShape, useTrailLine } from "@/components/domain/TrailShape";
 import {
   NETWORK_LABEL,
@@ -34,7 +37,7 @@ import {
 import { ofCaption, photosOfNamed, type PlacePhoto } from "@/services/placePhotos";
 import { operatorsFor } from "@/services/operators";
 import { TrailImage } from "@/components/domain/TrailImage";
-import type { TrailPhoto } from "@/services/trailImagery";
+import { PLATE_CAPTION_LOADING, type TrailPhoto } from "@/services/trailImagery";
 import { trailWaypoints, orderedWaypoints, type TrailWaypoint } from "@/services/trailWaypoints";
 import { RouteWaypointMap, KIND_ICON } from "@/components/domain/RouteWaypointMap";
 import {
@@ -61,11 +64,18 @@ import {
   type TrailWay,
   waytypeBreakdown,
 } from "@/services/trailProfile";
-import { accessChips, routeShape } from "./trailShape";
+import { accessChips, routeShape, type RouteShape } from "./trailShape";
 import { cn } from "@/lib/utils";
 
-/** The hero caption before `TrailImage` reports which layer it settled on. */
-const TRAIL_PLATE_CAPTION = "Contours — imagery loading";
+/**
+ * The hero caption before `TrailImage` reports which layer it settled on.
+ *
+ * IMPORTED, NOT RETYPED. This was a literal copy of the same sentence
+ * `TrailImage` sends through `onCaption` a moment later, so the two were one
+ * edit away from disagreeing about what the picture is — and the reader would
+ * have seen the stale one first, which is the copy nobody re-reads.
+ */
+const TRAIL_PLATE_CAPTION = PLATE_CAPTION_LOADING;
 
 /**
  * The sentence under the stats row whenever the moving time is MODELLED.
@@ -77,6 +87,50 @@ const TRAIL_PLATE_CAPTION = "Contours — imagery loading";
  */
 const DIN_NOTE =
   "Moving time is estimated from the measured length and climb by DIN 33466 — 4 km/h on the flat, 300 m up and 500 m down per hour. It is a fit walker's moving time and counts no stops.";
+
+/**
+ * WHY THE GPX CONTROL IS DEAD — the one place the wording lives.
+ *
+ * A DISABLED BUTTON HAS TO SAY WHY, AND THE REASON HAS TO BE TRUE. There are
+ * two ways to have no file to write and they are not the same news: the line is
+ * still coming, or it is not coming. This once read "The line is still loading"
+ * for both, so a trail whose geometry had genuinely failed sat under a
+ * permanent, false "loading" and the reader waited for nothing.
+ *
+ * Returns `null` when there IS a file to write, so the two controls that offer
+ * it — the full-width button in the page and the pill in the docked bar — ask
+ * the same question and cannot answer it differently. They used to carry two
+ * copies of these sentences; only one of them had ever been corrected.
+ */
+const GPX_STILL_LOADING = "The line is still loading";
+const GPX_NEVER_ARRIVED =
+  "OpenStreetMap didn't send the line, so there is no file to write. This is a connection problem.";
+
+function gpxBlocked(points: number, waiting: boolean): string | null {
+  if (points > 1) return null;
+  return waiting ? GPX_STILL_LOADING : GPX_NEVER_ARRIVED;
+}
+
+/**
+ * How far the content sheet laps back over the bottom of the photograph.
+ *
+ * ONE NUMBER, ADDED TO THE HERO AND SUBTRACTED BY THE SHEET, so the lap costs
+ * no picture: the previous rounded panel was removed precisely because it took
+ * 28px off the photograph, and the fix is to give the photograph 28px more
+ * rather than to give up the lap the reference shows. The hero's own furniture
+ * — dots, credit line, route thumbnail — is positioned above this, because the
+ * sheet is drawn over anything inside it.
+ */
+const SHEET_LAP_PX = 28;
+
+/**
+ * The vertical band at the bottom of the photograph that the sheet covers plus
+ * the room its furniture needs above the lip. Positions are written against
+ * this rather than as loose magic numbers scattered through the hero.
+ */
+const HERO_CREDIT_BOTTOM = SHEET_LAP_PX + 8;
+const HERO_DOTS_BOTTOM = SHEET_LAP_PX + 30;
+const HERO_THUMB_BOTTOM = SHEET_LAP_PX + 12;
 
 /* -------------------------------------------------------------------------- */
 /* Data                                                                        */
@@ -214,9 +268,18 @@ function useSeen<T extends HTMLElement>(margin = "400px") {
  */
 export default function TrailDetail() {
   const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
   const [params] = useSearchParams();
   const osmId = Number(id);
+
+  /**
+   * THE WAY OUT, AND ON THIS PAGE IT IS THE ONLY ONE.
+   *
+   * No bottom navigation, no top bar and no Explore header (Charlie,
+   * 2026-09-08 — see `isFullScreenRoute`): the chevron on the photograph is
+   * every exit this screen has. `useDetailBack` is the shared rule and Find is
+   * the fallback, because Find is the list trails are opened from.
+   */
+  const goBack = useDetailBack("/explore/routes");
 
   /**
    * The expedition this approach was opened from, when there was one.
@@ -434,6 +497,8 @@ export default function TrailDetail() {
   const startSpot = line.length > 1 ? { lat: line[0].lat, lon: line[0].lon } : null;
   /** Still worth waiting for, as opposed to not coming. */
   const lineWaiting = lineLoading || facts.loading;
+  /** Why the GPX controls cannot write a file, or `null` when they can. */
+  const blocked = gpxBlocked(line.length, lineWaiting);
   /* Frame 0 is whatever `TrailImage` settled on — a verified photograph, the
      satellite ground, or the contour plate. The rest are the Commons
      photographs, each carrying its own credit. Dots appear only when there is
@@ -452,27 +517,59 @@ export default function TrailDetail() {
   return (
     <div
       ref={scroller}
-      className="no-scrollbar relative flex h-full flex-col overflow-y-auto"
       /*
-       * `TABBAR_STICKY_BOTTOM`, not `TABBAR_CLEAR`.
+       * NO CLEARANCE AT THE FOOT, AND THAT IS THE POINT — the bar reserves its
+       * own room by staying in normal flow. See the note on the bar itself.
        *
-       * The clearance constant is for a scroller whose last row is CONTENT.
-       * Here the last row is the pinned bar itself, and the bar's resting place
-       * in normal flow has to coincide exactly with where `position: sticky`
-       * holds it — otherwise it visibly hops up 12px as you reach the end.
+       * WHAT THIS REPLACED, twice, because both attempts are instructive:
+       *
+       *   · `paddingBottom: TABBAR_STICKY_BOTTOM` (84px) under a bar pinned at
+       *     `bottom: 84px`. A sticky offset is measured from the scroll
+       *     container's CONTENT box — already reduced by that very padding — so
+       *     the two compounded: the bar rode 168px off the bottom while its
+       *     resting place was 84px off it, and 60px of the licence line sat
+       *     permanently behind it at full scroll (375 × 812,
+       *     /explore/trail/2572951, 8 Sep 2026).
+       *
+       *   · An overlay bar with the scroller padded by the bar's measured
+       *     height, from a `ResizeObserver`. Correct arithmetic, and it worked
+       *     — right up until the observer stopped being delivered. RO callbacks
+       *     are dispatched as part of the rendering steps, so a page that is not
+       *     painting does not get them: caught here with the bar 26px shorter
+       *     than the padding still reserved for it, and a control probe proved
+       *     it was the observer and not the code. Layout that depends on a
+       *     frame having been painted is layout that is wrong whenever one has
+       *     not been.
+       *
+       * In flow, the arithmetic is the browser's and there is none of ours to
+       * get wrong, in any bar state, painted or not.
        */
-      style={{ paddingBottom: TABBAR_STICKY_BOTTOM }}
+      className="no-scrollbar relative flex h-full flex-col overflow-y-auto"
     >
-      {/* ---- Hero — edge to edge -----------------------------------------
-          No inset, no radius, and no sheet lapping over the bottom of it. The
-          rounded panel that used to sit here (`-mt-7 rounded-t-[26px]`) cut
-          the photograph off 28px early; on the reference the photograph runs
-          to the edge on all three sides and the type starts below it.
+      {/* ---- Hero — the top of the page, and the top of the screen -------
+          THE PICTURE IS THE FIRST THING, WITH NOTHING ABOVE IT. There is no
+          app top bar and no Explore header on this route (see
+          `isFullScreenRoute`), so this runs edge to edge on three sides and up
+          under the status bar, as the reference does.
+
+          THE SHEET LAPS BACK OVER IT AND THE HERO IS TALLER BY EXACTLY THAT
+          MUCH. A rounded panel used to sit here and was removed for cutting
+          the photograph off 28px early; the lap is what the reference actually
+          shows, so the answer was the height, not the panel. `SHEET_LAP_PX` is
+          added to the hero and taken off it again by the sheet, which leaves
+          the same amount of picture visible as no lap at all.
 
           `on-dark` because the ground here is a photograph in both themes —
           see index.css. Without it the controls take the light palette on a
           light build and vanish into the picture. */}
-      <div className="on-dark relative h-[46vh] max-h-[420px] min-h-[290px] shrink-0 bg-slate">
+      <div
+        className="on-dark relative shrink-0 bg-slate"
+        style={{
+          height: `calc(46vh + ${SHEET_LAP_PX}px)`,
+          maxHeight: `${440 + SHEET_LAP_PX}px`,
+          minHeight: `${310 + SHEET_LAP_PX}px`,
+        }}
+      >
         <TrailImage
           osmId={trail.osmId}
           lat={trail.lat}
@@ -497,29 +594,49 @@ export default function TrailDetail() {
         )}
         <div className="scrim-bottom pointer-events-none absolute inset-x-0 bottom-0 h-2/3" />
 
-        <button
-          type="button"
-          onClick={() => navigate(-1)}
-          aria-label="Back"
-          // ExploreLayout's header has already cleared the notch (see the
-          // --screen-safe-top contract in chrome.tsx); adding env() here counted
-          // it twice and dropped these controls ~47px on a notched phone.
-          className="absolute left-4 top-3.5 grid h-9 w-9 place-items-center rounded-full border border-hairline-strong bg-obsidian/70 text-snow backdrop-blur transition-colors hover:border-azure/50"
-        >
-          <ChevronLeft size={18} strokeWidth={1.8} />
-        </button>
+        {/* ---- The four floating discs -----------------------------------
+            GLASS, AND THIS IS WHERE GLASS ACTUALLY WORKS. `LiquidGlassButton`
+            refracts what is behind it, so it needs texture to bend: over the
+            photograph or the satellite mosaic these read as lenses, which is
+            what the reference shows and what the same treatment could not do
+            over the flat plate at the bottom of the page until the bar there
+            was made an overlay.
 
-        {/* Share, save, more — the reference's order exactly. Directions used
-            to hold the save slot up here; it has moved down to the two
-            full-width buttons, where the reference puts it. */}
-        <div className="absolute right-4 top-3.5 flex gap-2">
-          <HeroCircleButton
-            label="Share"
-            icon={Share2}
-            onClick={() => sharePage(`${trail.name} · ICEFALL`)}
+            THEY PAY THE NOTCH THEMSELVES. This used to be `top-3.5` flat, with
+            a note saying Explore's header had already cleared the inset —
+            correct then, false now: there is no header above this page at all,
+            so the discs sit under the clock without the `env()` below. The
+            photograph is supposed to run up there; a back button is not. */}
+        <div
+          className="pointer-events-none absolute inset-x-4 flex items-start justify-between"
+          style={{ top: "calc(0.875rem + env(safe-area-inset-top, 0px))" }}
+        >
+          <LiquidGlassCircle
+            icon={ChevronLeft}
+            label="Back"
+            onClick={goBack}
+            className="pointer-events-auto"
           />
-          <SaveCircle saved={saved} onToggle={toggleSave} />
-          <HeroCircleButton label="More" icon={MoreHorizontal} onClick={() => setOptions(true)} />
+          {/* Share, save, more — the reference's order exactly, and all three do
+              something real. Share is the system share sheet (the clipboard
+              where there is none), save writes to this device's saved trails,
+              and the overflow opens the sheet at the bottom of this file: GPX,
+              the OSM relation, directions, the pin, the operator's page. A
+              fourth disc with nothing behind it would have been easy to draw
+              and is the reason this note names what each one does. */}
+          <div className="pointer-events-auto flex gap-2">
+            <LiquidGlassCircle
+              icon={Share2}
+              label="Share"
+              onClick={() => sharePage(`${trail.name} · ICEFALL`)}
+            />
+            <SaveCircle glass saved={saved} onToggle={toggleSave} />
+            <LiquidGlassCircle
+              icon={MoreHorizontal}
+              label="More"
+              onClick={() => setOptions(true)}
+            />
+          </div>
         </div>
 
         {/* THE DOT IS 6px; THE BUTTON IS NOT. Each one is a 24x44 target with
@@ -527,7 +644,10 @@ export default function TrailDetail() {
             with a thumb and with a keyboard — the dots themselves are the
             reference's, the hit area is this app's 44px rule. */}
         {frameCount > 1 && (
-          <div className="absolute inset-x-0 bottom-6 flex justify-center">
+          <div
+            className="absolute inset-x-0 flex justify-center"
+            style={{ bottom: `${HERO_DOTS_BOTTOM}px` }}
+          >
             {Array.from({ length: frameCount }, (_, i) => (
               <button
                 key={i}
@@ -568,7 +688,10 @@ export default function TrailDetail() {
               and `trailImagery.ts` already fixed that exact bug inside
               `photoCaption`.
         */}
-        <div className="absolute inset-x-0 bottom-2.5 pl-5 pr-24 text-[10px] text-mist-dim">
+        <div
+          className="absolute inset-x-0 pl-5 pr-28 text-[10px] text-mist-dim"
+          style={{ bottom: `${HERO_CREDIT_BOTTOM}px` }}
+        >
           {framePhoto ? (
             <a
               href={framePhoto.pageUrl}
@@ -602,41 +725,86 @@ export default function TrailDetail() {
           )}
         </div>
 
-        {/* The route's own shape, overlapping the corner of the photograph as
-            the reference draws it — and a control, not decoration: it takes you
-            to the interactive map further down. */}
+        {/* THE ROUTE'S OWN SHAPE, at the photograph's bottom-right corner where
+            the reference puts its map thumbnail — and a control, not
+            decoration: it takes you to the interactive map further down.
+
+            ONLY WHEN THERE IS A LINE TO DRAW. `haveLine` is true once either
+            the member ways or the concatenated geometry have arrived; without
+            one there is no shape, and a 90px tile of empty graphite would be a
+            picture of nothing where the reference has a picture of the route.
+            OpenStreetMap does not always send it — see the GPX control, which
+            goes dark for the same reason and says so. */}
         {haveLine && (
           <button
             type="button"
             onClick={goToMap}
             aria-label="Show the route map"
-            className="absolute -bottom-7 right-4 z-10 grid h-[84px] w-[84px] place-items-center overflow-hidden rounded-tile border border-hairline-strong bg-graphite shadow-[var(--ice-shadow-pop)] transition-colors hover:border-azure/50"
+            style={{ bottom: `${HERO_THUMB_BOTTOM}px` }}
+            className="absolute right-4 z-10 grid h-[88px] w-[88px] place-items-center overflow-hidden rounded-card border border-hairline-strong bg-graphite/90 shadow-[var(--ice-shadow-pop)] backdrop-blur transition-colors hover:border-azure/50"
           >
-            <TrailShape line={line} segments={segments} width={72} height={72} showEnds />
+            <TrailShape line={line} segments={segments} width={74} height={74} showEnds />
           </button>
         )}
       </div>
 
-      {/* ---- Body ---------------------------------------------------------- */}
-      <div className={cn("px-5", haveLine ? "pt-10" : "pt-5")}>
+      {/* ---- The content sheet ---------------------------------------------
+          IT RISES OVER THE PHOTOGRAPH, with the generous top radius the
+          reference draws. `-mt-[SHEET_LAP_PX]` is the other half of the height
+          the hero was given above, so the lap costs the picture nothing.
+
+          `bg-obsidian`, the app canvas, so this reads as the page arriving
+          rather than as a card laid on it. No border and no shadow: the radius
+          and the photograph behind it are the edge. */}
+      <div
+        className="relative z-[1] rounded-t-[26px] bg-obsidian px-5"
+        style={{ marginTop: `-${SHEET_LAP_PX}px`, paddingTop: `${SHEET_LAP_PX - 4}px` }}
+      >
         <Stagger>
           {/* ---- Title ---------------------------------------------------- */}
           <Rise>
             <h1 className="text-[27px] font-light leading-[1.15] text-snow">{trail.name}</h1>
             {trail.localName && <p className="mt-1 text-[13px] text-mist-dim">{trail.localName}</p>}
 
-            {/* The reference's metadata line is a star rating, a coloured
-                difficulty square and a place. Two of those three have no
-                source here — see the ratings note at the top of this file, and
-                `toTrails()`, which carries no country — so the line is the
-                grade, the network and the waymark reference, all of them tags
-                on this relation. */}
+            {/* ---- The meta row ----------------------------------------
+                THE REFERENCE'S LINE IS "4.6 ★ · difficulty · place". TWO OF
+                THOSE THREE HAVE NO SOURCE IN THIS PRODUCT AND THE SLOTS ARE
+                LEFT OUT RATHER THAN FILLED.
+
+                NO RATING, AND NOT A GREYED ONE EITHER. Nobody has ever rated a
+                trail through ICEFALL: there is no ratings table, no reviews and
+                no users. A star with a number beside it is a claim about how
+                many people walked this and what they thought, and a placeholder
+                star is the same claim in a lighter colour. `routes/ratings.ts`
+                opens "⚠️ THESE NUMBERS ARE INVENTED" and hashes the route id —
+                that is the function this page must never call.
+
+                NO PLACE. `Trail` carries no country and no region: `toTrails()`
+                builds from a relation's own tags and `trailById` fetches
+                `out tags center`, which is a bounding-box centre and not a
+                place name. The search index does know which country FILE a
+                relation came from, and 1,054 of the 77,141 appear in more than
+                one of them, so lifting it would put a confident wrong country
+                under about one trail in seventy. The named ends below — OSM's
+                own `from`/`to`/`via` — are what this app actually knows about
+                where the walk is.
+
+                WHAT IS HERE IS THE DIFFICULTY, in the reference's own form: a
+                coloured mark and the word beside it, from `sac_scale`, a real
+                surveyed grade. It is NOT underlined as a link the way the
+                reference's is — there is nowhere in this app that explains the
+                T-grades, and an underline that opens nothing is a dead control
+                drawn in text. The network and the waymark reference follow it,
+                both tags on this relation. */}
             <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-mist">
               {grade && SAC_LABEL[grade] && (
                 <span className="flex items-center gap-1.5">
+                  {/* A DOT, as the reference draws it — it was a rounded
+                      square here, which read as a swatch rather than as the
+                      status mark it is. */}
                   <span
                     aria-hidden
-                    className={cn("h-2.5 w-2.5 rounded-[3px]", gradeColour(grade))}
+                    className={cn("h-2.5 w-2.5 rounded-full", gradeColour(grade))}
                   />
                   <span className="text-snow">{SAC_LABEL[grade]}</span>
                   {/* A route that is T1 for nine kilometres and T4 for one is a
@@ -670,48 +838,81 @@ export default function TrailDetail() {
           </Rise>
 
           {/* ---- The four figures ----------------------------------------
-              Two columns on a phone, four when there is room. Four cells across
-              390px leaves ~82px each and `Stat` sets its value and unit on one
-              baseline — so "85.8 km" plus "measured" wrapped onto three ragged
-              lines and the labels stopped lining up. */}
+              FOUR ACROSS, AS THE REFERENCE HAS THEM, which needed `Stat` to
+              gain a stacked form before it was possible. Four cells across a
+              375px phone leaves ~78px each, and the default `Stat` sets the
+              figure and its provenance on ONE baseline — "85.8 km" beside
+              "measured" wrapped into three ragged lines and the labels below
+              them stopped agreeing. Stacked, each cell is figure / label /
+              provenance, which is the reference's hierarchy with the line this
+              app owes underneath it.
+
+              THE PROVENANCE IS NOT NEGOTIABLE. "12.0 km as mapped" reads
+              honestly where a bare "12.0 km" would not: one is a measurement
+              with a source and the other is a claim ICEFALL has not earned.
+              Every cell keeps its word, including the ones that say "not
+              known".
+
+              AND NO CELL PRINTS A BARE ELLIPSIS. All four used to sit under a
+              lone "…" with an empty provenance line while their data was in
+              flight, which tells a reader nothing: an ellipsis cannot
+              distinguish a slow answer from a broken one, and this page waits
+              on two Overpass queries that can take ten seconds or never
+              return. `Waiting` is a spinner with words under it, so the wait is
+              visibly a wait and the terminal state is visibly different. */}
           <Rise className="pt-5">
-            <div className="grid grid-cols-2 gap-x-4 gap-y-4 border-y border-hairline py-4 sm:grid-cols-4 sm:gap-2">
+            <div className="grid grid-cols-4 gap-x-2.5 border-y border-hairline py-4">
               <Stat
+                stacked
                 label="Length"
-                value={km ? `${km.toFixed(1)} km` : facts.loading ? "…" : "—"}
+                value={km ? `${km.toFixed(1)} km` : facts.loading ? <Waiting /> : "—"}
                 unit={
                   km
                     ? trail.lengthKm
                       ? "as mapped"
                       : "measured"
                     : facts.loading
-                      ? ""
+                      ? "measuring the ways"
                       : "not known"
                 }
               />
               <Stat
+                stacked
                 label="Ascent"
                 value={
-                  trail.ascentM
-                    ? `${trail.ascentM.toLocaleString()} m`
-                    : facts.elevation
-                      ? `${facts.elevation.ascentM.toLocaleString()} m`
-                      : facts.loading
-                        ? "…"
-                        : "—"
+                  trail.ascentM ? (
+                    `${trail.ascentM.toLocaleString()} m`
+                  ) : facts.elevation ? (
+                    `${facts.elevation.ascentM.toLocaleString()} m`
+                  ) : facts.loading ? (
+                    <Waiting />
+                  ) : (
+                    "—"
+                  )
                 }
-                unit={trail.ascentM ? "as mapped" : facts.elevation ? "computed" : "not known"}
+                unit={
+                  trail.ascentM
+                    ? "as mapped"
+                    : facts.elevation
+                      ? "computed"
+                      : facts.loading
+                        ? "sampling elevation"
+                        : "not known"
+                }
               />
               <Stat
+                stacked
                 label="Moving time"
                 value={
-                  trail.durationH
-                    ? formatHours(trail.durationH)
-                    : movingH
-                      ? formatHours(movingH)
-                      : facts.loading
-                        ? "…"
-                        : "—"
+                  trail.durationH ? (
+                    formatHours(trail.durationH)
+                  ) : movingH ? (
+                    formatHours(movingH)
+                  ) : facts.loading ? (
+                    <Waiting />
+                  ) : (
+                    "—"
+                  )
                 }
                 unit={
                   trail.durationH
@@ -719,18 +920,44 @@ export default function TrailDetail() {
                     : movingH
                       ? "estimated · DIN 33466"
                       : facts.loading
-                        ? ""
+                        ? "waiting on length and climb"
                         : "not known"
                 }
               />
-              {/* The reference's fourth column is the bare word "Circular".
-                  Here it is measured — see `routeShape` — and it says which of
-                  the two answers it gave: the mapper's tag, or the distance
-                  between the two ends of the line. */}
+              {/* ---- Shape ------------------------------------------------
+                  THE REFERENCE DRAWS THIS COLUMN AS A GLYPH WITH THE WORD AS
+                  ITS LABEL — a loop arrow over "Circular" — and that is the one
+                  place a picture beats the word, because the shape of a walk is
+                  a shape. So the figure is the glyph and "Loop" or "Point to
+                  point" is the label beneath it.
+
+                  IT IS MEASURED, not the reference's bare adjective — see
+                  `routeShape`, which prefers the mapper's `roundtrip` tag, then
+                  asks whether the member ways close a circuit, then how far
+                  apart the two ends of the line are. The provenance line says
+                  which of the three answered.
+
+                  AND THE WAIT IS NAMED, WHICH IS THE BARE-ELLIPSIS FIX. The
+                  other three columns resolve from the relation's own tags,
+                  which arrive first; the shape needs the LINE, so this cell sat
+                  under a lone "…" long after its neighbours had printed "216 m
+                  computed". An ellipsis carries nothing — a reader cannot tell
+                  a slow answer from a broken one — so the glyph is a spinner
+                  while the line is coming and an em dash once it is not, each
+                  with the words underneath that say which. */}
               <Stat
-                label="Shape"
-                value={shape ? shape.word : lineLoading || facts.loading ? "…" : "—"}
-                unit={shape ? shape.detail : lineLoading || facts.loading ? "" : "not known"}
+                stacked
+                label={
+                  shape ? shape.word : lineLoading || facts.loading ? "Shape" : "Shape not known"
+                }
+                value={<ShapeGlyph shape={shape} waiting={lineLoading || facts.loading} />}
+                unit={
+                  shape
+                    ? shape.detail
+                    : lineLoading || facts.loading
+                      ? "waiting for the line"
+                      : "no line to measure"
+                }
               />
             </div>
 
@@ -900,7 +1127,7 @@ export default function TrailDetail() {
           <Rise className="pt-6">
             <button
               type="button"
-              disabled={line.length < 2}
+              disabled={blocked !== null}
               onClick={() => downloadGpx(trail.name, line)}
               className="flex h-12 w-full items-center justify-center gap-2 rounded-pill border border-hairline-strong text-[13.5px] text-snow transition-colors hover:border-azure/50 disabled:pointer-events-none disabled:opacity-45"
             >
@@ -908,15 +1135,12 @@ export default function TrailDetail() {
               Download GPX
             </button>
             {/* A DISABLED BUTTON HAS TO SAY WHY, AND THE REASON HAS TO BE
-                TRUE. This line read "The line is still loading" for both of
-                the states that disable the button, so a trail whose geometry
-                had actually failed sat under a permanent, false "loading". */}
+                TRUE. The two sentences are `gpxBlocked`'s, shared with the pill
+                in the docked bar, which offers the same file and must not be
+                able to give a different account of why it cannot write it. */}
             <p className="mt-1.5 text-center text-[11px] leading-relaxed text-mist-dim">
-              {line.length > 1
-                ? `${line.length.toLocaleString()} points · for a watch or handheld`
-                : lineWaiting
-                  ? "The line is still loading"
-                  : "OpenStreetMap didn't send the line, so there is no file to write. This is a connection problem."}
+              {gpxBlocked(line.length, lineWaiting) ??
+                `${line.length.toLocaleString()} points · for a watch or handheld`}
             </p>
 
             <button
@@ -1132,30 +1356,64 @@ export default function TrailDetail() {
         {saved && <p className="mt-6 text-center text-[10.5px] text-mist-dim">{SAVED_NOTICE}</p>}
       </div>
 
-      {/* Room for the bar to rest over, so the last row of content is never
-          under it. `mt-auto` pushes the bar to the foot on a short page. */}
-      <div className="mt-auto h-6 shrink-0" />
+      {/* One line of leading between the last paragraph and the bar's hairline,
+          so the licence text is not set flush against it. `mt-auto` is what
+          holds the bar at the foot of a page too short to scroll, where
+          `sticky` has no scroll to work with and would otherwise leave it
+          stranded mid-screen. */}
+      <div className="mt-auto h-4 shrink-0" />
 
-      {/* ---- The pinned bar -----------------------------------------------
-          STICKY, not fixed, and it rests on `TABBAR_STICKY_BOTTOM`.
+      {/* ---- The action bar -----------------------------------------------
+          IT SITS WHERE THE NAVIGATION USED TO — Charlie, 2026-09-08: "fix those
+          3 buttons as well to be at where the navigation is". There is no tab
+          bar on this route (see `isFullScreenRoute`), so the bottom edge is
+          free and this takes it.
 
-          The last pinned version of this bar padded itself by the tab bar's
-          height on the theory that the bar overlays the viewport. The tab bar
-          is an overlay, but the padding was applied the wrong way round: the
-          panel covered it and left a dead black band underneath. That constant
-          exists for exactly this and is the only correct way to say "just
-          above the pill, never under it". */}
+          STICKY AT `bottom: 0`, AND IN NORMAL FLOW. Both halves matter:
+
+          IN FLOW is what reserves the room. The bar is the last child of the
+          scroller, so its height is part of the scroll length and the content
+          above it can always be scrolled clear of it — in every state, with no
+          constant to keep in step and nothing measured. The two versions this
+          replaced each reserved the room some other way and each got it wrong;
+          the scroller's own note records how.
+
+          STICKY is what puts it on the bottom edge while you read, and it is
+          also what gives the two glass pills something to refract: content
+          between here and wherever you are scrolled passes BEHIND the bar. A
+          pane of glass over an opaque plate is not glass — measured, 8 Sep
+          2026, when both pills rendered as flat dark rectangles.
+
+          `bottom: 0` exactly, so the place `sticky` holds it and its resting
+          place in flow are the same point and it does not hop as you reach the
+          end.
+
+          THE HOME INDICATOR IS PAID FOR IN THE BAR'S OWN PADDING, not in its
+          offset — lifting the whole bar by `env(safe-area-inset-bottom)` would
+          leave a strip of scrolling page visible underneath a bar that is meant
+          to be on the edge. Padding it puts the plate on the screen edge and
+          the buttons above the indicator, which is the point. */}
       <div
-        className="sticky z-20 shrink-0 border-t border-hairline bg-obsidian/95 px-5 py-3 backdrop-blur"
-        style={{ bottom: TABBAR_STICKY_BOTTOM }}
+        className="sticky bottom-0 z-20 shrink-0 border-t border-hairline bg-obsidian/70 px-5 pt-3 backdrop-blur-xl"
+        style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom, 0px))" }}
       >
         <div className="flex items-stretch gap-2.5">
+          {/* SAVE STAYS SOLID — Charlie, 2026-09-08: "glass the button except
+              save". Not only because he said so: glass is a recessive surface,
+              it takes its colour from whatever it is over, and this is the one
+              control on the row that commits something. Three panes of glass
+              would be a row with no primary action in it.
+
+              AND IT IS THE NARROW ONE, as the reference draws it: `basis-0`
+              with a smaller `grow` than the two beside it, so the solid pill
+              reads as a decisive mark rather than as the widest thing on the
+              row. */}
           <button
             type="button"
             onClick={toggleSave}
             aria-pressed={saved}
             className={cn(
-              "flex h-11 flex-1 items-center justify-center gap-2 rounded-pill text-[13.5px] transition-colors",
+              "flex h-11 shrink basis-0 grow-[0.84] items-center justify-center gap-2 rounded-pill text-[13.5px] transition-colors",
               saved
                 ? "border border-azure/50 bg-azure/[0.12] text-azure"
                 : "bg-azure text-obsidian hover:bg-azure-bright",
@@ -1167,24 +1425,32 @@ export default function TrailDetail() {
           {/* "GPX", not "Download". Download promises the trail works without a
               signal, and it does not: there is no per-trail offline pack in
               this app, and the satellite tiles may not be cached at all. */}
-          <button
-            type="button"
-            disabled={line.length < 2}
+          <LiquidGlassButton
+            disabled={blocked !== null}
+            aria-describedby={blocked ? "gpx-reason" : undefined}
             onClick={() => downloadGpx(trail.name, line)}
-            className="flex h-11 flex-1 items-center justify-center gap-2 rounded-pill border border-hairline-strong text-[13.5px] text-snow transition-colors hover:border-azure/50 disabled:pointer-events-none disabled:opacity-45"
+            className="h-11 grow basis-0 text-[13.5px] disabled:pointer-events-none disabled:opacity-45"
           >
             <Download size={16} strokeWidth={1.8} />
             GPX
-          </button>
-          <button
-            type="button"
-            onClick={goToMap}
-            className="flex h-11 flex-1 items-center justify-center gap-2 rounded-pill border border-hairline-strong text-[13.5px] text-snow transition-colors hover:border-azure/50"
-          >
+          </LiquidGlassButton>
+          <LiquidGlassButton onClick={goToMap} className="h-11 grow basis-0 text-[13.5px]">
             <MapGlyph size={16} strokeWidth={1.8} />
             Map
-          </button>
+          </LiquidGlassButton>
         </div>
+        {/* THE PILL SAYS WHY IT IS DEAD, in the same words as the full-width
+            button above — one constant, so the two cannot drift apart. Printed
+            only while it IS dead: a caption under a working control would be
+            noise, and the point count is already stated up the page.
+
+            IT ALSO CHANGES THE BAR'S HEIGHT, which is the whole reason the
+            scroller measures the bar instead of clearing a constant. */}
+        {blocked && (
+          <p id="gpx-reason" className="mt-2 text-center text-[11px] leading-relaxed text-mist-dim">
+            {blocked}
+          </p>
+        )}
       </div>
 
       <SavedToast show={flash} label="Saved to your trails" detail="on this device" />
@@ -1215,6 +1481,46 @@ function gradeColour(grade: string): string {
   if (grade === "hiking" || grade === "mountain_hiking") return "bg-summit";
   if (grade === "demanding_mountain_hiking" || grade === "alpine_hiking") return "bg-alert";
   return "bg-danger";
+}
+
+/**
+ * The shape column's figure — a glyph, because a shape is a shape.
+ *
+ * The reference draws a loop arrow with "Circular" beneath it, and that is the
+ * one stat on this row whose value is better shown than spelled. Three states,
+ * and each is a different claim:
+ *
+ *   Loop            the ways close, or the two ends meet — arrows returning
+ *   Point to point  the ends are apart by a measured distance — an arrow away
+ *   neither         a spinner while the line may still arrive, an em dash once
+ *                   it will not. NEVER a bare "…" for both: an ellipsis cannot
+ *                   tell a slow answer from a failed one, and this cell printed
+ *                   one for minutes at a time while its neighbours were done.
+ *
+ * The word itself is not lost — it becomes the cell's label, so a reader who
+ * cannot read the glyph reads "Loop" directly underneath it.
+ */
+function ShapeGlyph({ shape, waiting }: { shape: RouteShape | null; waiting: boolean }) {
+  if (shape) {
+    const Icon = shape.word === "Loop" ? Repeat : MoveRight;
+    return <Icon size={19} strokeWidth={1.6} aria-hidden className="text-snow" />;
+  }
+  if (waiting) return <Waiting />;
+  return <span className="text-mist-dim">—</span>;
+}
+
+/**
+ * A figure that has not arrived — the one thing every cell in the stats row
+ * prints instead of "…".
+ *
+ * An ellipsis says nothing about whether anything is still happening, which is
+ * the whole question when the answer depends on two Overpass queries that can
+ * take ten seconds or fail silently. A turning spinner does, and the cell's
+ * provenance line beneath it names what is being waited on. Every one of these
+ * has a terminal state that is visibly different: an em dash and "not known".
+ */
+function Waiting() {
+  return <Loader2 size={16} className="animate-spin text-mist-dim" aria-label="still loading" />;
 }
 
 /** The waypoint kinds, in a walker's words. */
@@ -1541,12 +1847,13 @@ function OptionsSheet({
       <SheetRow
         icon={Download}
         title="Download GPX"
+        /* THE THIRD PLACE THIS FILE OFFERS THE SAME FILE, and it used to carry
+           its own shortened version of the reason — "nothing to write" — which
+           is how two of the three came to disagree about what had gone wrong.
+           `gpxBlocked` is now the only wording. */
         detail={
-          line.length > 1
-            ? `${line.length.toLocaleString()} points · for a watch or handheld`
-            : waiting
-              ? "The line is still loading"
-              : "OpenStreetMap didn't send the line — nothing to write"
+          gpxBlocked(line.length, waiting) ??
+          `${line.length.toLocaleString()} points · for a watch or handheld`
         }
         onClick={() => line.length > 1 && downloadGpx(trail.name, line)}
       />

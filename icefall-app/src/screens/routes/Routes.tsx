@@ -1203,6 +1203,11 @@ function TrailCard({ trail, near }: { trail: Trail; near: string }) {
           lat={trail.lat}
           lon={trail.lon}
           name={trail.name}
+          /* The same length this card prints under the name, so the mosaic is
+             sized to the walk rather than to a constant. `useTrailLength`
+             measures it when OSM did not record one, and the imagery re-frames
+             itself the moment that lands. */
+          lengthKm={length.km}
           onCaption={setCaption}
           className="absolute inset-0 h-full w-full"
         />
@@ -1244,7 +1249,29 @@ function TrailCard({ trail, near }: { trail: Trail; near: string }) {
             {trail.ref}
           </span>
         )}
-        <span className="absolute bottom-3 left-3 right-20 truncate text-[10px] text-mist">
+        {/*
+          TWO LINES, AND `truncate` IS THE BUG THIS REPLACES.
+
+          The caption is not decoration — for a Commons or Geograph photograph
+          it IS the attribution, and CC BY-SA requires the photographer, the
+          licence and the source. One truncated line at `right-20` gave it
+          283 px. Measured through a canvas at this exact computed font
+          (`10px "Inter Tight"`), with a deliberately short 20-character
+          stand-in name, all 16,099 entries in photos.json: 15,931 of them —
+          99.0% — are wider than that, median 389 px, p90 522 px. The
+          photographer survived the ellipsis; the licence and the site did not,
+          on effectively every card carrying a photograph.
+
+          Two lines, and the full width when there is no `ref` pill in the
+          corner to clear, fits the p90. `clamp-2` rather than `line-clamp-2`
+          for the reason set out in index.css.
+        */}
+        <span
+          className={cn(
+            "clamp-2 absolute bottom-3 left-3 text-[10px] leading-[1.35] text-mist",
+            trail.ref ? "right-20" : "right-3",
+          )}
+        >
           {caption}
         </span>
       </div>

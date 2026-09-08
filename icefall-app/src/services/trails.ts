@@ -545,11 +545,64 @@ export async function trailById(osmId: number, signal?: AbortSignal): Promise<Tr
   // No Overpass offline. A warm list covers anything reached from a search;
   // beyond that the sample routes resolve so a detail link never dead-ends.
   if (OFFLINE) return offlineTrailById(osmId);
+
+  /*
+   * THE PREBUILT INDEXES, BEFORE THE NETWORK. This is a cold deep link — a
+   * shared URL, or a saved trail opened after a restart — and the record it
+   * needs is already sitting in `public/data/trails/`.
+   *
+   * Measured 2026-09-08 on /explore/trail/6133182 (Hrafntinnusker, Iceland)
+   * with no warm list:
+   *
+   *     508 ms   the Overpass request starts
+   *  21,647 ms   the first response comes back
+   *  27,233 ms   the third call completes and the trail record exists
+   *              — 27 seconds of "Finding this trail…", and only THEN does
+   *                the image component mount and ask for its first tile
+   *
+   * The relation's id, name, coordinates, network, length and ref are all in
+   * the country file for Iceland, which is 8,677 bytes. Overpass also returned
+   * 429 and 504 repeatedly during that same hour, so the slow path is not even
+   * a reliable one. Nothing about that trade was ever chosen; the id lookup was
+   * written when the alternative was a thirteen-second AREA query, and the
+   * static files arrived afterwards.
+   *
+   * SMALLEST FILE FIRST, and stop at the first hit. An id carries no hint of
+   * which country it is in, so the order has to be a guess — and "fewest
+   * trails" is the guess that costs least when it is wrong: Iceland, Cyprus,
+   * Wales and Ireland together are 57 KB, and any of them answering ends the
+   * scan. Overpass is still there for a relation outside the 22 indexed
+   * countries, which is the only case that now pays for the network.
+   */
+  const indexed = await trailFromIndexes(osmId, signal);
+  if (indexed) return indexed;
+
   const elements = await overpass(
     `[out:json][timeout:40];relation(${osmId});out tags center;`,
     signal,
   );
   return toTrails(elements)[0] ?? null;
+}
+
+/**
+ * One relation, looked up across every prebuilt country index — or null.
+ *
+ * `distanceM` is deliberately stripped: `fetchCountryIndex` measures every
+ * trail against an origin, and there is no origin here. A distance measured
+ * from a placeholder is worse than no distance, because the screen would print
+ * it.
+ */
+async function trailFromIndexes(osmId: number, signal?: AbortSignal): Promise<Trail | null> {
+  const manifest = await trailManifest();
+  if (!manifest?.countries?.length) return null;
+  const smallestFirst = [...manifest.countries].sort((a, b) => (a.n ?? 0) - (b.n ?? 0));
+  for (const c of smallestFirst) {
+    if (signal?.aborted) return null;
+    const list = await fetchCountryIndex(3_600_000_000 + c.rel, { lat: 0, lon: 0 }, signal);
+    const hit = list?.find((t) => t.osmId === osmId);
+    if (hit) return { ...hit, distanceM: undefined };
+  }
+  return null;
 }
 
 const REACH: Record<TrailNetwork, number> = { lwn: 0, rwn: 1, nwn: 2, iwn: 3 };

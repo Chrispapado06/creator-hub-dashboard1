@@ -1,5 +1,5 @@
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
-import { ScreenHeader, SegmentedTabs } from "@/components/layout/chrome";
+import { ScreenHeader, SegmentedTabs, isFullScreenRoute } from "@/components/layout/chrome";
 import { useTabSwipe } from "@/hooks/useTabSwipe";
 
 /**
@@ -66,7 +66,7 @@ const HUB = "/explore/hub";
 
 /** Everything beyond your own training lives here. */
 export default function ExploreLayout() {
-  const { pathname } = useLocation();
+  const { pathname, key } = useLocation();
   const navigate = useNavigate();
 
   // Longest matching prefix so detail routes keep their parent tab lit. No
@@ -98,9 +98,21 @@ export default function ExploreLayout() {
    * bug this fixes. History is the right answer because the same peak page is
    * reached from Expeditions, from Mountains and from search, and each of them
    * deserves to be returned to.
+   *
+   * EXCEPT ON A COLD OPEN, WHERE THERE IS NO HISTORY TO STEP BACK INTO.
+   * `location.key` is `"default"` exactly when this is the router's first entry
+   * — a pasted or shared link, a notification, a bookmark — and `navigate(-1)`
+   * there either does nothing or walks the reader out of ICEFALL altogether.
+   * The same test guards `/social/post/:id`, and mountain, peak and operator
+   * pages all reach this header with no exit of their own.
+   *
+   * The trail and trek pages no longer do: they render above, with no header at
+   * all, and carry their own floating control wired to `useDetailBack` — the
+   * same rule, in the one place the two of them share.
    */
   const onTabRoot = TABS.some((t) => t.value === pathname);
-  const back = onHub ? undefined : onTabRoot ? HUB : true;
+  const coldOpen = key === "default";
+  const back = onHub ? undefined : onTabRoot || coldOpen ? HUB : true;
 
   /*
    * Swipe between the three, but ONLY on a tab root.
@@ -143,6 +155,30 @@ export default function ExploreLayout() {
         <div className="flex min-h-0 flex-1 flex-col">
           <Outlet />
         </div>
+      </div>
+    );
+  }
+
+  /*
+   * ONE TRAIL, ONE TREK: NOTHING OF THIS LAYOUT AT ALL.
+   *
+   * Charlie's reference (2026-09-08) opens with a photograph running edge to
+   * edge and up under the status bar — no app header, no "Explore" title, no
+   * Find / Expeditions / Guides strip. Anything drawn here would be the
+   * difference between the reference and the screen.
+   *
+   * The list is `isFullScreenRoute`'s, the same one that takes the bottom
+   * navigation and the top bar off these routes, so all three absences are one
+   * decision recorded in one place rather than three conditions that can drift.
+   *
+   * `--screen-safe-top` is deliberately NOT set here. `AppShell` has already
+   * zeroed it for the outlet, which is what lets the hero start at the top
+   * edge; the pages pay the notch in their own floating controls.
+   */
+  if (isFullScreenRoute(pathname)) {
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <Outlet />
       </div>
     );
   }

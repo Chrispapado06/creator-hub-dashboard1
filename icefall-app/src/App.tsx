@@ -5,6 +5,7 @@ import { Navigate, Outlet, Route, Routes, useLocation, useParams } from "react-r
 import { AppTopBar } from "@/components/layout/AppTopBar";
 import { PhoneShell } from "@/components/layout/PhoneShell";
 import { TabBar } from "@/components/layout/TabBar";
+import { isFullScreenRoute } from "@/components/layout/chrome";
 import { IcefallMark } from "@/components/ui/IcefallMark";
 import { Button } from "@/components/ui/primitives";
 import { useSessionState } from "@/auth/session";
@@ -231,9 +232,27 @@ function AppShell() {
   /* Screens that keep the bottom navigation but not the top bar. */
   const bare = pathname === "/settings/profile";
 
+  /*
+   * Screens that own the whole screen — one trek, one trail. NO BOTTOM
+   * NAVIGATION AND NO TOP BAR: on Charlie's reference the photograph is the
+   * first thing on the page and it runs up under the status bar, so anything
+   * drawn above it is the one element the reference does not have.
+   *
+   * The list and the reasoning live in `chrome.tsx`, beside the two constants
+   * this switches off. Zeroing `--tabbar-clearance` here is the other half of
+   * the same decision: `TABBAR_CLEAR` and `TABBAR_STICKY_BOTTOM` are both built
+   * from that variable, so every scroller and every pinned bar below stops
+   * reserving room for a bar that is not being rendered — without any of them
+   * having to know which route they are on.
+   */
+  const fullScreen = isFullScreenRoute(pathname);
+
   return (
     /* `relative`: the tab bar is an overlay positioned against this box. */
-    <div className="relative flex h-full min-h-0 flex-col">
+    <div
+      className="relative flex h-full min-h-0 flex-col"
+      style={fullScreen ? ({ "--tabbar-clearance": "0px" } as React.CSSProperties) : undefined}
+    >
       {/* The top bar, on every screen that has the bottom navigation (owner,
           2026-09-04). It clears the notch, so everything below it must not:
           `--screen-safe-top: 0px` on the content wrapper is what stops the
@@ -247,7 +266,12 @@ function AppShell() {
           with its own back arrow; the profile / search / messages doors above
           it were three ways to leave a half-edited form. When the bar is
           absent the screen clears the notch itself — see the style below. */}
-      {!bare && <AppTopBar />}
+      {/* NOR ON A FULL-SCREEN ROUTE, for the same reason as Edit Profile and a
+          second one: the reference has no chrome above the photograph at all,
+          and the doors this bar carries would be three more ways to abandon the
+          trail you just opened. The page draws its own back control — see
+          `useDetailBack`, which is the only exit those routes have left. */}
+      {!bare && !fullScreen && <AppTopBar />}
       {/*
         `key={pathname}` IS ALSO THE SCROLL RESET, and that is a second reason
         to keep it rather than an accident worth tidying away.
@@ -276,15 +300,23 @@ function AppShell() {
         animate={{ opacity: 1 }}
         transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
         className="flex min-h-0 flex-1 flex-col"
-        /* The bar above has cleared the notch. Screens read
-           `var(--screen-safe-top, env(...))`, so zeroing it here is what keeps
-           the inset counted once — and NOT zeroing it when there is no bar is
-           what keeps the screen from sliding up under the status bar. */
+        /* Screens read `var(--screen-safe-top, env(...))`. Zeroing it here is
+           what keeps the notch counted ONCE when `AppTopBar` has already
+           cleared it, and NOT zeroing it on Edit Profile — which has no bar
+           above it — is what keeps that form out from under the status bar.
+           ON A FULL-SCREEN ROUTE IT IS ZERO FOR THE OPPOSITE REASON: there is
+           no bar, and the page is meant to start at the top edge, because the
+           reference's photograph runs up under the status bar. Those pages pay
+           the inset in their own floating controls instead, which is the only
+           thing up there that must not be under the clock. */
         style={bare ? undefined : ({ "--screen-safe-top": "0px" } as React.CSSProperties)}
       >
         <Outlet />
       </motion.main>
-      <TabBar />
+      {/* Absent on a full-screen route — see `isFullScreenRoute`. Nothing else
+          has to change for that: the clearance variable above is already 0px
+          there, so no scroller is holding space for a bar nobody drew. */}
+      {!fullScreen && <TabBar />}
     </div>
   );
 }

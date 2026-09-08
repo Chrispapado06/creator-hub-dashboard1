@@ -47,6 +47,27 @@ import { cn } from "@/lib/utils";
  * ordinary blur underneath, so the control is still a legible pane of glass
  * rather than an invisible rectangle. Nothing here is load-bearing for reading
  * the label.
+ *
+ * ── AND IT NEEDED A GROUND, WHICH IS WHY `brightness` IS IN THE CHAIN ────────
+ *
+ * Measured 2026-09-08 at 375×812 on /explore/trail/2572951: the two pills in
+ * the docked bar rendered as plain dark rectangles with a faint rim. Nothing
+ * was broken — the CSS parsed, the filter was mounted, the id resolved. There
+ * was simply nothing behind them to refract. Displacement moves pixels around
+ * and a blur averages them, and both of those are the identity function on a
+ * flat near-black plate, so the whole first layer produced no visible pixel.
+ *
+ * Two fixes, and both were needed:
+ *
+ *   1. `brightness()` and `saturate()` joined the chain. Unlike displacement
+ *      and blur they change a flat ground too, so the pane lifts off whatever
+ *      it is over and reads as a pane at the very bottom of a page as well as
+ *      over a photograph.
+ *   2. GIVE IT SOMETHING TO BEND. `TrailDetail`'s bar stopped being an opaque
+ *      band at the end of the scroller and became an overlay the page runs
+ *      under — see the note on its clearance. Refraction is only visible when
+ *      there is something to refract, so where these are used matters as much
+ *      as what they are made of.
  */
 
 /**
@@ -91,6 +112,25 @@ export function GlassFilterDefs() {
 }
 
 /**
+ * What the pane does to whatever is behind it.
+ *
+ * The displacement and the blur are the reference's and do the refraction. The
+ * two after them are this app's, and they are what makes the same component
+ * legible over a near-black page as well as over a photograph — see the note
+ * at the top of this file.
+ *
+ * BOTH ARE DELIBERATELY SMALL, and 1.32 was measured to be too big. It lifted
+ * the pane nicely off the near-black bar and then blew out completely over the
+ * snow in a satellite hero: three near-white discs with near-white icons in
+ * them, which is a worse failure than the flat rectangle it was fixing, because
+ * the control stops being findable rather than just stops being pretty. At 1.14
+ * the pane still separates from black and no longer clips on white — and the
+ * icon carries `type-scrim`, which is this app's existing answer for a glyph on
+ * a bright photograph, so the legibility does not rest on this number alone.
+ */
+const GLASS_BACKDROP = "url(#icefall-liquid-glass) blur(6px) brightness(1.14) saturate(1.25)";
+
+/**
  * The inset light along the pane's edges.
  *
  * Two stacks, because glass catches light differently depending on what is
@@ -100,6 +140,42 @@ export function GlassFilterDefs() {
  */
 const EDGE_LIGHT =
   "shadow-[0_0_8px_rgba(0,0,0,0.10),0_2px_6px_rgba(0,0,0,0.14),inset_3px_3px_0.5px_-3.5px_rgba(255,255,255,0.10),inset_-3px_-3px_0.5px_-3.5px_rgba(255,255,255,0.85),inset_1px_1px_1px_-0.5px_rgba(255,255,255,0.55),inset_-1px_-1px_1px_-0.5px_rgba(255,255,255,0.55),inset_0_0_6px_6px_rgba(255,255,255,0.10),inset_0_0_2px_2px_rgba(255,255,255,0.06),0_0_12px_rgba(0,0,0,0.18)]";
+
+/**
+ * THE PANE ITSELF, AS THREE LAYERS — the whole of the glass, and the only copy.
+ *
+ * Exported because three controls are made of it now and one of them is not a
+ * `LiquidGlassButton`: `SaveCircle` has its own spring and its own expanding
+ * ring, so it composes the pane rather than wrapping the button. Rebuilding the
+ * stack there would have been the second glass treatment this file exists to
+ * prevent — and the one that would have been left behind the next time the
+ * first was corrected.
+ *
+ * The host must be `relative isolate` and carry the radius; every layer sits at
+ * `-z-10` beneath the label, which is what keeps text out of the displacement
+ * map. `rounded-pill` at 999px is a circle on a square host, so nothing here
+ * needs to know which shape it is being cut to.
+ */
+export function GlassLayers() {
+  return (
+    <>
+      {/* The refraction. Its own layer so the label is never displaced with
+          it — text put through a displacement map is unreadable. */}
+      <span
+        aria-hidden
+        className="absolute inset-0 -z-10 overflow-hidden rounded-pill backdrop-blur-md"
+        style={{ backdropFilter: GLASS_BACKDROP, WebkitBackdropFilter: GLASS_BACKDROP }}
+      />
+      {/* The pane's own edges. */}
+      <span aria-hidden className={cn("absolute inset-0 -z-10 rounded-pill", EDGE_LIGHT)} />
+      {/* A whisper of fill, so the label has a ground on a bright photograph. */}
+      <span
+        aria-hidden
+        className="absolute inset-0 -z-10 rounded-pill bg-[color-mix(in_oklab,var(--ice-snow)_9%,transparent)]"
+      />
+    </>
+  );
+}
 
 /**
  * NO `asChild`, AND THIS IS A CORRECTION RATHER THAN A SIMPLIFICATION.
@@ -121,20 +197,7 @@ export function LiquidGlassButton({
 }: React.ComponentProps<"button"> & { to?: string }) {
   const layers = (
     <>
-      {/* The refraction. Its own layer so the label is never displaced with
-          it — text put through a displacement map is unreadable. */}
-      <span
-        aria-hidden
-        className="absolute inset-0 -z-10 overflow-hidden rounded-pill backdrop-blur-md"
-        style={{ backdropFilter: "url(#icefall-liquid-glass) blur(6px)" }}
-      />
-      {/* The pane's own edges. */}
-      <span aria-hidden className={cn("absolute inset-0 -z-10 rounded-pill", EDGE_LIGHT)} />
-      {/* A whisper of fill, so the label has a ground on a bright photograph. */}
-      <span
-        aria-hidden
-        className="absolute inset-0 -z-10 rounded-pill bg-[color-mix(in_oklab,var(--ice-snow)_9%,transparent)]"
-      />
+      <GlassLayers />
       {children}
     </>
   );
@@ -159,5 +222,48 @@ export function LiquidGlassButton({
     <button className={shell} {...props}>
       {layers}
     </button>
+  );
+}
+
+/**
+ * THE SAME PANE, CUT ROUND — the discs that float on a hero photograph.
+ *
+ * Charlie's reference puts four of them over the picture: back at the top left,
+ * share, save and overflow grouped at the top right. They read as glass over
+ * the image, which is exactly what `LiquidGlassButton` already is, so this is a
+ * shape and a label rather than a second glass treatment. `--radius-pill` is
+ * 999px, so a square pane is already a circle; nothing about the layer stack
+ * changes.
+ *
+ * IT IS ALSO THE ONE PLACE THE REFRACTION IS UNAMBIGUOUSLY WORTH IT. These sit
+ * on a photograph or on a satellite mosaic — real texture, so the displacement
+ * map has something to bend and the disc reads as a lens rather than as a tint.
+ *
+ * `label` is required and becomes the accessible name: every one of these is an
+ * icon with no text, and an unlabelled icon button is a control a screen reader
+ * announces as "button".
+ */
+export function LiquidGlassCircle({
+  icon: Icon,
+  label,
+  className,
+  ...props
+}: Omit<React.ComponentProps<"button">, "children"> & {
+  icon: React.ComponentType<{ size?: number | string; strokeWidth?: number | string }>;
+  label: string;
+}) {
+  return (
+    <LiquidGlassButton
+      aria-label={label}
+      /* `type-scrim` puts the canvas colour behind the glyph as a drop-shadow —
+         the app's existing fix for an icon on a bright photograph, and needed
+         here because a pane of glass over snow is a pale ground for a pale
+         icon. It is theme-aware, so on a light build the halo inverts with the
+         canvas rather than staying a hard-coded black. */
+      className={cn("type-scrim h-10 w-10 shrink-0 px-0 py-0", className)}
+      {...props}
+    >
+      <Icon size={17} strokeWidth={1.8} />
+    </LiquidGlassButton>
   );
 }

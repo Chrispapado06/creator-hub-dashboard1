@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronLeft } from "lucide-react";
 import {
   animate,
@@ -7,7 +7,7 @@ import {
   useMotionValueEvent,
   type MotionValue,
 } from "framer-motion";
-import { useNavigate } from "react-router-dom";
+import { matchPath, useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { tabStripScrollLeft } from "./tabStripScroll";
 
@@ -38,6 +38,79 @@ export const TABBAR_CLEAR =
 /** Where a `sticky bottom` bar rests: just above the pill, never under it. */
 export const TABBAR_STICKY_BOTTOM =
   "calc(var(--tabbar-clearance) + env(safe-area-inset-bottom, 0px))";
+
+/* -------------------------------------------------------------------------- */
+/* Full-screen routes — the pages that carry no bottom navigation             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * THE PAGES THAT OWN THE WHOLE SCREEN.
+ *
+ * Charlie, 2026-09-08: "remove the damn navigation if you click on a specific
+ * trek". Opening one trek or one trail is reading, not browsing: the five tabs
+ * underneath are five ways to abandon the thing you just chose, and the page's
+ * own Save / GPX / Map row is the row that deserves the bottom of the screen.
+ *
+ * ── ONE LIST, IN ONE FILE, READ IN ONE PLACE ─────────────────────────────────
+ *
+ * `AppShell` is the only caller. It does two things with the answer and they
+ * are the same decision: it does not render `<TabBar />`, and it sets
+ * `--tabbar-clearance: 0px` on the shell. That variable is what every constant
+ * above is built from, so the whole app's idea of "leave room for the bar"
+ * collapses to nothing on these routes by itself — no screen, no layout and no
+ * scroller needs to know which page it is on. Adding a route here is therefore
+ * the entire change; there is no second or third place to keep in step.
+ *
+ * ── IT NOW REMOVES THE HEADER TOO, AND THAT RAISES THE STAKES ────────────────
+ *
+ * Charlie's reference (2026-09-08) is a trail page whose PHOTOGRAPH is the top
+ * of the screen: nothing above it, not the app's own top bar and not Explore's
+ * "Explore" title and tab strip. So `AppShell` also skips `AppTopBar` on these
+ * routes and `ExploreLayout` returns a bare outlet — and the three ways off
+ * this page that were not the page's own are gone at once: the five tabs, the
+ * top bar's doors, and the header chevron.
+ *
+ * WHAT IS LEFT IS THE PAGE'S OWN FLOATING BACK CONTROL, AND IT IS THE ONLY WAY
+ * OUT. Every screen listed here therefore has to draw one and wire it to
+ * `useDetailBack`, directly below. A route in this list without one is a page a
+ * reader cannot leave, which is worse than any layout problem it fixes.
+ */
+const FULL_SCREEN_ROUTES = ["/explore/trail/:id", "/explore/trek/:id"] as const;
+
+/** True on a page that carries no bottom navigation and reserves no room for it. */
+export function isFullScreenRoute(pathname: string): boolean {
+  return FULL_SCREEN_ROUTES.some((pattern) => matchPath(pattern, pathname) !== null);
+}
+
+/**
+ * THE WAY OFF A FULL-SCREEN PAGE, AND IT HAS TO SURVIVE A COLD OPEN.
+ *
+ * `navigate(-1)` is the right answer for a page reached from inside the app:
+ * the same trail is opened from Find, from search, from saved trails and from
+ * an expedition's hikes tab, and each of those deserves to be returned to. It
+ * is the wrong answer when there is nothing behind it — on a pasted link, a
+ * bookmark, a notification or a cold reload, `-1` either does nothing at all or
+ * steps the reader out of ICEFALL entirely. That bug has shipped here before,
+ * and it used to be survivable because the tab bar was still on screen. On
+ * these routes it is not.
+ *
+ * `location.key === "default"` is exactly the router's first history entry, and
+ * it is the same test `/social/post/:id` uses. There the fallback is hard-coded;
+ * here the caller names the list its own readers came from, because a trail
+ * comes from Find and a trek comes from the treks list.
+ *
+ * ONE IMPLEMENTATION, because the two pages that need it were each about to
+ * carry their own — and a rule with two copies is a rule that gets corrected
+ * once.
+ */
+export function useDetailBack(fallback: string): () => void {
+  const navigate = useNavigate();
+  const { key } = useLocation();
+  return useCallback(() => {
+    if (key === "default") navigate(fallback, { replace: true });
+    else navigate(-1);
+  }, [key, navigate, fallback]);
+}
 
 export function Screen({
   children,
