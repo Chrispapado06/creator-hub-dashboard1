@@ -231,8 +231,8 @@ export default function ShareActivity() {
 
       {background === "transparent" && (
         <p className="mx-auto mt-3 max-w-[280px] px-5 text-center text-[11px] leading-relaxed text-mist-dim">
-          The chequer is not part of the image — this card exports with a transparent background,
-          so it sits over whatever you put behind it in a Story.
+          The chequer is not part of the image — this card exports with a transparent background, so
+          it sits over whatever you put behind it in a Story.
         </p>
       )}
 
@@ -341,10 +341,14 @@ export default function ShareActivity() {
                   : "border-hairline hover:border-hairline-strong",
               )}
             >
-              <span className={cn("block text-[12.5px]", style === cs.id ? "text-snow" : "text-mist")}>
+              <span
+                className={cn("block text-[12.5px]", style === cs.id ? "text-snow" : "text-mist")}
+              >
                 {cs.label}
               </span>
-              <span className="mt-1 block text-[10.5px] leading-tight text-mist-dim">{cs.note}</span>
+              <span className="mt-1 block text-[10.5px] leading-tight text-mist-dim">
+                {cs.note}
+              </span>
             </button>
           ))}
         </div>

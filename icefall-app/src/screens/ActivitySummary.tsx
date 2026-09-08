@@ -1,6 +1,6 @@
 import { BarChart3, Play, Share2, Watch } from "lucide-react";
 import { Link, Navigate, useParams } from "react-router-dom";
-import { Badge, Button, Card, Divider, SectionLabel, Metric } from "@/components/ui/primitives";
+import { Badge, Button, Divider, SectionLabel, Metric } from "@/components/ui/primitives";
 import { RouteMap } from "@/components/ui/RouteMap";
 import { TerrainMap } from "@/components/map/TerrainMap";
 import {
@@ -110,12 +110,12 @@ export default function ActivitySummary() {
                   Imported from {WATCH_PROVIDER_NAME[recorded.origin.provider]}
                   {recorded.origin.deviceName ? ` ${recorded.origin.deviceName}` : ""}
                 </p>
-                <p className="mt-1 text-[11.5px] leading-relaxed text-mist-dim">
+                <p className="mt-1 text-[11.5px] leading-relaxed text-mist">
                   ICEFALL did not record this activity. The figures are the ones your watch service
                   reported.
                 </p>
                 {recorded.origin.vendorEntered === true && (
-                  <p className="mt-1 text-[11.5px] leading-relaxed text-mist-dim">
+                  <p className="mt-1 text-[11.5px] leading-relaxed text-mist">
                     {WATCH_PROVIDER_NAME[recorded.origin.provider]} marks this activity as entered
                     or edited by hand.
                   </p>
@@ -126,9 +126,15 @@ export default function ActivitySummary() {
         )}
 
         {/* Headline metrics */}
-        <Rise className="pt-5">
-          <Card>
-            <div className="grid grid-cols-3 gap-3">
+        {/* SIX FIGURES, NOT A PANEL OF SIX FIGURES.
+            The card around this was saying "these numbers belong together",
+            which the grid already says; what it cost was the numbers reading as
+            numbers on the page instead of as the contents of a box. The one
+            `Divider` stays, because there IS a real division here — the three
+            headline figures, then the three that qualify them. */}
+        <Rise className="pt-7">
+          <div>
+            <div className="grid grid-cols-3 gap-x-5">
               <Metric
                 size="md"
                 value={fmtDistance(activity.distanceKm)}
@@ -143,8 +149,8 @@ export default function ActivitySummary() {
               />
               <Metric size="md" value={fmtDuration(activity.durationSec)} label="Time" />
             </div>
-            <Divider className="my-4" />
-            <div className="grid grid-cols-3 gap-3">
+            <Divider className="my-5" />
+            <div className="grid grid-cols-3 gap-x-5">
               <Metric
                 size="sm"
                 value={activity.avgPaceSecPerKm ? fmtPace(activity.avgPaceSecPerKm) : "—"}
@@ -175,7 +181,7 @@ export default function ActivitySummary() {
                 the moment a real weight exists — a caveat that outlives its
                 cause teaches people to ignore caveats. */}
             {activity.calories !== undefined && bodyMassKgSet === null && (
-              <p className="mt-4 border-t border-hairline pt-3.5 text-[11.5px] leading-relaxed text-mist-dim">
+              <p className="mt-5 text-[11.5px] leading-relaxed text-mist">
                 Energy is estimated against an assumed {DEFAULT_BODY_MASS_KG} kg because you have
                 not set a weight.{" "}
                 <Link to="/settings" className="text-azure underline underline-offset-2">
@@ -184,7 +190,7 @@ export default function ActivitySummary() {
                 and it will be calculated for you.
               </p>
             )}
-          </Card>
+          </div>
         </Rise>
 
         {/* PH-01 — THE SIX PANELS ARE GONE. "Your best today", "why it
@@ -194,18 +200,21 @@ export default function ActivitySummary() {
             their only home and is deleted with them. */}
 
         {/* Route */}
-        <Rise className="pt-6">
+        <Rise className="pt-9">
           <SectionLabel>Route</SectionLabel>
           {recorded?.origin.kind === "imported" && recorded.points.length === 0 ? (
             /* v1 imports NO TRACK — there is nothing to draw, real or seeded.
                A synthetic route under a real imported activity would be a
                fabricated map, not a fallback. */
-            <p className="mt-3 rounded-card border border-hairline bg-graphite p-4 text-[12px] leading-relaxed text-mist-dim">
+            <p className="mt-3 text-[12px] leading-relaxed text-mist">
               No GPS track — ICEFALL brings across the summary of an imported activity, not the
               route.
             </p>
           ) : (
-            <div className="mt-3 overflow-hidden rounded-card border border-hairline">
+            /* THE MAP IS THE PICTURE. It was framed and radiused inside the
+               page's gutter; a map is a photograph of the ground, so `-mx-5`
+               takes it to the glass and the frame comes off. */
+            <div className="-mx-5 mt-4 overflow-hidden">
               {recorded && recorded.points.length > 1 ? (
                 // Recorded activities carry real coordinates, so they get real
                 // terrain. Tilt it and the climb is visible in the landform.
@@ -230,16 +239,18 @@ export default function ActivitySummary() {
 
         {/* Conditions — only when something actually recorded them. */}
         {activity.conditions && (
-          <Rise className="pt-6">
+          <Rise className="pt-8">
             <SectionLabel>Conditions</SectionLabel>
-            <Card className="mt-3">
+            {/* The label and the air announce it; the readings underneath are
+                readings, not the contents of a card. */}
+            <div className="mt-3">
               <WeatherStrip conditions={activity.conditions} />
               {activity.conditions.visibilityKm && (
-                <p className="tnum mt-3 text-[12px] text-mist-dim">
+                <p className="tnum mt-3 text-[12px] text-mist">
                   Visibility {activity.conditions.visibilityKm} km
                 </p>
               )}
-            </Card>
+            </div>
           </Rise>
         )}
 
@@ -249,7 +260,7 @@ export default function ActivitySummary() {
 
         {/* Coach */}
         {activity.insight && (
-          <Rise className="pt-6">
+          <Rise className="pt-8">
             <CoachInsight>{activity.insight}</CoachInsight>
           </Rise>
         )}
@@ -260,14 +271,14 @@ export default function ActivitySummary() {
             data attached. It draws nothing at all when Strava cannot work for
             this person — see the component. */}
         {recorded && (
-          <Rise className="pt-6">
+          <Rise className="pt-8">
             <SendToStrava activity={recorded} />
           </Rise>
         )}
 
         {/* Post-activity is peak motivation — the honest moment to show the
             analytics layer a free athlete doesn't have yet. Self-hides on Pro. */}
-        <Rise className="pt-6">
+        <Rise className="pt-8">
           <UpgradePrompt featureId="data.analytics" title={analytics.title} body={analytics.body} />
         </Rise>
       </Stagger>

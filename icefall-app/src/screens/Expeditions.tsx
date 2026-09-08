@@ -16,7 +16,7 @@ import {
   Star,
 } from "lucide-react";
 
-import { Badge, Button, Card, Disclaimer, SectionLabel } from "@/components/ui/primitives";
+import { Badge, Button, Disclaimer, SectionLabel } from "@/components/ui/primitives";
 import { CompanyMark } from "@/components/domain/CompanyMark";
 import { Rise, Screen, ScreenHeader, Stagger } from "@/components/layout/chrome";
 import { HeroImage } from "@/components/domain/cards";
@@ -601,23 +601,23 @@ export default function Expeditions() {
         </Rise>
 
         {tab === "explore" && (
-        <ExploreTab
-          subject={subject}
-          selectedTrek={selectedTrek}
-          mountains={shownMountains}
-          selectedId={selectedTrek ? undefined : peak?.id}
-          selectedTrekId={trekId}
-          onSelect={(id) => {
-            setPeakId(id);
-            setTrekId(null);
-            setQuery("");
-          }}
-          onSelectTrek={setTrekId}
-          listings={listings}
-          objective={objective}
-          searching={needle !== ""}
-          loading={loadingPeaks}
-        />
+          <ExploreTab
+            subject={subject}
+            selectedTrek={selectedTrek}
+            mountains={shownMountains}
+            selectedId={selectedTrek ? undefined : peak?.id}
+            selectedTrekId={trekId}
+            onSelect={(id) => {
+              setPeakId(id);
+              setTrekId(null);
+              setQuery("");
+            }}
+            onSelectTrek={setTrekId}
+            listings={listings}
+            objective={objective}
+            searching={needle !== ""}
+            loading={loadingPeaks}
+          />
         )}
 
         {tab === "mountains" && (
@@ -745,12 +745,10 @@ function ExploreTab({
       </Rise>
 
       {mountains.length === 0 ? (
-        <Rise className="pt-3">
-          <Card>
-            <p className="text-[12.5px] text-mist">
-              {loading ? "Searching every peak…" : "No mountain matches that."}
-            </p>
-          </Card>
+        <Rise className="py-8">
+          <p className="text-[12.5px] text-mist">
+            {loading ? "Searching every peak…" : "No mountain matches that."}
+          </p>
         </Rise>
       ) : (
         <Rise className="no-scrollbar -mx-5 mt-3 flex gap-3 overflow-x-auto px-5">
@@ -769,9 +767,7 @@ function ExploreTab({
       {/* Hidden mid-search: the results are about what was typed, and a fixed
           rail of world-famous walks under a search for "alpine ascents"
           answers a question nobody asked. */}
-      {!searching && (
-        <FamousTreks selectedId={selectedTrekId} onSelect={handleSelectTrek} />
-      )}
+      {!searching && <FamousTreks selectedId={selectedTrekId} onSelect={handleSelectTrek} />}
 
       {/* ---- The companies ---------------------------------------------- */}
       {/* Where a tap on either rail scrolls to. A zero-height anchor rather
@@ -787,13 +783,11 @@ function ExploreTab({
       {selectedTrek && !subject && (
         <Rise className="pt-8">
           <p className="section-label">Companies on {selectedTrek.name}</p>
-          <Card className="mt-3">
-            <p className="text-[12.5px] leading-relaxed text-mist">
-              No high point is published for this route, and companies are matched partly on the
-              altitude they work at. Rather than list every operator and let the order imply a
-              match nobody made, this shows none.
-            </p>
-          </Card>
+          <p className="mt-2.5 max-w-[52ch] text-[12.5px] leading-relaxed text-mist">
+            No high point is published for this route, and companies are matched partly on the
+            altitude they work at. Rather than list every operator and let the order imply a match
+            nobody made, this shows none.
+          </p>
         </Rise>
       )}
 
@@ -808,14 +802,14 @@ function ExploreTab({
             <p className="section-label">Guides on {subject.name}</p>
             <p className="mt-1.5 text-[12px] leading-relaxed text-mist-dim">
               {subject.name} is a guided objective rather than an expedition. Expedition companies
-              organise permits, base camps and logistics for high peaks, and the lowest altitude
-              any of them works at is well above this summit.
+              organise permits, base camps and logistics for high peaks, and the lowest altitude any
+              of them works at is well above this summit.
             </p>
           </Rise>
           <Rise className="pt-3">
             <Link
               to={`/explore/guides?peak=${encodeURIComponent(subject.name)}&elevation=${subject.elevationM}${subject.country ? `&country=${encodeURIComponent(subject.country)}` : ""}`}
-              className="flex items-center gap-3.5 rounded-card border border-hairline bg-graphite p-4 transition-colors hover:border-azure/50"
+              className="flex items-center gap-3.5 py-3.5 transition-colors hover:opacity-90"
             >
               <span className="grid h-11 w-11 shrink-0 place-items-center rounded-tile border border-hairline bg-elevated/40 text-mist">
                 <MountainIcon size={17} strokeWidth={1.4} />
@@ -854,7 +848,9 @@ function ExploreTab({
             </p>
           </Rise>
 
-          <div className="mt-3 space-y-2.5">
+          {/* The gilt band at the top, then the rest as rows. The spacing is
+              the list now — there is nothing left to space cards apart. */}
+          <div className="mt-3.5">
             {(() => {
               // The best match is lifted out and shown first, highlighted; the
               // rest keep their alphabetical order underneath it.
@@ -875,7 +871,7 @@ function ExploreTab({
                     </Rise>
                   )}
                   {rest.map((o) => (
-                    <Rise key={o.id}>
+                    <Rise key={o.id} className="border-t border-hairline first:border-t-0">
                       <OperatorCard operator={o} subject={subject} objective={objective} />
                     </Rise>
                   ))}
@@ -967,10 +963,14 @@ function MountainTile({
   return (
     <Tag
       {...(to ? { to } : { type: "button" as const, onClick: onSelect, "aria-pressed": selected })}
+      /* The photograph IS the tile, so the only edge is the picture's own.
+         Selection is a ring drawn INSIDE that edge rather than a frame swapped
+         for a coloured one — a border that only changes colour makes every
+         unselected tile read as selected-but-grey. */
       className={cn(
-        "relative block overflow-hidden rounded-card border text-left transition-colors",
+        "relative block overflow-hidden rounded-tile text-left transition-opacity hover:opacity-[0.92]",
         to ? "w-full" : "w-[128px] shrink-0",
-        selected ? "border-azure/70" : "border-hairline hover:border-hairline-strong",
+        selected && "ring-2 ring-inset ring-azure",
       )}
     >
       <div className="aspect-[4/5] w-full bg-slate">
@@ -1104,10 +1104,11 @@ function TrekTile({
   return (
     <Tag
       {...(to ? { to } : { type: "button" as const, onClick: onSelect, "aria-pressed": selected })}
+      /* Same treatment as `MountainTile` — see the note there. */
       className={cn(
-        "relative block shrink-0 overflow-hidden rounded-card border text-left transition-colors",
+        "relative block shrink-0 overflow-hidden rounded-tile text-left transition-opacity hover:opacity-[0.92]",
         to ? "w-full" : "w-[142px]",
-        selected ? "border-azure/70" : "border-hairline hover:border-hairline-strong",
+        selected && "ring-2 ring-inset ring-azure",
       )}
     >
       <div className="aspect-[4/5] w-full bg-slate">
@@ -1246,7 +1247,10 @@ function MountainsTab({
       )
       .sort((a, b) => b.elevationM - a.elevationM);
 
-    return { list: [...curated, ...rest.slice(0, CATALOGUE_CAP)], total: curated.length + rest.length };
+    return {
+      list: [...curated, ...rest.slice(0, CATALOGUE_CAP)],
+      total: curated.length + rest.length,
+    };
   }, [mountains, catalogue, country]);
 
   const shown = inCountry.list;
@@ -1318,16 +1322,14 @@ function MountainsTab({
       )}
 
       {shown.length === 0 ? (
-        <Rise className="pt-3">
-          <Card>
-            <p className="text-[12.5px] text-mist">
-              {loading
-                ? "Searching every peak…"
-                : country
-                  ? `No mountain here is in ${country}.`
-                  : "No mountain matches that."}
-            </p>
-          </Card>
+        <Rise className="py-8">
+          <p className="text-[12.5px] text-mist">
+            {loading
+              ? "Searching every peak…"
+              : country
+                ? `No mountain here is in ${country}.`
+                : "No mountain matches that."}
+          </p>
         </Rise>
       ) : (
         <div className="grid grid-cols-2 gap-3 pt-3">
@@ -1467,13 +1469,33 @@ function OperatorCard({
   };
 
   return (
+    /*
+     * A COMPANY IS A DISTINCT OBJECT, AND ITS DISTINCTNESS IS NOT A RECTANGLE.
+     *
+     * Every listing used to be a bordered graphite box, so twelve companies
+     * read as twelve identical containers and the ONE that is different — the
+     * best match, or a pinned placement — could only say so by changing the
+     * colour of its outline. That is the commercial layer carried by geometry,
+     * which is exactly the thing gilt exists to carry instead.
+     *
+     * Now: the plain listing is a row on the page, aligned by the company's own
+     * mark down the left. The featured one keeps the mountain photograph at
+     * full bleed and the gilt pill on it, and the pill is what says why it is
+     * first.
+     *
+     * `gilt-sheen` STAYS, AND IT IS A BAND RATHER THAN A CARD. It runs the full
+     * width of the screen now, which is the difference that matters: a wash and
+     * a lit top edge across the whole page is a section the page is showing, not
+     * an object floating on it. It is the one gesture the rule asks for by name
+     * — a paid or promoted position is told apart by COLOUR and a label, never
+     * by a rectangle — and it is what lets every other listing here drop its
+     * frame without losing the distinction.
+     */
     <Link
       to={operatorHref(operator, target)}
       className={cn(
-        "block overflow-hidden rounded-card border transition-colors",
-        featured
-          ? "gilt-sheen border-gilt/45 bg-graphite hover:border-gilt/75"
-          : "border-hairline bg-graphite hover:border-hairline-strong",
+        "block transition-opacity hover:opacity-90",
+        featured && "gilt-sheen -mx-5 px-5 pb-1",
       )}
     >
       {/* The banner belongs to the MOUNTAIN, not the company.
@@ -1482,7 +1504,7 @@ function OperatorCard({
           a picture on this card that nobody involved chose. The peak is what the
           match is about, and its photograph is already ours. */}
       {featured && (
-        <div className="relative aspect-[16/6] w-full">
+        <div className="relative -mx-5 aspect-[16/6] w-auto">
           <img
             src={peakImage.src}
             alt=""
@@ -1491,14 +1513,14 @@ function OperatorCard({
             className="h-full w-full object-cover"
           />
           <div className="absolute inset-0 scrim-bottom" />
-          <p className="absolute bottom-2.5 left-3 inline-flex items-center gap-1.5 rounded-pill border border-gilt/45 bg-obsidian/70 px-2.5 py-1 text-[9.5px] font-medium uppercase tracking-[0.14em] text-gilt-bright backdrop-blur-sm">
+          <p className="absolute bottom-2.5 left-5 inline-flex items-center gap-1.5 rounded-pill border border-gilt/45 bg-obsidian/70 px-2.5 py-1 text-[9.5px] font-medium uppercase tracking-[0.14em] text-gilt-bright backdrop-blur-sm">
             <Star size={9} strokeWidth={0} fill="currentColor" />
             {operator.featured ? "Featured" : `Best match for ${subject.name}`}
           </p>
         </div>
       )}
 
-      <div className="flex items-start gap-3 p-3.5">
+      <div className="flex items-start gap-3.5 py-3.5">
         <OperatorMark operator={operator} size={featured ? 66 : 58} />
 
         <div className="min-w-0 flex-1">
@@ -1547,7 +1569,9 @@ function OperatorCard({
 
         <div className="flex w-[84px] shrink-0 flex-col items-end gap-0.5 text-right">
           {operator.priceFromEur != null && (
-            <p className="tnum whitespace-nowrap text-[11.5px] text-snow">From {fmtPrice(operator.priceFromEur)}</p>
+            <p className="tnum whitespace-nowrap text-[11.5px] text-snow">
+              From {fmtPrice(operator.priceFromEur)}
+            </p>
           )}
           <p className="w-full truncate text-[11px] text-mist-dim">
             {operator.coverage ?? operator.certification}
@@ -1598,10 +1622,10 @@ function bestMatchFor(list: Operator[], subject: ListingSubject): Operator | und
 function InvitationsTab() {
   return (
     <>
-      <Rise className="pt-5">
-        <Card>
-          <p className="text-[14px] font-light text-snow">Nothing can invite you here</p>
-          <p className="mt-2 text-[12.5px] leading-relaxed text-mist">
+      <Rise className="pt-8">
+        <div>
+          <p className="text-[21px] font-light text-snow">Nothing can invite you here</p>
+          <p className="mt-2.5 text-[12.5px] leading-relaxed text-mist">
             Invitations need two things ICEFALL does not have: accounts on a server, and operators
             connected to it. Until both exist this tab stays empty — an invitation from a company
             ICEFALL cannot identify would be worth less than nothing.
@@ -1610,7 +1634,7 @@ function InvitationsTab() {
             If you are approached by an operator claiming ICEFALL sent them, it did not. Verify the
             company through its national guides association before you reply.
           </p>
-        </Card>
+        </div>
       </Rise>
       <Rise className="pt-4">
         <Disclaimer>
@@ -1630,7 +1654,9 @@ function CompanyRow({
   objective: EnquiryObjective | undefined;
 }) {
   return (
-    <Card>
+    /* A row, aligned by the company's mark — the same treatment the directory
+       listing takes. See the note on `OperatorCard`. */
+    <div className="border-t border-hairline pt-4 first:border-t-0 first:pt-0">
       <div className="flex items-start gap-3.5">
         {/* The same component as the directory card. This was a hand-rolled
             monogram, so a company could appear with one set of initials here
@@ -1657,7 +1683,7 @@ function CompanyRow({
           </Link>
         )}
       </div>
-    </Card>
+    </div>
   );
 }
 
@@ -1671,9 +1697,12 @@ function CompanyRow({
  */
 function Notice({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-card border border-azure/20 bg-azure/[0.04] p-4">
+    /* The app's own note treatment: one rule in the accent down the left,
+       never a tinted rectangle. These are the most important sentences on the
+       screen and a wash of blue behind them made them read as chrome. */
+    <div className="border-l border-azure/40 pl-3.5">
       <p className="section-label text-azure/70">{label}</p>
-      <p className="mt-2.5 text-[12.5px] leading-relaxed text-snow/85">{children}</p>
+      <p className="mt-2 text-[12.5px] leading-relaxed text-snow/85">{children}</p>
     </div>
   );
 }
@@ -1699,9 +1728,12 @@ function TrustStrip() {
   ];
 
   return (
-    <div className="rounded-card border border-hairline bg-graphite">
+    /* Three things that are true, set as three statements with air between
+       them. The outline said "these belong together", which the spacing says
+       already; one hairline per real division is what is left. */
+    <div>
       {items.map((it, i) => (
-        <div key={it.title} className={cn("flex gap-3 p-4", i > 0 && "border-t border-hairline")}>
+        <div key={it.title} className={cn("flex gap-3 py-4", i > 0 && "border-t border-hairline")}>
           <span className="mt-0.5 shrink-0 text-mist-dim">{it.icon}</span>
           <div className="min-w-0">
             <p className="text-[13px] text-snow/90">{it.title}</p>
@@ -1783,8 +1815,11 @@ export function ExpeditionDetail() {
           <p className="text-[13px] leading-relaxed text-mist">{exp.summary}</p>
         </Rise>
 
-        <Rise className="pt-6">
-          <Card>
+        <Rise className="pt-8">
+          {/* The facts of the trip, as a definition list on the page. What
+              makes them a group is the air above them and the hairline under
+              them, not a rectangle. */}
+          <div>
             <dl className="space-y-3 text-[13px]">
               <Row label="Duration" value={exp.durationLabel} />
               <Row label="Season" value={exp.seasons.join(", ")} />
@@ -1793,23 +1828,21 @@ export function ExpeditionDetail() {
             </dl>
             {/* Not a price: nobody is selling this. Real quotes vary by season,
                 ratio and what the operator excludes. */}
-            <p className="mt-3.5 text-[11px] leading-relaxed text-mist-dim">
+            <p className="mt-4 border-t border-hairline pt-3.5 text-[11px] leading-relaxed text-mist-dim">
               Illustrative figures for planning only. ICEFALL sells nothing, takes no payment and
               holds no departure dates — a real quote comes from the operator you choose.
             </p>
-          </Card>
+          </div>
         </Rise>
 
-        <Rise className="pt-6">
+        <Rise className="pt-8">
           <SectionLabel>Required experience</SectionLabel>
-          <Card className="mt-3">
-            <p className="text-[13px] leading-relaxed text-mist">{exp.requiredExperience}</p>
-          </Card>
+          <p className="mt-3 text-[13px] leading-relaxed text-mist">{exp.requiredExperience}</p>
         </Rise>
 
-        <Rise className="pt-6">
+        <Rise className="pt-8">
           <SectionLabel>Prerequisites</SectionLabel>
-          <Card className="mt-3">
+          <div className="mt-3.5">
             <ul className="space-y-2.5">
               {exp.prerequisites.map((p) => (
                 <li key={p} className="flex gap-3 text-[13px] leading-relaxed text-mist">
@@ -1818,15 +1851,18 @@ export function ExpeditionDetail() {
                 </li>
               ))}
             </ul>
-          </Card>
+          </div>
         </Rise>
 
         {authority.length > 0 && (
-          <Rise className="pt-6">
+          <Rise className="pt-8">
             <SectionLabel>Permit authority</SectionLabel>
-            <div className="mt-3 space-y-2.5">
+            <div className="mt-3.5">
               {authority.map((a) => (
-                <Card key={a.country}>
+                <div
+                  key={a.country}
+                  className="border-t border-hairline pt-4 first:border-t-0 first:pt-0"
+                >
                   <p className="section-label">{a.country}</p>
                   <p className="mt-2 text-[13px] leading-relaxed text-snow/85">
                     {a.access.authority}
@@ -1836,15 +1872,15 @@ export function ExpeditionDetail() {
                       {a.access.authorityNote}
                     </p>
                   )}
-                </Card>
+                </div>
               ))}
             </div>
           </Rise>
         )}
 
-        <Rise className="pt-6">
+        <Rise className="pt-8">
           <SectionLabel>Operators</SectionLabel>
-          <div className="mt-3 space-y-2.5">
+          <div className="mt-3.5">
             {listings.map((o) => (
               <CompanyRow key={o.id} operator={o} objective={objective} />
             ))}
@@ -1853,9 +1889,9 @@ export function ExpeditionDetail() {
           {SHOW_DEMO_OPERATORS && <Disclaimer className="mt-3">{DEMO_NOTICE}</Disclaimer>}
         </Rise>
 
-        <Rise className="pt-6">
+        <Rise className="pt-8">
           <SectionLabel>Ask before you book</SectionLabel>
-          <Card className="mt-3">
+          <div className="mt-3.5">
             <ul className="space-y-3">
               {questions.map((q) => (
                 <li key={q} className="flex gap-3 text-[12.5px] leading-relaxed text-mist">
@@ -1864,7 +1900,7 @@ export function ExpeditionDetail() {
                 </li>
               ))}
             </ul>
-          </Card>
+          </div>
         </Rise>
 
         <Rise className="pt-6">
@@ -1872,7 +1908,7 @@ export function ExpeditionDetail() {
             href={operatorSearchUrl(objective.peakName)}
             target="_blank"
             rel="noreferrer noopener"
-            className="flex items-center gap-2.5 rounded-card border border-hairline bg-graphite px-4 py-3.5 text-[13px] text-mist transition-colors hover:border-azure/50 hover:text-snow"
+            className="flex items-center gap-2.5 py-3.5 text-[13px] text-mist transition-colors hover:text-snow"
           >
             <ExternalLink size={15} strokeWidth={1.6} className="shrink-0" />
             <span className="flex-1">Search certified operators for {objective.peakName}</span>

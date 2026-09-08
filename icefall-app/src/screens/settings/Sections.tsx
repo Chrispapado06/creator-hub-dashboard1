@@ -32,14 +32,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { motion, useReducedMotion } from "framer-motion";
-import {
-  Button,
-  Card,
-  Disclaimer,
-  SectionLabel,
-  Stat,
-  sharePage,
-} from "@/components/ui/primitives";
+import { Button, Disclaimer, SectionLabel, Stat, sharePage } from "@/components/ui/primitives";
 import { Rise, TABBAR_CLEAR } from "@/components/layout/chrome";
 import {
   ActionRow,
@@ -1034,7 +1027,10 @@ function HandleField({ profile }: { profile: MyProfileState }) {
       )}
 
       {changing && !problem && (
-        <div className="mt-3 rounded-card border border-hairline-strong bg-slate/40 p-3">
+        /* A NOTE, NOT A PANEL. One rule in the accent marks the aside; the
+           box that used to hold it was saying only "this paragraph and this
+           button go together", which the space around them already says. */
+        <div className="mt-3 border-l border-azure/30 pl-3.5">
           {/* Shown only once somebody is actually changing it, which is the
               only moment either sentence matters. */}
           <p className="text-[11.5px] leading-relaxed text-mist">
@@ -1136,17 +1132,34 @@ function CountryField({
   );
 
   return (
-    <div className="border-t border-hairline px-4 py-3.5 first:border-t-0">
-      <span className="block text-[11px] uppercase tracking-[0.1em] text-mist-dim">Country</span>
+    /* Shaped like `MockField`, because it sits in the same column as five of
+       them: label on the page, one box, and the box is the control you change.
+       It used to carry a top hairline and its own `px-4` inset, left over from
+       when this column was a bordered group — so the one field with a dropdown
+       was also the one field indented past its neighbours.
+
+       `pt-4 first:pt-0` IS `MockField`'S OWN WRAPPER, and it has to be here
+       too. The box this field lost was carrying `py-3.5`, so dropping it left
+       Country sitting 14px tighter under "Town or region" than every other
+       field in the column sits under its neighbour — the parent's `space-y-6`
+       is only half of the gap the others get. */
+    <div className="pt-4 first:pt-0">
+      {/* A SPAN, AND 12.5px, TO MATCH `MockField` EXACTLY — this sits in the
+          same column as five of them, so a heavier, larger heading on the one
+          field with a dropdown reads as a different kind of thing. It is not a
+          `<label>`: there is no input to point `htmlFor` at, and `Listbox`
+          already gives its button `aria-label="Country"`, so an unassociated
+          label element would announce a second, empty one. */}
+      <span className="block text-[12.5px] font-medium text-snow">Country</span>
       <Listbox
         label="Country"
         value={value}
         onChange={(v) => void choose(v)}
         placeholder="Prefer not to say"
         options={options}
-        className="mt-2"
+        className="mt-1.5"
       />
-      <p className="mt-1.5 text-[11px] leading-relaxed text-mist-dim">
+      <p className="mt-1.5 text-[11px] leading-relaxed text-mist">
         {value.length === 0
           ? COUNTRY_IS_NEVER_PARSED
           : "Chosen from this list only. ICEFALL never works a country out from the town you typed."}
@@ -1746,7 +1759,9 @@ function WaitingToSend({
     .map((k) => FIELD_LABEL[k]);
 
   return (
-    <div className="px-4 py-3.5">
+    /* No inset. This is a sentence and a button on the page — the `px-4` was
+       the padding of a box that is gone. */
+    <div>
       <p className="text-[13.5px] text-snow">
         {fields.length === 1
           ? "One edit is on this phone and has not reached ICEFALL."
@@ -2458,6 +2473,13 @@ function ShareProfile() {
   return (
     <SettingsPage title="Share profile" subtitle="A card other people can open.">
       <Rise>
+        {/* THE ONE CARD ON THIS SCREEN, AND IT IS A DEPICTION.
+            Everything else in settings lost its outline because the outline was
+            only saying "these lines belong together". This is not that: it is a
+            picture of the card OTHER PEOPLE open — the subtitle above says so —
+            and its edge is the artefact's own, the same exemption the Passport
+            and the share renders hold. Flattening it would leave no way to tell
+            where the thing being shared stops and this screen starts. */}
         <div className="overflow-hidden rounded-card border border-azure/30 bg-graphite">
           <div className="relative h-[150px]">
             <img
@@ -2607,11 +2629,11 @@ function Verification() {
         {kinds.map((k) => {
           const app = settings.verification[k.id];
           return (
-            <div key={k.id} className="border-t border-hairline px-4 py-3.5 first:border-t-0">
+            <div key={k.id} className="-mx-5 border-t border-hairline px-5 py-3.5 first:border-t-0">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-[14px] text-snow">{k.name}</p>
-                  <p className="mt-1 text-[11.5px] leading-relaxed text-mist-dim">{k.detail}</p>
+                  <p className="mt-1 text-[11.5px] leading-relaxed text-mist">{k.detail}</p>
                 </div>
                 <StatusPill status={app.status} />
               </div>
@@ -2632,7 +2654,7 @@ function Verification() {
 
       {currentTier === "free" && (
         <Rise className="pt-4">
-          <div className="rounded-card border border-azure/35 bg-azure/[0.05] p-4">
+          <div className="border-l border-azure/30 pl-3.5">
             <p className="text-[13px] text-snow">Verification is a Pro feature.</p>
             <p className="mt-1.5 text-[11.5px] leading-relaxed text-mist">
               Reviewing an identity costs real time, so it is reserved for Pro members.
@@ -3262,16 +3284,17 @@ function MountainCV() {
   return (
     <SettingsPage title="Mountain CV" subtitle="What you have actually climbed.">
       <Rise>
-        <Card>
-          <p className="text-[12.5px] leading-relaxed text-mist">
-            Your CV is assembled from the Mountain Passport — summits, highest altitude, technical
-            ground and the skills you reported. Nothing in it can be typed in by hand, which is what
-            makes it worth showing to a guide or a partner.
-          </p>
-          <Link to="/profile" className="mt-3 inline-block text-[12.5px] text-azure">
-            Open the Passport →
-          </Link>
-        </Card>
+        {/* Two lines of prose introducing a screen. There is nothing above them
+            to be separated from and no object for a card to stand for, so they
+            are simply the first thing on the page. */}
+        <p className="text-[12.5px] leading-relaxed text-mist">
+          Your CV is assembled from the Mountain Passport — summits, highest altitude, technical
+          ground and the skills you reported. Nothing in it can be typed in by hand, which is what
+          makes it worth showing to a guide or a partner.
+        </p>
+        <Link to="/profile" className="mt-3 inline-block text-[12.5px] text-azure">
+          Open the Passport →
+        </Link>
       </Rise>
       <Group label="Visibility">
         <ChoiceRow
@@ -3484,13 +3507,17 @@ function Membership() {
   return (
     <SettingsPage title="Membership" subtitle="Your plan and what it includes.">
       <Rise>
-        <div className="rounded-card border border-azure/35 bg-azure/[0.05] p-4">
+        {/* The plan, said in type rather than drawn in a tinted rectangle: a
+            small azure label, the name at display size, the price under it.
+            The colour is doing the work the fill was doing, and the figures
+            read as figures instead of as the contents of a tile. */}
+        <div>
           <p className="text-[10px] uppercase tracking-[0.2em] text-azure">Current plan</p>
-          <p className="mt-1.5 text-[22px] font-light text-snow">{plan.name}</p>
+          <p className="mt-2 text-[30px] font-light leading-tight text-snow">{plan.name}</p>
           {plan.monthlyEur ? (
-            <p className="tnum mt-1 text-[13px] text-mist">€{plan.monthlyEur} / month</p>
+            <p className="tnum mt-1.5 text-[13px] text-mist">€{plan.monthlyEur} / month</p>
           ) : (
-            <p className="mt-1 text-[13px] text-mist">No charge</p>
+            <p className="mt-1.5 text-[13px] text-mist">No charge</p>
           )}
         </div>
       </Rise>
@@ -3880,12 +3907,14 @@ function ManageAccount() {
           />
         )}
       </Group>
-      {leaveError && (
-        <p className="px-1 pt-2 text-[12px] leading-relaxed text-danger">{leaveError}</p>
-      )}
+      {leaveError && <p className="pt-3 text-[12px] leading-relaxed text-danger">{leaveError}</p>}
 
-      <Rise className="pt-6">
-        <div className="rounded-card border border-danger/40 bg-danger/[0.05] p-4">
+      <Rise className="pt-10">
+        {/* THE ONE DESTRUCTIVE BLOCK, marked by a rule in the danger colour
+            rather than by a tinted rectangle. Nothing about the warning got
+            quieter: the heading keeps its glyph, the sentence is unchanged, and
+            the confirm step is still a second, deliberate tap. */}
+        <div className="border-l-2 border-danger/60 pl-4">
           <p className="flex items-center gap-2 text-[13px] text-snow">
             <Trash2 size={15} strokeWidth={1.8} className="text-danger" />
             Delete everything

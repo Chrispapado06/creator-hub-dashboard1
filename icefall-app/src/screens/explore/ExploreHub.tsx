@@ -30,6 +30,7 @@ import { useTraining } from "@/tracking/training";
 import { trekById, trekDuration, trekRegion, type Trek } from "@/treks";
 import { trekImage } from "@/treks/images";
 import type { Goal, Mountain } from "@/types";
+import { PageTour } from "@/tour/PageTour";
 
 /**
  * EXPLORE — the hub, to the owner's design of 2026-09-04.
@@ -88,7 +89,6 @@ import type { Goal, Mountain } from "@/types";
 /* -------------------------------------------------------------------------- */
 /* Theme                                                                       */
 /* -------------------------------------------------------------------------- */
-
 
 /*
  * Colours come from components/layout/editorialPalette.ts: the tints and inks
@@ -313,6 +313,15 @@ export default function ExploreHub() {
           </header>
         </Rise>
 
+        {/* ---- What this screen is ------------------------------------------
+            Shown once, on the first Explore, and never again once dismissed.
+            Under the title rather than above it: a screen names itself before
+            it explains itself. Above the card into Find, because the first two
+            of its three sentences are about what Find does — and the third is
+            about Browse, which is directly below that card. The guide is read
+            in the order the page is. */}
+        <PageTour screen="explore" />
+
         <Rise className="mt-6">
           <DiscoverCard />
         </Rise>
@@ -336,7 +345,7 @@ export default function ExploreHub() {
         </Rise>
 
         {allDoors && (
-          <Rise className="mt-3">
+          <Rise className="mt-7">
             <MoreDoors goal={goal} />
           </Rise>
         )}
@@ -436,10 +445,7 @@ function DiscoverCard() {
   }
 
   return (
-    <section
-      className="relative overflow-hidden rounded-[20px] p-5"
-      style={{ color: WHITE }}
-    >
+    <section className="relative overflow-hidden rounded-[20px] p-5" style={{ color: WHITE }}>
       {/* "Vista de Chamonix" — CC0, so no visible credit is owed. A valley with
           the range behind it, which is what "around your location" means.
 
@@ -465,59 +471,59 @@ function DiscoverCard() {
         }}
       />
       <div className="relative">
-      {/* The arrow floats at the card's edge rather than taking a flex slot:
+        {/* The arrow floats at the card's edge rather than taking a flex slot:
           in the drawing the title runs on one line under it, and giving the
           arrow its own column wrapped "Find Near Trail/Trek" onto two. */}
-      <div className="relative flex items-center gap-4 pr-12">
-        <span
-          aria-hidden="true"
-          className="grid h-12 w-12 shrink-0 place-items-center rounded-[14px] border border-[#FFFFFF]/15 bg-[#FFFFFF]/10"
-        >
-          <MapPin size={22} strokeWidth={1.6} />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-[12px] font-medium uppercase tracking-[0.16em] text-[#FFFFFF]/65">
-            Discover nearby
-          </p>
-          <Link to="/explore/routes" className="display mt-1 block text-[27px] leading-none">
-            Find Near Trail/Trek
-          </Link>
-          <p className="mt-1.5 text-[15px] leading-snug text-[#FFFFFF]/75">
-            Trails, treks &amp; routes around your location
-          </p>
-        </div>
-        <Link
-          to="/explore/routes"
-          aria-label="Open Find"
-          /* Sits over the brightest part of the photograph, where a 10% white
+        <div className="relative flex items-center gap-4 pr-12">
+          <span
+            aria-hidden="true"
+            className="grid h-12 w-12 shrink-0 place-items-center rounded-[14px] border border-[#FFFFFF]/15 bg-[#FFFFFF]/10"
+          >
+            <MapPin size={22} strokeWidth={1.6} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-[12px] font-medium uppercase tracking-[0.16em] text-[#FFFFFF]/65">
+              Discover nearby
+            </p>
+            <Link to="/explore/routes" className="display mt-1 block text-[27px] leading-none">
+              Find Near Trail/Trek
+            </Link>
+            <p className="mt-1.5 text-[15px] leading-snug text-[#FFFFFF]/75">
+              Trails, treks &amp; routes around your location
+            </p>
+          </div>
+          <Link
+            to="/explore/routes"
+            aria-label="Open Find"
+            /* Sits over the brightest part of the photograph, where a 10% white
              fill and a thin border disappeared entirely. A dark translucent
              disc with a blur reads on snow and on sky alike. */
-          className="absolute right-0 top-1/2 grid h-[38px] w-[38px] -translate-y-1/2 place-items-center rounded-full border border-[#FFFFFF]/45 bg-[#0B1430]/45 backdrop-blur-sm"
-        >
-          <ArrowRight size={18} strokeWidth={1.8} aria-hidden="true" />
-        </Link>
-      </div>
+            className="absolute right-0 top-1/2 grid h-[38px] w-[38px] -translate-y-1/2 place-items-center rounded-full border border-[#FFFFFF]/45 bg-[#0B1430]/45 backdrop-blur-sm"
+          >
+            <ArrowRight size={18} strokeWidth={1.8} aria-hidden="true" />
+          </Link>
+        </div>
 
-      <div className="mt-6 flex items-center gap-3 text-[15px]">
-        <button
-          type="button"
-          onClick={useCurrentLocation}
-          disabled={locating}
-          className="inline-flex items-center gap-2 disabled:opacity-70"
-        >
-          {locating ? (
-            <Loader2 size={16} className="animate-spin" aria-hidden="true" />
-          ) : (
-            <Crosshair size={16} strokeWidth={1.7} aria-hidden="true" />
-          )}
-          Use current location
-        </button>
-        <span aria-hidden="true" className="text-[#FFFFFF]/40">
-          ·
-        </span>
-        <Link to="/explore/routes?where=1" className="text-[#FFFFFF]/60">
-          or pick a region
-        </Link>
+        <div className="mt-6 flex items-center gap-3 text-[15px]">
+          <button
+            type="button"
+            onClick={useCurrentLocation}
+            disabled={locating}
+            className="inline-flex items-center gap-2 disabled:opacity-70"
+          >
+            {locating ? (
+              <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+            ) : (
+              <Crosshair size={16} strokeWidth={1.7} aria-hidden="true" />
+            )}
+            Use current location
+          </button>
+          <span aria-hidden="true" className="text-[#FFFFFF]/40">
+            ·
+          </span>
+          <Link to="/explore/routes?where=1" className="text-[#FFFFFF]/60">
+            or pick a region
+          </Link>
         </div>
       </div>
     </section>
@@ -571,10 +577,16 @@ function CategoryCard({ category }: { category: (typeof CATEGORIES)[number] }) {
         <ArrowRight size={16} strokeWidth={1.8} aria-hidden="true" style={{ color: WHITE }} />
       </div>
 
-      <p className="relative mt-auto pt-7 text-[18px] font-semibold leading-tight" style={{ color: WHITE }}>
+      <p
+        className="relative mt-auto pt-7 text-[18px] font-semibold leading-tight"
+        style={{ color: WHITE }}
+      >
         {category.label}
       </p>
-      <p className="relative mt-1.5 text-[13.5px] leading-snug" style={{ color: "rgba(255,255,255,0.78)" }}>
+      <p
+        className="relative mt-1.5 text-[13.5px] leading-snug"
+        style={{ color: "rgba(255,255,255,0.78)" }}
+      >
         {category.blurb}
       </p>
     </Link>
@@ -618,7 +630,9 @@ function MoreDoors({ goal }: { goal: Goal | undefined }) {
       to: goal ? `/mountain/${encodeURIComponent(goal.id)}/conditions` : "/goals",
       label: "Conditions",
       icon: CloudSnow,
-      line: goal ? `Forecast for ${goal.name}.` : "Conditions follow a mountain — set an objective first.",
+      line: goal
+        ? `Forecast for ${goal.name}.`
+        : "Conditions follow a mountain — set an objective first.",
     },
     {
       to: "/gear",
@@ -629,32 +643,53 @@ function MoreDoors({ goal }: { goal: Goal | undefined }) {
   ];
 
   return (
+    /*
+     * ROWS, NOT FOUR MORE TILES.
+     *
+     * These four used to be grey boxes in the card language of the pastel
+     * category cards above — but those cards are photographs, and the picture
+     * is what makes each of them an object. With no photograph behind it a
+     * door is a link with a sentence under it, and dressing a link as a card
+     * put four fills and four shadows on the page saying nothing the words
+     * were not already saying.
+     *
+     * The icon chip stays: at 44px it is a mark beside a name, not a
+     * container, and it is the column that aligns the list — which is why the
+     * rows need no outline and only one hairline between them.
+     */
     <div>
-      <div className="grid grid-cols-2 gap-3">
-        {doors.map((d) => {
-          const Icon = d.icon;
-          return (
-            <Link
-              key={d.label}
-              to={d.to}
-              className="block rounded-[24px] bg-graphite p-4 shadow-[0_1px_8px_rgba(20,24,40,0.05)]"
+      {doors.map((d) => {
+        const Icon = d.icon;
+        return (
+          <Link
+            key={d.label}
+            to={d.to}
+            className="-mx-5 flex items-start gap-3.5 border-t border-hairline px-5 py-4 transition-colors first:border-t-0 hover:bg-white/[0.03]"
+          >
+            <span
+              aria-hidden="true"
+              className="mt-0.5 grid h-11 w-11 shrink-0 place-items-center rounded-[12px] bg-slate text-mist"
             >
-              <div className="flex items-center gap-2 text-mist">
-                <span
-                  aria-hidden="true"
-                  className="grid h-9 w-9 place-items-center rounded-[10px] bg-slate"
-                >
-                  <Icon size={18} strokeWidth={1.6} />
-                </span>
-                <ArrowRight size={16} strokeWidth={1.8} aria-hidden="true" />
-              </div>
-              <p className="mt-7 text-[19px] font-semibold leading-tight text-snow">{d.label}</p>
-              <p className="mt-1.5 text-[13px] leading-snug text-mist">{d.line}</p>
-            </Link>
-          );
-        })}
-      </div>
-      <p className="mt-4 text-[12px] leading-relaxed text-mist-dim">{NETWORK_NOT_CONNECTED_NOTICE}</p>
+              <Icon size={18} strokeWidth={1.6} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[17px] font-semibold leading-tight text-snow">
+                {d.label}
+              </span>
+              <span className="mt-1 block text-[13px] leading-snug text-mist">{d.line}</span>
+            </span>
+            <ArrowRight
+              size={16}
+              strokeWidth={1.8}
+              aria-hidden="true"
+              className="mt-1.5 shrink-0 text-mist-dim"
+            />
+          </Link>
+        );
+      })}
+      <p className="mt-5 text-[12px] leading-relaxed text-mist-dim">
+        {NETWORK_NOT_CONNECTED_NOTICE}
+      </p>
     </div>
   );
 }
@@ -756,16 +791,22 @@ function ObjectiveCard({ goal }: { goal: Goal }) {
   );
 }
 
-/** No objective yet. The same card shape, saying so, leading to Goals. */
+/**
+ * No objective yet — said on the page, not inside a shape.
+ *
+ * It used to hold the objective card's own 17:10 frame with a graphite fill and
+ * a shadow, so an athlete who had set nothing was shown a large empty grey
+ * rectangle. There is no photograph here because there is no mountain, and a
+ * box standing in for a picture that does not exist is a container drawn around
+ * nothing. What is left is the type and the one control, which is all this
+ * state ever had to say.
+ */
 function NoObjective() {
   return (
-    <Link
-      to="/goals"
-      className="flex aspect-[17/10] flex-col justify-end rounded-[24px] bg-graphite p-4 shadow-[0_1px_8px_rgba(20,24,40,0.05)]"
-    >
+    <Link to="/goals" className="block py-1">
       <p className="text-[12px] uppercase tracking-[0.16em] text-mist-dim">No objective set</p>
-      <h3 className="display mt-1 text-[32px] leading-none text-snow">Name the mountain</h3>
-      <div className="mt-3 flex items-center justify-between gap-3">
+      <h3 className="display mt-1.5 text-[38px] leading-none text-snow">Name the mountain</h3>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <p className="text-[14px] text-mist">Everything on this page follows it.</p>
         <span className="shrink-0 rounded-full bg-azure px-5 py-2.5 text-[15px] font-semibold text-[color:var(--ice-on-accent)]">
           Set an objective
@@ -815,11 +856,18 @@ function MountainRailCard({ mountain }: { mountain: Mountain }) {
   }
 
   return (
-    <Link
-      to={`/explore/mountain/${mountain.id}`}
-      className="w-[245px] shrink-0 overflow-hidden rounded-[22px] bg-graphite shadow-[0_1px_10px_rgba(20,24,40,0.06)]"
-    >
-      <div className="relative h-[152px] bg-slate">
+    /*
+     * THE PICTURE IS THE CARD.
+     *
+     * It was a graphite panel with a shadow and the photograph inset at the top
+     * of it — a frame wearing a picture. Now the photograph is the only thing
+     * with an edge, and the range, the name and the figures sit under it on the
+     * page's own ground, aligned to the picture's left edge. The rail reads as
+     * a run of photographs rather than a row of grey slabs, and the type gets
+     * the full 245px instead of 213 inside a padding.
+     */
+    <Link to={`/explore/mountain/${mountain.id}`} className="block w-[245px] shrink-0">
+      <div className="relative h-[152px] overflow-hidden rounded-[18px] bg-slate">
         <img
           src={image.src}
           alt={image.real ? mountain.name : ""}
@@ -831,7 +879,11 @@ function MountainRailCard({ mountain }: { mountain: Mountain }) {
           type="button"
           onClick={toggleSaved}
           aria-pressed={saved !== undefined}
-          aria-label={saved ? `Remove ${mountain.name} from your objectives` : `Save ${mountain.name} as an objective`}
+          aria-label={
+            saved
+              ? `Remove ${mountain.name} from your objectives`
+              : `Save ${mountain.name} as an objective`
+          }
           className="absolute right-3 top-3 grid h-9 w-9 place-items-center rounded-full shadow-[0_1px_6px_rgba(20,24,40,0.12)]"
           style={{ backgroundColor: WHITE, color: INK }}
         >
@@ -843,14 +895,16 @@ function MountainRailCard({ mountain }: { mountain: Mountain }) {
           />
         </button>
       </div>
-      <div className="p-4">
+      <div className="pt-3">
         {/* The record's range can carry a sub-range in brackets — "Karakoram
             (Baltoro Muztagh)" — which is true but does not fit a 245px card.
             The bracketed part is dropped for display; nothing is added. */}
         <p className="truncate text-[12px] uppercase tracking-[0.16em] text-mist">
           {mountain.range.replace(/\s*\([^)]*\)\s*$/, "")} · {mountain.country}
         </p>
-        <h3 className="display mt-1 truncate text-[28px] leading-none text-snow">{mountain.name}</h3>
+        <h3 className="display mt-1 truncate text-[28px] leading-none text-snow">
+          {mountain.name}
+        </h3>
         <div className="mt-3 flex items-center gap-3">
           <span
             className="rounded-full px-3 py-1 text-[13px]"
@@ -870,11 +924,9 @@ function TrekRailCard({ trek }: { trek: Trek }) {
   const place = region ? `${region.name} · ${trek.country}` : trek.country;
 
   return (
-    <Link
-      to={`/explore/trek/${trek.id}`}
-      className="w-[245px] shrink-0 overflow-hidden rounded-[22px] bg-graphite shadow-[0_1px_10px_rgba(20,24,40,0.06)]"
-    >
-      <div className="relative h-[152px] bg-slate">
+    /* Same treatment as the mountain beside it — see the note there. */
+    <Link to={`/explore/trek/${trek.id}`} className="block w-[245px] shrink-0">
+      <div className="relative h-[152px] overflow-hidden rounded-[18px] bg-slate">
         <img
           src={trekImage(trek)}
           alt={trek.name}
@@ -882,7 +934,7 @@ function TrekRailCard({ trek }: { trek: Trek }) {
           className="absolute inset-0 h-full w-full object-cover"
         />
       </div>
-      <div className="p-4">
+      <div className="pt-3">
         <p className="truncate text-[12px] uppercase tracking-[0.16em] text-mist">{place}</p>
         <h3 className="display mt-1 truncate text-[28px] leading-none text-snow">{trek.name}</h3>
         <div className="mt-3 flex items-center gap-3">

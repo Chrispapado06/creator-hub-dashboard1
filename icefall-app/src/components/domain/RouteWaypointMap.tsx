@@ -2,9 +2,15 @@ import { useEffect, useRef, useState } from "react";
 import { LngLatBounds, Map as MapLibreMap, Marker, type GeoJSONSource } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import {
-  Droplets, Info, MapPin, Mountain as PeakIcon, ParkingCircle, TreePine, Eye,
+  Droplets,
+  Info,
+  MapPin,
+  Mountain as PeakIcon,
+  ParkingCircle,
+  TreePine,
+  Eye,
 } from "lucide-react";
-import { MAP_ATTRIBUTION, styleFor } from "@/components/map/icefallStyle";
+import { MAP_ATTRIBUTION, styleFor, type MapStyleId } from "@/components/map/icefallStyle";
 import type { TrailWaypoint } from "@/services/trailWaypoints";
 import type { LatLon } from "@/services/trails";
 import { cn } from "@/lib/utils";
@@ -39,6 +45,7 @@ export function RouteWaypointMap({
   start,
   center,
   waypoints,
+  styleId = "icefall",
   className,
 }: {
   line: LatLon[];
@@ -46,6 +53,16 @@ export function RouteWaypointMap({
   /** Where to sit before the line exists — the relation's own coordinates. */
   center: LatLon;
   waypoints: TrailWaypoint[];
+  /**
+   * Which basemap to draw — the same three the tracker and Find offer.
+   *
+   * Added for the trail page, where the reference put a control in the map's
+   * bottom-left corner. That control on the reference is turn-by-turn
+   * directions, which ICEFALL has no routing engine to provide; the style
+   * switch is a control that does something, in the slot where the reference
+   * showed one.
+   */
+  styleId?: MapStyleId;
   className?: string;
 }) {
   /*
@@ -59,6 +76,18 @@ export function RouteWaypointMap({
   const holder = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const [ready, setReady] = useState(false);
+  /*
+   * `setStyle` REPLACES every source and layer under the same map instance, so
+   * the route line drawn below has to be added again after each swap. This
+   * counter is what tells that effect to re-run: the style itself is not a
+   * value it can watch, because the swap is asynchronous and the sources are
+   * only gone once MapLibre says so.
+   */
+  const [styleEpoch, setStyleEpoch] = useState(0);
+  /** The style currently on the map, so a re-render never re-applies the same one. */
+  const appliedStyle = useRef<MapStyleId>(styleId);
+  /** The line the camera was last framed on, so a style swap does not re-frame. */
+  const framedPoints = useRef(-1);
 
   /*
    * The map mounts on the trail's OWN COORDINATES and never waits for geometry.
@@ -75,7 +104,7 @@ export function RouteWaypointMap({
 
     const map = new MapLibreMap({
       container: holder.current,
-      style: styleFor("icefall"),
+      style: styleFor(appliedStyle.current),
       center: [center.lon, center.lat],
       zoom: 11,
       interactive: true,
@@ -84,12 +113,35 @@ export function RouteWaypointMap({
     mapRef.current = map;
     map.on("load", () => setReady(true));
 
+    /*
+     * The trail page can throw this map full-screen, which changes the
+     * container's size without unmounting it. MapLibre's own `trackResize`
+     * usually catches that, but the same belt-and-braces observer is already
+     * in `AreaMap` for the same reason — a canvas left at the old size is a
+     * map with the wrong half of the route in it.
+     */
+    const ro = new ResizeObserver(() => map.resize());
+    ro.observe(holder.current);
+
     return () => {
+      ro.disconnect();
       map.remove();
       mapRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [center.lat, center.lon]);
+
+  /** Swapping the basemap, without rebuilding the map. */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || appliedStyle.current === styleId) return;
+    appliedStyle.current = styleId;
+    map.setStyle(styleFor(styleId));
+    const bump = () => setStyleEpoch((n) => n + 1);
+    map.once("styledata", bump);
+    return () => {
+      map.off("styledata", bump);
+    };
+  }, [ready, styleId]);
 
   /** The route itself, added the moment the geometry lands. */
   useEffect(() => {
@@ -123,10 +175,20 @@ export function RouteWaypointMap({
       });
     }
 
-    const bounds = new LngLatBounds();
-    line.forEach((p) => bounds.extend([p.lon, p.lat]));
-    map.fitBounds(bounds, { padding: 48, animate: true, maxZoom: 16 });
-  }, [ready, line]);
+    /*
+     * Frame the route ONCE per line. This used to run on every pass, which was
+     * harmless while the only trigger was the line arriving — but a style swap
+     * re-runs it too, and snapping the camera back to the whole route every
+     * time somebody chose "Satellite" would undo the zoom they made the switch
+     * to look at.
+     */
+    if (framedPoints.current !== line.length) {
+      framedPoints.current = line.length;
+      const bounds = new LngLatBounds();
+      line.forEach((p) => bounds.extend([p.lon, p.lat]));
+      map.fitBounds(bounds, { padding: 48, animate: true, maxZoom: 16 });
+    }
+  }, [ready, line, styleEpoch]);
 
   // Start marker + numbered waypoints, added once the map is ready.
   useEffect(() => {

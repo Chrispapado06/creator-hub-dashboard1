@@ -1,8 +1,10 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Award,
   Bell,
   BadgeCheck,
+  Compass,
   CloudOff,
   ShieldCheck,
   Database,
@@ -22,11 +24,12 @@ import {
   Watch,
 } from "lucide-react";
 import { Rise, Screen, ScreenHeader, Stagger } from "@/components/layout/chrome";
-import { Group, LinkRow } from "@/components/settings/kit";
+import { ActionRow, Group, LinkRow } from "@/components/settings/kit";
 import { ThemePicker } from "@/components/settings/ThemePicker";
 import { useApp, usePrimaryGoal } from "@/state/AppState";
 import { useSettings } from "@/settings/store";
 import { fmtDate } from "@/lib/format";
+import { resetTours } from "@/tour/tours";
 
 /**
  * SETTINGS — the account centre.
@@ -41,6 +44,8 @@ import { fmtDate } from "@/lib/format";
  */
 export default function Settings() {
   const { user } = useApp();
+  /* Purely so the row can say it did something — see the note on the row. */
+  const [guidesCleared, setGuidesCleared] = useState(false);
   const { settings } = useSettings();
   const goal = usePrimaryGoal();
 
@@ -55,62 +60,73 @@ export default function Settings() {
       </div>
 
       <Stagger className="px-5 pb-6">
-        {/* ---- Who you are ------------------------------------------------ */}
+        {/* ---- Who you are ------------------------------------------------
+            NOT A CARD. This was `rounded-card border border-hairline bg-graphite
+            p-4` — an outlined panel at the very top of the screen, where there
+            is nothing above it to be separated FROM. It stood for no object,
+            floated above nothing, and its edge told you nothing the top of the
+            screen had not already said.
+
+            So it is the athlete, on the page: the photograph, their name, and
+            the mountain they are training for, in the same left gutter every
+            row below uses. The one hairline it kept (between the name and the
+            objective) is gone too — a person and their objective are the same
+            subject, and space says "related" better than a rule does. */}
         <Rise>
-          <div className="rounded-card border border-hairline bg-graphite p-4">
-            <div className="flex items-center gap-3.5">
-              {/* Tapping the photo goes straight to the picker — the shortest
-                  path to the thing people most want to change. */}
-              <Link
-                to="/settings/profile"
-                aria-label="Change profile photo"
-                className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-full border border-hairline bg-slate text-[16px] text-mist"
-              >
-                {(settings.avatar ?? user.avatar) ? (
-                  <img
-                    src={settings.avatar ?? user.avatar}
-                    alt=""
-                    aria-hidden
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  name.slice(0, 1).toUpperCase()
-                )}
-              </Link>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-[17px] text-snow">{name}</p>
-                <p className="truncate text-[12px] text-mist-dim">@{handle}</p>
-                <p className="mt-1.5 flex items-center gap-1.5 text-[11.5px] text-mist">
-                  <ShieldCheck
-                    size={13}
-                    strokeWidth={1.8}
-                    className={verified ? "text-azure" : "text-mist-dim"}
-                  />
-                  {verified ? "Verified" : "Not verified"}
-                </p>
-              </div>
-            </div>
-
-            {goal && (
-              <p className="mt-3.5 border-t border-hairline pt-3 text-[12.5px] text-mist">
-                <span className="text-snow">{goal.name}</span> · {fmtDate(goal.targetDate)}
+          <div className="flex items-center gap-3.5">
+            {/* Tapping the photo goes straight to the picker — the shortest
+                path to the thing people most want to change. The circle keeps
+                its edge: that is a photograph's own boundary, not a container
+                drawn around a group of lines. */}
+            <Link
+              to="/settings/profile"
+              aria-label="Change profile photo"
+              className="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-full border border-hairline bg-slate text-[18px] text-mist"
+            >
+              {(settings.avatar ?? user.avatar) ? (
+                <img
+                  src={settings.avatar ?? user.avatar}
+                  alt=""
+                  aria-hidden
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                name.slice(0, 1).toUpperCase()
+              )}
+            </Link>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[20px] font-light text-snow">{name}</p>
+              <p className="truncate text-[12px] text-mist">@{handle}</p>
+              <p className="mt-1.5 flex items-center gap-1.5 text-[11.5px] text-mist">
+                <ShieldCheck
+                  size={13}
+                  strokeWidth={1.8}
+                  className={verified ? "text-azure" : "text-mist-dim"}
+                />
+                {verified ? "Verified" : "Not verified"}
               </p>
-            )}
-
-            <div className="mt-3.5 grid grid-cols-2 gap-2.5">
-              <Link
-                to="/profile"
-                className="grid h-10 place-items-center rounded-pill border border-hairline-strong text-[12.5px] text-snow transition-colors hover:border-azure/50"
-              >
-                View profile
-              </Link>
-              <Link
-                to="/settings/share"
-                className="grid h-10 place-items-center rounded-pill border border-azure/45 bg-azure/[0.10] text-[12.5px] text-azure transition-colors hover:bg-azure/[0.16]"
-              >
-                Share profile
-              </Link>
             </div>
+          </div>
+
+          {goal && (
+            <p className="mt-4 text-[12.5px] text-mist">
+              <span className="text-snow">{goal.name}</span> · {fmtDate(goal.targetDate)}
+            </p>
+          )}
+
+          <div className="mt-5 grid grid-cols-2 gap-2.5">
+            <Link
+              to="/profile"
+              className="grid h-11 place-items-center rounded-pill border border-hairline-strong text-[12.5px] text-snow transition-colors hover:border-azure/50"
+            >
+              View profile
+            </Link>
+            <Link
+              to="/settings/share"
+              className="grid h-11 place-items-center rounded-pill border border-azure/45 bg-azure/[0.10] text-[12.5px] text-azure transition-colors hover:bg-azure/[0.16]"
+            >
+              Share profile
+            </Link>
           </div>
         </Rise>
 
@@ -129,7 +145,7 @@ export default function Settings() {
             choice at the top of its own display page. `ThemePicker` shows the
             themes rather than naming them, as a phone does. */}
         <Group label="Appearance">
-          <div className="p-4">
+          <div className="pt-1.5">
             <ThemePicker />
           </div>
         </Group>
@@ -301,6 +317,28 @@ export default function Settings() {
             icon={LifeBuoy}
             title="Help & support"
             detail="Get help, report a bug, or raise a safety issue."
+          />
+          {/* THE WAY BACK TO THE PAGE GUIDES.
+
+              Home, Explore, recording, Coach and your profile each introduce
+              themselves once, inline, on the first visit. Skipping one is
+              permanent by design — a guide that returns on a timer is a popup
+              with a delay — so this is the only way back to them, and without
+              it a mistap costs the athlete the explanation for good.
+
+              The row says what it does rather than "reset": nothing else is
+              cleared, and no data goes with it. `guidesCleared` is feedback,
+              not state: the guides reappear the next time each screen is
+              opened, and this screen has none of its own to show it on. */}
+          <ActionRow
+            icon={Compass}
+            title="Show the page guides again"
+            detail="Home, Explore, recording, Coach and your profile each explain themselves once on the first visit. This brings all five back."
+            value={guidesCleared ? "Cleared" : undefined}
+            onClick={() => {
+              resetTours();
+              setGuidesCleared(true);
+            }}
           />
         </Group>
 

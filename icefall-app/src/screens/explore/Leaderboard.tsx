@@ -146,8 +146,11 @@ export default function Leaderboard() {
 
         {/* ---- What is being ranked, and where --------------------------- */}
         {scope !== "world" && (
-          <Rise className="pt-3">
-            <div className="flex items-center gap-2.5 rounded-tile border border-hairline bg-graphite px-3.5 py-2.5">
+          <Rise className="pt-3.5">
+            {/* A line of context, not an object. It says WHERE the ranking
+                applies, so it reads as a caption under the scope control —
+                outlining it made it look like a second control. */}
+            <div className="flex items-center gap-2.5">
               {scope === "mountain" ? (
                 <>
                   <MountainIcon size={15} strokeWidth={1.7} className="shrink-0 text-azure" />
@@ -189,14 +192,20 @@ export default function Leaderboard() {
 
         {/* ---- The field --------------------------------------------------- */}
         {/*
-         * One panel, two states. The podium and the empty notice occupy the
-         * same frame — same graphite card, same photograph under the same heavy
-         * scrim — so an empty board reads as a board that is waiting, not as a
-         * component that failed to load.
+         * One band, two states. The podium and the empty notice occupy the same
+         * photograph under the same heavy scrim — so an empty board reads as a
+         * board that is waiting, not as a component that failed to load.
+         *
+         * IT IS NOT A CARD ANY MORE. It was a bordered, radiused graphite box
+         * with a picture inside it, which is the frame wearing the photograph.
+         * The picture is the subject here, so it runs edge to edge (`-mx-5`
+         * out of the screen's one gutter) and the type inside comes back to
+         * that gutter with `px-5`. Nothing is drawn around it: a full-width
+         * band of alpine ground under a ceremony needs no outline to be found.
          */}
         {(podium.length > 0 || entries.length === 0) && (
-          <Rise className="pt-5">
-            <div className="relative overflow-hidden rounded-card border border-hairline bg-graphite">
+          <Rise className="pt-7">
+            <div className="relative -mx-5 overflow-hidden bg-graphite">
               <img
                 src="/img/home-hero.jpg"
                 alt=""
@@ -212,23 +221,23 @@ export default function Leaderboard() {
                * every theme because the picture under it never got lighter, and
                * anything wearing it becomes a dark island (see index.css).
                * That is not this. The photograph here runs at 13% and is
-               * texture; what is really underneath is `bg-graphite`, a card,
-               * and a card follows the theme. Written in `--ice-obsidian` this
-               * deepens a dark card on the dark theme and lightens a pale one
-               * on the light theme, which is what the podium needs to keep its
-               * own ink either way.
+               * texture; what is really underneath is `bg-graphite`, which is
+               * this band's ground rather than a card, and a ground follows the
+               * theme. Written in `--ice-obsidian` this deepens a dark band on
+               * the dark theme and lightens a pale one on the light theme,
+               * which is what the podium needs to keep its own ink either way.
                */}
               <div className="absolute inset-0 bg-gradient-to-t from-obsidian/[0.97] via-obsidian/60 to-obsidian/35" />
 
               <div className="relative">
                 {podium.length > 0 ? (
-                  <div className="grid grid-cols-3 items-end gap-2 px-4 pb-6 pt-7">
+                  <div className="grid grid-cols-3 items-end gap-2 px-5 pb-7 pt-8">
                     <PodiumPlace entry={podium[1]} place={2} metricLabel={metricLabel} />
                     <PodiumPlace entry={podium[0]} place={1} metricLabel={metricLabel} />
                     <PodiumPlace entry={podium[2]} place={3} metricLabel={metricLabel} />
                   </div>
                 ) : (
-                  <div className="px-6 py-9 text-center">
+                  <div className="px-5 py-11 text-center">
                     <span className="mx-auto grid h-12 w-12 place-items-center rounded-full border border-azure/30 bg-azure/[0.07] text-azure">
                       <Trophy size={20} strokeWidth={1.4} />
                     </span>
@@ -246,25 +255,28 @@ export default function Leaderboard() {
         )}
 
         {/* ---- The table --------------------------------------------------- */}
+        {/*
+         * Rows on the page, not a table in a box. The rank number and the
+         * avatar are already a column running down the left edge, and a column
+         * aligns a list far better than an outline around it does — the same
+         * reasoning that took the frame off Notifications.
+         */}
         {rows.length > 0 && (
-          <Rise className="pt-3">
-            <div className="overflow-hidden rounded-card border border-hairline bg-graphite">
-              {rows.map((entry, i) => (
-                <BoardRow
-                  key={entry.athleteId}
-                  entry={entry}
-                  metricLabel={metricLabel}
-                  first={i === 0}
-                />
-              ))}
-            </div>
+          <Rise className="pt-4">
+            {rows.map((entry) => (
+              <BoardRow key={entry.athleteId} entry={entry} metricLabel={metricLabel} />
+            ))}
           </Rise>
         )}
 
         {/* ---- Your standing ----------------------------------------------- */}
-        <Rise className="pt-5">
+        <Rise className="pt-8">
           <SectionLabel>Your standing</SectionLabel>
-          <div className="mt-3 rounded-card border border-azure/35 bg-azure/[0.05] p-4">
+          {/* The label and the air above it are what make this a section. It
+              used to be an azure-tinted box as well, which said the same thing
+              a second time and more loudly — and spent the accent on a
+              container instead of on the figures. */}
+          <div className="mt-3.5">
             <div className="flex items-center gap-3.5">
               <span className="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-full bg-slate text-[15px] text-mist">
                 {settings.avatar ? (
@@ -295,7 +307,9 @@ export default function Leaderboard() {
               </div>
             </div>
 
-            <div className="mt-4 grid grid-cols-3 gap-2 border-t border-hairline pt-3.5">
+            {/* The one real division on this screen: the person above, their
+                figures below. One hairline, where the change of kind is. */}
+            <div className="mt-4 grid grid-cols-3 gap-x-5 gap-y-4 border-t border-hairline pt-4">
               <Figure label="Verified summits" value={String(standing.summits)} />
               <Figure
                 label="Verified vertical"
@@ -304,7 +318,7 @@ export default function Leaderboard() {
               <Figure label={metricLabel} value={categoryValue(standing, category)} />
             </div>
 
-            <p className="mt-3 text-[11px] leading-relaxed text-mist">
+            <p className="mt-4 text-[11px] leading-relaxed text-mist">
               {CATEGORY_MEANING[category]}
             </p>
           </div>
@@ -326,12 +340,19 @@ export default function Leaderboard() {
         )}
 
         {/* ---- Footer notice ------------------------------------------------ */}
-        <Rise className="pt-5">
-          <div className="flex gap-3 rounded-card border border-hairline bg-graphite p-4">
+        {/* Two disclosures, marked with the app's own note treatment: one left
+            rule in the accent. Both sentences are the schema's own constants
+            and neither is touched. */}
+        <Rise className="pt-8">
+          <div className="flex gap-3 border-l border-azure/30 pl-3.5">
             <MountainIcon size={15} strokeWidth={1.7} className="mt-px shrink-0 text-azure/80" />
+            {/* Stepped up from `text-mist-dim` to `text-mist` now that the
+                graphite fill under them is gone: these two are the screen's
+                honesty copy at 11px, and secondary ink clears AA in both
+                themes where tertiary does not. Not one word changed. */}
             <div className="min-w-0 space-y-1.5">
-              <p className="text-[11px] leading-relaxed text-mist-dim">{VERIFIED_ONLY_NOTICE}</p>
-              <p className="text-[11px] leading-relaxed text-mist-dim">{RANKING_UPDATE_NOTICE}</p>
+              <p className="text-[11px] leading-relaxed text-mist">{VERIFIED_ONLY_NOTICE}</p>
+              <p className="text-[11px] leading-relaxed text-mist">{RANKING_UPDATE_NOTICE}</p>
             </div>
           </div>
         </Rise>
@@ -493,24 +514,17 @@ function PodiumPlace({
  * person who scored it would be flattering them rather than telling them where
  * they stand, which is the only reason to open this screen.
  */
-function BoardRow({
-  entry,
-  metricLabel,
-  first,
-}: {
-  entry: BoardEntry;
-  metricLabel: string;
-  first: boolean;
-}) {
+function BoardRow({ entry, metricLabel }: { entry: BoardEntry; metricLabel: string }) {
   return (
+    /* `-mx-5 px-5` so the athlete's own fill and the hover state reach the
+       screen edge while the type stays on the one gutter. A fill here is a
+       STATE — "this row is you", "your finger is on this row" — which is the
+       one thing a fill is allowed to say; it is not a container. */
     <Link
       to={`/social/people/${entry.athleteId}`}
       className={cn(
-        "flex items-center gap-3 px-4 py-3 transition-colors",
-        !first && "border-t border-hairline",
-        entry.isYou
-          ? "border-l-2 border-l-azure bg-azure/[0.07] pl-[14px]"
-          : "hover:bg-white/[0.03]",
+        "-mx-5 flex items-center gap-3 px-5 py-3.5 transition-colors",
+        entry.isYou ? "bg-azure/[0.07]" : "hover:bg-white/[0.03]",
       )}
     >
       <span className="tnum w-5 shrink-0 text-[13px] text-mist">{entry.rank}</span>

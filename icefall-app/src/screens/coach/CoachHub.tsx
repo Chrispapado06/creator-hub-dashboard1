@@ -25,7 +25,18 @@ import { FOCUS_LABELS, fmtDistance, fmtElevation } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/state/AppState";
 import type { TrainingDay } from "@/types";
-import { ACCENT, Eyebrow, INK, ON_PRIMARY, PRIMARY, TILE, TINT, WHITE, useObjective } from "./shell";
+import {
+  ACCENT,
+  Eyebrow,
+  INK,
+  ON_PRIMARY,
+  PRIMARY,
+  TILE,
+  TINT,
+  WHITE,
+  useObjective,
+} from "./shell";
+import { PageTour } from "@/tour/PageTour";
 
 /**
  * COACH — THE HUB, to the owner's mockup of 2026-09-06, and the landing surface
@@ -439,6 +450,14 @@ export default function CoachHub() {
           <Hero goal={goal} kind={kind} />
         </Rise>
 
+        {/* ---- What this screen is ------------------------------------------
+            Shown once, on the first Coach, and never again once dismissed.
+            Under the hero and above the ask bar: it says what Coach answers
+            FROM before the athlete types the first question, which is the one
+            thing that stops a scripted, evidence-bound coach reading as a
+            broken chatbot. */}
+        <PageTour screen="coach" />
+
         {/* ---- Ask bar ----------------------------------------------------- */}
         <Rise className="mt-5">
           {atLimit ? (
@@ -599,7 +618,13 @@ const ON_PHOTO_ACCENT = "#9EC5FF";
 /** The ground under a photograph, so a 404 leaves a panel rather than a hole. */
 const PHOTO_GROUND = "#0B1430";
 
-function Hero({ goal, kind }: { goal: ReturnType<typeof useObjective>["goal"]; kind: string | null }) {
+function Hero({
+  goal,
+  kind,
+}: {
+  goal: ReturnType<typeof useObjective>["goal"];
+  kind: string | null;
+}) {
   return (
     <section
       /* FULL-BLEED, NOT A CARD — owner, 2026-09-06: "dont have it a a box
@@ -788,7 +813,12 @@ function ObjectivePill({
           </span>
         )}
       </span>
-      <ChevronRight size={16} strokeWidth={1.8} aria-hidden="true" className="shrink-0 opacity-45" />
+      <ChevronRight
+        size={16}
+        strokeWidth={1.8}
+        aria-hidden="true"
+        className="shrink-0 opacity-45"
+      />
     </Link>
   );
 }
@@ -886,7 +916,10 @@ function TodayCard({
             {eased && (
               <p
                 className="mt-3 rounded-[14px] px-3 py-2 text-[13px] leading-relaxed"
-                style={{ backgroundColor: "rgba(255,255,255,0.10)", color: "rgba(255,255,255,0.88)" }}
+                style={{
+                  backgroundColor: "rgba(255,255,255,0.10)",
+                  color: "rgba(255,255,255,0.88)",
+                }}
               >
                 <span className="font-semibold">Eased today. </span>
                 {easedStatus}

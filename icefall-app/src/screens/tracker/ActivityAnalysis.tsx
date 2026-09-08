@@ -7,8 +7,15 @@ import { AnalysisChart, SeriesTabs, formatValue } from "@/components/domain/Anal
 import { useActivityById } from "@/tracking/feed";
 import { fmtDistance, fmtElevation } from "@/lib/format";
 import {
-  SPLIT_MODE_LABEL, availableSeries, climbsFor, defaultSplitMode, pointAtDistance, seriesFor,
-  splitsFor, type SeriesKind, type SplitMode,
+  SPLIT_MODE_LABEL,
+  availableSeries,
+  climbsFor,
+  defaultSplitMode,
+  pointAtDistance,
+  seriesFor,
+  splitsFor,
+  type SeriesKind,
+  type SplitMode,
 } from "@/tracking/analysis";
 import { cn } from "@/lib/utils";
 
@@ -77,7 +84,11 @@ export default function ActivityAnalysis() {
       <Stagger className="px-5 pb-8">
         {recorded.simulated && (
           <Rise>
-            <div className="rounded-tile border border-alert/45 bg-alert/[0.08] px-3.5 py-2.5">
+            {/* Marked by one rule in the alert colour rather than by a tinted
+                rectangle. The sentence is unchanged — it is the one thing on
+                this screen that stops a generated track being read as a
+                performance. */}
+            <div className="border-l-2 border-alert/60 pl-3.5">
               <p className="text-[12px] text-alert">
                 Simulated activity — these charts describe a generated track, and it counts towards
                 nothing.
@@ -87,8 +98,10 @@ export default function ActivityAnalysis() {
         )}
 
         {/* ---- Map, following the cursor ---------------------------------- */}
-        <Rise className={recorded.simulated ? "pt-3" : ""}>
-          <div className="overflow-hidden rounded-card border border-hairline">
+        <Rise className={recorded.simulated ? "pt-6" : ""}>
+          {/* A map is a picture: edge to edge, no frame. The figures it drives
+              sit under it on the page's own left edge. */}
+          <div className="-mx-5 overflow-hidden">
             <MiniMap
               lat={at?.lat ?? recorded.points[0].lat}
               lon={at?.lon ?? recorded.points[0].lon}
@@ -107,9 +120,7 @@ export default function ActivityAnalysis() {
                 </span>
               )}
               <span>
-                <span className="text-snow">
-                  {hhmm((at.t - recorded.points[0].t) / 1000)}
-                </span>
+                <span className="text-snow">{hhmm((at.t - recorded.points[0].t) / 1000)}</span>
               </span>
             </div>
           )}
@@ -199,8 +210,14 @@ export default function ActivityAnalysis() {
               </div>
             </Rise>
             <Rise className="pt-3">
-              <div className="overflow-hidden rounded-card border border-hairline bg-graphite">
-                <div className="flex items-center gap-3 border-b border-hairline px-4 py-2.5 text-[10px] uppercase tracking-[0.1em] text-mist-dim">
+              {/* THE COLUMNS DO THE ALIGNING. The box around this list, and
+                  the hairline under every row inside it, were both saying
+                  "these rows are a table" — which four right-aligned tabular
+                  columns say on their own. What is kept is the ONE rule under
+                  the column headings, where the headings genuinely stop and the
+                  figures begin. */}
+              <div>
+                <div className="-mx-5 flex items-center gap-3 border-b border-hairline px-5 pb-2 text-[10px] uppercase tracking-[0.1em] text-mist-dim">
                   <span className="flex-1">Split</span>
                   <span className="w-16 text-right">Climb</span>
                   <span className="w-16 text-right">Time</span>
@@ -209,17 +226,14 @@ export default function ActivityAnalysis() {
                 {splits.map((s, i) => (
                   <div
                     key={`${s.label}-${i}`}
-                    className={cn(
-                      "flex items-center gap-3 px-4 py-2.5 text-[12.5px]",
-                      i > 0 && "border-t border-hairline",
-                    )}
+                    className="-mx-5 flex items-center gap-3 px-5 py-2.5 text-[12.5px]"
                   >
                     <span className="flex-1 text-snow">{s.label}</span>
                     <span className="tnum w-16 text-right text-mist">
                       +{fmtElevation(s.elevationGainM)}
                     </span>
                     <span className="tnum w-16 text-right text-mist">{hhmm(s.durationSec)}</span>
-                    <span className="tnum w-16 text-right text-mist-dim">
+                    <span className="tnum w-16 text-right text-mist">
                       {s.paceSecPerKm ? `${formatValue(s.paceSecPerKm, "pace")}` : "—"}
                     </span>
                   </div>
@@ -240,13 +254,17 @@ export default function ActivityAnalysis() {
               </p>
             </Rise>
             <Rise className="pt-3">
-              <div className="space-y-2">
+              {/* ROWS. Each climb was an outlined tile on a fill; the numbered
+                  medallion already aligns the list, which is what a per-row
+                  outline was standing in for. The hover moves off the vanished
+                  border onto a fill that reaches the screen edge. */}
+              <div>
                 {climbs.map((c, i) => (
                   <button
                     key={i}
                     type="button"
                     onClick={() => setCursorM(c.startDistanceM)}
-                    className="flex w-full items-center gap-3 rounded-tile border border-hairline bg-graphite px-3.5 py-3 text-left transition-colors hover:border-azure/40"
+                    className="-mx-5 flex w-full items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-white/[0.03]"
                   >
                     <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-azure/40 text-[11px] text-azure">
                       {i + 1}
@@ -255,7 +273,7 @@ export default function ActivityAnalysis() {
                       <span className="tnum block text-[13.5px] text-snow">
                         +{fmtElevation(c.gainM)} m · {c.gradientPct}%
                       </span>
-                      <span className="tnum mt-0.5 block text-[11px] text-mist-dim">
+                      <span className="tnum mt-0.5 block text-[11px] text-mist">
                         {fmtDistance(c.startDistanceM / 1000, 1)}–
                         {fmtDistance(c.endDistanceM / 1000, 1)} km · {hhmm(c.durationSec)}
                       </span>

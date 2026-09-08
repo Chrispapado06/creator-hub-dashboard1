@@ -647,25 +647,36 @@
   --ice-elevated: oklch(0.93 0.006 85); /* #EBE7E0  inputs/chips  */
 
   /*
-   * Ink — the three weights, hierarchy preserved, measured against the canvas.
+   * Ink — the three weights, hierarchy preserved, MEASURED AGAINST THE CANVAS
+   * (#F6F4F0), which is the surface most of this app's text now sits on.
    *
-   *   snow      16.00:1  (dark theme: 17.33:1)
-   *   mist       6.60:1  (dark theme:  6.61:1)
-   *   mist-dim   4.60:1  (dark theme:  3.34:1)
+   *   snow      14.54:1 on canvas · 15.98:1 on a card
+   *   mist       6.03:1 on canvas ·  6.63:1 on a card
+   *   mist-dim   4.61:1 on canvas ·  5.06:1 on a card
    *
    * Primary is deliberately #1D222A and not black: it is the dark theme's own
-   * `--ice-slate`, and 16:1 is past the point where more contrast only adds
+   * `--ice-slate`, and ~15:1 is past the point where more contrast only adds
    * harshness on a bright screen.
    *
    * Tertiary is the one place this block does NOT mirror the dark theme. At
    * 3.34:1 the dark tertiary already fails AA for small text, and `.section-label`
-   * renders it at 10px. Mirroring the ratio would have carried the defect over,
-   * so it is set to 4.60:1 instead. The hierarchy still reads because the gap
-   * to secondary (6.60) is what the eye sorts on, not the absolute value.
+   * renders it at 10px, so the light theme is set to clear 4.5:1 instead.
+   *
+   * IT IS #666F80 AND NOT #6D7687 BECAUSE THE CANVAS IS THE GROUND, NOT THE
+   * CARD, and the old comment here measured the wrong surface. The previous
+   * value was picked when tertiary ink almost always sat on a white card, where
+   * it is 4.57:1 and scrapes AA; on the warm canvas underneath, the same ink is
+   * 4.16:1 and fails. The cards are now gone from the profile, settings,
+   * groups, the leaderboard and the activity screens — that type sits on the
+   * canvas — so the canvas is the surface that has to be measured. This value
+   * clears AA on all three light surfaces (canvas 4.61, card 5.06, raised 4.37
+   * where it is placeholder ink inside a chip). The hierarchy still reads: the
+   * gap to secondary is what the eye sorts on, and it is 1.45x before and 1.31x
+   * now, a step read as "quieter" either way.
    */
   --ice-snow: oklch(0.25 0.0165 262); /* #1D222A  primary text */
   --ice-mist: oklch(0.478 0.03 264); /* #545D6E  secondary    */
-  --ice-mist-dim: oklch(0.563 0.029 264); /* #6D7687  tertiary     */
+  --ice-mist-dim: oklch(0.541 0.029 264); /* #666F80  tertiary     */
 
   /*
    * Accent — alpine azure, darkened until it survives a white ground.

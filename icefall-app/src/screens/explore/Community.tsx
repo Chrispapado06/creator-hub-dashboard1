@@ -14,7 +14,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { Avatar, Card, Disclaimer, sharePage } from "@/components/ui/primitives";
+import { Avatar, Disclaimer, sharePage } from "@/components/ui/primitives";
 import { LogSummitSheet } from "@/components/domain/SummitLogKit";
 import { CreatePostSheet } from "@/components/domain/PostComposer";
 import { Sheet, SheetRow } from "@/components/ui/Sheet";
@@ -438,9 +438,13 @@ export default function Community() {
           )}
 
           {posts === 0 && (
-            <Rise className="pt-4">
-              <Card>
-                <p className="text-[13px] text-snow">Nothing here yet.</p>
+            /* Centred type on the page. A bordered box announcing an empty
+               feed is a container drawn around nothing — and it made a feature
+               that is honestly not built yet look like a component that broke.
+               Both sentences are unchanged; only the frame is gone. */
+            <Rise className="px-4 py-10 text-center">
+              <div>
+                <p className="text-[15px] text-snow">Nothing here yet.</p>
                 {/* FIVE DIFFERENT EMPTINESSES, AND THEY ARE NOT THE SAME
                     STATEMENT. "No posts match this filter" implies there are
                     posts — that somewhere behind the filter is a feed. In a
@@ -451,7 +455,7 @@ export default function Community() {
                     has done their half — set an objective, saved a card —
                     because "nobody you follow has posted" blames people for a
                     server that does not exist. */}
-                <p className="mt-1.5 text-[11.5px] leading-relaxed text-mist-dim">
+                <p className="mx-auto mt-2.5 max-w-[300px] text-[11.5px] leading-relaxed text-mist">
                   {feedEmpty
                     ? "Nobody has posted anything, because posting is not built yet. This is an empty feature rather than a filter that came back with nothing — when people can post, what they write appears here."
                     : filter === "following"
@@ -464,13 +468,17 @@ export default function Community() {
                           : "Nobody has posted about the mountains you have set as goals."
                         : "No posts match this filter."}
                 </p>
-              </Card>
+              </div>
             </Rise>
           )}
 
-          {/* ---- House rule + honesty ---------------------------------------- */}
-          <Rise className="pt-6">
-            <div className="rounded-card border border-hairline bg-graphite p-4">
+          {/* ---- House rule + honesty ----------------------------------------
+              The end of the scroll, so it is separated by the largest step of
+              air on the screen rather than by an outline. The shield is the
+              mark that says "this is the house speaking"; a rectangle around it
+              said the same thing again, more loudly and less well. */}
+          <Rise className="px-4 pt-10">
+            <div>
               <p className="flex items-center gap-2 text-[12.5px] text-snow">
                 <ShieldCheck size={14} strokeWidth={1.7} className="shrink-0 text-azure" />
                 {COMMUNITY_HOUSE_RULE}
@@ -880,21 +888,25 @@ function SearchResults({
       </Rise>
 
       {people.length === 0 ? (
-        <Rise className="pt-2.5">
-          <Card>
-            <p className="text-[12.5px] leading-relaxed text-mist">
-              There is nobody to find yet. Accounts exist, but no climber directory does, so none
-              can be looked up by name — this is an empty network rather than a search that came
-              back short.
-            </p>
-          </Card>
+        /* The sentence, on the page. A box around an explanation of why a
+           search found nothing is a container drawn around nothing. */
+        <Rise className="pt-3">
+          <p className="max-w-[46ch] text-[12.5px] leading-relaxed text-mist">
+            There is nobody to find yet. Accounts exist, but no climber directory does, so none can
+            be looked up by name — this is an empty network rather than a search that came back
+            short.
+          </p>
         </Rise>
       ) : (
+        /* Rows, not a stack of outlined tiles. The avatar column already runs
+           down the left edge and does the aligning an outline was doing; the
+           `-mx-5 px-5` lets the hover state reach the screen edge while the
+           type stays on the gutter. */
         people.map((athlete) => (
-          <Rise key={athlete.id} className="pt-2.5">
+          <Rise key={athlete.id}>
             <Link
               to={`/social/people/${athlete.id}`}
-              className="flex items-center gap-3 rounded-card border border-hairline bg-graphite p-3.5 transition-colors hover:border-hairline-strong"
+              className="-mx-5 flex items-center gap-3 px-5 py-3.5 transition-colors hover:bg-white/[0.03]"
             >
               <Avatar name={athlete.displayName} />
               <span className="min-w-0 flex-1">
@@ -921,10 +933,8 @@ function SearchResults({
       </Rise>
 
       {posts.length === 0 ? (
-        <Rise className="pt-2.5">
-          <Card>
-            <p className="text-[12.5px] text-mist">No posts mention “{query.trim()}”.</p>
-          </Card>
+        <Rise className="pt-3">
+          <p className="text-[12.5px] text-mist">No posts mention “{query.trim()}”.</p>
         </Rise>
       ) : (
         /* There is no promoted placement in here: nobody paid to appear against
@@ -1035,8 +1045,11 @@ function CreateSheet({
         );
       })}
 
-      <div className="py-4">
-        <div className="rounded-card border border-hairline bg-slate/50 p-3.5">
+      {/* The sheet is already the floating surface; a second box inside it is
+          just a box. One hairline marks the real division — the options above,
+          the house's own words below — and the shield does the rest. */}
+      <div className="mt-2 border-t border-hairline py-5">
+        <div>
           <p className="flex items-center gap-2 text-[12.5px] text-snow">
             <ShieldCheck size={14} strokeWidth={1.7} className="shrink-0 text-azure" />
             Safety first

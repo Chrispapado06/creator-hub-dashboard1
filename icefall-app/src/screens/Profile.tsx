@@ -24,7 +24,7 @@ import { usePublicProfile } from "@/social/publicProfile";
 import { useProfileHydrationState } from "@/settings/hydrate";
 import { isBackendConfigured } from "@/backend/client";
 import { Link } from "react-router-dom";
-import { Badge, Card, Divider, SectionLabel, Stat } from "@/components/ui/primitives";
+import { Badge, Divider, SectionLabel, Stat } from "@/components/ui/primitives";
 import { MonthlyVolume } from "@/components/ui/charts";
 import { VerificationMark } from "@/components/ui/VerificationMark";
 import { BadgeHex } from "@/components/domain/BadgeHex";
@@ -80,6 +80,7 @@ import { ACHIEVEMENT_CATALOGUE } from "@/tracking/records";
 import { loadMeta } from "@/tracking/store";
 import { importedInPeriod } from "@/social/leaderboard";
 import { WATCH_PROVIDER_NAME } from "@/watch/types";
+import { PageTour } from "@/tour/PageTour";
 
 type Tab = "posts" | "summits" | "activities" | "passport" | "stats";
 
@@ -149,7 +150,14 @@ function ProfileFigure({
   );
 }
 
-/** A graphite row: leading mark, two lines of text, chevron. */
+/**
+ * A row: leading mark, two lines of text, chevron.
+ *
+ * IT WAS A GRAPHITE PANEL. A row that opens another screen is a link, not a
+ * thing in the world, and an outline around it said "detached object" about a
+ * navigation. The leading 44px mark and the chevron are what make it read as a
+ * row now — a mark at touch size is a mark, not a container.
+ */
 function ActionRow({
   lead,
   title,
@@ -178,8 +186,7 @@ function ActionRow({
       <ChevronRight size={16} strokeWidth={1.8} className="shrink-0 text-mist-dim" />
     </>
   );
-  const cls =
-    "flex w-full items-center gap-3 rounded-card border border-hairline bg-graphite p-3 text-left transition-colors hover:border-azure/40";
+  const cls = "flex w-full items-center gap-3 py-3 text-left transition-opacity hover:opacity-80";
 
   return to ? (
     <Link to={to} className={cls}>
@@ -826,8 +833,23 @@ export default function Profile() {
           </LiquidGlassButton>
         </Rise>
 
+        {/* ---- What this screen is ------------------------------------------
+            Shown once, on the first visit, and never again once dismissed.
+
+            AFTER THE IDENTITY BLOCK, NOT BEFORE IT. The avatar above is pulled
+            up by a negative margin so it overlaps the foot of the banner;
+            anything inserted before it breaks that overlap and leaves the
+            photograph with a gap under it. This is the first thing after the
+            person, which is also the right order to read them in.
+
+            Its first sentence names the Stats tab specifically, NOT the six
+            figures directly below it — Followers, Following and Connections are
+            a server count and a local store, so "everything counted here is
+            what you record" would have been wrong about half of that row. */}
+        <PageTour screen="profile" />
+
         {/* ---- The six figures --------------------------------------------- */}
-        <Rise className="pt-5">
+        <Rise className="pt-6">
           {/* Pulled out past the page margin: six figures need every pixel. */}
           <div className="-mx-3 flex items-start">
             {/* The same server figures the athlete's own profile shows to
@@ -950,8 +972,15 @@ export default function Profile() {
           </Rise>
         )}
 
-        {/* ---- Share ------------------------------------------------------- */}
-        <Rise className="pt-3">
+        {/* ---- Share -------------------------------------------------------
+            ONE HAIRLINE, AT THE ONE REAL DIVISION. Above it the objective —
+            a fact about the climb ahead; below it something the reader can do
+            with the page. Everything else on this screen is separated by air.
+
+            AND ONLY WHEN THERE IS AN OBJECTIVE ROW ABOVE IT TO DIVIDE FROM.
+            A rule drawn with nothing on its other side is decoration, and the
+            objective section is conditional. */}
+        <Rise className={cn(objective ? "border-t border-hairline pt-2" : "pt-5")}>
           <ActionRow
             to="/profile/share"
             title="Share Profile"
@@ -981,7 +1010,7 @@ export default function Profile() {
             down a profile, and there is no such page yet because nothing grants
             an award. What has to be true before any of this is real is written
             at the top of `components/domain/AwardWreath.tsx`. */}
-        <Rise className="pt-7">
+        <Rise className="pt-9">
           <div className="flex items-center justify-between">
             <SectionLabel>Badges</SectionLabel>
             {/* `/settings/badges`, which is where `Badges` is declared. This
@@ -1041,7 +1070,7 @@ export default function Profile() {
             The three values on the right are printed from the absence layer,
             so a figure ICEFALL does not hold says why rather than showing a
             number nobody supplied. */}
-        <Rise className="pt-7">
+        <Rise className="pt-9">
           <div className="flex items-center justify-between">
             <SectionLabel>Mountain Passport</SectionLabel>
             <button
@@ -1106,8 +1135,11 @@ export default function Profile() {
           <MountainCvSheet passport={passport} open={cvOpen} onClose={() => setCvOpen(false)} />
         </Rise>
 
-        {/* ---- Tabs -------------------------------------------------------- */}
-        <Rise className="pt-7">
+        {/* ---- Tabs --------------------------------------------------------
+            A change of kind: everything above is the athlete, everything below
+            is what they have done. The air says so, and the tab underline is
+            the one rule the section needs. */}
+        <Rise className="pt-10">
           <div className="flex gap-6 border-b border-hairline">
             {(
               [
@@ -1160,9 +1192,15 @@ export default function Profile() {
           </Rise>
         )}
 
-        {/* ---- Links ------------------------------------------------------- */}
-        <Rise className="pt-7">
-          <Card className="overflow-hidden p-0">
+        {/* ---- Links -------------------------------------------------------
+            ROWS ON THE PAGE, NOT A TABLE IN A BOX. Five destinations that have
+            nothing to do with each other except being reachable from here, so
+            the one hairline between consecutive rows stays — that is a real
+            division. The outer outline said nothing the space had not already
+            said. `-mx-5 px-5` keeps the words on the screen's one left gutter
+            while the hover fill and the rule run edge to edge. */}
+        <Rise className="pt-8">
+          <div>
             {[
               {
                 to: "/goals",
@@ -1182,7 +1220,10 @@ export default function Profile() {
                 key={row.to}
                 to={row.to}
                 className={cn(
-                  "flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-slate/40",
+                  /* `bg-white/[0.03]`, not `bg-slate/40`: slate lifted a row off the
+                     graphite card these used to sit in, and on the canvas it moves
+                     the light theme by two channel steps. */
+                  "-mx-5 flex items-center gap-3 px-5 py-3.5 transition-colors hover:bg-white/[0.03]",
                   i > 0 && "border-t border-hairline",
                 )}
               >
@@ -1191,10 +1232,10 @@ export default function Profile() {
                 <ChevronRight size={16} strokeWidth={1.8} className="shrink-0 text-mist-dim" />
               </Link>
             ))}
-          </Card>
+          </div>
         </Rise>
 
-        <Rise className="pt-6">
+        <Rise className="pt-10">
           <button
             type="button"
             /*
@@ -1274,23 +1315,31 @@ function ActivityTab({ recorded }: { recorded: ReturnType<typeof useRecordedActi
           it now says how many it is showing rather than silently stopping at
           eight, with a way through to all of them. */}
       {recorded.length > 8 && (
-        <Rise className="pt-4">
+        <Rise className="pt-5">
+          {/* A link, not a thing in the world. A row. */}
           <Link
             to="/activity"
-            className="flex items-center justify-between rounded-card border border-hairline bg-graphite px-4 py-3 text-[12.5px] text-mist transition-colors hover:border-azure/45 hover:text-snow"
+            className="flex items-center justify-between py-3 text-[12.5px] text-mist transition-colors hover:text-snow"
           >
             <span>Showing your 8 most recent of {recorded.length}</span>
             <span className="text-azure">All activity</span>
           </Link>
         </Rise>
       )}
+      {/*
+        FULL-BLEED, BECAUSE THE PICTURE IS THE OBJECT.
+
+        Each of these is a genuinely distinct thing — one recorded session, one
+        tap target — so it stays one link. But the thing IS the line the athlete
+        walked, and a drawing inset inside a bordered radiused box is the box
+        wearing the picture. The trace runs edge to edge (`-mx-5` out of the
+        screen's own gutter), the words sit underneath on the page's left edge,
+        and the air between consecutive sessions is what separates them.
+      */}
       {recorded.slice(0, 8).map((r) => (
-        <Rise key={r.id} className="pt-3">
-          <Link
-            to={`/activity/${r.id}`}
-            className="block overflow-hidden rounded-card border border-hairline bg-graphite transition-colors hover:border-hairline-strong"
-          >
-            <div className="relative h-[132px] bg-slate">
+        <Rise key={r.id} className="pt-8">
+          <Link to={`/activity/${r.id}`} className="group block">
+            <div className="relative -mx-5 h-[132px] bg-slate transition-opacity group-hover:opacity-[0.92]">
               {r.points && r.points.length > 1 && (
                 <div className="absolute inset-0 grid place-items-center">
                   <TrailShape
@@ -1300,9 +1349,11 @@ function ActivityTab({ recorded }: { recorded: ReturnType<typeof useRecordedActi
                   />
                 </div>
               )}
-              <div className="absolute inset-0 bg-gradient-to-t from-graphite via-transparent to-transparent" />
+              {/* The fade now meets the page it sits on, not the card it used
+                  to sit in. */}
+              <div className="absolute inset-0 bg-gradient-to-t from-obsidian via-transparent to-transparent" />
             </div>
-            <div className="p-4">
+            <div className="pt-3">
               <div className="flex items-center gap-2">
                 <p className="text-[15px] text-snow">{r.title}</p>
                 {/* Mutually exclusive by construction — see ActivityCard's
@@ -1317,7 +1368,7 @@ function ActivityTab({ recorded }: { recorded: ReturnType<typeof useRecordedActi
               <p className="mt-0.5 text-[11.5px] text-mist-dim">
                 {fmtDate(r.startedAt, { day: "numeric" })}
               </p>
-              <div className="mt-3 grid grid-cols-3 gap-2">
+              <div className="mt-3 grid grid-cols-3 gap-x-5 gap-y-4">
                 <Stat value={fmtDistance(r.distanceM / 1000, 1)} unit="km" label="Distance" />
                 <Stat
                   value={`+${fmtElevation(r.elevationGainM)}`}
@@ -1349,15 +1400,15 @@ function SummitsTab({
     );
   }
   return (
-    <Rise className="pt-4">
-      <Card className="overflow-hidden p-0">
+    <Rise className="pt-5">
+      {/* A register of ascents: like rows, one under the next, with a hairline
+          between them because there is no leading column to align them and a
+          list of names needs a floor. The box that used to hold them is gone. */}
+      <div>
         {summits.map((s, i) => (
           <div
             key={`${s.name}-${i}`}
-            className={cn(
-              "flex items-center gap-3 px-4 py-3.5",
-              i > 0 && "border-t border-hairline",
-            )}
+            className={cn("flex items-center gap-3 py-3.5", i > 0 && "border-t border-hairline")}
           >
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[14px] text-snow">{s.name}</span>
@@ -1374,7 +1425,7 @@ function SummitsTab({
             )}
           </div>
         ))}
-      </Card>
+      </div>
     </Rise>
   );
 }
@@ -1423,9 +1474,9 @@ function StatsTab({
         )}
       </Rise>
 
-      <Rise className="pt-6">
+      <Rise className="pt-9">
         <SectionLabel>All time</SectionLabel>
-        <div className="mt-3 grid grid-cols-2 gap-3">
+        <div className="mt-3 grid grid-cols-2 gap-x-5 gap-y-4">
           <Stat size="lg" value={String(stats.activities)} label="Activities" />
           <Stat size="lg" value={fmtDistance(stats.distanceKm, 0)} unit="km" label="Distance" />
           <Stat size="lg" value={fmtElevation(stats.elevationM)} unit="m" label="Elevation gain" />
@@ -1461,22 +1512,21 @@ function StatsTab({
           earned in every screenshot and review. The model no longer carries
           the fields — see the User type. */}
 
-      <Rise className="pt-6">
+      <Rise className="pt-9">
         <div className="flex items-baseline justify-between">
           <SectionLabel>Achievements</SectionLabel>
           <span className="tnum text-[11.5px] text-mist-dim">
             {achievements.filter((a) => !a.locked).length} / {achievements.length}
           </span>
         </div>
-        <div className="mt-3 grid grid-cols-4 gap-2.5">
+        <div className="mt-4 grid grid-cols-4 gap-x-3 gap-y-6">
           {achievements.map((a) => (
             <div key={a.id} className="text-center">
-              <div
-                className={cn(
-                  "grid h-[68px] place-items-center rounded-tile border",
-                  a.locked ? "border-hairline bg-graphite" : "border-azure/45 bg-azure/[0.07]",
-                )}
-              >
+              {/* LOCKED OR EARNED IS CARRIED BY INK, NOT BY A FRAME. Twelve
+                  outlined squares in a grid made every achievement look like a
+                  form field; the mark and its colour say the same thing, and
+                  the grid's own spacing is what groups them. */}
+              <div className="grid h-[68px] place-items-center">
                 {a.locked ? (
                   <Lock size={15} strokeWidth={1.7} className="text-mist-dim" />
                 ) : (
@@ -1525,14 +1575,18 @@ function PostsTab({
   if (stream.length === 0) {
     return (
       <Rise className="pt-5">
-        <div className="rounded-card border border-hairline bg-graphite p-6 text-center">
-          <p className="text-[15px] text-snow">Start the mountain journey</p>
+        {/* A BOX ROUND AN EMPTY STATE IS A CONTAINER DRAWN AROUND NOTHING.
+            Centred type on the page instead; the button keeps its fill,
+            because a fill on a control is what says it can be pressed — at
+            the control radius, so it can never be mistaken for a panel. */}
+        <div className="py-9 text-center">
+          <p className="text-[17px] font-light text-snow">Start the mountain journey</p>
           <p className="mx-auto mt-2 max-w-[260px] text-[12px] leading-relaxed text-mist-dim">
             Share your first climb, route or expedition.
           </p>
           <Link
             to="/social"
-            className="mt-4 inline-block rounded-card bg-azure px-5 py-3 text-[12.5px] uppercase tracking-[0.08em] text-obsidian transition-colors hover:bg-azure-bright"
+            className="mt-5 inline-block rounded-[12px] bg-azure px-5 py-3 text-[12.5px] uppercase tracking-[0.08em] text-obsidian transition-colors hover:bg-azure-bright"
           >
             Create post
           </Link>
@@ -1544,7 +1598,7 @@ function PostsTab({
   return (
     <>
       {stream.map((item) => (
-        <Rise key={item.key} className="pt-3">
+        <Rise key={item.key} className="pt-8">
           {item.node}
         </Rise>
       ))}

@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useRef} from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Bluetooth,
@@ -11,8 +11,8 @@ import {
   Volume2,
   VolumeX,
 } from "lucide-react";
-import { Navigate, useNavigate, useParams, useSearchParams} from "react-router-dom";
-import { Badge, Button, Card, Disclaimer } from "@/components/ui/primitives";
+import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Badge, Button, Disclaimer } from "@/components/ui/primitives";
 import { TerrainMap } from "@/components/map/TerrainMap";
 import {
   CueToast,
@@ -109,7 +109,8 @@ export default function LiveTracker() {
   // `accuracy` rides along so the map's follow camera knows how much of the
   // last fix's movement to believe. See followCameraFor in @/tracking/display.
   const geoTrack = useMemo(
-    () => s.points.map((p) => ({ lat: p.lat, lon: p.lon, heading: p.heading, accuracy: p.accuracy })),
+    () =>
+      s.points.map((p) => ({ lat: p.lat, lon: p.lon, heading: p.heading, accuracy: p.accuracy })),
     [s.points],
   );
 
@@ -169,8 +170,14 @@ export default function LiveTracker() {
           </div>
         </div>
 
-        <div className="no-scrollbar flex-1 space-y-3 overflow-y-auto px-5">
-          <Card>
+        {/* THREE SECTIONS, NOT THREE PANELS.
+            Each of these was a `<Card>` — a hairline box on a graphite fill —
+            and the screen read as a stack of three rectangles before it read as
+            three things ICEFALL is about to ask for. Each already opens with a
+            `section-label`, which is the announcement; the space between them
+            is what separates them now. */}
+        <div className="no-scrollbar flex-1 space-y-9 overflow-y-auto px-5 pt-1">
+          <section>
             <p className="section-label">Permissions ICEFALL will ask for</p>
             <ul className="mt-3 space-y-3">
               {!type.indoor && (
@@ -187,14 +194,14 @@ export default function LiveTracker() {
               />
             </ul>
             {type.indoor && (
-              <p className="mt-4 text-[11px] leading-relaxed text-mist-dim">
+              <p className="mt-4 text-[11px] leading-relaxed text-mist">
                 This is an indoor activity, so ICEFALL will not request location at all.
               </p>
             )}
-          </Card>
+          </section>
 
           {!type.indoor && (
-            <Card>
+            <section>
               <p className="section-label">Position source</p>
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <ModeButton
@@ -216,31 +223,29 @@ export default function LiveTracker() {
                   labelled SIMULATED and never presented as real performance.
                 </Disclaimer>
               )}
-            </Card>
+            </section>
           )}
 
-          <Card>
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-[13px] text-snow">Heart-rate strap</p>
-                <p className="mt-1 text-[11px] text-mist-dim">
-                  {rec.hrState.detail ??
-                    (rec.bluetoothSupported
-                      ? "Not connected"
-                      : "Web Bluetooth unavailable in this browser")}
-                </p>
-              </div>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={!rec.bluetoothSupported}
-                onClick={() => rec.connectHeartRate()}
-              >
-                <Bluetooth size={14} strokeWidth={1.7} />
-                Connect
-              </Button>
+          <section className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[13px] text-snow">Heart-rate strap</p>
+              <p className="mt-1 text-[11px] text-mist">
+                {rec.hrState.detail ??
+                  (rec.bluetoothSupported
+                    ? "Not connected"
+                    : "Web Bluetooth unavailable in this browser")}
+              </p>
             </div>
-          </Card>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={!rec.bluetoothSupported}
+              onClick={() => rec.connectHeartRate()}
+            >
+              <Bluetooth size={14} strokeWidth={1.7} />
+              Connect
+            </Button>
+          </section>
         </div>
 
         <div
@@ -378,7 +383,11 @@ export default function LiveTracker() {
                 : "border-hairline-strong text-mist hover:text-snow",
             )}
           >
-            {coachOn ? <Volume2 size={18} strokeWidth={1.5} /> : <VolumeX size={18} strokeWidth={1.5} />}
+            {coachOn ? (
+              <Volume2 size={18} strokeWidth={1.5} />
+            ) : (
+              <VolumeX size={18} strokeWidth={1.5} />
+            )}
           </button>
 
           <button
@@ -424,7 +433,7 @@ export default function LiveTracker() {
               {new Date(s.elapsedMs).toISOString().substring(11, 19)}
             </p>
 
-            <div className="mt-8 grid w-full max-w-[280px] grid-cols-2 gap-3">
+            <div className="mt-8 grid w-full max-w-[280px] grid-cols-2 gap-x-6 gap-y-5">
               <PausedStat id={m1} s={s} ctx={ctx} />
               <PausedStat id={m2} s={s} ctx={ctx} />
               <PausedStat id={m3} s={s} ctx={ctx} />
@@ -474,9 +483,13 @@ export default function LiveTracker() {
               <h2 className="text-[22px] font-light text-snow">Finish your activity?</h2>
               <p className="mt-1.5 text-[13px] text-mist">Good work out there.</p>
 
-              <div className="mt-5 rounded-card border border-hairline bg-obsidian p-4">
+              {/* A box inside a sheet is a box inside a box. The sheet is
+                  already the detached surface; what this needed was a division
+                  between "Finish your activity?" and the figures it is asking
+                  you to finish — which is one hairline. */}
+              <div className="mt-5 border-t border-hairline pt-5">
                 <p className="section-label">{type.label}</p>
-                <div className="mt-3 grid grid-cols-3 gap-3">
+                <div className="mt-3 grid grid-cols-3 gap-x-5">
                   <MetricTile id={m1} reading={readMetric(m1, s, ctx)} size="sm" />
                   <MetricTile id={m2} reading={readMetric(m2, s, ctx)} size="sm" />
                   <MetricTile id={m3} reading={readMetric(m3, s, ctx)} size="sm" />
@@ -513,11 +526,11 @@ function PausedStat({
   s: Parameters<typeof readMetric>[1];
   ctx: Parameters<typeof readMetric>[2];
 }) {
-  return (
-    <div className="rounded-tile border border-hairline bg-graphite/60 p-3">
-      <MetricTile id={id} reading={readMetric(id, s, ctx)} size="sm" />
-    </div>
-  );
+  /* A FIGURE, NOT A TILE. Four outlined squares floated over a blurred map
+     while the activity was paused; the numbers are what the athlete is looking
+     at, and each one was wearing a box that said nothing except "this is a
+     number, separately from that number". The grid gap already says it. */
+  return <MetricTile id={id} reading={readMetric(id, s, ctx)} size="sm" />;
 }
 
 function Perm({ icon: Icon, title, body }: { icon: typeof MapPin; title: string; body: string }) {

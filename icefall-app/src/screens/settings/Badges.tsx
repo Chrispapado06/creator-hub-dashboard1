@@ -4,8 +4,14 @@ import { Button, Disclaimer } from "@/components/ui/primitives";
 import { Rise, Screen, ScreenHeader, Stagger } from "@/components/layout/chrome";
 import { BadgeHex } from "@/components/domain/BadgeHex";
 import {
-  BADGES, BADGES_INTRO, BADGE_LIMIT_NOTICE, BADGE_NOT_BUILT_NOTICE, BADGE_STATE_LABEL,
-  badgeState, type BadgeSpec, type BadgeState,
+  BADGES,
+  BADGES_INTRO,
+  BADGE_LIMIT_NOTICE,
+  BADGE_NOT_BUILT_NOTICE,
+  BADGE_STATE_LABEL,
+  badgeState,
+  type BadgeSpec,
+  type BadgeState,
 } from "@/badges/model";
 import { useSettings } from "@/settings/store";
 import { useApp } from "@/state/AppState";
@@ -34,16 +40,23 @@ export default function Badges() {
           <p className="text-[12.5px] leading-relaxed text-mist">{BADGES_INTRO}</p>
         </Rise>
 
+        {/* One badge per row, separated by air. The 56px hexagon is the column
+            that aligns the list, which is the job an outline round each entry
+            was doing badly. */}
         {BADGES.map((badge) => (
-          <Rise key={badge.id} className="pt-3">
+          <Rise key={badge.id} className="pt-7">
             <BadgeCard badge={badge} state={badgeState(badge, settings, currentTier)} />
           </Rise>
         ))}
 
         {/* ---- Why badges exist ------------------------------------------- */}
         {currentTier === "free" && (
-          <Rise className="pt-6">
-            <div className="rounded-card border border-azure/35 bg-azure/[0.05] p-4">
+          <Rise className="pt-8">
+            {/* A NOTE, MARKED BY A RULE — not a tinted box. The app's own
+                `Disclaimer` treatment: one azure left rule and the copy on the
+                page's own left edge. A filled rectangle around three lines was
+                saying "separate object" about a paragraph. */}
+            <div className="border-l border-azure/30 pl-3.5">
               <p className="flex items-center gap-2 text-[12px] uppercase tracking-[0.1em] text-azure">
                 <Crown size={14} strokeWidth={1.8} />
                 Verified is a Pro feature
@@ -59,8 +72,12 @@ export default function Badges() {
           </Rise>
         )}
 
-        <Rise className="pt-5">
-          <div className="grid gap-3 sm:grid-cols-3">
+        {/* THREE REASONS, NOT THREE BOXES. These were three bordered panels in
+            a grid; the space between them and the mark that leads each one are
+            what say they are three things, so the outlines were only repeating
+            it more loudly. */}
+        <Rise className="pt-9">
+          <div className="grid gap-7 sm:grid-cols-3">
             {[
               {
                 icon: ShieldCheck,
@@ -78,7 +95,7 @@ export default function Badges() {
                 body: "Badges recognise those who contribute, support and inspire others.",
               },
             ].map((c) => (
-              <div key={c.title} className="rounded-card border border-hairline bg-graphite p-4">
+              <div key={c.title}>
                 <c.icon size={16} strokeWidth={1.7} className="text-azure" />
                 <p className="mt-2.5 text-[13px] text-snow">{c.title}</p>
                 <p className="mt-1.5 text-[11.5px] leading-relaxed text-mist-dim">{c.body}</p>
@@ -87,7 +104,7 @@ export default function Badges() {
           </div>
         </Rise>
 
-        <Rise className="pt-5">
+        <Rise className="pt-9">
           <Disclaimer>{BADGE_LIMIT_NOTICE}</Disclaimer>
           <Disclaimer className="mt-3">{BADGE_NOT_BUILT_NOTICE}</Disclaimer>
         </Rise>
@@ -109,7 +126,7 @@ const STATE_TONE: Record<BadgeState["kind"], string> = {
 
 function BadgeCard({ badge, state }: { badge: BadgeSpec; state: BadgeState }) {
   const body = (
-    <div className="flex items-start gap-4 p-4">
+    <div className="flex items-start gap-4">
       {/*
         Always in full colour.
         The mark is the badge's identity — blue for Verified, azure for Sherpa,
@@ -123,12 +140,7 @@ function BadgeCard({ badge, state }: { badge: BadgeSpec; state: BadgeState }) {
         <div className="flex flex-wrap items-center gap-2">
           <p className="text-[16px] text-snow">{badge.name}</p>
           {/* The badge's own accent, as it appears beside a name on a profile. */}
-          <Check
-            size={13}
-            strokeWidth={3}
-            style={{ color: badge.stroke }}
-            className="shrink-0"
-          />
+          <Check size={13} strokeWidth={3} style={{ color: badge.stroke }} className="shrink-0" />
           <span
             className={cn(
               "rounded-pill border px-2 py-[3px] text-[9.5px] uppercase tracking-[0.09em]",
@@ -142,7 +154,10 @@ function BadgeCard({ badge, state }: { badge: BadgeSpec; state: BadgeState }) {
         <p className="mt-2 text-[12px] leading-relaxed text-mist">{badge.about}</p>
 
         {state.kind === "locked-pro" && (
-          <div className="mt-3 rounded-tile border border-hairline bg-slate/50 p-3">
+          /* A note under the badge it is about, marked by a rule rather than
+             boxed. The control keeps its own border — that is what says it can
+             be pressed — and sits on its own line under the sentence. */
+          <div className="mt-3 border-l border-azure/30 pl-3.5">
             <p className="flex items-start gap-2 text-[12px] leading-relaxed text-snow">
               <Lock size={14} strokeWidth={1.8} className="mt-0.5 shrink-0 text-azure" />
               Paid members can apply for verification.
@@ -168,7 +183,13 @@ function BadgeCard({ badge, state }: { badge: BadgeSpec; state: BadgeState }) {
     </div>
   );
 
-  const shell = "block overflow-hidden rounded-card border border-hairline bg-graphite";
+  /*
+   * NO SHELL. A badge in this catalogue is an entry in a list, not a detached
+   * object floating over the page: the hexagon marks where each one starts and
+   * the space between them says where one ends. The row is still one tap target
+   * where there is something to tap — that has never been the border's job.
+   */
+  const shell = "block";
 
   /*
    * A locked badge carries its own "Upgrade to Pro" link INSIDE the card, and an
@@ -180,7 +201,11 @@ function BadgeCard({ badge, state }: { badge: BadgeSpec; state: BadgeState }) {
     Boolean(badge.applyPath) && (state.kind === "open" || state.kind === "declined");
 
   return wholeCardLinks ? (
-    <Link to={badge.applyPath!} className={cn(shell, "transition-colors hover:border-hairline-strong")}>
+    <Link
+      to={badge.applyPath!}
+      /* The hover moved off the vanished border and onto the ink. */
+      className={cn(shell, "transition-opacity hover:opacity-80")}
+    >
       {body}
     </Link>
   ) : (

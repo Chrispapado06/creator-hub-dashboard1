@@ -22,16 +22,14 @@ import {
 } from "lucide-react";
 
 import { TerrainMap } from "@/components/map/TerrainMap";
-import { MAP_STYLE_LABEL, saveMapStyle, savedMapStyle, type MapStyleId } from "@/components/map/icefallStyle";
-import { cn } from "@/lib/utils";
 import {
-  fmtDate,
-  fmtDistance,
-  fmtDuration,
-  fmtElevation,
-  fmtPace,
-  fmtTime,
-} from "@/lib/format";
+  MAP_STYLE_LABEL,
+  saveMapStyle,
+  savedMapStyle,
+  type MapStyleId,
+} from "@/components/map/icefallStyle";
+import { cn } from "@/lib/utils";
+import { fmtDate, fmtDistance, fmtDuration, fmtElevation, fmtPace, fmtTime } from "@/lib/format";
 import { loadActivities } from "@/tracking/store";
 import { activityById } from "@/tracking/activities";
 import { useMountainImage } from "@/components/domain/MountainImage";
@@ -83,9 +81,9 @@ export default function ActivityComplete() {
       <Header activity={activity} typeLabel={type.label} onBack={() => navigate("/activity")} />
 
       <div className="px-5">
-        <SummaryCard activity={activity} />
+        <SummarySection activity={activity} />
         <Replay activity={activity} />
-        <ShareCard onShare={() => navigate(`/activity/${activity.id}/share`)} />
+        <ShareSection onShare={() => navigate(`/activity/${activity.id}/share`)} />
         <FactsRow activity={activity} />
       </div>
     </div>
@@ -259,17 +257,26 @@ function IconButton({
 }
 
 /* -------------------------------------------------------------------------- */
-/* Your Summary                                                               */
+/* Your Summary — a section on the page, not a card. See below.              */
 /* -------------------------------------------------------------------------- */
 
-function SummaryCard({ activity }: { activity: Activity }) {
+function SummarySection({ activity }: { activity: Activity }) {
   const assumedMass = activity.calories !== null && activity.caloriesForKg !== undefined;
 
   return (
-    <section className="mt-1 rounded-card border border-hairline bg-graphite/70 p-5">
+    /*
+     * A HEADING AND SIX FIGURES, ON THE PAGE.
+     *
+     * This was `rounded-card border border-hairline bg-graphite/70 p-5` with the
+     * `<h2>` inside it — two section markers competing, and the weaker one
+     * (a rectangle) drawn around the stronger one (a heading). The heading and
+     * the air above it are the announcement; the numbers underneath read as a
+     * row of figures rather than as the contents of a panel.
+     */
+    <section className="mt-2">
       <h2 className="text-[19px] font-normal text-snow">Your Summary</h2>
 
-      <div className="mt-5 grid grid-cols-3 gap-y-6">
+      <div className="mt-5 grid grid-cols-3 gap-x-5 gap-y-7">
         <Stat
           icon={MapPin}
           label="Distance"
@@ -281,9 +288,8 @@ function SummaryCard({ activity }: { activity: Activity }) {
           label="Total ascent"
           value={fmtElevation(activity.elevationGainM)}
           unit="m"
-          divider
         />
-        <Stat icon={Timer} label="Time" value={fmtDuration(activity.durationSec)} divider />
+        <Stat icon={Timer} label="Time" value={fmtDuration(activity.durationSec)} />
 
         <Stat
           icon={Gauge}
@@ -298,7 +304,6 @@ function SummaryCard({ activity }: { activity: Activity }) {
           value={activity.avgHeartRateBpm !== null ? String(activity.avgHeartRateBpm) : null}
           unit="bpm"
           absent="Not connected"
-          divider
         />
         <Stat
           icon={Flame}
@@ -306,11 +311,12 @@ function SummaryCard({ activity }: { activity: Activity }) {
           value={activity.calories !== null ? String(Math.round(activity.calories)) : null}
           unit="kcal"
           absent="Needs weight"
-          divider
         />
       </div>
 
-      <p className="mt-5 border-t border-hairline pt-4 text-[12px] leading-relaxed text-mist-dim">
+      {/* THE ONE HAIRLINE ON THIS BLOCK, at the one real division: the figures
+          stop and the statement about how they were arrived at begins. */}
+      <p className="mt-6 border-t border-hairline pt-4 text-[12px] leading-relaxed text-mist">
         All stats are calculations based on your device data.
         {assumedMass &&
           ` Energy is estimated for ${activity.caloriesForKg} kg — set your weight and it is calculated for you.`}
@@ -332,23 +338,27 @@ function Stat({
   value,
   unit,
   absent,
-  divider = false,
 }: {
   icon: typeof MapPin;
   label: string;
   value: string | null;
   unit?: string;
   absent?: string;
-  divider?: boolean;
 }) {
+  /* NO COLUMN RULES. Four vertical hairlines used to separate the six figures,
+     which drew the block as a table of cells; the gap between the columns
+     already separates them, and a figure with a rule down its left side reads
+     as a tile rather than as a number. */
   return (
-    <div className={cn("min-w-0", divider && "border-l border-hairline pl-3.5")}>
+    <div className="min-w-0">
       <p className="flex items-center gap-1.5 whitespace-nowrap text-[10px] uppercase tracking-[0.06em] text-mist-dim">
         <Icon size={12} strokeWidth={1.6} className="shrink-0" />
         {label}
       </p>
       {value === null ? (
-        <p className="mt-1.5 text-[14px] text-mist-dim">{absent ?? "—"}</p>
+        /* `text-mist`: this sentence is the whole point of the tile when there
+           is no figure, and it lost the graphite fill that was carrying it. */
+        <p className="mt-1.5 text-[14px] text-mist">{absent ?? "—"}</p>
       ) : (
         <p className="tnum mt-1.5 whitespace-nowrap text-[23px] font-semibold leading-none text-snow">
           {value}
@@ -431,12 +441,15 @@ function Replay({ activity }: { activity: Activity }) {
     };
   }, [playing, speed, points.length]);
 
-  const index = Math.max(0, Math.min(points.length - 1, Math.round(progress * (points.length - 1))));
+  const index = Math.max(
+    0,
+    Math.min(points.length - 1, Math.round(progress * (points.length - 1))),
+  );
   const at = points[index];
   const elapsed = Math.round(progress * activity.durationSec);
 
   return (
-    <section className="mt-6">
+    <section className="mt-10">
       <div className="flex items-center justify-between">
         <h2 className="text-[19px] font-normal text-snow">Replay</h2>
         <div className="flex overflow-hidden rounded-tile border border-hairline">
@@ -460,14 +473,20 @@ function Replay({ activity }: { activity: Activity }) {
       {points.length < 2 ? (
         /* Withheld rather than shown empty: a replay of a track with no
            positions is a black rectangle that looks broken. */
-        <div className="mt-3 rounded-card border border-hairline bg-graphite p-5">
-          <p className="text-[13px] leading-relaxed text-mist">
-            No replay for this activity — the recording holds no positions, so there is no route to
-            fly back over.
-          </p>
-        </div>
+        /* The sentence on the page. A box drawn around "there is nothing
+           here" is a container built to hold nothing. */
+        <p className="mt-4 text-[13px] leading-relaxed text-mist">
+          No replay for this activity — the recording holds no positions, so there is no route to
+          fly back over.
+        </p>
       ) : (
-        <div className="mt-3 overflow-hidden rounded-card border border-hairline bg-graphite">
+        /* A MAP IS A PICTURE, SO IT GOES EDGE TO EDGE.
+           It was a framed, radiused panel on a fill — a photograph of the
+           ground inset inside a box, which is the box wearing the picture.
+           `-mx-5` cancels the screen's gutter so the terrain reaches the glass;
+           the transport row underneath puts the gutter back for its own
+           controls, so they stay on the page's one left edge. */
+        <div className="-mx-5 mt-4">
           <div className="relative h-[330px]">
             {/*
              * AT REST, THE WHOLE ROUTE. Following from the first point put the
@@ -490,8 +509,9 @@ function Replay({ activity }: { activity: Activity }) {
               className="absolute inset-0"
             />
 
-            {/* Speed */}
-            <div className="absolute left-3 top-3">
+            {/* Speed. Inset to 16px rather than 12 now that the map reaches
+                the glass — a control 12px from a phone's bezel is a mis-tap. */}
+            <div className="absolute left-4 top-4">
               <button
                 type="button"
                 onClick={() =>
@@ -505,7 +525,7 @@ function Replay({ activity }: { activity: Activity }) {
             </div>
 
             {/* North indicator — static, because the recording has no heading. */}
-            <div className="absolute right-3 top-3 grid h-11 w-11 place-items-center rounded-full border border-hairline-strong bg-obsidian/80 backdrop-blur">
+            <div className="absolute right-4 top-4 grid h-11 w-11 place-items-center rounded-full border border-hairline-strong bg-obsidian/80 backdrop-blur">
               <span className="absolute top-1 text-[8.5px] uppercase tracking-[0.1em] text-mist">
                 N
               </span>
@@ -522,14 +542,14 @@ function Replay({ activity }: { activity: Activity }) {
                 saveMapStyle(next);
               }}
               aria-label={`Map style — ${MAP_STYLE_LABEL[styleId]}`}
-              className="absolute bottom-3 right-3 grid h-11 w-11 place-items-center rounded-full bg-obsidian/70 text-snow backdrop-blur"
+              className="absolute bottom-4 right-4 grid h-11 w-11 place-items-center rounded-full bg-obsidian/70 text-snow backdrop-blur"
             >
               <Layers size={18} strokeWidth={1.6} />
             </button>
           </div>
 
           {/* ---- Transport ------------------------------------------------ */}
-          <div className="flex items-center gap-3 px-3 py-3">
+          <div className="flex items-center gap-3 px-5 py-3.5">
             <button
               type="button"
               onClick={() => {
@@ -593,9 +613,15 @@ function hhmmss(total: number): string {
 /* Share                                                                      */
 /* -------------------------------------------------------------------------- */
 
-function ShareCard({ onShare }: { onShare: () => void }) {
+function ShareSection({ onShare }: { onShare: () => void }) {
   return (
-    <section className="mt-6 flex items-center justify-between gap-4 rounded-card border border-hairline bg-graphite/70 p-5">
+    /* Heading, one line, and the control. The panel around it was a second,
+       weaker section marker drawn around the `<h2>` that was already doing the
+       job — see `SummarySection`. The button keeps its border, because a border
+       that says "you may press this" is a role rather than a grouping; it drops
+       to the control radius so it can never read as the same object as a
+       container. */
+    <section className="mt-10 flex items-center justify-between gap-4">
       <div className="min-w-0">
         <h2 className="text-[19px] font-normal text-snow">Share Your Activity</h2>
         <p className="mt-1.5 text-[13.5px] leading-relaxed text-mist">
@@ -605,7 +631,7 @@ function ShareCard({ onShare }: { onShare: () => void }) {
       <button
         type="button"
         onClick={onShare}
-        className="flex shrink-0 items-center gap-2 rounded-card border border-azure/60 px-5 py-3 text-[14px] text-azure transition-colors hover:bg-azure/[0.08]"
+        className="flex h-11 shrink-0 items-center gap-2 rounded-[10px] border border-azure/60 px-5 text-[14px] text-azure transition-colors hover:bg-azure/[0.08]"
       >
         <Share2 size={16} strokeWidth={1.7} />
         Share
@@ -620,7 +646,11 @@ function ShareCard({ onShare }: { onShare: () => void }) {
 
 function FactsRow({ activity }: { activity: Activity }) {
   return (
-    <section className="mt-4 grid grid-cols-3 gap-3 rounded-card border border-hairline bg-graphite/70 p-5">
+    /* Three facts about the recording, as a row of figures with quiet labels.
+       They were tiles in an outlined box; the hairline above is the one real
+       division on this screen — the activity's own record, after everything
+       offered to do something with it. */
+    <section className="mt-10 grid grid-cols-3 gap-x-5 border-t border-hairline pt-6">
       <Fact
         icon={Calendar}
         label="Date"
@@ -656,7 +686,7 @@ function Fact({
     <div className="flex items-start gap-2.5">
       <Icon size={17} strokeWidth={1.5} className="mt-0.5 shrink-0 text-mist-dim" />
       <div className="min-w-0">
-        <p className="text-[12.5px] text-mist-dim">{label}</p>
+        <p className="text-[12.5px] text-mist">{label}</p>
         <p className="mt-1 text-[13.5px] leading-snug text-snow">{value}</p>
       </div>
     </div>

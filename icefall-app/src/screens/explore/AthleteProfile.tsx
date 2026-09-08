@@ -21,7 +21,6 @@ import {
 import {
   Avatar,
   Button,
-  Card,
   Disclaimer,
   HeroCircleButton,
   SectionLabel,
@@ -714,7 +713,7 @@ function ProfileBody({ idOrUsername, onRetry }: { idOrUsername: string; onRetry:
           />
         </Rise>
 
-        <Rise className="pt-5">
+        <Rise className="pt-6">
           <Figures
             profile={profile}
             summitCount={summits.summitCount}
@@ -744,19 +743,22 @@ function ProfileBody({ idOrUsername, onRetry }: { idOrUsername: string; onRetry:
           <HighlightsRow profileId={profile.id} isOwn={false} onOpen={setOpenHighlight} />
         </Rise>
 
-        <Rise className="pt-5">
+        <Rise className="pt-6">
           <ObjectiveRow />
         </Rise>
 
-        <Rise className="pt-3">
+        {/* ONE HAIRLINE, AT THE ONE REAL DIVISION. Above it is a fact about the
+            climber; below it is something the reader can do. That is a genuine
+            change of kind, which is the only thing a rule is spent on. */}
+        <Rise className="border-t border-hairline pt-2">
           <ShareRow isYou={isYou} firstName={firstName} onShare={shareProfile} />
         </Rise>
 
-        <Rise className="pt-7">
+        <Rise className="pt-8">
           <Badges />
         </Rise>
 
-        <Rise className="pt-7">
+        <Rise className="pt-8">
           <Achievements
             highestM={summits.highestM}
             byYear={summits.byYear}
@@ -764,7 +766,7 @@ function ProfileBody({ idOrUsername, onRetry }: { idOrUsername: string; onRetry:
           />
         </Rise>
 
-        <Rise className="pt-7">
+        <Rise className="pt-8">
           <RecentActivity
             tab={tab}
             onTab={setTab}
@@ -776,15 +778,15 @@ function ProfileBody({ idOrUsername, onRetry }: { idOrUsername: string; onRetry:
           />
         </Rise>
 
-        <Rise className="pt-7">
+        <Rise className="pt-10">
           <ShareCard isYou={isYou} firstName={firstName} onShare={shareProfile} />
         </Rise>
 
-        <Rise className="pt-6">
+        <Rise className="pt-10">
           <WhatIsNotHere isYou={isYou} />
         </Rise>
 
-        <Rise className="pt-6">
+        <Rise className="pt-8">
           <ControlledBy firstName={firstName} isYou={isYou} />
         </Rise>
       </Stagger>
@@ -1379,50 +1381,54 @@ function Figures({
 
   return (
     <>
-      <Card className="p-3">
-        <div className="flex items-start">
-          {figures.map((f) => {
-            const on = open === f.key;
-            return (
-              <button
-                key={f.key}
-                type="button"
-                onClick={() => setOpen((cur) => (cur === f.key ? null : f.key))}
-                aria-expanded={on}
-                className="min-w-0 flex-1 px-[1px] text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-azure/60 focus-visible:ring-offset-2 focus-visible:ring-offset-graphite rounded-[8px] py-0.5"
-              >
-                <f.icon
-                  size={13}
-                  strokeWidth={1.7}
-                  aria-hidden
-                  className={cn("mx-auto", on ? "text-azure" : "text-mist-dim")}
-                />
-                <span className="mt-1.5 flex items-baseline justify-center gap-[2px]">
-                  <span className="tnum text-[17px] font-light leading-none tracking-[-0.02em] text-snow">
-                    {f.value}
-                  </span>
-                  {f.unit && <span className="text-[10px] text-mist-dim">{f.unit}</span>}
+      {/* A ROW OF FIGURES, NOT A PANEL OF THEM. Five numbers with quiet labels
+          under them read as a record; the same five inside a bordered graphite
+          block read as a widget, and the border was the only thing claiming
+          they were separate from the name above. */}
+      <div className="flex items-start">
+        {figures.map((f) => {
+          const on = open === f.key;
+          return (
+            <button
+              key={f.key}
+              type="button"
+              onClick={() => setOpen((cur) => (cur === f.key ? null : f.key))}
+              aria-expanded={on}
+              /* The ring offset follows the ground the figures now sit on:
+                   the page itself, not a graphite panel. */
+              className="min-w-0 flex-1 px-[1px] text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-azure/60 focus-visible:ring-offset-2 focus-visible:ring-offset-obsidian rounded-[8px] py-0.5"
+            >
+              <f.icon
+                size={13}
+                strokeWidth={1.7}
+                aria-hidden
+                className={cn("mx-auto", on ? "text-azure" : "text-mist-dim")}
+              />
+              <span className="mt-1.5 flex items-baseline justify-center gap-[2px]">
+                <span className="tnum text-[17px] font-light leading-none tracking-[-0.02em] text-snow">
+                  {f.value}
                 </span>
-                {/* 8px rather than the mockup's 9: five labels across a 375px
+                {f.unit && <span className="text-[10px] text-mist-dim">{f.unit}</span>}
+              </span>
+              {/* 8px rather than the mockup's 9: five labels across a 375px
                     handset, and CONNECTIONS is one unbreakable word. It is the
                     label that gives, not the figure above it. */}
-                <span
-                  className={cn(
-                    "mt-1.5 block text-[8px] uppercase leading-[1.3] tracking-[0.02em]",
-                    on ? "text-azure" : "text-mist-dim",
-                  )}
-                >
-                  {f.label}
-                </span>
-                <span className="sr-only">
-                  {" — "}
-                  {f.hint}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </Card>
+              <span
+                className={cn(
+                  "mt-1.5 block text-[8px] uppercase leading-[1.3] tracking-[0.02em]",
+                  on ? "text-azure" : "text-mist-dim",
+                )}
+              >
+                {f.label}
+              </span>
+              <span className="sr-only">
+                {" — "}
+                {f.hint}
+              </span>
+            </button>
+          );
+        })}
+      </div>
 
       {shown ? (
         <p className="mt-3 border-l border-azure/30 pl-3 text-[11px] leading-relaxed text-mist-dim">
@@ -1442,8 +1448,13 @@ function Figures({
 /* -------------------------------------------------------------------------- */
 
 /**
- * The graphite row from the mockup: a leading mark, two lines, and either a
- * chevron or nothing.
+ * A row on the page: a leading mark, two lines, and either a chevron or nothing.
+ *
+ * IT WAS A GRAPHITE PANEL AND IT IS NOT ONE ANY MORE. A row that opens a share
+ * sheet, or states an objective, is a line of the page rather than a thing in
+ * the world, and an outline around it was saying "detached object" about a
+ * link. The 44px azure mark stays — a mark at touch size is a mark, not a
+ * container — and it is what aligns the rows to each other now.
  *
  * Written here rather than imported because the two versions in this codebase
  * are both private to their screens — `Profile.tsx` has one and
@@ -1483,8 +1494,7 @@ function ProfileRow({
   /* `items-start`, matching `components/settings/kit.tsx`: the objective row
      carries three lines of explanation beside a 44px mark, and centring the
      mark against that leaves it floating in the middle of a paragraph. */
-  const className =
-    "flex w-full items-start gap-3.5 rounded-card border border-hairline bg-graphite p-3.5 text-left";
+  const className = "flex w-full items-start gap-3.5 py-3.5 text-left";
 
   // A row with nothing to do is not a button. The objective row states a fact
   // and has no destination, and a pressable surface that does nothing is the
@@ -1494,7 +1504,8 @@ function ProfileRow({
     <button
       type="button"
       onClick={onClick}
-      className={cn(className, "transition-colors hover:border-azure/45 hover:bg-slate/30")}
+      /* The hover was on a border that is gone. It is on the ink now. */
+      className={cn(className, "transition-opacity hover:opacity-80")}
     >
       {inner}
     </button>
@@ -1622,7 +1633,9 @@ function Achievements({
   return (
     <>
       <SectionLabel>Achievements</SectionLabel>
-      <Card className="mt-3.5">
+      {/* The label and the space above it announce this section; a rectangle
+          round it was a second, weaker marker competing with the first. */}
+      <div className="mt-3.5">
         <div className="flex items-start gap-3">
           <span className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-tile border border-hairline-strong bg-white/[0.03] text-mist">
             <MountainSnow size={17} strokeWidth={1.6} aria-hidden />
@@ -1645,7 +1658,7 @@ function Achievements({
             {message}
           </p>
         )}
-      </Card>
+      </div>
     </>
   );
 }
@@ -1786,8 +1799,25 @@ function PostStrip({
 
   return (
     <div className="mt-4 space-y-3">
+      {/*
+        `-mx-5` SO THE PHOTOGRAPHS ACTUALLY RUN EDGE TO EDGE.
+
+        `PostCard` draws its media full width and its words at `px-4`, which is
+        the shape `Community` renders it in — that feed gives it no horizontal
+        padding at all. This column is inside the profile's `px-5` gutter, so
+        every post here was inset by 20px more than the same post in the feed:
+        one card, two shapes, and the inset was the old bordered box surviving
+        as a margin after the border went. The prose underneath keeps the
+        gutter, because it is the page's text rather than the post's.
+      */}
       {postsOf(posts.rows, author).map((post) => (
-        <PostCard key={post.id} post={post} onOpenComments={onOpenComments} onReport={onReport} />
+        <PostCard
+          key={post.id}
+          post={post}
+          className="-mx-5"
+          onOpenComments={onOpenComments}
+          onReport={onReport}
+        />
       ))}
       {posts.truncated && (
         <p className="text-[11px] text-mist-dim">
@@ -1815,7 +1845,7 @@ function ShareCard({
   onShare: () => void;
 }) {
   return (
-    <Card>
+    <div>
       <p className="text-[15px] text-snow">Share this profile</p>
       <p className="mt-1.5 text-[12px] leading-relaxed text-mist">
         {isYou
@@ -1826,7 +1856,7 @@ function ShareCard({
         <Share2 size={15} strokeWidth={1.8} />
         Share
       </Button>
-    </Card>
+    </div>
   );
 }
 
@@ -1846,7 +1876,7 @@ function ShareCard({
  */
 function WhatIsNotHere({ isYou }: { isYou: boolean }) {
   return (
-    <Card>
+    <div>
       <SectionLabel>What ICEFALL can show you</SectionLabel>
       <p className="mt-3 text-[12px] leading-relaxed text-mist">{PUBLIC_PROFILE_LIMITS}</p>
       {!isYou && (
@@ -1856,7 +1886,7 @@ function WhatIsNotHere({ isYou }: { isYou: boolean }) {
           they did it with before you plan anything with them.
         </Disclaimer>
       )}
-    </Card>
+    </div>
   );
 }
 
@@ -1896,9 +1926,9 @@ function LookingUp() {
   return (
     <Screen>
       <ScreenHeader title="Climber" back />
-      <Card>
-        <p className="text-[13px] text-mist">Looking this climber up…</p>
-      </Card>
+      {/* A sentence on the page. A box round one line of text is a container
+          drawn about nothing. */}
+      <p className="pt-6 text-[13px] text-mist">Looking this climber up…</p>
     </Screen>
   );
 }
@@ -1939,8 +1969,10 @@ function NoClimberHere({ message }: { message?: string }) {
   return (
     <Screen>
       <ScreenHeader title="Climber" back />
-      <Card>
-        <p className="text-[15px] text-snow">No climber here</p>
+      {/* Type and space, not a panel: this IS the page, and a rectangle drawn
+          round the whole of it frames the emptiness rather than explaining it. */}
+      <div className="pt-6">
+        <p className="text-[19px] font-light text-snow">No climber here</p>
         {message !== undefined && (
           <p className="mt-2.5 text-[12px] leading-relaxed text-mist">{message}</p>
         )}
@@ -1949,12 +1981,12 @@ function NoClimberHere({ message }: { message?: string }) {
             ? "Nothing was asked of the server for this one: no ICEFALL account can hold a value of that shape, so it is the link that is wrong rather than a person who is missing."
             : "ICEFALL asked its server and got an answer, so this is not a connection problem — there is genuinely no account behind this link."}
         </p>
-        <Link to="/social?tab=people" className="mt-4 block">
+        <Link to="/social?tab=people" className="mt-6 block">
           <Button variant="secondary" className="w-full">
             Search for people
           </Button>
         </Link>
-      </Card>
+      </div>
     </Screen>
   );
 }
@@ -1985,8 +2017,8 @@ function CouldNotLook({
   return (
     <Screen>
       <ScreenHeader title="Climber" back />
-      <Card>
-        <p className="text-[15px] text-snow">
+      <div className="pt-6">
+        <p className="text-[19px] font-light text-snow">
           {noBackend ? "Not connected to a server" : "Could not look this climber up"}
         </p>
         {message !== undefined && (
@@ -2000,17 +2032,17 @@ function CouldNotLook({
         )}
 
         {noBackend ? (
-          <Link to="/social?tab=people" className="mt-4 block">
+          <Link to="/social?tab=people" className="mt-6 block">
             <Button variant="secondary" className="w-full">
               Back to people
             </Button>
           </Link>
         ) : (
-          <Button variant="secondary" className="mt-4 w-full" onClick={onRetry}>
+          <Button variant="secondary" className="mt-6 w-full" onClick={onRetry}>
             Try again
           </Button>
         )}
-      </Card>
+      </div>
     </Screen>
   );
 }

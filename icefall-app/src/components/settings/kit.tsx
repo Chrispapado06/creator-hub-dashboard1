@@ -58,6 +58,22 @@ export function SettingsPage({
   );
 }
 
+/**
+ * A GROUP IS A LABEL AND AIR — IT IS NOT A BOX.
+ *
+ * This used to draw `rounded-card border border-hairline bg-graphite` around
+ * every group of rows, so an account centre of twelve groups was twelve
+ * outlined rectangles stacked down the screen. The outline was saying only
+ * "these rows belong together", which is the one thing the space above the
+ * label and the label itself already say — and twelve of them saying it at
+ * once flattens the hierarchy rather than creating it.
+ *
+ * So the group is announced by `SectionLabel` and separated by `pt-7`, and the
+ * rows sit on the screen's own left gutter with everything else. The hairlines
+ * BETWEEN rows stay (see `DIVIDE`): consecutive settings rows are genuinely
+ * unlike each other — Password, then Two-factor, then Devices — and there is no
+ * avatar or icon column doing the aligning that a people list has.
+ */
 export function Group({
   label,
   children,
@@ -68,16 +84,9 @@ export function Group({
   className?: string;
 }) {
   return (
-    <Rise className={cn("pt-5 first:pt-0", className)}>
+    <Rise className={cn("pt-7 first:pt-0", className)}>
       {label && <SectionLabel>{label}</SectionLabel>}
-      <div
-        className={cn(
-          "overflow-hidden rounded-card border border-hairline bg-graphite",
-          label && "mt-3",
-        )}
-      >
-        {children}
-      </div>
+      <div className={cn(label && "mt-1.5")}>{children}</div>
     </Rise>
   );
 }
@@ -94,21 +103,38 @@ interface RowBase {
   disabled?: boolean;
 }
 
+/*
+ * `mist` is `text-mist`, not `text-mist-dim`, since the rows lost their fill.
+ * A status sat on a white card in the light theme at 4.57:1; the same ink on
+ * the warm canvas underneath is 4.16:1, which is under AA for 12px text. The
+ * tone is still the quiet one — secondary ink against a primary title — and it
+ * now clears 6:1 in both themes.
+ */
 const TONE: Record<NonNullable<RowBase["tone"]>, string> = {
   default: "text-snow",
   azure: "text-azure",
-  mist: "text-mist-dim",
+  mist: "text-mist",
   danger: "text-danger",
 };
 
-function RowInner({ icon: Icon, title, detail, value, tone = "default", chevron }: RowBase & { chevron?: boolean }) {
+function RowInner({
+  icon: Icon,
+  title,
+  detail,
+  value,
+  tone = "default",
+  chevron,
+}: RowBase & { chevron?: boolean }) {
   return (
     <>
       {Icon && <Icon size={17} strokeWidth={1.6} className="mt-0.5 shrink-0 text-azure/80" />}
       <span className="min-w-0 flex-1">
         <span className="block text-[14px] text-snow">{title}</span>
+        {/* `text-mist`, for the reason given on TONE: the graphite fill this
+            row used to sit on was carrying the tertiary ink over AA in the
+            light theme, and the canvas underneath does not. */}
         {detail && (
-          <span className="mt-1 block text-[11.5px] leading-relaxed text-mist-dim">{detail}</span>
+          <span className="mt-1 block text-[11.5px] leading-relaxed text-mist">{detail}</span>
         )}
       </span>
       {value && (
@@ -121,12 +147,34 @@ function RowInner({ icon: Icon, title, detail, value, tone = "default", chevron 
   );
 }
 
-const ROW = "flex w-full items-start gap-3.5 px-4 py-3.5 text-left transition-colors";
+/*
+ * `-mx-5 px-5` because the page's gutter is `px-5` and the row's own inset used
+ * to be `px-4` INSIDE a box that was itself inside that gutter — two nested
+ * insets, so a row's title started 36px from the screen edge while the section
+ * label above it started at 20. The negative margin cancels the page gutter and
+ * puts it back as the row's own padding: the text lands on the one left edge
+ * the whole screen uses, and the hover fill and the divider now reach the glass
+ * instead of stopping short of it.
+ */
+const ROW = "-mx-5 flex w-full items-start gap-3.5 px-5 py-3.5 text-left transition-colors";
 const DIVIDE = "border-t border-hairline first:border-t-0";
+
+/*
+ * THE HOVER HAD TO CHANGE WITH THE GROUND UNDER IT.
+ *
+ * It was `bg-slate/40`, which lifted a row off the graphite CARD it used to sit
+ * in. That card is gone and the row now sits on the canvas, where slate is the
+ * next surface UP from it — in the light theme #F1EEE9 at 40% over #F6F4F0
+ * moves each channel by two, which is not a hover state, it is nothing. The
+ * `white` token inverts to near-black in light (see the light block), so this
+ * one tint darkens on white and lightens on black, and it is what the other
+ * flattened rows in the app already use.
+ */
+const ROW_HOVER = "hover:bg-white/[0.03]";
 
 export function LinkRow({ to, ...row }: RowBase & { to: string }) {
   return (
-    <Link to={to} className={cn(ROW, DIVIDE, "hover:bg-slate/40")}>
+    <Link to={to} className={cn(ROW, DIVIDE, ROW_HOVER)}>
       <RowInner {...row} chevron />
     </Link>
   );
@@ -138,7 +186,7 @@ export function ActionRow({ onClick, ...row }: RowBase & { onClick: () => void }
       type="button"
       onClick={onClick}
       disabled={row.disabled}
-      className={cn(ROW, DIVIDE, "hover:bg-slate/40 disabled:opacity-50")}
+      className={cn(ROW, DIVIDE, ROW_HOVER, "disabled:opacity-50")}
     >
       <RowInner {...row} chevron />
     </button>
@@ -200,9 +248,9 @@ export function ChoiceRow<T extends string>({
   onChange: (v: T) => void;
 }) {
   return (
-    <div className={cn("px-4 py-3.5", DIVIDE)}>
+    <div className={cn("-mx-5 px-5 py-3.5", DIVIDE)}>
       <p className="text-[14px] text-snow">{title}</p>
-      {detail && <p className="mt-1 text-[11.5px] leading-relaxed text-mist-dim">{detail}</p>}
+      {detail && <p className="mt-1 text-[11.5px] leading-relaxed text-mist">{detail}</p>}
       <div className="mt-3 flex flex-wrap gap-2">
         {options.map((o) => (
           <button
@@ -221,7 +269,7 @@ export function ChoiceRow<T extends string>({
         ))}
       </div>
       {options.find((o) => o.value === value)?.detail && (
-        <p className="mt-2.5 text-[11px] leading-relaxed text-mist-dim">
+        <p className="mt-2.5 text-[11px] leading-relaxed text-mist">
           {options.find((o) => o.value === value)!.detail}
         </p>
       )}
@@ -249,7 +297,12 @@ export function StatusPill({ status }: { status: Status }) {
           ? "border-danger/50 bg-danger/[0.10] text-danger"
           : "border-hairline-strong text-mist-dim";
   return (
-    <span className={cn("rounded-pill border px-2.5 py-1 text-[10.5px] uppercase tracking-[0.09em]", tone)}>
+    <span
+      className={cn(
+        "rounded-pill border px-2.5 py-1 text-[10.5px] uppercase tracking-[0.09em]",
+        tone,
+      )}
+    >
       {STATUS_LABEL[status]}
     </span>
   );

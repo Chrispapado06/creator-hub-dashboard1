@@ -116,6 +116,18 @@ export default function PublicProfile() {
       <Stagger className="px-5 pb-8 pt-6">
         <Rise>
           {/*
+            THE ONE BOX ON THIS SCREEN THAT IS NOT A BOX — it is the artefact.
+            The owner's rule strips a border wherever its only message is "these
+            lines belong together", and every other outline on this page has
+            gone for that reason. This one stays because the page is not a page
+            about a climber: it is a CARD, in the sense the copy at the foot uses
+            the word — a frozen snapshot that travelled inside a link, that can
+            be saved to a file, and whose whole premise is that it was cut loose
+            from the app at the moment it was shared. Its edge is the artefact's
+            own, the same exemption `ShareActivity` and the passport hold, and
+            deleting it would leave two disclaimers describing something that is
+            no longer on screen.
+
             `overflow-hidden` on the card was clipping the avatar, which lifts
             out of the banner with a negative margin — the top of the circle was
             sliced off by the card's own rounded corner. Only the BANNER needs
@@ -175,9 +187,14 @@ export default function PublicProfile() {
                 <p className="mt-1.5 text-[12px] text-mist-dim">{profile.region}</p>
               )}
 
-              {/* ---- Objective ------------------------------------------- */}
+              {/* ---- Objective -------------------------------------------
+                  A box inside the card was a second frame inside a frame. The
+                  label, the space above it and one azure rule say the same
+                  thing without drawing a rectangle round three lines — and
+                  azure is right here for the reason it is right everywhere:
+                  the objective is the climber's own. */}
               {profile.objective && (
-                <div className="mt-4 rounded-tile border border-azure/35 bg-azure/[0.06] p-3.5">
+                <div className="mt-5 border-l border-azure/30 pl-3.5">
                   <p className="text-[10px] uppercase tracking-[0.18em] text-azure/85">
                     Current objective
                   </p>
@@ -189,8 +206,11 @@ export default function PublicProfile() {
                 </div>
               )}
 
-              {/* ---- Record ---------------------------------------------- */}
-              <div className="mt-4 grid grid-cols-3 gap-2 border-t border-hairline pt-4">
+              {/* ---- Record ----------------------------------------------
+                  A row of figures with quiet labels, and ONE hairline above
+                  them, because that is a real division: what the climber wrote
+                  ends here and what was counted begins. */}
+              <div className="mt-5 grid grid-cols-3 gap-x-5 gap-y-4 border-t border-hairline pt-4">
                 <Stat
                   size="lg"
                   label="Summits"
@@ -218,7 +238,7 @@ export default function PublicProfile() {
             on the phone. Somebody who has the app should land in it; somebody
             who does not should be able to get it in one tap where the browser
             allows that, and be told the actual steps where it does not. */}
-        <Rise className="pt-5">
+        <Rise className="pt-7">
           <div className="space-y-2.5">
             <Button
               className="w-full"
@@ -292,7 +312,8 @@ export default function PublicProfile() {
           )}
 
           {mode === "manual-ios" && (
-            <div className="mt-3 rounded-tile border border-hairline bg-graphite p-3.5">
+            /* Instructions, not an object: one rule and the steps beside it. */
+            <div className="mt-4 border-l border-azure/30 pl-3.5">
               <p className="flex items-center gap-2 text-[12.5px] text-snow">
                 <Smartphone size={14} strokeWidth={1.8} className="text-azure" />
                 Get ICEFALL on this iPhone
@@ -304,7 +325,7 @@ export default function PublicProfile() {
           )}
         </Rise>
 
-        <Rise className="pt-5">
+        <Rise className="pt-9">
           <Disclaimer>
             This card travelled inside the link itself, so it opens anywhere and was never sent to a
             server. It is a snapshot from{" "}

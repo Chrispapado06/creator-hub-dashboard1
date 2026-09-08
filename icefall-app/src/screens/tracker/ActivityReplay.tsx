@@ -4,7 +4,10 @@ import { Pause, Play } from "lucide-react";
 import { Screen, ScreenHeader } from "@/components/layout/chrome";
 import { TerrainMap } from "@/components/map/TerrainMap";
 import {
-  MAP_STYLE_LABEL, saveMapStyle, savedMapStyle, type MapStyleId,
+  MAP_STYLE_LABEL,
+  saveMapStyle,
+  savedMapStyle,
+  type MapStyleId,
 } from "@/components/map/icefallStyle";
 import { useActivityById } from "@/tracking/feed";
 import { fmtDistance, fmtElevation } from "@/lib/format";

@@ -600,7 +600,6 @@ export default function Groups() {
 
         {GroupsBody({ scope, state, privacy, onChanged: refresh })}
       </Stagger>
-
     </Screen>
   );
 }
@@ -634,13 +633,14 @@ function GroupsBody({
 
     if (DEMO_GROUPS.length === 0 && real.length === 0) {
       return (
-        <Rise className="pt-4">
-          <Card>
-            <p className="text-[13px] leading-relaxed text-mist">
-              No groups yet. A group appears here the moment somebody adds a mountain they want to
-              climb.
-            </p>
-          </Card>
+        /* Centred type, no frame. An outline around "there is nothing here"
+           draws a container round nothing and makes an honest empty state look
+           like a component that failed. */
+        <Rise className="py-10 text-center">
+          <p className="mx-auto max-w-[300px] text-[13px] leading-relaxed text-mist">
+            No groups yet. A group appears here the moment somebody adds a mountain they want to
+            climb.
+          </p>
         </Rise>
       );
     }
@@ -652,13 +652,16 @@ function GroupsBody({
             <Disclaimer>{GROUPS_DEMO_NOTICE}</Disclaimer>
           </Rise>
         )}
+        {/* `pt-8` between groups, not `pt-3` inside an outline. With the
+            frames gone it is the air that has to say where one group ends and
+            the next begins, so it is given enough of it to do the job. */}
         {DEMO_GROUPS.map((g) => (
-          <Rise key={g.id} className="pt-3">
+          <Rise key={g.id} className="pt-8">
             <DemoGroupCard group={g} />
           </Rise>
         ))}
         {real.map((g) => (
-          <Rise key={g.id} className="pt-3">
+          <Rise key={g.id} className="pt-8">
             <GroupCoverCard group={g} privacy={privacy} onChanged={onChanged} />
           </Rise>
         ))}
@@ -668,10 +671,8 @@ function GroupsBody({
 
   if (state.status === "loading") {
     return (
-      <Rise className="pt-4">
-        <Card>
-          <p className="text-[13px] text-mist-dim">Loading groups…</p>
-        </Card>
+      <Rise className="py-10 text-center">
+        <p className="text-[13px] text-mist">Loading groups…</p>
       </Rise>
     );
   }
@@ -698,19 +699,17 @@ function GroupsBody({
 
   if (shown.length === 0) {
     return (
-      <Rise className="pt-4">
-        <Card>
-          <p className="text-[13px] leading-relaxed text-mist">
-            You have not joined a group yet. Discover shows the mountains other people are
-            gathering around.
-          </p>
-        </Card>
+      <Rise className="py-10 text-center">
+        <p className="mx-auto max-w-[300px] text-[13px] leading-relaxed text-mist">
+          You have not joined a group yet. Discover shows the mountains other people are gathering
+          around.
+        </p>
       </Rise>
     );
   }
 
   return shown.map((g) => (
-    <Rise key={g.id} className="pt-3">
+    <Rise key={g.id} className="pt-8">
       <GroupCoverCard group={g} privacy={privacy} onChanged={onChanged} />
     </Rise>
   ));
@@ -737,8 +736,18 @@ function DemoGroupCard({ group }: { group: DemoGroup }) {
   const label = group.private ? "Request to join" : "Join";
 
   return (
-    <div className="overflow-hidden rounded-card border border-hairline bg-graphite">
-      <div className="relative h-[132px] w-full bg-slate">
+    /*
+     * A GROUP IS A DISTINCT OBJECT — AND THE OBJECT IS THE PHOTOGRAPH.
+     *
+     * It was a bordered graphite box with the cover inset 1px inside it, which
+     * is a frame wearing a picture. The cover now runs edge to edge out of the
+     * screen's gutter (`-mx-5`), the name stays on it under the same scrim, and
+     * everything else comes back to the page's own left edge. Air, not an
+     * outline, is what separates one group from the next — see the `pt-8` in
+     * the list above.
+     */
+    <div>
+      <div className="relative -mx-5 h-[132px] w-auto bg-slate">
         <img
           src={group.cover}
           alt=""
@@ -747,13 +756,13 @@ function DemoGroupCard({ group }: { group: DemoGroup }) {
           className="h-full w-full object-cover"
         />
         <div className="absolute inset-0 scrim-bottom" />
-        <p className="absolute bottom-3 left-4 right-4 flex items-center gap-1.5 text-[17px] text-snow">
+        <p className="absolute bottom-3 left-5 right-5 flex items-center gap-1.5 text-[19px] text-snow">
           <span className="truncate">{group.name}</span>
           {group.private && <Lock size={13} strokeWidth={1.9} className="shrink-0 text-mist" />}
         </p>
       </div>
 
-      <div className="flex items-center justify-between gap-3 px-4 py-3.5">
+      <div className="flex items-center justify-between gap-3 pt-3.5">
         <p className="tnum min-w-0 truncate text-[12.5px] text-mist">
           {/* The mockup's own abbreviation — "1.2K members · 156 posts". */}
           {abbreviate(group.members)} members · {group.posts} posts
@@ -762,7 +771,10 @@ function DemoGroupCard({ group }: { group: DemoGroup }) {
           type="button"
           disabled
           aria-label={`${label} ${group.name} — this is a placeholder group and nobody can join it`}
-          className="shrink-0 rounded-card border border-azure/40 px-5 py-2 text-[13.5px] text-azure/60"
+          /* A control keeps its boundary — that border is what says "you may
+             press this" — but it stops borrowing the container radius, so a
+             button and a panel never read as the same object. */
+          className="h-11 shrink-0 rounded-[10px] border border-azure/40 px-5 text-[13.5px] text-azure/60"
         >
           {label}
         </button>
@@ -774,10 +786,12 @@ function DemoGroupCard({ group }: { group: DemoGroup }) {
        * `GROUPS_DEMO_NOTICE` sits above all four cards and scrolls off the top;
        * by the fourth card a reader sees a greyed-out button and nothing saying
        * why, which is the exact thing a disabled control must never be. Same
-       * bordered line the real `GroupCoverCard` puts under its own row, so the
-       * two kinds of card explain themselves the same way.
+       * line, in the same place, the real `GroupCoverCard` puts under its own
+       * row, so the two kinds of card explain themselves the same way. It has
+       * no rule over it any more: a hairline there separated the sentence from
+       * the very control it is explaining.
        */}
-      <p className="border-t border-hairline px-4 py-3 text-[11.5px] leading-relaxed text-mist">
+      <p className="pt-2.5 text-[11.5px] leading-relaxed text-mist">
         A placeholder, shown to review this layout. There is no such group, so there is nothing to
         {group.private ? " ask to join" : " join"}.
       </p>
@@ -865,8 +879,10 @@ function GroupCoverCard({
   const unreadable = privacy.status !== "loading" && !privacyKnown;
 
   return (
-    <div className="overflow-hidden rounded-card border border-hairline bg-graphite">
-      <div className="relative h-[132px] w-full bg-slate">
+    /* Same treatment as `DemoGroupCard` — the cover is the object, edge to
+       edge, and the rest of the group sits on the page under it. */
+    <div>
+      <div className="relative -mx-5 h-[132px] w-auto bg-slate">
         {mountain?.photo ? (
           <img
             src={mountain.photo}
@@ -877,7 +893,7 @@ function GroupCoverCard({
           />
         ) : null}
         <div className="absolute inset-0 scrim-bottom" />
-        <p className="absolute bottom-3 left-4 right-4 flex items-center gap-1.5 text-[17px] text-snow">
+        <p className="absolute bottom-3 left-5 right-5 flex items-center gap-1.5 text-[19px] text-snow">
           <span className="truncate">{group.name}</span>
           {/* The owner's own mark for private, and drawn ONLY where the server
               actually said private. An unread privacy setting gets no lock:
@@ -888,7 +904,7 @@ function GroupCoverCard({
         </p>
       </div>
 
-      <div className="flex items-center justify-between gap-3 px-4 py-3.5">
+      <div className="flex items-center justify-between gap-3 pt-3.5">
         <p className="tnum min-w-0 truncate text-[12.5px] text-mist">
           {/* Null is unknown, and says so. It is never rendered as zero. */}
           {group.memberCount === null
@@ -898,7 +914,7 @@ function GroupCoverCard({
         </p>
 
         {joined ? (
-          <span className="shrink-0 rounded-card border border-hairline px-5 py-2 text-[13.5px] text-mist-dim">
+          <span className="grid h-11 shrink-0 place-items-center rounded-[10px] border border-hairline px-5 text-[13.5px] text-mist-dim">
             Joined
           </span>
         ) : privacy.status === "loading" ? (
@@ -909,20 +925,17 @@ function GroupCoverCard({
             <Loader2 size={13} className="animate-spin" aria-hidden="true" />
             Checking
           </span>
-        ) : unreadable ? (
-          /* NO CONTROL AT ALL, and the sentence below the row says why. Neither
+        ) : unreadable /* NO CONTROL AT ALL, and the sentence below the row says why. Neither
              button can be drawn honestly: one of the two would be refused by
-             the database and this card cannot tell which. */
-          null
-        ) : pending ? (
+             the database and this card cannot tell which. */ ? null : pending ? (
           /* Not a disabled button. There is nothing for this person to press —
              the decision is somebody else's — and a greyed-out control would
              read as a feature that is not finished. */
-          <span className="shrink-0 rounded-card border border-hairline px-5 py-2 text-[13.5px] text-mist-dim">
+          <span className="grid h-11 shrink-0 place-items-center rounded-[10px] border border-hairline px-5 text-[13.5px] text-mist-dim">
             Asked
           </span>
         ) : ask === "declined" ? (
-          <span className="shrink-0 rounded-card border border-hairline px-5 py-2 text-[13.5px] text-mist-dim">
+          <span className="grid h-11 shrink-0 place-items-center rounded-[10px] border border-hairline px-5 text-[13.5px] text-mist-dim">
             Not accepted
           </span>
         ) : openToAnyone || ask === "accepted" ? (
@@ -945,7 +958,7 @@ function GroupCoverCard({
                  group's space; see §7C before removing this. */
               navigate(`/social/groups/${group.id}`);
             }}
-            className="shrink-0 rounded-card bg-azure px-5 py-2 text-[13.5px] text-obsidian transition-colors hover:bg-azure-bright disabled:opacity-60"
+            className="h-11 shrink-0 rounded-[10px] bg-azure px-5 text-[13.5px] text-obsidian transition-colors hover:bg-azure-bright disabled:opacity-60"
           >
             {actions.busy ? "Joining…" : "Join"}
           </button>
@@ -961,7 +974,7 @@ function GroupCoverCard({
               // "Not accepted" instead of leaving the same button there.
               onChanged();
             }}
-            className="shrink-0 rounded-card border border-azure/50 px-4 py-2 text-[13.5px] text-azure transition-colors hover:border-azure disabled:opacity-60"
+            className="h-11 shrink-0 rounded-[10px] border border-azure/50 px-4 text-[13.5px] text-azure transition-colors hover:border-azure disabled:opacity-60"
           >
             {actions.busy ? "Asking…" : "Request to join"}
           </button>
@@ -973,7 +986,7 @@ function GroupCoverCard({
       {(actions.error ||
         unreadable ||
         (!joined && (pending || ask === "declined" || ask === "accepted" || isPrivate))) && (
-        <p className="border-t border-hairline px-4 py-3 text-[11.5px] leading-relaxed text-mist">
+        <p className="pt-2.5 text-[11.5px] leading-relaxed text-mist">
           {actions.error
             ? actions.error
             : unreadable
@@ -1121,7 +1134,9 @@ function CreateGroupCard({
 
   if (made) {
     return (
-      <Card>
+      /* Said on the page. A box around "your group exists" is a container
+         around a sentence; the medallion is the mark, the air is the frame. */
+      <div className="pt-6">
         <span
           aria-hidden="true"
           className="grid h-10 w-10 place-items-center rounded-full border border-azure/40 text-azure"
@@ -1143,7 +1158,7 @@ function CreateGroupCard({
         <Button variant="secondary" className="mt-2.5 w-full" onClick={onClose}>
           Not now
         </Button>
-      </Card>
+      </div>
     );
   }
 
@@ -1182,8 +1197,17 @@ function CreateGroupCard({
   const ready = destinationId !== null && trimmed.length > 0 && trimmed.length <= MAX_GROUP_NAME;
 
   return (
-    <Card inset={false}>
-      <div className="flex items-center gap-3 border-b border-hairline px-4 py-3">
+    /*
+     * A FORM IS NOT A CARD.
+     *
+     * The fields inside it keep their borders — a boundary is what tells you
+     * that you may type — but the panel around a group of fields was only
+     * saying "these belong together", which the heading row and the air
+     * already say. Two real divisions survive, as single hairlines: under the
+     * title row, and above the one control that commits all of it.
+     */
+    <div className="pt-2">
+      <div className="flex items-center gap-3 border-b border-hairline pb-3">
         <Users size={15} strokeWidth={1.6} className="shrink-0 text-mist-dim" aria-hidden="true" />
         <span className="flex-1 text-[13px] text-snow">Start a group</span>
         <button
@@ -1195,7 +1219,7 @@ function CreateGroupCard({
         </button>
       </div>
 
-      <div className="space-y-5 px-4 py-4">
+      <div className="space-y-6 py-5">
         {/* ---- Mountain ---------------------------------------------------- */}
         <div>
           <p className="section-label">Mountain</p>
@@ -1248,7 +1272,7 @@ function CreateGroupCard({
               onChange={(e) => setName(e.target.value)}
               maxLength={MAX_GROUP_NAME}
               placeholder="What the party is calling itself"
-              className="mt-2 w-full rounded-tile border border-hairline bg-white/[0.02] px-3 py-2.5 text-[13px] text-snow placeholder:text-mist-dim focus:border-azure/50 focus:outline-none"
+              className="mt-2 h-11 w-full rounded-tile border border-hairline bg-elevated/40 px-3 text-[13px] text-snow placeholder:text-mist-dim focus:border-azure/50 focus:outline-none"
             />
           </label>
           {/* Shown near the limit rather than always — a counter on an empty
@@ -1334,7 +1358,7 @@ function CreateGroupCard({
       </div>
 
       {/* ---- Create ------------------------------------------------------- */}
-      <div className="border-t border-hairline px-4 py-4">
+      <div className="border-t border-hairline pt-4">
         <Button
           className="w-full"
           disabled={!ready || blocked !== null || actions.busy}
@@ -1380,7 +1404,7 @@ function CreateGroupCard({
           <p className="mt-2.5 text-[11.5px] leading-relaxed text-mist">{actions.error}</p>
         )}
       </div>
-    </Card>
+    </div>
   );
 }
 
@@ -1825,7 +1849,7 @@ function InterestedList({ groupId }: { groupId: string }) {
 
   if (failure) {
     return (
-      <div className="mt-3 rounded-tile border border-hairline bg-white/[0.015] p-3">
+      <div className="mt-3">
         <InterestFailureNote reason={failure} />
       </div>
     );
@@ -1849,7 +1873,10 @@ function InterestedList({ groupId }: { groupId: string }) {
   }
 
   return (
-    <div className="mt-3 rounded-tile border border-hairline bg-white/[0.015] p-3">
+    /* NOT A PANEL. The loading and empty answers directly above are already
+       type on the page; a box around the third answer said only "these lines
+       belong together", and the avatar column already aligns the list. */
+    <div className="mt-3">
       {namesReadable ? (
         <ul className="space-y-2.5">
           {people.map((person) => (
@@ -2249,14 +2276,18 @@ function YourGroupsSection() {
               filter genuinely caused. */}
           <Card>
             <p className="text-[14px] text-snow">
-              None of your {expeditions.length} {expeditions.length === 1 ? "group" : "groups"} match
-              these filters
+              None of your {expeditions.length} {expeditions.length === 1 ? "group" : "groups"}{" "}
+              match these filters
             </p>
             <p className="mt-1.5 text-[12px] leading-relaxed text-mist">
               This one really is a filtered list of what you have — nothing has been hidden from
               you.
             </p>
-            <Button variant="secondary" className="mt-4 w-full" onClick={() => setFilters(NO_FILTERS)}>
+            <Button
+              variant="secondary"
+              className="mt-4 w-full"
+              onClick={() => setFilters(NO_FILTERS)}
+            >
               Clear filters
             </Button>
           </Card>
@@ -2272,7 +2303,11 @@ function YourGroupsSection() {
           )}
           {visible.map((group) => (
             <Rise key={group.id} className="pt-3">
-              <GroupCard group={group} style={groupStyle[group.id]} to={`/social/groups/${group.id}`} />
+              <GroupCard
+                group={group}
+                style={groupStyle[group.id]}
+                to={`/social/groups/${group.id}`}
+              />
             </Rise>
           ))}
         </>

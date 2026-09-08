@@ -1,17 +1,30 @@
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import {
-  Activity as ActivityIcon, ArrowUpRight, Backpack, Check, ChevronRight, Clock,
-  Flame, Play, Route, TrendingUp,
+  Activity as ActivityIcon,
+  ArrowUpRight,
+  Backpack,
+  Check,
+  ChevronRight,
+  Clock,
+  Flame,
+  Play,
+  Route,
+  TrendingUp,
 } from "lucide-react";
-import { Button, Card, SectionLabel } from "@/components/ui/primitives";
+import { Button, SectionLabel } from "@/components/ui/primitives";
 import { MiniBars } from "@/components/ui/charts";
 import { Rise, Screen, Stagger } from "@/components/layout/chrome";
 import { MountainThumb } from "@/components/domain/MountainImage";
 import { ObjectiveWeather } from "@/components/domain/ObjectiveWeather";
 import { PromotedCard } from "@/components/domain/PromotedCard";
 import {
-  fmtCountdown, fmtDistance, fmtElevation, fmtHours, greeting, FOCUS_LABELS,
+  fmtCountdown,
+  fmtDistance,
+  fmtElevation,
+  fmtHours,
+  greeting,
+  FOCUS_LABELS,
 } from "@/lib/format";
 import { sync } from "@/services/repository";
 import { useActivityFeed, useWeeklyProgress } from "@/tracking/feed";
@@ -25,6 +38,7 @@ import { usePromotedHomeCard } from "@/social/promoted";
 import { parseDay } from "@/network/groups";
 import type { Score } from "@/coach/types";
 import { SubscribeSheet, useSubscribeSheet } from "@/components/growth/SubscribeSheet";
+import { PageTour } from "@/tour/PageTour";
 import { cn } from "@/lib/utils";
 
 /**
@@ -129,8 +143,7 @@ function heroForToday(now: Date = new Date()): { src: string; flip: boolean } {
 }
 
 export default function Home() {
-  const { user, toggleSession } =
-    useApp();
+  const { user, toggleSession } = useApp();
   /*
    * The subscription sheet, shown ONCE PER INSTALL on the first Home.
    *
@@ -170,7 +183,8 @@ export default function Home() {
    * start date has moved.
    */
   const todayWeek = useMemo(
-    () => (today ? (plan?.weeks.find((w) => w.days.some((d) => d.date === today.date)) ?? null) : null),
+    () =>
+      today ? (plan?.weeks.find((w) => w.days.some((d) => d.date === today.date)) ?? null) : null,
     [plan, today],
   );
 
@@ -197,11 +211,12 @@ export default function Home() {
       // midnight, which is the previous day west of Greenwich.
       const parsed = parseDay(d.date);
       return {
-      date: d.date,
-      label: DAY_INITIALS[parsed ? (parsed.getDay() + 6) % 7 : i % 7],
-      rest: d.focus === "rest",
-      done: completedByDate.get(d.date) === true || satisfiedByActivity.has(d.date) || d.completed,
-      isToday: d.date === todayKey,
+        date: d.date,
+        label: DAY_INITIALS[parsed ? (parsed.getDay() + 6) % 7 : i % 7],
+        rest: d.focus === "rest",
+        done:
+          completedByDate.get(d.date) === true || satisfiedByActivity.has(d.date) || d.completed,
+        isToday: d.date === todayKey,
       };
     });
   }, [todayWeek, today, completedByDate, satisfiedByActivity]);
@@ -228,8 +243,7 @@ export default function Home() {
   const hero = heroForToday();
 
   const readinessKnown =
-    typeof intel.readiness.score.value === "number" &&
-    Number.isFinite(intel.readiness.score.value);
+    typeof intel.readiness.score.value === "number" && Number.isFinite(intel.readiness.score.value);
 
   return (
     <Screen padded={false}>
@@ -319,9 +333,19 @@ export default function Home() {
           </div>
 
           {/* ---- Current objective — overlapping the foot of the hero ------ */}
-          <div className="relative px-5 pt-6">
+          {/*
+            THE OBJECTIVE IS NOT IN A BOX ANY MORE.
+
+            It was a bordered graphite card laid over the foot of the hero
+            photograph, which put a hard rectangle across the one picture on
+            this screen and made the athlete's own mountain look like a widget
+            dropped on it. What announces this block now is its label, the
+            26px name under it, and the air on either side — the picture
+            dissolves into the page and the objective simply continues down it.
+          */}
+          <div className="relative px-5 pt-7">
             {goal ? (
-              <Card>
+              <div>
                 <Link to="/goals" className="block">
                   <div className="flex items-start gap-3">
                     <div className="min-w-0 flex-1">
@@ -358,7 +382,9 @@ export default function Home() {
                         style={{ width: `${Math.max(0, Math.min(100, goal.preparation))}%` }}
                       />
                     </div>
-                    <span className="tnum shrink-0 text-[13px] text-azure">{goal.preparation}%</span>
+                    <span className="tnum shrink-0 text-[13px] text-azure">
+                      {goal.preparation}%
+                    </span>
                   </div>
                   {/* The real training block — never "expedition ready", which is
                       a clearance ICEFALL is forbidden to give. */}
@@ -376,13 +402,14 @@ export default function Home() {
                     changes every morning. Both remaining figures are still
                     derivable, and readiness still renders an em dash rather
                     than a zero when it cannot be computed. */}
-                <div className="mt-4 grid grid-cols-2 gap-2 border-t border-hairline pt-4">
-                  <Stat value={daysToGoValue(goal.targetDate)} label={daysToGoLabel(goal.targetDate)} />
+                <div className="mt-5 grid grid-cols-2 gap-x-5 border-t border-hairline pt-4">
+                  <Stat
+                    value={daysToGoValue(goal.targetDate)}
+                    label={daysToGoLabel(goal.targetDate)}
+                  />
                   <Stat
                     value={
-                      readinessKnown
-                        ? `${Math.round(intel.readiness.score.value as number)}%`
-                        : "—"
+                      readinessKnown ? `${Math.round(intel.readiness.score.value as number)}%` : "—"
                     }
                     label="Readiness"
                   />
@@ -405,7 +432,7 @@ export default function Home() {
                     thing that ruling was about. */}
                 {elevationM !== null && lat !== undefined && lon !== undefined && (
                   <ObjectiveWeather
-                    className="mt-4"
+                    className="mt-5"
                     peakName={goal.name}
                     elevationM={elevationM}
                     lat={lat}
@@ -413,21 +440,21 @@ export default function Home() {
                     goalId={goal.id}
                   />
                 )}
-              </Card>
+              </div>
             ) : (
-              <Card>
+              <div>
                 <p className="section-label text-azure">Current objective</p>
-                <p className="mt-2 text-[13px] text-snow">No objective set.</p>
-                <p className="mt-1.5 text-[12px] leading-relaxed text-mist">
+                <p className="mt-2.5 text-[19px] font-light text-snow">No objective set.</p>
+                <p className="mt-2 max-w-[34ch] text-[12px] leading-relaxed text-mist">
                   A plan, a kit list and a readiness read are all built from a mountain and a date.
                 </p>
                 <Link
                   to="/goals"
-                  className="mt-3 inline-flex items-center gap-1 text-[12.5px] text-azure"
+                  className="mt-3.5 inline-flex items-center gap-1 text-[12.5px] text-azure"
                 >
                   Set an objective <ChevronRight size={14} strokeWidth={1.8} />
                 </Link>
-              </Card>
+              </div>
             )}
           </div>
         </Rise>
@@ -439,8 +466,12 @@ export default function Home() {
             sits on the photograph, and nothing may be inserted between them. */}
         {active && activeType && ActiveIcon && (
           <Rise className="pt-3">
+            {/* One azure rule down the left, which is this app's own mark for
+                a note that matters — not a tinted rectangle. The pulsing dot
+                and the azure ink already say "this is live"; the box was a
+                third voice saying it. */}
             <Link to={`/activity/live/${active.activityTypeId}`} className="block">
-              <div className="flex items-center gap-3 rounded-card border border-azure/40 bg-azure/[0.06] p-4">
+              <div className="flex items-center gap-3 border-l-2 border-azure py-3 pl-3.5">
                 <span className="relative grid h-10 w-10 shrink-0 place-items-center rounded-full border border-azure/40 text-azure">
                   <ActiveIcon size={18} strokeWidth={1.5} />
                   <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 animate-pulse rounded-full bg-azure ring-2 ring-obsidian" />
@@ -460,6 +491,20 @@ export default function Home() {
             </Link>
           </Rise>
         )}
+
+        {/* ---- What this screen is ------------------------------------------
+            Shown once, on the first Home, and never again once it is dismissed.
+
+            BELOW THE ACTIVE SESSION for the same reason the promotion is: an
+            activity in progress is the most time-critical control on the page
+            and nothing goes above it. Above the promotion, because an
+            introduction to the athlete's own screen outranks an advertisement.
+
+            `hold` while the subscription sheet is up: that sheet is a
+            full-screen dialog shown once per install on this very screen, and
+            two first-run things at once is neither. Holding does not consume
+            the guide — it appears after the sheet closes, still unseen. */}
+        <PageTour screen="home" hold={subscribe.open} />
 
         {/* ---- A promotion, if one is running ------------------------------
             WHERE, AND WHY IT MOVED FROM THE DRAWING. The mockup puts this
@@ -519,7 +564,12 @@ export default function Home() {
           >
             Today's plan
           </SectionLabel>
-          <Card className="mt-3">
+          {/* A heading and the air above it are already the strongest section
+              marker on the screen. The rectangle that used to wrap this was a
+              second, weaker one competing with it. The two hairlines inside —
+              under the session's detail, and above the session plan — stay:
+              those are real divisions between unlike things. */}
+          <div className="mt-3.5">
             {today ? (
               /* The tick is a control, not a status dot, so it cannot live
                  inside the link to the session — an anchor may not contain a
@@ -598,7 +648,7 @@ export default function Home() {
               </p>
             )}
 
-          {/* ---- Session plan ---------------------------------------------
+            {/* ---- Session plan ---------------------------------------------
               The vertical timeline `phone-5.png` draws. It renders on every
               build, not behind a flag — the layout is the production design.
 
@@ -612,61 +662,61 @@ export default function Home() {
               HR down gradually". Neither ships. ICEFALL has measured nobody's
               heart and holds no threshold to divide one against, so there is no
               zone to name — effort stays in words until a device pairs. -- */}
-          {today && today.durationMin ? (
-            /* A SECTION of the session's card, not a card beside it. Owner:
+            {today && today.durationMin ? (
+              /* A SECTION of the session's card, not a card beside it. Owner:
                "session plan should also be connected to the endurance box."
                It is the same session broken down — it was never separate
                information, only a separate border. */
-            <div className="mt-5 border-t border-hairline pt-4">
-              <>
-                <SectionLabel>Session plan</SectionLabel>
-                <ol className="mt-3.5">
-                  {sessionSegments(today.durationMin, today.detail).map((seg, i, all) => (
-                    <li key={seg.name} className="flex gap-3.5">
-                      {/* The rail: a dot per row, joined by a line that stops
+              <div className="mt-5 border-t border-hairline pt-4">
+                <>
+                  <SectionLabel>Session plan</SectionLabel>
+                  <ol className="mt-3.5">
+                    {sessionSegments(today.durationMin, today.detail).map((seg, i, all) => (
+                      <li key={seg.name} className="flex gap-3.5">
+                        {/* The rail: a dot per row, joined by a line that stops
                           at the last one rather than trailing into nothing. */}
-                      <div className="flex w-3 shrink-0 flex-col items-center">
-                        <span
-                          className={cn(
-                            "mt-1.5 h-3 w-3 shrink-0 rounded-full border",
-                            i === 0 ? "border-azure bg-azure" : "border-mist-dim",
-                          )}
-                        />
-                        {i < all.length - 1 && <span className="w-px flex-1 bg-hairline" />}
-                      </div>
+                        <div className="flex w-3 shrink-0 flex-col items-center">
+                          <span
+                            className={cn(
+                              "mt-1.5 h-3 w-3 shrink-0 rounded-full border",
+                              i === 0 ? "border-azure bg-azure" : "border-mist-dim",
+                            )}
+                          />
+                          {i < all.length - 1 && <span className="w-px flex-1 bg-hairline" />}
+                        </div>
 
-                      <div
-                        className={cn(
-                          "flex min-w-0 flex-1 gap-4 pb-4",
-                          i < all.length - 1 && "border-b border-hairline",
-                          i > 0 && "pt-0.5",
-                        )}
-                      >
-                        <div className="w-[88px] shrink-0">
-                          <p className="text-[14.5px] text-snow">{seg.name}</p>
-                          {/* An em dash where there are no minutes, as the
+                        <div
+                          className={cn(
+                            "flex min-w-0 flex-1 gap-4 pb-4",
+                            i < all.length - 1 && "border-b border-hairline",
+                            i > 0 && "pt-0.5",
+                          )}
+                        >
+                          <div className="w-[88px] shrink-0">
+                            <p className="text-[14.5px] text-snow">{seg.name}</p>
+                            {/* An em dash where there are no minutes, as the
                               drawing does on its own last row — never a zero. */}
-                          <p className="tnum mt-0.5 text-[12.5px] text-mist">
-                            {seg.minutes === null ? "—" : `${seg.minutes} min`}
+                            <p className="tnum mt-0.5 text-[12.5px] text-mist">
+                              {seg.minutes === null ? "—" : `${seg.minutes} min`}
+                            </p>
+                          </div>
+                          <p className="min-w-0 flex-1 text-[13px] leading-relaxed text-mist">
+                            {seg.note}
                           </p>
                         </div>
-                        <p className="min-w-0 flex-1 text-[13px] leading-relaxed text-mist">
-                          {seg.note}
-                        </p>
-                      </div>
-                    </li>
-                  ))}
-                </ol>
+                      </li>
+                    ))}
+                  </ol>
 
-                <p className="mt-1 text-[11px] leading-relaxed text-mist-dim">
-                  {SEGMENTS_ARE_A_STANDARD_SHAPE}
-                </p>
-              </>
-            </div>
-          ) : null}
-          </Card>
+                  <p className="mt-1 text-[11px] leading-relaxed text-mist-dim">
+                    {SEGMENTS_ARE_A_STANDARD_SHAPE}
+                  </p>
+                </>
+              </div>
+            ) : null}
+          </div>
 
-          <div className="mt-2.5 grid grid-cols-2 gap-2.5">
+          <div className="mt-5 grid grid-cols-2 gap-3">
             <TileLink
               to="/coach/nutrition"
               img="/img/onboarding-plan.jpg"
@@ -695,7 +745,7 @@ export default function Home() {
           >
             This week
           </SectionLabel>
-          <Card className="mt-3">
+          <div className="mt-3.5">
             {/* ---- The day strip `phone-5.png` draws --------------------------
                 Seven circles Mon–Sun: a tick where the session is done, a ring
                 on today, an empty circle ahead. Real data throughout —
@@ -719,10 +769,7 @@ export default function Home() {
                   {weekDays.map((d) => (
                     <div key={d.date} className="flex flex-col items-center gap-2">
                       <span
-                        className={cn(
-                          "text-[11px]",
-                          d.isToday ? "text-snow" : "text-mist-dim",
-                        )}
+                        className={cn("text-[11px]", d.isToday ? "text-snow" : "text-mist-dim")}
                       >
                         {d.label}
                       </span>
@@ -752,14 +799,14 @@ export default function Home() {
               </div>
             )}
 
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-4 gap-x-3 gap-y-4 border-t border-hairline pt-4">
               <Figure icon={ActivityIcon} value={String(weekly.activities)} label="Activities" />
               <Figure icon={Clock} value={fmtHours(weekly.timeHours)} label="Duration" />
               <Figure icon={TrendingUp} value={fmtElevation(weekly.elevationM)} label="Elevation" />
               <Figure icon={Route} value={fmtDistance(weekly.distanceKm)} label="Distance" />
             </div>
             <MiniBars data={weekly.daily} activeIndex={todayIndex} className="mt-5" />
-          </Card>
+          </div>
         </Rise>
 
         {/* PH-06 — REMOVED FROM HOME at the owner's request: Recent activity,
@@ -780,8 +827,11 @@ export default function Home() {
         {/* ---- Gear for the objective --------------------------------------- */}
         {goal?.mountainId && sync.systemForMountain(goal.mountainId) && (
           <Rise className="pt-7">
+            {/* A picture with words on it, so the picture is the thing: out of
+                the gutter with `-mx-5`, no frame, and the type brought back to
+                the page's own left edge inside it. */}
             <Link to="/gear" className="block">
-              <div className="relative overflow-hidden rounded-card border border-hairline">
+              <div className="relative -mx-5 overflow-hidden">
                 <img
                   src={`/img/${goal.mountainId}.jpg`}
                   alt=""
@@ -789,13 +839,13 @@ export default function Home() {
                   className="absolute inset-0 h-full w-full object-cover opacity-30"
                 />
                 <div className="absolute inset-0 bg-gradient-to-r from-graphite via-graphite/85 to-transparent" />
-                <div className="relative p-5">
-                  <h3 className="text-[16px] text-snow">Gear up for {goal.name}</h3>
+                <div className="relative px-5 py-7">
+                  <h3 className="text-[19px] font-light text-snow">Gear up for {goal.name}</h3>
                   <p className="mt-1.5 max-w-[30ch] text-[11.5px] leading-relaxed text-mist">
                     The system this class of objective demands, including the technical items
                     ICEFALL does not make.
                   </p>
-                  <span className="mt-3.5 inline-flex items-center gap-1.5 rounded-tile border border-azure/45 px-3.5 py-2 text-[12.5px] text-azure">
+                  <span className="mt-4 inline-flex h-11 items-center gap-1.5 rounded-[10px] border border-azure/45 px-4 text-[12.5px] text-azure">
                     View gear guide
                   </span>
                 </div>
@@ -812,7 +862,10 @@ export default function Home() {
               Derived for {goal.name} from its altitude, latitude and a live forecast — not
               editorial.
             </p>
-            <div className="mt-3 divide-y divide-hairline border-y border-hairline">
+            {/* No rules between these and none around them: each row already
+                carries a 66px photograph down the left, and a picture column
+                aligns a list better than an outline ever did. */}
+            <div className="mt-4">
               <IntelRow
                 to={`/mountain/${goal.id}`}
                 img="/img/expedition-hero.jpg"
@@ -840,7 +893,6 @@ export default function Home() {
             </div>
           </Rise>
         )}
-
       </Stagger>
       {subscribe.open && <SubscribeSheet onDismiss={subscribe.dismiss} />}
     </Screen>
@@ -1027,7 +1079,10 @@ function TileLink({
 }) {
   return (
     <Link to={to} className="block">
-      <div className="relative h-[184px] overflow-hidden rounded-card border border-hairline">
+      {/* The radius here follows the photograph's own edge, which is a real
+          edge. The border did not follow anything — it was a frame around a
+          picture, and a picture does not need framing. */}
+      <div className="relative h-[184px] overflow-hidden rounded-card">
         <img
           src={img}
           alt=""
@@ -1065,8 +1120,11 @@ function IntelRow({
   detail: string;
 }) {
   return (
-    <Link to={to} className="flex items-center gap-3.5 py-3">
-      <span className="h-[52px] w-[66px] shrink-0 overflow-hidden rounded-tile border border-hairline">
+    <Link
+      to={to}
+      className="-mx-5 flex items-center gap-3.5 px-5 py-3.5 transition-colors hover:bg-white/[0.03]"
+    >
+      <span className="h-[52px] w-[66px] shrink-0 overflow-hidden rounded-tile">
         <img src={img} alt="" aria-hidden className="h-full w-full object-cover" />
       </span>
       <span className="min-w-0 flex-1">
