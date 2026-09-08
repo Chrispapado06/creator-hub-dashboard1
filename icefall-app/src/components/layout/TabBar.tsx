@@ -222,19 +222,34 @@ function ActiveLens({
   const swell = useMotionValue(1);
 
   useEffect(() => {
-    const to = pressedIndex === null ? 1 : 1.14;
+    /* 1.18 rather than 1.14: at 90ms the eye reads the PEAK, not the average,
+       and the smaller value was legible only in a slow hold. */
+    const to = pressedIndex === null ? 1 : 1.18;
     if (reduce) {
       swell.set(1);
       return;
     }
-    /* Down is quick and eager; the release is softer and slightly springy, which
-       is what makes it read as glass settling rather than a button popping. */
-    const controls = animate(swell, to, {
-      type: "spring",
-      stiffness: pressedIndex === null ? 260 : 520,
-      damping: pressedIndex === null ? 26 : 30,
-      mass: 0.6,
-    });
+    /*
+     * THE PRESS IS A TWEEN, NOT A SPRING, AND THAT IS THE WHOLE FIX.
+     *
+     * The first version sprang to 1.14 at stiffness 520 — roughly 250ms to
+     * arrive. A REAL TAP IS 60 TO 100 MILLISECONDS. So on a phone the swell was
+     * still climbing through about 1.02 when the finger lifted and the release
+     * pulled it straight back: the growth was real, correctly wired, and
+     * invisible. The owner: "It doesn't move with my finger, doesn't grow".
+     *
+     * It was only ever visible in my own test because that held the press for
+     * 250ms, which no thumb does. A synthetic hold is not a tap.
+     *
+     * 90ms flat on the way in, so a tap that lasts 60ms is already most of the
+     * way there and one that lasts 200ms has been at full size for a while. The
+     * release keeps its spring, because that is the half that should feel like
+     * glass settling rather than a button popping.
+     */
+    const controls =
+      pressedIndex === null
+        ? animate(swell, to, { type: "spring", stiffness: 260, damping: 26, mass: 0.6 })
+        : animate(swell, to, { duration: 0.09, ease: [0.2, 0.8, 0.3, 1] });
     return () => controls.stop();
   }, [pressedIndex, reduce, swell]);
 
@@ -339,7 +354,11 @@ function ActiveLens({
       <span
         className="absolute inset-0 rounded-full backdrop-blur-md backdrop-saturate-[1.6] backdrop-brightness-110"
         style={{
-          background: `linear-gradient(to bottom, ${lit(0.14)} 0%, ${lit(0.05)} 55%, ${lit(0.09)} 100%)`,
+          /* Carries the shape ON ITS OWN if `backdrop-filter` is unavailable —
+             an old device, a browser with it switched off. Faint enough that
+             where the refraction DOES work it is still the refraction doing the
+             work, strong enough that the lens is never invisible. */
+          background: `linear-gradient(to bottom, ${lit(0.2)} 0%, ${lit(0.08)} 55%, ${lit(0.13)} 100%)`,
           boxShadow: [
             `inset 0 1px 0 0 ${lit(0.5)}`,
             `inset 0 -1px 0 0 ${lit(0.14)}`,
@@ -589,8 +608,39 @@ export function TabBar() {
          * navigation that cannot be read over a hero image is not a trade worth
          * making for a nicer pane.
          */
-        className="pointer-events-auto relative overflow-visible rounded-[24px] border border-hairline-strong bg-[color-mix(in_oklab,var(--ice-graphite)_24%,transparent)] shadow-[var(--ice-shadow-pop)] backdrop-blur-2xl backdrop-saturate-150"
+        className="pointer-events-auto relative overflow-visible rounded-[24px]"
       >
+        {/*
+          THE GLASS IS A PLATE, NOT THE CONTAINER — AND THAT IS A BUG FIX, NOT A
+          TIDY-UP.
+
+          The pane used to be this box's own background, with the lens rendered
+          INSIDE it. On Chrome that composites exactly as drawn, which is how it
+          passed every check made on the Mac. ON AN IPHONE THE LENS DISAPPEARED,
+          and the owner reported it the first time they opened the deploy on a
+          phone: "the glass thing on navigation isn't working".
+
+          WebKit does not nest backdrop filters. An element carrying
+          `backdrop-filter` becomes a backdrop ROOT for everything inside it, so
+          a descendant asking for its own `backdrop-filter` has nothing left to
+          sample and the declaration quietly does nothing. It is not a prefix
+          problem — `-webkit-backdrop-filter` is emitted — and it is not a
+          version problem. It is the nesting.
+
+          The lens's fill is deliberately almost not there, because the
+          refraction was supposed to do the work. Take the refraction away and
+          almost nothing is what remains.
+
+          So the pane is now a SIBLING plate painted underneath, and the lens is
+          a sibling painted over it. Nothing filtered contains anything filtered:
+          the lens's backdrop is the page and this plate, which is what makes it
+          genuinely refract the bar rather than tint it — and it is the same
+          picture on both engines.
+        */}
+        <span
+          aria-hidden
+          className="absolute inset-0 rounded-[24px] border border-hairline-strong bg-[color-mix(in_oklab,var(--ice-graphite)_24%,transparent)] shadow-[var(--ice-shadow-pop)] backdrop-blur-2xl backdrop-saturate-150"
+        />
         {/* Both the light and the ripple are clipped to the pill, so the cone
             and the circle respect its rounded corners — the wrapper owns the
             rounding, not the shapes inside it. The emitter is INSIDE this clip
@@ -604,6 +654,10 @@ export function TabBar() {
           <Ripple at={ripple} />
         </span>
 
+        {/* `relative` puts the tabs above the plate and the lens without a
+            z-index: later sibling, same stacking context. The lens is a
+            selection BACKGROUND — an icon blurred by the thing marking it is
+            the bug this ordering prevents. */}
         <ul className="relative flex h-[var(--tabbar-h)] items-stretch">
           {TABS.map((tab, i) => {
             if (!tab) {
