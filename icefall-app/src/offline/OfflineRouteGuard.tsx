@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
-import { DEMO } from "./offline";
+import { OFFLINE } from "./offline";
 
 /**
  * Offline, there is no door.
@@ -21,6 +21,19 @@ import { DEMO } from "./offline";
  * NOT listed: they are ordinary product screens that work offline, and the
  * paywall is part of what there is to look at.
  *
+ * ── WHY THIS GATES ON `OFFLINE` AND NOT `DEMO` ─────────────────────────────
+ *
+ * It used to read `DEMO`, which is `OFFLINE || VITE_ICEFALL_DEMO`. Every reason
+ * written above is a reason about being OFFLINE — no backend, no Overpass, a
+ * plane. None of them is true of the ONLINE demo build, which has a network and
+ * can complete onboarding perfectly well.
+ *
+ * The cost of the wider gate was that the owner could not reach `/onboarding`
+ * at all in the demo build to see the signup questions — gender, sex at birth,
+ * the body numbers and "how did you hear about us" — which are asked there and
+ * nowhere else. Typing the URL bounced to `/home`, which looked exactly like
+ * the questions not existing. They exist; this guard was hiding them.
+ *
  * Renders nothing, and does nothing at all when the flag is unset.
  */
 const BYPASSED = /^\/(welcome|auth(\/|$)|onboarding(\/|$))/;
@@ -30,7 +43,7 @@ export function OfflineRouteGuard() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!DEMO) return;
+    if (!OFFLINE) return;
     if (BYPASSED.test(pathname)) navigate("/home", { replace: true });
   }, [pathname, navigate]);
 
