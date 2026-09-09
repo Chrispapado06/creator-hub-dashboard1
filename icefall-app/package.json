@@ -8,11 +8,13 @@
     "build": "tsc && vite build && node scripts/strip-local-assets.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "npm run test:tracking && npm run test:conditions && npm run test:scroll",
+    "test": "npm run test:tracking && npm run test:conditions && npm run test:scroll && npm run test:treks && npm run test:follow",
     "test:tracking": "esbuild src/tracking/tracking.test.ts --bundle --platform=node --format=esm --log-level=warning --outfile=node_modules/.icefall-tests/tracking.test.mjs && node node_modules/.icefall-tests/tracking.test.mjs",
     "test:conditions": "esbuild src/services/conditions.test.ts --bundle --platform=node --format=esm --log-level=warning --define:import.meta.env={} --alias:@=./src --outfile=node_modules/.icefall-tests/conditions.test.mjs && node node_modules/.icefall-tests/conditions.test.mjs",
     "test:scroll": "esbuild src/components/layout/scroll.test.ts --bundle --platform=node --format=esm --log-level=warning --outfile=node_modules/.icefall-tests/scroll.test.mjs && node node_modules/.icefall-tests/scroll.test.mjs",
-    "peaks": "node scripts/build-peak-catalogue.mjs"
+    "test:treks": "esbuild src/treks/route.test.ts --bundle --platform=node --format=esm --log-level=warning --alias:@=./src --outfile=node_modules/.icefall-tests/treks.test.mjs && node node_modules/.icefall-tests/treks.test.mjs",
+    "peaks": "node scripts/build-peak-catalogue.mjs",
+    "test:follow": "esbuild src/tracking/follow.test.ts --bundle --platform=node --format=esm --log-level=warning --define:import.meta.env={} --alias:@=./src --outfile=node_modules/.icefall-tests/follow.test.mjs && node node_modules/.icefall-tests/follow.test.mjs"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.6",

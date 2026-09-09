@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, Navigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   ChevronLeft,
   ChevronRight,
+  Compass,
   Download,
   ExternalLink,
   Images,
@@ -36,6 +37,7 @@ import {
 } from "@/services/trails";
 import { ofCaption, photosOfNamed, type PlacePhoto } from "@/services/placePhotos";
 import { operatorsFor } from "@/services/operators";
+import { useRouteFacts } from "@/services/routeFacts";
 import { TrailImage } from "@/components/domain/TrailImage";
 import { PLATE_CAPTION_LOADING, type TrailPhoto } from "@/services/trailImagery";
 import { trailWaypoints, orderedWaypoints, type TrailWaypoint } from "@/services/trailWaypoints";
@@ -47,21 +49,18 @@ import {
   type MapStyleId,
 } from "@/components/map/icefallStyle";
 import { mapsDirectionsUrl, mapsPinUrl, openMaps } from "@/lib/maps";
+import { downloadGpx, gpxBlocked } from "@/lib/gpx";
+import { FOLLOW_ONE_LINE, followBlocked, followHref } from "@/tracking/follow";
 import { SAVED_NOTICE, isTrailSaved, saveTrail, unsaveTrail } from "@/services/savedTrails";
 import { SaveCircle, SavedToast, useSaveFlash } from "@/components/ui/SaveControl";
 import { BreakdownBar, ElevationProfile } from "@/components/domain/TrailProfile";
 import {
-  elevationOf,
   formatHours,
   hardestGrade,
   lineSegments,
   surfaceBreakdown,
-  toGpx,
   trailLengthKm,
-  trailWays,
   walkingHours,
-  type Elevation,
-  type TrailWay,
   waytypeBreakdown,
 } from "@/services/trailProfile";
 import { accessChips, routeShape, type RouteShape } from "./trailShape";
@@ -89,29 +88,6 @@ const DIN_NOTE =
   "Moving time is estimated from the measured length and climb by DIN 33466 — 4 km/h on the flat, 300 m up and 500 m down per hour. It is a fit walker's moving time and counts no stops.";
 
 /**
- * WHY THE GPX CONTROL IS DEAD — the one place the wording lives.
- *
- * A DISABLED BUTTON HAS TO SAY WHY, AND THE REASON HAS TO BE TRUE. There are
- * two ways to have no file to write and they are not the same news: the line is
- * still coming, or it is not coming. This once read "The line is still loading"
- * for both, so a trail whose geometry had genuinely failed sat under a
- * permanent, false "loading" and the reader waited for nothing.
- *
- * Returns `null` when there IS a file to write, so the two controls that offer
- * it — the full-width button in the page and the pill in the docked bar — ask
- * the same question and cannot answer it differently. They used to carry two
- * copies of these sentences; only one of them had ever been corrected.
- */
-const GPX_STILL_LOADING = "The line is still loading";
-const GPX_NEVER_ARRIVED =
-  "OpenStreetMap didn't send the line, so there is no file to write. This is a connection problem.";
-
-function gpxBlocked(points: number, waiting: boolean): string | null {
-  if (points > 1) return null;
-  return waiting ? GPX_STILL_LOADING : GPX_NEVER_ARRIVED;
-}
-
-/**
  * How far the content sheet laps back over the bottom of the photograph.
  *
  * ONE NUMBER, ADDED TO THE HERO AND SUBTRACTED BY THE SHEET, so the lap costs
@@ -135,46 +111,6 @@ const HERO_THUMB_BOTTOM = SHEET_LAP_PX + 12;
 /* -------------------------------------------------------------------------- */
 /* Data                                                                        */
 /* -------------------------------------------------------------------------- */
-
-/**
- * Everything the relation does not tell us, worked out from its own geometry.
- *
- * One Overpass call for the member ways (tags AND geometry, ~48 KB) and one
- * free Open-Meteo call for the heights. Both are cached for the session, so
- * coming back to a trail costs nothing.
- */
-function useTrailFacts(osmId: number | undefined) {
-  const [ways, setWays] = useState<TrailWay[] | null>(null);
-  const [elevation, setElevation] = useState<Elevation | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (osmId == null) return;
-    let live = true;
-    const ctrl = new AbortController();
-    setLoading(true);
-    setWays(null);
-    setElevation(null);
-
-    trailWays(osmId)
-      .then(async (w) => {
-        if (!live || w.length === 0) return;
-        setWays(w);
-        const e = await elevationOf(osmId, w, ctrl.signal);
-        if (live) setElevation(e);
-      })
-      .finally(() => {
-        if (live) setLoading(false);
-      });
-
-    return () => {
-      live = false;
-      ctrl.abort();
-    };
-  }, [osmId]);
-
-  return { ways, elevation, loading };
-}
 
 /**
  * Real tagged stops along the route.
@@ -269,6 +205,7 @@ function useSeen<T extends HTMLElement>(margin = "400px") {
 export default function TrailDetail() {
   const { id } = useParams<{ id: string }>();
   const [params] = useSearchParams();
+  const navigate = useNavigate();
   const osmId = Number(id);
 
   /**
@@ -318,7 +255,7 @@ export default function TrailDetail() {
   const scroller = useRef<HTMLDivElement | null>(null);
   const mapSection = useSeen<HTMLDivElement>();
 
-  const facts = useTrailFacts(trail?.osmId);
+  const facts = useRouteFacts(trail?.osmId);
   /*
    * THE LINE WAITS FOR THE WAYS. Two Overpass queries, one after the other.
    *
@@ -338,6 +275,7 @@ export default function TrailDetail() {
    */
   const {
     line,
+    paths,
     loading: lineLoading,
     failed: lineFailed,
   } = useTrailLine(Number.isFinite(osmId) ? osmId : undefined, !facts.loading);
@@ -499,6 +437,18 @@ export default function TrailDetail() {
   const lineWaiting = lineLoading || facts.loading;
   /** Why the GPX controls cannot write a file, or `null` when they can. */
   const blocked = gpxBlocked(line.length, lineWaiting);
+  /** Why Start Route cannot run, or `null` when it can. Same gate, own words. */
+  const followStopped = followBlocked(line.length, lineWaiting);
+  /**
+   * The three SAC grades where hands, exposure and mountaineering judgement
+   * come into it. ICEFALL's standing rule is that on that ground the judgement
+   * belongs to a certified guide, made in person — so a control that starts a
+   * walk on it says so before the walk starts, not afterwards.
+   */
+  const alpine =
+    grade === "alpine_hiking" ||
+    grade === "demanding_alpine_hiking" ||
+    grade === "difficult_alpine_hiking";
   /* Frame 0 is whatever `TrailImage` settled on — a verified photograph, the
      satellite ground, or the contour plate. The rest are the Commons
      photographs, each carrying its own credit. Dots appear only when there is
@@ -1005,6 +955,7 @@ export default function TrailDetail() {
             ref={mapSection.ref}
             trail={trail}
             line={line}
+            paths={paths}
             stops={orderedStops}
             haveLine={haveLine}
             lineLoading={lineLoading}
@@ -1128,7 +1079,7 @@ export default function TrailDetail() {
             <button
               type="button"
               disabled={blocked !== null}
-              onClick={() => downloadGpx(trail.name, line)}
+              onClick={() => downloadGpx(trail.name, paths)}
               className="flex h-12 w-full items-center justify-center gap-2 rounded-pill border border-hairline-strong text-[13.5px] text-snow transition-colors hover:border-azure/50 disabled:pointer-events-none disabled:opacity-45"
             >
               <Download size={16} strokeWidth={1.8} />
@@ -1143,10 +1094,76 @@ export default function TrailDetail() {
                 `${line.length.toLocaleString()} points · for a watch or handheld`}
             </p>
 
+            {/* ═══ OWNER RULING, Charlie, 2026-09-09 — PLACEMENT IS PART OF IT ═══
+                "So above get directions, there should be a button of 'Start
+                Route' where it can show you the route to follow correctly."
+
+                So: a control labelled EXACTLY "Start Route", full width, sitting
+                DIRECTLY ABOVE "Get directions" in this stack. It is being built
+                by the trek-route-and-navigate workstream; this comment is here
+                because the brief for that work was written before the ruling and
+                a running agent cannot see later instructions.
+
+                THE TWO ARE DIFFERENT ACTIONS AND THE ORDER IS THE ARGUMENT.
+                "Get directions" hands you to an external maps app to reach the
+                START of the trail — it is how you get to the trailhead, and it
+                leaves ICEFALL. "Start Route" is the walk itself: it begins a
+                recorded activity bound to this line and follows it on the
+                ground. Start Route is what you do when you have arrived, so it
+                reads first and it is the one that should carry the emphasis.
+
+                WHAT IT MAY AND MAY NOT CLAIM. It follows a known line: position
+                against the route, distance and bearing to the next point,
+                distance to the end, and an off-route state with how far off.
+                It is NOT turn-by-turn — there are no instructions in OSM route
+                data and promising them would invent guidance a walker could act
+                on. It is NOT a safety device: GPS drifts, batteries die, and the
+                line is OpenStreetMap data that can be wrong or stale.
+
+                IT MUST NOT RENDER WHERE THERE IS NO LINE. A "Start Route" that
+                cannot start is the dead control this codebase keeps shipping —
+                gate it the way `gpxBlocked` gates the GPX button, and give the
+                same kind of true reason when it cannot run. */}
+            <button
+              type="button"
+              disabled={followStopped !== null}
+              onClick={() =>
+                navigate(
+                  followHref("hiking", { osmId: trail.osmId, name: trail.name }),
+                )
+              }
+              className="mt-3.5 flex h-12 w-full items-center justify-center gap-2 rounded-pill bg-azure text-[13.5px] text-obsidian transition-colors hover:bg-azure-bright disabled:pointer-events-none disabled:opacity-45"
+            >
+              <Compass size={16} strokeWidth={1.8} />
+              Start Route
+            </button>
+            {/* THE LIMIT IS STATED BEFORE THE WALK, NOT DURING IT, and it is
+                one sentence rather than a paragraph nobody reads standing at a
+                trailhead. The full four are on the tracker itself, opened once
+                and folded away after — see `FOLLOW_LIMITS`. When the control is
+                dead the caption is the true reason instead, in the same words
+                the GPX button uses for the same silence. */}
+            <p className="mt-1.5 text-center text-[11px] leading-relaxed text-mist-dim">
+              {followStopped ?? FOLLOW_ONE_LINE}
+              {followStopped === null && alpine && grade && (
+                <>
+                  {" "}
+                  OpenStreetMap grades this {SAC_LABEL[grade]}
+                  {gradeDerived ? ", read off the hardest of its member paths" : ""} — on that
+                  ground ICEFALL defers to an IFMGA/UIAGM-certified guide, whose judgement is made
+                  in person and not by an app.
+                </>
+              )}
+            </p>
+
+            {/* "Get directions" is the OTHER action and it comes second: it
+                hands you to an external maps app to REACH the start, and it
+                leaves ICEFALL. Start Route is the walk itself, so it reads
+                first and takes the emphasis this button used to carry. */}
             <button
               type="button"
               onClick={() => openMaps(mapsDirectionsUrl(startSpot ?? spot))}
-              className="mt-3.5 flex h-12 w-full items-center justify-center gap-2 rounded-pill bg-azure text-[13.5px] text-obsidian transition-colors hover:bg-azure-bright"
+              className="mt-3.5 flex h-12 w-full items-center justify-center gap-2 rounded-pill border border-hairline-strong text-[13.5px] text-snow transition-colors hover:border-azure/50"
             >
               <Navigation size={16} strokeWidth={1.8} />
               Get directions
@@ -1428,7 +1445,7 @@ export default function TrailDetail() {
           <LiquidGlassButton
             disabled={blocked !== null}
             aria-describedby={blocked ? "gpx-reason" : undefined}
-            onClick={() => downloadGpx(trail.name, line)}
+            onClick={() => downloadGpx(trail.name, paths)}
             className="h-11 grow basis-0 text-[13.5px] disabled:pointer-events-none disabled:opacity-45"
           >
             <Download size={16} strokeWidth={1.8} />
@@ -1459,6 +1476,7 @@ export default function TrailDetail() {
         <OptionsSheet
           trail={trail}
           line={line}
+          paths={paths}
           waiting={lineWaiting}
           onClose={() => setOptions(false)}
         />
@@ -1659,6 +1677,7 @@ function RouteMapPanel({
   ref,
   trail,
   line,
+  paths,
   stops,
   haveLine,
   lineLoading,
@@ -1671,6 +1690,8 @@ function RouteMapPanel({
   ref: React.Ref<HTMLDivElement>;
   trail: Trail;
   line: LatLon[];
+  /** The pieces the relation truly makes — what the map draws. See `joinWays`. */
+  paths: LatLon[][];
   stops: TrailWaypoint[];
   haveLine: boolean;
   lineLoading: boolean;
@@ -1707,6 +1728,7 @@ function RouteMapPanel({
       >
         <RouteWaypointMap
           line={line}
+          paths={paths}
           start={line[0] ?? { lat: trail.lat, lon: trail.lon }}
           center={{ lat: trail.lat, lon: trail.lon }}
           waypoints={stops}
@@ -1828,11 +1850,14 @@ function RouteMapPanel({
 function OptionsSheet({
   trail,
   line,
+  paths,
   waiting,
   onClose,
 }: {
   trail: Trail;
   line: LatLon[];
+  /** The pieces the relation truly makes — what the GPX file is written from. */
+  paths: LatLon[][];
   /** True while the line may still arrive — see the GPX row. */
   waiting: boolean;
   onClose: () => void;
@@ -1855,7 +1880,7 @@ function OptionsSheet({
           gpxBlocked(line.length, waiting) ??
           `${line.length.toLocaleString()} points · for a watch or handheld`
         }
-        onClick={() => line.length > 1 && downloadGpx(trail.name, line)}
+        onClick={() => line.length > 1 && downloadGpx(trail.name, paths)}
       />
       <SheetRow
         icon={ExternalLink}
@@ -1887,30 +1912,6 @@ function OptionsSheet({
       )}
     </Sheet>
   );
-}
-
-/**
- * Saves the route as GPX.
- *
- * The line comes from the relation's own geometry, so the file carries OSM's
- * ODbL notice in its metadata — required, and the sort of thing that is easy to
- * leave out and hard to add back once the file is on somebody's watch.
- */
-function downloadGpx(name: string, line: LatLon[]) {
-  if (line.length < 2) return;
-  const blob = new Blob([toGpx(name, line)], { type: "application/gpx+xml" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `${
-    name
-      .replace(/[^\w\s-]/g, "")
-      .trim()
-      .replace(/\s+/g, "-")
-      .toLowerCase() || "trail"
-  }.gpx`;
-  a.click();
-  URL.revokeObjectURL(url);
 }
 
 /* -------------------------------------------------------------------------- */

@@ -17,3 +17,6 @@ public/img/guides/
 
 # Trail photo harvest working state — intermediate, never shipped
 .harvest/
+
+# Overpass responses cached by the trek↔OSM matching script — regenerate, never commit
+scripts/.cache/

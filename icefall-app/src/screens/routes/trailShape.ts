@@ -41,12 +41,14 @@ const MIN_LOOP_LENGTH_KM = 1;
  *
  * OSM's own `roundtrip` tag outranks the measurement wherever a mapper set it:
  * they walked it and we did not. Without the tag the answer comes from the
- * geometry, and `trailGeometry` is what makes that legitimate — it reads the
- * relation's members in membership order and skips alternative and excursion
- * roles, so `line[0]` and the last point are the route's own two ends rather
- * than whichever way happened to sort first by id. What it does NOT do is turn
- * a member way that was drawn backwards the right way round — which is why the
- * ways get a vote of their own below.
+ * geometry, and `trailSegments` is what makes that legitimate — it joins the
+ * member ways on the NODES they share, turning round the ones OSM stored
+ * backwards, and skips alternative and excursion roles. So on a route that
+ * joins into one path, `line[0]` and the last point are the route's own two
+ * ends. Where the ways do NOT all join, `trailGeometry` hands this function
+ * those separate paths end to end, and the last point is then the last piece's
+ * end rather than the route's — which is why the ways get a vote of their own
+ * below rather than this test standing alone.
  *
  * Returns null rather than a shrug: a route with no line, no closed circuit and
  * no tag has no honest answer, and the stats row prints "—" for it.
@@ -63,13 +65,15 @@ export function routeShape(
   /*
    * THE SECOND MEASUREMENT, AND WHY THERE HAS TO BE ONE.
    *
-   * `trailGeometry` concatenates the member ways in MEMBERSHIP order but does
-   * not reverse the ones whose own geometry runs the other way — and OSM
-   * routinely reuses an existing way in whichever direction it was drawn. When
-   * the last member is stored backwards, the last point of the joined line is
-   * that way's far end rather than the route's, so a real loop can measure as
-   * kilometres of gap. The word would then be wrong even though the number
-   * under it was honestly measured, which is the worse failure of the two.
+   * A route OSM holds as pieces that do not meet still reaches `line` as those
+   * pieces laid end to end, so its last point is the last piece's end and not
+   * the route's — and a real loop can then measure as kilometres of gap. The
+   * word would be wrong even though the number under it was honestly measured,
+   * which is the worse failure of the two.
+   *
+   * (Until 2026-09-09 this was true of nearly every route, not just the broken
+   * ones: the line was the member ways in membership order with the ones OSM
+   * stored backwards left backwards. `joinWays` now turns those round.)
    *
    * `looseEnds` does not care which way a way was drawn: it counts how many
    * junctions the ways leave with an odd number of ends. Zero means the ways

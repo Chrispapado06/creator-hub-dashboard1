@@ -102,6 +102,7 @@ export const UNAVAILABLE_COPY: Record<UnavailableReason, string> = {
   "awaiting-signal": "Acquiring",
   "not-connected": "Not connected",
   "needs-permission": "Permission needed",
+  "signal-lost": "Signal lost",
 };
 
 /**

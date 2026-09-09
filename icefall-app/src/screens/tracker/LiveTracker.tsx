@@ -32,6 +32,9 @@ import { readMetric } from "@/tracking/metrics";
 import { projectTrack } from "@/tracking/adapt";
 import { finalizeActivity } from "@/tracking/finalize";
 import { useRecorder, type GpsMode } from "@/tracking/useRecorder";
+import { FollowPanel } from "@/components/tracker/FollowPanel";
+import { buildFollowRoute, decodeBoundRoute, followReadout } from "@/tracking/follow";
+import { trailPaths, trailSegments, type LatLon } from "@/services/trails";
 import type { ActivityTypeId } from "@/tracking/types";
 import { useApp } from "@/state/AppState";
 import { usePrimaryGoalWithProgress } from "@/tracking/training";
@@ -75,15 +78,101 @@ export default function LiveTracker() {
 
   const mountain = goal?.mountainId ? sync.mountainById(goal.mountainId) : undefined;
 
+  /**
+   * THE ROUTE THIS WALK IS BOUND TO, when it was started from one.
+   *
+   * From the URL on a fresh start; from the persisted session on a resume, where
+   * the URL carries only the activity type — see `ActiveSession.route`. Null is
+   * the ordinary case and every line of route-following below is behind it, so
+   * an activity started from the picker is exactly the screen it always was.
+   */
+  const urlRoute = useMemo(() => decodeBoundRoute(params), [params]);
+
   const rec = useRecorder({
     activityTypeId: (typeId as ActivityTypeId) ?? "outdoor-run",
     mode,
     autoPause,
     bodyMassKg,
     elevationTargetM: type?.verticalFocus ? 1000 : null,
+    route: urlRoute,
   });
+  const boundRoute = rec.route;
 
   const { snapshot: s } = rec;
+
+  /* ------------------------------------------------------------------ */
+  /* The line being followed                                             */
+  /* ------------------------------------------------------------------ */
+
+  /*
+   * TWO SHAPES OF THE SAME FETCH, and each goes where it belongs — the rule the
+   * trek and trail pages already follow. `guide` is the simplified line, which
+   * is what a map should draw. `follow` is the same relation at FULL fidelity,
+   * which is what a position is measured against: simplification moves a point
+   * by up to about forty metres, and a walker standing on the path would be
+   * told they were forty metres off it. One Overpass request feeds both, so the
+   * line drawn and the line measured against can never be different lines.
+   */
+  const [guide, setGuide] = useState<LatLon[][]>([]);
+  const [followPaths, setFollowPaths] = useState<LatLon[][]>([]);
+  /* A FAILED FETCH IS NOT A SLOW ONE, and the panel says which. Swallowing the
+     rejection left it on "waiting for the line" for ever. */
+  const [lineFailed, setLineFailed] = useState(false);
+  useEffect(() => {
+    if (!boundRoute) return;
+    let live = true;
+    setLineFailed(false);
+    trailSegments(boundRoute.osmId)
+      .then((p) => live && setGuide(p))
+      .catch(() => live && setLineFailed(true));
+    trailPaths(boundRoute.osmId)
+      .then((p) => live && setFollowPaths(p))
+      .catch(() => live && setLineFailed(true));
+    return () => {
+      live = false;
+    };
+  }, [boundRoute]);
+
+  const followRoute = useMemo(() => buildFollowRoute(followPaths), [followPaths]);
+  const readout = useMemo(
+    () =>
+      followReadout(followRoute, {
+        track: s.points,
+        accuracyM: s.gpsAccuracyM,
+        signalLost: s.signalLost,
+        gpsAvailable: s.capabilities.gps,
+        permissionDenied: rec.gpsState.status === "denied",
+        lineFailed,
+      }),
+    [
+      followRoute,
+      s.points,
+      s.gpsAccuracyM,
+      s.signalLost,
+      s.capabilities.gps,
+      rec.gpsState.status,
+      lineFailed,
+    ],
+  );
+
+  /*
+   * DEV-ONLY HANDLE on the followed line and the reading taken against it.
+   *
+   * The same device `TerrainMap` uses on the map instance, for the same reason
+   * given there: a WebGL canvas does not appear in a screenshot tool, and a
+   * number derived from a GPS fix cannot be produced by clicking. Without a way
+   * to interrogate the live engine, "the follow screen works" would rest on a
+   * typecheck, which is evidence about shapes and not about wiring. Stripped
+   * from production by `import.meta.env.DEV`.
+   */
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    (window as unknown as { __icefallFollow?: unknown }).__icefallFollow = {
+      route: followRoute,
+      readout,
+      bound: boundRoute,
+    };
+  }, [followRoute, readout, boundRoute]);
 
   /*
    * The spoken coach. No AI and no network: `liveCues` compares the athlete to
@@ -281,6 +370,7 @@ export default function LiveTracker() {
         styleId={savedMapStyle()}
         fallbackTrack={projected}
         fallbackSeed={type.id}
+        guide={boundRoute ? guide : undefined}
         className="absolute inset-0 h-full w-full"
       />
       <div className="absolute inset-x-0 top-0 h-44 bg-gradient-to-b from-obsidian via-obsidian/75 to-transparent" />
@@ -310,9 +400,43 @@ export default function LiveTracker() {
         )}
       </div>
 
-      <CueToast cue={rec.cue} />
+      {/* NAVIGATION AT THE TOP, METRICS AT THE BOTTOM, MAP BETWEEN.
+          The bottom block is `shrink-0` and already carries nine tiles; adding
+          a panel to it would push the controls off a small screen rather than
+          scroll. Up here it also sits where a walker glancing down actually
+          looks — and it capped and scrolls, so the limits list opening on a
+          first walk cannot swallow the map. */}
+      {boundRoute && (
+        <div className="relative z-20 shrink-0 px-5 pt-3">
+          <FollowPanel
+            route={boundRoute}
+            readout={readout}
+            /* TALL ENOUGH FOR THE LIMITS, which open by themselves on a
+               first followed walk and are the one thing here a walker has not
+               read before. At 46vh the fourth of them — the map, the compass
+               and the guide — ended mid-sentence at the panel's edge, which is
+               the worst of the four to lose and read as a broken screen rather
+               than as a scrollable one. Where it still does not fit, the panel
+               scrolls and says so at the cut. The cap is what stops it
+               swallowing the map. */
+            className="max-h-[62vh] rounded-card border border-hairline-strong bg-obsidian/85 backdrop-blur"
+          />
+        </div>
+      )}
+
+      {/* BELOW THE PANEL, NOT ACROSS IT, when there is a panel — see the note
+          on `CueToast`. Without a route bound these keep the slot they have
+          always had, just under the top bar. */}
+      <CueToast
+        cue={rec.cue}
+        className={boundRoute ? "relative inset-x-auto top-auto mx-5 mt-2" : undefined}
+      />
+      {/* THE PANEL OWNS THIS NEWS WHEN THERE IS A PANEL. Both said a fix had
+          been lost, in different words, one on top of the other; the panel's
+          version says it AND says what stops being measured because of it, so
+          the toast would only be the same warning twice. */}
       <SignalWarning
-        show={s.signalLost}
+        show={s.signalLost && !boundRoute}
         message="GPS signal lost. Timing continues — distance will resume when a fix returns."
       />
 

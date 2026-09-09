@@ -1,4 +1,5 @@
 import type { RecorderState } from "./recorder";
+import type { BoundRoute } from "./follow";
 import type { ActivityTypeId } from "./types";
 import type { GpsMode } from "./useRecorder";
 
@@ -25,6 +26,22 @@ export interface ActiveSession {
   version: 1;
   mode: GpsMode;
   state: RecorderState;
+  /**
+   * The route this activity is following, when it was started from one.
+   *
+   * PART OF THE IN-PROGRESS ACTIVITY, not of the URL that started it. A phone
+   * killed on a lock screen reopens through the Home screen's resume link,
+   * which carries the activity type and nothing else — so a binding kept only
+   * in the query string would come back as a plain recording, and the walker
+   * would find the line they were following gone at the moment they most need
+   * it. Only the id is stored; the geometry is re-fetched the same way every
+   * other screen gets it.
+   *
+   * OPTIONAL, and absent is the normal case — every activity started from the
+   * activity picker has no route. Sessions written before this field existed
+   * simply have none, which reads correctly as "not following anything".
+   */
+  route?: BoundRoute;
 }
 
 export function saveActiveSession(session: Omit<ActiveSession, "version">): void {

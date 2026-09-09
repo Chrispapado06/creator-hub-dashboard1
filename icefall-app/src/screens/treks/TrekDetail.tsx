@@ -1,11 +1,30 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, Navigate, useParams } from "react-router-dom";
-import { ChevronLeft, Compass, MessageSquare, Share2 } from "lucide-react";
+import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
+import {
+  ChevronLeft,
+  Compass,
+  Download,
+  ExternalLink,
+  Maximize2,
+  MessageSquare,
+  Share2,
+  X,
+} from "lucide-react";
 import { Card, Disclaimer, SectionLabel, Stat, sharePage } from "@/components/ui/primitives";
 import { Rise, SegmentedTabs, Stagger, useDetailBack } from "@/components/layout/chrome";
 import { LiquidGlassButton, LiquidGlassCircle } from "@/components/ui/LiquidGlassButton";
 import { cn } from "@/lib/utils";
 import { MOUNTAINS } from "@/data/mock/mountains";
+import { useTrailLine } from "@/components/domain/TrailShape";
+import { RouteWaypointMap } from "@/components/domain/RouteWaypointMap";
+import { ElevationProfile } from "@/components/domain/TrailProfile";
+import { useRouteFacts } from "@/services/routeFacts";
+import { TRAIL_ATTRIBUTION } from "@/services/trails";
+import { savedMapStyle } from "@/components/map/icefallStyle";
+import { downloadGpx, gpxBlocked } from "@/lib/gpx";
+import { FOLLOW_ONE_LINE, followBlocked, followHref } from "@/tracking/follow";
+import { OFFLINE } from "@/offline/offline";
+import { trekRoute, type TrekRoute } from "@/treks/route";
 import {
   TREKS,
   peaksForTrek,
@@ -57,6 +76,14 @@ type Tab = (typeof TABS)[number]["value"];
  * in the figures row — with a line under it saying that is what a dash means —
  * and "Not specified" in prose, rather than a guess.
  *
+ * WHAT IT DOES HAVE, SINCE 2026-09-09: a map, a GPX file and an elevation
+ * profile — on the treks that were matched to an OpenStreetMap route relation,
+ * and only on those. The mapping lives in `treks/osmRoutes.ts`, the reason for
+ * every match and every refusal in `scripts/trek-osm-audit.json`, and the whole
+ * of it is behind `trekRoute(id)` returning nothing. When it returns nothing,
+ * this page is exactly what it was: no map, no file, no profile, and nothing
+ * empty drawn where they would be.
+ *
  * REBUILT 2026-09-08 to Charlie's reference, the same one the trail page
  * follows: "this is how i want it to look like when you click on a trek". The
  * bordered cards at the top are gone with the boxes; what replaced them is a
@@ -66,8 +93,18 @@ type Tab = (typeof TABS)[number]["value"];
  */
 export default function TrekDetail() {
   const { id = "" } = useParams();
-  const [tab, setTab] = useState<Tab>("overview");
   const trek = trekById(id);
+  /**
+   * The OSM route relation this trek was matched to, or nothing.
+   *
+   * Nothing is a normal answer and roughly two routes in three get it — see
+   * `treks/route.ts` and the audit beside the script that built the mapping.
+   */
+  const route = trek ? trekRoute(trek.id) : undefined;
+  /* A trek with a mapped line opens on it. The summary above the tabs is the
+     whole of what the overview tab adds, so opening there would have hidden
+     the one thing this page now has that it did not have before. */
+  const [tab, setTab] = useState<Tab>(route ? "route" : "overview");
 
   /**
    * THE WAY OUT, AND UNTIL THIS EXISTED THERE WAS NONE.
@@ -176,11 +213,18 @@ export default function TrekDetail() {
         <div className="scrim-bottom pointer-events-none absolute inset-x-0 bottom-0 h-2/3" />
 
         {/* TWO DISCS, NOT FOUR, AND THAT IS THE POINT. The reference has back,
-            share, save and an overflow. Back and share are real here. There is
-            no saved-treks store anywhere in this app — `savedTrails` is keyed
-            on an OSM relation id and no trek has one — so a heart would be a
-            control that forgets, and there is no options sheet for a trek to
-            put behind a "…". Two discs that work beat four that look right.
+            share, save and an overflow. Back and share are real here, and there
+            is no options sheet for a trek to put behind a "…".
+
+            SAVE STAYS OFF EVEN NOW THAT SOME TREKS HAVE A RELATION ID. It used
+            to be off because `savedTrails` is keyed on an OSM relation id and
+            no trek had one; that is no longer the reason. The reason now is
+            that only some treks have one, so the heart would appear on a third
+            of these pages and be missing from the rest with no visible logic —
+            and what it saved would surface in Saved trails under the OSM
+            relation's name, which is frequently not the trek's ("Tour du
+            Cervin" for the Tour du Matterhorn). A save that files a walk under
+            a name the athlete did not use is worse than no save.
 
             They pay the notch themselves: nothing above this page clears it. */}
         <div
@@ -272,10 +316,17 @@ export default function TrekDetail() {
 
         {/* ---- The figures ------------------------------------------------
             THREE COLUMNS, NOT THE REFERENCE'S FOUR, AND THAT IS A MEASUREMENT
-            RATHER THAN A PREFERENCE. A trek publishes no measured length and no
+            RATHER THAN A PREFERENCE. A trek RECORD publishes no length and no
             elevation gain, so two of the reference's four columns have no
-            source at all. What is left that is genuinely FIGURE-SHAPED is the
-            duration, the grade and the high point.
+            source in this catalogue. What is left that is genuinely
+            FIGURE-SHAPED is the duration, the grade and the high point.
+
+            Where a trek has been matched to an OpenStreetMap relation there IS
+            now a measured length and a measured climb, but they are the
+            relation's rather than the route record's — so they are printed in
+            the route tab beside the line they were measured off, and not in
+            this row, where they would silently become four columns on some
+            treks and three on the rest.
 
             THE SEASON IS THE FOURTH FACT AND IT IS NOT A FIGURE. "Mid-June –
             mid-September" is twenty-four characters; in a quarter of a 375px
@@ -372,11 +423,32 @@ export default function TrekDetail() {
         )}
 
         {tab === "route" && (
-          <Stagger className="mt-4 space-y-3">
-            <Card className="p-4">
-              <SectionLabel>What the route is</SectionLabel>
-              <p className="mt-2 text-sm leading-relaxed text-mist/80">{trek.summary}</p>
-            </Card>
+          <>
+            <Stagger className="mt-4 space-y-3">
+              <Card className="p-4">
+                <SectionLabel>What the route is</SectionLabel>
+                <p className="mt-2 text-sm leading-relaxed text-mist/80">{trek.summary}</p>
+              </Card>
+            </Stagger>
+
+            {/* THE MAPPED LINE, WHERE THERE IS ONE, AND OUTSIDE `Stagger`.
+                Mounted only on this tab, so the Overpass queries behind it are
+                asked of the reader who opened the route rather than of
+                everybody who opened the page. Where there is no line, nothing
+                is drawn — not an empty map, not a disabled Download, not a
+                placeholder — and the tab is exactly what it always was.
+
+                OUTSIDE `Stagger` for the reason `TrailDetail` records at its
+                own map: `Stagger` is a framer-motion div and carries a
+                transform, and a transformed ancestor makes the full-screen
+                map's `position: fixed` resolve against that div instead of
+                the viewport. */}
+            {route && (
+              <div className="mt-5">
+                <TrekRouteMap trek={trek} route={route} />
+              </div>
+            )}
+
             {/*
              * NO DAY-BY-DAY ITINERARY.
              *
@@ -385,11 +457,14 @@ export default function TrekDetail() {
              * most damaging thing this page could print, because it is the part a
              * walker plans flights and leave around.
              */}
-            <Disclaimer>
-              ICEFALL does not publish a day-by-day itinerary for this route. Stages differ between
-              operators and we hold none of theirs — what is above is the route, not a schedule.
-            </Disclaimer>
-          </Stagger>
+            <Stagger className="mt-3 space-y-3">
+              <Disclaimer>
+                ICEFALL does not publish a day-by-day itinerary for this route. Stages differ
+                between operators and we hold none of theirs — what is above is the route, not a
+                schedule.
+              </Disclaimer>
+            </Stagger>
+          </>
         )}
 
         {tab === "prepare" && (
@@ -464,10 +539,14 @@ export default function TrekDetail() {
           TWO CONTROLS, AND BOTH DO SOMETHING. Enquire opens the compose screen
           this app already has and is the one committing action on the page, so
           it is the solid one — Charlie, 2026-09-08: "glass the button except
-          save". The reference's other two are Download and Map; a trek has no
-          GPX to write and no mapped line to show, so the second pill is the
-          companies list, which is real and is the question most people open a
-          trek page with. Nothing is drawn for the slots that would be empty.
+          save". The reference's other two are Download and Map. Both of those
+          now exist for a trek that has been matched to an OSM relation — but
+          only for those, and this bar is on every trek page, so a pill that
+          worked on a third of them would be a dead control on the rest. The map
+          and the file live in the route tab instead, which is where the line
+          is and which a matched trek opens on. The second pill stays the
+          companies list, which is real on every page and is the question most
+          people open a trek with.
 
           NO PRICE ON IT. `priceFromEur` is null on all 252 routes — no operator
           has quoted one — so "Price on enquiry" is what the enquiry is for and
@@ -518,6 +597,335 @@ export default function TrekDetail() {
  * overlap the reference draws costs the picture nothing.
  */
 const SHEET_LAP_PX = 28;
+
+/* -------------------------------------------------------------------------- */
+/* The mapped line                                                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * THE LINE, THE PROFILE AND THE FILE — the three things a trek page could not
+ * have until a trek had an OSM relation behind it.
+ *
+ * Every one of them comes through the SAME services the trail page uses, off
+ * the same relation id: `trailGeometry` for the line, `trailWays` and
+ * `elevationOf` for the profile, `toGpx` for the file. There is no second
+ * geometry pipeline, nothing stored in this app, and nothing drawn that OSM did
+ * not send. A trek with no matched relation does not render this at all — see
+ * the call site.
+ *
+ * WHAT THIS SECTION SAYS OUT LOUD, and why each sentence is not optional:
+ *
+ *   WHOSE LINE IT IS. The relation id and the relation's own name, which is
+ *   often not the trek's — the Tour du Matterhorn's line is filed under "Tour
+ *   du Cervin". A walker following a line is entitled to know which line, and
+ *   the name it is filed under is how they check it themselves.
+ *
+ *   HOW IT WAS MATCHED. The evidence, in the words the matching script
+ *   recorded. This app has already deleted a whole imagery system for matching
+ *   on proximity and getting it wrong; a route is a far worse thing to get
+ *   wrong than a photograph, so the reasoning is on the page rather than in a
+ *   commit message.
+ *
+ *   THAT IT IS A MAP, NOT A GUARANTEE. OSM is surveyed by volunteers. The line
+ *   can be out of date, incomplete or simply wrong, and it says nothing about
+ *   whether the route is open, in condition, or safe on the day.
+ */
+/**
+ * How far apart the elevation readings are, in kilometres.
+ *
+ * The denominator is the number of GAPS, not the number of readings — 100
+ * samples across 166 km are 99 gaps of 1.7 km, and dividing by 100 would
+ * understate the spacing the reader is being warned about.
+ */
+const sampleSpacing = (lengthKm: number, samples: number) =>
+  samples > 1 ? lengthKm / (samples - 1) : lengthKm;
+
+function TrekRouteMap({ trek, route }: { trek: Trek; route: TrekRoute }) {
+  const navigate = useNavigate();
+  const facts = useRouteFacts(route.osmId);
+  /* The ways go first and the line follows them — two Overpass queries in
+     sequence, never at once. The note on `trailProfile.ts` records what three
+     concurrent queries from one client cost: the geometry came back empty. */
+  /* BOTH SHAPES, AND EACH GOES WHERE IT BELONGS. `line` is every point end to
+     end and answers "is there a line yet" and "where does it start"; `paths`
+     is the continuous pieces the relation truly makes, and is what gets DRAWN
+     and WRITTEN. Handing the flattened array to either of those puts a
+     straight edge through every gap OSM left. */
+  const {
+    line,
+    paths,
+    loading: lineLoading,
+    failed: lineFailed,
+  } = useTrailLine(route.osmId, !facts.loading);
+  const [full, setFull] = useState(false);
+  const [why, setWhy] = useState(false);
+  /* The basemap the athlete last chose, read once. This page offers no picker
+     of its own — the trail page and the tracker own that preference, and a
+     second control setting the same value is a second place for it to drift. */
+  const [style] = useState(savedMapStyle);
+
+  const waiting = lineLoading || facts.loading;
+  const blocked = gpxBlocked(line.length, waiting);
+  /** Why Start Route cannot run, or `null` when it can. Same gate, own words. */
+  const followStopped = followBlocked(line.length, waiting);
+  const haveLine = line.length > 1;
+
+  // Escape leaves the full-screen map — the only way out on a desktop build,
+  // which has no back gesture.
+  useEffect(() => {
+    if (!full) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setFull(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [full]);
+
+  /**
+   * Ground this app defers on, read off the route's own record.
+   *
+   * Two separate reasons, kept separate, because the sentence has to say the
+   * true one: the summary describing glacier, rope or technical ground, or a
+   * published high point at altitude. ICEFALL's standing rule is that on any of
+   * that the judgement belongs to a certified guide, made in person — the same
+   * deferral the readiness test, the groups and the passport all carry.
+   */
+  const glaciated = /glacier|glaciated|crevasse|crampon|rope|technical/i.test(trek.summary);
+  const high = trek.maxAltitudeM !== null && trek.maxAltitudeM >= 3500;
+
+  return (
+    <div>
+      <div className="flex items-baseline justify-between gap-3">
+        <p className="section-label text-mist">The mapped line</p>
+        {route.lengthKm !== null && (
+          <p className="tnum text-[11.5px] text-mist">{route.lengthKm.toLocaleString("en-GB")} km</p>
+        )}
+      </div>
+      <p className="mt-1.5 text-[11.5px] leading-relaxed text-mist-dim">
+        OpenStreetMap holds this route as relation {route.osmId}, filed under{" "}
+        <span className="text-mist">“{route.osmName}”</span>. ICEFALL matched the two; it did not
+        draw this line, and the distance beside the heading is that line measured, not a figure
+        this route was sold with.
+      </p>
+
+      {/* ---- The map ----------------------------------------------------- */}
+      <div
+        className={cn(
+          "relative bg-graphite",
+          /* THE MARGIN BELONGS TO THE INLINE STATE ONLY. Left on in both, the
+             `mt-3` still applied once the holder went `fixed inset-0` and
+             pushed the full-screen map 12px down the viewport — a strip of the
+             page showing above it and the same 12px of map cut off the bottom.
+             Measured on the Tour du Mont Blanc, 2026-09-09: canvas 385×694 at
+             top 12 in a 385×706 viewport. */
+          full ? "fixed inset-0 z-50" : "mt-3 h-[300px] overflow-hidden rounded-card border border-hairline",
+        )}
+      >
+        <RouteWaypointMap
+          line={line}
+          paths={paths}
+          start={line[0] ?? { lat: route.lat, lon: route.lon }}
+          center={{ lat: route.lat, lon: route.lon }}
+          /* NO WAYPOINTS. `trailWaypoints` is a third Overpass query and this
+             page has no list of stops to number against it. The line is the
+             claim being made here. */
+          waypoints={[]}
+          styleId={style}
+          className="absolute inset-0 h-full w-full"
+        />
+
+        {/* THE MAP HAS TO SAY WHEN IT IS NOT SHOWING THE ROUTE. Until the
+            geometry lands there is a basemap on screen with no route on it,
+            which reads as "this walk goes nowhere" unless it is labelled. */}
+        {!haveLine && !OFFLINE && (
+          /* TOP-LEFT, CLEAR OF BOTH THE EXPAND DISC AND THE MAP'S OWN
+             ATTRIBUTION. It sat at the foot of the map for one build and
+             covered MapLibre's attribution line, which is a licence notice
+             and not a thing a banner of ours may hide. */
+          <div className="pointer-events-none absolute left-3 right-14 top-3 rounded-xl bg-obsidian/85 px-3 py-2 backdrop-blur">
+            <p className="text-[11.5px] leading-relaxed text-mist">
+              {waiting
+                ? "Fetching the line from OpenStreetMap…"
+                : lineFailed
+                  ? "OpenStreetMap didn't send the line. This is a connection problem, not an empty route."
+                  : "OpenStreetMap sent no line for this relation."}
+            </p>
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={() => setFull((v) => !v)}
+          aria-label={full ? "Close the full-screen map" : "Show the map full screen"}
+          className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full border border-hairline-strong bg-obsidian/85 text-mist backdrop-blur transition-colors hover:text-snow"
+        >
+          {full ? <X size={16} strokeWidth={1.8} /> : <Maximize2 size={16} strokeWidth={1.8} />}
+        </button>
+      </div>
+
+      {/* ---- The vertical story ------------------------------------------
+          Drawn only when Open-Meteo actually answered. `elevationOf` returns
+          null rather than a flat line when it cannot, because a profile that
+          is secretly zeros is worse than no profile. */}
+      {facts.elevation && route.lengthKm !== null && (
+        <div className="mt-5">
+          <div className="flex items-baseline justify-between">
+            <p className="section-label text-mist">Elevation</p>
+            {/* "AT LEAST", AND THE WORD IS MEASURED RATHER THAN MODEST.
+                Open-Meteo caps a request at 100 points, so a long route is
+                sampled every kilometre or more, and climb between two samples
+                is climb this profile cannot see. Coarse sampling of a
+                continuous line can only MISS ascent, never invent it, so the
+                figure is a floor — which is why it is printed as one.
+
+                Measured on the Tour du Mont Blanc, 2026-09-09: 165.9 km at
+                100 samples gave ↑ 422 m and ↓ 1,058 m on a circuit, where the
+                two must in truth be equal and both run to five figures. Printed
+                bare, as they were for one build, they read as the climb of the
+                walk. They are not that number and never were. */}
+            <p className="tnum text-[11.5px] text-mist">
+              ↑ at least {facts.elevation.ascentM.toLocaleString()} m · ↓ at least{" "}
+              {facts.elevation.descentM.toLocaleString()} m
+            </p>
+          </div>
+          <ElevationProfile className="mt-2.5" elevation={facts.elevation} lengthKm={route.lengthKm} />
+          {/* THE HIGH POINT ON THE ROUTE IS A PUBLISHED FACT ON THIS RECORD;
+              this profile is sampled from a global elevation model along OSM's
+              line. They are two different measurements of the same mountain
+              and they will not agree exactly, so neither is presented as a
+              correction of the other. */}
+          <p className="mt-2 text-[11px] leading-relaxed text-mist-dim">
+            Sampled from a global elevation model along the mapped line, not surveyed — one reading
+            about every{" "}
+            {sampleSpacing(route.lengthKm, facts.elevation.points.length).toLocaleString("en-GB", {
+              maximumFractionDigits: 1,
+            })}{" "}
+            km, so the shape is right and anything that rises and falls between two readings is not
+            counted in the totals. This route's published high point is {trekAltitude(trek)}.
+          </p>
+        </div>
+      )}
+
+      {/* ---- The file -----------------------------------------------------
+          OFFLINE THERE IS NO FILE AND NO PRETENDING THERE IS. `trailGeometry`
+          returns an empty line in the offline build by design — a relation's
+          geometry lives only in Overpass — so the control would sit permanently
+          disabled under "this is a connection problem", which in a build that
+          knows it has no connection is a worse answer than not offering the
+          file at all. The map area says the same thing in its own words. */}
+      {OFFLINE ? (
+        <p className="mt-5 text-[11.5px] leading-relaxed text-mist-dim">
+          The GPX file and the route-following screen are both written from the relation's own
+          geometry, which is fetched rather than stored. This build has no connection, so there is
+          no line yet — for either.
+        </p>
+      ) : (
+        <>
+          {/* ---- Walking it ----------------------------------------------
+              THE PRIMARY ACTION ON THIS SECTION, and it is the only control
+              here that does anything on the ground: it starts a recorded
+              activity bound to this line and follows it. The file below is for
+              a watch; this is for the walk.
+
+              IT CANNOT RENDER WHERE THERE IS NO LINE TO FOLLOW. Gated on the
+              same question the GPX button asks, in `followBlocked`'s own
+              words — a Start control that cannot start is the worst outcome
+              this section could ship. */}
+          <button
+            type="button"
+            disabled={followStopped !== null}
+            onClick={() =>
+              navigate(
+                followHref("trekking", { osmId: route.osmId, name: trek.name }),
+              )
+            }
+            className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-pill bg-azure text-[13.5px] text-obsidian transition-colors hover:bg-azure-bright disabled:pointer-events-none disabled:opacity-45"
+          >
+            <Compass size={16} strokeWidth={1.8} />
+            Start Route
+          </button>
+          {/* ONE SENTENCE BEFORE THE WALK. The full four are on the tracker,
+              open on a first walk and folded away after — see FOLLOW_LIMITS.
+              The guide deferral this route may need is in the disclaimer at
+              the foot of this section, which is the same block of text and is
+              read in the same breath. */}
+          <p className="mt-1.5 text-center text-[11px] leading-relaxed text-mist-dim">
+            {followStopped ?? FOLLOW_ONE_LINE}
+          </p>
+
+          <button
+            type="button"
+            disabled={blocked !== null}
+            onClick={() => downloadGpx(trek.name, paths)}
+            className="mt-3.5 flex h-12 w-full items-center justify-center gap-2 rounded-pill border border-hairline-strong text-[13.5px] text-snow transition-colors hover:border-azure/50 disabled:pointer-events-none disabled:opacity-45"
+          >
+            <Download size={16} strokeWidth={1.8} />
+            Download GPX
+          </button>
+          {/* A DISABLED BUTTON HAS TO SAY WHY, AND THE REASON HAS TO BE TRUE.
+              Both sentences come from `lib/gpx.ts`, which is the only place
+              this app words them — the trail page offers the same file in
+              three places and all three used to word it differently. */}
+          <p className="mt-1.5 text-center text-[11px] leading-relaxed text-mist-dim">
+            {blocked ?? `${line.length.toLocaleString()} points · for a watch or handheld`}
+          </p>
+        </>
+      )}
+
+      {/* ---- Where this came from ------------------------------------------
+          A control that reveals the evidence, not a paragraph nobody reads.
+          The sentences are the matching script's own, carried through the
+          generated file — the page does not re-word them, so what a walker
+          reads is what was actually tested. */}
+      <div className="mt-5 border-t border-hairline pt-4">
+        <button
+          type="button"
+          onClick={() => setWhy((v) => !v)}
+          className="text-[12.5px] text-azure underline underline-offset-2"
+        >
+          {why ? "Hide how this line was matched" : "How this line was matched"}
+        </button>
+        {why && (
+          <div className="mt-2.5 space-y-1.5">
+            {route.evidence.map((e) => (
+              <p key={e} className="text-[11.5px] leading-relaxed text-mist-dim">
+                {e}
+              </p>
+            ))}
+            <p className="text-[11.5px] leading-relaxed text-mist-dim">
+              {route.confidence === "strong"
+                ? "Matched on the relation calling itself what this trek calls it."
+                : "Matched on a partial name agreement corroborated by the measured length. This is the weaker of the two grades ICEFALL will accept, and routes it could not be confident about were left with no line at all."}
+            </p>
+            <a
+              href={`https://www.openstreetmap.org/relation/${route.osmId}`}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="inline-flex items-center gap-1.5 text-[11.5px] text-azure underline underline-offset-2"
+            >
+              Check it on OpenStreetMap
+              <ExternalLink size={12} strokeWidth={1.8} />
+            </a>
+          </div>
+        )}
+      </div>
+
+      <Disclaimer className="mt-4">
+        This line is OpenStreetMap data, surveyed by volunteers. It can be out of date, incomplete
+        or wrong, and it says nothing about whether the route is open, in condition or passable
+        today. Carry a map and compass and know how to use them.
+        {(glaciated || high) && (
+          <>
+            {" "}
+            This route {glaciated ? "crosses glaciated or technical ground" : ""}
+            {glaciated && high ? " and " : ""}
+            {high ? `reaches ${trekAltitude(trek)}` : ""}: for that ICEFALL defers to an
+            IFMGA/UIAGM-certified guide, whose judgement is made in person and not by an app.
+          </>
+        )}
+      </Disclaimer>
+      <p className="mt-2 text-[10.5px] text-mist-dim">{TRAIL_ATTRIBUTION}</p>
+    </div>
+  );
+}
 
 /**
  * The route's own description, clamped, with the reference's "Show more".

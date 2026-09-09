@@ -67,9 +67,26 @@ interface TerrainMapProps {
   /** Used by the offline fallback renderer. */
   fallbackTrack?: TrackPoint[];
   fallbackSeed?: string;
+  /**
+   * A LINE THE ATHLETE IS FOLLOWING, drawn UNDER their own track.
+   *
+   * Two lines on one map that look alike is a map that lies: the route is
+   * OpenStreetMap's claim about where a path is, and the track is where this
+   * phone has actually been. They are different kinds of statement and they are
+   * drawn differently — the guide is a pale dashed line beneath, the recorded
+   * track the solid azure one on top — so which is which never has to be
+   * guessed at.
+   *
+   * PATHS, not points. Where OSM holds a route as pieces that do not meet, each
+   * piece is its own line and nothing is drawn across the gap; handing this a
+   * flattened array would put a straight edge through every one of them. Same
+   * rule as the GPX file — see `joinWays` in services/trails.ts.
+   */
+  guide?: { lat: number; lon: number }[][];
 }
 
 const ROUTE_SOURCE = "icefall-route";
+const GUIDE_SOURCE = "icefall-guide";
 const EXAGGERATION = 1.45;
 
 export function TerrainMap({
@@ -86,6 +103,7 @@ export function TerrainMap({
   className,
   fallbackTrack = [],
   fallbackSeed = "icefall",
+  guide,
 }: TerrainMapProps) {
   /*
    * OFFLINE: no tiles, so no map. Returned before the hooks below, which is
@@ -220,6 +238,30 @@ export function TerrainMap({
         /* terrain is an enhancement, not a requirement */
       }
 
+      /* THE GUIDE GOES DOWN FIRST, so the athlete's own track always draws
+         over it. MapLibre paints in the order layers are added, and a route
+         line drawn on top of the track would hide exactly the thing the
+         athlete is checking: whether where they have been matches it. */
+      map.addSource(GUIDE_SOURCE, {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+      map.addLayer({
+        id: "guide-line",
+        type: "line",
+        source: GUIDE_SOURCE,
+        layout: { "line-cap": "butt", "line-join": "round" },
+        paint: {
+          "line-color": "#E6EDF5", // --ice-snow
+          "line-width": ["interpolate", ["linear"], ["zoom"], 10, 2, 16, 4],
+          "line-opacity": 0.72,
+          // Dashed, and it is not decoration: a broken line is how a map says
+          // "this is a line somebody drew", against the continuous one the
+          // phone measured.
+          "line-dasharray": [2.2, 1.6],
+        },
+      });
+
       map.addSource(ROUTE_SOURCE, {
         type: "geojson",
         data: {
@@ -344,6 +386,47 @@ export function TerrainMap({
       map.fitBounds(b, { padding: 56, duration: 900, pitch: is3D ? 55 : 0, maxZoom: 16 });
     }
   }, [track, headLat, headLon, ready, follow, is3D, hideLiveMarker]);
+
+  /* ------------------------------------------------------------------ */
+  /* The followed line                                                   */
+  /* ------------------------------------------------------------------ */
+
+  /** True once the map has framed the guide — which it does at most once. */
+  const didFitGuide = useRef(false);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const src = map.getSource(GUIDE_SOURCE) as GeoJSONSource | undefined;
+    if (!src) return;
+
+    const pieces = (guide ?? []).filter((p) => p.length > 1);
+    src.setData({
+      type: "FeatureCollection",
+      features: pieces.map((p) => ({
+        type: "Feature" as const,
+        properties: {},
+        geometry: {
+          type: "LineString" as const,
+          coordinates: p.map((c) => [c.lon, c.lat] as [number, number]),
+        },
+      })),
+    });
+
+    /* FRAME THE ROUTE WHILE THERE IS NOTHING ELSE TO LOOK AT. Before the first
+       fix the camera has no athlete to follow, and a map centred on Chamonix
+       while somebody stands on the West Highland Way is worse than useless.
+       Once a fix lands the follow camera locks on and this never runs again —
+       it is gated on the track being empty, not on a timer. */
+    if (pieces.length === 0 || didFitGuide.current || track.length > 0) return;
+    didFitGuide.current = true;
+    const all = pieces.flat();
+    const b = all.reduce(
+      (acc, c) => acc.extend([c.lon, c.lat] as [number, number]),
+      new LngLatBounds([all[0].lon, all[0].lat], [all[0].lon, all[0].lat]),
+    );
+    map.fitBounds(b, { padding: 48, duration: 800, maxZoom: 15 });
+  }, [guide, ready, track.length]);
 
   /* ------------------------------------------------------------------ */
   /* Follow camera                                                       */
@@ -551,6 +634,16 @@ export function TerrainMap({
         <div className="pointer-events-none absolute inset-x-0 bottom-0 p-3">
           <p className="rounded-tile bg-obsidian/80 px-2.5 py-1.5 text-center text-[10px] text-mist-dim backdrop-blur">
             Map tiles unavailable — showing ICEFALL's offline topographic view
+            {/* AND SAY WHAT IS MISSING FROM IT. This view's contours are drawn
+                by ICEFALL, not surveyed, so the followed route is not put on
+                it: a real OSM line laid over invented ground would imply the
+                two had been measured against each other. Without this sentence
+                a walker following a route just finds the route gone. The
+                figures above the map are unaffected — they are measured
+                against the line itself and never against what is drawn. */}
+            {guide && guide.some((p) => p.length > 1)
+              ? ". The route you are following is not drawn on it; the distances and bearings still are."
+              : ""}
           </p>
         </div>
       </div>

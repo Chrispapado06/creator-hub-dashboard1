@@ -157,7 +157,15 @@ export type UnavailableReason =
   | "indoor"
   | "awaiting-signal"
   | "not-connected"
-  | "needs-permission";
+  | "needs-permission"
+  /**
+   * A fix the phone HAD and has since lost — distinct from never having had
+   * one. It matters because the app is holding a real position that is no
+   * longer where the walker is, and route following is the screen where the
+   * difference between "acquiring" and "this dot is stale" decides whether a
+   * number on screen is a measurement or a memory.
+   */
+  | "signal-lost";
 
 export interface MetricReading {
   value: number | null;

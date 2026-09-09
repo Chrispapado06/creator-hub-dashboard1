@@ -1,0 +1,1 @@
+import{aO as n}from"./index-2nMeADzC.js";const i=n,s=[{id:"for-you",label:"For You"},{id:"following",label:"Following"},{id:"my-mountains",label:"My Mountains"}],l=()=>[];function r(o){if(o<1)return"just now";if(o<24)return`${Math.round(o)}h ago`;const a=Math.round(o/24);return a===1?"1d ago":`${a}d ago`}export{s as F,i as S,r as a,l as c};

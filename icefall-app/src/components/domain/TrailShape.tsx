@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
-import { trailGeometry, type LatLon } from "@/services/trails";
+import { trailSegments, type LatLon } from "@/services/trails";
 
 /**
  * The trail's actual line, drawn.
@@ -125,9 +125,21 @@ export function TrailShape({
  * location; the page gets the line.
  */
 export function useTrailLine(osmId: number | undefined, enabled = true) {
-  const [line, setLine] = useState<LatLon[]>([]);
+  /*
+   * BOTH SHAPES OF THE SAME ANSWER, and the caller has to pick the right one.
+   *
+   * `paths` is what the relation actually holds: one continuous line for most
+   * routes, several where OSM maps the route as pieces that do not meet.
+   * Anything that DRAWS — a map, a GPX file — takes `paths`, because rendering
+   * the flattened version puts a straight edge through every gap.
+   *
+   * `line` is the same points end to end, for the callers that want points
+   * rather than shape: a length, the 74px glyph, where the route starts.
+   */
+  const [paths, setPaths] = useState<LatLon[][]>([]);
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
+  const line = useMemo(() => paths.flat(), [paths]);
 
   useEffect(() => {
     if (!osmId || !enabled) return;
@@ -136,9 +148,9 @@ export function useTrailLine(osmId: number | undefined, enabled = true) {
     setLoading(true);
     setFailed(false);
 
-    trailGeometry(osmId)
+    trailSegments(osmId)
       .then((l) => {
-        if (live) setLine(l);
+        if (live) setPaths(l);
       })
       .catch(() => {
         if (live) setFailed(true);
@@ -153,5 +165,5 @@ export function useTrailLine(osmId: number | undefined, enabled = true) {
     };
   }, [osmId, enabled]);
 
-  return { line, loading, failed };
+  return { line, paths, loading, failed };
 }

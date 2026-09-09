@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1"
+    />
+    <meta name="theme-color" content="#080B0D" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter+Tight:ital,wght@0,100..900;1,100..900&family=Instrument+Serif:ital@0;1&display=swap"
+    />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="ICEFALL" />
+    <!-- iOS ignores the manifest's icons; without this the Home Screen tile is
+         a blurry screenshot of the page. -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta
+      name="description"
+      content="ICEFALL — the digital ecosystem for outdoor athletes and mountaineers. Track. Train. Plan. Explore."
+    />
+    <title>ICEFALL</title>
+    <!--
+      LIGHT-THEME DESIGN STUDY. Not a user preference, and not the default.
+
+      `?theme=light` stamps data-theme="light" on <html>, which is the only
+      thing that activates the light block at the bottom of src/index.css.
+      `?theme=dark` clears it. Anything else, including a first visit, leaves
+      the attribute absent and the app dark — the default is decided by the
+      absence of this attribute, so a bug in here cannot change it.
+
+      Session-scoped on purpose: the choice survives navigation inside the app
+      while the owner clicks through the screens, and is gone when the tab
+      closes. It deliberately does NOT use localStorage or touch app settings.
+
+      Inline and in <head> so it runs before first paint. Moving it into a
+      module would let the dark canvas paint first and flash.
+    -->
+    <script>
+      (function () {
+        try {
+          /* PERSISTENT now, not session-only. The owner asked for a theme
+             control in Settings on 2026-09-03, and a preference that forgets
+             itself when the tab closes is not a preference. `?theme=` still
+             works and still wins, so a link can force either one for a review.
+             localStorage key, so `resetAll`'s `icefall.` prefix clear takes it
+             with everything else — a fresh onboarding starts from the default. */
+          /* THE THEME FOLLOWS THE PERSON, ON EVERY PAGE (owner, 2026-09-04).
+             A stored choice — from Settings › Appearance, or forced by
+             `?theme=light|dark` for a review link — always wins. With no
+             choice stored ("System" in Settings, or a fresh install), the
+             phone's own `prefers-color-scheme` decides, and a change of that
+             setting while the app is open re-stamps the attribute live.
+             `?theme=system` clears a stored choice. Nothing else in the app
+             sets `data-theme`: no screen may override what is chosen here. */
+          var KEY = "icefall.theme.v1";
+          var q = new URLSearchParams(location.search).get("theme");
+          if (q === "light" || q === "dark") localStorage.setItem(KEY, q);
+          if (q === "system") localStorage.removeItem(KEY);
+          var stored = localStorage.getItem(KEY);
+          var chosen = stored === "light" || stored === "dark" ? stored : null;
+          var mq = window.matchMedia ? window.matchMedia("(prefers-color-scheme: light)") : null;
+          function apply(theme) {
+            if (theme === "light") document.documentElement.setAttribute("data-theme", "light");
+            else document.documentElement.removeAttribute("data-theme");
+            var m = document.querySelector('meta[name="theme-color"]');
+            /* The canvas colour of each theme, so the status bar matches. */
+            if (m) m.setAttribute("content", theme === "light" ? "#F6F4F0" : "#080B0D");
+          }
+          function followSystem() {
+            apply(mq && mq.matches ? "light" : "dark");
+          }
+          apply(chosen || (mq && mq.matches ? "light" : "dark"));
+          if (!chosen && mq) {
+            /* Live, two ways. The media-query change event is the standard
+               route. The foreground re-check is the belt to its braces: on a
+               phone the setting is changed in the OS Settings app and the
+               person switches back, which fires visibilitychange/focus — and
+               a re-read there costs nothing if the event already did its job. */
+            if (mq.addEventListener) mq.addEventListener("change", followSystem);
+            else if (mq.addListener) mq.addListener(followSystem);
+            document.addEventListener("visibilitychange", function () {
+              if (document.visibilityState === "visible") followSystem();
+            });
+            window.addEventListener("focus", followSystem);
+          }
+        } catch (e) {
+          /* Private mode denies sessionStorage. Staying dark is the right
+             failure: the study is opt-in and this is not worth a crash. */
+        }
+      })();
+    </script>
+    <script type="module" crossorigin src="/assets/index-2nMeADzC.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-D98kGA6r.css">
+  <script id="vite-plugin-pwa:register-sw" src="/registerSW.js"></script></head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

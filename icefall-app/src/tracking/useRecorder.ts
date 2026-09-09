@@ -6,6 +6,7 @@ import { SimulatedGpsSource } from "./sources/simulator";
 import { BluetoothHeartRateSource } from "./sources/heartRate";
 import { buildLiveCue, type LiveCue } from "./insights";
 import { DISPLAY_INTERVAL_MS, PERSIST_INTERVAL_MS, transitionKey } from "./display";
+import type { BoundRoute } from "./follow";
 import type { ActivityTypeId, RecordedActivity, RecorderSnapshot, SourceState } from "./types";
 import { activityById } from "./activities";
 
@@ -35,6 +36,15 @@ export interface UseRecorderOptions {
   /** From settings — the calorie estimate is meaningless without it. */
   bodyMassKg?: number;
   elevationTargetM?: number | null;
+  /**
+   * A route this activity is following, from the page that started it.
+   *
+   * Persisted with the session so it survives the app being killed — see
+   * `ActiveSession.route`. Passing nothing while a saved session HAS one does
+   * not clear it: that is the resume case, and it is the whole reason the
+   * binding is stored rather than read off the URL every time.
+   */
+  route?: BoundRoute | null;
 }
 
 export function useRecorder({
@@ -43,11 +53,14 @@ export function useRecorder({
   autoPause = true,
   bodyMassKg = 72,
   elevationTargetM,
+  route = null,
 }: UseRecorderOptions) {
   const type = useMemo(() => activityById(activityTypeId), [activityTypeId]);
 
   const recorderRef = useRef<ActivityRecorder | null>(null);
   const resumedRef = useRef(false);
+  /** The binding in force: the caller's, or the resumed session's own. */
+  const routeRef = useRef<BoundRoute | null>(route);
   if (!recorderRef.current) {
     // Reopened with an activity still in progress? Restore it — the track,
     // distance, ascent, splits and time all survive the app having closed.
@@ -55,6 +68,8 @@ export function useRecorder({
     if (saved && saved.state.activityTypeId === activityTypeId) {
       recorderRef.current = ActivityRecorder.restore(saved.state);
       resumedRef.current = true;
+      // A resume with no route in the URL keeps the one the walk started with.
+      if (!routeRef.current && saved.route) routeRef.current = saved.route;
     } else {
       recorderRef.current = new ActivityRecorder(activityTypeId, {
         autoPause,
@@ -121,7 +136,7 @@ export function useRecorder({
         const at = Date.now();
         if (at - lastPersistRef.current > PERSIST_INTERVAL_MS) {
           lastPersistRef.current = at;
-          saveActiveSession({ mode, state: recorder.serialize() });
+          saveActiveSession({ mode, state: recorder.serialize(), route: routeRef.current ?? undefined });
         }
       }
 
@@ -163,7 +178,7 @@ export function useRecorder({
     const persistNow = () => {
       const snap = recorder.snapshot();
       if ((snap.status === "recording" || snap.status === "paused") && snap.startedAt) {
-        saveActiveSession({ mode, state: recorder.serialize() });
+        saveActiveSession({ mode, state: recorder.serialize(), route: routeRef.current ?? undefined });
       }
     };
     const onVisibility = () => {
@@ -233,6 +248,49 @@ export function useRecorder({
       /* not fatal — tracking continues without it */
     }
   }, []);
+
+  /* ------------------------------------------------------------------ */
+  /* A recording with no live source is a recording of nothing            */
+  /* ------------------------------------------------------------------ */
+
+  /*
+   * ⚠ TWO WAYS TO END UP RECORDING AGAINST SILENCE, BOTH MEASURED 2026-09-09.
+   *
+   * 1. A RESUMED SESSION. `ActiveSession` brings the recorder back with its
+   *    track, distance, ascent and clock intact — and with nothing feeding it,
+   *    because the source was a live object that died with the page. `resume()`
+   *    already re-acquires, and its comment says why, but it only runs when the
+   *    athlete presses Resume — and a session restored in the RECORDING state
+   *    never shows that button. The way back from a crash depended on first
+   *    pausing an activity you had no reason to think was broken.
+   *
+   * 2. STRICTMODE, IN DEVELOPMENT. React mounts, tears down and re-mounts every
+   *    component on purpose, to catch exactly this. The teardown ran the
+   *    cleanup below — `gpsRef.current?.stop()`, which calls `clearWatch` — and
+   *    the re-mount did not start location again, because `LiveTracker` guards
+   *    its auto-start on a ref that says "I have already started once". Driving
+   *    the app on 9 Sep 2026, with the Geolocation API instrumented to record
+   *    its own calls, showed one `watchPosition`, one `clearWatch` immediately
+   *    after it, and no second watch — so the tracker sat on a running clock, an
+   *    empty track and "No GPS", waiting for fixes nothing was going to send.
+   *
+   * THE GUARD IS THE STATE OF THE SOURCE, NOT A MEMORY OF HAVING STARTED ONE.
+   * "Have I ever started?" cannot recover from a source that has since died;
+   * "is one live?" can, and it is the same question in every case. It will not
+   * re-prompt a refusal: a declined or unsupported source reports `denied` /
+   * `unsupported`, never `idle`, so only a source that is absent or stopped is
+   * re-acquired.
+   */
+  useEffect(() => {
+    if (type.indoor) return;
+    const status = recorder.snapshot().status;
+    if (status !== "recording" && status !== "paused") return;
+    if (gpsRef.current && gpsRef.current.getState().status !== "idle") return;
+    void (async () => {
+      await startLocation();
+      await requestWakeLock();
+    })();
+  }, [recorder, startLocation, requestWakeLock, type.indoor, snapshot.status]);
 
   /* ------------------------------------------------------------------ */
   /* Controls                                                           */
@@ -333,6 +391,8 @@ export function useRecorder({
     dismissCue: () => setCue(null),
     /** True when this mount restored an activity that was still in progress. */
     resumed: resumedRef.current,
+    /** The route being followed — the caller's, or a resumed session's own. */
+    route: routeRef.current,
     start,
     pause,
     resume,

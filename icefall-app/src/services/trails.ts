@@ -731,11 +731,149 @@ export interface LatLon {
 
 interface GeomMember {
   type: string;
+  /** The member's own id — a way's or a sub-relation's. See `trailSegments`. */
+  ref?: number;
   role?: string;
   geometry?: LatLon[];
 }
 
-const geometryCache = new Map<number, Promise<LatLon[]>>();
+/**
+ * A member this app follows rather than draws.
+ *
+ * `alternative`, `alternate` and `excursion` are variants beside the route: a
+ * high-level option, a spur to a viewpoint. Drawing them puts a line on the map
+ * the walker is not being told to walk, and writing them into the GPX puts a
+ * fork on a watch. They are skipped whether they are ways or sub-relations.
+ *
+ * BOTH SPELLINGS, because OSM carries both and they mean the same thing. The
+ * Tour du Mont Blanc's parent relation roles its seven variants `alternative`;
+ * the Six Foot Track roles its spur `alternate`, and with only the first
+ * spelling filtered that spur was drawn as part of the track.
+ */
+const SIDE_ROLE = (role?: string) =>
+  role === "alternative" || role === "alternate" || role === "excursion";
+
+/**
+ * How many levels of sub-relation to follow.
+ *
+ * The loop stops on its own as soon as a level yields no further relations, so
+ * this number costs nothing on the ordinary route and is not a budget — it is
+ * only the backstop that stops a relation which contains itself, or contains
+ * something that contains it, from being followed for ever. (`seen` already
+ * refuses to revisit a relation; this is the second lock on the same door.)
+ *
+ * It is deliberately well clear of what real routes need rather than equal to
+ * it. Measured 2026-09-09, the West Highland Way takes exactly three: the
+ * parent, its eight sections, and the two parts of "Milngavie to Drymen". A cap
+ * of three would have fitted that and then silently dropped the deepest ways of
+ * anything mapped one level deeper — a line that stops short with nothing on
+ * screen saying it did, which is the failure this file is most careful about.
+ */
+const MAX_RELATION_DEPTH = 6;
+
+const geometryCache = new Map<number, Promise<LatLon[][]>>();
+
+/**
+ * THE SAME PATHS BEFORE SIMPLIFICATION — for following, not for drawing.
+ *
+ * `trailSegments` returns the line simplified at 0.0004°, which moves a point
+ * by up to about forty metres. That is invisible in a 300px map and it is the
+ * right trade for drawing. It is the WRONG line to stand next to: a walker
+ * exactly on the path would measure up to 40 m from the simplified version of
+ * it, and an off-route warning that fires because of the app's own drawing
+ * tolerance is a false alarm on a mountain.
+ *
+ * So the joined, full-fidelity paths are kept as well. This costs no extra
+ * request — it is the same array `trailSegments` simplifies on its way out, so
+ * the two are the same fetch and cannot disagree about what the relation holds.
+ */
+const fullPathsCache = new Map<number, LatLon[][]>();
+
+/* -------------------------------------------------------------------------- */
+/* Joining the member ways into paths                                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A point as its own identity, to seven decimals — about a centimetre.
+ *
+ * Two ways that meet in OSM meet AT A NODE, and both carry that node's exact
+ * coordinates. So "do these two ways join?" is a question about identity, not
+ * about distance, and this app answers it that way on purpose. Nothing here
+ * asks whether two ends are NEAR each other: proximity matching is precisely
+ * what put a war memorial on a Cypriot ridge in this codebase, and a route is a
+ * far worse thing to get wrong than a photograph.
+ */
+const nodeKey = (p: LatLon) => `${p.lat.toFixed(7)},${p.lon.toFixed(7)}`;
+
+/**
+ * The member ways, joined into as few continuous paths as they truly make.
+ *
+ * ⚠ WHY THIS EXISTS, MEASURED ON THE TOUR DU MONT BLANC, 2026-09-09. The old
+ * code pushed every member way's points into one array in membership order and
+ * drew that. Membership order is not walking order and OSM reuses a way in
+ * whichever direction it was first drawn, so consecutive members frequently
+ * start nowhere near where the last one ended — and every one of those breaks
+ * was drawn as a straight line. The TMB had 159 of them totalling 69.8 km,
+ * including a 19.3 km chord straight across the Mont Blanc massif. That line
+ * went into the GPX file too, so it was a path on somebody's watch, over a
+ * glacier, that does not exist.
+ *
+ * Joining on the shared NODE instead — flipping a way when it is stored
+ * backwards, and looking past the next member for the one that actually
+ * continues — leaves the TMB with none: one continuous 165.9 km circuit.
+ *
+ * WHERE THE WAYS DO NOT JOIN, THE PATH ENDS AND ANOTHER BEGINS, and nothing is
+ * drawn between them. Some relations are genuinely mapped as loose pieces:
+ * measured the same day, the Snowman Trek's 71 ways still leave 62 breaks, and
+ * joining those would have drawn 279 km of invented line on a 273 km route.
+ * Two paths with a gap between them is what OSM actually holds; one line
+ * through the gap is a claim nobody made.
+ */
+export function joinWays(ways: LatLon[][]): LatLon[][] {
+  const usable = ways.filter((w) => w.length > 1);
+  if (usable.length === 0) return [];
+
+  /* Every way that touches a given node, so the continuation is found by
+     lookup rather than by scanning the whole relation for each join. */
+  const at = new Map<string, number[]>();
+  usable.forEach((w, i) => {
+    for (const end of [w[0], w[w.length - 1]]) {
+      const k = nodeKey(end);
+      const list = at.get(k);
+      if (list) list.push(i);
+      else at.set(k, [i]);
+    }
+  });
+
+  const used = new Array(usable.length).fill(false);
+  const paths: LatLon[][] = [];
+
+  for (let seed = 0; seed < usable.length; seed++) {
+    if (used[seed]) continue;
+    used[seed] = true;
+    const path = [...usable[seed]];
+
+    /* Grow from BOTH ends: a seed picked out of the middle of a route would
+       otherwise leave everything behind it stranded as its own path. */
+    for (const forwards of [true, false]) {
+      for (;;) {
+        const tip = forwards ? path[path.length - 1] : path[0];
+        const next = (at.get(nodeKey(tip)) ?? []).find((i) => !used[i]);
+        if (next === undefined) break;
+        used[next] = true;
+        const w = usable[next];
+        // The way as walked FROM this tip: reversed when it is stored the
+        // other way round. The shared node itself is dropped, not repeated.
+        const run = nodeKey(w[0]) === nodeKey(tip) ? w.slice(1) : [...w].reverse().slice(1);
+        if (forwards) path.push(...run);
+        else path.unshift(...run.reverse());
+      }
+    }
+    paths.push(path);
+  }
+
+  return paths;
+}
 
 /* -------------------------------------------------------------------------- */
 /* Measured length                                                            */
@@ -793,11 +931,23 @@ export function measureLength(osmId: number, signal?: AbortSignal): Promise<numb
     if (signal?.aborted) return null;
     if (lengthCache[osmId] !== undefined) return lengthCache[osmId];
     try {
-      const line = await trailGeometry(osmId);
-      if (line.length < 2) return null;
-      // Measured off the SIMPLIFIED line, which is within ~40 m of the real one
-      // over a whole trail — far inside the precision anyone plans with.
-      const km = lengthOf(line);
+      const paths = await trailSegments(osmId);
+      if (paths.every((p) => p.length < 2)) return null;
+      /*
+       * `trailSegments` MEASURED THE FULL LINE ON ITS WAY PAST and left the
+       * answer here, which is the only reason this reads the cache a second
+       * time. What it returns is simplified for drawing, and measuring that
+       * would report a trail shorter than it is — see the note at the fetch.
+       *
+       * SUMMED PER PATH, NEVER ACROSS THEM, in both places. A relation OSM
+       * holds as pieces has real distance between those pieces, and measuring
+       * the flattened array would charge the walker for it — the arithmetic
+       * that once put Stórurð at 38.7 km against its surveyor's 14.6 km.
+       */
+      const measured = lengthCache[osmId];
+      if (measured !== undefined) return measured;
+      // Only reachable if the line arrived with nothing worth measuring.
+      const km = paths.reduce((total, p) => total + (p.length > 1 ? lengthOf(p) : 0), 0);
       rememberLength(osmId, km);
       return km;
     } catch {
@@ -810,15 +960,52 @@ export function measureLength(osmId: number, signal?: AbortSignal): Promise<numb
 }
 
 /**
- * The trail's actual line.
+ * The trail's actual line, as the CONTINUOUS PATHS the relation truly makes.
  *
  * One relation is a few hundred kilobytes and several thousand points — fine
- * for a page the athlete asked for, far too much for a list. The result is
+ * for a page the athlete asked for, far too much for a list. Each path is
  * simplified before it is returned, because nothing on this screen is drawn
  * larger than a few hundred pixels and a 6,000-point path costs the same to
  * render as a useful one.
+ *
+ * Usually one path. More than one means OSM holds this route as pieces that do
+ * not meet, and the gaps between them are gaps — see `joinWays`. Simplifying
+ * per path rather than across the whole set is not a detail: run over a joined
+ * array, Douglas–Peucker treats the jump between two pieces as part of the line
+ * and can drop the real points either side of it.
  */
-export function trailGeometry(osmId: number): Promise<LatLon[]> {
+/**
+ * One `out geom` for a set of relations, tried across the mirrors.
+ *
+ * Returns the elements, or `null` when no mirror answered — which the caller
+ * turns into `TrailsUnreachable`. A LEVEL THAT FAILS IS NOT A PARTIAL LINE:
+ * half a route drawn as if it were the whole one is exactly the sort of quiet
+ * wrongness this file refuses elsewhere, so nothing is returned at all.
+ */
+async function overpassRelations(
+  ids: number[],
+): Promise<{ members?: GeomMember[] }[] | null> {
+  const query = `[out:json][timeout:90];relation(id:${ids.join(",")});out geom;`;
+  for (const url of MIRRORS) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ data: query }),
+        signal: withTimeout(OVERPASS_TIMEOUT_MS * 2),
+      });
+      const text = await res.text();
+      if (!text.trimStart().startsWith("{")) continue;
+      const json = JSON.parse(text) as { elements?: { members?: GeomMember[] }[] };
+      return json.elements ?? [];
+    } catch {
+      /* next mirror */
+    }
+  }
+  return null;
+}
+
+export function trailSegments(osmId: number): Promise<LatLon[][]> {
   const cached = geometryCache.get(osmId);
   if (cached) return cached;
 
@@ -849,36 +1036,79 @@ export function trailGeometry(osmId: number): Promise<LatLon[]> {
    * listening, not cancel the work every other caller is still waiting on.
    */
   const promise = (async () => {
-    const query = `[out:json][timeout:90];relation(${osmId});out geom;`;
-    for (const url of MIRRORS) {
-      try {
-        const res = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({ data: query }),
-          signal: withTimeout(OVERPASS_TIMEOUT_MS * 2),
-        });
-        const text = await res.text();
-        if (!text.trimStart().startsWith("{")) continue;
-        const json = JSON.parse(text) as {
-          elements?: { members?: GeomMember[] }[];
-        };
-        const members = json.elements?.[0]?.members ?? [];
-        const line: LatLon[] = [];
-        for (const m of members) {
-          // Guideposts and viewpoints are nodes with no geometry; the route is
-          // the ways, and `forward`/`backward` variants are alternatives rather
-          // than continuations.
-          if (m.type !== "way" || !m.geometry?.length) continue;
-          if (m.role === "alternative" || m.role === "excursion") continue;
-          line.push(...m.geometry);
+    /*
+     * A ROUTE CAN BE A PARENT OF OTHER ROUTES, AND THE BIG ONES USUALLY ARE.
+     *
+     * `out geom` returns geometry for a relation's WAY members only. A member
+     * that is itself a relation comes back as a bare reference with no points,
+     * so a route OSM models as a parent of sections used to arrive here as an
+     * empty line — the map drew nothing, the GPX was empty, and neither said
+     * why. Measured 2026-09-09: the West Highland Way (r16287) is eight section
+     * relations and not one way of its own; the Pennine Way, the South West
+     * Coast Path, the Appalachian Trail and the Pacific Crest Trail are the
+     * same shape, as are four routes already shipped whose lines stopped short
+     * because a spur or a link was held as a sub-relation.
+     *
+     * So the members are followed: each level's sub-relations are fetched in
+     * ONE further query, to `MAX_RELATION_DEPTH`, with everything already seen
+     * remembered so a relation that contains itself cannot loop. The ways come
+     * back in no particular order, which costs nothing — `joinWays` joins on
+     * shared nodes and never on membership order.
+     */
+    const ways: LatLon[][] = [];
+    const seen = new Set<number>([osmId]);
+    /* EACH WAY ONCE, however many members carry it. A route mapped as a parent
+       WITH ways of its own can hold a way that one of its sections holds too,
+       and a way taken twice is a second identical path — drawn over the first,
+       written to the GPX twice, and counted twice in the length. */
+    const takenWays = new Set<number>();
+    let level = [osmId];
+
+    for (let depth = 0; depth < MAX_RELATION_DEPTH && level.length > 0; depth++) {
+      const json = await overpassRelations(level);
+      if (json === null) throw new TrailsUnreachable();
+
+      const next: number[] = [];
+      for (const el of json) {
+        for (const m of el.members ?? []) {
+          if (SIDE_ROLE(m.role)) continue;
+          if (m.type === "way" && m.geometry?.length) {
+            if (typeof m.ref === "number") {
+              if (takenWays.has(m.ref)) continue;
+              takenWays.add(m.ref);
+            }
+            ways.push(m.geometry);
+          } else if (m.type === "relation" && typeof m.ref === "number" && !seen.has(m.ref)) {
+            seen.add(m.ref);
+            next.push(m.ref);
+          }
         }
-        return simplify(line, 0.0004);
-      } catch {
-        /* next mirror */
       }
+      level = next;
     }
-    throw new TrailsUnreachable();
+
+    const joined = joinWays(ways);
+    fullPathsCache.set(osmId, joined);
+
+    /*
+     * THE LENGTH IS TAKEN HERE, OFF THE FULL LINE, BEFORE IT IS SIMPLIFIED.
+     *
+     * Simplification is for drawing: at 0.0004° it moves a point by up to about
+     * forty metres, which is invisible in a 300px map and enormous in a total,
+     * because every switchback it straightens is distance removed from the sum.
+     * Measured on the Snowman Trek, 2026-09-09: 273.2 km along the real line,
+     * 254.7 km along the simplified one — 18.5 km short, on a card that says how
+     * far somebody is about to walk, and short is the dangerous direction.
+     *
+     * Overpass measures the same 70 ways at 272.999 km, so this figure is the
+     * relation's own length to within a tenth of a percent.
+     */
+    rememberLength(
+      osmId,
+      joined.reduce((total, p) => total + (p.length > 1 ? lengthOf(p) : 0), 0),
+    );
+
+    return joined.map((path) => simplify(path, 0.0004));
   })();
 
   geometryCache.set(osmId, promise);
@@ -888,13 +1118,53 @@ export function trailGeometry(osmId: number): Promise<LatLon[]> {
 }
 
 /**
+ * The same paths end to end, for the callers that want points rather than shape
+ * — measuring a length, drawing a 74px glyph, deciding where a route starts.
+ *
+ * ⚠ NOT FOR DRAWING A MAP OR WRITING A GPX. This array cannot say where one
+ * path stops and the next begins, so anything that renders it as a single line
+ * puts a straight edge through every gap. Those two callers take
+ * `trailSegments`. Kept because a length summed across the pieces is right and
+ * the pieces are already the real ones.
+ */
+export function trailGeometry(osmId: number): Promise<LatLon[]> {
+  return trailSegments(osmId).then((paths) => paths.flat());
+}
+
+/**
+ * The relation's paths at full fidelity — every node OSM holds, joined but not
+ * simplified. See `fullPathsCache`.
+ *
+ * Awaits the same shared promise, so it costs no request of its own and can
+ * never return a different relation's line than the map is drawing.
+ */
+export function trailPaths(osmId: number): Promise<LatLon[][]> {
+  return trailSegments(osmId).then(() => fullPathsCache.get(osmId) ?? []);
+}
+
+/**
  * Ramer–Douglas–Peucker, in degrees.
  *
  * A tolerance of 0.0004° is roughly 40 m — invisible at any size this app draws
  * a trail, and it takes a 6,000-point relation down to a few hundred.
  */
 export function simplify(points: LatLon[], tolerance: number): LatLon[] {
-  if (points.length < 3) return points;
+  const keep = simplifyIndices(points, tolerance);
+  return keep.length === points.length ? points : keep.map((i) => points[i]);
+}
+
+/**
+ * The same reduction, returning the INDICES that survive rather than the points.
+ *
+ * The surviving points are exactly the ones that carry the route's shape: RDP
+ * drops a vertex only when the line either side of it passes within `tolerance`
+ * of where it sits. That makes them the useful navigation targets on a line
+ * whose raw nodes can be five metres apart — and the indices are what lets a
+ * caller hold ONE full-fidelity line and still know which of its points those
+ * are, instead of a second array it would then have to match up.
+ */
+export function simplifyIndices(points: LatLon[], tolerance: number): number[] {
+  if (points.length < 3) return points.map((_, i) => i);
 
   const keep = new Uint8Array(points.length);
   keep[0] = 1;
@@ -918,7 +1188,9 @@ export function simplify(points: LatLon[], tolerance: number): LatLon[] {
     }
   }
 
-  return points.filter((_, i) => keep[i]);
+  const out: number[] = [];
+  for (let i = 0; i < points.length; i++) if (keep[i]) out.push(i);
+  return out;
 }
 
 function perpendicular(p: LatLon, a: LatLon, b: LatLon): number {

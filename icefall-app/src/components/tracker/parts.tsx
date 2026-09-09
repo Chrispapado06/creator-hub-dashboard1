@@ -131,7 +131,17 @@ export function SimulatedBadge({ className }: { className?: string }) {
 /* CueToast — rare, brief, never blocking                                     */
 /* -------------------------------------------------------------------------- */
 
-export function CueToast({ cue }: { cue: LiveCue | null }) {
+/**
+ * `className` overrides the position, and one caller needs it to.
+ *
+ * These float just under the top bar, which is the right place when the map is
+ * the only thing beneath them. On a route-following walk the follow panel holds
+ * that slot, and a toast landing on top of it covers the state a walker is
+ * checking — measured 9 Sep 2026, with the signal-lost toast sitting across the
+ * panel's own "Signal lost" heading. `LiveTracker` drops them into the column
+ * below the panel instead.
+ */
+export function CueToast({ cue, className }: { cue: LiveCue | null; className?: string }) {
   return (
     <AnimatePresence>
       {cue && (
@@ -140,7 +150,7 @@ export function CueToast({ cue }: { cue: LiveCue | null }) {
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -10 }}
           transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
-          className="pointer-events-none absolute inset-x-5 top-[86px] z-30"
+          className={cn("pointer-events-none absolute inset-x-5 top-[86px] z-30", className)}
         >
           <div className="rounded-tile border border-azure/25 bg-obsidian/92 px-4 py-3 backdrop-blur-xl">
             <p className="section-label text-azure/80">{cue.label}</p>
@@ -156,7 +166,15 @@ export function CueToast({ cue }: { cue: LiveCue | null }) {
 /* SignalWarning                                                               */
 /* -------------------------------------------------------------------------- */
 
-export function SignalWarning({ show, message }: { show: boolean; message: string }) {
+export function SignalWarning({
+  show,
+  message,
+  className,
+}: {
+  show: boolean;
+  message: string;
+  className?: string;
+}) {
   return (
     <AnimatePresence>
       {show && (
@@ -164,7 +182,7 @@ export function SignalWarning({ show, message }: { show: boolean; message: strin
           initial={{ opacity: 0, y: -8 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -8 }}
-          className="pointer-events-none absolute inset-x-5 top-[86px] z-30"
+          className={cn("pointer-events-none absolute inset-x-5 top-[86px] z-30", className)}
         >
           <div className="flex items-start gap-2.5 rounded-tile border border-alert/30 bg-obsidian/92 px-4 py-3 backdrop-blur-xl">
             <AlertTriangle size={14} strokeWidth={1.7} className="mt-px shrink-0 text-alert" />

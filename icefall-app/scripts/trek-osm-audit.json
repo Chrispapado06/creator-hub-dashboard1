@@ -1,0 +1,6547 @@
+{
+ "built": "2026-09-09",
+ "matched": 92,
+ "declined": 160,
+ "results": [
+  {
+   "id": "tour-du-mont-blanc",
+   "name": "Tour du Mont Blanc",
+   "region": "alps",
+   "country": "France / Italy / Switzerland",
+   "statedKm": [
+    165,
+    165
+   ],
+   "candidates": 12,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 124456,
+   "osmName": "Tour du Mont Blanc",
+   "matchedName": "Tour du Mont Blanc",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 165.9,
+   "sections": 1,
+   "bounds": {
+    "minlat": 45.6964873,
+    "minlon": 6.7066048,
+    "maxlat": 46.0584706,
+    "maxlon": 7.1283204
+   },
+   "centre": {
+    "lat": 45.87747895,
+    "lon": 6.9174626
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "FR",
+     "IT",
+     "CH"
+    ],
+    "length": "165.9 km drawn against the 165 km this trek states",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside France, by OSM's own boundary",
+    "wayMembers": 740
+   },
+   "tags": {
+    "network": "rwn",
+    "ref": "TMB",
+    "wikidata": null,
+    "operator": null,
+    "symbol": "Yellow rhombus with 'TMB' capital letters on it.",
+    "website": null
+   },
+   "wayMembers": 740,
+   "countedKm": 165.9
+  },
+  {
+   "id": "walkers-haute-route",
+   "name": "Walker's Haute Route",
+   "region": "alps",
+   "country": "France / Switzerland",
+   "statedKm": [
+    220,
+    220
+   ],
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 3020521,
+   "osmName": "Walker's Haute Route",
+   "matchedName": "Walker's Haute Route",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 209.2,
+   "sections": 23,
+   "bounds": {
+    "minlat": 45.9229963,
+    "minlon": 6.8692064,
+    "maxlat": 46.224384,
+    "maxlon": 7.8129438
+   },
+   "centre": {
+    "lat": 46.073690150000004,
+    "lon": 7.3410751
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "FR",
+     "CH"
+    ],
+    "length": "209.2 km drawn against the 220 km this trek states",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside Switzerland, by OSM's own boundary",
+    "wayMembers": 901
+   },
+   "tags": {
+    "network": "rwn",
+    "ref": "WHR",
+    "wikidata": "Q18670873",
+    "operator": null,
+    "symbol": null,
+    "website": null
+   },
+   "wayMembers": 901,
+   "countedKm": 209.2
+  },
+  {
+   "id": "chamonix-zermatt-haute-route",
+   "name": "Chamonix–Zermatt Haute Route",
+   "region": "alps",
+   "country": "France / Switzerland",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "tour-du-matterhorn",
+   "name": "Tour du Matterhorn",
+   "region": "alps",
+   "country": "Switzerland / Italy",
+   "statedKm": [
+    150,
+    150
+   ],
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 1176308,
+   "osmName": "Tour du Cervin",
+   "matchedName": "Matterhorn Tour",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 133.8,
+   "sections": 0,
+   "bounds": {
+    "minlat": 45.8904886,
+    "minlon": 7.4770944,
+    "maxlat": 46.224384,
+    "maxlon": 7.8044041
+   },
+   "centre": {
+    "lat": 46.0574363,
+    "lon": 7.640749250000001
+   },
+   "tier": 2,
+   "tests": {
+    "name": "every distinctive word matches",
+    "country": [
+     "CH",
+     "IT"
+    ],
+    "length": "133.8 km drawn against the 150 km this trek states",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside Switzerland, by OSM's own boundary",
+    "wayMembers": 365
+   },
+   "tags": {
+    "network": "rwn",
+    "ref": null,
+    "wikidata": null,
+    "operator": null,
+    "symbol": null,
+    "website": null
+   },
+   "wayMembers": 365,
+   "countedKm": 133.8
+  },
+  {
+   "id": "tour-des-combins",
+   "name": "Tour des Combins",
+   "region": "alps",
+   "country": "Switzerland / Italy",
+   "statedKm": [
+    100,
+    140
+   ],
+   "candidates": 10,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 49181,
+   "osmName": "Tour des Combins",
+   "matchedName": "Tour des Combins",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 99.9,
+   "sections": 9,
+   "bounds": {
+    "minlat": 45.8253462,
+    "minlon": 7.1561166,
+    "maxlat": 46.0370613,
+    "maxlon": 7.3831128
+   },
+   "centre": {
+    "lat": 45.931203749999995,
+    "lon": 7.2696147
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "CH",
+     "IT"
+    ],
+    "length": "99.9 km drawn against the 100–140 km this trek states",
+    "wikipedia": "fr:Tour des Combins",
+    "countryPolygon": "the line's centre falls inside Switzerland, by OSM's own boundary",
+    "wayMembers": 192
+   },
+   "tags": {
+    "network": "rwn",
+    "ref": "TDC",
+    "wikidata": "Q2255884",
+    "operator": null,
+    "symbol": "Yellow rhombus with 'TDC' capital letters on it",
+    "website": "http://www.tourdescombins.ch/fr/"
+   },
+   "wayMembers": 192,
+   "countedKm": 100
+  },
+  {
+   "id": "tour-de-la-vanoise",
+   "name": "Tour de la Vanoise",
+   "region": "alps",
+   "country": "France",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "tour-du-queyras",
+   "name": "Tour du Queyras",
+   "region": "alps",
+   "country": "France",
+   "statedKm": [
+    130,
+    130
+   ],
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 9711201,
+   "osmName": "Tour du Queyras",
+   "matchedName": "Tour du Queyras",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 110.5,
+   "sections": 0,
+   "bounds": {
+    "minlat": 44.6684498,
+    "minlon": 6.7101641,
+    "maxlat": 44.842949,
+    "maxlon": 6.9921702
+   },
+   "centre": {
+    "lat": 44.7556994,
+    "lon": 6.85116715
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "FR"
+    ],
+    "length": "110.5 km drawn against the 130 km this trek states",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside France, by OSM's own boundary",
+    "wayMembers": 262
+   },
+   "tags": {
+    "network": "nwn",
+    "ref": "GR 58",
+    "wikidata": "Q3478741",
+    "operator": "FFRP",
+    "symbol": null,
+    "website": null
+   },
+   "wayMembers": 262,
+   "countedKm": 110.5
+  },
+  {
+   "id": "via-alpina",
+   "name": "Via Alpina",
+   "region": "alps",
+   "country": "Italy / Slovenia / Austria / Germany / Liechtenstein / Switzerland / France / Monaco",
+   "statedKm": null,
+   "candidates": 295,
+   "matched": false,
+   "reason": "ambiguous — 23 relations answer to this name in different places (r12359027 27km, r12359028 16.1km, r12359029 24.7km, r12359030 22.1km, r12359031 13.4km, r12359032 16.2km, r14249124 13.6km, r14249125 18.7km, …)"
+  },
+  {
+   "id": "stubai-high-trail",
+   "name": "Stubai High Trail",
+   "region": "alps",
+   "country": "Austria",
+   "statedKm": [
+    80,
+    80
+   ],
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "berlin-high-trail",
+   "name": "Berlin High Trail",
+   "region": "alps",
+   "country": "Austria",
+   "statedKm": [
+    70,
+    70
+   ],
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "zillertal-alps-high-trail",
+   "name": "Zillertal Alps High Trail",
+   "region": "alps",
+   "country": "Austria",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "adlerweg",
+   "name": "Adlerweg",
+   "region": "alps",
+   "country": "Austria",
+   "statedKm": [
+    420,
+    420
+   ],
+   "candidates": 38,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 3305327,
+   "osmName": "Adlerweg",
+   "matchedName": "Adlerweg",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 338.6,
+   "sections": 27,
+   "bounds": {
+    "minlat": 46.9910781,
+    "minlon": 10.272428,
+    "maxlat": 47.5902127,
+    "maxlon": 12.4308479
+   },
+   "centre": {
+    "lat": 47.2906454,
+    "lon": 11.35163795
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "AT"
+    ],
+    "length": "338.6 km drawn against the 420 km this trek states",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside Austria, by OSM's own boundary",
+    "wayMembers": 972
+   },
+   "tags": {
+    "network": "rwn",
+    "ref": null,
+    "wikidata": null,
+    "operator": "Tirol",
+    "symbol": "Scharzer Adler auf gelbem Hintergrund",
+    "website": null
+   },
+   "wayMembers": 972,
+   "countedKm": 340.3
+  },
+  {
+   "id": "e5-alpine-crossing",
+   "name": "E5 Alpine Crossing",
+   "region": "alps",
+   "country": "Germany / Austria / Italy",
+   "statedKm": [
+    80,
+    80
+   ],
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "gran-paradiso-trek",
+   "name": "Gran Paradiso Trek",
+   "region": "alps",
+   "country": "Italy",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "tour-of-the-bernina",
+   "name": "Tour of the Bernina",
+   "region": "alps",
+   "country": "Switzerland / Italy",
+   "statedKm": [
+    100,
+    120
+   ],
+   "candidates": 5,
+   "matched": false,
+   "reason": "no relation of this name measures anything near the 100–120 km this trek states — closest is r17040733 \"Bernina Tour\" at 17.6 km"
+  },
+  {
+   "id": "chimborazo-circuit",
+   "name": "Chimborazo Circuit",
+   "region": "andes-north",
+   "country": "Ecuador",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "choro-trek",
+   "name": "Choro Trek",
+   "region": "andes-north",
+   "country": "Bolivia",
+   "statedKm": null,
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 3127884,
+   "osmName": "El Choro",
+   "matchedName": "El Choro Trek",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 44.8,
+   "sections": 0,
+   "bounds": {
+    "minlat": -16.3220682,
+    "minlon": -68.0626517,
+    "maxlat": -16.2037944,
+    "maxlon": -67.835819
+   },
+   "centre": {
+    "lat": -16.262931299999998,
+    "lon": -67.94923535000001
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "BO"
+    ],
+    "length": "44.8 km drawn, a plausible length for the 3–4 days this route takes — the trek itself states no distance",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside Bolivia, by OSM's own boundary",
+    "wayMembers": 24
+   },
+   "tags": {
+    "network": null,
+    "ref": null,
+    "wikidata": "Q14913960",
+    "operator": null,
+    "symbol": null,
+    "website": null
+   },
+   "wayMembers": 24,
+   "countedKm": 45.4
+  },
+  {
+   "id": "condor-trek",
+   "name": "Condor Trek",
+   "region": "andes-north",
+   "country": "Ecuador",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "condoriri-trek",
+   "name": "Condoriri Trek",
+   "region": "andes-north",
+   "country": "Bolivia",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "cordillera-apolobamba-trek",
+   "name": "Cordillera Apolobamba Trek",
+   "region": "andes-north",
+   "country": "Bolivia",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "cordillera-real-trek",
+   "name": "Cordillera Real Trek",
+   "region": "andes-north",
+   "country": "Bolivia",
+   "statedKm": [
+    200,
+    200
+   ],
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "cotopaxi-base-camp-and-refuge-trek",
+   "name": "Cotopaxi Base Camp and Refuge Trek",
+   "region": "andes-north",
+   "country": "Ecuador",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "el-altar-trek",
+   "name": "El Altar Trek",
+   "region": "andes-north",
+   "country": "Ecuador",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "illampu-circuit",
+   "name": "Illampu Circuit",
+   "region": "andes-north",
+   "country": "Bolivia",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "ingapirca-inca-trail",
+   "name": "Ingapirca Inca Trail",
+   "region": "andes-north",
+   "country": "Ecuador",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "quilotoa-loop",
+   "name": "Quilotoa Loop",
+   "region": "andes-north",
+   "country": "Ecuador",
+   "statedKm": null,
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 20978783,
+   "osmName": "Quilotoa Loop",
+   "matchedName": "Quilotoa Loop",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 34.3,
+   "sections": 0,
+   "bounds": {
+    "minlat": -0.8681695,
+    "minlon": -78.9268166,
+    "maxlat": -0.7057659,
+    "maxlon": -78.869474
+   },
+   "centre": {
+    "lat": -0.7869676999999999,
+    "lon": -78.8981453
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "EC"
+    ],
+    "length": "34.3 km drawn, a plausible length for the 3–4 days this route takes — the trek itself states no distance",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside Ecuador, by OSM's own boundary",
+    "wayMembers": 64
+   },
+   "tags": {
+    "network": null,
+    "ref": null,
+    "wikidata": "Q14230556",
+    "operator": null,
+    "symbol": null,
+    "website": null
+   },
+   "wayMembers": 64,
+   "countedKm": 34.3
+  },
+  {
+   "id": "quilotoa-chimborazo-trek",
+   "name": "Quilotoa–Chimborazo Trek",
+   "region": "andes-north",
+   "country": "Ecuador",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "sajama-circuit",
+   "name": "Sajama Circuit",
+   "region": "andes-north",
+   "country": "Bolivia",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "takesi-trek",
+   "name": "Takesi Trek",
+   "region": "andes-north",
+   "country": "Bolivia",
+   "statedKm": null,
+   "candidates": 1,
+   "matched": false,
+   "reason": "r3313887 \"Takesi Inca Trail\" and this trek's name differ by 1 distinctive word(s) — 1 the relation carries and this trek does not, 0 this trek carries and the relation does not — and no measured length or wikipedia title says they are the same route"
+  },
+  {
+   "id": "yunga-cruz-trek",
+   "name": "Yunga Cruz Trek",
+   "region": "andes-north",
+   "country": "Bolivia",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "annapurna-circuit-trek",
+   "name": "Annapurna Circuit Trek",
+   "region": "annapurna",
+   "country": "Nepal",
+   "statedKm": null,
+   "candidates": 3,
+   "matched": false,
+   "reason": "ambiguous — 2 relations answer to this name in different places (r1187310 238.8km, r19876645 90.8km)"
+  },
+  {
+   "id": "annapurna-circuit-tilicho-lake",
+   "name": "Annapurna Circuit + Tilicho Lake",
+   "region": "annapurna",
+   "country": "Nepal",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "annapurna-base-camp-trek",
+   "name": "Annapurna Base Camp Trek",
+   "region": "annapurna",
+   "country": "Nepal",
+   "statedKm": null,
+   "candidates": 1,
+   "matched": false,
+   "reason": "no relation of this name is a plausible length for a 7–12 day walk (35–480 km) — closest is r17548991 \"Annapurna Base Camp Trek\" at 23.9 km"
+  },
+  {
+   "id": "annapurna-sanctuary-trek",
+   "name": "Annapurna Sanctuary Trek",
+   "region": "annapurna",
+   "country": "Nepal",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "mardi-himal-trek",
+   "name": "Mardi Himal Trek",
+   "region": "annapurna",
+   "country": "Nepal",
+   "statedKm": null,
+   "candidates": 2,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 19267496,
+   "osmName": "Mardi Himal trek",
+   "matchedName": "Mardi Himal trek",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 30.1,
+   "sections": 0,
+   "bounds": {
+    "minlat": 28.2923576,
+    "minlon": 83.8207336,
+    "maxlat": 28.4599914,
+    "maxlon": 83.8950267
+   },
+   "centre": {
+    "lat": 28.376174499999998,
+    "lon": 83.85788015
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "NP"
+    ],
+    "length": "30.1 km drawn, a plausible length for the 5–7 days this route takes — the trek itself states no distance",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside Nepal, by OSM's own boundary",
+    "wayMembers": 23
+   },
+   "tags": {
+    "network": "rwn",
+    "ref": "MH",
+    "wikidata": "Q59310908",
+    "operator": null,
+    "symbol": null,
+    "website": null
+   },
+   "wayMembers": 23,
+   "countedKm": 30.1
+  },
+  {
+   "id": "ghorepani-poon-hill-trek",
+   "name": "Ghorepani–Poon Hill Trek",
+   "region": "annapurna",
+   "country": "Nepal",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "khopra-ridge-trek",
+   "name": "Khopra Ridge Trek",
+   "region": "annapurna",
+   "country": "Nepal",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "nar-phu-valley-trek",
+   "name": "Nar Phu Valley Trek",
+   "region": "annapurna",
+   "country": "Nepal",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "tilicho-lake-trek",
+   "name": "Tilicho Lake Trek",
+   "region": "annapurna",
+   "country": "Nepal",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "jomsom-muktinath-trek",
+   "name": "Jomsom–Muktinath Trek",
+   "region": "annapurna",
+   "country": "Nepal",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "mount-toubkal-circuit-trek",
+   "name": "Mount Toubkal Circuit Trek",
+   "region": "atlas",
+   "country": "Morocco",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "high-atlas-trek",
+   "name": "High Atlas Trek",
+   "region": "atlas",
+   "country": "Morocco",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "mgoun-massif-trek",
+   "name": "M'Goun Massif Trek",
+   "region": "atlas",
+   "country": "Morocco",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "jebel-saghro-trek",
+   "name": "Jebel Saghro Trek",
+   "region": "atlas",
+   "country": "Morocco",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "australian-alps-walking-track",
+   "name": "Australian Alps Walking Track",
+   "region": "australia",
+   "country": "Australia",
+   "statedKm": [
+    655,
+    655
+   ],
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 1644959,
+   "osmName": "Australian Alps Walking Track",
+   "matchedName": "Australian Alps Walking Track",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 693.9,
+   "sections": 0,
+   "bounds": {
+    "minlat": -37.9533578,
+    "minlon": 146.2154956,
+    "maxlat": -35.5312843,
+    "maxlon": 149.0655817
+   },
+   "centre": {
+    "lat": -36.74232105,
+    "lon": 147.64053865
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "AU"
+    ],
+    "length": "693.9 km drawn against the 655 km this trek states",
+    "wikipedia": "en:Australian Alps Walking Track",
+    "countryPolygon": "the line's centre falls inside Australia, by OSM's own boundary",
+    "wayMembers": 390
+   },
+   "tags": {
+    "network": "nwn",
+    "ref": null,
+    "wikidata": "Q4823802",
+    "operator": "Parks Victoria;NSW National Parks and Wildlife Service;ACT Parks and Conservation;Director of National Parks",
+    "symbol": "yellow triangle",
+    "website": "https://theaustralianalpsnationalparks.org/experience/aawt/"
+   },
+   "wayMembers": 390,
+   "countedKm": 693.9
+  },
+  {
+   "id": "bibbulmun-track",
+   "name": "Bibbulmun Track",
+   "region": "australia",
+   "country": "Australia",
+   "statedKm": [
+    1000,
+    1000
+   ],
+   "candidates": 6,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 400098,
+   "osmName": "Bibbulmun Track",
+   "matchedName": "Bibbulmun Track",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 960,
+   "sections": 0,
+   "bounds": {
+    "minlat": -35.10925,
+    "minlon": 115.828916,
+    "maxlat": -31.948649,
+    "maxlon": 117.8798103
+   },
+   "centre": {
+    "lat": -33.5289495,
+    "lon": 116.85436315000001
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "AU"
+    ],
+    "length": "960 km drawn against the 1000 km this trek states",
+    "wikipedia": "en:Bibbulmun Track",
+    "countryPolygon": "the line's centre falls inside Australia, by OSM's own boundary",
+    "wayMembers": 627
+   },
+   "tags": {
+    "network": "nwn",
+    "ref": null,
+    "wikidata": "Q4902980",
+    "operator": "Department of Biodiversity, Conservation and Attractions (DBCA)",
+    "symbol": "rainbow serpent on yellow triangle",
+    "website": "http://www.bibbulmuntrack.org.au/"
+   },
+   "wayMembers": 627,
+   "countedKm": 960
+  },
+  {
+   "id": "cape-to-cape-track",
+   "name": "Cape to Cape Track",
+   "region": "australia",
+   "country": "Australia",
+   "statedKm": [
+    123,
+    123
+   ],
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 401769,
+   "osmName": "Cape to Cape Track",
+   "matchedName": "Cape to Cape Track",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 125.6,
+   "sections": 0,
+   "bounds": {
+    "minlat": -34.3688732,
+    "minlon": 114.9782431,
+    "maxlat": -33.5394346,
+    "maxlon": 115.1378894
+   },
+   "centre": {
+    "lat": -33.9541539,
+    "lon": 115.05806625
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "AU"
+    ],
+    "length": "125.6 km drawn against the 123 km this trek states",
+    "wikipedia": "en:Cape to Cape Track",
+    "countryPolygon": "the line's centre falls inside Australia, by OSM's own boundary",
+    "wayMembers": 127
+   },
+   "tags": {
+    "network": "rwn",
+    "ref": null,
+    "wikidata": "Q5035210",
+    "operator": "Department of Environment and Conservation (DEC)",
+    "symbol": "stylized representation of track coastline",
+    "website": "http://www.capetocapetrack.com.au"
+   },
+   "wayMembers": 127,
+   "countedKm": 125.6
+  },
+  {
+   "id": "great-ocean-walk",
+   "name": "Great Ocean Walk",
+   "region": "australia",
+   "country": "Australia",
+   "statedKm": [
+    104,
+    104
+   ],
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 1951913,
+   "osmName": "Great Ocean Walk",
+   "matchedName": "Great Ocean Walk",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 96.4,
+   "sections": 0,
+   "bounds": {
+    "minlat": -38.8543732,
+    "minlon": 143.1049681,
+    "maxlat": -38.6622074,
+    "maxlon": 143.6719459
+   },
+   "centre": {
+    "lat": -38.7582903,
+    "lon": 143.38845700000002
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "AU"
+    ],
+    "length": "96.4 km drawn against the 104 km this trek states",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside Australia, by OSM's own boundary",
+    "wayMembers": 133
+   },
+   "tags": {
+    "network": "rwn",
+    "ref": null,
+    "wikidata": "Q1488476",
+    "operator": null,
+    "symbol": null,
+    "website": null
+   },
+   "wayMembers": 133,
+   "countedKm": 96.4
+  },
+  {
+   "id": "heysen-trail",
+   "name": "Heysen Trail",
+   "region": "australia",
+   "country": "Australia",
+   "statedKm": [
+    1200,
+    1200
+   ],
+   "candidates": 2,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 124080,
+   "osmName": "Heysen Trail",
+   "matchedName": "Heysen Trail",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 1097.9,
+   "sections": 0,
+   "bounds": {
+    "minlat": -35.659327,
+    "minlon": 137.9231702,
+    "maxlat": -31.1348802,
+    "maxlon": 139.129775
+   },
+   "centre": {
+    "lat": -33.3971036,
+    "lon": 138.52647259999998
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "AU"
+    ],
+    "length": "1097.9 km drawn against the 1200 km this trek states",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside Australia, by OSM's own boundary",
+    "wayMembers": 869
+   },
+   "tags": {
+    "network": "nwn",
+    "ref": null,
+    "wikidata": null,
+    "operator": null,
+    "symbol": null,
+    "website": "http://www.heysentrail.asn.au"
+   },
+   "wayMembers": 869,
+   "countedKm": 1098
+  },
+  {
+   "id": "larapinta-trail",
+   "name": "Larapinta Trail",
+   "region": "australia",
+   "country": "Australia",
+   "statedKm": [
+    223,
+    223
+   ],
+   "candidates": 15,
+   "matched": false,
+   "reason": "no relation of this name measures anything near the 223 km this trek states — closest is r3958659 \"Larapinta Trail Section 6\" at 32.6 km"
+  },
+  {
+   "id": "main-range-track",
+   "name": "Main Range Track",
+   "region": "australia",
+   "country": "Australia",
+   "statedKm": [
+    22,
+    22
+   ],
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 3838571,
+   "osmName": "Main Range Walking Track",
+   "matchedName": "Main Range Walking Track",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 21.9,
+   "sections": 0,
+   "bounds": {
+    "minlat": -36.4587,
+    "minlon": 148.2623659,
+    "maxlat": -36.4060127,
+    "maxlon": 148.3286543
+   },
+   "centre": {
+    "lat": -36.43235635,
+    "lon": 148.2955101
+   },
+   "tier": 3,
+   "tests": {
+    "name": "the same name but for a generic word",
+    "country": [
+     "AU"
+    ],
+    "length": "21.9 km drawn against the 22 km this trek states",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside Australia, by OSM's own boundary",
+    "wayMembers": 20
+   },
+   "tags": {
+    "network": null,
+    "ref": null,
+    "wikidata": "Q66725200",
+    "operator": null,
+    "symbol": null,
+    "website": null
+   },
+   "wayMembers": 20,
+   "countedKm": 21.9
+  },
+  {
+   "id": "overland-track",
+   "name": "Overland Track",
+   "region": "australia",
+   "country": "Australia",
+   "statedKm": [
+    65,
+    65
+   ],
+   "candidates": 6,
+   "matched": false,
+   "reason": "no relation of this name measures anything near the 65 km this trek states — closest is r7765183 \"Overland Track section 5\" at 19.5 km"
+  },
+  {
+   "id": "six-foot-track",
+   "name": "Six Foot Track",
+   "region": "australia",
+   "country": "Australia",
+   "statedKm": [
+    45,
+    45
+   ],
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 3735948,
+   "osmName": "Six Foot Track",
+   "matchedName": "Six Foot Track",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 44.4,
+   "sections": 0,
+   "bounds": {
+    "minlat": -33.8203805,
+    "minlon": 150.0209832,
+    "maxlat": -33.7037004,
+    "maxlon": 150.2895087
+   },
+   "centre": {
+    "lat": -33.76204045,
+    "lon": 150.15524595
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "AU"
+    ],
+    "length": "44.4 km drawn against the 45 km this trek states",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside Australia, by OSM's own boundary",
+    "wayMembers": 48
+   },
+   "tags": {
+    "network": "rwn",
+    "ref": null,
+    "wikidata": "Q7532743",
+    "operator": null,
+    "symbol": null,
+    "website": "https://www.sixfoottrack.com/"
+   },
+   "wayMembers": 48,
+   "countedKm": 44.4
+  },
+  {
+   "id": "south-coast-track",
+   "name": "South Coast Track",
+   "region": "australia",
+   "country": "Australia",
+   "statedKm": [
+    85,
+    85
+   ],
+   "candidates": 2,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 2712082,
+   "osmName": "South Coast Track",
+   "matchedName": "South Coast Track",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 73.4,
+   "sections": 0,
+   "bounds": {
+    "minlat": -43.6113322,
+    "minlon": 146.2143815,
+    "maxlat": -43.476118,
+    "maxlon": 146.8932496
+   },
+   "centre": {
+    "lat": -43.5437251,
+    "lon": 146.55381555
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "AU"
+    ],
+    "length": "73.4 km drawn against the 85 km this trek states",
+    "wikipedia": "en:South Coast Track",
+    "countryPolygon": "the line's centre falls inside Australia, by OSM's own boundary",
+    "wayMembers": 36
+   },
+   "tags": {
+    "network": "rwn",
+    "ref": null,
+    "wikidata": "Q7566866",
+    "operator": null,
+    "symbol": null,
+    "website": "https://parks.tas.gov.au/explore-our-parks/southwest-national-park/south-coast-track"
+   },
+   "wayMembers": 36,
+   "countedKm": 73.4
+  },
+  {
+   "id": "thorsborne-trail",
+   "name": "Thorsborne Trail",
+   "region": "australia",
+   "country": "Australia",
+   "statedKm": [
+    32,
+    32
+   ],
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 19347052,
+   "osmName": "Thorsborne Trail",
+   "matchedName": "Thorsborne Trail",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 28.7,
+   "sections": 0,
+   "bounds": {
+    "minlat": -18.4849119,
+    "minlon": 146.2720261,
+    "maxlat": -18.3111452,
+    "maxlon": 146.3306224
+   },
+   "centre": {
+    "lat": -18.39802855,
+    "lon": 146.30132425
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "AU"
+    ],
+    "length": "28.7 km drawn against the 32 km this trek states",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside Australia, by OSM's own boundary",
+    "wayMembers": 11
+   },
+   "tags": {
+    "network": "rwn",
+    "ref": null,
+    "wikidata": null,
+    "operator": null,
+    "symbol": null,
+    "website": null
+   },
+   "wayMembers": 11,
+   "countedKm": 28.7
+  },
+  {
+   "id": "three-capes-track",
+   "name": "Three Capes Track",
+   "region": "australia",
+   "country": "Australia",
+   "statedKm": [
+    48,
+    48
+   ],
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 5693084,
+   "osmName": "Three Capes Track",
+   "matchedName": "Three Capes Track",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 34.8,
+   "sections": 0,
+   "bounds": {
+    "minlat": -43.2242551,
+    "minlon": 147.8889559,
+    "maxlat": -43.1355492,
+    "maxlon": 148.0079346
+   },
+   "centre": {
+    "lat": -43.179902150000004,
+    "lon": 147.94844525000002
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "AU"
+    ],
+    "length": "34.8 km drawn against the 48 km this trek states",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside Australia, by OSM's own boundary",
+    "wayMembers": 8
+   },
+   "tags": {
+    "network": "rwn",
+    "ref": null,
+    "wikidata": null,
+    "operator": "Tasmania Parks & Wildlife Service",
+    "symbol": null,
+    "website": null
+   },
+   "wayMembers": 8,
+   "countedKm": 46.2
+  },
+  {
+   "id": "bumdra-trek",
+   "name": "Bumdra Trek",
+   "region": "bhutan",
+   "country": "Bhutan",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "bumthang-owl-trek",
+   "name": "Bumthang Owl Trek",
+   "region": "bhutan",
+   "country": "Bhutan",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "dagala-thousand-lakes-trek",
+   "name": "Dagala Thousand Lakes Trek",
+   "region": "bhutan",
+   "country": "Bhutan",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "druk-path-trek",
+   "name": "Druk Path Trek",
+   "region": "bhutan",
+   "country": "Bhutan",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "jomolhari-trek",
+   "name": "Jomolhari Trek",
+   "region": "bhutan",
+   "country": "Bhutan",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "laya-gasa-trek",
+   "name": "Laya–Gasa Trek",
+   "region": "bhutan",
+   "country": "Bhutan",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "merak-sakteng-trek",
+   "name": "Merak–Sakteng Trek",
+   "region": "bhutan",
+   "country": "Bhutan",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "nabji-korphu-trail",
+   "name": "Nabji Korphu Trail",
+   "region": "bhutan",
+   "country": "Bhutan",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "snowman-trek",
+   "name": "Snowman Trek",
+   "region": "bhutan",
+   "country": "Bhutan",
+   "statedKm": [
+    347,
+    347
+   ],
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 13373158,
+   "osmName": "Snowman Trek",
+   "matchedName": "Snowman Trek",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 273,
+   "sections": 0,
+   "bounds": {
+    "minlat": 27.6049114,
+    "minlon": 89.253874,
+    "maxlat": 28.0897927,
+    "maxlon": 90.6751207
+   },
+   "centre": {
+    "lat": 27.847352049999998,
+    "lon": 89.96449734999999
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "BT"
+    ],
+    "length": "273 km drawn against the 347 km this trek states",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside Bhutan, by OSM's own boundary",
+    "wayMembers": 70
+   },
+   "tags": {
+    "network": "iwn",
+    "ref": null,
+    "wikidata": null,
+    "operator": null,
+    "symbol": null,
+    "website": null
+   },
+   "wayMembers": 70,
+   "countedKm": 336.2
+  },
+  {
+   "id": "trans-bhutan-trail",
+   "name": "Trans Bhutan Trail",
+   "region": "bhutan",
+   "country": "Bhutan",
+   "statedKm": [
+    403,
+    403
+   ],
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 13359866,
+   "osmName": "Trans Bhutan Trail",
+   "matchedName": "Trans Bhutan Trail",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 403.8,
+   "sections": 17,
+   "bounds": {
+    "minlat": 27.2600868,
+    "minlon": 89.2820484,
+    "maxlat": 27.5914285,
+    "maxlon": 91.5516551
+   },
+   "centre": {
+    "lat": 27.42575765,
+    "lon": 90.41685175
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "BT"
+    ],
+    "length": "403.8 km drawn against the 403 km this trek states",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside Bhutan, by OSM's own boundary",
+    "wayMembers": 476
+   },
+   "tags": {
+    "network": "iwn",
+    "ref": null,
+    "wikidata": null,
+    "operator": null,
+    "symbol": null,
+    "website": "https://transbhutantrail.com/"
+   },
+   "wayMembers": 476,
+   "countedKm": 416.9
+  },
+  {
+   "id": "ala-archa-trek",
+   "name": "Ala Archa Trek",
+   "region": "central-asia",
+   "country": "Kyrgyzstan",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "ala-kul-trek",
+   "name": "Ala-Kul Trek",
+   "region": "central-asia",
+   "country": "Kyrgyzstan",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "arslanbob-walnut-forest-trek",
+   "name": "Arslanbob Walnut Forest Trek",
+   "region": "central-asia",
+   "country": "Kyrgyzstan",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "bartang-valley-trek",
+   "name": "Bartang Valley Trek",
+   "region": "central-asia",
+   "country": "Tajikistan",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "fann-mountains-trek",
+   "name": "Fann Mountains Trek",
+   "region": "central-asia",
+   "country": "Tajikistan",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "heights-of-alay-trek",
+   "name": "Heights of Alay Trek",
+   "region": "central-asia",
+   "country": "Kyrgyzstan",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "jyrgalan-boz-uchuk-lakes-trek",
+   "name": "Jyrgalan Boz Uchuk Lakes Trek",
+   "region": "central-asia",
+   "country": "Kyrgyzstan",
+   "statedKm": null,
+   "candidates": 1,
+   "matched": false,
+   "reason": "r9426379 \"маршрут на Боз-Учук\" and this trek's name differ by 2 distinctive word(s) — 0 the relation carries and this trek does not, 2 this trek carries and the relation does not — and no measured length or wikipedia title says they are the same route"
+  },
+  {
+   "id": "keskenkija-loop",
+   "name": "Keskenkija Loop",
+   "region": "central-asia",
+   "country": "Kyrgyzstan",
+   "statedKm": null,
+   "candidates": 1,
+   "matched": false,
+   "reason": "only a stem of the name matches r9426396 \"Кескенкия айланпа жолу\", and no measured length or wikipedia title agrees with it"
+  },
+  {
+   "id": "kol-suu-lake-trek",
+   "name": "Kol Suu Lake Trek",
+   "region": "central-asia",
+   "country": "Kyrgyzstan",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "pamir-trek",
+   "name": "Pamir Trek",
+   "region": "central-asia",
+   "country": "Tajikistan",
+   "statedKm": [
+    1313,
+    1313
+   ],
+   "candidates": 1,
+   "matched": false,
+   "confidence": "strong",
+   "osmId": 19862178,
+   "osmName": "Pamir Trail",
+   "matchedName": "Pamir Trail",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 1432.4,
+   "sections": 54,
+   "bounds": {
+    "minlat": 36.9897422,
+    "minlon": 67.7967752,
+    "maxlat": 39.466128,
+    "maxlon": 73.5874343
+   },
+   "centre": {
+    "lat": 38.227935099999996,
+    "lon": 70.69210475
+   },
+   "tier": 3,
+   "tests": {
+    "name": "the same name but for a generic word",
+    "country": [
+     "TJ"
+    ],
+    "length": "1432.4 km measured against the 1313 km this trek states",
+    "wikipedia": null
+   },
+   "tags": {
+    "network": "iwn",
+    "ref": null,
+    "wikidata": null,
+    "operator": null,
+    "symbol": null,
+    "website": "https://pamirtrail.org"
+   },
+   "wayMembers": 982,
+   "countedKm": 1432.4,
+   "reason": "r19862178 sits in AF, and this trek is in Tajikistan"
+  },
+  {
+   "id": "peak-lenin-base-camp-trek",
+   "name": "Peak Lenin Base Camp Trek",
+   "region": "central-asia",
+   "country": "Kyrgyzstan",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "seven-lakes-trek",
+   "name": "Seven Lakes Trek",
+   "region": "central-asia",
+   "country": "Tajikistan",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "song-kul-trek",
+   "name": "Song-Kul Trek",
+   "region": "central-asia",
+   "country": "Kyrgyzstan",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "tien-shan-trek",
+   "name": "Tien Shan Trek",
+   "region": "central-asia",
+   "country": "Kyrgyzstan",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "huayhuash-circuit-trek",
+   "name": "Huayhuash Circuit Trek",
+   "region": "cordillera",
+   "country": "Peru",
+   "statedKm": [
+    120,
+    135
+   ],
+   "candidates": 3,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 1112639,
+   "osmName": "Circuito de Huayhuash",
+   "matchedName": "Circuito de Huayhuash",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 98.5,
+   "sections": 0,
+   "bounds": {
+    "minlat": -10.4135388,
+    "minlon": -77.0430181,
+    "maxlat": -10.1492674,
+    "maxlon": -76.8371978
+   },
+   "centre": {
+    "lat": -10.281403099999999,
+    "lon": -76.94010795
+   },
+   "tier": 2,
+   "tests": {
+    "name": "every distinctive word matches",
+    "country": [
+     "PE"
+    ],
+    "length": "98.5 km drawn against the 120–135 km this trek states",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside Peru, by OSM's own boundary",
+    "wayMembers": 31
+   },
+   "tags": {
+    "network": "lwn",
+    "ref": null,
+    "wikidata": null,
+    "operator": null,
+    "symbol": null,
+    "website": "https://www.huayhuash.com/huayhuash_circuit.html"
+   },
+   "wayMembers": 31,
+   "countedKm": 101.1
+  },
+  {
+   "id": "santa-cruz-trek",
+   "name": "Santa Cruz Trek",
+   "region": "cordillera",
+   "country": "Peru",
+   "statedKm": [
+    50,
+    50
+   ],
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 1732163,
+   "osmName": "Santa Cruz Trek",
+   "matchedName": "Santa Cruz Trek",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 45.8,
+   "sections": 0,
+   "bounds": {
+    "minlat": -9.0105208,
+    "minlon": -77.779113,
+    "maxlat": -8.9096911,
+    "maxlon": -77.5226989
+   },
+   "centre": {
+    "lat": -8.960105949999999,
+    "lon": -77.65090595
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "PE"
+    ],
+    "length": "45.8 km drawn against the 50 km this trek states",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside Peru, by OSM's own boundary",
+    "wayMembers": 30
+   },
+   "tags": {
+    "network": "lwn",
+    "ref": null,
+    "wikidata": "Q15101728",
+    "operator": null,
+    "symbol": null,
+    "website": null
+   },
+   "wayMembers": 30,
+   "countedKm": 45.8
+  },
+  {
+   "id": "alpamayo-circuit-trek",
+   "name": "Alpamayo Circuit Trek",
+   "region": "cordillera",
+   "country": "Peru",
+   "statedKm": null,
+   "candidates": 2,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 1732180,
+   "osmName": "Alpamayo Circuit",
+   "matchedName": "Alpamayo Circuit",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 66,
+   "sections": 0,
+   "bounds": {
+    "minlat": -8.9002505,
+    "minlon": -77.7952843,
+    "maxlat": -8.8024787,
+    "maxlon": -77.4656123
+   },
+   "centre": {
+    "lat": -8.8513646,
+    "lon": -77.63044830000001
+   },
+   "tier": 3,
+   "tests": {
+    "name": "the same name but for a generic word",
+    "country": [
+     "PE"
+    ],
+    "length": "66 km drawn, a plausible length for the 10–12 days this route takes — the trek itself states no distance",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside Peru, by OSM's own boundary",
+    "wayMembers": 29
+   },
+   "tags": {
+    "network": "lwn",
+    "ref": null,
+    "wikidata": null,
+    "operator": null,
+    "symbol": null,
+    "website": null
+   },
+   "wayMembers": 29,
+   "countedKm": 66
+  },
+  {
+   "id": "cedros-alpamayo-traverse",
+   "name": "Cedros–Alpamayo Traverse",
+   "region": "cordillera",
+   "country": "Peru",
+   "statedKm": [
+    96,
+    96
+   ],
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "colca-canyon-trek",
+   "name": "Colca Canyon Trek",
+   "region": "cordillera",
+   "country": "Peru",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "cotahuasi-canyon-trek",
+   "name": "Cotahuasi Canyon Trek",
+   "region": "cordillera",
+   "country": "Peru",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "inca-trail-to-machu-picchu",
+   "name": "Inca Trail to Machu Picchu",
+   "region": "cusco",
+   "country": "Peru",
+   "statedKm": [
+    43,
+    43
+   ],
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 15703494,
+   "osmName": "Camino Inca a Machu Picchu",
+   "matchedName": "Camino Inca a Machu Picchu",
+   "extras": 1,
+   "missing": 0,
+   "lengthKm": 36,
+   "sections": 0,
+   "bounds": {
+    "minlat": -13.2647413,
+    "minlon": -72.5440242,
+    "maxlat": -13.1612611,
+    "maxlon": -72.3819862
+   },
+   "centre": {
+    "lat": -13.2130012,
+    "lon": -72.4630052
+   },
+   "tier": 2,
+   "tests": {
+    "name": "every distinctive word matches",
+    "country": [
+     "PE"
+    ],
+    "length": "36 km drawn against the 43 km this trek states",
+    "wikipedia": "es:Camino Inca a Machu Picchu",
+    "countryPolygon": "the line's centre falls inside Peru, by OSM's own boundary",
+    "wayMembers": 52
+   },
+   "tags": {
+    "network": "rwn",
+    "ref": null,
+    "wikidata": "Q6014019",
+    "operator": "Ministerio de Cultura",
+    "symbol": null,
+    "website": null
+   },
+   "wayMembers": 52,
+   "countedKm": 38.3
+  },
+  {
+   "id": "short-inca-trail",
+   "name": "Short Inca Trail",
+   "region": "cusco",
+   "country": "Peru",
+   "statedKm": [
+    11,
+    11
+   ],
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "salkantay-trek",
+   "name": "Salkantay Trek",
+   "region": "cusco",
+   "country": "Peru",
+   "statedKm": null,
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 2376237,
+   "osmName": "Camino del Inca Salkantay",
+   "matchedName": "Salkantay trail",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 75.2,
+   "sections": 0,
+   "bounds": {
+    "minlat": -13.5005301,
+    "minlon": -72.6721621,
+    "maxlat": -13.1454349,
+    "maxlon": -72.5304968
+   },
+   "centre": {
+    "lat": -13.3229825,
+    "lon": -72.60132945
+   },
+   "tier": 3,
+   "tests": {
+    "name": "the same name but for a generic word",
+    "country": [
+     "PE"
+    ],
+    "length": "75.2 km drawn, a plausible length for the 4–5 days this route takes — the trek itself states no distance",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside Peru, by OSM's own boundary",
+    "wayMembers": 73
+   },
+   "tags": {
+    "network": "rwn",
+    "ref": null,
+    "wikidata": "Q21051923",
+    "operator": null,
+    "symbol": null,
+    "website": null
+   },
+   "wayMembers": 73,
+   "countedKm": 75.2
+  },
+  {
+   "id": "salkantay-inca-trail-trek",
+   "name": "Salkantay–Inca Trail Trek",
+   "region": "cusco",
+   "country": "Peru",
+   "statedKm": null,
+   "candidates": 1,
+   "matched": false,
+   "reason": "r2376237 \"Camino del Inca Salkantay\" and this trek's name differ by 1 distinctive word(s) — 1 the relation carries and this trek does not, 0 this trek carries and the relation does not — and no measured length or wikipedia title says they are the same route"
+  },
+  {
+   "id": "lares-trek",
+   "name": "Lares Trek",
+   "region": "cusco",
+   "country": "Peru",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "choquequirao-trek",
+   "name": "Choquequirao Trek",
+   "region": "cusco",
+   "country": "Peru",
+   "statedKm": null,
+   "candidates": 2,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 2072730,
+   "osmName": "Choquequirao Trek",
+   "matchedName": "Choquequirao Trek",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 29.5,
+   "sections": 0,
+   "bounds": {
+    "minlat": -13.5123343,
+    "minlon": -72.8625536,
+    "maxlat": -13.3893991,
+    "maxlon": -72.8014672
+   },
+   "centre": {
+    "lat": -13.450866699999999,
+    "lon": -72.8320104
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "PE"
+    ],
+    "length": "29.5 km drawn, a plausible length for the 4–5 days this route takes — the trek itself states no distance",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside Peru, by OSM's own boundary",
+    "wayMembers": 16
+   },
+   "tags": {
+    "network": "rwn",
+    "ref": null,
+    "wikidata": "Q62554657",
+    "operator": null,
+    "symbol": null,
+    "website": null
+   },
+   "wayMembers": 16,
+   "countedKm": 29.5
+  },
+  {
+   "id": "choquequirao-machu-picchu-trek",
+   "name": "Choquequirao–Machu Picchu Trek",
+   "region": "cusco",
+   "country": "Peru",
+   "statedKm": [
+    100,
+    100
+   ],
+   "candidates": 2,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 16221089,
+   "osmName": "Choquequirao To Machu Picchu",
+   "matchedName": "Choquequirao To Machu Picchu",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 105.9,
+   "sections": 0,
+   "bounds": {
+    "minlat": -13.4464058,
+    "minlon": -72.892237,
+    "maxlat": -13.1454349,
+    "maxlon": -72.5275005
+   },
+   "centre": {
+    "lat": -13.29592035,
+    "lon": -72.70986875
+   },
+   "tier": 3,
+   "tests": {
+    "name": "the same name but for a generic word",
+    "country": [
+     "PE"
+    ],
+    "length": "105.9 km drawn against the 100 km this trek states",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside Peru, by OSM's own boundary",
+    "wayMembers": 81
+   },
+   "tags": {
+    "network": "rwn",
+    "ref": null,
+    "wikidata": null,
+    "operator": null,
+    "symbol": null,
+    "website": null
+   },
+   "wayMembers": 81,
+   "countedKm": 109
+  },
+  {
+   "id": "ausangate-trek",
+   "name": "Ausangate Trek",
+   "region": "cusco",
+   "country": "Peru",
+   "statedKm": null,
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 3475867,
+   "osmName": "Ausangate circuit",
+   "matchedName": "Ausangate circuit",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 63.5,
+   "sections": 0,
+   "bounds": {
+    "minlat": -13.8693201,
+    "minlon": -71.3162044,
+    "maxlat": -13.6711575,
+    "maxlon": -71.16025
+   },
+   "centre": {
+    "lat": -13.7702388,
+    "lon": -71.23822720000001
+   },
+   "tier": 3,
+   "tests": {
+    "name": "the same name but for a generic word",
+    "country": [
+     "PE"
+    ],
+    "length": "63.5 km drawn, a plausible length for the 4–6 days this route takes — the trek itself states no distance",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside Peru, by OSM's own boundary",
+    "wayMembers": 37
+   },
+   "tags": {
+    "network": "lwn",
+    "ref": null,
+    "wikidata": "Q136108901",
+    "operator": null,
+    "symbol": null,
+    "website": null
+   },
+   "wayMembers": 37,
+   "countedKm": 97.1
+  },
+  {
+   "id": "ausangate-rainbow-mountain-trek",
+   "name": "Ausangate & Rainbow Mountain Trek",
+   "region": "cusco",
+   "country": "Peru",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "huchuy-qosqo-trek",
+   "name": "Huchuy Qosqo Trek",
+   "region": "cusco",
+   "country": "Peru",
+   "statedKm": [
+    15,
+    15
+   ],
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "ancascocha-trek",
+   "name": "Ancascocha Trek",
+   "region": "cusco",
+   "country": "Peru",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "vilcabamba-to-machu-picchu",
+   "name": "Vilcabamba to Machu Picchu",
+   "region": "cusco",
+   "country": "Peru",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "dolomites-alta-via-1",
+   "name": "Dolomites Alta Via 1",
+   "region": "dolomites",
+   "country": "Italy",
+   "statedKm": [
+    125,
+    125
+   ],
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 177743,
+   "osmName": "Alta via n. 1 delle Dolomiti - Dolomiten-Höhenweg Nr. 1",
+   "matchedName": "Alta via n. 1 delle Dolomiti - Dolomiten-Höhenweg Nr. 1",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 118.4,
+   "sections": 0,
+   "bounds": {
+    "minlat": 46.137989,
+    "minlon": 11.983863,
+    "maxlat": 46.6998955,
+    "maxlon": 12.2169501
+   },
+   "centre": {
+    "lat": 46.41894225,
+    "lon": 12.100406549999999
+   },
+   "tier": 2,
+   "tests": {
+    "name": "every distinctive word matches",
+    "country": [
+     "IT"
+    ],
+    "length": "118.4 km drawn against the 125 km this trek states",
+    "wikipedia": "it:Alta via n. 1",
+    "countryPolygon": "the line's centre falls inside Italy, by OSM's own boundary",
+    "wayMembers": 255
+   },
+   "tags": {
+    "network": "rwn",
+    "ref": "AV1",
+    "wikidata": "Q1236280",
+    "operator": null,
+    "symbol": "Blue triangle with a 1 inside",
+    "website": null
+   },
+   "wayMembers": 255,
+   "countedKm": 179.5
+  },
+  {
+   "id": "dolomites-alta-via-2",
+   "name": "Dolomites Alta Via 2",
+   "region": "dolomites",
+   "country": "Italy",
+   "statedKm": [
+    180,
+    180
+   ],
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 404914,
+   "osmName": "Alta Via n. 2 delle Dolomiti - Dolomiten-Höhenweg Nr. 2",
+   "matchedName": "Alta Via n. 2 delle Dolomiti - Dolomiten-Höhenweg Nr. 2",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 169.1,
+   "sections": 0,
+   "bounds": {
+    "minlat": 46.0354871,
+    "minlon": 11.6825796,
+    "maxlat": 46.6976493,
+    "maxlon": 11.9495323
+   },
+   "centre": {
+    "lat": 46.3665682,
+    "lon": 11.816055949999999
+   },
+   "tier": 2,
+   "tests": {
+    "name": "every distinctive word matches",
+    "country": [
+     "IT"
+    ],
+    "length": "169.1 km drawn against the 180 km this trek states",
+    "wikipedia": "it:Alta via n. 2",
+    "countryPolygon": "the line's centre falls inside Italy, by OSM's own boundary",
+    "wayMembers": 404
+   },
+   "tags": {
+    "network": "rwn",
+    "ref": "AV2",
+    "wikidata": "Q123376517",
+    "operator": null,
+    "symbol": "Blue triangle line with 2 inside",
+    "website": null
+   },
+   "wayMembers": 404,
+   "countedKm": 187.9
+  },
+  {
+   "id": "dolomites-alta-via-3",
+   "name": "Dolomites Alta Via 3",
+   "region": "dolomites",
+   "country": "Italy",
+   "statedKm": [
+    100,
+    120
+   ],
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 1657836,
+   "osmName": "Alta via n. 3 delle Dolomiti - Dolomiten-Höhenweg Nr. 3",
+   "matchedName": "Alta via n. 3 delle Dolomiti - Dolomiten-Höhenweg Nr. 3",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 109.4,
+   "sections": 0,
+   "bounds": {
+    "minlat": 46.2640728,
+    "minlon": 12.1563526,
+    "maxlat": 46.7378343,
+    "maxlon": 12.3003174
+   },
+   "centre": {
+    "lat": 46.500953550000006,
+    "lon": 12.228335000000001
+   },
+   "tier": 2,
+   "tests": {
+    "name": "every distinctive word matches",
+    "country": [
+     "IT"
+    ],
+    "length": "109.4 km drawn against the 100–120 km this trek states",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside Italy, by OSM's own boundary",
+    "wayMembers": 271
+   },
+   "tags": {
+    "network": "rwn",
+    "ref": "AV3",
+    "wikidata": null,
+    "operator": null,
+    "symbol": "Red triangle with a 3 Inside",
+    "website": null
+   },
+   "wayMembers": 271,
+   "countedKm": 110
+  },
+  {
+   "id": "dolomites-alta-via-4",
+   "name": "Dolomites Alta Via 4",
+   "region": "dolomites",
+   "country": "Italy",
+   "statedKm": [
+    85,
+    85
+   ],
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 1658415,
+   "osmName": "Alta via n. 4 delle Dolomiti - Dolomiten-Höhenweg Nr. 4",
+   "matchedName": "Alta via n. 4 delle Dolomiti - Dolomiten-Höhenweg Nr. 4",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 70.4,
+   "sections": 0,
+   "bounds": {
+    "minlat": 46.4361508,
+    "minlon": 12.2254664,
+    "maxlat": 46.73002,
+    "maxlon": 12.3642049
+   },
+   "centre": {
+    "lat": 46.5830854,
+    "lon": 12.29483565
+   },
+   "tier": 2,
+   "tests": {
+    "name": "every distinctive word matches",
+    "country": [
+     "IT"
+    ],
+    "length": "70.4 km drawn against the 85 km this trek states",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside Italy, by OSM's own boundary",
+    "wayMembers": 189
+   },
+   "tags": {
+    "network": "rwn",
+    "ref": "AV4",
+    "wikidata": null,
+    "operator": null,
+    "symbol": "Red Triangle with a 4 inside",
+    "website": null
+   },
+   "wayMembers": 189,
+   "countedKm": 70.4
+  },
+  {
+   "id": "dolomites-alta-via-5",
+   "name": "Dolomites Alta Via 5",
+   "region": "dolomites",
+   "country": "Italy",
+   "statedKm": [
+    90,
+    90
+   ],
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 15882641,
+   "osmName": "Alta via n. 5 delle Dolomiti",
+   "matchedName": "Alta via n. 5 delle Dolomiti",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 76.4,
+   "sections": 7,
+   "bounds": {
+    "minlat": 46.4287758,
+    "minlon": 12.2254664,
+    "maxlat": 46.6995435,
+    "maxlon": 12.4028206
+   },
+   "centre": {
+    "lat": 46.56415964999999,
+    "lon": 12.3141435
+   },
+   "tier": 2,
+   "tests": {
+    "name": "every distinctive word matches",
+    "country": [
+     "IT"
+    ],
+    "length": "76.4 km drawn against the 90 km this trek states",
+    "wikipedia": "it:Alta via n. 5",
+    "countryPolygon": "the line's centre falls inside Italy, by OSM's own boundary",
+    "wayMembers": 140
+   },
+   "tags": {
+    "network": "rwn",
+    "ref": "AV5",
+    "wikidata": null,
+    "operator": null,
+    "symbol": "Blue triangle with a 5 inside",
+    "website": null
+   },
+   "wayMembers": 140,
+   "countedKm": 77.5
+  },
+  {
+   "id": "dolomites-alta-via-6",
+   "name": "Dolomites Alta Via 6",
+   "region": "dolomites",
+   "country": "Italy",
+   "statedKm": [
+    180,
+    180
+   ],
+   "candidates": 1,
+   "matched": false,
+   "reason": "no relation of this name measures anything near the 180 km this trek states — closest is r3865163 \"Alta via n. 6 delle Dolomiti\" at 108.2 km"
+  },
+  {
+   "id": "cathedral-peak-circuit",
+   "name": "Cathedral Peak Circuit",
+   "region": "drakensberg",
+   "country": "South Africa",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "drakensberg-amphitheatre-trek",
+   "name": "Drakensberg Amphitheatre Trek",
+   "region": "drakensberg",
+   "country": "South Africa",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "drakensberg-grand-traverse",
+   "name": "Drakensberg Grand Traverse",
+   "region": "drakensberg",
+   "country": "South Africa / Lesotho",
+   "statedKm": [
+    220,
+    230
+   ],
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "giants-cup-trail",
+   "name": "Giant's Cup Trail",
+   "region": "drakensberg",
+   "country": "South Africa",
+   "statedKm": [
+    60,
+    60
+   ],
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "injisuthi-to-cathedral-peak-traverse",
+   "name": "Injisuthi to Cathedral Peak Traverse",
+   "region": "drakensberg",
+   "country": "South Africa / Lesotho",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "mnweni-circuit",
+   "name": "Mnweni Circuit",
+   "region": "drakensberg",
+   "country": "South Africa / Lesotho",
+   "statedKm": null,
+   "candidates": 1,
+   "matched": false,
+   "reason": "r8603361 \"Mnweni Marathon\" and this trek's name differ by 1 distinctive word(s) — 1 the relation carries and this trek does not, 0 this trek carries and the relation does not — and no measured length or wikipedia title says they are the same route"
+  },
+  {
+   "id": "rhino-peak-hike",
+   "name": "Rhino Peak Hike",
+   "region": "drakensberg",
+   "country": "South Africa",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "sani-pass-to-thabana-ntlenyana",
+   "name": "Sani Pass to Thabana Ntlenyana",
+   "region": "drakensberg",
+   "country": "South Africa / Lesotho",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "kilimanjaro-machame-route",
+   "name": "Kilimanjaro Machame Route",
+   "region": "east-africa",
+   "country": "Tanzania",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "kilimanjaro-lemosho-route",
+   "name": "Kilimanjaro Lemosho Route",
+   "region": "east-africa",
+   "country": "Tanzania",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "kilimanjaro-rongai-route",
+   "name": "Kilimanjaro Rongai Route",
+   "region": "east-africa",
+   "country": "Tanzania",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "kilimanjaro-northern-circuit",
+   "name": "Kilimanjaro Northern Circuit",
+   "region": "east-africa",
+   "country": "Tanzania",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "kilimanjaro-marangu-route",
+   "name": "Kilimanjaro Marangu Route",
+   "region": "east-africa",
+   "country": "Tanzania",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "mount-meru-trek",
+   "name": "Mount Meru Trek",
+   "region": "east-africa",
+   "country": "Tanzania",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "mount-kenya-sirimon-route",
+   "name": "Mount Kenya Sirimon Route",
+   "region": "east-africa",
+   "country": "Kenya",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "mount-kenya-chogoria-route",
+   "name": "Mount Kenya Chogoria Route",
+   "region": "east-africa",
+   "country": "Kenya",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "mount-kenya-naro-moru-route",
+   "name": "Mount Kenya Naro Moru Route",
+   "region": "east-africa",
+   "country": "Kenya",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "rwenzori-central-circuit",
+   "name": "Rwenzori Central Circuit",
+   "region": "east-africa",
+   "country": "Uganda",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "rwenzori-kilembe-trail",
+   "name": "Rwenzori Kilembe Trail",
+   "region": "east-africa",
+   "country": "Uganda",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "simien-mountains-trek",
+   "name": "Simien Mountains Trek",
+   "region": "east-africa",
+   "country": "Ethiopia",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "bale-mountains-trek",
+   "name": "Bale Mountains Trek",
+   "region": "east-africa",
+   "country": "Ethiopia",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "camino-franc-s",
+   "name": "Camino Francés",
+   "region": "iberia",
+   "country": "France / Spain",
+   "statedKm": [
+    780,
+    780
+   ],
+   "candidates": 11,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 2163573,
+   "osmName": "Camiño Francés",
+   "matchedName": "Camiño Francés",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 767,
+   "sections": 6,
+   "bounds": {
+    "minlat": 42.258269,
+    "minlon": -8.5457492,
+    "maxlat": 43.1623398,
+    "maxlon": -1.2372141
+   },
+   "centre": {
+    "lat": 42.7103044,
+    "lon": -4.891481649999999
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "FR",
+     "ES"
+    ],
+    "length": "767 km drawn against the 780 km this trek states",
+    "wikipedia": "es:Camino de Santiago Francés",
+    "countryPolygon": "the line's centre falls inside Spain, by OSM's own boundary",
+    "wayMembers": 2984
+   },
+   "tags": {
+    "network": "iwn",
+    "ref": null,
+    "wikidata": "Q1029584",
+    "operator": null,
+    "symbol": "NNN",
+    "website": null
+   },
+   "wayMembers": 2984,
+   "countedKm": 767
+  },
+  {
+   "id": "camino-portugu-s",
+   "name": "Camino Portugués",
+   "region": "iberia",
+   "country": "Portugal / Spain",
+   "statedKm": [
+    240,
+    240
+   ],
+   "candidates": 25,
+   "matched": false,
+   "confidence": "strong",
+   "osmId": 12786090,
+   "osmName": "Caminho Português de Santiago",
+   "matchedName": "Camino Portugués",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 361.6,
+   "sections": 0,
+   "bounds": {
+    "minlat": 40.3040981,
+    "minlon": -8.6823169,
+    "maxlat": 42.8804942,
+    "maxlon": -8.4360215
+   },
+   "centre": {
+    "lat": 41.592296149999996,
+    "lon": -8.5591692
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "PT",
+     "ES"
+    ],
+    "length": "361.6 km measured against the 240 km this trek states",
+    "wikipedia": "pt:Caminho Português de Santiago"
+   },
+   "tags": {
+    "network": "nwn",
+    "ref": "CP",
+    "wikidata": "Q1029533",
+    "operator": null,
+    "symbol": null,
+    "website": null
+   },
+   "wayMembers": 2066,
+   "countedKm": 361.6,
+   "reason": "r12786090 draws 361.6 km, against the 240 km this trek states"
+  },
+  {
+   "id": "camino-portugu-s-coastal",
+   "name": "Camino Portugués Coastal",
+   "region": "iberia",
+   "country": "Portugal / Spain",
+   "statedKm": [
+    274,
+    274
+   ],
+   "candidates": 2,
+   "matched": false,
+   "reason": "r12786090 \"Caminho Português de Santiago\" and this trek's name differ by 1 distinctive word(s) — 0 the relation carries and this trek does not, 1 this trek carries and the relation does not — and no measured length or wikipedia title says they are the same route"
+  },
+  {
+   "id": "camino-del-norte",
+   "name": "Camino del Norte",
+   "region": "iberia",
+   "country": "Spain",
+   "statedKm": [
+    825,
+    825
+   ],
+   "candidates": 12,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 19001007,
+   "osmName": "Camino del Norte",
+   "matchedName": "Camino del Norte",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 912.8,
+   "sections": 5,
+   "bounds": {
+    "minlat": 42.927281,
+    "minlon": -8.1608639,
+    "maxlat": 43.5756795,
+    "maxlon": -1.4766419
+   },
+   "centre": {
+    "lat": 43.25148025,
+    "lon": -4.818752900000001
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "ES"
+    ],
+    "length": "912.8 km drawn against the 825 km this trek states",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside Spain, by OSM's own boundary",
+    "wayMembers": 4561
+   },
+   "tags": {
+    "network": "iwn",
+    "ref": "CdN",
+    "wikidata": "Q829469",
+    "operator": null,
+    "symbol": "yellow shell on blue;yellow arrow",
+    "website": null
+   },
+   "wayMembers": 4561,
+   "countedKm": 912.8
+  },
+  {
+   "id": "camino-primitivo",
+   "name": "Camino Primitivo",
+   "region": "iberia",
+   "country": "Spain",
+   "statedKm": [
+    23,
+    320
+   ],
+   "candidates": 2,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 19298101,
+   "osmName": "Camino Primitivo",
+   "matchedName": "Camino Primitivo",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 260.3,
+   "sections": 11,
+   "bounds": {
+    "minlat": 42.9144057,
+    "minlon": -8.0167851,
+    "maxlat": 43.4173762,
+    "maxlon": -5.8406813
+   },
+   "centre": {
+    "lat": 43.165890950000005,
+    "lon": -6.9287332
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "ES"
+    ],
+    "length": "260.3 km drawn against the 23–320 km this trek states",
+    "wikipedia": "gl:Camiño Primitivo",
+    "countryPolygon": "the line's centre falls inside Spain, by OSM's own boundary",
+    "wayMembers": 830
+   },
+   "tags": {
+    "network": "nwn",
+    "ref": null,
+    "wikidata": "Q929491",
+    "operator": null,
+    "symbol": "yellow shell on blue;yellow arrow",
+    "website": "https://www.caminosantiago.org/cpperegrino/caminos/caminover.asp?kCamino=ES05a&CaminoId=2"
+   },
+   "wayMembers": 830,
+   "countedKm": 260.3
+  },
+  {
+   "id": "camino-ingl-s",
+   "name": "Camino Inglés",
+   "region": "iberia",
+   "country": "Spain",
+   "statedKm": [
+    115,
+    115
+   ],
+   "candidates": 2,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 1102966,
+   "osmName": "Camiño Inglés",
+   "matchedName": "Camiño Inglés",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 113,
+   "sections": 0,
+   "bounds": {
+    "minlat": 42.8804942,
+    "minlon": -8.5457492,
+    "maxlat": 43.516709,
+    "maxlon": -8.1508483
+   },
+   "centre": {
+    "lat": 43.1986016,
+    "lon": -8.34829875
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "ES"
+    ],
+    "length": "113 km drawn against the 115 km this trek states",
+    "wikipedia": "gl:Camiño Inglés",
+    "countryPolygon": "the line's centre falls inside Spain, by OSM's own boundary",
+    "wayMembers": 568
+   },
+   "tags": {
+    "network": "iwn",
+    "ref": null,
+    "wikidata": "Q5795426",
+    "operator": null,
+    "symbol": null,
+    "website": "https://www.caminodesantiago.gal/gl/planifica/as-rutas/camino-ingles"
+   },
+   "wayMembers": 568,
+   "countedKm": 147.3
+  },
+  {
+   "id": "via-de-la-plata",
+   "name": "Via de la Plata",
+   "region": "iberia",
+   "country": "Spain",
+   "statedKm": [
+    1000,
+    1000
+   ],
+   "candidates": 5,
+   "matched": false,
+   "reason": "no relation of this name measures anything near the 1000 km this trek states — closest is r16949977 \"Vía de la Plata hiking - 02 Merida to Salamanca\" at 291 km"
+  },
+  {
+   "id": "camino-finisterre",
+   "name": "Camino Finisterre",
+   "region": "iberia",
+   "country": "Spain",
+   "statedKm": [
+    27,
+    90
+   ],
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "gr20-corsica-trek",
+   "name": "GR20 Corsica Trek",
+   "region": "iberia",
+   "country": "France",
+   "statedKm": [
+    180,
+    180
+   ],
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "gr10-pyrenees",
+   "name": "GR10 Pyrenees",
+   "region": "iberia",
+   "country": "France",
+   "statedKm": [
+    866,
+    866
+   ],
+   "candidates": 12,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 7411272,
+   "osmName": "La traversée des Pyrénées",
+   "matchedName": "GR 10",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 925.2,
+   "sections": 9,
+   "bounds": {
+    "minlat": 42.4215967,
+    "minlon": -1.7740077,
+    "maxlat": 43.373127,
+    "maxlon": 3.1291223
+   },
+   "centre": {
+    "lat": 42.897361849999996,
+    "lon": 0.6775573
+   },
+   "tier": 2,
+   "tests": {
+    "name": "every distinctive word matches",
+    "country": [
+     "FR"
+    ],
+    "length": "925.2 km drawn against the 866 km this trek states",
+    "wikipedia": "en:GR 10",
+    "countryPolygon": "the line's centre falls inside France, by OSM's own boundary",
+    "wayMembers": 2026
+   },
+   "tags": {
+    "network": "nwn",
+    "ref": "GR 10",
+    "wikidata": "Q1486783",
+    "operator": "FFRP",
+    "symbol": null,
+    "website": "https://www.ffrandonnee.fr/randonner/sentiers/gr-10-la-grande-traversee-des-pyrenees"
+   },
+   "wayMembers": 2026,
+   "countedKm": 925.2
+  },
+  {
+   "id": "gr11-pyrenees",
+   "name": "GR11 Pyrenees",
+   "region": "iberia",
+   "country": "Spain",
+   "statedKm": [
+    800,
+    800
+   ],
+   "candidates": 15,
+   "matched": false,
+   "reason": "no relation of this name measures anything near the 800 km this trek states — closest is r3353528 \"Caminho Histórico\" at 211.9 km"
+  },
+  {
+   "id": "amalfi-coast-path-of-the-gods",
+   "name": "Amalfi Coast / Path of the Gods",
+   "region": "iberia",
+   "country": "Italy",
+   "statedKm": [
+    7.8,
+    7.8
+   ],
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "via-francigena",
+   "name": "Via Francigena",
+   "region": "iberia",
+   "country": "United Kingdom / France / Switzerland / Italy",
+   "statedKm": [
+    2000,
+    2000
+   ],
+   "candidates": 86,
+   "matched": false,
+   "reason": "the closest relation, r955907 \"Via Francigena - 04 parte Italia\", is a stage or a variant rather than the route itself"
+  },
+  {
+   "id": "mallorca-gr221",
+   "name": "Mallorca GR221",
+   "region": "iberia",
+   "country": "Spain",
+   "statedKm": [
+    140,
+    140
+   ],
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "la-gomera-gr132",
+   "name": "La Gomera GR132",
+   "region": "iberia",
+   "country": "Spain",
+   "statedKm": [
+    127,
+    127
+   ],
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "laugavegur-trail",
+   "name": "Laugavegur Trail",
+   "region": "iceland",
+   "country": "Iceland",
+   "statedKm": [
+    55,
+    55
+   ],
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 1225037,
+   "osmName": "Laugavegur",
+   "matchedName": "Laugavegur",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 49.8,
+   "sections": 0,
+   "bounds": {
+    "minlat": 63.6842955,
+    "minlon": -19.5168271,
+    "maxlat": 63.9910173,
+    "maxlon": -19.0615841
+   },
+   "centre": {
+    "lat": 63.8376564,
+    "lon": -19.289205600000003
+   },
+   "tier": 3,
+   "tests": {
+    "name": "the same name but for a generic word",
+    "country": [
+     "IS"
+    ],
+    "length": "49.8 km drawn against the 55 km this trek states",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside Iceland, by OSM's own boundary",
+    "wayMembers": 84
+   },
+   "tags": {
+    "network": "rwn",
+    "ref": "Laugav.",
+    "wikidata": "Q151268",
+    "operator": null,
+    "symbol": null,
+    "website": null
+   },
+   "wayMembers": 84,
+   "countedKm": 55.3
+  },
+  {
+   "id": "fimmv-r-uh-ls-trek",
+   "name": "Fimmvörðuháls Trek",
+   "region": "iceland",
+   "country": "Iceland",
+   "statedKm": [
+    22,
+    25
+   ],
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 396940,
+   "osmName": "Fimmvörðuháls",
+   "matchedName": "Fimmvörðuháls",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 23,
+   "sections": 0,
+   "bounds": {
+    "minlat": 63.5301213,
+    "minlon": -19.5116991,
+    "maxlat": 63.6779822,
+    "maxlon": -19.4253034
+   },
+   "centre": {
+    "lat": 63.604051749999996,
+    "lon": -19.468501250000003
+   },
+   "tier": 3,
+   "tests": {
+    "name": "the same name but for a generic word",
+    "country": [
+     "IS"
+    ],
+    "length": "23 km drawn against the 22–25 km this trek states",
+    "wikipedia": "is:Fimmvörðuháls",
+    "countryPolygon": "the line's centre falls inside Iceland, by OSM's own boundary",
+    "wayMembers": 36
+   },
+   "tags": {
+    "network": "rwn",
+    "ref": "F",
+    "wikidata": "Q748270",
+    "operator": "Ferðafélagið Útivist",
+    "symbol": null,
+    "website": null
+   },
+   "wayMembers": 36,
+   "countedKm": 23
+  },
+  {
+   "id": "laugavegur-fimmv-r-uh-ls-trek",
+   "name": "Laugavegur & Fimmvörðuháls Trek",
+   "region": "iceland",
+   "country": "Iceland",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "hornstrandir-trek",
+   "name": "Hornstrandir Trek",
+   "region": "iceland",
+   "country": "Iceland",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "kjalvegur-trail",
+   "name": "Kjalvegur Trail",
+   "region": "iceland",
+   "country": "Iceland",
+   "statedKm": null,
+   "candidates": 2,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 13548,
+   "osmName": "Kjalvegur",
+   "matchedName": "Kjalvegur",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 40.4,
+   "sections": 0,
+   "bounds": {
+    "minlat": 64.6171306,
+    "minlon": -19.7564829,
+    "maxlat": 64.8698904,
+    "maxlon": -19.5639137
+   },
+   "centre": {
+    "lat": 64.7435105,
+    "lon": -19.6601983
+   },
+   "tier": 3,
+   "tests": {
+    "name": "the same name but for a generic word",
+    "country": [
+     "IS"
+    ],
+    "length": "40.4 km drawn, a plausible length for the 2–3 days this route takes — the trek itself states no distance",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside Iceland, by OSM's own boundary",
+    "wayMembers": 7
+   },
+   "tags": {
+    "network": null,
+    "ref": "35",
+    "wikidata": null,
+    "operator": null,
+    "symbol": "Der Weg ist ausgeschildert und mit Steinpfählen markiert",
+    "website": null
+   },
+   "wayMembers": 7,
+   "countedKm": 40.4
+  },
+  {
+   "id": "daisetsuzan-grand-traverse",
+   "name": "Daisetsuzan Grand Traverse",
+   "region": "japan",
+   "country": "Japan",
+   "statedKm": [
+    55,
+    55
+   ],
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "hakuba-three-peaks-traverse",
+   "name": "Hakuba Three Peaks Traverse",
+   "region": "japan",
+   "country": "Japan",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "kumano-kodo",
+   "name": "Kumano Kodo",
+   "region": "japan",
+   "country": "Japan",
+   "statedKm": null,
+   "candidates": 6,
+   "matched": false,
+   "reason": "ambiguous — 2 relations answer to this name in different places (r17094646 35.9km, r17131166 64.9km)"
+  },
+  {
+   "id": "kumano-kodo-kohechi",
+   "name": "Kumano Kodo Kohechi",
+   "region": "japan",
+   "country": "Japan",
+   "statedKm": [
+    70,
+    70
+   ],
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 17131166,
+   "osmName": "熊野古道 小辺路",
+   "matchedName": "Kumano Kodo - Kohechi",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 64.9,
+   "sections": 0,
+   "bounds": {
+    "minlat": 33.855241,
+    "minlon": 135.585456,
+    "maxlat": 34.2128269,
+    "maxlon": 135.76534
+   },
+   "centre": {
+    "lat": 34.03403395,
+    "lon": 135.675398
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "JP"
+    ],
+    "length": "64.9 km drawn against the 70 km this trek states",
+    "wikipedia": "ja:小辺路",
+    "countryPolygon": "the line's centre falls inside Japan, by OSM's own boundary",
+    "wayMembers": 99
+   },
+   "tags": {
+    "network": "rwn",
+    "ref": null,
+    "wikidata": "Q11463835",
+    "operator": null,
+    "symbol": null,
+    "website": null
+   },
+   "wayMembers": 99,
+   "countedKm": 64.9
+  },
+  {
+   "id": "michinoku-coastal-trail",
+   "name": "Michinoku Coastal Trail",
+   "region": "japan",
+   "country": "Japan",
+   "statedKm": [
+    1025,
+    1025
+   ],
+   "candidates": 33,
+   "matched": false,
+   "reason": "no relation of this name measures anything near the 1025 km this trek states — closest is r19047964 \"みちのく潮風トレイル\" at 492.2 km"
+  },
+  {
+   "id": "mount-fuji-climbing-routes",
+   "name": "Mount Fuji Climbing Routes",
+   "region": "japan",
+   "country": "Japan",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "mount-ontake-pilgrim-route",
+   "name": "Mount Ontake Pilgrim Route",
+   "region": "japan",
+   "country": "Japan",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "nakasendo-trail",
+   "name": "Nakasendo Trail",
+   "region": "japan",
+   "country": "Japan",
+   "statedKm": [
+    534,
+    534
+   ],
+   "candidates": 3,
+   "matched": false,
+   "reason": "no relation of this name measures anything near the 534 km this trek states — closest is r54496 \"中山道\" at 150.2 km"
+  },
+  {
+   "id": "northern-alps-trekking-circuit",
+   "name": "Northern Alps Trekking Circuit",
+   "region": "japan",
+   "country": "Japan",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "shikoku-pilgrimage",
+   "name": "Shikoku Pilgrimage",
+   "region": "japan",
+   "country": "Japan",
+   "statedKm": [
+    1200,
+    1200
+   ],
+   "candidates": 90,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 13653655,
+   "osmName": "四国遍路",
+   "matchedName": "Shikoku Pilgrimage",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 1106.1,
+   "sections": 88,
+   "bounds": {
+    "minlat": 32.7241665,
+    "minlon": 132.4961847,
+    "maxlat": 34.3598591,
+    "maxlon": 134.6059158
+   },
+   "centre": {
+    "lat": 33.5420128,
+    "lon": 133.55105025
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "JP"
+    ],
+    "length": "1106.1 km drawn against the 1200 km this trek states",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside Japan, by OSM's own boundary",
+    "wayMembers": 4057
+   },
+   "tags": {
+    "network": "nwn",
+    "ref": null,
+    "wikidata": "Q1972399",
+    "operator": null,
+    "symbol": null,
+    "website": null
+   },
+   "wayMembers": 4057,
+   "countedKm": 1144.5
+  },
+  {
+   "id": "tateyama-kurobe-alpine-trek",
+   "name": "Tateyama–Kurobe Alpine Trek",
+   "region": "japan",
+   "country": "Japan",
+   "statedKm": [
+    37.2,
+    37.2
+   ],
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "yakushima-miyanoura-dake",
+   "name": "Yakushima Miyanoura-dake",
+   "region": "japan",
+   "country": "Japan",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "everest-base-camp-trek",
+   "name": "Everest Base Camp Trek",
+   "region": "khumbu",
+   "country": "Nepal",
+   "statedKm": null,
+   "candidates": 1,
+   "matched": false,
+   "reason": "no relation of this name is a plausible length for a 12–14 day walk (60–560 km) — closest is r1189003 \"Everest Base Camp Trek\" at 53.8 km"
+  },
+  {
+   "id": "everest-base-camp-via-gokyo-lakes",
+   "name": "Everest Base Camp via Gokyo Lakes",
+   "region": "khumbu",
+   "country": "Nepal",
+   "statedKm": null,
+   "candidates": 1,
+   "matched": false,
+   "reason": "no relation of this name is a plausible length for a 16–18 day walk (80–720 km) — closest is r1189003 \"Everest Base Camp Trek\" at 53.8 km"
+  },
+  {
+   "id": "everest-three-passes-trek",
+   "name": "Everest Three Passes Trek",
+   "region": "khumbu",
+   "country": "Nepal",
+   "statedKm": null,
+   "candidates": 1,
+   "matched": true,
+   "confidence": "medium",
+   "osmId": 3777292,
+   "osmName": "Three Passes Trek",
+   "matchedName": "Three Passes Trek",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 99.2,
+   "sections": 7,
+   "bounds": {
+    "minlat": 27.6878536,
+    "minlon": 86.6357508,
+    "maxlat": 27.9619229,
+    "maxlon": 86.8705897
+   },
+   "centre": {
+    "lat": 27.82488825,
+    "lon": 86.75317025
+   },
+   "tier": 2,
+   "tests": {
+    "name": "every distinctive word matches",
+    "country": [
+     "NP"
+    ],
+    "length": "99.2 km drawn, a plausible length for the 18–21 days this route takes — the trek itself states no distance",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside Nepal, by OSM's own boundary",
+    "wayMembers": 159
+   },
+   "tags": {
+    "network": "nwn",
+    "ref": null,
+    "wikidata": null,
+    "operator": null,
+    "symbol": null,
+    "website": null
+   },
+   "wayMembers": 159,
+   "countedKm": 99.3
+  },
+  {
+   "id": "gokyo-lakes-trek",
+   "name": "Gokyo Lakes Trek",
+   "region": "khumbu",
+   "country": "Nepal",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "gokyo-renjo-la-trek",
+   "name": "Gokyo–Renjo La Trek",
+   "region": "khumbu",
+   "country": "Nepal",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "cho-la-pass-trek",
+   "name": "Cho La Pass Trek",
+   "region": "khumbu",
+   "country": "Nepal",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "everest-view-trek",
+   "name": "Everest View Trek",
+   "region": "khumbu",
+   "country": "Nepal",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "ama-dablam-base-camp-trek",
+   "name": "Ama Dablam Base Camp Trek",
+   "region": "khumbu",
+   "country": "Nepal",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "everest-high-passes-island-peak-trek",
+   "name": "Everest High Passes & Island Peak Trek",
+   "region": "khumbu",
+   "country": "Nepal",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "jiri-to-everest-base-camp-trek",
+   "name": "Jiri to Everest Base Camp Trek",
+   "region": "khumbu",
+   "country": "Nepal",
+   "statedKm": null,
+   "candidates": 1,
+   "matched": false,
+   "reason": "no relation of this name is a plausible length for a 18–24 day walk (90–960 km) — closest is r1189003 \"Everest Base Camp Trek\" at 53.8 km"
+  },
+  {
+   "id": "langtang-valley-trek",
+   "name": "Langtang Valley Trek",
+   "region": "langtang",
+   "country": "Nepal",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "langtang-gosaikunda-trek",
+   "name": "Langtang–Gosaikunda Trek",
+   "region": "langtang",
+   "country": "Nepal",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "gosaikunda-trek",
+   "name": "Gosaikunda Trek",
+   "region": "langtang",
+   "country": "Nepal",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "helambu-trek",
+   "name": "Helambu Trek",
+   "region": "langtang",
+   "country": "Nepal",
+   "statedKm": null,
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 4867728,
+   "osmName": "Helambu Trek",
+   "matchedName": "Helambu Trek",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 43.4,
+   "sections": 0,
+   "bounds": {
+    "minlat": 27.7495434,
+    "minlon": 85.4482205,
+    "maxlat": 28.0129456,
+    "maxlon": 85.4980927
+   },
+   "centre": {
+    "lat": 27.8812445,
+    "lon": 85.47315660000001
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "NP"
+    ],
+    "length": "43.4 km drawn, a plausible length for the 5–7 days this route takes — the trek itself states no distance",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside Nepal, by OSM's own boundary",
+    "wayMembers": 46
+   },
+   "tags": {
+    "network": "nwn",
+    "ref": null,
+    "wikidata": null,
+    "operator": null,
+    "symbol": null,
+    "website": null
+   },
+   "wayMembers": 46,
+   "countedKm": 43.4
+  },
+  {
+   "id": "tamang-heritage-trail",
+   "name": "Tamang Heritage Trail",
+   "region": "langtang",
+   "country": "Nepal",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "manaslu-circuit-trek",
+   "name": "Manaslu Circuit Trek",
+   "region": "nepal-remote",
+   "country": "Nepal",
+   "statedKm": null,
+   "candidates": 2,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 1328173,
+   "osmName": "Manaslu Circuit",
+   "matchedName": "Manaslu Circuit",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 146.8,
+   "sections": 0,
+   "bounds": {
+    "minlat": 28.0483558,
+    "minlon": 84.3491194,
+    "maxlat": 28.6668949,
+    "maxlon": 84.9091243
+   },
+   "centre": {
+    "lat": 28.35762535,
+    "lon": 84.62912185
+   },
+   "tier": 3,
+   "tests": {
+    "name": "the same name but for a generic word",
+    "country": [
+     "NP"
+    ],
+    "length": "146.8 km drawn, a plausible length for the 13–16 days this route takes — the trek itself states no distance",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside Nepal, by OSM's own boundary",
+    "wayMembers": 154
+   },
+   "tags": {
+    "network": "nwn",
+    "ref": null,
+    "wikidata": "Q14223863",
+    "operator": "Manaslu Conservation area Project",
+    "symbol": "none",
+    "website": null
+   },
+   "wayMembers": 154,
+   "countedKm": 146.8
+  },
+  {
+   "id": "tsum-valley-trek",
+   "name": "Tsum Valley Trek",
+   "region": "nepal-remote",
+   "country": "Nepal",
+   "statedKm": null,
+   "candidates": 1,
+   "matched": false,
+   "reason": "no relation of this name is a plausible length for a 11–18 day walk (55–720 km) — closest is r11074323 \"Tsum Valley trek\" at 38.1 km"
+  },
+  {
+   "id": "upper-mustang-trek",
+   "name": "Upper Mustang Trek",
+   "region": "nepal-remote",
+   "country": "Nepal",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "upper-dolpo-trek",
+   "name": "Upper Dolpo Trek",
+   "region": "nepal-remote",
+   "country": "Nepal",
+   "statedKm": null,
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 11104197,
+   "osmName": "Upper Dolpo Circuit",
+   "matchedName": "Upper Dolpo Circuit",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 209.4,
+   "sections": 0,
+   "bounds": {
+    "minlat": 28.8729202,
+    "minlon": 82.8192021,
+    "maxlat": 29.4280683,
+    "maxlon": 83.186788
+   },
+   "centre": {
+    "lat": 29.15049425,
+    "lon": 83.00299505000001
+   },
+   "tier": 3,
+   "tests": {
+    "name": "the same name but for a generic word",
+    "country": [
+     "NP"
+    ],
+    "length": "209.4 km drawn, a plausible length for the 21–27 days this route takes — the trek itself states no distance",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside Nepal, by OSM's own boundary",
+    "wayMembers": 221
+   },
+   "tags": {
+    "network": "nwn",
+    "ref": "UD",
+    "wikidata": null,
+    "operator": null,
+    "symbol": null,
+    "website": null
+   },
+   "wayMembers": 221,
+   "countedKm": 209.4
+  },
+  {
+   "id": "lower-dolpo-trek",
+   "name": "Lower Dolpo Trek",
+   "region": "nepal-remote",
+   "country": "Nepal",
+   "statedKm": null,
+   "candidates": 1,
+   "matched": false,
+   "reason": "no relation of this name is a plausible length for a 15–20 day walk (75–800 km) — closest is r11103213 \"Lower Dolpo Circuit\" at 5.1 km"
+  },
+  {
+   "id": "kanchenjunga-base-camp-trek",
+   "name": "Kanchenjunga Base Camp Trek",
+   "region": "nepal-remote",
+   "country": "Nepal",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "makalu-base-camp-trek",
+   "name": "Makalu Base Camp Trek",
+   "region": "nepal-remote",
+   "country": "Nepal",
+   "statedKm": null,
+   "candidates": 1,
+   "matched": false,
+   "reason": "no relation of this name is a plausible length for a 18–22 day walk (90–880 km) — closest is r9387979 \"Makalu base camp trek with Arun valley\" at 53.3 km"
+  },
+  {
+   "id": "dhaulagiri-circuit-trek",
+   "name": "Dhaulagiri Circuit Trek",
+   "region": "nepal-remote",
+   "country": "Nepal",
+   "statedKm": null,
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 11096629,
+   "osmName": "Dhaulagiri Trek",
+   "matchedName": "Dhaulagiri Trek",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 111.8,
+   "sections": 0,
+   "bounds": {
+    "minlat": 28.3385064,
+    "minlon": 83.3317735,
+    "maxlat": 28.7979942,
+    "maxlon": 83.6864201
+   },
+   "centre": {
+    "lat": 28.568250300000003,
+    "lon": 83.50909680000001
+   },
+   "tier": 3,
+   "tests": {
+    "name": "the same name but for a generic word",
+    "country": [
+     "NP"
+    ],
+    "length": "111.8 km drawn, a plausible length for the 17–21 days this route takes — the trek itself states no distance",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside Nepal, by OSM's own boundary",
+    "wayMembers": 45
+   },
+   "tags": {
+    "network": "nwn",
+    "ref": "DT",
+    "wikidata": null,
+    "operator": null,
+    "symbol": null,
+    "website": null
+   },
+   "wayMembers": 45,
+   "countedKm": 111.8
+  },
+  {
+   "id": "nar-phu-annapurna-circuit",
+   "name": "Nar Phu + Annapurna Circuit",
+   "region": "nepal-remote",
+   "country": "Nepal",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "ruby-valley-trek",
+   "name": "Ruby Valley Trek",
+   "region": "nepal-remote",
+   "country": "Nepal",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "rara-lake-trek",
+   "name": "Rara Lake Trek",
+   "region": "nepal-remote",
+   "country": "Nepal",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "abel-tasman-coast-track",
+   "name": "Abel Tasman Coast Track",
+   "region": "new-zealand",
+   "country": "New Zealand",
+   "statedKm": [
+    60,
+    60
+   ],
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 5987159,
+   "osmName": "GW - 04 Abel Tasman Coast Track",
+   "matchedName": "GW - 04 Abel Tasman Coast Track",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 67.6,
+   "sections": 0,
+   "bounds": {
+    "minlat": -40.9961348,
+    "minlon": 172.9540361,
+    "maxlat": -40.7820928,
+    "maxlon": 173.0567785
+   },
+   "centre": {
+    "lat": -40.889113800000004,
+    "lon": 173.0054073
+   },
+   "tier": 2,
+   "tests": {
+    "name": "every distinctive word matches",
+    "country": [
+     "NZ"
+    ],
+    "length": "67.6 km drawn against the 60 km this trek states",
+    "wikipedia": "en:Abel Tasman Coast Track",
+    "countryPolygon": "the line's centre falls inside New Zealand, by OSM's own boundary",
+    "wayMembers": 144
+   },
+   "tags": {
+    "network": "nwn",
+    "ref": "GW04",
+    "wikidata": "Q318501",
+    "operator": "Department of Conservation",
+    "symbol": null,
+    "website": "https://www.doc.govt.nz/parks-and-recreation/places-to-go/nelson-tasman/places/abel-tasman-national-park/things-to-do/tracks/abel-tasman-coast-track/"
+   },
+   "wayMembers": 144,
+   "countedKm": 67.6
+  },
+  {
+   "id": "copland-track",
+   "name": "Copland Track",
+   "region": "new-zealand",
+   "country": "New Zealand",
+   "statedKm": [
+    18,
+    18
+   ],
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 17692450,
+   "osmName": "Copland Track",
+   "matchedName": "Copland Track",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 23.8,
+   "sections": 0,
+   "bounds": {
+    "minlat": -43.6525353,
+    "minlon": 169.8119049,
+    "maxlat": -43.5749023,
+    "maxlon": 170.0186477
+   },
+   "centre": {
+    "lat": -43.6137188,
+    "lon": 169.91527630000002
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "NZ"
+    ],
+    "length": "23.8 km drawn against the 18 km this trek states",
+    "wikipedia": "en:Copland Track",
+    "countryPolygon": "the line's centre falls inside New Zealand, by OSM's own boundary",
+    "wayMembers": 27
+   },
+   "tags": {
+    "network": null,
+    "ref": null,
+    "wikidata": "Q112966873",
+    "operator": null,
+    "symbol": null,
+    "website": null
+   },
+   "wayMembers": 27,
+   "countedKm": 23.8
+  },
+  {
+   "id": "gillespie-pass-circuit",
+   "name": "Gillespie Pass Circuit",
+   "region": "new-zealand",
+   "country": "New Zealand",
+   "statedKm": [
+    58,
+    58
+   ],
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "heaphy-track",
+   "name": "Heaphy Track",
+   "region": "new-zealand",
+   "country": "New Zealand",
+   "statedKm": [
+    78.4,
+    78.4
+   ],
+   "candidates": 1,
+   "matched": true,
+   "confidence": "medium",
+   "osmId": 1385145,
+   "osmName": "GW - 05 Heaphy Track",
+   "matchedName": "GW - 05 Heaphy Track",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 73.2,
+   "sections": 0,
+   "bounds": {
+    "minlat": -41.1094318,
+    "minlon": 172.1024256,
+    "maxlat": -40.847785,
+    "maxlon": 172.4560956
+   },
+   "centre": {
+    "lat": -40.9786084,
+    "lon": 172.2792606
+   },
+   "tier": 1,
+   "tests": {
+    "name": "a stem of the name",
+    "country": [
+     "NZ"
+    ],
+    "length": "73.2 km drawn against the 78.4 km this trek states",
+    "wikipedia": "en:Heaphy Track",
+    "countryPolygon": "the line's centre falls inside New Zealand, by OSM's own boundary",
+    "wayMembers": 35
+   },
+   "tags": {
+    "network": "nwn",
+    "ref": "GW05",
+    "wikidata": "Q1592359",
+    "operator": null,
+    "symbol": null,
+    "website": "https://www.doc.govt.nz/parks-and-recreation/places-to-go/nelson-tasman/places/kahurangi-national-park/things-to-do/tracks/heaphy-track/"
+   },
+   "wayMembers": 35,
+   "countedKm": 73.2
+  },
+  {
+   "id": "hump-ridge-track",
+   "name": "Hump Ridge Track",
+   "region": "new-zealand",
+   "country": "New Zealand",
+   "statedKm": [
+    61,
+    61
+   ],
+   "candidates": 4,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 11620232,
+   "osmName": "Hump Ridge Trail",
+   "matchedName": "Hump Ridge Trail",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 47.3,
+   "sections": 3,
+   "bounds": {
+    "minlat": -46.2498251,
+    "minlon": 167.2851629,
+    "maxlat": -46.1464857,
+    "maxlon": 167.4744707
+   },
+   "centre": {
+    "lat": -46.198155400000005,
+    "lon": 167.37981680000001
+   },
+   "tier": 3,
+   "tests": {
+    "name": "the same name but for a generic word",
+    "country": [
+     "NZ"
+    ],
+    "length": "47.3 km drawn against the 61 km this trek states",
+    "wikipedia": "en:Hump Ridge Track",
+    "countryPolygon": "the line's centre falls inside New Zealand, by OSM's own boundary",
+    "wayMembers": 28
+   },
+   "tags": {
+    "network": "rwn",
+    "ref": "HRT",
+    "wikidata": "Q5941215",
+    "operator": null,
+    "symbol": null,
+    "website": null
+   },
+   "wayMembers": 28,
+   "countedKm": 57.8
+  },
+  {
+   "id": "kepler-track",
+   "name": "Kepler Track",
+   "region": "new-zealand",
+   "country": "New Zealand",
+   "statedKm": [
+    60,
+    60
+   ],
+   "candidates": 1,
+   "matched": true,
+   "confidence": "medium",
+   "osmId": 1385141,
+   "osmName": "GW - 08 Kepler Track",
+   "matchedName": "GW - 08 Kepler Track",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 61.6,
+   "sections": 0,
+   "bounds": {
+    "minlat": -45.4939099,
+    "minlon": 167.5093922,
+    "maxlat": -45.3818196,
+    "maxlon": 167.7186879
+   },
+   "centre": {
+    "lat": -45.43786475,
+    "lon": 167.61404005
+   },
+   "tier": 1,
+   "tests": {
+    "name": "a stem of the name",
+    "country": [
+     "NZ"
+    ],
+    "length": "61.6 km drawn against the 60 km this trek states",
+    "wikipedia": "en:Kepler Track",
+    "countryPolygon": "the line's centre falls inside New Zealand, by OSM's own boundary",
+    "wayMembers": 27
+   },
+   "tags": {
+    "network": "nwn",
+    "ref": "GW08",
+    "wikidata": "Q846931",
+    "operator": "Department of Conservation",
+    "symbol": null,
+    "website": "https://www.doc.govt.nz/parks-and-recreation/places-to-go/fiordland/places/fiordland-national-park/things-to-do/tracks/kepler-track/"
+   },
+   "wayMembers": 27,
+   "countedKm": 61.6
+  },
+  {
+   "id": "milford-track",
+   "name": "Milford Track",
+   "region": "new-zealand",
+   "country": "New Zealand",
+   "statedKm": [
+    53.5,
+    53.5
+   ],
+   "candidates": 2,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 1385121,
+   "osmName": "GW - 07 Milford Track",
+   "matchedName": "GW - 07 Milford Track",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 53.5,
+   "sections": 0,
+   "bounds": {
+    "minlat": -44.9320558,
+    "minlon": 167.7525916,
+    "maxlat": -44.6835792,
+    "maxlon": 167.9308906
+   },
+   "centre": {
+    "lat": -44.8078175,
+    "lon": 167.84174109999998
+   },
+   "tier": 2,
+   "tests": {
+    "name": "every distinctive word matches",
+    "country": [
+     "NZ"
+    ],
+    "length": "53.5 km drawn against the 53.5 km this trek states",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside New Zealand, by OSM's own boundary",
+    "wayMembers": 32
+   },
+   "tags": {
+    "network": "nwn",
+    "ref": "GW07",
+    "wikidata": "Q673819",
+    "operator": "Department of Conservation",
+    "symbol": null,
+    "website": "https://www.doc.govt.nz/parks-and-recreation/places-to-go/fiordland/places/fiordland-national-park/things-to-do/tracks/milford-track/"
+   },
+   "wayMembers": 32,
+   "countedKm": 53.5
+  },
+  {
+   "id": "mueller-hut-route",
+   "name": "Mueller Hut Route",
+   "region": "new-zealand",
+   "country": "New Zealand",
+   "statedKm": [
+    5.2,
+    5.2
+   ],
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 6062291,
+   "osmName": "Mueller Hut",
+   "matchedName": "Mueller Hut",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 6.5,
+   "sections": 0,
+   "bounds": {
+    "minlat": -43.7328452,
+    "minlon": 170.0632728,
+    "maxlat": -43.7130939,
+    "maxlon": 170.0948503
+   },
+   "centre": {
+    "lat": -43.72296955,
+    "lon": 170.07906155
+   },
+   "tier": 3,
+   "tests": {
+    "name": "the same name but for a generic word",
+    "country": [
+     "NZ"
+    ],
+    "length": "6.5 km drawn against the 5.2 km this trek states",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside New Zealand, by OSM's own boundary",
+    "wayMembers": 30
+   },
+   "tags": {
+    "network": "rwn",
+    "ref": null,
+    "wikidata": null,
+    "operator": null,
+    "symbol": null,
+    "website": "https://www.doc.govt.nz/parks-and-recreation/places-to-go/canterbury/places/aoraki-mount-cook-national-park/things-to-do/tracks/mueller-hut-route/"
+   },
+   "wayMembers": 30,
+   "countedKm": 6.5
+  },
+  {
+   "id": "paparoa-track",
+   "name": "Paparoa Track",
+   "region": "new-zealand",
+   "country": "New Zealand",
+   "statedKm": [
+    55,
+    55
+   ],
+   "candidates": 3,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 10462885,
+   "osmName": "Paparoa Track",
+   "matchedName": "Paparoa Track",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 51.3,
+   "sections": 0,
+   "bounds": {
+    "minlat": -42.3374972,
+    "minlon": 171.3398104,
+    "maxlat": -42.1069916,
+    "maxlon": 171.4577789
+   },
+   "centre": {
+    "lat": -42.2222444,
+    "lon": 171.39879465
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "NZ"
+    ],
+    "length": "51.3 km drawn against the 55 km this trek states",
+    "wikipedia": "en:Paparoa Track",
+    "countryPolygon": "the line's centre falls inside New Zealand, by OSM's own boundary",
+    "wayMembers": 33
+   },
+   "tags": {
+    "network": "nwn",
+    "ref": null,
+    "wikidata": "Q60761090",
+    "operator": "DOC",
+    "symbol": null,
+    "website": null
+   },
+   "wayMembers": 33,
+   "countedKm": 51.3
+  },
+  {
+   "id": "rakiura-track",
+   "name": "Rakiura Track",
+   "region": "new-zealand",
+   "country": "New Zealand",
+   "statedKm": [
+    32,
+    32
+   ],
+   "candidates": 3,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 1385146,
+   "osmName": "GW - 09 Rakiura Track",
+   "matchedName": "GW - 09 Rakiura Track",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 34.8,
+   "sections": 0,
+   "bounds": {
+    "minlat": -46.9023389,
+    "minlon": 168.0186161,
+    "maxlat": -46.8451035,
+    "maxlon": 168.1350958
+   },
+   "centre": {
+    "lat": -46.8737212,
+    "lon": 168.07685594999998
+   },
+   "tier": 2,
+   "tests": {
+    "name": "every distinctive word matches",
+    "country": [
+     "NZ"
+    ],
+    "length": "34.8 km drawn against the 32 km this trek states",
+    "wikipedia": "en:Rakiura Track",
+    "countryPolygon": "the line's centre falls inside New Zealand, by OSM's own boundary",
+    "wayMembers": 42
+   },
+   "tags": {
+    "network": "nwn",
+    "ref": "GW09",
+    "wikidata": "Q2129081",
+    "operator": "Department of Conservation",
+    "symbol": null,
+    "website": "https://www.doc.govt.nz/parks-and-recreation/places-to-go/southland/places/stewart-island-rakiura/rakiura-national-park/things-to-do/rakiura-track/"
+   },
+   "wayMembers": 42,
+   "countedKm": 34.8
+  },
+  {
+   "id": "rees-dart-track",
+   "name": "Rees-Dart Track",
+   "region": "new-zealand",
+   "country": "New Zealand",
+   "statedKm": [
+    70,
+    70
+   ],
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 19470095,
+   "osmName": "Rees-Dart Track",
+   "matchedName": "Rees-Dart Track",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 60.2,
+   "sections": 0,
+   "bounds": {
+    "minlat": -44.6959496,
+    "minlon": 168.307382,
+    "maxlat": -44.518992,
+    "maxlon": 168.5632833
+   },
+   "centre": {
+    "lat": -44.6074708,
+    "lon": 168.43533265
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "NZ"
+    ],
+    "length": "60.2 km drawn against the 70 km this trek states",
+    "wikipedia": "en:Rees and Dart Tracks",
+    "countryPolygon": "the line's centre falls inside New Zealand, by OSM's own boundary",
+    "wayMembers": 18
+   },
+   "tags": {
+    "network": "rwn",
+    "ref": null,
+    "wikidata": "Q14230840",
+    "operator": null,
+    "symbol": null,
+    "website": null
+   },
+   "wayMembers": 18,
+   "countedKm": 60.2
+  },
+  {
+   "id": "routeburn-track",
+   "name": "Routeburn Track",
+   "region": "new-zealand",
+   "country": "New Zealand",
+   "statedKm": [
+    32,
+    32
+   ],
+   "candidates": 8,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 1385139,
+   "osmName": "GW - 06 Routeburn Track",
+   "matchedName": "GW - 06 Routeburn Track",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 31.4,
+   "sections": 0,
+   "bounds": {
+    "minlat": -44.82478,
+    "minlon": 168.1174207,
+    "maxlat": -44.7099826,
+    "maxlon": 168.2787211
+   },
+   "centre": {
+    "lat": -44.7673813,
+    "lon": 168.1980709
+   },
+   "tier": 2,
+   "tests": {
+    "name": "every distinctive word matches",
+    "country": [
+     "NZ"
+    ],
+    "length": "31.4 km drawn against the 32 km this trek states",
+    "wikipedia": "en:Routeburn Track",
+    "countryPolygon": "the line's centre falls inside New Zealand, by OSM's own boundary",
+    "wayMembers": 60
+   },
+   "tags": {
+    "network": "nwn",
+    "ref": "GW06",
+    "wikidata": "Q2170592",
+    "operator": "Depratment of Conservation",
+    "symbol": null,
+    "website": "https://www.doc.govt.nz/parks-and-recreation/places-to-go/fiordland/places/fiordland-national-park/things-to-do/tracks/routeburn-track/"
+   },
+   "wayMembers": 60,
+   "countedKm": 31.4
+  },
+  {
+   "id": "stewart-island-north-west-circuit",
+   "name": "Stewart Island North-West Circuit",
+   "region": "new-zealand",
+   "country": "New Zealand",
+   "statedKm": [
+    125,
+    125
+   ],
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "te-araroa",
+   "name": "Te Araroa",
+   "region": "new-zealand",
+   "country": "New Zealand",
+   "statedKm": [
+    3000,
+    3000
+   ],
+   "candidates": 76,
+   "matched": false,
+   "reason": "no relation of this name measures anything near the 3000 km this trek states — closest is r8518626 \"Te Araroa - South Island / Te Waipounamu\" at 1595.2 km"
+  },
+  {
+   "id": "tongariro-alpine-crossing",
+   "name": "Tongariro Alpine Crossing",
+   "region": "new-zealand",
+   "country": "New Zealand",
+   "statedKm": [
+    19.4,
+    19.4
+   ],
+   "candidates": 2,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 104369,
+   "osmName": "Tongariro Alpine Crossing",
+   "matchedName": "Tongariro Alpine Crossing",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 19.6,
+   "sections": 0,
+   "bounds": {
+    "minlat": -39.1473856,
+    "minlon": 175.5809777,
+    "maxlat": -39.0738218,
+    "maxlon": 175.663848
+   },
+   "centre": {
+    "lat": -39.1106037,
+    "lon": 175.62241285
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "NZ"
+    ],
+    "length": "19.6 km drawn against the 19.4 km this trek states",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside New Zealand, by OSM's own boundary",
+    "wayMembers": 42
+   },
+   "tags": {
+    "network": "rwn",
+    "ref": null,
+    "wikidata": "Q2441670",
+    "operator": "Department of Conservation",
+    "symbol": null,
+    "website": "https://www.doc.govt.nz/parks-and-recreation/places-to-go/central-north-island/places/tongariro-national-park/things-to-do/tracks/tongariro-alpine-crossing/"
+   },
+   "wayMembers": 42,
+   "countedKm": 19.6
+  },
+  {
+   "id": "tongariro-northern-circuit",
+   "name": "Tongariro Northern Circuit",
+   "region": "new-zealand",
+   "country": "New Zealand",
+   "statedKm": null,
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 173345,
+   "osmName": "GW - 02 Tongariro Northern Circuit",
+   "matchedName": "GW - 02 Tongariro Northern Circuit",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 44.2,
+   "sections": 0,
+   "bounds": {
+    "minlat": -39.2124079,
+    "minlon": 175.5417441,
+    "maxlat": -39.1322192,
+    "maxlon": 175.689194
+   },
+   "centre": {
+    "lat": -39.17231355,
+    "lon": 175.61546905
+   },
+   "tier": 2,
+   "tests": {
+    "name": "every distinctive word matches",
+    "country": [
+     "NZ"
+    ],
+    "length": "44.2 km drawn, a plausible length for the 3–4 days this route takes — the trek itself states no distance",
+    "wikipedia": "en:Tongariro Northern Circuit",
+    "countryPolygon": "the line's centre falls inside New Zealand, by OSM's own boundary",
+    "wayMembers": 56
+   },
+   "tags": {
+    "network": "nwn",
+    "ref": "GW02",
+    "wikidata": "Q1258134",
+    "operator": "Department of Conservation",
+    "symbol": null,
+    "website": "https://www.doc.govt.nz/parks-and-recreation/places-to-go/central-north-island/places/tongariro-national-park/things-to-do/tracks/tongariro-northern-circuit/"
+   },
+   "wayMembers": 56,
+   "countedKm": 44.2
+  },
+  {
+   "id": "travers-sabine-circuit",
+   "name": "Travers–Sabine Circuit",
+   "region": "new-zealand",
+   "country": "New Zealand",
+   "statedKm": [
+    80,
+    80
+   ],
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 17722735,
+   "osmName": "Travers-Sabine Circuit",
+   "matchedName": "Travers-Sabine Circuit",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 86.1,
+   "sections": 0,
+   "bounds": {
+    "minlat": -42.0279029,
+    "minlon": 172.6805066,
+    "maxlat": -41.8066566,
+    "maxlon": 172.8613934
+   },
+   "centre": {
+    "lat": -41.91727975,
+    "lon": 172.77095
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "NZ"
+    ],
+    "length": "86.1 km drawn against the 80 km this trek states",
+    "wikipedia": "en:Travers-Sabine Circuit",
+    "countryPolygon": "the line's centre falls inside New Zealand, by OSM's own boundary",
+    "wayMembers": 62
+   },
+   "tags": {
+    "network": null,
+    "ref": null,
+    "wikidata": "Q7836127",
+    "operator": "Department of Conservation",
+    "symbol": null,
+    "website": null
+   },
+   "wayMembers": 62,
+   "countedKm": 86.1
+  },
+  {
+   "id": "appalachian-trail",
+   "name": "Appalachian Trail",
+   "region": "north-america",
+   "country": "United States",
+   "statedKm": [
+    3536,
+    3536
+   ],
+   "candidates": 21,
+   "matched": false,
+   "reason": "no relation of this name measures anything near the 3536 km this trek states — closest is r18321044 \"Appalachian Trail\" at 857.3 km"
+  },
+  {
+   "id": "arizona-trail",
+   "name": "Arizona Trail",
+   "region": "north-america",
+   "country": "United States",
+   "statedKm": [
+    1300,
+    1300
+   ],
+   "candidates": 7,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 2804113,
+   "osmName": "Arizona Trail",
+   "matchedName": "Arizona Trail",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 1254.8,
+   "sections": 0,
+   "bounds": {
+    "minlat": 31.3336403,
+    "minlon": -112.1891832,
+    "maxlat": 37.0012463,
+    "maxlon": -110.2778921
+   },
+   "centre": {
+    "lat": 34.1674433,
+    "lon": -111.23353765
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "US"
+    ],
+    "length": "1254.8 km drawn against the 1300 km this trek states",
+    "wikipedia": "en:Arizona Trail",
+    "countryPolygon": "the line's centre falls inside United States, by OSM's own boundary",
+    "wayMembers": 549
+   },
+   "tags": {
+    "network": "nwn",
+    "ref": "AZT",
+    "wikidata": "Q4791456",
+    "operator": "Arizona Trail Association",
+    "symbol": null,
+    "website": "https://aztrail.org"
+   },
+   "wayMembers": 549,
+   "countedKm": 1310.1
+  },
+  {
+   "id": "berg-lake-trail",
+   "name": "Berg Lake Trail",
+   "region": "north-america",
+   "country": "Canada",
+   "statedKm": [
+    23,
+    23
+   ],
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 6035635,
+   "osmName": "Berg Lake Trail",
+   "matchedName": "Berg Lake Trail",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 19.1,
+   "sections": 0,
+   "bounds": {
+    "minlat": 53.0506548,
+    "minlon": -119.2162129,
+    "maxlat": 53.1556528,
+    "maxlon": -119.1536651
+   },
+   "centre": {
+    "lat": 53.1031538,
+    "lon": -119.184939
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "CA"
+    ],
+    "length": "19.1 km drawn against the 23 km this trek states",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside Canada, by OSM's own boundary",
+    "wayMembers": 35
+   },
+   "tags": {
+    "network": "lwn",
+    "ref": null,
+    "wikidata": null,
+    "operator": "BCParks",
+    "symbol": null,
+    "website": "https://www.env.gov.bc.ca/bcparks"
+   },
+   "wayMembers": 35,
+   "countedKm": 19.1
+  },
+  {
+   "id": "chilkoot-trail",
+   "name": "Chilkoot Trail",
+   "region": "north-america",
+   "country": "United States",
+   "statedKm": [
+    53,
+    53
+   ],
+   "candidates": 1,
+   "matched": false,
+   "confidence": "strong",
+   "osmId": 1225005,
+   "osmName": "Chilkoot Trail",
+   "matchedName": "Chilkoot Trail",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 50.1,
+   "sections": 0,
+   "bounds": {
+    "minlat": 59.5118947,
+    "minlon": -135.346648,
+    "maxlat": 59.8454616,
+    "maxlon": -134.9961135
+   },
+   "centre": {
+    "lat": 59.678678149999996,
+    "lon": -135.17138075
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "US"
+    ],
+    "length": "50.1 km measured against the 53 km this trek states",
+    "wikipedia": "en:Chilkoot Trail"
+   },
+   "tags": {
+    "network": "iwn",
+    "ref": null,
+    "wikidata": "Q3389258",
+    "operator": "US National Park Service, Parks Canada",
+    "symbol": null,
+    "website": "https://www.nps.gov/klgo/planyourvisit/chilkoottrail.htm"
+   },
+   "wayMembers": 113,
+   "countedKm": 50.1,
+   "reason": "r1225005 sits in CA, and this trek is in United States"
+  },
+  {
+   "id": "colorado-trail",
+   "name": "Colorado Trail",
+   "region": "north-america",
+   "country": "United States",
+   "statedKm": [
+    782,
+    782
+   ],
+   "candidates": 18,
+   "matched": false,
+   "reason": "the closest relation, r19113150 \"CDT - Colorado Section\", is a stage or a variant rather than the route itself"
+  },
+  {
+   "id": "continental-divide-trail",
+   "name": "Continental Divide Trail",
+   "region": "north-america",
+   "country": "United States",
+   "statedKm": [
+    4990,
+    4990
+   ],
+   "candidates": 7,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 921198,
+   "osmName": "Continental Divide National Scenic Trail",
+   "matchedName": "Continental Divide National Scenic Trail",
+   "extras": 1,
+   "missing": 0,
+   "lengthKm": 4821,
+   "sections": 4,
+   "bounds": {
+    "minlat": 31.4969852,
+    "minlon": -113.906121,
+    "maxlat": 48.998693,
+    "maxlon": -108.2087367
+   },
+   "centre": {
+    "lat": 40.2478391,
+    "lon": -111.05742885000001
+   },
+   "tier": 2,
+   "tests": {
+    "name": "every distinctive word matches",
+    "country": [
+     "US"
+    ],
+    "length": "4821 km drawn against the 4990 km this trek states",
+    "wikipedia": "en:Continental Divide Trail",
+    "countryPolygon": "the line's centre falls inside United States, by OSM's own boundary",
+    "wayMembers": 1738
+   },
+   "tags": {
+    "network": "nwn",
+    "ref": "CDT",
+    "wikidata": "Q492875",
+    "operator": null,
+    "symbol": "Rounded triangle inscribed with CDT",
+    "website": "https://wiki.openstreetmap.org/wiki/North_American_Divide_Trails"
+   },
+   "wayMembers": 1738,
+   "countedKm": 4821.1
+  },
+  {
+   "id": "grand-canyon-rim-to-rim",
+   "name": "Grand Canyon Rim-to-Rim",
+   "region": "north-america",
+   "country": "United States",
+   "statedKm": [
+    33,
+    36
+   ],
+   "candidates": 3,
+   "matched": false,
+   "reason": "no relation of this name measures anything near the 33–36 km this trek states — closest is r16357175 \"Canyon Rim Loop\" at 6.1 km"
+  },
+  {
+   "id": "high-sierra-trail",
+   "name": "High Sierra Trail",
+   "region": "north-america",
+   "country": "United States",
+   "statedKm": [
+    116,
+    116
+   ],
+   "candidates": 3,
+   "matched": false,
+   "reason": "no relation of this name measures anything near the 116 km this trek states — closest is r1714300 \"High Sierra Trail\" at 77.4 km"
+  },
+  {
+   "id": "john-muir-trail",
+   "name": "John Muir Trail",
+   "region": "north-america",
+   "country": "United States",
+   "statedKm": [
+    340,
+    340
+   ],
+   "candidates": 6,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 1244828,
+   "osmName": "John Muir Trail",
+   "matchedName": "John Muir Trail",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 335.5,
+   "sections": 0,
+   "bounds": {
+    "minlat": 36.5588663,
+    "minlon": -119.5585844,
+    "maxlat": 37.8720975,
+    "maxlon": -118.2914794
+   },
+   "centre": {
+    "lat": 37.2154819,
+    "lon": -118.9250319
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "US"
+    ],
+    "length": "335.5 km drawn against the 340 km this trek states",
+    "wikipedia": "en:John Muir Trail",
+    "countryPolygon": "the line's centre falls inside United States, by OSM's own boundary",
+    "wayMembers": 94
+   },
+   "tags": {
+    "network": "rwn",
+    "ref": "JMT",
+    "wikidata": "Q967917",
+    "operator": "The JMT Wilderness Conservancy",
+    "symbol": null,
+    "website": "https://jmtwilderness.org/hiking-the-jmt/"
+   },
+   "wayMembers": 94,
+   "countedKm": 335.5
+  },
+  {
+   "id": "juan-de-fuca-trail",
+   "name": "Juan de Fuca Trail",
+   "region": "north-america",
+   "country": "Canada",
+   "statedKm": null,
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 7518802,
+   "osmName": "Juan de Fuca Marine Trail",
+   "matchedName": "Juan de Fuca Marine Trail",
+   "extras": 1,
+   "missing": 0,
+   "lengthKm": 40.3,
+   "sections": 0,
+   "bounds": {
+    "minlat": 48.4371281,
+    "minlon": -124.444078,
+    "maxlat": 48.5329314,
+    "maxlon": -124.0914639
+   },
+   "centre": {
+    "lat": 48.48502975,
+    "lon": -124.26777095
+   },
+   "tier": 2,
+   "tests": {
+    "name": "every distinctive word matches",
+    "country": [
+     "CA"
+    ],
+    "length": "40.3 km drawn, a plausible length for the 4–6 days this route takes — the trek itself states no distance",
+    "wikipedia": "en:Juan de Fuca Marine Trail",
+    "countryPolygon": "the line's centre falls inside Canada, by OSM's own boundary",
+    "wayMembers": 420
+   },
+   "tags": {
+    "network": "rwn",
+    "ref": null,
+    "wikidata": "Q6301269",
+    "operator": null,
+    "symbol": null,
+    "website": "https://bcparks.ca/juan-de-fuca-park/marine-trail/"
+   },
+   "wayMembers": 420,
+   "countedKm": 41.4
+  },
+  {
+   "id": "mount-baker-chain-lakes-loop",
+   "name": "Mount Baker Chain Lakes Loop",
+   "region": "north-america",
+   "country": "United States",
+   "statedKm": [
+    10.5,
+    10.5
+   ],
+   "candidates": 4,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 18021725,
+   "osmName": "Chain Lakes Loop Trail",
+   "matchedName": "Chain Lakes Loop Trail",
+   "extras": 0,
+   "missing": 2,
+   "lengthKm": 9.9,
+   "sections": 0,
+   "bounds": {
+    "minlat": 48.8433524,
+    "minlon": -121.7223385,
+    "maxlat": 48.8600599,
+    "maxlon": -121.683539
+   },
+   "centre": {
+    "lat": 48.85170615,
+    "lon": -121.70293875
+   },
+   "tier": 2,
+   "tests": {
+    "name": "every distinctive word matches",
+    "country": [
+     "US"
+    ],
+    "length": "9.9 km drawn against the 10.5 km this trek states",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside United States, by OSM's own boundary",
+    "wayMembers": 27
+   },
+   "tags": {
+    "network": "lwn",
+    "ref": null,
+    "wikidata": null,
+    "operator": null,
+    "symbol": null,
+    "website": null
+   },
+   "wayMembers": 27,
+   "countedKm": 9.9
+  },
+  {
+   "id": "pacific-crest-trail",
+   "name": "Pacific Crest Trail",
+   "region": "north-america",
+   "country": "United States",
+   "statedKm": [
+    4270,
+    4270
+   ],
+   "candidates": 2,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 1225378,
+   "osmName": "Pacific Crest Trail",
+   "matchedName": "Pacific Crest Trail",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 4217.8,
+   "sections": 29,
+   "bounds": {
+    "minlat": 32.5897262,
+    "minlon": -120.8021271,
+    "maxlat": 49.0002693,
+    "maxlon": -116.4669782
+   },
+   "centre": {
+    "lat": 40.79499775,
+    "lon": -118.63455265
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "US"
+    ],
+    "length": "4217.8 km drawn against the 4270 km this trek states",
+    "wikipedia": "en:Pacific Crest Trail",
+    "countryPolygon": "the line's centre falls inside United States, by OSM's own boundary",
+    "wayMembers": 984
+   },
+   "tags": {
+    "network": "nwn",
+    "ref": "PCT",
+    "wikidata": "Q2003736",
+    "operator": "Pacific Crest Trail Association",
+    "symbol": null,
+    "website": "https://www.pcta.org/"
+   },
+   "wayMembers": 984,
+   "countedKm": 4217.7
+  },
+  {
+   "id": "rae-lakes-loop",
+   "name": "Rae Lakes Loop",
+   "region": "north-america",
+   "country": "United States",
+   "statedKm": [
+    66,
+    66
+   ],
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 1710944,
+   "osmName": "Rae Lakes Loop",
+   "matchedName": "Rae Lakes Loop",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 60.5,
+   "sections": 0,
+   "bounds": {
+    "minlat": 36.7532271,
+    "minlon": -118.5829364,
+    "maxlat": 36.8743361,
+    "maxlon": -118.3976767
+   },
+   "centre": {
+    "lat": 36.8137816,
+    "lon": -118.49030655
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "US"
+    ],
+    "length": "60.5 km drawn against the 66 km this trek states",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside United States, by OSM's own boundary",
+    "wayMembers": 20
+   },
+   "tags": {
+    "network": "rwn",
+    "ref": null,
+    "wikidata": null,
+    "operator": "Sequoia and Kings Canyon National Parks",
+    "symbol": null,
+    "website": "https://www.nps.gov/seki/planyourvisit/rae-lakes-loop.htm"
+   },
+   "wayMembers": 20,
+   "countedKm": 60.5
+  },
+  {
+   "id": "rockwall-trail",
+   "name": "Rockwall Trail",
+   "region": "north-america",
+   "country": "Canada",
+   "statedKm": [
+    10.7,
+    10.7
+   ],
+   "candidates": 1,
+   "matched": false,
+   "reason": "no relation of this name measures anything near the 10.7 km this trek states — closest is r16227288 \"Rockwall Trail\" at 52.8 km"
+  },
+  {
+   "id": "skyline-trail-jasper",
+   "name": "Skyline Trail Jasper",
+   "region": "north-america",
+   "country": "Canada",
+   "statedKm": [
+    44,
+    44
+   ],
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "teton-crest-trail",
+   "name": "Teton Crest Trail",
+   "region": "north-america",
+   "country": "United States",
+   "statedKm": [
+    64,
+    64
+   ],
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 3895101,
+   "osmName": "Teton Crest Trail",
+   "matchedName": "Teton Crest Trail",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 57.3,
+   "sections": 0,
+   "bounds": {
+    "minlat": 43.5480914,
+    "minlon": -110.9336145,
+    "maxlat": 43.80549,
+    "maxlon": -110.725535
+   },
+   "centre": {
+    "lat": 43.6767907,
+    "lon": -110.82957475
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "US"
+    ],
+    "length": "57.3 km drawn against the 64 km this trek states",
+    "wikipedia": "en:Teton Crest Trail",
+    "countryPolygon": "the line's centre falls inside United States, by OSM's own boundary",
+    "wayMembers": 49
+   },
+   "tags": {
+    "network": null,
+    "ref": null,
+    "wikidata": null,
+    "operator": null,
+    "symbol": null,
+    "website": null
+   },
+   "wayMembers": 49,
+   "countedKm": 57.3
+  },
+  {
+   "id": "the-long-trail",
+   "name": "The Long Trail",
+   "region": "north-america",
+   "country": "United States",
+   "statedKm": [
+    439,
+    439
+   ],
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "west-coast-trail",
+   "name": "West Coast Trail",
+   "region": "north-america",
+   "country": "Canada",
+   "statedKm": null,
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 6955341,
+   "osmName": "West Coast Trail",
+   "matchedName": "West Coast Trail",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 75.9,
+   "sections": 0,
+   "bounds": {
+    "minlat": 48.5427957,
+    "minlon": -125.1302766,
+    "maxlat": 48.7932499,
+    "maxlon": -124.4095772
+   },
+   "centre": {
+    "lat": 48.6680228,
+    "lon": -124.7699269
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "CA"
+    ],
+    "length": "75.9 km drawn, a plausible length for the 6–8 days this route takes — the trek itself states no distance",
+    "wikipedia": "en:West Coast Trail",
+    "countryPolygon": "the line's centre falls inside Canada, by OSM's own boundary",
+    "wayMembers": 229
+   },
+   "tags": {
+    "network": "rwn",
+    "ref": null,
+    "wikidata": "Q3434548",
+    "operator": null,
+    "symbol": null,
+    "website": "https://www.pc.gc.ca/eng/pn-np/bc/pacificrim/activ/activ6a.aspx"
+   },
+   "wayMembers": 229,
+   "countedKm": 93.9
+  },
+  {
+   "id": "wonderland-trail",
+   "name": "Wonderland Trail",
+   "region": "north-america",
+   "country": "United States",
+   "statedKm": [
+    150,
+    150
+   ],
+   "candidates": 2,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 4111743,
+   "osmName": "Wonderland Trail",
+   "matchedName": "Wonderland Trail",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 138.4,
+   "sections": 0,
+   "bounds": {
+    "minlat": 46.7519491,
+    "minlon": -121.9126677,
+    "maxlat": 46.971553,
+    "maxlon": -121.6050246
+   },
+   "centre": {
+    "lat": 46.861751049999995,
+    "lon": -121.75884615
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "US"
+    ],
+    "length": "138.4 km drawn against the 150 km this trek states",
+    "wikipedia": "en:Wonderland Trail",
+    "countryPolygon": "the line's centre falls inside United States, by OSM's own boundary",
+    "wayMembers": 82
+   },
+   "tags": {
+    "network": "rwn",
+    "ref": null,
+    "wikidata": "Q3498361",
+    "operator": "Mount Rainier National Park",
+    "symbol": null,
+    "website": "https://www.nps.gov/mora/planyourvisit/the-wonderland-trail.htm"
+   },
+   "wayMembers": 82,
+   "countedKm": 138.4
+  },
+  {
+   "id": "yosemite-high-country-trek",
+   "name": "Yosemite High Country Trek",
+   "region": "north-america",
+   "country": "United States",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "zion-traverse",
+   "name": "Zion Traverse",
+   "region": "north-america",
+   "country": "United States",
+   "statedKm": [
+    80,
+    80
+   ],
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "torres-del-paine-w-trek",
+   "name": "Torres del Paine W Trek",
+   "region": "patagonia",
+   "country": "Chile",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "torres-del-paine-o-circuit",
+   "name": "Torres del Paine O Circuit",
+   "region": "patagonia",
+   "country": "Chile",
+   "statedKm": [
+    110,
+    120
+   ],
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "torres-del-paine-q-circuit",
+   "name": "Torres del Paine Q Circuit",
+   "region": "patagonia",
+   "country": "Chile",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "dientes-de-navarino-trek",
+   "name": "Dientes de Navarino Trek",
+   "region": "patagonia",
+   "country": "Chile",
+   "statedKm": [
+    40,
+    50
+   ],
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "huemul-circuit-trek",
+   "name": "Huemul Circuit Trek",
+   "region": "patagonia",
+   "country": "Argentina",
+   "statedKm": [
+    60,
+    60
+   ],
+   "candidates": 5,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 9365907,
+   "osmName": "Vuelta al Huemul",
+   "matchedName": "Huemul Circuit",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 64.9,
+   "sections": 0,
+   "bounds": {
+    "minlat": -49.4876234,
+    "minlon": -73.1190294,
+    "maxlat": -49.3369697,
+    "maxlon": -72.8636047
+   },
+   "centre": {
+    "lat": -49.41229654999999,
+    "lon": -72.99131704999999
+   },
+   "tier": 3,
+   "tests": {
+    "name": "the same name but for a generic word",
+    "country": [
+     "AR"
+    ],
+    "length": "64.9 km drawn against the 60 km this trek states",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside Argentina, by OSM's own boundary",
+    "wayMembers": 63
+   },
+   "tags": {
+    "network": "lwn",
+    "ref": null,
+    "wikidata": "Q105633019",
+    "operator": null,
+    "symbol": null,
+    "website": "https://en.wikivoyage.org/wiki/El_Chalten"
+   },
+   "wayMembers": 63,
+   "countedKm": 64.9
+  },
+  {
+   "id": "ohiggins-glacier-trek",
+   "name": "O'Higgins Glacier Trek",
+   "region": "patagonia",
+   "country": "Chile",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "cerro-castillo-circuit",
+   "name": "Cerro Castillo Circuit",
+   "region": "patagonia",
+   "country": "Chile",
+   "statedKm": [
+    53,
+    53
+   ],
+   "candidates": 1,
+   "matched": false,
+   "reason": "the closest relation, r6958064 \"Greater Patagonian Trail Section 32: Cerro Castillo\", is a stage or a variant rather than the route itself"
+  },
+  {
+   "id": "cochamo-valley-trek",
+   "name": "Cochamo Valley Trek",
+   "region": "patagonia",
+   "country": "Chile",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "villa-ohiggins-el-chalten-trek",
+   "name": "Villa O'Higgins–El Chalten Trek",
+   "region": "patagonia",
+   "country": "Chile / Argentina",
+   "statedKm": [
+    22,
+    22
+   ],
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "fitz-roy-el-chalten-trek",
+   "name": "Fitz Roy / El Chalten Trek",
+   "region": "patagonia",
+   "country": "Argentina",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "laguna-de-los-tres-trek",
+   "name": "Laguna de los Tres Trek",
+   "region": "patagonia",
+   "country": "Argentina",
+   "statedKm": [
+    20,
+    25
+   ],
+   "candidates": 1,
+   "matched": false,
+   "reason": "no relation of this name measures anything near the 20–25 km this trek states — closest is r4485261 \"Sendero Laguna de los Tres\" at 12.7 km"
+  },
+  {
+   "id": "patagonia-ohiggins-trek",
+   "name": "Patagonia O'Higgins Trek",
+   "region": "patagonia",
+   "country": "Chile",
+   "statedKm": null,
+   "candidates": 0,
+   "matched": false,
+   "reason": "no OSM route relation in this region carries this name"
+  },
+  {
+   "id": "beara-way",
+   "name": "Beara Way",
+   "region": "uk-ireland",
+   "country": "Ireland",
+   "statedKm": [
+    206,
+    242
+   ],
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 2989585,
+   "osmName": "Beara Way",
+   "matchedName": "Beara Way",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 209.7,
+   "sections": 0,
+   "bounds": {
+    "minlat": 51.5804569,
+    "minlon": -10.2342312,
+    "maxlat": 51.8742058,
+    "maxlon": -9.5094156
+   },
+   "centre": {
+    "lat": 51.72733135,
+    "lon": -9.8718234
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "IE"
+    ],
+    "length": "209.7 km drawn against the 206–242 km this trek states",
+    "wikipedia": "en:Beara Way",
+    "countryPolygon": "the line's centre falls inside Ireland, by OSM's own boundary",
+    "wayMembers": 342
+   },
+   "tags": {
+    "network": "nwn",
+    "ref": null,
+    "wikidata": "Q4876619",
+    "operator": null,
+    "symbol": null,
+    "website": "http://www.bearatourism.com/bearaway.html"
+   },
+   "wayMembers": 342,
+   "countedKm": 209.7
+  },
+  {
+   "id": "cape-wrath-trail",
+   "name": "Cape Wrath Trail",
+   "region": "uk-ireland",
+   "country": "United Kingdom",
+   "statedKm": [
+    370,
+    370
+   ],
+   "candidates": 17,
+   "matched": false,
+   "confidence": "strong",
+   "osmId": 9327615,
+   "osmName": "Cape Wrath Trail",
+   "matchedName": "Cape Wrath Trail",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 533.5,
+   "sections": 8,
+   "bounds": {
+    "minlat": 56.7670714,
+    "minlon": -5.5229903,
+    "maxlat": 58.6251808,
+    "maxlon": -4.7243559
+   },
+   "centre": {
+    "lat": 57.6961261,
+    "lon": -5.1236730999999995
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "GB"
+    ],
+    "length": "546.4 km measured against the 370 km this trek states",
+    "wikipedia": "en:Cape Wrath Trail"
+   },
+   "tags": {
+    "network": "nwn",
+    "ref": null,
+    "wikidata": "Q5035168",
+    "operator": null,
+    "symbol": null,
+    "website": "http://www.capewrathtrail.org.uk/"
+   },
+   "wayMembers": 842,
+   "countedKm": 546.4,
+   "reason": "r9327615 draws 533.5 km, against the 370 km this trek states"
+  },
+  {
+   "id": "coast-to-coast-walk",
+   "name": "Coast-to-Coast Walk",
+   "region": "uk-ireland",
+   "country": "United Kingdom",
+   "statedKm": [
+    300,
+    300
+   ],
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 12145,
+   "osmName": "Coast to Coast Walk",
+   "matchedName": "Coast to Coast Walk",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 302.8,
+   "sections": 3,
+   "bounds": {
+    "minlat": 54.3700962,
+    "minlon": -3.6390967,
+    "maxlat": 54.5413879,
+    "maxlon": -0.521638
+   },
+   "centre": {
+    "lat": 54.45574205,
+    "lon": -2.08036735
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "GB"
+    ],
+    "length": "302.8 km drawn against the 300 km this trek states",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside United Kingdom, by OSM's own boundary",
+    "wayMembers": 1163
+   },
+   "tags": {
+    "network": "nwn",
+    "ref": "C2C",
+    "wikidata": "Q1104394",
+    "operator": null,
+    "symbol": null,
+    "website": "https://www.wainwright.org.uk/coast-to-coast/"
+   },
+   "wayMembers": 1163,
+   "countedKm": 344.3
+  },
+  {
+   "id": "cotswold-way",
+   "name": "Cotswold Way",
+   "region": "uk-ireland",
+   "country": "United Kingdom",
+   "statedKm": [
+    164,
+    164
+   ],
+   "candidates": 8,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 65239,
+   "osmName": "Cotswold Way",
+   "matchedName": "Cotswold Way",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 165,
+   "sections": 0,
+   "bounds": {
+    "minlat": 51.3812389,
+    "minlon": -2.4226045,
+    "maxlat": 52.0575599,
+    "maxlon": -1.7808507
+   },
+   "centre": {
+    "lat": 51.7193994,
+    "lon": -2.1017276
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "GB"
+    ],
+    "length": "165 km drawn against the 164 km this trek states",
+    "wikipedia": "en:Cotswold Way",
+    "countryPolygon": "the line's centre falls inside United Kingdom, by OSM's own boundary",
+    "wayMembers": 745
+   },
+   "tags": {
+    "network": "nwn",
+    "ref": "CW",
+    "wikidata": "Q1136661",
+    "operator": "National Trails",
+    "symbol": null,
+    "website": "https://www.nationaltrail.co.uk/en_GB/trails/cotswold-way/"
+   },
+   "wayMembers": 745,
+   "countedKm": 165
+  },
+  {
+   "id": "cumbria-way",
+   "name": "Cumbria Way",
+   "region": "uk-ireland",
+   "country": "United Kingdom",
+   "statedKm": [
+    112,
+    112
+   ],
+   "candidates": 2,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 946178,
+   "osmName": "Cumbria Way",
+   "matchedName": "Cumbria Way",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 118.6,
+   "sections": 0,
+   "bounds": {
+    "minlat": 54.1976065,
+    "minlon": -3.1742448,
+    "maxlat": 54.8961516,
+    "maxlon": -2.936672
+   },
+   "centre": {
+    "lat": 54.54687905,
+    "lon": -3.0554584
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "GB"
+    ],
+    "length": "118.6 km drawn against the 112 km this trek states",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside United Kingdom, by OSM's own boundary",
+    "wayMembers": 509
+   },
+   "tags": {
+    "network": "rwn",
+    "ref": null,
+    "wikidata": "Q5194037",
+    "operator": null,
+    "symbol": null,
+    "website": "https://cumbriaway.co.uk/"
+   },
+   "wayMembers": 509,
+   "countedKm": 136.7
+  },
+  {
+   "id": "dales-way",
+   "name": "Dales Way",
+   "region": "uk-ireland",
+   "country": "United Kingdom",
+   "statedKm": [
+    126,
+    126
+   ],
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 29302,
+   "osmName": "Dales Way",
+   "matchedName": "Dales Way",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 129,
+   "sections": 0,
+   "bounds": {
+    "minlat": 53.8612228,
+    "minlon": -2.9147573,
+    "maxlat": 54.3751038,
+    "maxlon": -1.8018677
+   },
+   "centre": {
+    "lat": 54.1181633,
+    "lon": -2.3583125000000003
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "GB"
+    ],
+    "length": "129 km drawn against the 126 km this trek states",
+    "wikipedia": "en:Dales Way",
+    "countryPolygon": "the line's centre falls inside United Kingdom, by OSM's own boundary",
+    "wayMembers": 667
+   },
+   "tags": {
+    "network": "rwn",
+    "ref": null,
+    "wikidata": "Q5210793",
+    "operator": null,
+    "symbol": null,
+    "website": "http://www.dalesway.org.uk/"
+   },
+   "wayMembers": 667,
+   "countedKm": 129.2
+  },
+  {
+   "id": "dingle-way",
+   "name": "Dingle Way",
+   "region": "uk-ireland",
+   "country": "Ireland",
+   "statedKm": [
+    20,
+    162
+   ],
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 21664,
+   "osmName": "The Dingle Way",
+   "matchedName": "The Dingle Way",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 162.7,
+   "sections": 0,
+   "bounds": {
+    "minlat": 52.0991627,
+    "minlon": -10.4642267,
+    "maxlat": 52.3131609,
+    "maxlon": -9.7066288
+   },
+   "centre": {
+    "lat": 52.206161800000004,
+    "lon": -10.085427750000001
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "IE"
+    ],
+    "length": "162.7 km drawn against the 20–162 km this trek states",
+    "wikipedia": "en:Dingle Way",
+    "countryPolygon": "the line's centre falls inside Ireland, by OSM's own boundary",
+    "wayMembers": 344
+   },
+   "tags": {
+    "network": "nwn",
+    "ref": "DW",
+    "wikidata": "Q5278223",
+    "operator": null,
+    "symbol": "Yellow hiker on black background",
+    "website": "https://www.sportireland.ie/redirect/trail/11"
+   },
+   "wayMembers": 344,
+   "countedKm": 181.1
+  },
+  {
+   "id": "great-glen-way",
+   "name": "Great Glen Way",
+   "region": "uk-ireland",
+   "country": "United Kingdom",
+   "statedKm": [
+    125,
+    125
+   ],
+   "candidates": 2,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 126572,
+   "osmName": "Great Glen Way",
+   "matchedName": "Great Glen Way",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 123.3,
+   "sections": 0,
+   "bounds": {
+    "minlat": 56.8208675,
+    "minlon": -5.1189433,
+    "maxlat": 57.4759521,
+    "maxlon": -4.2253526
+   },
+   "centre": {
+    "lat": 57.148409799999996,
+    "lon": -4.672147949999999
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "GB"
+    ],
+    "length": "123.3 km drawn against the 125 km this trek states",
+    "wikipedia": "en:Great Glen Way",
+    "countryPolygon": "the line's centre falls inside United Kingdom, by OSM's own boundary",
+    "wayMembers": 253
+   },
+   "tags": {
+    "network": "nwn",
+    "ref": null,
+    "wikidata": "Q380086",
+    "operator": null,
+    "symbol": null,
+    "website": "https://www.highland.gov.uk/greatglenway/"
+   },
+   "wayMembers": 253,
+   "countedKm": 123.3
+  },
+  {
+   "id": "hadrians-wall-path",
+   "name": "Hadrian's Wall Path",
+   "region": "uk-ireland",
+   "country": "United Kingdom",
+   "statedKm": [
+    135,
+    135
+   ],
+   "candidates": 2,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 38791,
+   "osmName": "Hadrian's Wall Path",
+   "matchedName": "Hadrian's Wall Path",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 137.6,
+   "sections": 0,
+   "bounds": {
+    "minlat": 54.8982453,
+    "minlon": -3.2150939,
+    "maxlat": 55.0389206,
+    "maxlon": -1.5302486
+   },
+   "centre": {
+    "lat": 54.96858295,
+    "lon": -2.37267125
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "GB"
+    ],
+    "length": "137.6 km drawn against the 135 km this trek states",
+    "wikipedia": "en:Hadrian's Wall Path",
+    "countryPolygon": "the line's centre falls inside United Kingdom, by OSM's own boundary",
+    "wayMembers": 421
+   },
+   "tags": {
+    "network": "nwn",
+    "ref": null,
+    "wikidata": "Q1567583",
+    "operator": "National Trails",
+    "symbol": "acorn",
+    "website": "http://www.nationaltrail.co.uk/hadrianswall/"
+   },
+   "wayMembers": 421,
+   "countedKm": 139
+  },
+  {
+   "id": "kerry-way",
+   "name": "Kerry Way",
+   "region": "uk-ireland",
+   "country": "Ireland",
+   "statedKm": [
+    214,
+    214
+   ],
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 183744,
+   "osmName": "The Kerry Way",
+   "matchedName": "The Kerry Way",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 220.8,
+   "sections": 0,
+   "bounds": {
+    "minlat": 51.7565486,
+    "minlon": -10.2209938,
+    "maxlat": 52.0640358,
+    "maxlon": -9.4926575
+   },
+   "centre": {
+    "lat": 51.9102922,
+    "lon": -9.856825650000001
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "IE"
+    ],
+    "length": "220.8 km drawn against the 214 km this trek states",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside Ireland, by OSM's own boundary",
+    "wayMembers": 455
+   },
+   "tags": {
+    "network": "nwn",
+    "ref": null,
+    "wikidata": "Q1739608",
+    "operator": null,
+    "symbol": null,
+    "website": "https://www.sportireland.ie/redirect/trail/19"
+   },
+   "wayMembers": 455,
+   "countedKm": 220.8
+  },
+  {
+   "id": "offas-dyke-path",
+   "name": "Offa's Dyke Path",
+   "region": "uk-ireland",
+   "country": "United Kingdom",
+   "statedKm": [
+    285,
+    285
+   ],
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 9649,
+   "osmName": "Offa's Dyke Path",
+   "matchedName": "Offa's Dyke Path",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 291.6,
+   "sections": 0,
+   "bounds": {
+    "minlat": 51.6325256,
+    "minlon": -3.4127986,
+    "maxlat": 53.3425307,
+    "maxlon": -2.6483248
+   },
+   "centre": {
+    "lat": 52.48752815,
+    "lon": -3.0305617
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "GB"
+    ],
+    "length": "291.6 km drawn against the 285 km this trek states",
+    "wikipedia": "en:Offa's Dyke Path",
+    "countryPolygon": "the line's centre falls inside United Kingdom, by OSM's own boundary",
+    "wayMembers": 979
+   },
+   "tags": {
+    "network": "nwn",
+    "ref": "ODP",
+    "wikidata": "Q745914",
+    "operator": "National Trails",
+    "symbol": null,
+    "website": "http://www.nationaltrail.co.uk/OffasDyke/"
+   },
+   "wayMembers": 979,
+   "countedKm": 291.6
+  },
+  {
+   "id": "pembrokeshire-coast-path",
+   "name": "Pembrokeshire Coast Path",
+   "region": "uk-ireland",
+   "country": "United Kingdom",
+   "statedKm": [
+    300,
+    300
+   ],
+   "candidates": 6,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 20279882,
+   "osmName": "Pembrokeshire Coast Path main route",
+   "matchedName": "Pembrokeshire Coast Path main route",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 285.1,
+   "sections": 0,
+   "bounds": {
+    "minlat": 51.5987832,
+    "minlon": -5.3198017,
+    "maxlat": 52.115555,
+    "maxlon": -4.6473445
+   },
+   "centre": {
+    "lat": 51.8571691,
+    "lon": -4.9835731
+   },
+   "tier": 2,
+   "tests": {
+    "name": "every distinctive word matches",
+    "country": [
+     "GB"
+    ],
+    "length": "285.1 km drawn against the 300 km this trek states",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside United Kingdom, by OSM's own boundary",
+    "wayMembers": 846
+   },
+   "tags": {
+    "network": "nwn",
+    "ref": null,
+    "wikidata": "Q1347296",
+    "operator": null,
+    "symbol": null,
+    "website": null
+   },
+   "wayMembers": 846,
+   "countedKm": 285.1
+  },
+  {
+   "id": "pennine-way",
+   "name": "Pennine Way",
+   "region": "uk-ireland",
+   "country": "United Kingdom",
+   "statedKm": [
+    431,
+    431
+   ],
+   "candidates": 33,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 4080347,
+   "osmName": "Pennine Way",
+   "matchedName": "Pennine Way",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 411,
+   "sections": 11,
+   "bounds": {
+    "minlat": 53.3643585,
+    "minlon": -2.5624162,
+    "maxlat": 55.5471444,
+    "maxlon": -1.8168639
+   },
+   "centre": {
+    "lat": 54.45575145,
+    "lon": -2.18964005
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "GB"
+    ],
+    "length": "411 km drawn against the 431 km this trek states",
+    "wikipedia": "en:Pennine Way",
+    "countryPolygon": "the line's centre falls inside United Kingdom, by OSM's own boundary",
+    "wayMembers": 1223
+   },
+   "tags": {
+    "network": "nwn",
+    "ref": null,
+    "wikidata": "Q1478622",
+    "operator": "National Trails",
+    "symbol": null,
+    "website": "http://www.nationaltrail.co.uk/PennineWay/"
+   },
+   "wayMembers": 1223,
+   "countedKm": 411
+  },
+  {
+   "id": "skye-trail",
+   "name": "Skye Trail",
+   "region": "uk-ireland",
+   "country": "United Kingdom",
+   "statedKm": [
+    128,
+    128
+   ],
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 14421894,
+   "osmName": "Skye Trail",
+   "matchedName": "Skye Trail",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 128.7,
+   "sections": 7,
+   "bounds": {
+    "minlat": 57.1419864,
+    "minlon": -6.3465082,
+    "maxlat": 57.7012512,
+    "maxlon": -5.9123987
+   },
+   "centre": {
+    "lat": 57.421618800000005,
+    "lon": -6.12945345
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "GB"
+    ],
+    "length": "128.7 km drawn against the 128 km this trek states",
+    "wikipedia": null,
+    "countryPolygon": "the line's centre falls inside United Kingdom, by OSM's own boundary",
+    "wayMembers": 352
+   },
+   "tags": {
+    "network": "rwn",
+    "ref": null,
+    "wikidata": "Q104585723",
+    "operator": null,
+    "symbol": null,
+    "website": null
+   },
+   "wayMembers": 352,
+   "countedKm": 128.6
+  },
+  {
+   "id": "south-west-coast-path",
+   "name": "South West Coast Path",
+   "region": "uk-ireland",
+   "country": "United Kingdom",
+   "statedKm": [
+    1014,
+    1014
+   ],
+   "candidates": 59,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 2376086,
+   "osmName": "South West Coast Path",
+   "matchedName": "South West Coast Path",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 1033.9,
+   "sections": 52,
+   "bounds": {
+    "minlat": 49.9595308,
+    "minlon": -5.715129,
+    "maxlat": 51.2409448,
+    "maxlon": -1.9245346
+   },
+   "centre": {
+    "lat": 50.6002378,
+    "lon": -3.8198318
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "GB"
+    ],
+    "length": "1033.9 km drawn against the 1014 km this trek states",
+    "wikipedia": "en:South West Coast Path",
+    "countryPolygon": "the line's centre falls inside United Kingdom, by OSM's own boundary",
+    "wayMembers": 7931
+   },
+   "tags": {
+    "network": "nwn",
+    "ref": "SWCP",
+    "wikidata": "Q1631281",
+    "operator": "National Trails",
+    "symbol": null,
+    "website": "http://wiki.openstreetmap.org/wiki/South_West_Coast_Path"
+   },
+   "wayMembers": 7931,
+   "countedKm": 1057.6
+  },
+  {
+   "id": "southern-upland-way",
+   "name": "Southern Upland Way",
+   "region": "uk-ireland",
+   "country": "United Kingdom",
+   "statedKm": [
+    344,
+    344
+   ],
+   "candidates": 4,
+   "matched": false,
+   "reason": "the closest relation, r50325 \"Southern Upland Way (Section A - Portpatrick to Melrose)\", is a stage or a variant rather than the route itself"
+  },
+  {
+   "id": "the-ridgeway",
+   "name": "The Ridgeway",
+   "region": "uk-ireland",
+   "country": "United Kingdom",
+   "statedKm": [
+    139,
+    139
+   ],
+   "candidates": 27,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 8879,
+   "osmName": "The Ridgeway",
+   "matchedName": "The Ridgeway",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 138.8,
+   "sections": 0,
+   "bounds": {
+    "minlat": 51.4114881,
+    "minlon": -1.8306137,
+    "maxlat": 51.8421339,
+    "maxlon": -0.6067988
+   },
+   "centre": {
+    "lat": 51.626811000000004,
+    "lon": -1.2187062499999999
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "GB"
+    ],
+    "length": "138.8 km drawn against the 139 km this trek states",
+    "wikipedia": "en:The Ridgeway",
+    "countryPolygon": "the line's centre falls inside United Kingdom, by OSM's own boundary",
+    "wayMembers": 498
+   },
+   "tags": {
+    "network": "nwn",
+    "ref": "RW",
+    "wikidata": "Q590196",
+    "operator": "National Trails",
+    "symbol": null,
+    "website": "http://www.nationaltrail.co.uk/Ridgeway/"
+   },
+   "wayMembers": 498,
+   "countedKm": 138.8
+  },
+  {
+   "id": "west-highland-way",
+   "name": "West Highland Way",
+   "region": "uk-ireland",
+   "country": "United Kingdom",
+   "statedKm": [
+    154,
+    154
+   ],
+   "candidates": 12,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 16287,
+   "osmName": "West Highland Way",
+   "matchedName": "West Highland Way",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 153.2,
+   "sections": 8,
+   "bounds": {
+    "minlat": 55.9414133,
+    "minlon": -5.1141564,
+    "maxlat": 56.8217938,
+    "maxlon": -4.317835
+   },
+   "centre": {
+    "lat": 56.38160355,
+    "lon": -4.7159957
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "GB"
+    ],
+    "length": "153.2 km drawn against the 154 km this trek states",
+    "wikipedia": "en:West Highland Way",
+    "countryPolygon": "the line's centre falls inside United Kingdom, by OSM's own boundary",
+    "wayMembers": 350
+   },
+   "tags": {
+    "network": "nwn",
+    "ref": null,
+    "wikidata": "Q965998",
+    "operator": "West Highland Way Management Group",
+    "symbol": null,
+    "website": "https://www.westhighlandway.org/"
+   },
+   "wayMembers": 350,
+   "countedKm": 153.1
+  },
+  {
+   "id": "wicklow-way",
+   "name": "Wicklow Way",
+   "region": "uk-ireland",
+   "country": "Ireland",
+   "statedKm": [
+    131,
+    131
+   ],
+   "candidates": 1,
+   "matched": true,
+   "confidence": "strong",
+   "osmId": 2740,
+   "osmName": "Wicklow Way",
+   "matchedName": "Wicklow Way",
+   "extras": 0,
+   "missing": 0,
+   "lengthKm": 128.1,
+   "sections": 0,
+   "bounds": {
+    "minlat": 52.6954353,
+    "minlon": -6.6484451,
+    "maxlat": 53.2773535,
+    "maxlon": -6.2040291
+   },
+   "centre": {
+    "lat": 52.986394399999995,
+    "lon": -6.4262371
+   },
+   "tier": 4,
+   "tests": {
+    "name": "the same name",
+    "country": [
+     "IE"
+    ],
+    "length": "128.1 km drawn against the 131 km this trek states",
+    "wikipedia": "en:Wicklow Way",
+    "countryPolygon": "the line's centre falls inside Ireland, by OSM's own boundary",
+    "wayMembers": 335
+   },
+   "tags": {
+    "network": "nwn",
+    "ref": "WW",
+    "wikidata": "Q389539",
+    "operator": "Irish National Waymarked Trails",
+    "symbol": "Yellow Hiker",
+    "website": "https://www.sportireland.ie/redirect/trail/40"
+   },
+   "wayMembers": 335,
+   "countedKm": 128.1
+  }
+ ]
+}

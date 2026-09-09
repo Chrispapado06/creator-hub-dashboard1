@@ -84,32 +84,55 @@ export function trailWays(osmId: number): Promise<TrailWay[]> {
    * screen saying so.
    */
   const promise = (async () => {
-    const query = `[out:json][timeout:90];relation(${osmId});way(r);out tags geom;`;
-    for (const url of MIRRORS) {
-      try {
-        const res = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({ data: query }),
-          signal: withTimeout(OVERPASS_TIMEOUT_MS * 2),
-        });
-        const text = await res.text();
-        if (!text.trimStart().startsWith("{")) continue;
-        const json = JSON.parse(text) as {
-          elements?: { type?: string; tags?: Record<string, string>; geometry?: LatLon[] }[];
-        };
-        const ways: TrailWay[] = [];
-        for (const el of json.elements ?? []) {
-          if (el.type !== "way" || !el.geometry?.length) continue;
-          ways.push({
-            tags: el.tags ?? {},
-            geometry: el.geometry,
-            lengthM: lineLength(el.geometry),
+    /*
+     * TWO WORDINGS OF ONE QUESTION, AND THE SECOND IS ONLY EVER ASKED OF A
+     * ROUTE THAT IS A PARENT OF OTHER ROUTES.
+     *
+     * `way(r)` means "the ways this relation holds ITSELF", which is every
+     * ordinary route and is left exactly as it was. A route OSM models as a
+     * parent of sections holds none, so that question returns nothing — and
+     * nothing here is not a small loss: it is the surface breakdown gone and
+     * the elevation profile gone, silently, on precisely the biggest routes in
+     * the catalogue. The West Highland Way, the Pennine Way and the Pacific
+     * Crest Trail are all that shape.
+     *
+     * `>>` asks again through the sections, recursing down member relations to
+     * their ways. It is the heavier query and is not spent on the common case;
+     * an empty first answer is the only thing that reaches it.
+     */
+    const QUERIES = [
+      `[out:json][timeout:90];relation(${osmId});way(r);out tags geom;`,
+      `[out:json][timeout:180];relation(${osmId});>>;out tags geom;`,
+    ];
+    for (const query of QUERIES) {
+      for (const url of MIRRORS) {
+        try {
+          const res = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({ data: query }),
+            signal: withTimeout(OVERPASS_TIMEOUT_MS * 2),
           });
+          const text = await res.text();
+          if (!text.trimStart().startsWith("{")) continue;
+          const json = JSON.parse(text) as {
+            elements?: { type?: string; tags?: Record<string, string>; geometry?: LatLon[] }[];
+          };
+          const ways: TrailWay[] = [];
+          for (const el of json.elements ?? []) {
+            // `>>` returns the member NODES as well — guideposts, cairns and
+            // viewpoints. The route is the ways.
+            if (el.type !== "way" || !el.geometry?.length) continue;
+            ways.push({
+              tags: el.tags ?? {},
+              geometry: el.geometry,
+              lengthM: lineLength(el.geometry),
+            });
+          }
+          if (ways.length) return ways;
+        } catch {
+          // Next mirror.
         }
-        if (ways.length) return ways;
-      } catch {
-        // Next mirror.
       }
     }
     return [];
@@ -434,16 +457,36 @@ export function formatHours(h: number): string {
 /* -------------------------------------------------------------------------- */
 
 /** The route as GPX, so it can go to a watch or a handheld unit. */
-export function toGpx(name: string, line: LatLon[], elevation?: number[] | null): string {
+export function toGpx(name: string, paths: LatLon[][], elevation?: number[] | null): string {
   const esc = (s: string) =>
     s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   // The profile is 100 resampled points and the line is thousands, so heights
   // are only attached when the counts genuinely correspond.
-  const withEle = elevation && elevation.length === line.length ? elevation : null;
-  const pts = line
-    .map((p, i) => {
-      const ele = withEle ? `<ele>${withEle[i].toFixed(1)}</ele>` : "";
-      return `<trkpt lat="${p.lat.toFixed(6)}" lon="${p.lon.toFixed(6)}">${ele}</trkpt>`;
+  const total = paths.reduce((n, p) => n + p.length, 0);
+  const withEle = elevation && elevation.length === total ? elevation : null;
+  /*
+   * ONE <trkseg> PER PATH, AND THAT IS THE WHOLE POINT OF TAKING PATHS.
+   *
+   * GPX says a track segment is a run of points connected in order, and a new
+   * segment is how the format states "the recording stops here and resumes
+   * there". Written as one segment, a route OSM holds as separate pieces
+   * becomes a watch instruction to walk in a straight line from the end of one
+   * piece to the start of the next — across whatever is in between. Measured on
+   * the Tour du Mont Blanc before the ways were joined properly: 69.8 km of
+   * such lines, the longest 19.3 km, straight over the massif.
+   */
+  let at = 0;
+  const segs = paths
+    .filter((p) => p.length > 1)
+    .map((path) => {
+      const pts = path
+        .map((p) => {
+          const ele = withEle ? `<ele>${withEle[at].toFixed(1)}</ele>` : "";
+          at++;
+          return `<trkpt lat="${p.lat.toFixed(6)}" lon="${p.lon.toFixed(6)}">${ele}</trkpt>`;
+        })
+        .join("");
+      return `<trkseg>${pts}</trkseg>`;
     })
     .join("");
   return (
@@ -452,7 +495,7 @@ export function toGpx(name: string, line: LatLon[], elevation?: number[] | null)
     `<metadata><name>${esc(name)}</name>` +
     "<copyright author=\"OpenStreetMap contributors\"><license>https://opendatacommons.org/licenses/odbl/</license></copyright>" +
     "</metadata>" +
-    `<trk><name>${esc(name)}</name><trkseg>${pts}</trkseg></trk></gpx>`
+    `<trk><name>${esc(name)}</name>${segs}</trk></gpx>`
   );
 }
 

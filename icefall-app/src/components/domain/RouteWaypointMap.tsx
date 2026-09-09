@@ -42,13 +42,24 @@ const KIND_ICON: Record<TrailWaypoint["kind"], typeof Eye> = {
 
 export function RouteWaypointMap({
   line,
+  paths,
   start,
   center,
   waypoints,
   styleId = "icefall",
   className,
 }: {
+  /** Every point, in order — used to place the start marker and frame. */
   line: LatLon[];
+  /**
+   * The continuous paths the route truly makes, which is what gets DRAWN.
+   *
+   * Usually one. Where OSM holds the route as pieces that do not meet, the
+   * gaps between them are left empty rather than bridged: a straight edge
+   * across a gap is a path this app invented. Omitted, `line` is drawn as one
+   * path — right for callers whose line is a single recorded track.
+   */
+  paths?: LatLon[][];
   start: LatLon;
   /** Where to sit before the line exists — the relation's own coordinates. */
   center: LatLon;
@@ -148,10 +159,17 @@ export function RouteWaypointMap({
     const map = mapRef.current;
     if (!map || !ready || line.length < 2) return;
 
+    /* A MultiLineString, so a route mapped as loose pieces is drawn as loose
+       pieces. One path is the ordinary case and renders identically. */
+    const drawn = (paths?.length ? paths : [line]).filter((p) => p.length > 1);
+    if (drawn.length === 0) return;
     const data = {
       type: "Feature" as const,
       properties: {},
-      geometry: { type: "LineString" as const, coordinates: line.map((p) => [p.lon, p.lat]) },
+      geometry: {
+        type: "MultiLineString" as const,
+        coordinates: drawn.map((p) => p.map((q) => [q.lon, q.lat])),
+      },
     };
 
     const existing = map.getSource("route-line");
@@ -188,7 +206,7 @@ export function RouteWaypointMap({
       line.forEach((p) => bounds.extend([p.lon, p.lat]));
       map.fitBounds(bounds, { padding: 48, animate: true, maxZoom: 16 });
     }
-  }, [ready, line, styleEpoch]);
+  }, [ready, line, paths, styleEpoch]);
 
   // Start marker + numbered waypoints, added once the map is ready.
   useEffect(() => {
