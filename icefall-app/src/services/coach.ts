@@ -12,6 +12,7 @@ import {
 } from "@/coach/budget";
 import { fmtCountdown, fmtDistance, fmtElevation } from "@/lib/format";
 import { DEMO } from "@/offline/offline";
+import { supabase } from "@/backend/client";
 
 /**
  * ICEFALL Coach.
@@ -242,9 +243,32 @@ export async function askCoach(
     }
 
     try {
+      /*
+       * THE SESSION TOKEN GOES WITH THE QUESTION.
+       *
+       * The coach function is the one ICEFALL edge function that keeps
+       * `verify_jwt` at its default. `strava` and `watch` must be public —
+       * they are bare browser redirects that carry no Authorization header and
+       * never can — but this one spends money on an Anthropic key per call, and
+       * an unauthenticated endpoint whose URL is sitting in the app bundle in
+       * plain text is somebody else's budget waiting to be found.
+       *
+       * Without this header every real call returned 401 and fell silently
+       * through to the scripted coach, which looks exactly like the endpoint
+       * not being configured at all — the failure would have been invisible.
+       *
+       * A signed-out athlete has no token, so the `?? ''` sends none and the
+       * function refuses. That is the right answer rather than an error: the
+       * catch below drops to the scripted coach, which is what a signed-out
+       * device had anyway.
+       */
+      const token = (await supabase?.auth.getSession())?.data.session?.access_token;
       const res = await fetch(ENDPOINT, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token ?? ""}`,
+        },
         // The system prompt carries the athlete AND ICEFALL's rules. A model
         // handed only the question will invent a readiness score, clear someone
         // for a summit, or prescribe a hard day the app has already vetoed.
