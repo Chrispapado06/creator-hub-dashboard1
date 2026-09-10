@@ -391,10 +391,31 @@ function Bubble({ message, reveal = false }: { message: CoachMessage; reveal?: b
             <span className="section-label text-azure/70">ICEFALL Coach</span>
           </div>
         )}
+        {/*
+          THE COACH'S ANSWER HAS NO CONTAINER. The owner, 2026-09-11: "remove the
+          box anwser background".
+
+          It does not need one. The reply is already announced by the mark and
+          the "ICEFALL Coach" label directly above it, and the athlete's own
+          words sit filled and right-aligned opposite — so who said what is
+          carried by position and by the label, which is what the app's own box
+          rule says spacing and type should do. A border around the one thing on
+          the screen that is being read is the container the owner has objected
+          to four times now.
+
+          THE ATHLETE'S OWN MESSAGES KEEP THEIR FILL, and that is the rule
+          rather than an exception to it: a fill means "a named party said
+          this", which is exactly what a chat bubble is. Stripping both would
+          leave two voices in one column distinguished only by alignment.
+
+          Padding goes with the box on the coach's side: with no fill to sit
+          inside, `px-4` only pushed the reply out of line with the label above
+          it.
+        */}
         <div
           className={cn(
-            "whitespace-pre-line rounded-card px-4 py-3 text-[13px] leading-relaxed",
-            isCoach ? "border border-hairline bg-graphite text-snow/90" : "bg-elevated text-snow",
+            "whitespace-pre-line text-[13px] leading-relaxed",
+            isCoach ? "text-snow/90" : "rounded-card bg-elevated px-4 py-3 text-snow",
           )}
         >
           {/*
@@ -404,7 +425,15 @@ function Bubble({ message, reveal = false }: { message: CoachMessage; reveal?: b
             it would flatten a three-paragraph answer into one line the moment
             the animation ran.
           */}
-          {reveal ? <WordReveal text={message.body} /> : message.body}
+          {/* Slower than the component's default, on the owner's eye,
+              2026-09-11: "make the reply slithly slower". Tuned here rather
+              than in `WordReveal` so the component keeps a sensible default for
+              any other caller. */}
+          {reveal ? (
+            <WordReveal text={message.body} stagger={0.066} duration={0.46} />
+          ) : (
+            message.body
+          )}
         </div>
         {message.disclaimer && (
           <Disclaimer className="mt-2.5 text-left">{message.disclaimer}</Disclaimer>
