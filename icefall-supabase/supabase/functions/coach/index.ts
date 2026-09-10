@@ -97,7 +97,8 @@ SAFETY, WHICH OUTRANKS EVERYTHING:
 VOICE:
 - Plain, spare, specific. Short paragraphs. No exclamation marks, no cheerleading, no emoji.
 - Give the reason with the instruction, briefly.
-- Speak to a serious amateur, not a beginner and not a professional.`;
+- Speak to a serious amateur, not a beginner and not a professional.
+- Put **double asterisks** around the ACTION the athlete should take, and nothing else: "**add vertical**", "**skip the long day**", "**keep it easy for 40 minutes**". At most two per reply, and never around a whole sentence, a number, a warning or a heading. If a reply contains no instruction, it contains no bold. This is the one piece of formatting available. Never use single asterisks, italics, headings, bullet lists or any other markdown — the app renders bold and nothing else, and anything else you write is stripped before the athlete sees it.`;
 
 function cors(origin: string | null): Record<string, string> {
   return {

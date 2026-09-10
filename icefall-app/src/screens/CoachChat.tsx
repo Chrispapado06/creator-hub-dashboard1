@@ -429,11 +429,10 @@ function Bubble({ message, reveal = false }: { message: CoachMessage; reveal?: b
               2026-09-11: "make the reply slithly slower". Tuned here rather
               than in `WordReveal` so the component keeps a sensible default for
               any other caller. */}
-          {reveal ? (
-            <WordReveal text={message.body} stagger={0.066} duration={0.46} />
-          ) : (
-            message.body
-          )}
+          {/* Always `WordReveal`, animating only the reply that just arrived:
+              it is also what renders the coach's `**bold**` action, so a
+              message that took the plain path would print its asterisks. */}
+          <WordReveal text={message.body} animate={reveal} stagger={0.066} duration={0.46} />
         </div>
         {message.disclaimer && (
           <Disclaimer className="mt-2.5 text-left">{message.disclaimer}</Disclaimer>

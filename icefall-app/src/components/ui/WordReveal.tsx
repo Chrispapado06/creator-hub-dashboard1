@@ -43,9 +43,57 @@ import { motion, useReducedMotion } from "framer-motion";
  * streaming endpoint is ever wired up this component is the right shape to
  * receive it, but nothing here implies one exists.
  */
+/**
+ * THE ONE PIECE OF MARKDOWN THIS APP RENDERS: `**bold**`, and only that.
+ *
+ * The coach is asked, in the house rules on the server, to put double asterisks
+ * around the ACTION and nothing else — "**add vertical**", "**skip the long
+ * day**". Rendering it costs nothing at the model: a bold pair is a couple of
+ * output tokens, and the instruction lives in the system block, which is sent
+ * with `cache_control: ephemeral` and therefore read at about a tenth of the
+ * input rate.
+ *
+ * NO MARKDOWN LIBRARY, AND NO WIDER SUBSET. A parser that also does headings,
+ * lists, links and code is a parser that will one day render a heading in the
+ * middle of a chat bubble because the model felt like it — and it is a
+ * dependency, and it is an HTML-injection surface. This splits on `**` and
+ * alternates. Anything it does not understand stays as literal text, which is
+ * the safe direction: a stray asterisk is ugly, a swallowed sentence is not.
+ *
+ * An unclosed `**` leaves an odd number of pieces, so the final piece lands on
+ * an even index and renders plain. That is deliberate — a half-written bold
+ * marker should not turn the rest of the answer bold.
+ */
+export function parseBold(text: string): { text: string; bold: boolean }[] {
+  return text
+    .split(/\*\*/)
+    /*
+     * STRAY SINGLE ASTERISKS ARE STRIPPED, NOT RENDERED.
+     *
+     * The house rules tell the model bold is the only formatting available and
+     * to use no italics — and on the very first test it emitted *volume* and
+     * *consistency* anyway. A prompt is guidance, not a guarantee, so the
+     * renderer refuses the input rather than trusting the instruction: any
+     * asterisk left after the `**` split is markup the model was asked not to
+     * write, and showing it raw puts punctuation in the athlete's face that
+     * nobody intended.
+     *
+     * Safe here in a way it would not be generally: this renders COACH OUTPUT
+     * only. Nothing an athlete types passes through it.
+     */
+    .map((piece, i) => ({ text: piece.replace(/\*/g, ""), bold: i % 2 === 1 }))
+    .filter((p) => p.text !== "");
+}
+
 export function WordReveal({
   text,
   className,
+  /**
+   * False renders the finished text — same bold, no animation. Every coach
+   * message except the one that just arrived takes this path, and without it
+   * they would print their `**` markers as literal asterisks.
+   */
+  animate = true,
   /** Seconds between one word and the next. */
   stagger = 0.045,
   /** Seconds each word takes to arrive. */
@@ -53,6 +101,7 @@ export function WordReveal({
 }: {
   text: string;
   className?: string;
+  animate?: boolean;
   stagger?: number;
   duration?: number;
 }) {
@@ -63,7 +112,18 @@ export function WordReveal({
    * group is what makes `split` return the separators as well as the pieces —
    * without it every newline in the reply is silently eaten.
    */
-  const tokens = useMemo(() => text.split(/(\s+)/), [text]);
+  const segments = useMemo(() => parseBold(text), [text]);
+
+  /*
+   * Flattened to words ACROSS the segments, not within each one, so the stagger
+   * is one continuous count over the whole answer. Splitting per segment would
+   * restart the delay at every bold phrase and the reveal would stutter, then
+   * race, then stutter again.
+   */
+  const tokens = useMemo(
+    () => segments.flatMap((seg) => seg.text.split(/(\s+)/).map((t) => ({ t, bold: seg.bold }))),
+    [segments],
+  );
 
   /*
    * REDUCED MOTION GETS THE SENTENCE, NOT A FASTER SENTENCE. Somebody who has
@@ -71,13 +131,27 @@ export function WordReveal({
    * version of the animation; a staggered reveal at any speed is the thing they
    * switched off. So the text is simply there.
    */
-  if (reduce) return <span className={className}>{text}</span>;
+  if (reduce || !animate) {
+    return (
+      <span className={className}>
+        {segments.map((seg, i) =>
+          seg.bold ? (
+            <strong key={i} className="font-semibold text-snow">
+              {seg.text}
+            </strong>
+          ) : (
+            <Fragment key={i}>{seg.text}</Fragment>
+          ),
+        )}
+      </span>
+    );
+  }
 
   let wordIndex = -1;
 
   return (
     <span className={className}>
-      {tokens.map((token, i) => {
+      {tokens.map(({ t: token, bold }, i) => {
         /* Whitespace is re-emitted exactly as found, unanimated: it carries the
            line breaks, and a blurred newline is not a thing. */
         if (token === "") return null;
@@ -89,7 +163,7 @@ export function WordReveal({
             key={i}
             /* `inline-block` so the transform has a box to act on — a plain
                inline span ignores `y` entirely. */
-            className="inline-block"
+            className={bold ? "inline-block font-semibold text-snow" : "inline-block"}
             initial={{ opacity: 0, filter: "blur(6px)", y: 4 }}
             animate={{ opacity: 1, filter: "blur(0px)", y: 0 }}
             transition={{
