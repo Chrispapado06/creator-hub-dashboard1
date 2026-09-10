@@ -5,6 +5,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { Disclaimer } from "@/components/ui/primitives";
 import { IcefallMark } from "@/components/ui/IcefallMark";
 import { ShiningText } from "@/components/ui/ShiningText";
+import { WordReveal } from "@/components/ui/WordReveal";
 import { cn } from "@/lib/utils";
 import { SUGGESTED_PROMPTS, askCoach } from "@/services/coach";
 import { useCoachContext } from "@/coach/context";
@@ -65,6 +66,9 @@ export default function CoachChat() {
   const [messages, setMessages] = useState<CoachMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [thinking, setThinking] = useState(false);
+  /* The id of the reply currently writing itself out, or null. Deliberately one
+     id rather than a flag on the message — see where it is set. */
+  const [revealId, setRevealId] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -179,6 +183,20 @@ export default function CoachChat() {
       await new Promise((r) => setTimeout(r, MIN_VISIBLE_MS - shownFor));
     }
 
+    /*
+     * THE REPLY THAT JUST ARRIVED IS THE ONLY ONE THAT WRITES ITSELF OUT.
+     *
+     * The owner, 2026-09-11: after the thinking line, "you see it writing it"
+     * rather than the answer appearing whole. That is a reveal on ARRIVAL, not
+     * a property of a coach message — so it is keyed to this one id.
+     *
+     * Without the id every coach bubble in the thread would re-reveal on the
+     * next render: this list re-renders whenever anything on the screen
+     * changes, and an animation with no memory of having run replays each time.
+     * The athlete would watch the whole conversation rewrite itself every time
+     * they typed a character.
+     */
+    setRevealId(message.id);
     setMessages((m) => [...m, message]);
     setThinking(false);
   }
@@ -235,7 +253,7 @@ export default function CoachChat() {
           )}
 
           {messages.map((m) => (
-            <Bubble key={m.id} message={m} />
+            <Bubble key={m.id} message={m} reveal={m.id === revealId} />
           ))}
 
           <AnimatePresence>
@@ -356,7 +374,7 @@ export default function CoachChat() {
   );
 }
 
-function Bubble({ message }: { message: CoachMessage }) {
+function Bubble({ message, reveal = false }: { message: CoachMessage; reveal?: boolean }) {
   const isCoach = message.role === "coach";
 
   return (
@@ -379,7 +397,14 @@ function Bubble({ message }: { message: CoachMessage }) {
             isCoach ? "border border-hairline bg-graphite text-snow/90" : "bg-elevated text-snow",
           )}
         >
-          {message.body}
+          {/*
+            `whitespace-pre-line` above is why `WordReveal` re-emits its
+            whitespace verbatim rather than splitting on spaces: the reply's
+            paragraph breaks live in that whitespace, and a split that dropped
+            it would flatten a three-paragraph answer into one line the moment
+            the animation ran.
+          */}
+          {reveal ? <WordReveal text={message.body} /> : message.body}
         </div>
         {message.disclaimer && (
           <Disclaimer className="mt-2.5 text-left">{message.disclaimer}</Disclaimer>
