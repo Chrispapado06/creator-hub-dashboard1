@@ -20,6 +20,27 @@ import Home from "@/screens/Home";
 
 // Everything past the first paint is split, following the sibling apps' pattern.
 const Onboarding = lazy(() => import("@/screens/Onboarding"));
+
+/**
+ * Has this device ever been through onboarding?
+ *
+ * Read from storage rather than from `useApp()` because the "/" route sits
+ * OUTSIDE the provider — it is the route a cold start lands on, before the
+ * shell exists. It answers the same question `AppShell`'s gate answers, from
+ * the same key, which is the point: two guards reading different flags for one
+ * question is what left `?fresh=1` rendering a blank frame.
+ *
+ * Absent, unreadable or malformed all mean "no", which is the safe answer: a
+ * device that cannot prove it has onboarded is shown the way in.
+ */
+function onboardedAtBoot(): boolean {
+  try {
+    const raw = localStorage.getItem("icefall.state.v1");
+    return raw ? JSON.parse(raw)?.onboarded === true : false;
+  } catch {
+    return false;
+  }
+}
 const Messages = lazy(() => import("@/screens/chat/Messages"));
 const ChatThread = lazy(() => import("@/screens/chat/Thread"));
 const BookGuide = lazy(() => import("@/screens/booking/BookGuide"));
@@ -346,7 +367,24 @@ export default function App() {
           {/* Offline the athlete is already on the device and already
               onboarded, so the root URL opens the app rather than holding on
               the splash for 2.6 s and then deciding the same thing. */}
-          <Route path="/" element={DEMO ? <Navigate to="/home" replace /> : <Splash />} />
+          {/*
+            A DEMO BUILD SENDS "/" STRAIGHT TO /home — BUT ONLY ONCE THERE IS AN
+            ATHLETE TO SEND. With `?fresh=1` the demo device is wiped and
+            nothing is seeded, so `onboarded` is false, and this redirect met
+            AppShell's gate bouncing the other way: /home → "/" → /home, and the
+            routed area rendered neither. A blank frame under a correct banner —
+            the same two-guards-disagreeing shape `offline/seed.ts` records
+            hitting on its own first pass.
+
+            `Splash` is what a cold start is supposed to meet, and it already
+            knows where to send somebody who has not onboarded. So the demo
+            shortcut now asks the question the gate asks rather than a different
+            one.
+          */}
+          <Route
+            path="/"
+            element={DEMO && onboardedAtBoot() ? <Navigate to="/home" replace /> : <Splash />}
+          />
           <Route path="/welcome" element={<Welcome />} />
           <Route path="/auth/create" element={<CreateAccount />} />
           <Route path="/auth/signup" element={<SignUp />} />

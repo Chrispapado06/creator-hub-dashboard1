@@ -66,6 +66,42 @@ function seed() {
   if (typeof localStorage === "undefined") return;
 
   /*
+   * ?fresh=1 — WALK IN AS A BRAND NEW ATHLETE.
+   *
+   * The owner, 2026-09-10: "can you send me the onboarding one where you go
+   * though onboarding". They could not, and the reason is four lines below
+   * this one: the demo writes `onboarded: true`, which the header calls out as
+   * the ONLY render gate between a cold start and /home. So the demo build —
+   * the one that needs no email and no password — is precisely the build in
+   * which onboarding can never appear, and wiping the device does not help,
+   * because the next load seeds it again.
+   *
+   * This clears the whole demo device and seeds NOTHING, so the app meets the
+   * gate with `onboarded` false and runs the real Welcome → questionnaire →
+   * handle → connect → trial path with the real screens. Nothing is faked and
+   * no screen is special-cased: the flag only decides whether a sample athlete
+   * is written before the app reads.
+   *
+   * It is inside `if (!DEMO)`, so it exists in a demo build and nowhere else —
+   * a production bundle cannot be talked into wiping somebody's device with a
+   * query string. Re-running the tour is `?fresh=1` again; dropping the
+   * parameter and reloading returns the populated demo.
+   */
+  try {
+    if (new URLSearchParams(window.location.search).get("fresh") === "1") {
+      const doomed: string[] = [];
+      for (let i = 0; i < localStorage.length; i += 1) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith("icefall.")) doomed.push(k);
+      }
+      doomed.forEach((k) => localStorage.removeItem(k));
+      return;
+    }
+  } catch {
+    /* No storage, or no location. Fall through and seed as usual. */
+  }
+
+  /*
    * ONCE PER BROWSER, NOT ONCE PER PAGE LOAD — and this was a real bug, not a
    * tidy-up.
    *
