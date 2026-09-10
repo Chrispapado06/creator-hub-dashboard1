@@ -9,6 +9,14 @@ import { fmtDate, fmtElevation } from "@/lib/format";
 import { assessObjectiveReadiness } from "@/coach/mountainReadiness";
 import type { Dimension, DimensionResult, ObjectiveReadiness } from "@/coach/mountainReadiness";
 import { assessPeak } from "@/services/peakAssessment";
+import {
+  REFERENCE_NEXT_STEP,
+  REFERENCE_NO_READINESS,
+  REFERENCE_PLAN_NOTE,
+  TIER_EYEBROW,
+  TIER_STATEMENT,
+} from "@/services/peakTier";
+import { sync } from "@/services/repository";
 import { useRecordedActivities } from "@/tracking/feed";
 import { useApp, usePrimaryGoal } from "@/state/AppState";
 
@@ -60,7 +68,14 @@ import { useApp, usePrimaryGoal } from "@/state/AppState";
  * crash or an invented one.
  */
 export interface ReadinessResultState {
-  peak: { name: string; elevationM: number; lat?: number; lon?: number };
+  peak: {
+    name: string;
+    elevationM: number;
+    lat?: number;
+    lon?: number;
+    /** The curated record's id. Absent for a reference entry — which is then not scored. */
+    curatedId?: string;
+  };
   /** ISO date the athlete intends to attempt it. Absent when they gave none. */
   targetDate?: string;
   /**
@@ -136,7 +151,13 @@ function parseNavState(raw: unknown): ReadinessResultState | null {
   const fit = sr && isRecord(sr.fitness) ? sr.fitness : undefined;
 
   return {
-    peak: { name, elevationM, lat: finite(raw.peak.lat), lon: finite(raw.peak.lon) },
+    peak: {
+      name,
+      elevationM,
+      lat: finite(raw.peak.lat),
+      lon: finite(raw.peak.lon),
+      curatedId: text(raw.peak.curatedId),
+    },
     targetDate: isoDate(raw.targetDate),
     selfReported: sr
       ? {
@@ -411,6 +432,61 @@ function RequirementRow({
 }
 
 /* -------------------------------------------------------------------------- */
+/* A reference entry — nothing to score against                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The payoff for a peak ICEFALL has not surveyed. The engine is not run: every
+ * dimension it scores is measured against an elevation band's benchmarks, and
+ * `professionalAdvice` is the band's guide verdict — which on a reference
+ * entry is a judgement nobody made. The screen says what the page is and
+ * where the grade lives, and offers the plan, which is labelled as a general
+ * altitude programme wherever it appears.
+ */
+function ReferenceResult({ objective }: { objective: ReadinessResultState }) {
+  const navigate = useNavigate();
+  const { account } = useApp();
+  const { peak } = objective;
+  return (
+    <FunnelScreen
+      eyebrow="Readiness assessment"
+      title={peak.name}
+      subtitle={`${fmtElevation(peak.elevationM)} m · ${TIER_EYEBROW.reference}`}
+      back="/home"
+    >
+      <Rise className="mt-8">
+        <Card className="p-5">
+          <p className="section-label text-mist-dim">No readiness figure</p>
+          <p className="mt-3 text-[13px] leading-relaxed text-mist">{REFERENCE_NO_READINESS}</p>
+        </Card>
+      </Rise>
+      <Rise className="mt-4">
+        <Card className="p-5">
+          <p className="section-label text-[9px] text-mist-dim">{TIER_EYEBROW.reference}</p>
+          <p className="mt-2 text-[12px] leading-relaxed text-mist">{TIER_STATEMENT.reference}</p>
+          <p className="mt-2 text-[12px] leading-relaxed text-mist-dim">{REFERENCE_NEXT_STEP}</p>
+        </Card>
+      </Rise>
+      <Rise className="mt-10">
+        <div className="border-t border-hairline pt-7">
+          <p className="text-[13px] leading-relaxed text-mist">{REFERENCE_PLAN_NOTE}</p>
+          <Button
+            className="mt-6 w-full"
+            onClick={() => navigate(account ? "/coach/plan" : "/auth/create")}
+          >
+            Build my training plan
+            <ArrowRight size={16} strokeWidth={1.8} />
+          </Button>
+          <Button variant="secondary" className="mt-3 w-full" onClick={() => navigate("/home")}>
+            Not now
+          </Button>
+        </div>
+      </Rise>
+    </FunnelScreen>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
 /* Empty state — no objective to assess                                        */
 /* -------------------------------------------------------------------------- */
 
@@ -467,6 +543,7 @@ export default function ReadinessResult() {
           elevationM: goal.elevationM,
           lat: goal.lat,
           lon: goal.lon,
+          curatedId: goal.mountainId,
         },
         targetDate: goal.targetDate,
         selfReported: undefined,
@@ -489,8 +566,11 @@ export default function ReadinessResult() {
     [objectives],
   );
 
+  /** The human-written record. A reference entry has none and is not scored. */
+  const curated = objective?.peak.curatedId ? sync.mountainById(objective.peak.curatedId) : undefined;
+
   const readiness = useMemo<ObjectiveReadiness | null>(() => {
-    if (!objective) return null;
+    if (!objective || !curated) return null;
     return assessObjectiveReadiness({
       peak: objective.peak,
       activities,
@@ -511,9 +591,10 @@ export default function ReadinessResult() {
       },
       now,
     });
-  }, [objective, activities, summitsLogged, coachProfile, now]);
+  }, [objective, curated, activities, summitsLogged, coachProfile, now]);
 
-  if (!objective || !readiness) return <NoObjective />;
+  if (!objective) return <NoObjective />;
+  if (!curated || !readiness) return <ReferenceResult objective={objective} />;
 
   const { peak, targetDate } = objective;
   const gap = readiness.biggestGap;
@@ -529,7 +610,8 @@ export default function ReadinessResult() {
 
   // Same call the engine makes internally (latitude only shapes the season
   // window, which is not surfaced here), used solely to explain why a composite
-  // on this class of objective is held below full marks.
+  // on this class of objective is held below full marks. Never printed as a
+  // grade: the subtitle carries the grade a person wrote.
   const assessment = assessPeak(peak.elevationM, peak.lat ?? 0, peak.lon);
 
   /**
@@ -559,7 +641,7 @@ export default function ReadinessResult() {
     <FunnelScreen
       eyebrow="Readiness assessment"
       title={peak.name}
-      subtitle={`${fmtElevation(peak.elevationM)} m · ${assessment.shortLabel}`}
+      subtitle={`${fmtElevation(peak.elevationM)} m · ${curated.difficultyLabel}`}
       back="/home"
     >
       {/* ---- The score ---------------------------------------------------- */}

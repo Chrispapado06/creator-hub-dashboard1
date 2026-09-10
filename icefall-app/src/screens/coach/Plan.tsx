@@ -7,6 +7,7 @@ import { isoDate } from "@/data/mock/clock";
 import { FOCUS_LABELS, fmtDistance, fmtElevation } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/state/AppState";
+import { REFERENCE_PLAN_NOTE } from "@/services/peakTier";
 import { useTraining } from "@/tracking/training";
 import type { TrainingDay, TrainingWeek } from "@/types";
 import { ACCENT, Chip, CoachCard, CoachHead, Eyebrow, ON_PRIMARY, PRIMARY, TINT } from "./shell";
@@ -148,6 +149,14 @@ export default function Plan() {
                   {PHASE_PURPOSE[prefix ?? ""] ?? week.block}
                 </p>
 
+                {/* The plan's own label. It was on the Training screen and the
+                    older CoachPlan, and this — the routed /coach/plan — had none. */}
+                {training.goal && !training.goal.mountainId && (
+                  <p className="mt-2.5 text-[12px] leading-relaxed text-mist-dim">
+                    {REFERENCE_PLAN_NOTE}
+                  </p>
+                )}
+
                 {training.preparation && (
                   <div className="mt-4">
                     <div className="h-2 w-full overflow-hidden rounded-full" style={{ backgroundColor: TINT.blue }}>
@@ -159,9 +168,15 @@ export default function Plan() {
                         }}
                       />
                     </div>
+                    {/* The CONSISTENCY part, not the composite: the composite
+                        also holds time-in-build (and, on a surveyed mountain,
+                        capability), so printing it under "of prescribed
+                        sessions completed" was a false label — 36% shown where
+                        2 of 4 sessions was the fact. */}
                     <p className="tnum mt-2 text-[12px] text-mist">
-                      {training.preparation.percent}% of prescribed sessions completed — not a
-                      readiness figure.
+                      {training.preparation.parts.find((p) => p.label === "Consistency")?.percent ??
+                        training.preparation.percent}
+                      % of prescribed sessions completed — not a readiness figure.
                     </p>
                   </div>
                 )}

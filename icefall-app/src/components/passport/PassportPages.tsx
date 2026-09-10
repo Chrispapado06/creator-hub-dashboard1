@@ -1,4 +1,5 @@
 import { useEffect, useId } from "react";
+import { REFERENCE_NO_READINESS_SHORT, TIER_EYEBROW } from "@/services/peakTier";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Printer, X } from "lucide-react";
@@ -687,8 +688,10 @@ function ObjectiveRow({ objective }: { objective: PassportObjective }) {
       </div>
       <p className="tnum mt-[3px] text-[9.5px] text-mist-dim">
         {objective.elevationM !== undefined && `${fmtElevation(objective.elevationM)} m`}
-        {objective.elevationM !== undefined && objective.classLabel ? " · " : ""}
-        {objective.classLabel}
+        {objective.elevationM !== undefined && (objective.classLabel || objective.unsurveyed)
+          ? " · "
+          : ""}
+        {objective.unsurveyed ? TIER_EYEBROW.reference : objective.classLabel}
       </p>
 
       <div className="mt-2 flex flex-wrap items-start gap-x-5 gap-y-2">
@@ -708,7 +711,11 @@ function ObjectiveRow({ objective }: { objective: PassportObjective }) {
         </div>
         <div className="min-w-0">
           <p className="section-label text-[7.5px]">Readiness</p>
-          {objective.readiness.value === null ? (
+          {objective.unsurveyed ? (
+            // Not withheld for want of data — there is nothing to measure
+            // against. The reason is the tier, and it is named.
+            <p className="mt-1 text-[10px] leading-snug text-mist">{REFERENCE_NO_READINESS_SHORT}</p>
+          ) : objective.readiness.value === null ? (
             // Withheld, with the reason. mountainReadiness refuses a composite
             // whenever a dimension the objective turns on is unknown, and the
             // page must not quietly present that as a low score.

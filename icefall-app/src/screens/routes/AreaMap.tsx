@@ -245,7 +245,22 @@ export function FindMap({
 
   return (
     <div className="absolute inset-0 overflow-hidden bg-slate">
-      <div ref={holder} className="absolute inset-0" />
+      {/*
+        SIZED BY `h-full w-full`, NOT BY `absolute inset-0`.
+
+        MapLibre's own stylesheet puts `position: relative` on this exact
+        element (`.maplibregl-map`), and that sheet loads AFTER Tailwind's in
+        both the dev and the production build, because this screen is a lazy
+        chunk and MapLibre's CSS travels with it (`assets/maplibre-gl-*.css`).
+        Same specificity, later sheet wins: its `relative` beat Tailwind's
+        `.absolute`, `inset-0` then had nothing to size, and the holder
+        collapsed to 0px tall — a blank pane above the sheet while the map
+        reported "ready". Percent sizing off the `absolute inset-0` parent
+        above holds whichever `position` wins and whichever order the
+        stylesheets load in — the same way `TerrainMap` and `RouteWaypointMap`
+        size theirs.
+      */}
+      <div ref={holder} className="h-full w-full" />
 
       {/* Said while it is true, and gone the moment it is not. */}
       {status !== "ready" && (

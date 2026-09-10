@@ -1,6 +1,6 @@
 import { haversine } from "@/tracking/filters";
 import { OVERPASS_TIMEOUT_MS, PEAKS_TIMEOUT_MS, withTimeout } from "@/lib/netTimeout";
-import { displayName } from "./peakNames";
+import { displayName, isLatin } from "./peakNames";
 import { MOUNTAINS } from "@/data/mock/mountains";
 import { OFFLINE } from "@/offline/offline";
 import { offlineNearbyPeaks } from "@/offline/fixtures";
@@ -31,10 +31,32 @@ export interface Peak {
   /** Country name, when a geocoder supplied one. */
   country?: string;
   /**
+   * WHERE `country` CAME FROM, named so the screen can attribute it honestly.
+   *
+   * The two sources are not interchangeable and the peak page prints the
+   * source under the value. A bundled peak was placed by point-in-polygon
+   * against Natural Earth's 10 m boundaries at build time; a live search
+   * result carries whatever the Photon geocoder returned for the query. Saying
+   * "Natural Earth" over the second would be a claim about provenance that is
+   * simply untrue.
+   */
+  countrySource?: "Natural Earth" | "Photon geocoder";
+  /**
    * The name on the local map, when `name` is an English or romanised form of
    * it. Kept so the athlete can match a card against a signpost.
    */
   localName?: string;
+  /**
+   * OSM's `name:en` when the local name is ALREADY Latin script and so keeps
+   * the title — "Ağrı Dağı" stays the name, and this holds "Mount Ararat".
+   *
+   * It used to be thrown away: `packedToPeak` only read `x` when the local name
+   * could not be read, so 316 English names in the catalogue were unreachable.
+   * Measured 2026-09-11: "Ararat" found the 2,480 m Greenland one and, only
+   * when Photon was online, the 5,137 m Turkish one third. Searched and shown
+   * beneath the name; it never replaces the mapper's own.
+   */
+  englishName?: string;
   /** OSM's Wikidata id — the key to a verified photograph, see peakWikidata.ts. */
   wikidata?: string;
   /** A photograph of THIS peak, once one has been resolved. */
@@ -51,6 +73,27 @@ interface PackedPeak {
   o: number;
   w?: string;
   v?: number;
+  /**
+   * OSM's `wikidata` tag — the peak's exact entity id, e.g. "Q503433".
+   *
+   * THE IDENTITY LINK, and for a long time the builder threw it away. It is
+   * what resolves a photograph and every harvested fact, and it is an EXACT
+   * ENTITY MATCH rather than a name or a coordinate, which is the only kind of
+   * match this project trusts for imagery. Measured 2026-09-10: OSM carries it
+   * on 63.9% of Alpine peaks above 3,000 m against 26.2% for `wikipedia`, so
+   * capturing it roughly two-and-a-half times the resolvable set.
+   */
+  d?: string;
+  /**
+   * OSM's `name:en`, when it has one and it differs from `name`.
+   *
+   * The catalogue used to store only the local name, so it held 富士山, دماوند
+   * and Эльбрус Западный — and OFFLINE SEARCH FOR "Mount Fuji" RETURNED
+   * NOTHING, because search matches the stored name. `enrichPeaks()` fixes
+   * this at runtime from Wikidata, but that needs a network and only covers
+   * the peaks it is asked about.
+   */
+  x?: string;
   /**
    * Country, stamped into the bundle offline.
    *
@@ -100,16 +143,31 @@ export const PEAK_ATTRIBUTION = "Peak data © OpenStreetMap contributors (ODbL)"
 
 let bundlePromise: Promise<Peak[]> | null = null;
 
-const packedToPeak = (p: PackedPeak): Peak => ({
-  id: `osm:${p.a.toFixed(4)},${p.o.toFixed(4)}`,
-  name: p.n,
-  elevationM: p.e,
-  lat: p.a,
-  lon: p.o,
-  wikipedia: p.w,
-  volcano: p.v === 1,
-  country: p.c,
-});
+export const packedToPeak = (p: PackedPeak): Peak => {
+  /*
+   * Show the English name only when the local one cannot be read by someone
+   * who does not read the script — the same test `enrichPeaks()` applies, so
+   * the offline and online paths agree. A mapper's own Latin name outranks
+   * ours: "Jbel Toubkal" stays as it is even though `name:en` exists — but the
+   * English name is KEPT beside it (`englishName`), not discarded, so it can
+   * still be searched for and read.
+   */
+  const upgrade = Boolean(p.x) && !isLatin(p.n);
+  return {
+    id: `osm:${p.a.toFixed(4)},${p.o.toFixed(4)}`,
+    name: upgrade ? p.x! : p.n,
+    localName: upgrade ? p.n : undefined,
+    englishName: !upgrade && p.x && p.x !== p.n ? p.x : undefined,
+    elevationM: p.e,
+    lat: p.a,
+    lon: p.o,
+    wikipedia: p.w,
+    wikidata: p.d,
+    volcano: p.v === 1,
+    country: p.c,
+    countrySource: p.c ? "Natural Earth" : undefined,
+  };
+};
 
 /**
  * Curated mountains are matched by name so they keep their rich page.
@@ -126,19 +184,100 @@ const packedToPeak = (p: PackedPeak): Peak => ({
  * The elevation tolerance absorbs the small disagreements between OSM and the
  * curated figures (4,807 vs 4,806; 3,970 vs 3,967).
  */
-function withCurated(peak: Peak): Peak {
-  const aliases = peak.name
-    .toLowerCase()
-    .split("/")
-    .map((s) => s.trim());
+/**
+ * A LEADING "MOUNT" IS NOT A DIFFERENT MOUNTAIN.
+ *
+ * The curated record is called "Everest"; OSM's English name for the same
+ * summit node is "Mount Everest". Exact matching therefore missed, and a search
+ * for "Everest" returned the curated objective AND a separate reference entry
+ * for the same rock — the two tiers, side by side, for one mountain. Same for
+ * "Denali" / "Mount Denali" and "Kilimanjaro" / "Mount Kilimanjaro".
+ *
+ * This stays an EXACT match, just after normalising a generic leading noun. It
+ * is not the substring test that let "Mont Blanc du Tacul" impersonate Mont
+ * Blanc — "blanc du tacul" still does not equal "blanc" — and the elevation and
+ * distance guards below are untouched.
+ */
+/*
+ * "Cerro", "Pico", "Nevado", "Volcán", "Jbel" and "Pik" are the same kind of
+ * word as "Mount" in their own languages. The list stopped at the English and
+ * Alpine ones, so OSM's "Cerro Aconcagua" never equalled the curated
+ * "Aconcagua" and the 6,961 m summit rendered a SECOND page — a reference
+ * entry saying "ICEFALL has not surveyed it" — for a mountain whose record
+ * says a guide is required. Found 2026-09-11 by replaying this function over
+ * all 53,668 catalogue rows against the fourteen curated records.
+ */
+const stripLeadingGeneric = (s: string) =>
+  s.replace(/^(mount|mont|monte|mt\.?|the|cerro|pico|nevado|volc[aá]n|jbel|pik)\s+/i, "").trim();
+
+/**
+ * THE NAME ON THE OSM SUMMIT NODE, where it is not the mountain's name.
+ *
+ * Two curated objectives are mapped under the name of their highest POINT
+ * rather than the mountain: Kilimanjaro's node is "Uhuru Peak" (its summit
+ * cone, "Kibo", is a second node 1.4 km away at the same height), and Mount
+ * Olympus's is "Μύτικας" / "Mytikas", its highest summit. No leading-noun rule
+ * turns "Uhuru Peak" into "Kilimanjaro", so the link is written down here as a
+ * fact about the map. Lower-cased; the elevation and distance guards in
+ * `withCurated` still apply, so a homonym elsewhere cannot borrow the record.
+ *
+ * Kept HERE rather than on the curated record: `data/mock/mountains.ts` holds
+ * the human judgement about each mountain, and a mapping quirk is not that.
+ */
+const CATALOGUE_ALIASES: Record<string, string[]> = {
+  kilimanjaro: ["uhuru peak", "kibo"],
+  "mount-olympus": ["mytikas", "μύτικας"],
+};
+
+export function withCurated(peak: Peak): Peak {
+  const aliases = new Set<string>();
+  // The displayed name, the local one it may have replaced, the English one
+  // it kept beside a Latin local name, and all of them again without a leading
+  // generic noun.
+  for (const source of [peak.name, peak.localName, peak.englishName]) {
+    if (!source) continue;
+    for (const part of source.toLowerCase().split("/")) {
+      const trimmed = part.trim();
+      if (!trimmed) continue;
+      aliases.add(trimmed);
+      aliases.add(stripLeadingGeneric(trimmed));
+    }
+  }
 
   const hit = MOUNTAINS.find(
     (m) =>
-      aliases.includes(m.name.toLowerCase()) &&
+      (aliases.has(m.name.toLowerCase()) ||
+        aliases.has(stripLeadingGeneric(m.name.toLowerCase())) ||
+        (CATALOGUE_ALIASES[m.id] ?? []).some((a) => aliases.has(a))) &&
       Math.abs(peak.elevationM - m.elevationM) <= 50 &&
       haversine(peak, { lat: m.coords.lat, lon: m.coords.lon }) < 2000,
   );
   return hit ? { ...peak, curatedId: hit.id } : peak;
+}
+
+/**
+ * The bundled rows, in `Peak` shape and linked to the curated records.
+ *
+ * Pure — no fetch — so `services/peaks.test.ts` can run it over the real
+ * `public/data/peaks.json` and prove that every curated objective resolves to
+ * exactly the catalogue node it should. The build script's `must` list only
+ * proves a famous name is PRESENT in the file; it cannot tell that "Uhuru
+ * Peak" is there and unlinked.
+ */
+export function hydrateCatalogue(rows: PackedPeak[]): Peak[] {
+  return rows.map(packedToPeak).map(withCurated);
+}
+
+/**
+ * The other name a row is known by, for the line under a card's title: the
+ * local script when the title is English (富士山 under Mount Fuji), or the
+ * English name when the title is the mapper's Latin one (Mount Ararat under
+ * Ağrı Dağı). A row holds one or the other, never both.
+ */
+export function otherName(p: Pick<Peak, "name" | "localName" | "englishName">): string | undefined {
+  if (p.localName && p.localName !== p.name) return p.localName;
+  if (p.englishName && p.englishName !== p.name) return p.englishName;
+  return undefined;
 }
 
 /** The curated ten, in `Peak` shape — the offline floor for the catalogue. */
@@ -156,7 +295,7 @@ export function loadPeakCatalogue(): Promise<Peak[]> {
   if (!bundlePromise) {
     bundlePromise = fetch(BUNDLE_URL)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then((rows: PackedPeak[]) => rows.map(packedToPeak).map(withCurated))
+      .then((rows: PackedPeak[]) => hydrateCatalogue(rows))
       .catch(() => {
         // Offline before the catalogue was ever cached — fall back to the
         // curated mountains so the screen is never empty.
@@ -204,13 +343,54 @@ export async function nearbyFromCatalogue(
 }
 
 export async function searchCatalogueByName(query: string, limit = 30): Promise<Peak[]> {
+  const all = await loadPeakCatalogue();
+  return searchCatalogue(all, query, limit);
+}
+
+/**
+ * Every name a catalogue row can be found under.
+ *
+ * The displayed name, the local name it may have replaced, the English name
+ * kept beside a Latin local one, and — for a row linked to a curated record —
+ * the curated name itself. The last is what makes "Kilimanjaro" findable
+ * offline: the summit node is called "Uhuru Peak", and before this the
+ * catalogue answered that query with nothing at all.
+ */
+function searchableNames(p: Peak): string[] {
+  const curated = p.curatedId ? MOUNTAINS.find((m) => m.id === p.curatedId)?.name : undefined;
+  return [p.name, p.localName, p.englishName, curated].filter((s): s is string => Boolean(s));
+}
+
+/**
+ * The catalogue half of search, as a pure function over rows.
+ *
+ * Ranked by HOW the name matches before elevation, and ranked BEFORE the cut.
+ * It used to sort by height alone and slice, then `searchPeaks` re-ranked the
+ * survivors: for "fuji" the six tallest substring matches were taken first and
+ * Mount Fuji came sixth behind Fuji Mountain, Fujidanayama and Fujimidai; for
+ * "everest" the 8,749 m south peak led. Ranking the whole match set first
+ * means the exact name is never cut before it can be ranked.
+ *
+ * Rows linked to the same curated record collapse to one: Kilimanjaro's summit
+ * is mapped twice ("Uhuru Peak" and "Kibo", both 5,895 m) and both now link
+ * to the curated objective, which is one mountain and one row.
+ */
+export function searchCatalogue(all: Peak[], query: string, limit = 30): Peak[] {
   const q = query.trim().toLowerCase();
   if (q.length < 2) return [];
-  const all = await loadPeakCatalogue();
-  return all
-    .filter((p) => p.name.toLowerCase().includes(q))
-    .sort((a, b) => b.elevationM - a.elevationM)
-    .slice(0, limit);
+  const matched = all.filter((p) => searchableNames(p).some((n) => n.toLowerCase().includes(q)));
+  const ranked = rankByName(matched, q);
+  const out: Peak[] = [];
+  const curatedSeen = new Set<string>();
+  for (const p of ranked) {
+    if (p.curatedId) {
+      if (curatedSeen.has(p.curatedId)) continue;
+      curatedSeen.add(p.curatedId);
+    }
+    out.push(p);
+    if (out.length >= limit) break;
+  }
+  return out;
 }
 
 /**
@@ -628,6 +808,7 @@ export async function searchPeaksGlobal(query: string, signal?: AbortSignal): Pr
           lon: h.lon,
           wikipedia: d.wikipedia,
           country: h.country,
+          countrySource: h.country ? "Photon geocoder" : undefined,
           volcano: h.volcano,
         }),
       );
@@ -656,28 +837,59 @@ export async function searchPeaks(query: string, signal?: AbortSignal): Promise<
  * Exact name first, then names starting with the query, then a word inside the
  * name starting with it, then any substring. Ties break on elevation, because
  * between two peaks sharing a name the higher one is the one people mean.
+ *
+ * A leading "Mount" does not count against the exact match: "Mount Fuji" IS the
+ * exact answer to "fuji", and until this was stripped it tied with "Fujiyama"
+ * and lost on height to five other Fuji-somethings. Every name the row can be
+ * found under is tried and the best tier wins, so "Ararat" ranks Ağrı Dağı by
+ * its English name rather than by a substring it does not contain.
  */
-function rankByName(peaks: Peak[], query: string): Peak[] {
+export function rankByName(peaks: Peak[], query: string): Peak[] {
   const q = query.trim().toLowerCase();
   if (!q) return peaks;
 
-  const tier = (name: string): number => {
+  const tierOfName = (name: string): number => {
     const n = name.toLowerCase();
-    if (n === q) return 0;
-    if (n.startsWith(q)) return 1;
+    const bare = stripLeadingGeneric(n);
+    if (n === q || bare === q) return 0;
+    if (n.startsWith(q) || bare.startsWith(q)) return 1;
     if (n.split(/[\s/(),-]+/).some((w) => w.startsWith(q))) return 2;
     return 3;
   };
+  const tier = (p: Peak) => Math.min(...searchableNames(p).map(tierOfName));
+
+  /*
+   * Within a tier, two FACTS break the tie before height does. A row ICEFALL
+   * has surveyed leads: "olympus" is the Greek one with the curated record, not
+   * the 3,088 m Mount Olympus in Alberta. Then a row OSM's own mappers tagged
+   * with a Wikipedia article: seven summits are called Ben Nevis and the
+   * Scottish one, at 1,345 m, is the lowest but one — height alone put South
+   * Africa's 2,682 m Ben Nevis first, and the tag is what says which of them
+   * has an article written about it. Height decides only after both.
+   */
+  const curated = (p: Peak) => (p.curatedId ? 1 : 0);
+  const article = (p: Peak) => (p.wikipedia ? 1 : 0);
 
   // Copy first: callers pass arrays they still hold.
-  return [...peaks].sort((a, b) => tier(a.name) - tier(b.name) || b.elevationM - a.elevationM);
+  return [...peaks].sort(
+    (a, b) =>
+      tier(a) - tier(b) ||
+      curated(b) - curated(a) ||
+      article(b) - article(a) ||
+      b.elevationM - a.elevationM,
+  );
 }
 
 function mergeByName(base: Peak[], extra: Peak[]): Peak[] {
-  const seen = new Set(base.map((p) => `${p.name.toLowerCase()}|${p.elevationM}`));
+  // A row linked to a curated record is that record, whatever the node was
+  // called — the live search and the catalogue must not list one mountain
+  // twice because Overpass said "Cerro Aconcagua" and the bundle said the same.
+  const keyOf = (p: Peak) =>
+    p.curatedId ? `curated:${p.curatedId}` : `${p.name.toLowerCase()}|${p.elevationM}`;
+  const seen = new Set(base.map(keyOf));
   const out = [...base];
   for (const p of extra) {
-    const key = `${p.name.toLowerCase()}|${p.elevationM}`;
+    const key = keyOf(p);
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(p);

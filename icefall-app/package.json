@@ -8,13 +8,20 @@
     "build": "tsc && vite build && node scripts/strip-local-assets.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "npm run test:tracking && npm run test:conditions && npm run test:scroll && npm run test:treks && npm run test:follow",
+    "test": "npm run test:tracking && npm run test:conditions && npm run test:scroll && npm run test:treks && npm run test:follow && npm run test:peaks",
     "test:tracking": "esbuild src/tracking/tracking.test.ts --bundle --platform=node --format=esm --log-level=warning --outfile=node_modules/.icefall-tests/tracking.test.mjs && node node_modules/.icefall-tests/tracking.test.mjs",
     "test:conditions": "esbuild src/services/conditions.test.ts --bundle --platform=node --format=esm --log-level=warning --define:import.meta.env={} --alias:@=./src --outfile=node_modules/.icefall-tests/conditions.test.mjs && node node_modules/.icefall-tests/conditions.test.mjs",
     "test:scroll": "esbuild src/components/layout/scroll.test.ts --bundle --platform=node --format=esm --log-level=warning --outfile=node_modules/.icefall-tests/scroll.test.mjs && node node_modules/.icefall-tests/scroll.test.mjs",
     "test:treks": "esbuild src/treks/route.test.ts --bundle --platform=node --format=esm --log-level=warning --alias:@=./src --outfile=node_modules/.icefall-tests/treks.test.mjs && node node_modules/.icefall-tests/treks.test.mjs",
     "peaks": "node scripts/build-peak-catalogue.mjs",
-    "test:follow": "esbuild src/tracking/follow.test.ts --bundle --platform=node --format=esm --log-level=warning --define:import.meta.env={} --alias:@=./src --outfile=node_modules/.icefall-tests/follow.test.mjs && node node_modules/.icefall-tests/follow.test.mjs"
+    "test:peaks": "esbuild src/services/peaks.test.ts --bundle --platform=node --format=esm --log-level=warning --define:import.meta.env={} --alias:@=./src --outfile=node_modules/.icefall-tests/peaks.test.mjs && node node_modules/.icefall-tests/peaks.test.mjs",
+    "test:follow": "esbuild src/tracking/follow.test.ts --bundle --platform=node --format=esm --log-level=warning --define:import.meta.env={} --alias:@=./src --outfile=node_modules/.icefall-tests/follow.test.mjs && node node_modules/.icefall-tests/follow.test.mjs",
+    "peaks:world": "node scripts/build-peak-catalogue.mjs --world",
+    "peak-facts": "node scripts/harvest-peak-facts.mjs",
+    "peak-photos": "node scripts/harvest-peak-photos.mjs",
+    "peaks:all": "npm run peaks:world && npm run peak-facts && npm run peak-photos",
+    "peaks:tradeoff": "node scripts/peak-floor-tradeoff.mjs",
+    "peaks:rebuild": "node scripts/build-peak-catalogue.mjs --world --report"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.6",

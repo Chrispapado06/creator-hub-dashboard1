@@ -63,6 +63,8 @@ export interface SavedObjective {
   photo?: string;
   /** OSM `wikipedia` tag — resolves the peak's photograph. */
   wikipedia?: string;
+  /** OSM `wikidata` tag — the exact entity, resolving facts and photograph. */
+  wikidata?: string;
   addedAt: string;
   /** ISO date the summit was reached. Undefined until marked done. */
   summitedAt?: string;

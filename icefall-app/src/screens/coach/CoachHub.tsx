@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { REFERENCE_PLAN_NOTE } from "@/services/peakTier";
 import { Link, useNavigate } from "react-router-dom";
 import {
   ArrowRight,
@@ -556,6 +557,7 @@ export default function CoachHub() {
             day={today}
             tiles={tiles}
             hasGoal={Boolean(intel.goal)}
+            surveyed={intel.goal?.surveyed ?? true}
             /* The briefing can hold today's session down — illness, a hard day
                yesterday, a load spike. When its focus differs from the plan's,
                the plan's day is shown with that said beside it rather than
@@ -831,6 +833,7 @@ function TodayCard({
   day,
   tiles,
   hasGoal,
+  surveyed,
   eased,
   easedStatus,
   cold,
@@ -838,6 +841,8 @@ function TodayCard({
   day: TrainingDay | undefined;
   tiles: Tile[];
   hasGoal: boolean;
+  /** False for a reference goal: the plan's own label then travels with the session. */
+  surveyed: boolean;
   eased: boolean;
   easedStatus: string;
   cold: boolean;
@@ -933,6 +938,15 @@ function TodayCard({
               >
                 Nothing is recorded yet, so this is the plan's prescription rather than a read of
                 your form.
+              </p>
+            )}
+
+            {!surveyed && (
+              <p
+                className="mt-3 text-[12px] leading-relaxed"
+                style={{ color: "rgba(255,255,255,0.62)" }}
+              >
+                {REFERENCE_PLAN_NOTE}
               </p>
             )}
 

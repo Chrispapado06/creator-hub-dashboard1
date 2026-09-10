@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { REFERENCE_NO_KIT_LIST, REFERENCE_NO_READINESS } from "@/services/peakTier";
 import { DateField } from "@/components/ui/DateField";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
@@ -144,6 +145,13 @@ interface GroupPeak {
   wikipedia?: string;
   /** The athlete's goal for this mountain, when they have one. */
   goalId?: string;
+  /**
+   * The curated record's id, when the group's mountain is one ICEFALL has
+   * surveyed. Readiness and the shared kit list are derived from an elevation
+   * band, and for a reference entry that band is the only "assessment" there
+   * is — so both are withheld without it, the same as on the goal's own pages.
+   */
+  curatedId?: string;
 }
 
 /**
@@ -185,6 +193,7 @@ function useGroupPeak(group: Expedition): GroupPeak {
       photo: goal?.photo ?? objective?.photo,
       wikipedia: goal?.wikipedia ?? objective?.wikipedia,
       goalId: goal?.id,
+      curatedId: goal?.mountainId ?? objective?.curatedId,
     };
   }, [group.peakName, group.elevationM, goals, objectives]);
 }
@@ -212,7 +221,7 @@ interface DerivedReadiness {
 function useMemberReadiness(peak: GroupPeak): DerivedReadiness {
   const { objectives, coachProfile } = useApp();
   const activities = useRecordedActivities();
-  const { name, elevationM, lat, lon } = peak;
+  const { name, elevationM, lat, lon, curatedId } = peak;
 
   return useMemo<DerivedReadiness>(() => {
     if (typeof elevationM !== "number" || !Number.isFinite(elevationM)) {
@@ -220,6 +229,13 @@ function useMemberReadiness(peak: GroupPeak): DerivedReadiness {
         score: unavailable("no-data"),
         qualifier: "estimated",
         note: `No elevation is recorded for ${name}, and ICEFALL reads the class of an objective from its elevation. There is nothing to assess against rather than a guess at one.`,
+      };
+    }
+    if (!curatedId) {
+      return {
+        score: unavailable("no-data"),
+        qualifier: "estimated",
+        note: `${name} is a reference entry. ${REFERENCE_NO_READINESS}`,
       };
     }
 
@@ -265,7 +281,7 @@ function useMemberReadiness(peak: GroupPeak): DerivedReadiness {
       qualifier: selfReported ? "self-reported" : "estimated",
       note,
     };
-  }, [name, elevationM, lat, lon, activities, objectives, coachProfile]);
+  }, [curatedId, name, elevationM, lat, lon, activities, objectives, coachProfile]);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -769,12 +785,15 @@ function SharedChecklist({ group, peak }: { group: Expedition; peak: GroupPeak }
 
   const elevationM = peak.elevationM;
 
+  // Surveyed mountains only: the generator reads an elevation band, and on a
+  // reference entry that would put crampons on a volcano with no glacier
+  // (`REFERENCE_NO_KIT_LIST` records the case).
   const generated = useMemo(
     () =>
-      typeof elevationM === "number"
+      typeof elevationM === "number" && peak.curatedId
         ? generateChecklist({ name: peak.name, elevationM, lat: peak.lat, lon: peak.lon })
         : null,
-    [peak.name, elevationM, peak.lat, peak.lon],
+    [peak.name, elevationM, peak.lat, peak.lon, peak.curatedId],
   );
 
   // Keyed to the athlete's goal when one exists for this mountain, so the group
@@ -797,8 +816,9 @@ function SharedChecklist({ group, peak }: { group: Expedition; peak: GroupPeak }
               mountain ICEFALL knows nothing about. */}
           <UnavailableState reason="no-data" size="lg" />
           <p className="mt-4 text-center text-[13px] leading-relaxed text-mist">
-            This group has no elevation recorded for {peak.name}, so ICEFALL cannot work out what
-            class of mountain it is — and the kit list follows entirely from that.
+            {typeof elevationM === "number" && !peak.curatedId
+              ? `${peak.name} is a reference entry. ${REFERENCE_NO_KIT_LIST}`
+              : `This group has no elevation recorded for ${peak.name}, so ICEFALL cannot work out what class of mountain it is — and the kit list follows entirely from that.`}
           </p>
         </Card>
       </Rise>

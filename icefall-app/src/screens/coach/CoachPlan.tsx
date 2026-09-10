@@ -10,6 +10,7 @@ import { fuellingFor, NUTRITION_DISCLAIMER, type FuellingPlan } from "@/coach/nu
 import { FOCUS_GUIDANCE } from "@/services/coach";
 import { useTraining } from "@/tracking/training";
 import { useApp } from "@/state/AppState";
+import { REFERENCE_PLAN_NOTE } from "@/services/peakTier";
 import { cn } from "@/lib/utils";
 import { FOCUS_LABELS, fmtDate, fmtDistance, fmtDurationCompact, fmtElevation } from "@/lib/format";
 import { isoDate } from "@/data/mock/clock";
@@ -297,6 +298,9 @@ export default function CoachPlan() {
           <p className="tnum mt-2.5 text-[12px] leading-relaxed text-mist-dim">
             Week {plan.currentWeek} of {plan.totalWeeks} · built backwards from {goal.name}
           </p>
+          {!goal.mountainId && (
+            <p className="mt-2 text-[11px] leading-relaxed text-mist-dim">{REFERENCE_PLAN_NOTE}</p>
+          )}
         </Rise>
 
         <Rise className="pt-4">

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { REFERENCE_NO_READINESS } from "@/services/peakTier";
 import { Link } from "react-router-dom";
 import { Download, Loader2, Share2 } from "lucide-react";
 
@@ -265,7 +266,9 @@ export default function ShareReadiness() {
     summits.length > 0;
 
   const readiness = useMemo<ObjectiveReadiness | null>(() => {
-    if (!peak) return null;
+    // A reference entry is not scored — the card would carry an elevation
+    // band's guide verdict out of the app under the athlete's name.
+    if (!peak || !curated) return null;
     return assessObjectiveReadiness({
       peak,
       activities: realActivities,
@@ -279,7 +282,7 @@ export default function ShareReadiness() {
         // hand the athlete an estimate they never gave.
       },
     });
-  }, [peak, realActivities, summits, coachProfile]);
+  }, [curated, peak, realActivities, summits, coachProfile]);
 
   /* ---- The card ---------------------------------------------------------- */
 
@@ -405,8 +408,9 @@ export default function ShareReadiness() {
         <ScreenHeader title="Share readiness" back />
         <Card>
           <p className="text-[13px] leading-relaxed text-mist">
-            {goal.name} has no recorded elevation, and ICEFALL judges the class of an objective from
-            its elevation and position. Without it there is no assessment to share.
+            {peak && !curated
+              ? `${goal.name} is a reference entry. ${REFERENCE_NO_READINESS} There is no assessment to share.`
+              : `${goal.name} has no recorded elevation, and ICEFALL judges the class of an objective from its elevation and position. Without it there is no assessment to share.`}
           </p>
           <Button asChild variant="secondary" className="mt-4 w-full">
             <Link to={`/goals/${goal.id}`}>Open the objective</Link>

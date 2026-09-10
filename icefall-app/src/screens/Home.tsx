@@ -27,6 +27,7 @@ import {
   FOCUS_LABELS,
 } from "@/lib/format";
 import { sync } from "@/services/repository";
+import { REFERENCE_NO_READINESS_SHORT, REFERENCE_PLAN_NOTE } from "@/services/peakTier";
 import { useActivityFeed, useWeeklyProgress } from "@/tracking/feed";
 import { activeSessionSummary } from "@/tracking/activeSession";
 import { activityById } from "@/tracking/activities";
@@ -375,17 +376,32 @@ export default function Home() {
                     )}
                   </div>
 
-                  <div className="mt-4 flex items-center gap-3">
-                    <div className="h-[3px] flex-1 overflow-hidden rounded-full bg-white/[0.07]">
-                      <div
-                        className="h-full rounded-full bg-azure transition-[width] duration-500"
-                        style={{ width: `${Math.max(0, Math.min(100, goal.preparation))}%` }}
-                      />
+                  {/*
+                    * THE READINESS BAR IS FOR SURVEYED MOUNTAINS ONLY — the same
+                    * rule the peak page and the goal card keep. A quarter of
+                    * the percentage is "capability", measured against a
+                    * route's vertical gain; for an unsurveyed peak
+                    * `tracking/training.ts` substitutes `elevationM * 0.45`,
+                    * a coefficient with no source. The named absence replaces
+                    * a confident bar. See `services/peakTier.ts`.
+                    */}
+                  {goalMountain ? (
+                    <div className="mt-4 flex items-center gap-3">
+                      <div className="h-[3px] flex-1 overflow-hidden rounded-full bg-white/[0.07]">
+                        <div
+                          className="h-full rounded-full bg-azure transition-[width] duration-500"
+                          style={{ width: `${Math.max(0, Math.min(100, goal.preparation))}%` }}
+                        />
+                      </div>
+                      <span className="tnum shrink-0 text-[13px] text-azure">
+                        {goal.preparation}%
+                      </span>
                     </div>
-                    <span className="tnum shrink-0 text-[13px] text-azure">
-                      {goal.preparation}%
-                    </span>
-                  </div>
+                  ) : (
+                    <p className="mt-4 text-[11px] leading-relaxed text-mist-dim">
+                      {REFERENCE_NO_READINESS_SHORT}
+                    </p>
+                  )}
                   {/* The real training block — never "expedition ready", which is
                       a clearance ICEFALL is forbidden to give. */}
                   <p className="section-label mt-2.5">
@@ -407,11 +423,16 @@ export default function Home() {
                     value={daysToGoValue(goal.targetDate)}
                     label={daysToGoLabel(goal.targetDate)}
                   />
+                  {/* The coach's read of TODAY'S form (load, recovery,
+                      consistency), which is what `intel.readiness` is. On a
+                      reference goal it sat one line under "No readiness figure
+                      — ICEFALL has not surveyed a route on this peak" labelled
+                      plain "Readiness", so the card contradicted itself. */}
                   <Stat
                     value={
                       readinessKnown ? `${Math.round(intel.readiness.score.value as number)}%` : "—"
                     }
-                    label="Readiness"
+                    label="Readiness today"
                   />
                 </div>
 
@@ -605,6 +626,15 @@ export default function Home() {
                       {today.detail}
                     </p>
                   ) : null}
+                  {/* The plan's own label travels with the session wherever it
+                      is shown. It was on the Training screen and nowhere else,
+                      so Home prescribed a session for an unsurveyed peak with
+                      nothing saying what kind of plan it came from. */}
+                  {goal && !goalMountain && (
+                    <p className="mt-2.5 text-[11px] leading-relaxed text-mist-dim">
+                      {REFERENCE_PLAN_NOTE}
+                    </p>
+                  )}
                 </Link>
                 {/* The drawing's two controls, side by side under the rule:
                     a filled Start Session and an outlined Mark as Done. They
@@ -859,8 +889,9 @@ export default function Home() {
           <Rise className="pt-7">
             <SectionLabel>Mountain intelligence</SectionLabel>
             <p className="mt-2 text-[11.5px] leading-relaxed text-mist-dim">
-              Derived for {goal.name} from its altitude, latitude and a live forecast — not
-              editorial.
+              {goalMountain
+                ? `Derived for ${goal.name} from its altitude, latitude and a live forecast — not editorial.`
+                : `${goal.name} is a reference entry: a live forecast and your own records, and no derived grade, kit list or readiness figure.`}
             </p>
             {/* No rules between these and none around them: each row already
                 carries a 66px photograph down the left, and a picture column
@@ -882,13 +913,21 @@ export default function Home() {
                 to={`/mountain/${goal.id}/checklist`}
                 img="/img/onboarding-plan.jpg"
                 title="Kit & documents"
-                detail="What this class of peak actually demands"
+                detail={
+                  goalMountain
+                    ? "What this class of peak actually demands"
+                    : "Your own pack list — no derived kit for an unsurveyed peak"
+                }
               />
               <IntelRow
                 to={`/mountain/${goal.id}/benchmark`}
                 img="/img/gran-paradiso.jpg"
                 title="Benchmark"
-                detail="Your recorded record against the objective"
+                detail={
+                  goalMountain
+                    ? "Your recorded record against the objective"
+                    : "No readiness figure for an unsurveyed peak"
+                }
               />
             </div>
           </Rise>
@@ -1020,8 +1059,13 @@ function ReadinessDial({ score }: { score: Score }) {
       </div>
       {/* The em dash in the ring already says the score is unknown; the label
           stays one short word so it cannot wrap under the dial. */}
-      <p className="section-label mt-2 flex items-center gap-0.5 text-[8.5px] text-mist">
-        Readiness
+      {/* "Readiness today", not "Readiness": this dial is the coach's read of
+          the athlete's form for TODAY'S session — load, recovery, consistency.
+          It is not readiness for the mountain, and on a reference goal the
+          strip a few lines down says no such figure exists. One word left
+          the two contradicting each other on the same screen. */}
+      <p className="section-label mt-2 flex items-center gap-0.5 whitespace-nowrap text-[8.5px] text-mist">
+        Readiness today
         <ChevronRight size={10} strokeWidth={2.4} />
       </p>
     </div>

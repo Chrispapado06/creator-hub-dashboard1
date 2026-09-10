@@ -8,7 +8,7 @@ import { useMountainImage } from "@/components/domain/MountainImage";
 import { cn } from "@/lib/utils";
 import { fmtElevation } from "@/lib/format";
 import { sync } from "@/services/repository";
-import { assessPeak } from "@/services/peakAssessment";
+import { TIER_EYEBROW } from "@/services/peakTier";
 import { PEAK_ATTRIBUTION, rememberPeaks, searchPeaks, type Peak } from "@/services/peaks";
 import { useApp } from "@/state/AppState";
 import {
@@ -234,10 +234,14 @@ function Ticked({ className }: { className?: string }) {
   );
 }
 
-/** The class of mountain, from the curated table or derived from elevation. */
+/**
+ * The curated grade, or the name of the tier when ICEFALL has not surveyed
+ * the peak. It used to fall back to `assessPeak(...).shortLabel` — an
+ * elevation band in the slot a grade occupies. See `services/peakTier.ts`.
+ */
 function classLabelFor(peak: Peak): string {
   const curated = peak.curatedId ? sync.mountainById(peak.curatedId) : undefined;
-  return curated?.difficultyLabel ?? assessPeak(peak.elevationM, peak.lat, peak.lon).shortLabel;
+  return curated?.difficultyLabel ?? TIER_EYEBROW.reference;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -792,6 +796,10 @@ export default function ReadinessTest() {
         elevationM: answers.objective.elevationM,
         lat: answers.objective.lat,
         lon: answers.objective.lon,
+        // The result screen scores only a SURVEYED objective; without this it
+        // cannot tell a curated mountain from a reference entry of the same
+        // height, and would grade the latter from its elevation.
+        curatedId: answers.objective.curatedId,
       },
       targetDate: parseDateKey(dateKey)?.toISOString(),
       selfReported: selfReportFrom(answers, coachProfile),

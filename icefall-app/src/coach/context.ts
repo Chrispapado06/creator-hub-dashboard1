@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { REFERENCE_NOT_ASSESSED } from "@/services/peakTier";
 import { useApp } from "@/state/AppState";
 import { useCoachIntel, type CoachIntel } from "@/coach/hooks";
 import { useRecordedActivities, useWeeklyProgress } from "@/tracking/feed";
@@ -72,6 +73,12 @@ export interface ObjectiveContext {
   targetDate: string;
   daysAway: number | null;
   preparationPct: number;
+  /**
+   * Whether a human-written ICEFALL record backs the objective. When false the
+   * model is told so in words — it holds no grade, no kit list and no readiness
+   * judgement for the mountain and must not invent one in conversation.
+   */
+  surveyed: boolean;
   /** The training block this week belongs to, e.g. "Base 3". */
   block: string | null;
   weekIndex: number | null;
@@ -178,6 +185,7 @@ export function useCoachContext(): CoachContext {
           targetDate: intel.goal.targetDate,
           daysAway: daysUntilLocal(intel.goal.targetDate),
           preparationPct: intel.goal.preparation,
+          surveyed: intel.goal.surveyed,
           block: intel.currentWeek?.block ?? null,
           weekIndex: intel.currentWeek?.index ?? null,
         }
@@ -286,9 +294,16 @@ export function describeState(ctx: CoachContext): string {
     lines.push(
       `Objective: ${objective.name}${objective.elevationM ? ` (${objective.elevationM} m)` : ""}, ` +
         `${objective.daysAway === null ? "date unknown" : `${objective.daysAway} days away`}, ` +
-        `preparation ${objective.preparationPct}%` +
+        (objective.surveyed
+          ? `preparation ${objective.preparationPct}%`
+          : `training plan ${objective.preparationPct}% complete (plan completion, NOT readiness)`) +
         (objective.block ? `, training block ${objective.block} (week ${objective.weekIndex})` : ""),
     );
+    if (!objective.surveyed) {
+      // The same sentence the screens print. The model must not be the one
+      // surface that grades an unsurveyed mountain or prescribes kit for it.
+      lines.push(`Objective tier: reference entry. ${REFERENCE_NOT_ASSESSED}`);
+    }
   } else {
     lines.push("Objective: none set.");
   }

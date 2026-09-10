@@ -20,6 +20,7 @@ import { MODE_ICON } from "@/components/tracker/activityIcons";
 import { MountainBackdrop } from "@/components/domain/MountainImage";
 import { Badge, Card } from "@/components/ui/primitives";
 import { ProgressRing } from "@/components/ui/charts";
+import { TIER_EYEBROW } from "@/services/peakTier";
 import { WATCH_PROVIDER_NAME } from "@/watch/types";
 import {
   DIFFICULTY_LABELS,
@@ -234,9 +235,17 @@ export function GoalCard({ goal, compact }: { goal: Goal; compact?: boolean }) {
             </Badge>
           )}
         </div>
-        {goal.status === "active" && (
-          <ProgressRing value={goal.preparation} size={54} stroke={2.5} />
-        )}
+        {/* The ring is objective-only: a reference goal's percentage rests on
+            an invented route gain (`services/peakTier.ts`), so the card names
+            the tier instead of drawing a confident circle. */}
+        {goal.status === "active" &&
+          (goal.mountainId ? (
+            <ProgressRing value={goal.preparation} size={54} stroke={2.5} />
+          ) : (
+            <span className="section-label shrink-0 text-right text-[8px] leading-tight text-mist-dim">
+              {TIER_EYEBROW.reference}
+            </span>
+          ))}
       </div>
     </div>
   );

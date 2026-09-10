@@ -436,8 +436,42 @@ const CURATED_PEAKS: Peak[] = sync.mountains.map((m) => ({
 export default function Expeditions() {
   const goal = usePrimaryGoal();
   const [query, setQuery] = useState("");
+
+  /**
+   * THE ATHLETE'S OWN GOAL OPENS THE SCREEN — EVEN WHEN IT IS NOT CURATED.
+   *
+   * `peakId` fell back to Everest for any goal without a `mountainId`, so an
+   * athlete training for Mount Robson opened "Expeditions" on Everest's
+   * companies, with their own mountain nowhere on the rail. A goal carries the
+   * position, elevation and entity id it was created with — everything a rail
+   * tile and a listing subject need, in the shape `searchPeaks` returns — so
+   * the goal leads the rail and is the opening focus. Nothing is invented: a
+   * goal with no position (a custom objective) still gets the default.
+   */
+  const goalPeak = useMemo<Peak | undefined>(() => {
+    if (
+      !goal ||
+      goal.mountainId ||
+      goal.lat === undefined ||
+      goal.lon === undefined ||
+      goal.elevationM === undefined
+    )
+      return undefined;
+    return {
+      id: `osm:${goal.lat.toFixed(4)},${goal.lon.toFixed(4)}`,
+      name: goal.name,
+      elevationM: goal.elevationM,
+      lat: goal.lat,
+      lon: goal.lon,
+      country: goal.country,
+      wikipedia: goal.wikipedia,
+      wikidata: goal.wikidata,
+    };
+  }, [goal]);
+  const rail = useMemo(() => (goalPeak ? [goalPeak, ...CURATED_PEAKS] : CURATED_PEAKS), [goalPeak]);
+
   const [peakId, setPeakId] = useState<string>(
-    goal?.mountainId ? `curated:${goal.mountainId}` : `curated:${DEFAULT_PEAK}`,
+    goal?.mountainId ? `curated:${goal.mountainId}` : (goalPeak?.id ?? `curated:${DEFAULT_PEAK}`),
   );
   const [tab, setTab] = useState<TabId>("explore");
   const [trekId, setTrekId] = useState<string | null>(null);
@@ -489,7 +523,7 @@ export default function Expeditions() {
     };
   }, [needle]);
 
-  const shownMountains = needle.length >= 2 ? (found ?? []) : CURATED_PEAKS;
+  const shownMountains = needle.length >= 2 ? (found ?? []) : rail;
 
   /**
    * The peak in focus.
@@ -500,8 +534,8 @@ export default function Expeditions() {
    */
   const peak = useMemo(() => {
     if (needle && shownMountains.length > 0) return shownMountains[0];
-    return CURATED_PEAKS.find((m) => m.id === peakId) ?? CURATED_PEAKS[0];
-  }, [needle, shownMountains, peakId]);
+    return rail.find((m) => m.id === peakId) ?? rail[0];
+  }, [needle, shownMountains, peakId, rail]);
 
   /**
    * The trek in focus, when a trek tile was the last thing tapped.

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { TIER_EYEBROW } from "@/services/peakTier";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import {
   Activity,
@@ -3245,7 +3246,7 @@ function MyMountains() {
               to="/goals"
               icon={MountainIcon}
               title={g.name}
-              detail={`${fmtDate(g.targetDate)} · ${Math.round(g.preparation)}% prepared`}
+              detail={`${fmtDate(g.targetDate)} · ${g.mountainId ? `${Math.round(g.preparation)}% prepared` : TIER_EYEBROW.reference}`}
               value={i === 0 ? "Primary" : undefined}
               tone="azure"
             />

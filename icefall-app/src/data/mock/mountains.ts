@@ -61,6 +61,7 @@ export const MOUNTAINS: Mountain[] = [
     },
     permitIssuedToOperator: true,
     photo: "/img/everest.jpg",
+    photoCredit: "Vyacheslav Argenberg · CC BY 4.0 · Wikimedia Commons",
     summary:
       "The highest point on Earth. An expedition undertaking measured in months, not days, and only through professional operators.",
     requiresProfessionalSupport: true,
@@ -434,6 +435,7 @@ export const MOUNTAINS: Mountain[] = [
       visibilityKm: 40,
     },
     photo: "/img/mont-blanc.jpg",
+    photoCredit: "Wikimedia Commons · CC0",
     summary:
       "The highest summit in the Alps and the classic European alpine objective. Straightforward in grade, serious in altitude, weather and commitment.",
     requiresProfessionalSupport: true,
@@ -488,6 +490,7 @@ export const MOUNTAINS: Mountain[] = [
       visibilityKm: 60,
     },
     photo: "/img/matterhorn.jpg",
+    photoCredit: "Dennis G. Jarvis · CC BY-SA 2.0 · Wikimedia Commons",
     summary:
       "The most recognisable peak in the Alps. A committing rock ridge where speed is the primary safety margin.",
     requiresProfessionalSupport: true,
@@ -536,6 +539,7 @@ export const MOUNTAINS: Mountain[] = [
       visibilityKm: 15,
     },
     photo: "/img/denali.jpg",
+    photoCredit: "Wikimedia Commons · Public domain",
     summary:
       "The coldest big mountain on Earth relative to its altitude. A logistics and endurance test as much as a climb.",
     requiresProfessionalSupport: true,
@@ -584,6 +588,7 @@ export const MOUNTAINS: Mountain[] = [
       visibilityKm: 30,
     },
     photo: "/img/aconcagua.jpg",
+    photoCredit: "Wikimedia Commons · CC0",
     summary:
       "The highest summit in the Americas. No technical climbing, but altitude and wind defeat most attempts.",
     requiresProfessionalSupport: true,
@@ -648,6 +653,7 @@ export const MOUNTAINS: Mountain[] = [
       visibilityKm: 35,
     },
     photo: "/img/eiger.jpg",
+    photoCredit: "Wikimedia Commons · CC0",
     summary:
       "The most storied face in alpinism. Two very different mountains depending on which side you choose.",
     requiresProfessionalSupport: true,
@@ -701,6 +707,7 @@ export const MOUNTAINS: Mountain[] = [
       visibilityKm: 50,
     },
     photo: "/img/gran-paradiso.jpg",
+    photoCredit: "Wikimedia Commons · Public domain",
     summary:
       "The highest peak entirely within Italy, and the conventional stepping stone to Mont Blanc.",
     requiresProfessionalSupport: false,
@@ -749,6 +756,7 @@ export const MOUNTAINS: Mountain[] = [
       visibilityKm: 45,
     },
     photo: "/img/mount-olympus.jpg",
+    photoCredit: "Wikimedia Commons · CC0",
     summary:
       "The mythological home of the gods and an outstanding first serious objective — real exposure without technical glacier travel.",
     requiresProfessionalSupport: false,
@@ -796,6 +804,7 @@ export const MOUNTAINS: Mountain[] = [
       visibilityKm: 40,
     },
     photo: "/img/triglav.jpg",
+    photoCredit: "Wikimedia Commons · CC0",
     summary: "Slovenia's national symbol and one of Europe's finest via ferrata summits.",
     requiresProfessionalSupport: false,
   },
@@ -843,6 +852,7 @@ export const MOUNTAINS: Mountain[] = [
       visibilityKm: 70,
     },
     photo: "/img/toubkal.jpg",
+    photoCredit: "Anass ERRIHANI · CC BY-SA 4.0 · Wikimedia Commons",
     summary:
       "North Africa's highest summit. Excellent altitude preparation with a short approach from Marrakech.",
     requiresProfessionalSupport: false,

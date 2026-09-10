@@ -30,8 +30,7 @@ import { cn } from "@/lib/utils";
 import { fmtDate, fmtElevation } from "@/lib/format";
 import { monthsAhead } from "@/data/mock/clock";
 import { sync } from "@/services/repository";
-import { assessPeak } from "@/services/peakAssessment";
-import { PEAK_ATTRIBUTION, searchPeaks, type Peak } from "@/services/peaks";
+import { PEAK_ATTRIBUTION, otherName, searchPeaks, type Peak } from "@/services/peaks";
 import { buildPlanForGoal } from "@/tracking/training";
 import {
   useApp,
@@ -834,6 +833,7 @@ function PeakSearch({ onPick }: { onPick: (p: Peak) => void }) {
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[13px] text-snow">{p.name}</span>
                   <span className="tnum block text-[11px] text-mist-dim">
+                    {otherName(p) ? `${otherName(p)} · ` : ""}
                     {fmtElevation(p.elevationM)} m{p.country ? ` · ${p.country}` : ""}
                   </span>
                 </span>
@@ -1140,9 +1140,9 @@ export default function Onboarding() {
 
       addGoal({
         name: goalPeak.name,
-        subtitle:
-          curated?.difficultyLabel ??
-          assessPeak(goalPeak.elevationM, goalPeak.lat, goalPeak.lon).label,
+        // A surveyed mountain's own grade, otherwise a FACT — never the
+        // elevation band dressed as one. Same rule as `screens/Goals.tsx`.
+        subtitle: curated?.difficultyLabel ?? goalPeak.country ?? "Objective",
         elevationM: goalPeak.elevationM,
         mountainId: goalPeak.curatedId,
         wikipedia: goalPeak.wikipedia,
@@ -1746,8 +1746,14 @@ export default function Onboarding() {
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[14px] text-snow">{goalPeak.name}</p>
                       <p className="tnum text-[11px] text-mist-dim">
-                        {fmtElevation(goalPeak.elevationM)} m ·{" "}
-                        {assessPeak(goalPeak.elevationM, goalPeak.lat, goalPeak.lon).label}
+                        {fmtElevation(goalPeak.elevationM)} m
+                        {(() => {
+                          // The curated grade where one exists; otherwise the
+                          // country, which is a fact. See `services/peakTier.ts`.
+                          const c = goalPeak.curatedId ? sync.mountainById(goalPeak.curatedId) : undefined;
+                          const tail = c?.difficultyLabel ?? goalPeak.country;
+                          return tail ? ` · ${tail}` : "";
+                        })()}
                       </p>
                     </div>
                     <button
@@ -1776,6 +1782,7 @@ export default function Onboarding() {
                           <span className="min-w-0 flex-1">
                             <span className="block truncate text-[14px] text-snow">{p.name}</span>
                             <span className="tnum block text-[11px] text-mist-dim">
+                              {otherName(p) ? `${otherName(p)} · ` : ""}
                               {fmtElevation(p.elevationM)} m{p.country ? ` · ${p.country}` : ""}
                             </span>
                           </span>
@@ -2755,9 +2762,14 @@ function Payoff({
     };
   }, [created]);
 
-  const assessment = created
-    ? assessPeak(created.peak.elevationM, created.peak.lat, created.peak.lon)
-    : null;
+  /*
+   * The guide sentence below reads the field that HOLDS the judgement —
+   * `requiresProfessionalSupport` on the curated record — and not an elevation
+   * band. For a peak ICEFALL has not surveyed it says so instead.
+   */
+  const createdCurated = created?.peak.curatedId
+    ? sync.mountainById(created.peak.curatedId)
+    : undefined;
 
   const dayNames = WEEK.filter((w) => days.includes(w.day)).map((w) => w.label);
   const equipmentLabels = EQUIPMENT.filter((e) => equipment.includes(e.id)).map((e) => e.label);
@@ -2785,12 +2797,22 @@ function Payoff({
         <p className="section-label text-azure/85">What your answers changed</p>
 
         <div className="mt-4">
-          {created && plan && assessment ? (
+          {created && plan ? (
             <>
               <Line
                 label="Objective"
                 value={`${created.peak.name} · ${fmtElevation(created.peak.elevationM)} m`}
-                effect={`Created as an active goal and classed as ${assessment.label.toLowerCase()} from its elevation. That class is what your readiness is measured against.`}
+                /*
+                 * This used to read "classed as {elevation band} from its
+                 * elevation" for EVERY peak, including the fourteen with a
+                 * real grade. A surveyed mountain now names its own grade; an
+                 * unsurveyed one says there is none. See `services/peakTier.ts`.
+                 */
+                effect={
+                  createdCurated
+                    ? `Created as an active goal. ICEFALL's grade for it is "${createdCurated.difficultyLabel}", and that is what your readiness is measured against.`
+                    : `Created as an active goal. ICEFALL has not surveyed this peak, so it carries no grade; the plan is a general altitude programme built from its elevation.`
+                }
               />
               <Line
                 label="Target date"
@@ -2953,9 +2975,11 @@ function Payoff({
       <Disclaimer className="mt-6">
         This is a starting point, not a guarantee, and it adapts as you record real sessions.
         ICEFALL does not give medical advice and never asks you to train through pain.
-        {assessment?.requiresGuide
-          ? ` ${created?.peak.name} is glaciated or technical ground: engage a certified guide (IFMGA/UIAGM) or a reputable operator, and learn the skills in person.`
-          : ""}
+        {createdCurated?.requiresProfessionalSupport
+          ? ` ICEFALL's assessment of ${created?.peak.name} is that it should be climbed with a certified guide (IFMGA/UIAGM) or a reputable operator, learning the skills in person.`
+          : created && !createdCurated
+            ? ` ICEFALL has not surveyed ${created.peak.name}: there is no ICEFALL grade, season advice or guide advice for it, and this plan is a general altitude programme built from its elevation. Use a current guidebook and the local guides office for the route.`
+            : ""}
       </Disclaimer>
     </>
   );

@@ -140,6 +140,14 @@ export interface Goal {
   photo?: string;
   /** OSM `wikipedia` tag (`en:Ama Dablam`) — resolves the peak's photograph. */
   wikipedia?: string;
+  /**
+   * OSM `wikidata` tag (`Q503433`) — the exact entity, which is what resolves
+   * this peak's harvested facts and its photograph. Carried alongside
+   * `wikipedia` rather than instead of it: OSM tags `wikidata` on 63.9% of
+   * Alpine peaks above 3,000 m and `wikipedia` on 26.2%, and the two sets
+   * overlap without either containing the other.
+   */
+  wikidata?: string;
   /** Kept so the goal page can brief on the mountain: latitude sets the season
    *  window, country sets the permit authority. */
   lat?: number;

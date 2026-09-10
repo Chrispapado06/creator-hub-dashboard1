@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { REFERENCE_PLAN_NOTE } from "@/services/peakTier";
 import { Link } from "react-router-dom";
 import {
   ArrowUp,
@@ -164,6 +165,11 @@ export default function Today() {
                   <p className="mt-3 text-[12px] leading-relaxed text-mist-dim">
                     Nothing is recorded yet, so this is the plan's prescription rather than a read
                     of your form.
+                  </p>
+                )}
+                {intel.goal && !intel.goal.surveyed && (
+                  <p className="mt-3 text-[12px] leading-relaxed text-mist-dim">
+                    {REFERENCE_PLAN_NOTE}
                   </p>
                 )}
                 <Link

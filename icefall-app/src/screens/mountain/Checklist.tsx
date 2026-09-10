@@ -12,6 +12,7 @@ import { fmtElevation } from "@/lib/format";
 import { useApp } from "@/state/AppState";
 import { sync } from "@/services/repository";
 import { assessPeak } from "@/services/peakAssessment";
+import { REFERENCE_NO_KIT_LIST, REFERENCE_NEXT_STEP, TIER_EYEBROW } from "@/services/peakTier";
 import {
   CHECKLIST_DISCLAIMER,
   PACK_KIND_LABEL,
@@ -46,6 +47,12 @@ import {
  *     arrangements, so the "find equipment" affordance on a needed item is
  *     disabled and says exactly why. A plausible-looking link to nowhere is
  *     worse than no link at all.
+ *  4. Derive a list for a peak nobody has surveyed. The generator reads an
+ *     elevation band and nothing else, and on Erciyes Dağı — a 3,917 m
+ *     volcano with no glacier — it printed a crevasse rescue kit as ESSENTIAL
+ *     (measured 2026-09-11). A reference goal gets the athlete's own pack
+ *     planner and a sentence saying why there is no list; see
+ *     `REFERENCE_NO_KIT_LIST`.
  */
 
 const STATUSES: ItemStatus[] = ["have", "need", "replace", "borrow", "rent", "n/a"];
@@ -78,17 +85,21 @@ export default function Checklist() {
 
   const generated = useMemo(
     () =>
-      goal === undefined || elevationM === undefined
+      goal === undefined || elevationM === undefined || curated === undefined
         ? null
         : generateChecklist({ name: goal.name, elevationM, lat, lon }),
-    [goal, elevationM, lat, lon],
+    [goal, elevationM, lat, lon, curated],
   );
 
   // Read for the competences the list assumes and whether a guide is advised.
   // Latitude only drives the season window, which this screen never states.
+  // Surveyed mountains only — rule 4 above.
   const assessment = useMemo(
-    () => (elevationM === undefined ? null : assessPeak(elevationM, lat ?? 0, lon)),
-    [elevationM, lat, lon],
+    () =>
+      elevationM === undefined || curated === undefined
+        ? null
+        : assessPeak(elevationM, lat ?? 0, lon),
+    [elevationM, lat, lon, curated],
   );
 
   const statuses = useMemo(
@@ -136,6 +147,59 @@ export default function Checklist() {
 
   if (!goalId || !goal) return <Navigate to="/goals" replace />;
 
+  /* -- A reference entry: the athlete's own pack, and no derived list ------ */
+
+  if (!curated) {
+    const totals = packTotals(pack);
+    const packGranted = can("equipment.pack") || pack.length > 0;
+    return (
+      <Screen padded={false}>
+        <div className="px-5">
+          <ScreenHeader
+            title="Equipment"
+            subtitle={
+              elevationM === undefined
+                ? goal.name
+                : `${goal.name} · ${fmtElevation(elevationM)} m · ${TIER_EYEBROW.reference}`
+            }
+            back={`/goals/${goal.id}`}
+            className="pb-4"
+          />
+        </div>
+        <Stagger className="px-5">
+          <Rise className="pt-1">
+            <Card>
+              <p className="section-label text-mist-dim">No kit list</p>
+              <p className="mt-2.5 text-[13px] leading-relaxed text-mist">{REFERENCE_NO_KIT_LIST}</p>
+              <p className="mt-2.5 text-[12px] leading-relaxed text-mist-dim">{REFERENCE_NEXT_STEP}</p>
+            </Card>
+          </Rise>
+
+          <Rise className="pt-8">
+            <SectionLabel>Pack</SectionLabel>
+            {packGranted ? (
+              <Pack
+                items={pack}
+                targetGrams={targetGrams}
+                onAdd={(item) => addPackItem(goalId, item)}
+                onRemove={(id) => removePackItem(goalId, id)}
+                onTarget={(grams) => setPackTarget(goalId, grams)}
+                totals={totals}
+              />
+            ) : (
+              <UpgradePrompt
+                featureId="equipment.pack"
+                title="Weigh the pack before the mountain does it for you."
+                body="Pro adds itemised pack weights split into base, consumables and water, with a total and an optional target."
+                className="mt-3"
+              />
+            )}
+          </Rise>
+        </Stagger>
+      </Screen>
+    );
+  }
+
   /* -- A goal with no mountain under it ------------------------------------ */
 
   if (elevationM === undefined || !generated || !assessment) {
@@ -177,7 +241,7 @@ export default function Checklist() {
       <div className="px-5">
         <ScreenHeader
           title="Equipment"
-          subtitle={`${goal.name} · ${fmtElevation(elevationM)} m · ${assessment.shortLabel}`}
+          subtitle={`${goal.name} · ${fmtElevation(elevationM)} m · ${curated.difficultyLabel}`}
           back={`/goals/${goal.id}`}
           className="pb-4"
         />

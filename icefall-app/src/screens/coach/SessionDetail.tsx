@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import { REFERENCE_PLAN_NOTE } from "@/services/peakTier";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   Check,
@@ -543,6 +544,11 @@ function SessionHero({
         <p className="tnum mt-2.5 text-[12px] text-mist">
           {fmtDate(day.date, { weekday: "long" })}
         </p>
+
+        {/* The plan's own label, wherever a session from it is shown. */}
+        {goal && !goal.mountainId && (
+          <p className="mt-2.5 text-[11px] leading-relaxed text-mist-dim">{REFERENCE_PLAN_NOTE}</p>
+        )}
 
         {/* Tier of the photograph, never hidden: band artwork must not be able
             to pass as a photograph of the athlete's actual objective. */}

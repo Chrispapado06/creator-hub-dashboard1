@@ -121,6 +121,48 @@ interface CommonsInfo {
   pageUrl: string;
 }
 
+/**
+ * Commercial use, or it does not ship — CHECKED AT RUNTIME, not only at build
+ * time.
+ *
+ * This path had NO LICENCE CHECK AT ALL. It took whatever P18 pointed at,
+ * printed the photographer's name under it, and showed it. Commons policy does
+ * require free licences, so in practice most files are fine — but "most" is
+ * not a legal position, en.wikipedia hosts non-free fair-use files locally,
+ * and a licence that suits an encyclopedia does not automatically suit a
+ * product being sold.
+ *
+ * Refused: non-commercial, no-derivatives, anything carrying a `Restrictions`
+ * flag, and GFDL-only — GFDL requires the full licence text to travel with the
+ * work, which an app cannot do. A file dual-licensed GFDL + CC is fine, and
+ * that is why the GFDL test also looks for a CC option.
+ *
+ * A file with NO licence recorded is refused too. An unknown licence is not a
+ * permissive one, and `harvest-peak-photos.mjs` takes the same line: "a
+ * credits row with a hole in it is how an unattributed CC BY file gets shipped
+ * later."
+ */
+function licenceAllowsCommercialUse(meta: Record<string, { value?: string }>): boolean {
+  const plain = (html?: string) =>
+    (html ?? "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+
+  const short = plain(meta.LicenseShortName?.value);
+  const code = plain(meta.License?.value);
+  const terms = plain(meta.UsageTerms?.value);
+  const restrictions = plain(meta.Restrictions?.value);
+  const blob = `${short} ${code} ${terms}`;
+
+  if (!short && !code) return false;
+  if (restrictions) return false;
+  if (/\bnc\b|non-?commercial|noncommercial/.test(blob)) return false;
+  if (/\bnd\b|no-?deriv/.test(blob)) return false;
+  if (/fair use|non-?free|all rights reserved|unfree/.test(blob)) return false;
+  if (/gfdl|gnu free documentation/.test(blob) && !/\bcc[\s-]/.test(blob) && !/public domain|cc0/.test(blob))
+    return false;
+
+  return /cc0|cc by|cc-by|public domain|^pd|copyrighted free use|attribution/.test(blob);
+}
+
 /** Thumbnail plus the photographer and licence, for every file in one call. */
 async function fetchFiles(
   files: string[],
@@ -132,7 +174,7 @@ async function fetchFiles(
   const url =
     "https://commons.wikimedia.org/w/api.php?action=query&format=json&origin=*" +
     `&prop=imageinfo&iiprop=url|mediatype|extmetadata&iiurlwidth=${COMMONS_WIDTH}` +
-    "&iiextmetadatafilter=Artist|LicenseShortName" +
+    "&iiextmetadatafilter=Artist|LicenseShortName|License|UsageTerms|Restrictions" +
     `&titles=${encodeURIComponent(files.map((f) => `File:${f}`).join("|"))}`;
 
   const res = await fetch(url, { signal: withTimeout(PHOTOS_TIMEOUT_MS, signal) });
@@ -168,6 +210,8 @@ async function fetchFiles(
     // P18 can point at an SVG diagram or an audio file on non-mountain items.
     if (!src || info?.mediatype !== "BITMAP") continue;
     const meta = info.extmetadata ?? {};
+    // ICEFALL is a commercial product. See `licenceAllowsCommercialUse`.
+    if (!licenceAllowsCommercialUse(meta)) continue;
     out.set(key(page.title), {
       src,
       credit: strip(meta.Artist?.value),

@@ -1,5 +1,6 @@
 import type { Unavailable } from "@/coach/types";
 import { assessObjectiveReadiness } from "@/coach/mountainReadiness";
+import { MOUNTAINS } from "@/data/mock/mountains";
 import { assessPeak, type PeakAssessment } from "@/services/peakAssessment";
 import { activityById } from "@/tracking/activities";
 import type { RecordedActivity } from "@/tracking/types";
@@ -264,6 +265,14 @@ export interface PassportObjective {
   /** The dimension holding it back, when there is one. */
   limiting: string | null;
   requiresGuide: boolean;
+  /**
+   * True for a goal on a peak no human record backs. The page prints the
+   * reason rather than a withheld score's generic copy: there is no class of
+   * objective, no guide verdict and no readiness figure for it, and none of
+   * the three may be derived from elevation in a booklet somebody may show a
+   * guide. See `services/peakTier.ts`.
+   */
+  unsurveyed?: true;
 }
 
 export interface Passport {
@@ -751,6 +760,41 @@ export function buildPassport(input: PassportInput): Passport {
       };
     }
 
+    /*
+     * A REFERENCE ENTRY GETS NO CLASS, NO GUIDE VERDICT AND NO FIGURE. The
+     * engine below derives all three from elevation bands, which is fine for a
+     * surveyed objective (the band is a training benchmark beside a human
+     * grade) and a fabrication for one nobody has been up on ICEFALL's behalf.
+     * Measured 2026-09-11 on an Erciyes Dağı goal: the booklet printed "3,917 m
+     * · Serious alpine" and "This class of ground calls for an IFMGA/UIAGM-
+     * certified guide" three times, for a summer walk-up.
+     */
+    if (!g.mountainId) {
+      return {
+        id: g.id,
+        name: g.name,
+        elevationM: g.elevationM,
+        targetDate: g.targetDate,
+        preparation: Number.isFinite(g.preparation) ? g.preparation : null,
+        classLabel: null,
+        readiness: { value: null },
+        limiting: null,
+        requiresGuide: false,
+        unsurveyed: true,
+      };
+    }
+
+    /*
+     * THE CLASS AND THE GUIDE VERDICT COME FROM THE PERSON WHO WROTE THE
+     * RECORD, NOT FROM THE BAND. `assessment.label` is an elevation band and
+     * `assessment.requiresGuide` is `band >= 4`, i.e. "above 2,900 m" — so
+     * Gran Paradiso, whose record says `requiresProfessionalSupport: false`,
+     * printed "Serious alpine" and "This class of ground calls for an
+     * IFMGA/UIAGM-certified guide" in a booklet somebody may hand to one.
+     * Measured live 2026-09-11. The peak page fixed the same tile a day
+     * earlier; this is the same field, read the same way.
+     */
+    const curated = MOUNTAINS.find((m) => m.id === g.mountainId);
     const assessment = assessPeak(g.elevationM, g.lat ?? 0, g.lon);
     const readiness = assessObjectiveReadiness({
       peak: { name: g.name, elevationM: g.elevationM, lat: g.lat, lon: g.lon },
@@ -774,10 +818,10 @@ export function buildPassport(input: PassportInput): Passport {
       elevationM: g.elevationM,
       targetDate: g.targetDate,
       preparation: Number.isFinite(g.preparation) ? g.preparation : null,
-      classLabel: assessment.label,
+      classLabel: curated?.difficultyLabel ?? assessment.label,
       readiness: { value: readiness.overall.value, reason: readiness.overall.reason },
       limiting: readiness.biggestGap?.label ?? null,
-      requiresGuide: assessment.requiresGuide,
+      requiresGuide: curated ? curated.requiresProfessionalSupport : assessment.requiresGuide,
     };
   });
 

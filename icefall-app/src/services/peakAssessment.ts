@@ -211,7 +211,36 @@ export const ASSESSMENT_BANDS: readonly {
   band: PeakAssessment["band"];
   label: string;
   shortLabel: string;
-}[] = BANDS.map((b) => ({ band: b.band, label: b.label, shortLabel: b.shortLabel }));
+  /**
+   * The band as an ELEVATION RANGE — what it actually is.
+   *
+   * The filter chips on the objectives screen used `shortLabel`, so a control
+   * that partitions a list purely by height wore grade words: "Alpine",
+   * "Serious alpine". Two problems with that. It presented a derived grade as
+   * a category in a list that is mostly CURATED mountains, whose real grades
+   * are known and frequently disagree — the Matterhorn is written up as
+   * "Technical alpine" and its elevation puts it in "Serious alpine". And a
+   * grade is a judgement about a route, which is exactly what
+   * `services/peakTier.ts` stops the app asserting anywhere it has not been.
+   *
+   * The split itself is unchanged and useful: height IS what people filter a
+   * mountain list by. It just says so now.
+   */
+  rangeLabel: string;
+}[] = BANDS.map((b, i) => {
+  const lo = i === 0 ? 0 : BANDS[i - 1].max;
+  const hi = b.max;
+  return {
+    band: b.band,
+    label: b.label,
+    shortLabel: b.shortLabel,
+    rangeLabel: !Number.isFinite(hi)
+      ? `${lo.toLocaleString()} m +`
+      : lo === 0
+        ? `Under ${hi.toLocaleString()} m`
+        : `${lo.toLocaleString()}–${hi.toLocaleString()} m`,
+  };
+});
 
 /**
  * Season windows from latitude, not guesswork. A 4,000 m peak in Patagonia does

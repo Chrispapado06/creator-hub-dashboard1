@@ -1,7 +1,7 @@
 import { Loader2, Mountain as MountainIcon, Plus, Search, X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useMemo, useState } from "react";
-import { Navigate, useNavigate, useParams } from "react-router-dom";
+import { Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
 import { Badge, Button, Card, Disclaimer, SectionLabel } from "@/components/ui/primitives";
 import { ProgressRing } from "@/components/ui/charts";
 import { Rise, Screen, ScreenHeader, SegmentedTabs, Stagger } from "@/components/layout/chrome";
@@ -13,10 +13,9 @@ import type { Goal } from "@/types";
 import { useGoalsWithProgress, useTraining } from "@/tracking/training";
 import { monthsAhead } from "@/data/mock/clock";
 import { cn } from "@/lib/utils";
-import { assessPeak } from "@/services/peakAssessment";
 import { MountainThumb } from "@/components/domain/MountainImage";
 import { MountainPage } from "@/components/domain/MountainPage";
-import { searchPeaks, type Peak } from "@/services/peaks";
+import { otherName, searchPeaks, type Peak } from "@/services/peaks";
 
 const HORIZONS = [
   { label: "6 months", months: 6 },
@@ -34,7 +33,22 @@ export default function Goals() {
   const { addGoal } = useApp();
   const goals = useGoalsWithProgress();
   const [tab, setTab] = useState<"active" | "completed">("active");
-  const [creating, setCreating] = useState(false);
+
+  /*
+   * A MOUNTAIN PAGE CAN ARRIVE WITH THE MOUNTAIN ALREADY CHOSEN.
+   *
+   * "Set as my goal" on a peak page used to be a bare link here, so the
+   * athlete landed on an empty search box and typed the name again — and a
+   * different search hit made a goal for a different summit. The page now
+   * passes the `Peak` it was showing in the navigation state, and the form
+   * opens on it with the horizon buttons, one tap from a goal. The state is
+   * cleared straight away so Back, or a reload, does not re-open the form on a
+   * mountain the athlete already dealt with.
+   */
+  const location = useLocation();
+  const navigate = useNavigate();
+  const seeded = (location.state as { peak?: Peak } | null)?.peak ?? null;
+  const [creating, setCreating] = useState(Boolean(seeded));
 
   // The form searches the mountain library rather than taking free text. Typing
   // "Annapurna" used to create a goal with no elevation, no coordinates and no
@@ -42,7 +56,11 @@ export default function Goals() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Peak[]>([]);
   const [searching, setSearching] = useState(false);
-  const [picked, setPicked] = useState<Peak | null>(null);
+  const [picked, setPicked] = useState<Peak | null>(seeded);
+
+  useEffect(() => {
+    if (seeded) navigate(location.pathname, { replace: true, state: null });
+  }, [seeded, navigate, location.pathname]);
 
   // Ranked by elevation, tallest first — the biggest objective should lead.
   // Goals with no elevation recorded sort to the bottom.
@@ -86,10 +104,20 @@ export default function Goals() {
     const curated = peak.curatedId ? sync.mountainById(peak.curatedId) : undefined;
     addGoal({
       name: peak.name,
-      subtitle: curated?.difficultyLabel ?? assessPeak(peak.elevationM, peak.lat, peak.lon).label,
+      /*
+       * A DERIVED GRADE IS NOT A SUBTITLE FOR AN UNSURVEYED PEAK.
+       *
+       * This used to fall back to `assessPeak(...).label` — an elevation band —
+       * so a goal on any peak ICEFALL has not surveyed sat in the goals list
+       * wearing a grade, in the same slot and typeface as a real one. It now
+       * falls back to the country, which is a fact. `services/peakTier.ts`
+       * carries the measurements behind the rule.
+       */
+      subtitle: curated?.difficultyLabel ?? peak.country ?? "Objective",
       elevationM: peak.elevationM,
       mountainId: peak.curatedId,
       wikipedia: peak.wikipedia,
+      wikidata: peak.wikidata,
       lat: peak.lat,
       lon: peak.lon,
       country: peak.country,
@@ -150,9 +178,24 @@ export default function Goals() {
                       <MountainThumb peak={picked} size={44} />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-[14px] text-snow">{picked.name}</p>
+                        {/*
+                          * The picker used to print `assessPeak(...).label`
+                          * here with no curated fallback at all — so the last
+                          * thing an athlete read before committing to a goal
+                          * was an elevation band presented as the class of
+                          * mountain. A surveyed mountain shows its real grade;
+                          * everything else shows where it is.
+                          * See `services/peakTier.ts`.
+                          */}
                         <p className="tnum text-[11px] text-mist-dim">
-                          {fmtElevation(picked.elevationM)} m ·{" "}
-                          {assessPeak(picked.elevationM, picked.lat, picked.lon).label}
+                          {fmtElevation(picked.elevationM)} m
+                          {(() => {
+                            const c = picked.curatedId
+                              ? sync.mountainById(picked.curatedId)
+                              : undefined;
+                            const tail = c?.difficultyLabel ?? picked.country;
+                            return tail ? ` · ${tail}` : "";
+                          })()}
                         </p>
                       </div>
                       <button
@@ -220,6 +263,7 @@ export default function Goals() {
                             <span className="min-w-0 flex-1">
                               <span className="block truncate text-[13px] text-snow">{p.name}</span>
                               <span className="tnum block text-[11px] text-mist-dim">
+                                {otherName(p) ? `${otherName(p)} · ` : ""}
                                 {fmtElevation(p.elevationM)} m{p.country ? ` · ${p.country}` : ""}
                               </span>
                             </span>
@@ -336,6 +380,7 @@ export function GoalDetail() {
         country: goal.country ?? curated?.country,
         region: curated?.range,
         wikipedia: goal.wikipedia,
+        wikidata: goal.wikidata,
         curatedId: goal.mountainId,
         photo: goal.photo ?? curated?.photo,
         photoCredit: curated?.photoCredit,

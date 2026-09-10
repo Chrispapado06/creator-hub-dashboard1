@@ -9,6 +9,7 @@ import { fmtCountdown, fmtDate } from "@/lib/format";
 import { monthsAhead } from "@/data/mock/clock";
 import { useApp } from "@/state/AppState";
 import { useGoalsWithProgress } from "@/tracking/training";
+import { REFERENCE_NO_READINESS } from "@/services/peakTier";
 
 /**
  * The two things you can do with a mountain, in one place.
@@ -34,6 +35,8 @@ export interface MountainRef {
   subtitle?: string;
   /** OSM `wikipedia` tag — resolves the peak's photograph. */
   wikipedia?: string;
+  /** OSM `wikidata` tag — the exact entity, resolving facts and photograph. */
+  wikidata?: string;
   country?: string;
 }
 
@@ -68,6 +71,7 @@ export function ObjectiveActions({ mountain }: { mountain: MountainRef }) {
       elevationM: mountain.elevationM,
       mountainId: mountain.curatedId,
       wikipedia: mountain.wikipedia,
+      wikidata: mountain.wikidata,
       lat: mountain.lat,
       lon: mountain.lon,
       country: mountain.country,
@@ -90,6 +94,7 @@ export function ObjectiveActions({ mountain }: { mountain: MountainRef }) {
         curatedId: mountain.curatedId,
         photo: mountain.photo,
         wikipedia: mountain.wikipedia,
+        wikidata: mountain.wikidata,
       });
     }
     setChoosing(false);
@@ -101,18 +106,39 @@ export function ObjectiveActions({ mountain }: { mountain: MountainRef }) {
 
       {/* ---- Goal ---------------------------------------------------- */}
       {goal ? (
-        <Link
-          to={`/goals/${goal.id}`}
-          className="mt-3 flex items-center gap-4 rounded-tile border border-azure/30 bg-azure/[0.06] p-3.5"
-        >
-          <ProgressRing value={goal.preparation} size={46} stroke={2.5} />
-          <div className="min-w-0 flex-1">
-            <p className="section-label text-azure/80">Your goal</p>
-            <p className="mt-1 truncate text-[13px] text-snow">{fmtCountdown(goal.targetDate)}</p>
-            <p className="tnum text-[11px] text-mist-dim">Target {fmtDate(goal.targetDate)}</p>
-          </div>
-          <ChevronRight size={16} className="shrink-0 text-mist-dim" />
-        </Link>
+        <>
+          <Link
+            to={`/goals/${goal.id}`}
+            className="mt-3 flex items-center gap-4 rounded-tile border border-azure/30 bg-azure/[0.06] p-3.5"
+          >
+            {/*
+              * THE READINESS RING IS FOR SURVEYED MOUNTAINS ONLY.
+              *
+              * Readiness is the smaller of two ratios and one of them needs a
+              * route's vertical gain. For a peak ICEFALL has not surveyed there
+              * is no route, so `tracking/training.ts:289` substitutes
+              * `goal.elevationM * 0.45` — a coefficient with no source. The
+              * percentage is therefore measured against a number the app made
+              * up, and drawing it as a confident ring is the exact failure the
+              * peak page was rebuilt to stop. The countdown and the target date
+              * stay: the athlete set those, so they are real.
+              */}
+            {mountain.curatedId && (
+              <ProgressRing value={goal.preparation} size={46} stroke={2.5} />
+            )}
+            <div className="min-w-0 flex-1">
+              <p className="section-label text-azure/80">Your goal</p>
+              <p className="mt-1 truncate text-[13px] text-snow">{fmtCountdown(goal.targetDate)}</p>
+              <p className="tnum text-[11px] text-mist-dim">Target {fmtDate(goal.targetDate)}</p>
+            </div>
+            <ChevronRight size={16} className="shrink-0 text-mist-dim" />
+          </Link>
+          {!mountain.curatedId && (
+            <p className="mt-2 text-[11px] leading-relaxed text-mist-dim">
+              {REFERENCE_NO_READINESS}
+            </p>
+          )}
+        </>
       ) : (
         <div className="mt-3">
           <Button className="w-full" onClick={() => setChoosing((c) => !c)}>
@@ -193,6 +219,7 @@ export function ObjectiveActions({ mountain }: { mountain: MountainRef }) {
                 curatedId: mountain.curatedId,
                 photo: mountain.photo,
                 wikipedia: mountain.wikipedia,
+                wikidata: mountain.wikidata,
               })
             }
           >

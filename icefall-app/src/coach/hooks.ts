@@ -31,7 +31,20 @@ export interface CoachIntel {
   plan: TrainingPlan | null;
   currentWeek: TrainingWeek | null;
   today?: TrainingDay;
-  goal?: { id: string; name: string; preparation: number; elevationM?: number; targetDate: string };
+  goal?: {
+    id: string;
+    name: string;
+    preparation: number;
+    elevationM?: number;
+    targetDate: string;
+    /**
+     * Whether a human-written ICEFALL record backs this objective. False for
+     * a reference entry — every coach surface that prints the plan for one
+     * must say it is a general altitude programme (`REFERENCE_PLAN_NOTE`),
+     * and none may print a grade or a readiness judgement for it.
+     */
+    surveyed: boolean;
+  };
   /** True until the athlete has recorded enough for any of this to mean much. */
   cold: boolean;
 }
@@ -71,6 +84,7 @@ export function useCoachIntel(): CoachIntel {
           preparation: training.preparation?.percent ?? training.goal.preparation,
           elevationM: training.goal.elevationM,
           targetDate: training.goal.targetDate,
+          surveyed: training.mountain !== undefined,
         }
       : undefined;
 

@@ -17,6 +17,7 @@ import {
   Share2,
   Trash2,
 } from "lucide-react";
+import { REFERENCE_NO_READINESS_SHORT } from "@/services/peakTier";
 import type { LucideIcon } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { countryName, useMyProfile } from "@/auth/useMyProfile";
@@ -889,9 +890,12 @@ export default function Profile() {
                   : "No logged summit carries an elevation, so there is nothing to report."
               }
             />
+            {/* "<Name> ready" is a readiness claim, and for a reference goal
+                there is none to make: the figure is plan completion against a
+                general programme. The tile names the absence instead. */}
             <ProfileFigure
-              value={objective ? `${Math.round(objective.preparation)}%` : "—"}
-              label={objective ? `${objective.name.split(" ")[0]} ready` : "Ready"}
+              value={objective?.mountainId ? `${Math.round(objective.preparation)}%` : "—"}
+              label={objective?.mountainId ? `${objective.name.split(" ")[0]} ready` : "Ready"}
               info={
                 <button
                   type="button"
@@ -907,9 +911,11 @@ export default function Profile() {
           </div>
           {readyInfo && (
             <p className="mt-3 border-l border-azure/30 pl-3 text-[11px] leading-relaxed text-mist-dim">
-              {objective
+              {objective?.mountainId
                 ? `Completion of the training plan ICEFALL built for ${objective.name}. It measures the plan, not the mountain, and it clears nobody to attempt anything.`
-                : "No objective is set, so there is no training plan to measure."}
+                : objective
+                  ? REFERENCE_NO_READINESS_SHORT
+                  : "No objective is set, so there is no training plan to measure."}
             </p>
           )}
         </Rise>

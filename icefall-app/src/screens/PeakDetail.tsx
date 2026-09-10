@@ -7,12 +7,15 @@ import { resolvePeak, type Peak } from "@/services/peaks";
 import { enrichPeaks } from "@/services/peakWikidata";
 
 /**
- * A discovered peak's own page.
+ * A discovered peak's own page — a REFERENCE ENTRY.
  *
- * Everything on it is derived — elevation and position from OpenStreetMap,
- * grade and season from those two, photography and description from Wikimedia.
- * It uses the same layout as a curated mountain and as a goal, so the structure
- * never shifts underneath the athlete; only the depth of the data does.
+ * Elevation and position from OpenStreetMap; range, prominence, isolation,
+ * first ascent and the one-line description from Wikidata, each with its
+ * source; the photograph resolved by entity, never by proximity. NO grade and
+ * NO season — those used to be derived "from those two" here, and
+ * `services/peakTier.ts` records why that stopped. The page shares its layout
+ * with a curated mountain so the structure never shifts underneath the
+ * athlete, and says in words which of the two kinds of page it is.
  */
 export default function PeakDetail() {
   const { id } = useParams<{ id: string }>();
@@ -61,11 +64,17 @@ export default function PeakDetail() {
       data={{
         name: peak.name,
         localName: peak.localName,
+        englishName: peak.englishName,
         elevationM: peak.elevationM,
         lat: peak.lat,
         lon: peak.lon,
         country: peak.country,
+        countrySource: peak.countrySource,
         wikipedia: peak.wikipedia,
+        // The identity link. Without it the page has no harvested facts and
+        // falls back to elevation alone, which is the thin page this whole
+        // change exists to end.
+        wikidata: peak.wikidata,
         photo: peak.photo,
         photoCredit: peak.photoCredit,
         objectiveId: peak.id,

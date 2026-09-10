@@ -85,6 +85,43 @@ export default defineConfig({
           },
           {
             /*
+             * THE HARVESTED FACTS AND THE PHOTOGRAPH INDEX — CACHED ON USE,
+             * NOT PRECACHED, AND THE REASON IS SIZE.
+             *
+             * `data/peaks.json` is 4.7 MB for 53,668 peaks and IS precached,
+             * because without it offline search collapses to the curated
+             * fourteen. `data/peak-facts/{0..15}.json` hold the Wikidata
+             * harvest for 33,000-odd entities — 6.1 MB raw between them,
+             * sharded by entity id so one page costs one sixteenth. Precaching both would roughly double what installing the
+             * app costs, to make prominence and mountain range available on a
+             * peak page nobody has opened yet.
+             *
+             * So: the first visit to a reference peak fetches the facts, and
+             * every visit after that works offline. A peak opened with no
+             * signal and no cache still shows its elevation, position and
+             * country — those live in `peaks.json` — and simply shows no
+             * prominence row rather than an empty one. That is the honest
+             * degradation the tier was designed around.
+             *
+             * `data/peak-photos.json` follows the same rule for the same
+             * reason: it is one row per photographed peak across the world
+             * set, not the 580-row Alpine index it started as. Until it has
+             * loaded a card shows the contour plate, which claims nothing.
+             */
+            urlPattern: ({ url }) =>
+              url.origin === self.location.origin &&
+              (url.pathname.startsWith("/data/peak-facts/") ||
+                url.pathname === "/data/peak-photos.json"),
+            handler: "StaleWhileRevalidate",
+            options: {
+              cacheName: "icefall-peak-facts",
+              // Sixteen fact shards plus the photograph index.
+              expiration: { maxEntries: 20, maxAgeSeconds: 180 * 24 * 3600 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          {
+            /*
              * THE ATHLETE'S OWN FACE, AND THIS RULE IS WHY IT SURVIVES NO
              * SIGNAL.
              *

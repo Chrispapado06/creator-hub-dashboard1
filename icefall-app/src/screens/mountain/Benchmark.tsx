@@ -25,11 +25,19 @@ import {
   type ReadinessSnapshot,
 } from "@/services/benchmarkHistory";
 import { ASSESSMENT_DISCLAIMER, assessPeak } from "@/services/peakAssessment";
+import {
+  REFERENCE_NEXT_STEP,
+  REFERENCE_NO_READINESS,
+  REFERENCE_NO_READINESS_SHORT,
+  TIER_EYEBROW,
+  TIER_STATEMENT,
+} from "@/services/peakTier";
 import { sync } from "@/services/repository";
 import { useRecordedActivities } from "@/tracking/feed";
 import { useApp } from "@/state/AppState";
 import { fmtElevation } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import type { Mountain } from "@/types";
 
 /**
  * Benchmark — where the athlete stands against what the mountain asks.
@@ -67,6 +75,15 @@ import { cn } from "@/lib/utils";
  *     to hire a guide would be indefensible whatever the pricing table says.
  *
  * Nothing on this page tells anyone to climb or not to climb.
+ *
+ * AND NOTHING ON THIS PAGE IS COMPUTED FOR A REFERENCE ENTRY. Both engines
+ * derive the class of objective from an elevation band. For a curated
+ * mountain the band is a training benchmark standing beside a grade a person
+ * wrote; for a peak nobody has surveyed it is the only "assessment" there is,
+ * and it was rendering as one: "YOUR READINESS 10/100", "rope work on mixed
+ * ground", "engage an IFMGA/UIAGM-certified guide" on a 3,917 m walk-up
+ * (Erciyes Dağı, measured 2026-09-11). That tier gets the sentence in
+ * `services/peakTier.ts` and no figure.
  */
 
 /* -------------------------------------------------------------------------- */
@@ -130,6 +147,8 @@ const NOT_MEASURED_COPY: Record<string, string> = {
 interface Objective {
   peak: { name: string; elevationM: number; lat?: number; lon?: number };
   backTo: string;
+  /** The human-written record, when one exists. Absent for a reference entry. */
+  curated?: Mountain;
 }
 
 export default function Benchmark() {
@@ -161,6 +180,7 @@ export default function Benchmark() {
           lon: goal.lon ?? curated?.coords.lon,
         },
         backTo: `/goals/${goal.id}`,
+        curated,
       };
     }
 
@@ -169,6 +189,7 @@ export default function Benchmark() {
       return {
         peak: { name: saved.name, elevationM: saved.elevationM, lat: saved.lat, lon: saved.lon },
         backTo: "/goals",
+        curated: saved.curatedId ? sync.mountainById(saved.curatedId) : undefined,
       };
     }
 
@@ -202,7 +223,7 @@ export default function Benchmark() {
   );
 
   const readiness = useMemo<ObjectiveReadiness | null>(() => {
-    if (!objective) return null;
+    if (!objective?.curated) return null;
     return assessObjectiveReadiness({
       peak: objective.peak,
       activities,
@@ -222,9 +243,10 @@ export default function Benchmark() {
     setHistory(recordSnapshot(objectiveKey(objective.peak), readiness.overall));
   }, [objective, readiness]);
 
-  if (!objective || !readiness) return <NoObjective />;
+  if (!objective) return <NoObjective />;
+  if (!objective.curated || !readiness) return <ReferenceBenchmark objective={objective} />;
 
-  const { peak } = objective;
+  const { peak, curated } = objective;
   const assessment = assessPeak(peak.elevationM, peak.lat ?? 0, peak.lon);
   const demands = demandProfile(peak);
 
@@ -254,7 +276,10 @@ export default function Benchmark() {
     <Screen>
       <ScreenHeader
         title="Benchmark"
-        subtitle={`${peak.name} · ${fmtElevation(peak.elevationM)} m · ${assessment.shortLabel}`}
+        // The grade a person wrote. `assessment.shortLabel` is the band the
+        // engine benchmarks against, and on the Eiger it read "Serious alpine"
+        // under a record that says "Technical alpine".
+        subtitle={`${peak.name} · ${fmtElevation(peak.elevationM)} m · ${curated.difficultyLabel}`}
         back={objective.backTo}
       />
 
@@ -499,6 +524,46 @@ export default function Benchmark() {
 /* -------------------------------------------------------------------------- */
 /* No objective                                                                */
 /* -------------------------------------------------------------------------- */
+
+/**
+ * The benchmark page for a peak ICEFALL has not surveyed: what the page is, in
+ * words, and no figure. It does not run either engine — see the header.
+ */
+function ReferenceBenchmark({ objective }: { objective: Objective }) {
+  const { peak } = objective;
+  return (
+    <Screen>
+      <ScreenHeader
+        title="Benchmark"
+        subtitle={`${peak.name} · ${fmtElevation(peak.elevationM)} m · ${TIER_EYEBROW.reference}`}
+        back={objective.backTo}
+      />
+      <Stagger>
+        <Rise className="pt-1">
+          <SectionLabel>Your readiness</SectionLabel>
+          <Card className="mt-3">
+            <p className="section-label text-mist-dim">No readiness figure</p>
+            <p className="mt-2.5 text-[13px] leading-relaxed text-mist">{REFERENCE_NO_READINESS}</p>
+          </Card>
+        </Rise>
+        <Rise className="pt-6">
+          <Card>
+            <p className="section-label text-[9px] text-mist-dim">{TIER_EYEBROW.reference}</p>
+            <p className="mt-1.5 text-[12px] leading-relaxed text-mist">{TIER_STATEMENT.reference}</p>
+            <p className="mt-2 text-[12px] leading-relaxed text-mist-dim">{REFERENCE_NEXT_STEP}</p>
+          </Card>
+        </Rise>
+        <Rise className="pt-6">
+          <Link to={objective.backTo}>
+            <Button variant="secondary" className="w-full">
+              Back to the objective
+            </Button>
+          </Link>
+        </Rise>
+      </Stagger>
+    </Screen>
+  );
+}
 
 function NoObjective() {
   return (
@@ -901,7 +966,14 @@ function Comparison({
   selfReported,
 }: {
   current: { name: string; elevationM: number };
-  objectives: { id: string; name: string; elevationM: number; lat: number; lon: number }[];
+  objectives: {
+    id: string;
+    name: string;
+    elevationM: number;
+    lat: number;
+    lon: number;
+    curatedId?: string;
+  }[];
   activities: Parameters<typeof assessObjectiveReadiness>[0]["activities"];
   summitsLogged: { name: string; elevationM: number; date: string }[];
   selfReported: Parameters<typeof assessObjectiveReadiness>[0]["selfReported"];
@@ -915,13 +987,18 @@ function Comparison({
 
     return list.map((o) => {
       const peak = { name: o.name, elevationM: o.elevationM, lat: o.lat, lon: o.lon };
-      const result = assessObjectiveReadiness({ peak, activities, summitsLogged, selfReported });
+      const curated = o.curatedId ? sync.mountainById(o.curatedId) : undefined;
+      // A reference entry gets no engine run and no band label: the row says
+      // the tier and that there is no figure, the same as its own page.
+      const result = curated
+        ? assessObjectiveReadiness({ peak, activities, summitsLogged, selfReported })
+        : null;
       return {
         id: o.id,
         name: o.name,
         elevationM: o.elevationM,
-        shortLabel: assessPeak(o.elevationM, o.lat, o.lon).shortLabel,
-        overall: result.overall,
+        shortLabel: curated ? curated.difficultyLabel : TIER_EYEBROW.reference,
+        overall: result?.overall ?? null,
         isCurrent:
           o.name === current.name && Math.round(o.elevationM) === Math.round(current.elevationM),
       };
@@ -956,7 +1033,11 @@ function Comparison({
               </p>
             </div>
             <div className="shrink-0 text-right">
-              {row.overall.value === null ? (
+              {row.overall === null ? (
+                <p className="max-w-[128px] text-[10px] leading-snug text-mist-dim">
+                  {REFERENCE_NO_READINESS_SHORT}
+                </p>
+              ) : row.overall.value === null ? (
                 <UnavailableState
                   reason={row.overall.reason ?? "no-data"}
                   size="sm"
@@ -973,8 +1054,9 @@ function Comparison({
         ))}
       </div>
       <p className="border-t border-hairline px-4 py-3 text-[11px] leading-relaxed text-mist-dim">
-        Preparation profiles, computed against ICEFALL's benchmarks for each class of objective.
-        Class is estimated from elevation and position, not from a route.
+        Preparation profiles, computed against ICEFALL's benchmarks for each surveyed objective.
+        The benchmark class is estimated from elevation and position, not from a route; a
+        reference entry has no class and no figure.
       </p>
     </Card>
   );

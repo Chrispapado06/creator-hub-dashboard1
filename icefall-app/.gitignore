@@ -20,3 +20,4 @@ public/img/guides/
 
 # Overpass responses cached by the trek↔OSM matching script — regenerate, never commit
 scripts/.cache/
+.harvest-cache/

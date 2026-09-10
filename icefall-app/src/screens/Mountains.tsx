@@ -19,6 +19,7 @@ import { fmtDate, fmtElevation } from "@/lib/format";
 import { sync } from "@/services/repository";
 import { useApp, type SavedObjective } from "@/state/AppState";
 import { ASSESSMENT_BANDS, assessPeak } from "@/services/peakAssessment";
+import { TIER_EYEBROW } from "@/services/peakTier";
 import { REPRESENTATIVE_CAPTION } from "@/services/peakImagery";
 import { useMountainImage } from "@/components/domain/MountainImage";
 import { MountainPage } from "@/components/domain/MountainPage";
@@ -27,6 +28,7 @@ import {
   PEAK_ATTRIBUTION,
   mergePeaks,
   rememberPeaks,
+  otherName,
   searchCatalogueByName,
   type Peak,
 } from "@/services/peaks";
@@ -115,7 +117,7 @@ export default function Mountains() {
           type="button"
           onClick={() => setFilterOpen((o) => !o)}
           aria-expanded={filterOpen}
-          aria-label="Filter by assessment band"
+          aria-label="Filter by elevation"
           className={cn(
             "grid h-11 w-11 shrink-0 place-items-center rounded-tile border bg-elevated text-azure transition-colors",
             filterOpen || bands.size > 0
@@ -186,7 +188,7 @@ function BandChips({
                 : "border-hairline bg-elevated/60 text-mist hover:text-snow",
             )}
           >
-            {b.shortLabel}
+            {b.rangeLabel}
           </button>
         );
       })}
@@ -245,13 +247,17 @@ function ObjectivesList({
    * objective with no goal behind it has no preparation figure — and an empty
    * track with an invented number under it would be a lie about how ready the
    * athlete is for a mountain that can kill them. So: no goal, no bar.
+   *
+   * And no bar for a goal on an UNSURVEYED peak either, for the reason given
+   * in `services/peakTier.ts`: the capability quarter of that percentage is
+   * measured against `elevationM * 0.45`, which is nobody's measurement.
    */
   const progressFor = useCallback(
     (o: SavedObjective): number | null => {
       const goal = goals.find((g) =>
         o.curatedId ? g.mountainId === o.curatedId : g.name.toLowerCase() === o.name.toLowerCase(),
       );
-      return goal ? goal.preparation : null;
+      return goal && goal.mountainId ? goal.preparation : null;
     },
     [goals],
   );
@@ -321,7 +327,21 @@ function ObjectiveCard({
   progress: number | null;
 }) {
   const { removeObjective, toggleSummited } = useApp();
-  const a = assessPeak(o.elevationM, o.lat, o.lon);
+  /*
+   * A CURATED MOUNTAIN SHOWS ITS OWN GRADE, NOT THE DERIVED ONE.
+   *
+   * This card used `assessPeak(...)` for every entry, INCLUDING the fourteen
+   * that have a real grade written by a person — so the list overrode the
+   * expert judgement with an elevation band. Verified live on 2026-09-10:
+   * Kilimanjaro, curated "High-altitude trek", read "High altitude"; the
+   * MATTERHORN and the EIGER, both curated "Technical alpine" at difficulty 5,
+   * both read "Serious alpine". Understatement, which is the dangerous
+   * direction. Derived and curated agreed on only 6 of 14.
+   *
+   * An unsurveyed peak now shows no grade here at all — see
+   * `services/peakTier.ts`. It shows its elevation, which is a fact.
+   */
+  const curated = o.curatedId ? sync.mountainById(o.curatedId) : undefined;
   const image = useMountainImage({
     name: o.name,
     elevationM: o.elevationM,
@@ -385,7 +405,8 @@ function ObjectiveCard({
               {o.name}
             </h3>
             <p className="tnum mt-1 truncate pr-14 text-[13px] text-mist">
-              {fmtElevation(o.elevationM)} m · {a.label}
+              {fmtElevation(o.elevationM)} m
+              {curated ? ` · ${curated.difficultyLabel}` : ""}
             </p>
           </div>
 
@@ -432,10 +453,18 @@ function ObjectiveCard({
   );
 }
 
-/** One peak in a list, with its derived grade and a one-tap add. */
+/**
+ * One peak in a list.
+ *
+ * It used to carry a derived grade and a row of difficulty dots for EVERY
+ * peak, which is the tier confusion at its most compact: five dots is a
+ * verdict, and it was being drawn from an elevation band. A surveyed mountain
+ * keeps its grade and its dots because a person set them. Everything else
+ * shows facts — elevation, distance, range — and no verdict at all.
+ */
 function PeakRow({ peak }: { peak: Peak }) {
   const { addObjective, removeObjective, hasObjective } = useApp();
-  const a = assessPeak(peak.elevationM, peak.lat, peak.lon);
+  const curated = peak.curatedId ? sync.mountainById(peak.curatedId) : undefined;
   const id = peak.curatedId ? `curated:${peak.curatedId}` : peak.id;
   const saved = hasObjective(id);
   const to = peak.curatedId
@@ -453,15 +482,25 @@ function PeakRow({ peak }: { peak: Peak }) {
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <p className="truncate text-[14px] text-snow">{peak.name}</p>
-                {peak.curatedId && <Badge tone="azure">ICEFALL</Badge>}
+                {curated ? (
+                  <Badge tone="azure">ICEFALL</Badge>
+                ) : (
+                  <span className="section-label shrink-0 text-[8px] text-mist-dim">
+                    {TIER_EYEBROW.reference}
+                  </span>
+                )}
               </div>
+              {/* The other name it is known by — the local script under an
+                  English title, or the English name under a Latin local one —
+                  so a row found by typing "Ararat" reads as Ararat. */}
               <p className="tnum mt-0.5 text-[11px] text-mist-dim">
+                {otherName(peak) ? `${otherName(peak)} · ` : ""}
                 {fmtElevation(peak.elevationM)} m
                 {peak.distanceM != null && ` · ${(peak.distanceM / 1000).toFixed(1)} km away`}
-                {` · ${a.label}`}
+                {curated ? ` · ${curated.difficultyLabel}` : ""}
               </p>
             </div>
-            <DifficultyDots level={a.difficulty} className="shrink-0" />
+            {curated && <DifficultyDots level={curated.difficulty} className="shrink-0" />}
           </div>
         </Card>
       </Link>

@@ -39,13 +39,23 @@ import {
 import type { MountainConditions, Reading } from "@/services/conditions";
 import { assessPeak } from "@/services/peakAssessment";
 import type { PeakAssessment } from "@/services/peakAssessment";
+import {
+  REFERENCE_NEXT_STEP,
+  REFERENCE_NO_KIT_LIST,
+  REFERENCE_NO_KIT_LIST_SHORT,
+  REFERENCE_NO_READINESS,
+  REFERENCE_NO_READINESS_SHORT,
+  REFERENCE_NOT_ASSESSED,
+  TIER_EYEBROW,
+  TIER_STATEMENT,
+} from "@/services/peakTier";
 import { sync } from "@/services/repository";
 
 import { useRecordedActivities } from "@/tracking/feed";
 import { useApp } from "@/state/AppState";
 import { FOCUS_LABELS, fmtDate, fmtElevation } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { Goal } from "@/types";
+import type { Goal, Mountain } from "@/types";
 
 /**
  * §20 — the Command Centre.
@@ -76,6 +86,16 @@ import type { Goal } from "@/types";
  *  - PROVENANCE TRAVELS WITH THE NUMBER. Readiness assembled from what the
  *    athlete typed is badged self-reported wherever it appears, including on
  *    the headline ring.
+ *  - A REFERENCE ENTRY IS NOT ASSESSED. Every figure on this screen that is
+ *    not weather comes from `assessPeak`'s elevation band — the class label,
+ *    the kit list, the readiness composite, the guide verdict. For a goal on
+ *    a peak no human record backs, none of that has a source. Measured live
+ *    2026-09-11 on Erciyes Dağı, a summer walk-up volcano: "Serious alpine",
+ *    "crevasse rescue kit" as essential, "engage an IFMGA/UIAGM-certified
+ *    guide", readiness 10/100 — all from 3,917 m and nothing else. So for
+ *    that tier the two systems that would be derived report a NAMED absence
+ *    (`services/peakTier.ts`) and only the forecast, the countdown and the
+ *    plan are read.
  */
 
 /* -------------------------------------------------------------------------- */
@@ -286,8 +306,15 @@ function trainingStatus(
   readiness: ObjectiveReadiness | null,
   recordedSessions: number,
   to: string,
+  surveyed: boolean,
 ): SystemStatus {
   const base = { id: "training" as const, label: "Training", icon: Gauge, to };
+
+  // Not a data gap: there is no class of objective to measure against, and
+  // the deficit is zero because a system with no claim cannot be "behind".
+  if (!surveyed) {
+    return { ...base, word: "Not assessed", reason: REFERENCE_NO_READINESS_SHORT, deficit: 0 };
+  }
 
   // No elevation for the objective means no class of mountain to assess against.
   if (!readiness) {
@@ -348,10 +375,16 @@ interface EquipmentSummary {
   /** Whether any status has been recorded against this list at all. */
   touched: boolean;
   reason?: Unavailable;
+  /** No list was generated because the peak is a reference entry, not because data is missing. */
+  unsurveyed?: true;
 }
 
 function equipmentStatus(summary: EquipmentSummary, to: string): SystemStatus {
   const base = { id: "equipment" as const, label: "Equipment", icon: Backpack, to };
+
+  if (summary.unsurveyed) {
+    return { ...base, word: "No list", reason: REFERENCE_NO_KIT_LIST_SHORT, deficit: 0 };
+  }
 
   if (summary.total === null || summary.accounted === null || summary.total === 0) {
     return {
@@ -447,7 +480,18 @@ function nextPriority(
   assessment: PeakAssessment | null,
   peakName: string,
   equipment: EquipmentSummary,
+  surveyed: boolean,
 ): { system: SystemId; sentence: string } {
+  // Ranking three systems needs a claim about what the mountain asks of each,
+  // and for a reference entry ICEFALL holds none. The line says so instead of
+  // electing a winner between two systems that reported nothing.
+  if (!surveyed) {
+    return {
+      system: "training",
+      sentence: `${REFERENCE_NOT_ASSESSED} Keep to the general programme, watch the forecast, and treat the date as provisional.`,
+    };
+  }
+
   // Ties break in order of consequence: what you can prepare outranks what you
   // can only watch, and the body of work outranks the kit list.
   const order: SystemId[] = ["training", "equipment", "conditions"];
@@ -541,12 +585,14 @@ export default function CommandCentre() {
 
   /** Curated mountains carry the coordinates a goal often does not. */
   const mountain = goal?.mountainId ? sync.mountainById(goal.mountainId) : undefined;
+  /** Whether a human-written record backs this objective. See the header. */
+  const surveyed = mountain !== undefined;
   const elevationM = goal?.elevationM ?? mountain?.elevationM ?? null;
   const lat = goal?.lat ?? mountain?.coords.lat;
   const lon = goal?.lon ?? mountain?.coords.lon;
 
   const readiness = useMemo<ObjectiveReadiness | null>(() => {
-    if (!goal || elevationM === null) return null;
+    if (!goal || elevationM === null || !surveyed) return null;
     return assessObjectiveReadiness({
       peak: { name: goal.name, elevationM, lat, lon },
       activities: recorded,
@@ -561,7 +607,7 @@ export default function CommandCentre() {
             : undefined,
       },
     });
-  }, [goal, elevationM, lat, lon, recorded, summitsLogged, coachProfile]);
+  }, [goal, elevationM, lat, lon, surveyed, recorded, summitsLogged, coachProfile]);
 
   const conditions = useObjectiveConditions({
     name: goal?.name ?? "",
@@ -594,6 +640,9 @@ export default function CommandCentre() {
     if (!goal || elevationM === null) {
       return { total: null, accounted: null, touched: false, reason: "no-data" };
     }
+    if (!surveyed) {
+      return { total: null, accounted: null, touched: false, unsurveyed: true };
+    }
     const list = generateChecklist({ name: goal.name, elevationM, lat, lon });
     const statuses = checklistStatuses[goal.id] ?? {};
     const result = completion(list.items, statuses);
@@ -602,22 +651,23 @@ export default function CommandCentre() {
       accounted: result.resolved,
       touched: Object.keys(statuses).length > 0,
     };
-  }, [goal, elevationM, lat, lon, checklistStatuses]);
+  }, [goal, elevationM, lat, lon, surveyed, checklistStatuses]);
 
   if (!goal) return <NoObjective />;
 
-  const assessment = elevationM === null ? null : assessPeak(elevationM, lat ?? 0, lon);
+  const assessment =
+    elevationM === null || !surveyed ? null : assessPeak(elevationM, lat ?? 0, lon);
   const base = `/mountain/${goal.id}`;
   const now = new Date();
   const daysRemaining = daysUntilLocal(goal.targetDate, now);
 
   const systems: SystemStatus[] = [
-    trainingStatus(readiness, recorded.length, `${base}/benchmark`),
+    trainingStatus(readiness, recorded.length, `${base}/benchmark`, surveyed),
     equipmentStatus(equipment, `${base}/checklist`),
     conditionsStatus(conditions, `${base}/conditions`),
   ];
 
-  const priority = nextPriority(systems, readiness, assessment, goal.name, equipment);
+  const priority = nextPriority(systems, readiness, assessment, goal.name, equipment, surveyed);
 
   /**
    * Whether the performance figure is the athlete's own account of themselves.
@@ -630,7 +680,7 @@ export default function CommandCentre() {
 
   return (
     <Screen padded={false}>
-      <Hero goal={goal} elevationM={elevationM} assessment={assessment} />
+      <Hero goal={goal} elevationM={elevationM} assessment={assessment} curated={mountain} />
 
       <Stagger className="px-5 pb-4">
         {showingFallback && (
@@ -656,6 +706,7 @@ export default function CommandCentre() {
             selfReported={selfReported}
             recordedSessions={recorded.length}
             to={`${base}/benchmark`}
+            surveyed={surveyed}
           />
         </Rise>
 
@@ -688,6 +739,7 @@ export default function CommandCentre() {
             readiness={readiness}
             conditions={conditions}
             hasChecklist={equipment.total !== null && equipment.total > 0}
+            surveyed={surveyed}
           />
         </Rise>
       </Stagger>
@@ -703,10 +755,12 @@ function Hero({
   goal,
   elevationM,
   assessment,
+  curated,
 }: {
   goal: Goal;
   elevationM: number | null;
   assessment: PeakAssessment | null;
+  curated: Mountain | undefined;
 }) {
   const image = useMountainImage({
     name: goal.name,
@@ -752,13 +806,21 @@ function Hero({
           ) : (
             <span className="tnum text-[13px] text-mist">{fmtElevation(elevationM)} m</span>
           )}
-          {assessment && (
+          {/* The grade a PERSON wrote, or the tier. Never `assessment.shortLabel`:
+              that is an elevation band, and on the Matterhorn it read "Serious
+              alpine" against a record that says "Technical alpine". */}
+          {curated ? (
             <>
               <span className="text-mist-dim">·</span>
-              <span className="text-[13px] text-mist">{assessment.shortLabel}</span>
+              <span className="text-[13px] text-mist">{curated.difficultyLabel}</span>
+            </>
+          ) : (
+            <>
+              <span className="text-mist-dim">·</span>
+              <span className="section-label text-[9px] text-mist-dim">{TIER_EYEBROW.reference}</span>
             </>
           )}
-          {goal.subtitle && (
+          {goal.subtitle && goal.subtitle !== curated?.difficultyLabel && (
             <>
               <span className="text-mist-dim">·</span>
               <span className="text-[13px] text-mist">{goal.subtitle}</span>
@@ -902,18 +964,28 @@ function PerformancePanel({
   selfReported,
   recordedSessions,
   to,
+  surveyed,
 }: {
   readiness: ObjectiveReadiness | null;
   selfReported: boolean;
   recordedSessions: number;
   to: string;
+  surveyed: boolean;
 }) {
   return (
     <section>
       <SectionLabel>Am I physically ready</SectionLabel>
 
       <Card className="mt-3">
-        {!readiness ? (
+        {!surveyed ? (
+          // A named absence, not an UnavailableState: nothing is missing from a
+          // calculation. There is no calculation for this tier.
+          <div className="py-1">
+            <p className="section-label text-mist-dim">No readiness figure</p>
+            <p className="mt-2.5 text-[12px] leading-relaxed text-mist">{REFERENCE_NO_READINESS}</p>
+            <p className="mt-2.5 text-[12px] leading-relaxed text-mist-dim">{REFERENCE_NEXT_STEP}</p>
+          </div>
+        ) : !readiness ? (
           <div className="py-4">
             <UnavailableState reason="no-data" size="md" className="mx-auto" />
             <p className="mt-4 text-center text-[11px] leading-relaxed text-mist-dim">
@@ -974,7 +1046,18 @@ function EquipmentPanel({ summary, to }: { summary: EquipmentSummary; to: string
       <SectionLabel>Do I have everything</SectionLabel>
 
       <Card className="mt-3">
-        {known === null ? (
+        {summary.unsurveyed ? (
+          <div className="py-1">
+            <p className="section-label text-mist-dim">No kit list</p>
+            <p className="mt-2.5 text-[12px] leading-relaxed text-mist">{REFERENCE_NO_KIT_LIST}</p>
+            <Link to={to} className="mt-4 block">
+              <Button variant="secondary" className="w-full">
+                Open your pack
+                <ChevronRight size={15} strokeWidth={1.8} />
+              </Button>
+            </Link>
+          </div>
+        ) : known === null ? (
           <div className="py-3">
             <UnavailableState reason={summary.reason ?? "no-data"} size="md" className="mx-auto" />
             <p className="mt-4 text-center text-[11px] leading-relaxed text-mist-dim">
@@ -1308,13 +1391,16 @@ function Footnotes({
   readiness,
   conditions,
   hasChecklist,
+  surveyed,
 }: {
   readiness: ObjectiveReadiness | null;
   conditions: ConditionsState;
   hasChecklist: boolean;
+  surveyed: boolean;
 }) {
   return (
     <section className="space-y-4">
+      {!surveyed && <Disclaimer>{TIER_STATEMENT.reference}</Disclaimer>}
       {readiness?.professionalAdvice && <Disclaimer>{readiness.professionalAdvice}</Disclaimer>}
       {readiness && <Disclaimer>{OBJECTIVE_READINESS_DISCLAIMER}</Disclaimer>}
       {hasChecklist && <Disclaimer>{CHECKLIST_DISCLAIMER}</Disclaimer>}

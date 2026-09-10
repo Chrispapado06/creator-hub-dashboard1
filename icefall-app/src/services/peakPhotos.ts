@@ -23,6 +23,7 @@
  */
 
 import { PHOTOS_TIMEOUT_MS, withTimeout } from "@/lib/netTimeout";
+import { haversine } from "@/tracking/filters";
 import { OFFLINE } from "@/offline/offline";
 
 export interface PeakPhoto {
@@ -50,6 +51,9 @@ export function photoCredit(subject: string, photo: PeakPhoto): string {
 export const WIKIMEDIA_ATTRIBUTION = "Photography via Wikimedia Commons";
 
 /** Wikidata one-liners that mean "this is a mountain". */
+/** How far a name-guessed article may sit from the peak and still be it. */
+const NAME_GUESS_RADIUS_M = 10_000;
+
 const MOUNTAINISH =
   /\b(mountain|peak|summit|volcano|volcanic|massif|mount|hill|ridge|butte|nunatak|cerro|pico|berg)\b/i;
 const NOT_A_PEAK = /disambiguation|surname|given name|municipality|village|town|band\b|film\b/i;
@@ -58,7 +62,13 @@ const NOT_A_PEAK = /disambiguation|surname|given name|municipality|village|town|
 /* Cache                                                                      */
 /* -------------------------------------------------------------------------- */
 
-const CACHE_KEY = "icefall.peak-photos.v2";
+/*
+ * v3, not v2: entries written before the coordinate gate below may hold a
+ * photograph of a different mountain with the same name (see `flush`), and a
+ * cache that survives the fix keeps serving them. The old key is simply never
+ * read again; the settings reset clears it with everything else.
+ */
+const CACHE_KEY = "icefall.peak-photos.v3";
 const CACHE_LIMIT = 600;
 
 /**
@@ -122,6 +132,9 @@ interface Pending {
   title: string;
   /** Name guesses need the "is it actually a mountain?" gate; OSM links don't. */
   needsGate: boolean;
+  /** Where the peak is, so a name guess can be checked against the article's own position. */
+  lat?: number;
+  lon?: number;
   resolve: (facts: Entry) => void;
 }
 
@@ -159,13 +172,15 @@ interface WikiPage {
   pageimage?: string;
   extract?: string;
   terms?: { description?: string[] };
+  /** The article's own position, when it has one. Primary first. */
+  coordinates?: { lat: number; lon: number; primary?: string }[];
 }
 
 async function fetchPages(lang: string, titles: string[]): Promise<Map<string, WikiPage>> {
   const url =
     `https://${lang}.wikipedia.org/w/api.php?action=query&format=json&origin=*&redirects=1` +
-    "&prop=pageimages|pageterms|extracts&piprop=thumbnail|name&pithumbsize=1200" +
-    "&wbptterms=description&exintro=1&explaintext=1&exsentences=4" +
+    "&prop=pageimages|pageterms|extracts|coordinates&piprop=thumbnail|name&pithumbsize=1200" +
+    "&wbptterms=description&exintro=1&explaintext=1&exsentences=4&coprimary=primary" +
     `&titles=${encodeURIComponent(titles.join("|"))}`;
 
   const res = await fetch(url, { signal: withTimeout(PHOTOS_TIMEOUT_MS) });
@@ -227,20 +242,36 @@ async function fetchCredits(
     };
   };
 
-  const strip = (html?: string) =>
-    (html ?? "")
-      .replace(/<[^>]*>/g, "")
-      .replace(/\s+/g, " ")
-      .trim();
-
   for (const page of Object.values(json.query?.pages ?? {})) {
     const meta = page.imageinfo?.[0]?.extmetadata ?? {};
     out.set(fileKey(page.title), {
-      credit: strip(meta.Artist?.value) || "",
-      license: strip(meta.LicenseShortName?.value) || "",
+      credit: stripHtml(meta.Artist?.value) || "",
+      license: stripHtml(meta.LicenseShortName?.value) || "",
     });
   }
   return out;
+}
+
+/**
+ * Commons' Artist field is HTML. Tags are replaced with a SPACE, not nothing:
+ * "<span>Brad Mering</span><br>Baltimore, MD" stripped to "" ran the name into
+ * the city ("Brad MeringBaltimore, MD") on the Alpamayo caption. And the
+ * boilerplate Commons writes where no author was machine-readable — "No
+ * machine-readable author provided. Rubenfr assumed (based on copyright
+ * claims)." — is reduced to the name it assumed, which is the attribution
+ * Commons itself displays for the file.
+ */
+export function stripHtml(html?: string): string {
+  const text = (html ?? "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/\s+/g, " ")
+    .trim();
+  const assumed = /^No machine-readable author provided\.\s*(.+?)\s+assumed\s*\(based on copyright claims\)\.?$/i.exec(
+    text,
+  );
+  return assumed ? assumed[1] : text;
 }
 
 async function flush(batch: Pending[]) {
@@ -274,10 +305,33 @@ async function flush(batch: Pending[]) {
             const src = page?.thumbnail?.source;
             const description = page?.terms?.description?.[0] ?? "";
 
-            // The gate is about identity, not illustration: an article with no
-            // photograph can still be the right mountain and still describe it.
+            /*
+             * The gate is about identity, not illustration: an article with no
+             * photograph can still be the right mountain and still describe it.
+             *
+             * TWO TESTS, NOT ONE. "Is the article about a mountain?" does not
+             * ask "is it about THIS mountain?", and names repeat. Measured
+             * 2026-09-11 on Cerro Pan de Azúcar, a 5,249 m Andean summit with
+             * no `wikipedia` tag: the name guess resolved to enwiki's "Cerro
+             * Pan de Azúcar" — a 400 m hill in Maldonado, Uruguay, 1,400 km
+             * away — which passed the description gate ("hill") and put a
+             * photograph of the wrong country on the page, captioned with a
+             * real photographer's name. That is the proximity-matched failure
+             * this project deleted an imagery system over. So a name guess
+             * must also land where the peak is: the article's own coordinate
+             * within 10 km of the query's, and an article with no coordinate
+             * cannot be verified and is not used.
+             */
+            const at = page?.coordinates?.[0];
+            const farAway =
+              pending.lat !== undefined &&
+              pending.lon !== undefined &&
+              (!at ||
+                haversine({ lat: pending.lat, lon: pending.lon }, { lat: at.lat, lon: at.lon }) >
+                  NAME_GUESS_RADIUS_M);
             const wrongSubject =
-              pending.needsGate && (!MOUNTAINISH.test(description) || NOT_A_PEAK.test(description));
+              pending.needsGate &&
+              (!MOUNTAINISH.test(description) || NOT_A_PEAK.test(description) || farAway);
 
             if (!page || wrongSubject) {
               pending.resolve(null);
@@ -321,21 +375,29 @@ async function flush(batch: Pending[]) {
 
   for (const f of found) {
     const meta = (f.file && credits.get(fileKey(f.file))) || undefined;
-    const facts: Entry = {
-      photo: {
-        src: f.src,
-        credit: meta?.credit ?? "",
-        license: meta?.license ?? "",
-        pageUrl: f.page,
-      },
-      summary: f.summary,
-      articleUrl: f.page,
-    };
+    /*
+     * A CC BY licence cannot be satisfied without the photographer's name.
+     * Commons holds files with an empty Artist field — `File:Sermitsiaq.jpg`
+     * is one, and it rendered as "CC BY-SA 3.0 · Wikimedia Commons" with no
+     * author, which is a licence term printed and not met. The article is
+     * still the right one, so its summary and link are kept; only the
+     * photograph is withheld, and the page falls back to the terrain plate.
+     */
+    const credit = meta?.credit ?? "";
+    const license = meta?.license ?? "";
+    const photo =
+      requiresAttribution(license) && !credit
+        ? null
+        : { src: f.src, credit, license, pageUrl: f.page };
+    const facts: Entry = { photo, summary: f.summary, articleUrl: f.page };
     cache[f.pending.key] = facts;
     f.pending.resolve(facts);
   }
   persist();
 }
+
+/** Licences that oblige the display to name the author. */
+export const requiresAttribution = (license: string) => /^(CC[ -]BY|Attribution)/i.test(license);
 
 /* -------------------------------------------------------------------------- */
 /* Public API                                                                 */
@@ -407,7 +469,7 @@ export function resolvePeakFacts(query: PeakPhotoQuery): Promise<Entry> {
   if (existing) return existing;
 
   const promise = new Promise<Entry>((resolve) => {
-    queue.push({ key, lang, title, needsGate: !tagged, resolve });
+    queue.push({ key, lang, title, needsGate: !tagged, lat: query.lat, lon: query.lon, resolve });
     schedule();
   }).finally(() => inflight.delete(key));
 
@@ -513,12 +575,6 @@ async function categoryPhotos(category: string, subject: string): Promise<PeakPh
   if (!res.ok) return [];
   const json = (await res.json()) as { query?: { pages?: Record<string, CommonsFile> } };
 
-  const strip = (html?: string) =>
-    (html ?? "")
-      .replace(/<[^>]*>/g, "")
-      .replace(/\s+/g, " ")
-      .trim();
-
   const out: PeakPhoto[] = [];
   for (const page of Object.values(json.query?.pages ?? {})) {
     const info = page.imageinfo?.[0];
@@ -528,10 +584,15 @@ async function categoryPhotos(category: string, subject: string): Promise<PeakPh
     if (!fileIsAbout(name, subject) || NOT_THE_MOUNTAIN.test(name)) continue;
 
     const meta = info.extmetadata ?? {};
+    const credit = stripHtml(meta.Artist?.value);
+    const license = stripHtml(meta.LicenseShortName?.value);
+    // "Unknown photographer" under CC BY is a licence term not met; the file
+    // is skipped rather than captioned with a placeholder.
+    if (requiresAttribution(license) && !credit) continue;
     out.push({
       src,
-      credit: strip(meta.Artist?.value) || "Unknown photographer",
-      license: strip(meta.LicenseShortName?.value) || "See Commons",
+      credit: credit || "Unknown photographer",
+      license: license || "See Commons",
       pageUrl:
         info.descriptionurl ??
         `https://commons.wikimedia.org/wiki/${encodeURIComponent(page.title)}`,
@@ -585,4 +646,146 @@ export function resolvePeakGallery(query: PeakPhotoQuery): Promise<PeakPhoto[]> 
 
   galleryCache.set(category, promise);
   return promise;
+}
+
+/* -------------------------------------------------------------------------- */
+/* The harvested bundle                                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Photographs resolved, filtered and licence-checked AT BUILD TIME by
+ * `scripts/harvest-peak-photos.mjs`, downloaded into `public/img/peaks/` and
+ * indexed in `public/data/peak-photos.json`.
+ *
+ * WHY THIS EXISTS ALONGSIDE THE RUNTIME RESOLVER. The header of
+ * `components/domain/TrailPlate.tsx` records what runtime-only resolution cost
+ * on 2026-08-24: Commons rate-limited a sweep of twelve locations after five,
+ * geosearch returned whatever happened to be geotagged nearby, and Cyprus was
+ * illustrated with a stranger's selfie. But the decisive argument is not
+ * latency — it is that NOBODY CAN LOOK AT A `useEffect`. A pipeline that
+ * writes files to disk can be reviewed as a contact sheet, and the harvest
+ * script's own measurements say machine filters get to ~95% and no further:
+ * they cannot see an annotated panorama with peak names lettered across the
+ * sky, a 19th-century printed plate, or a topographic map saved as a PNG.
+ *
+ * Keyed by the id `services/peaks.ts` mints for every peak —
+ * `osm:<lat 4dp>,<lon 4dp>` — so the join is on position-as-identity for a
+ * record whose SUBJECT was resolved by entity, never by proximity.
+ */
+export interface HarvestedPhoto {
+  src: string;
+  credit: string;
+  license: string;
+  pageUrl: string;
+  /** The article or Wikidata entity that vouched for the subject. */
+  article: string;
+  via: string;
+  /** The Commons file title — the one stable identity a photograph has across
+   *  the two hosts and the analytics query strings the API hands out. */
+  file: string;
+  /**
+   * True only when a person looked at this file and accepted it. The Alpine
+   * harvest reviewed 608 candidates by eye; the worldwide set is machine-
+   * filtered beyond that, and the index says which is which rather than
+   * letting the two read the same.
+   */
+  reviewed: boolean;
+}
+
+/**
+ * One row as the harvest writes it — packed, because there are tens of
+ * thousands and phones fetch the file. The key comment in
+ * `scripts/harvest-peak-photos.mjs` is the contract; `unpack` below is the
+ * only place it is read.
+ */
+interface PackedPhoto {
+  s: string;
+  f: string;
+  a: string;
+  l: string;
+  q: string;
+  v: "p18" | "lead";
+  r?: 1;
+}
+
+/**
+ * WHY THE PHOTOGRAPH IS A COMMONS URL AND NOT A FILE IN `public/img/peaks/`.
+ *
+ * At 800 px the harvest's JPEGs weigh ~150 KB. A worldwide set is tens of
+ * thousands of them — more than a gigabyte in a repository whose whole image
+ * directory is 84 MB. So the index carries the thumbnail URL the Commons API
+ * rendered, the page fetches it on view, and the service worker's existing
+ * `upload.wikimedia.org` rule keeps it for offline. `--download` in the
+ * harvest script writes local files for a subset, and those rows carry a
+ * local path instead; this code serves either.
+ */
+const THUMB_BASE = "https://upload.wikimedia.org/wikipedia/commons/thumb/";
+
+function unpack(p: PackedPhoto): HarvestedPhoto {
+  return {
+    src: /^(https?:)?\//.test(p.s) ? p.s : THUMB_BASE + p.s,
+    // The harvest normalises this too; the bundle on disk predates that.
+    credit: stripHtml(p.a),
+    license: p.l,
+    pageUrl: `https://commons.wikimedia.org/wiki/File:${encodeURIComponent(p.f.replace(/ /g, "_"))}`,
+    article: /^Q\d+$/.test(p.q) ? `https://www.wikidata.org/wiki/${p.q}` : p.q,
+    via: p.v === "p18" ? "wikidata-p18" : "article-lead",
+    file: p.f,
+    reviewed: p.r === 1,
+  };
+}
+
+interface PhotoBundle {
+  v: number;
+  built: string;
+  /**
+   * Commons file names a person looked at and refused. Carried into the app
+   * because the RUNTIME resolver draws from the same candidate pool — without
+   * this list it would quietly serve, live, the exact files already rejected
+   * by eye.
+   */
+  rejects: Record<string, string>;
+  photos: Record<string, PackedPhoto>;
+}
+
+let bundle: PhotoBundle | null = null;
+let bundleLoad: Promise<PhotoBundle | null> | null = null;
+
+export function loadHarvestedPhotos(): Promise<PhotoBundle | null> {
+  bundleLoad ??= fetch("/data/peak-photos.json")
+    .then((r) => (r.ok ? (r.json() as Promise<PhotoBundle>) : null))
+    .then((b) => {
+      bundle = b;
+      return b;
+    })
+    .catch(() => null);
+  return bundleLoad;
+}
+
+/** The peak id the catalogue mints, from a coordinate. */
+export function peakPhotoKey(lat?: number, lon?: number): string | null {
+  if (lat === undefined || lon === undefined) return null;
+  return `osm:${lat.toFixed(4)},${lon.toFixed(4)}`;
+}
+
+/** Synchronous read, once the bundle has loaded. Undefined before that. */
+export function harvestedPhoto(lat?: number, lon?: number): HarvestedPhoto | undefined {
+  const key = peakPhotoKey(lat, lon);
+  const packed = key && bundle ? bundle.photos[key] : undefined;
+  return packed ? unpack(packed) : undefined;
+}
+
+/**
+ * Whether a Commons file was rejected by a person during review.
+ *
+ * Exported so the runtime path can honour the same judgement. Deleting an
+ * entry undoes a review that was done by eye and cannot be redone by a filter.
+ */
+export function rejectedByReview(fileName?: string): boolean {
+  if (!fileName || !bundle) return false;
+  return Boolean(bundle.rejects[fileName.replace(/_/g, " ").trim()]);
+}
+
+export function harvestedCredit(p: HarvestedPhoto, subject: string): string {
+  return [subject, p.credit, p.license, "Wikimedia Commons"].filter(Boolean).join(" · ");
 }

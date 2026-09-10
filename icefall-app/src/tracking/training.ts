@@ -135,7 +135,31 @@ function blockFor(week: number, total: number): { name: string; load: number } {
   return { name: "Taper", load: 0.55 };
 }
 
-/** How demanding the objective is, from the mountain or the goal's altitude. */
+/**
+ * How demanding the objective is, from the mountain or the goal's altitude.
+ *
+ * FINDING, 2026-09-10, ACTED ON 2026-09-11 — READ BEFORE CHANGING. With no
+ * curated `mountain` this function scales the volume from `elevationM / 1600`,
+ * a coefficient with no source. That is the ONE elevation-only inference that
+ * survives for an unsurveyed peak, and it survives because the screens say so
+ * in words (`REFERENCE_PLAN_NOTE`: "a general altitude programme"). Two others
+ * did not survive:
+ *
+ *   · `verticalFocus` prescribed a "Technical Session — crampon and axe work,
+ *     rope systems" for EVERY goal above 3,500 m. Measured live on Erciyes
+ *     Dağı, a summer walk-up volcano with no glacier: a rope-and-crampon
+ *     session on Home, on the Coach hub and in the plan. A rope requirement
+ *     asserted from height alone is a technical judgement about the ground,
+ *     which is the thing a reference entry may not carry. The focus now comes
+ *     from the curated difficulty only.
+ *   · `requiredAscent` in `computePreparation` fell back to `elevationM *
+ *     0.45` and printed it as "1,763 m needed". No route on Erciyes needs
+ *     1,763 m; the number was made up. Capability is now scored against a
+ *     surveyed route or not at all.
+ *
+ * Whether an elevation-scaled volume programme should exist at all is still the
+ * owner's call; it is labelled, not withheld.
+ */
 export function demandFor(goal: Goal, mountain?: Mountain): number {
   if (mountain) return 0.7 + mountain.difficulty * 0.13;
   if (goal.elevationM) return 0.7 + Math.min(5, goal.elevationM / 1600) * 0.13;
@@ -155,7 +179,10 @@ export function buildPlanForGoal(goal: Goal, mountain?: Mountain, now = new Date
   const currentWeek = Math.min(totalWeeks, Math.max(1, elapsed + 1));
 
   const demand = demandFor(goal, mountain);
-  const verticalFocus = (mountain?.difficulty ?? 3) >= 4 || (goal.elevationM ?? 0) >= 3500;
+  // Technical ground is a judgement a person made about a surveyed mountain.
+  // Without one there is no crampon-and-rope session, whatever the height —
+  // see `demandFor` for the volcano that was prescribed crevasse rescue.
+  const verticalFocus = (mountain?.difficulty ?? 0) >= 4;
 
   const weeks: TrainingWeek[] = [];
   for (let w = 1; w <= totalWeeks; w++) {
@@ -238,6 +265,14 @@ export interface PreparationBreakdown {
  *   consistency  — sessions completed out of those prescribed so far
  *   capability   — biggest single-day ascent against what the objective demands
  *   time         — how far through the build you are
+ *
+ * CAPABILITY EXISTS ONLY AGAINST A SURVEYED ROUTE. It is the biggest recorded
+ * ascent against the route's vertical gain, and a reference entry has no
+ * route: the old fallback of `elevationM * 0.45` was a number with no source,
+ * printed on the Training screen as "of 1,763 m needed". For a goal without a
+ * curated mountain the figure is consistency and time alone, renormalised, and
+ * every screen that prints it calls it plan completion rather than readiness —
+ * `services/peakTier.ts` holds the words.
  */
 export function computePreparation(
   goal: Goal,
@@ -282,14 +317,36 @@ export function computePreparation(
   const confidence = Math.min(1, prescribed / MIN_OBSERVED_SESSIONS);
   const consistencyScore = consistency * confidence;
 
+  const time = Math.min(1, plan.currentWeek / plan.totalWeeks);
+
+  const consistencyPart = {
+    label: "Consistency",
+    percent: Math.round(consistencyScore * 100),
+    detail:
+      confidence < 1
+        ? `${done} of ${prescribed} sessions — too few yet to judge`
+        : `${done} of ${prescribed} prescribed sessions completed`,
+  };
+  const timePart = {
+    label: "Time in the build",
+    percent: Math.round(time * 100),
+    detail: `Week ${plan.currentWeek} of ${plan.totalWeeks}`,
+  };
+
+  // The route's vertical gain, from the curated record. Null is a named
+  // absence: no surveyed route, so nothing real to measure an ascent against.
+  const requiredAscent = mountain?.routes.reduce((m, r) => Math.max(m, r.elevationGainM), 0) || null;
+
+  if (requiredAscent === null) {
+    const percent = Math.round(100 * (0.8 * consistencyScore + 0.2 * time));
+    return { percent: Math.max(0, Math.min(100, percent)), parts: [consistencyPart, timePart] };
+  }
+
   // Capability is limited by the weaker of two dimensions: can you climb the
   // vertical in a day, and have you been anywhere near the altitude. Judging
   // Everest on ascent alone rated it easier than Mont Blanc.
-  const requiredAscent =
-    mountain?.routes.reduce((m, r) => Math.max(m, r.elevationGainM), 0) ||
-    (goal.elevationM ? goal.elevationM * 0.45 : 1000);
   const bestAscent = feed.reduce((m, a) => Math.max(m, a.elevationGainM), 0);
-  const ascentReadiness = Math.min(1, requiredAscent ? bestAscent / requiredAscent : 0);
+  const ascentReadiness = Math.min(1, bestAscent / requiredAscent);
 
   const requiredAltitude = goal.elevationM ?? mountain?.elevationM ?? 0;
   const bestAltitude = feed.reduce(
@@ -304,21 +361,12 @@ export function computePreparation(
 
   const capability = Math.min(ascentReadiness, altitudeReadiness);
 
-  const time = Math.min(1, plan.currentWeek / plan.totalWeeks);
-
   const percent = Math.round(100 * (0.6 * consistencyScore + 0.25 * capability + 0.15 * time));
 
   return {
     percent: Math.max(0, Math.min(100, percent)),
     parts: [
-      {
-        label: "Consistency",
-        percent: Math.round(consistencyScore * 100),
-        detail:
-          confidence < 1
-            ? `${done} of ${prescribed} sessions — too few yet to judge`
-            : `${done} of ${prescribed} prescribed sessions completed`,
-      },
+      consistencyPart,
       {
         label: "Capability",
         percent: Math.round(capability * 100),
@@ -327,11 +375,7 @@ export function computePreparation(
             ? `Highest reached ${Math.round(bestAltitude).toLocaleString("en-GB")} m of ${Math.round(requiredAltitude).toLocaleString("en-GB")} m`
             : `Best single ascent ${Math.round(bestAscent).toLocaleString("en-GB")} m of ${Math.round(requiredAscent).toLocaleString("en-GB")} m needed`,
       },
-      {
-        label: "Time in the build",
-        percent: Math.round(time * 100),
-        detail: `Week ${plan.currentWeek} of ${plan.totalWeeks}`,
-      },
+      timePart,
     ],
   };
 }

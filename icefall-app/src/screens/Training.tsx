@@ -9,6 +9,7 @@ import { fmtDistance, fmtElevation } from "@/lib/format";
 import { isoDate } from "@/data/mock/clock";
 import { useTraining } from "@/tracking/training";
 import { useApp } from "@/state/AppState";
+import { REFERENCE_PLAN_NOTE } from "@/services/peakTier";
 
 const DAY_LABELS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
 
@@ -60,6 +61,9 @@ export default function Training() {
           <p className="mt-1 text-[12px] text-mist-dim">
             Week {plan.currentWeek} of {plan.totalWeeks} · built for {goal.name}
           </p>
+          {!goal.mountainId && (
+            <p className="mt-2 text-[11px] leading-relaxed text-mist-dim">{REFERENCE_PLAN_NOTE}</p>
+          )}
         </Rise>
 
         {/* Week navigator */}
@@ -160,13 +164,17 @@ export default function Training() {
           </Card>
         </Rise>
 
-        {/* Preparation — derived, and shown as such */}
+        {/* Preparation — derived, and shown as such. On a reference goal the
+            figure has no capability part (no surveyed route to measure an
+            ascent against — see `computePreparation`), so it is plan
+            completion and is called that: "Preparation for Erciyes 36%" read
+            as a readiness figure the peak page had just said does not exist. */}
         {preparation && (
           <Rise className="pt-6">
             <SectionLabel
               action={<span className="tnum section-label text-azure">{preparation.percent}%</span>}
             >
-              Preparation for {goal.name}
+              {goal.mountainId ? `Preparation for ${goal.name}` : "Plan completion"}
             </SectionLabel>
             <Card className="mt-3">
               <div className="space-y-3.5">
