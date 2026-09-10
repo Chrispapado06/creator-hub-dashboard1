@@ -134,6 +134,40 @@ Deno.serve(async (req) => {
     return json({ error: "not_configured" }, 503, origin);
   }
 
+  /*
+   * `verify_jwt` IS NOT THE DOOR IT LOOKS LIKE.
+   *
+   * It proves the bearer token was signed by this project — and the publishable
+   * key IS such a token, ships in the app bundle in plain text, and is therefore
+   * public. Verified against the deployed function: a POST carrying the
+   * publishable key returned 200. So `verify_jwt` alone left this endpoint open
+   * to anybody who read the bundle, which is exactly the budget-spending hole it
+   * was supposed to close.
+   *
+   * A real athlete's token carries `role: "authenticated"`; the publishable key
+   * carries `role: "anon"`. That distinction is the actual door.
+   *
+   * The signature is NOT re-checked here — the platform already did that before
+   * this code ran, which is the whole point of leaving `verify_jwt` on. This
+   * reads a claim from a token whose signature is already proven, so decoding
+   * without verifying is safe in this one specific order and nowhere else.
+   */
+  const auth = req.headers.get("Authorization") ?? "";
+  const jwt = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  let role = "";
+  try {
+    const [, body] = jwt.split(".");
+    role = JSON.parse(atob(body.replace(/-/g, "+").replace(/_/g, "/"))).role ?? "";
+  } catch {
+    role = "";
+  }
+  if (role !== "authenticated") {
+    /* The app falls back to its scripted coach on any non-OK status, so a
+       signed-out athlete gets the same answers they had before rather than an
+       error about tokens. */
+    return json({ error: "sign_in_required" }, 401, origin);
+  }
+
   let payload: {
     question?: unknown;
     system?: unknown;
