@@ -211,6 +211,113 @@ export type Message = {
   attachment_meta: Record<string, unknown> | null;
 };
 
+/**
+ * `public.products` — the marketplace, and the ONLY way this app can honestly
+ * name a company.
+ *
+ * An athlete may read a row only while `status = 'live'` (`products_select`,
+ * 20260828110000:968). `company_id` is a real uuid, which is what makes an
+ * enquiry about a product resolvable to a company when an enquiry about a
+ * mountain is not — see the header of `enquiries/send.ts` for why the operator
+ * slugs in `services/operators.ts` can never be.
+ *
+ * Only the four columns this app actually reads are declared. A wider type
+ * would invite a wider select, and `price_state`, `availability_state` and the
+ * rest belong to screens that do not exist here.
+ */
+export type MarketplaceProduct = {
+  id: string;
+  company_id: string;
+  name: string;
+  status: "draft" | "pending_review" | "live" | "archived";
+};
+
+/** `public.product_destinations` — which mountains a product goes to. */
+export type ProductDestination = {
+  product_id: string;
+  destination_id: string;
+};
+
+/**
+ * `public.readiness_shares` — 20260911200000.
+ *
+ * One row per disclosure of a training record to an expedition company. Every
+ * field is written by `open_enquiry_with_readiness` and then frozen by
+ * `readiness_shares_guard`; the app inserts nothing here directly and holds no
+ * insert grant, which is why the `Insert` side of the table entry below is
+ * `never`.
+ *
+ * `disclosed_text` IS THE DISCLOSURE, not a description of it. Read it back and
+ * render it; do not rebuild it from the athlete's current figures, which have
+ * moved on since.
+ */
+export type ReadinessShare = {
+  id: string;
+  created_at: string;
+  user_id: string;
+  enquiry_id: string;
+  /** NULL when the enquiry named a mountain and no company. Never a placeholder. */
+  company_id: string | null;
+  disclosed_text: string;
+  measured_lines: number;
+  reported_lines: number;
+  /** True on every row ICEFALL has written. See `enquiries/operatorDisclosurePolicy.ts`. */
+  vitals_withheld: boolean;
+  consent_event_seq: number;
+  /** NULL means in force. A date means withdrawn, and withdrawal is once-only. */
+  revoked_at: string | null;
+};
+
+/**
+ * `public.live_operator_companies` — a VIEW, and the whole operator directory
+ * this app is permitted to see.
+ *
+ * Name and slug only. `companies` itself is unreadable to an athlete
+ * (`companies_select` is staff-or-member), and the view deliberately omits
+ * `verification_status` and `documents_checked_at`: printing "verified" beside
+ * a business in a consumer app is a claim about somebody's company that
+ * ICEFALL's own schema says means only that documents were looked at.
+ *
+ * EMPTY IS THE ORDINARY STATE. A company appears here only once it has
+ * published a live product.
+ */
+export type LiveOperatorCompany = {
+  id: string;
+  slug: string;
+  name: string;
+};
+
+/**
+ * What `open_enquiry_with_readiness` returns.
+ *
+ * `share` IS shown — unlike the enquiry uuid, which `EnquiryOpened` explains is
+ * a fabricated receipt. The difference is use: a share id is what a withdrawal
+ * needs, the athlete never types it, and their own list of disclosures is where
+ * it comes from.
+ *
+ * `delivered_to_company` is false when the enquiry named a mountain and no
+ * company — which means the disclosure is held at the ICEFALL desk and can
+ * never reach an operator. It is not "pending", and a screen must not draw it
+ * as though it were.
+ */
+export type ReadinessShareOpened = {
+  ok: true;
+  share: string;
+  delivered_to_company: boolean;
+};
+
+/** What `readiness_share_revoke` returns. See `enquiries/operatorShare.ts`. */
+export type ReadinessShareRevoked = {
+  ok: true;
+  /** Already withdrawn before this call. Not an error and not a second one. */
+  already: boolean;
+  /**
+   * ICEFALL had already handed the enquiry to the company. NOT a failure — the
+   * fact that decides which of two true sentences a screen shows.
+   */
+  seen_by_company: boolean;
+};
+
 type Table<Row, Insert = Partial<Row>, Update = Partial<Row>> = {
   Row: Row;
   Insert: Insert;
@@ -234,8 +341,22 @@ export type Database = {
         Pick<ThreadParticipant, "thread_id" | "profile_id">
       >;
       messages: Table<Message, Pick<Message, "thread_id" | "sender_id"> & Partial<Message>>;
+      /*
+       * READ-ONLY, AND THE TYPE SAYS SO. `never` on the Insert and Update sides
+       * of all four: this app holds no write grant on the marketplace, and the
+       * disclosure record is written only by `open_enquiry_with_readiness` and
+       * amended only by `readiness_share_revoke`. A `Partial<Row>` default here
+       * would compile an `.insert()` that the database then refuses at runtime,
+       * which is the wrong place to find out.
+       */
+      products: Table<MarketplaceProduct, never, never>;
+      product_destinations: Table<ProductDestination, never, never>;
+      readiness_shares: Table<ReadinessShare, never, never>;
     };
-    Views: Record<never, never>;
+    Views: {
+      /** See `LiveOperatorCompany`. Select-only; a view has no insert side. */
+      live_operator_companies: Table<LiveOperatorCompany, never, never>;
+    };
     Functions: {
       is_admin: { Args: Record<never, never>; Returns: boolean };
       my_role: { Args: Record<never, never>; Returns: IcefallRole };
@@ -334,10 +455,18 @@ export type Database = {
        * words nobody was shown. `health_my_consent` reads back the decision
        * with the frozen sentence it was made against.
        *
-       * `p_decision` of 'withdrawn' or 'declined' DELETES every stored
-       * measurement inside the same transaction. That is not a side effect to
-       * be surprised by — it is the erasure Article 17 requires, placed where a
-       * caller cannot forget it.
+       * `p_decision` of 'withdrawn' or 'declined' ON THE 'health-metrics'
+       * PURPOSE deletes every stored measurement inside the same transaction.
+       * That is not a side effect to be surprised by — it is the erasure
+       * Article 17 requires, placed where a caller cannot forget it.
+       *
+       * SCOPED TO THAT PURPOSE BY 20260911200000, and it used to be scoped to
+       * nothing. While one purpose existed the difference was invisible; the
+       * moment a second one did ('readiness-to-operator'), declining to send
+       * training figures to an expedition company would have destroyed four
+       * hundred days of the same person's sleep and heart-rate history, on a
+       * screen that never mentioned a ring. Other purposes record the decision
+       * and delete nothing.
        */
       health_consent_wording_in_force: {
         Args: { p_purpose: string };
@@ -370,6 +499,57 @@ export type Database = {
           p_origin_screen?: string | null;
         };
         Returns: EnquiryOpened;
+      };
+      /**
+       * READINESS TO AN OPERATOR — 20260911200000.
+       *
+       * ONE CALL, ONE TRANSACTION: the enquiry, the per-share consent decision
+       * and the disclosure record. Deliberately not three client calls — a
+       * client that sent the enquiry and then failed to record the consent
+       * would have disclosed under no permission, and one that recorded consent
+       * and failed to send would hold a grant for a disclosure that never
+       * happened. Both are wrong records of the same event.
+       *
+       * `p_readiness_text` IS THE CONSENTED TEXT. The server does not rebuild
+       * it and must not: the only text anybody agreed to is the text that was
+       * on the screen, and this argument is how it reaches the record.
+       *
+       * `p_vitals_withheld` MAY ONLY BE TRUE. The function raises on false —
+       * today's consent wording promises wearable readings are not included, so
+       * a client asserting otherwise would be disclosing under a sentence that
+       * says the opposite. It is a parameter rather than an omission so that
+       * the refusal is explicit at the call site. See
+       * `enquiries/operatorDisclosurePolicy.ts`.
+       */
+      open_enquiry_with_readiness: {
+        Args: {
+          p_body: string;
+          p_readiness_text: string;
+          p_vitals_withheld?: boolean;
+          p_product_id?: string | null;
+          p_destination_id?: string | null;
+          p_company_id?: string | null;
+          p_origin_app?: SupportOriginApp;
+          p_origin_screen?: string | null;
+          p_measured_lines?: number;
+          p_reported_lines?: number;
+        };
+        Returns: ReadinessShareOpened;
+      };
+      /**
+       * Withdraw one disclosure: records a 'withdrawn' consent decision and
+       * stamps the share, in the same transaction and for the same reason the
+       * grant is atomic.
+       *
+       * IT DOES NOT UNSEND. A revoked share drops out of
+       * `operator_readiness_shares` on the operator's next read; what they have
+       * already opened is gone from ICEFALL's control. `seen_by_company` in the
+       * result is how a screen tells the athlete which of those two happened,
+       * and neither answer may be softened into the other.
+       */
+      readiness_share_revoke: {
+        Args: { p_share_id: string };
+        Returns: ReadinessShareRevoked;
       };
       /**
        * STRAVA. Two calls, and both are deliberately tiny.
@@ -429,6 +609,35 @@ export type Database = {
         }[];
       };
       watch_disconnect: { Args: { p_provider: string }; Returns: undefined };
+
+      /*
+       * HEALTH ACCOUNTS — Polar, WHOOP, Withings, Oura (migration
+       * 20260911120000, NOT YET APPLIED).
+       *
+       * `health_status` is the same shape and the same promise as
+       * `watch_status`: a set, one row per connected provider, empty when
+       * nothing is connected, and NO TOKEN MATERIAL. The tokens in
+       * `health_connections` are ciphertext the database cannot decrypt, and
+       * there is no policy that would let a client read them anyway — but this
+       * return type is the boundary somebody would have to widen first, so it
+       * is written narrowly on purpose.
+       *
+       * `health_disconnect` forgets one row, by provider. It CANNOT revoke at
+       * the vendor and it does not delete stored measurements; the Edge
+       * Function does the first and the consent-withdrawal path does the
+       * second.
+       */
+      health_status: {
+        Args: Record<never, never>;
+        Returns: {
+          provider: "polar" | "whoop" | "oura" | "withings";
+          provider_user_id: string | null;
+          account_label: string | null;
+          scope: string;
+          connected_at: string;
+        }[];
+      };
+      health_disconnect: { Args: { p_provider: string }; Returns: undefined };
     };
     Enums: {
       icefall_role: IcefallRole;

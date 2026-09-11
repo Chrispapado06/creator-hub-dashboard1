@@ -2,12 +2,32 @@ import { activityById } from "./activities";
 import type { RecordedActivity, TrackPointLive } from "./types";
 import type { Activity, SportMode, TrackPoint } from "@/types";
 import { WATCH_PROVIDER_NAME } from "@/watch/types";
+import { POLAR_SOURCE_CREDIT } from "@/health/PolarCredit";
 
-/** The provenance line for an imported activity's `Activity.location`. */
+/**
+ * The provenance line for an imported activity's `Activity.location`.
+ *
+ * ── WHY POLAR'S LINE SAYS "POLAR" TWICE ─────────────────────────────────────
+ *
+ * "Imported from Polar Vantage V3 · Source: Polar" reads as a repetition and
+ * IT IS NOT ONE TO TIDY AWAY. Polar's API agreement requires the literal text
+ * credit "Source: Polar" wherever Polar data appears, and "Imported from
+ * Polar" — however plainly it says the same thing — is not those words.
+ *
+ * It is appended HERE, to the label that travels with the activity, rather
+ * than added to each screen, because this string is what the history cards,
+ * the search results, the completion screen and the summary subtitle all
+ * render. One place to append it is one place that cannot be forgotten when
+ * the fifth screen is written.
+ *
+ * `POLAR_SOURCE_CREDIT` is imported rather than typed out so this copy and the
+ * rendered component can never drift apart.
+ */
 function importedLabel(origin: Extract<RecordedActivity["origin"], { kind: "imported" }>): string {
-  return origin.deviceName
+  const base = origin.deviceName
     ? `Imported from ${WATCH_PROVIDER_NAME[origin.provider]} ${origin.deviceName}`
     : `Imported from ${WATCH_PROVIDER_NAME[origin.provider]}`;
+  return origin.provider === "polar" ? `${base} · ${POLAR_SOURCE_CREDIT}` : base;
 }
 
 /**
@@ -89,7 +109,10 @@ export function recordedToActivity(r: RecordedActivity): Activity {
         ? "Simulated route"
         : r.origin.kind === "imported"
           ? importedLabel(r.origin)
-          : "Recorded activity"),
+          : r.origin.kind === "manual"
+            ? /* Never "Recorded activity" — that is the one thing it is not. */
+              "Added by hand"
+            : "Recorded activity"),
     startedAt: r.startedAt,
     durationSec: r.durationSec,
     distanceKm: r.distanceM / 1000,

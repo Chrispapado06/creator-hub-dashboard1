@@ -1,4 +1,5 @@
 import type { WatchProvider } from "@/watch/types";
+import type { StartTimeSource } from "./timeOfDay";
 
 /**
  * Tracking domain model.
@@ -38,9 +39,34 @@ import type { WatchProvider } from "@/watch/types";
  *   - `movingSecMeasured` — false when the vendor gave one duration only, so
  *     `RecordedActivity.movingSec` (which then equals `durationSec`) is never
  *     displayed as if a pause had actually been measured.
+ *   - `vendorSport` — the vendor's own word for the sport, kept so an
+ *     `"other"` that is really "ICEFALL has no mapping for this yet" can say
+ *     so instead of looking like a shrug.
  */
 export type ActivityOrigin =
   | { kind: "icefall" }
+  /**
+   * THE ATHLETE TOLD US. Nothing measured it.
+   *
+   * Added with the coach's `log_activity` tool: an athlete can now say "I did
+   * two hours with 600 up this morning" in the chat and have it recorded. That
+   * is real training and it belongs in their feed, their load curve and their
+   * preparation — but it is a SENTENCE, not a recording, and calling it
+   * `{ kind: "icefall" }` would be the app claiming it measured something
+   * nobody measured.
+   *
+   * The distinction is not cosmetic. `finalizeActivity` bars a manual entry
+   * from personal bests and achievements for the same reason it bars an
+   * import, `social/leaderboard.ts` counts only `icefall` toward a standing,
+   * and `SendToStrava` will not offer to publish one. An athlete choosing a
+   * mountain deserves their own records to be things that happened as stated.
+   *
+   * `source` says who typed it, so the summary can be honest about which. The
+   * coach path is the only one today; the field exists because a manual-entry
+   * SCREEN is the obvious next caller and it must not inherit the coach's
+   * wording.
+   */
+  | { kind: "manual"; enteredAt: string; source: "coach" | "athlete" }
   | {
       kind: "imported";
       provider: WatchProvider;
@@ -49,6 +75,22 @@ export type ActivityOrigin =
       importedAt: string;
       vendorEntered: boolean | null;
       movingSecMeasured: boolean;
+      /**
+       * WHAT THE WATCH SERVICE CALLED THIS, VERBATIM.
+       *
+       * Optional because every record written before this field existed has
+       * no answer for it, and inventing one from the ICEFALL type would be
+       * backwards — the vendor's word is the evidence, the ICEFALL type is
+       * the interpretation. Null when the vendor sent no sport at all.
+       *
+       * It is kept for one reason: `activityTypeId` may be `"other"` simply
+       * because `SPORT_TO_TYPE` has no entry for this value yet, and an
+       * athlete looking at a mountaineering day filed as "Other" deserves to
+       * see that their watch did say "Mountaineering" and ICEFALL did not
+       * know the word. Without this, an unmapped sport is indistinguishable
+       * from a genuinely uncategorised one.
+       */
+      vendorSport?: string | null;
     };
 
 /* -------------------------------------------------------------------------- */
@@ -323,6 +365,30 @@ export interface RecordedActivity {
   title: string;
   startedAt: string;
   endedAt: string;
+  /**
+   * THE ZONE THE ATHLETE WAS STANDING IN WHEN THIS STARTED.
+   *
+   * `startedAt` is a UTC instant and therefore says nothing about whether this
+   * was an alpine start or an evening session. Reading it with the phone's
+   * CURRENT zone is right only until somebody flies somewhere — after which
+   * every session they recorded at home shifts, and the sessions they record on
+   * the trip shift back when they land. So the offset is captured on the day.
+   *
+   * Optional because records written before this existed do not have it, and
+   * NOTHING backfills them: `exactLocalStart` returns null for those and the
+   * coach works from fewer sessions rather than from invented ones. See
+   * `tracking/timeOfDay.ts`, which is the only place these are read.
+   *
+   *  - `startUtcOffsetMin` minutes EAST of UTC at the start instant (+345 in
+   *    Kathmandu). Exact, and needs no timezone database to read back.
+   *  - `startTimeZone` the IANA name, when the platform would give one. Null is
+   *    normal — a watch import carries an offset and no zone.
+   *  - `startTimeSource` measured / reported / inferred. An inferred time is one
+   *    NOBODY gave, placed by the app, and every surface that shows it says so.
+   */
+  startUtcOffsetMin?: number | null;
+  startTimeZone?: string | null;
+  startTimeSource?: StartTimeSource;
   simulated: boolean;
   origin: ActivityOrigin;
 

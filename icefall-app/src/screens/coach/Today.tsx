@@ -20,9 +20,21 @@ import { fuellingFor } from "@/coach/nutrition";
 import { COACH_DISCLAIMER } from "@/coach/types";
 import { fmtElevation } from "@/lib/format";
 import { useApp } from "@/state/AppState";
-import { useTraining } from "@/tracking/training";
+import { useTraining, useTrainingShape } from "@/tracking/training";
+import { sessionReasonFor } from "@/coach/sessionReason";
+import { requirementSetFor } from "@/data/mock/mountainRequirements";
 import type { TrainingWeek } from "@/types";
-import { ACCENT, Chip, CoachCard, CoachHead, Eyebrow, ON_PRIMARY, PRIMARY, TILE, TINT } from "./shell";
+import {
+  ACCENT,
+  Chip,
+  CoachCard,
+  CoachHead,
+  Eyebrow,
+  ON_PRIMARY,
+  PRIMARY,
+  TILE,
+  TINT,
+} from "./shell";
 
 /**
  * COACH — TODAY, to the owner's design of 2026-09-04. The default Coach page.
@@ -97,11 +109,39 @@ export default function Today() {
   );
   const isRest = today?.focus === "rest";
 
+  /**
+   * One derived sentence for why today's session is the size it is.
+   *
+   * The same function the session screen calls, with the same inputs, so the
+   * two cannot print different reasons for the same day — which is the only
+   * reason this is a shared pure function rather than a line written here.
+   *
+   * Null for a rest day, for a day nothing can be derived about, and whenever
+   * there is no plan. The paragraph simply does not render.
+   */
+  const shape = useTrainingShape();
+  const reason = useMemo(() => {
+    if (!today || !training.plan || !training.goal) return null;
+    const week = training.plan.weeks.find((w) => w.days.some((d) => d.date === today.date));
+    if (!week) return null;
+    return sessionReasonFor({
+      day: today,
+      week,
+      plan: training.plan,
+      goal: training.goal,
+      mountain: training.mountain,
+      requirements: requirementSetFor(training.mountain),
+      shape,
+    });
+  }, [today, training.plan, training.goal, training.mountain, shape]);
+
   const fuelRows = [
     { label: "Before your session", line: fuel.before[0], icon: Timer, tint: "peach" as const },
     { label: "During your session", line: fuel.during[0], icon: Droplets, tint: "blue" as const },
     { label: "After your session", line: fuel.after[0], icon: Check, tint: "green" as const },
-  ].filter((r): r is typeof r & { line: string } => typeof r.line === "string" && r.line.length > 0);
+  ].filter(
+    (r): r is typeof r & { line: string } => typeof r.line === "string" && r.line.length > 0,
+  );
 
   const weekLine = !week
     ? "Set an objective and ICEFALL builds the week around it."
@@ -159,7 +199,15 @@ export default function Today() {
                   {eased && <Chip tone="peach">Eased today</Chip>}
                 </div>
                 {eased && (
-                  <p className="mt-3 text-[13px] leading-relaxed text-mist">{intel.briefing.status}</p>
+                  <p className="mt-3 text-[13px] leading-relaxed text-mist">
+                    {intel.briefing.status}
+                  </p>
+                )}
+                {/* Why today is this size. Derived from the plan and the
+                    objective — see `coach/sessionReason.ts`; absent rather than
+                    generic when nothing can be derived. */}
+                {reason && (
+                  <p className="mt-3 text-[13px] leading-relaxed text-mist">{reason.text}</p>
                 )}
                 {intel.cold && (
                   <p className="mt-3 text-[12px] leading-relaxed text-mist-dim">
@@ -210,9 +258,13 @@ export default function Today() {
             <Eyebrow>This week</Eyebrow>
             <div className="mt-1.5 flex items-baseline justify-between gap-3">
               <h2 className="display text-[32px] leading-none text-snow">
-                {week ? `${done} of ${planned.length} ${planned.length === 1 ? "session" : "sessions"}` : "No plan yet"}
+                {week
+                  ? `${done} of ${planned.length} ${planned.length === 1 ? "session" : "sessions"}`
+                  : "No plan yet"}
               </h2>
-              {week && <span className="tnum shrink-0 text-[14px] text-mist">{weekRangeLabel(week)}</span>}
+              {week && (
+                <span className="tnum shrink-0 text-[14px] text-mist">{weekRangeLabel(week)}</span>
+              )}
             </div>
 
             {week && planned.length > 0 && (
@@ -248,7 +300,9 @@ export default function Today() {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <Eyebrow>Today's fuel</Eyebrow>
-                <h2 className="display mt-1.5 text-[30px] leading-none text-snow">Eat with intention</h2>
+                <h2 className="display mt-1.5 text-[30px] leading-none text-snow">
+                  Eat with intention
+                </h2>
               </div>
               <span
                 aria-hidden="true"
@@ -281,10 +335,17 @@ export default function Today() {
                         <Icon size={16} strokeWidth={1.7} />
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block text-[15px] font-semibold text-snow">{row.label}</span>
+                        <span className="block text-[15px] font-semibold text-snow">
+                          {row.label}
+                        </span>
                         <span className="block truncate text-[13px] text-mist">{row.line}</span>
                       </span>
-                      <ChevronRight size={16} strokeWidth={1.7} className="shrink-0 text-mist" aria-hidden="true" />
+                      <ChevronRight
+                        size={16}
+                        strokeWidth={1.7}
+                        className="shrink-0 text-mist"
+                        aria-hidden="true"
+                      />
                     </Link>
                   );
                 })}

@@ -15,7 +15,7 @@ import { activityById } from "@/tracking/activities";
 import type { RecordedActivity } from "@/tracking/types";
 import { useApp } from "@/state/AppState";
 import {
-  MAX_POST_PHOTOS, OWN_POST_KIND_LABEL, PRIVACY_LABEL, addPost, removePost,
+  MAX_POST_PHOTOS, OWN_POST_KIND_LABEL, PRIVACY_LABEL, activityForPost, addPost, removePost,
   type MountainRef, type OwnPost, type OwnPostKind, type PostPrivacy,
 } from "@/social/posts";
 import { cn } from "@/lib/utils";
@@ -422,7 +422,13 @@ export function OwnPostCard({
   /** All recordings, so an attached activity renders its real metrics. */
   recorded: RecordedActivity[];
 }) {
-  const activity = post.activityId ? recorded.find((r) => r.id === post.activityId) : undefined;
+  /* NARROWED BEFORE IT IS RENDERED, not merely rendered carefully. A post is
+     the one place an activity is read by somebody other than its owner, and
+     `activityForPost` hands over a shape with no start time on it — so no
+     future edit to this card can put the athlete's morning on a feed. See the
+     type's own note in `social/posts.ts`. */
+  const found = post.activityId ? recorded.find((r) => r.id === post.activityId) : undefined;
+  const activity = found ? activityForPost(found) : undefined;
 
   return (
     <article className="overflow-hidden rounded-card border border-hairline bg-graphite">
@@ -474,7 +480,7 @@ export function OwnPostCard({
         )}
 
         {/* ---- Activity metrics: read live from the recording ------------- */}
-        {activity && (
+        {activity && post.activityId && (
           <div className="mt-3 rounded-tile border border-hairline bg-slate/40 p-3">
             <p className="text-[12.5px] text-snow">{activity.title}</p>
             <p className="mt-0.5 text-[10.5px] uppercase tracking-[0.1em] text-mist-dim">
@@ -486,7 +492,10 @@ export function OwnPostCard({
               <span>{fmtHours(activity.movingSec / 3600)}</span>
             </div>
             <Link
-              to={`/activity/${activity.id}`}
+              /* From the POST's own reference, not from the narrowed activity —
+                 which deliberately carries no id, because an activity id is an
+                 epoch timestamp and therefore a start time in disguise. */
+              to={`/activity/${post.activityId}`}
               className="mt-2 inline-block text-[11.5px] text-azure underline-offset-2 hover:underline"
             >
               View activity →

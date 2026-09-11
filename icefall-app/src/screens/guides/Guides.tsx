@@ -34,6 +34,7 @@ import {
   allGuides,
   type Speciality,
 } from "@/guides/types";
+import { planReviewAvailability } from "@/guides/planReview";
 import { AvailabilityCalendar } from "./AvailabilityCalendar";
 import {
   GuideCardTall,
@@ -461,6 +462,8 @@ export default function Guides() {
         )}
 
 
+        <PlanReviewSection />
+
         <Rise className="pt-5">
           <Disclaimer>{ACCESS_DISCLAIMER}</Disclaimer>
         </Rise>
@@ -557,6 +560,54 @@ function GuidesHero({ objective }: { objective: SearchObjective | null }) {
         </p>
       </div>
     </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Paid human plan review — the honest empty state                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * "A real guide reviews your plan before a big objective."
+ *
+ * NOBODY IS APPOINTED, so this renders text and NOTHING ELSE. No button, no
+ * disabled button, no "notify me", no waiting list. Rule 3 is not satisfied by
+ * greying a control out: a disabled control still advertises a product, still
+ * gets tapped, and still teaches somebody that a thing exists and is being kept
+ * from them. There is no thing.
+ *
+ * FLAT, NOT A CARD. Rule 6 — this is a paragraph about an absence, not a
+ * distinct object, so it gets a hairline above it and spacing, the same as the
+ * disclaimer beneath it. The `Card` twenty lines up is the exception the rule
+ * allows: the guide directory IS an object, and an empty one still is.
+ *
+ * The branch on `offers` is written even though it is unreachable today
+ * (`PLAN_REVIEW_OFFERS` is the empty tuple type), so that the day a guide is
+ * appointed this screen already has somewhere to put them rather than
+ * rendering nothing.
+ */
+function PlanReviewSection() {
+  const review = planReviewAvailability();
+
+  return (
+    <Rise className="mt-6 border-t border-hairline pt-5">
+      <p className="section-label">Having a guide read your plan</p>
+      {review.state === "none-appointed" ? (
+        <>
+          <p className="mt-2.5 text-[13px] leading-relaxed text-mist">{review.notice}</p>
+          <p className="mt-2.5 text-[13px] leading-relaxed text-mist">{review.alsoTrue}</p>
+        </>
+      ) : (
+        <div className="mt-2.5 space-y-3">
+          {review.offers.map((offer) => (
+            <div key={offer.id} className="text-[13px] leading-relaxed text-mist">
+              <span className="text-snow">{offer.reviewer.name}</span> · {offer.reviewer.certification}
+              <p className="mt-1">{offer.scope}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </Rise>
   );
 }
 

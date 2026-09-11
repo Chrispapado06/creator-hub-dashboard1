@@ -1,5 +1,5 @@
 import type { Unavailable } from "@/coach/types";
-import { assessObjectiveReadiness } from "@/coach/mountainReadiness";
+import { assessObjectiveReadiness, skillClaimed } from "@/coach/mountainReadiness";
 import { MOUNTAINS } from "@/data/mock/mountains";
 import { assessPeak, type PeakAssessment } from "@/services/peakAssessment";
 import { activityById } from "@/tracking/activities";
@@ -226,10 +226,35 @@ export interface PassportBand extends PassportBandSpec {
   highest: { name: string; elevationM: number; date: string } | null;
 }
 
+/**
+ * A course the athlete says they did, against a competence.
+ *
+ * NOT A VERIFICATION, and the passport must never render it as one. ICEFALL has
+ * not seen the document and has not rung the awarding body — see
+ * `passport/certificates.ts` for the argument, and note that `Provenance`'s
+ * `verified` member is still unreachable after this. A certificate here has
+ * exactly the weight of the athlete saying "I did this course", because that is
+ * all it is.
+ */
+export interface PassportSkillCertificate {
+  courseName: string;
+  awardedBy: string;
+  /** YYYY-MM-DD, as the athlete typed it. */
+  completedOn: string;
+}
+
 export interface PassportSkill {
   label: string;
   /** True when the athlete has claimed it. Never inferred from activity. */
   reported: boolean;
+  /**
+   * Courses recorded against this competence. Self-reported, always.
+   *
+   * A certificate does NOT set `reported`. Ticking a competence is a claim of
+   * present competence; a course in 2014 is a record of a course in 2014, and
+   * the passport shows the two as the different statements they are.
+   */
+  certificates: PassportSkillCertificate[];
 }
 
 export interface PassportSkillGroup {
@@ -316,25 +341,16 @@ function normalise(s: string): string {
     .trim();
 }
 
-/** Shortest claim worth matching on, as in mountainReadiness. */
-const MIN_CLAIM_CHARS = 4;
-
 /**
  * Does a reported skill cover a roster entry?
  *
- * Deliberately the same conservative containment test `mountainReadiness` uses
- * for `skillClaimed`, so the passport and the coach credit an athlete's claims
- * identically. It is duplicated rather than imported because that helper is
- * private to the readiness module; if it is ever exported, delete this.
+ * NOW THE IMPORT the old comment here asked for. This was a byte-for-byte copy
+ * of `mountainReadiness.skillClaimed`, kept only because that helper was
+ * private, with a note saying to delete it the day it was exported. It has been
+ * exported (Phase 3), so the copy is gone and the passport and the coach can no
+ * longer drift apart about whether a claim counts.
  */
-function claimMatches(required: string, claims: string[]): boolean {
-  const want = normalise(required);
-  return claims.some((raw) => {
-    const got = normalise(raw);
-    if (got.length < MIN_CLAIM_CHARS) return false;
-    return got === want || want.includes(got) || got.includes(want);
-  });
-}
+const claimMatches = skillClaimed;
 
 /** Altitude figures outside this are sensor noise, not places anyone has been. */
 const ALTITUDE_PLAUSIBLE_MIN_M = -500;
@@ -415,6 +431,20 @@ export interface PassportInput {
   activities: RecordedActivity[];
   coachProfile: CoachProfile;
   expeditions: Expedition[];
+  /**
+   * Certificates the athlete recorded, keyed to competences by LABEL.
+   *
+   * Passed in as plain data rather than as `SkillCertificate` so this module
+   * keeps no import of the certificate store — the passport is pure, and the
+   * store is a device thing. Optional: a caller that has none passes none, and
+   * nothing on the document changes.
+   */
+  certificates?: {
+    skillLabel: string;
+    courseName: string;
+    awardedBy: string;
+    completedOn: string;
+  }[];
   /** Injectable for tests. Defaults to now. */
   now?: Date;
 }
@@ -731,7 +761,20 @@ export function buildPassport(input: PassportInput): Passport {
     band: spec.band,
     label: spec.label,
     floorM: spec.floorM,
-    skills: spec.skills.map((label) => ({ label, reported: claimMatches(label, claims) })),
+    skills: spec.skills.map((label) => ({
+      label,
+      reported: claimMatches(label, claims),
+      /* Matched with the SAME containment test as a claim, so a certificate
+         filed against an older wording of a competence still finds its row
+         rather than silently disappearing off the document. */
+      certificates: (input.certificates ?? [])
+        .filter((c) => claimMatches(label, [c.skillLabel]))
+        .map((c) => ({
+          courseName: c.courseName,
+          awardedBy: c.awardedBy,
+          completedOn: c.completedOn,
+        })),
+    })),
   })).sort((a, b) => b.band - a.band);
 
   const roster = skillGroups.flatMap((g) => g.skills);

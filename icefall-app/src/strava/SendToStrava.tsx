@@ -61,7 +61,11 @@ export function SendToStrava({ activity }: { activity: RecordedActivity }) {
      own — ICEFALL holds no track to send, only a summary. Belt and braces:
      `points: []` on every import already fails the usable-points check below;
      this is what keeps that true if a future version ever imports a track. */
-  if (activity.origin.kind === "imported") return null;
+  /* A MANUAL ENTRY IS REFUSED HERE TOO, and more firmly. It has no track at
+     all — it is a duration and two figures somebody reported — so publishing it
+     to a public profile would be ICEFALL putting its name to an activity it
+     never saw. The `points` check below would catch it anyway; this says why. */
+  if (activity.origin.kind !== "icefall") return null;
 
   /* A track produced by the labelled simulator would land on a public profile
      as a real ascent. It is refused in `uploadToStrava` as well; refusing to

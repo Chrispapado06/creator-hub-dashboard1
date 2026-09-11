@@ -55,8 +55,8 @@ const WINDOW_DAYS = 28;
  * shared threshold rather than a per-module opinion so the chat, the briefing
  * and this score never disagree about when the last hard day was.
  */
-const HARD_ASCENT_M = 600;
-const HARD_MOVING_SEC = 3 * 3600;
+export const HARD_ASCENT_M = 600;
+export const HARD_MOVING_SEC = 3 * 3600;
 
 /**
  * Below this much observable history, consistency and specificity are noise:

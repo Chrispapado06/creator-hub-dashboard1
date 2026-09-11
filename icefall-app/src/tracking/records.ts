@@ -1,3 +1,4 @@
+import { ALPINE_START_BEFORE_HOUR, readableLocalStart } from "./timeOfDay";
 import { activityById } from "./activities";
 import { fmtDistance, fmtDuration, fmtElevation, fmtPace } from "@/lib/format";
 import type { RecordedActivity } from "./types";
@@ -179,7 +180,12 @@ const ACHIEVEMENT_RULES: {
     id: "alpine-start",
     name: "Alpine Start",
     detail: "Began an activity before 05:00.",
-    test: (a) => new Date(a.startedAt).getHours() < 5,
+    /* The clock where the athlete WAS, from the offset stored with the
+       recording, falling back to this device's clock for records written
+       before zone capture existed. `getHours()` alone re-reads a Nepal 04:30
+       as a Cyprus 07:45 — see `tracking/timeOfDay.ts`. The threshold is the
+       shared one, so "before five" has a single definition in this app. */
+    test: (a) => (readableLocalStart(a)?.hour ?? 24) < ALPINE_START_BEFORE_HOUR,
   },
   {
     id: "long-day",

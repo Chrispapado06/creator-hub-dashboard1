@@ -492,6 +492,116 @@ export function coachProfilePatchFrom(
   };
 }
 
+/**
+ * WHAT THIS TEST WOULD REPLACE, so the athlete is asked before it does.
+ *
+ * ── THE PROBLEM, AND HOW SMALL IT ACTUALLY IS ──────────────────────────────
+ *
+ * `coachProfilePatchFrom` above is applied the instant the tenth question is
+ * answered, with nothing asked. The test is FREE and can be taken by anybody,
+ * including somebody who spent fifteen minutes on the signup questionnaire six
+ * months ago — and the patch overwrites their answer with a rung they picked on
+ * a marketing funnel, silently, on a screen that never mentions their profile.
+ *
+ * It is worth knowing how narrow the blast radius is before building a wall
+ * around it: the patch touches exactly two things, and the file above already
+ * argues at length why `technicalSkills`, `availableEquipment` and
+ * `trainingDays` are omitted rather than emptied. So this asks about two
+ * answers, not about a profile.
+ *
+ * ── WHAT COUNTS AS A CONFLICT, AND WHAT DOES NOT ───────────────────────────
+ *
+ * Only a stored answer that the test would CHANGE. Filling an empty field is
+ * not a replacement and is not worth a question — nothing is lost, and asking
+ * about it would train people to tap through the one that matters. Nor is
+ * answering the same thing twice.
+ *
+ * A DELETION COUNTS, and it is the one most worth showing: "None yet" on the
+ * mountaineering question removes a stored claim entirely (the file above
+ * argues that is correct as a self-report), so an athlete who answers it
+ * casually would find their declared level simply gone with no screen having
+ * said so.
+ *
+ * `existing` and `incoming` are rendered by the caller, so they are words and
+ * not ids — a confirmation that shows somebody "b3" has not shown them
+ * anything.
+ */
+export interface CoachProfileConflict {
+  field: "mountaineering" | "maxAltitudeM";
+  label: string;
+  /** What the athlete's profile says today. */
+  existing: string;
+  /** What this test would put there — or null, when it would remove it. */
+  incoming: string | null;
+}
+
+export function coachProfileConflictsFrom(
+  answers: ReadinessTestAnswers,
+  existing: Pick<CoachProfile, "disciplineExperience" | "maxAltitudeM">,
+): CoachProfileConflict[] {
+  const conflicts: CoachProfileConflict[] = [];
+
+  const held = existing.disciplineExperience.mountaineering;
+  const rung = chosenOption(answers, "mountaineering")?.rung;
+  if (held !== undefined && held !== rung) {
+    conflicts.push({
+      field: "mountaineering",
+      label: "Mountaineering experience",
+      existing: held,
+      incoming: rung ?? null,
+    });
+  }
+
+  const altitude = bandValue(answers, "altitude");
+  if (
+    typeof existing.maxAltitudeM === "number" &&
+    typeof altitude === "number" &&
+    altitude !== existing.maxAltitudeM
+  ) {
+    conflicts.push({
+      field: "maxAltitudeM",
+      label: "Highest altitude reached",
+      existing: `${existing.maxAltitudeM.toLocaleString()} m`,
+      incoming: `${altitude.toLocaleString()} m`,
+    });
+  }
+
+  return conflicts;
+}
+
+/**
+ * The patch with the contested fields taken back out — what "keep what I had"
+ * actually writes.
+ *
+ * NOT `{}`. The uncontested half of the patch is still the athlete's own answer
+ * and still worth keeping: somebody who declines to replace a stored altitude
+ * should still have the mountaineering rung they just gave recorded, if they
+ * had none. So the patch is built once, by the one function that knows how, and
+ * this removes only what was refused.
+ */
+export function withoutConflicts(
+  patch: Partial<CoachProfile>,
+  refused: readonly CoachProfileConflict[],
+  existing: Pick<CoachProfile, "disciplineExperience" | "maxAltitudeM">,
+): Partial<CoachProfile> {
+  const out: Partial<CoachProfile> = { ...patch };
+  for (const conflict of refused) {
+    if (conflict.field === "maxAltitudeM") delete out.maxAltitudeM;
+    else if (out.disciplineExperience) {
+      /* Put the stored rung back rather than deleting the key: the patch is a
+         whole `disciplineExperience` map, so dropping the key would erase every
+         OTHER discipline the athlete declared at signup. */
+      out.disciplineExperience = {
+        ...out.disciplineExperience,
+        mountaineering: existing.disciplineExperience.mountaineering as NonNullable<
+          CoachProfile["disciplineExperience"][string]
+        >,
+      };
+    }
+  }
+  return out;
+}
+
 /* -------------------------------------------------------------------------- */
 /* Persistence                                                                 */
 /* -------------------------------------------------------------------------- */

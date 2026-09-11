@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useApp } from "@/state/AppState";
 import { useRecordedActivities } from "@/tracking/feed";
+import { certificateSkillLabel, useCertificates } from "@/passport/certificates";
 import { buildPassport, type Passport } from "./model";
 
 /**
@@ -17,6 +18,10 @@ import { buildPassport, type Passport } from "./model";
 export function usePassport(): Passport {
   const { user, goals, objectives, coachProfile, expeditions } = useApp();
   const activities = useRecordedActivities();
+  /* Self-reported courses, flattened to labels so `model.ts` needs no import of
+     the certificate store. Nothing here promotes a certificate to a verified
+     skill — see the header of `passport/certificates.ts`. */
+  const certificates = useCertificates();
 
   return useMemo(
     () =>
@@ -31,6 +36,12 @@ export function usePassport(): Passport {
         activities,
         coachProfile,
         expeditions,
+        certificates: certificates.map((c) => ({
+          skillLabel: certificateSkillLabel(c),
+          courseName: c.courseName,
+          awardedBy: c.awardedBy,
+          completedOn: c.completedOn,
+        })),
       }),
     [
       user.name,
@@ -43,6 +54,7 @@ export function usePassport(): Passport {
       activities,
       coachProfile,
       expeditions,
+      certificates,
     ],
   );
 }

@@ -12,7 +12,7 @@ import { useRecordedActivities } from "@/tracking/feed";
 import { useCoachIntel } from "@/coach/hooks";
 import { COACH_DISCLAIMER, CHECK_IN_MAX, CHECK_IN_MIN, known, unavailable } from "@/coach/types";
 import type { CheckIn, Score } from "@/coach/types";
-import type { RecoveryStatus } from "@/coach/recovery";
+import type { RecoveryStatus, VitalReport } from "@/coach/recovery";
 
 /**
  * Screen 09 — Recovery.
@@ -23,12 +23,23 @@ import type { RecoveryStatus } from "@/coach/recovery";
  * screen are honest about which half is opinion and which half does not exist
  * at all on this platform.
  *
- * Three of the six — sleep, HRV and resting heart rate — have no data source in
- * this build. No browser exposes any of them and there is no wearable bridge,
- * so they render as NO SENSOR rather than as an empty bar. The other three are
- * the athlete's own sliders and carry a self-reported qualifier everywhere they
- * appear, because a number someone typed about how they feel and a number a
- * device measured must never look identical.
+ * Two of the six — sleep and resting heart rate — come from whatever instrument
+ * is connected, through `tracking/sources/vitals.ts`, and are rendered from
+ * `recovery.vitals` rather than hard-coded here. Each carries a MEASURED badge,
+ * the name of the instrument that took it and the day that instrument says it
+ * measured — because Oura's sleep reaches Oura's cloud only when the person
+ * opens the Oura app, so "last night" can arrive a day late and a figure shown
+ * without its date will eventually be read as this morning's when it is not.
+ * With nothing connected they render as NO SENSOR, which is a fact about this
+ * athlete's setup rather than a permanent property of the platform.
+ *
+ * HRV has no source here because ICEFALL does not use it, which is a different
+ * sentence and is said as one.
+ *
+ * The other three are the athlete's own sliders and carry a self-reported
+ * qualifier everywhere they appear, because a number someone typed about how
+ * they feel and a number a device measured must never look identical. That is
+ * rule 5, and this screen is where it is either visible or it is not.
  *
  * The referral path is the load-bearing part of this file. When `assessRecovery`
  * sets `flagForProfessional`, that panel is rendered FIRST, above the score,
@@ -110,9 +121,11 @@ interface Factor {
   score: Score;
   note: string;
   qualifier?: DataQualifier;
+  /** A measured figure with its unit, rendered as text rather than as a bar. */
+  reading?: string | null;
 }
 
-function buildFactors(checkIn: CheckIn | undefined): Factor[] {
+function buildFactors(checkIn: CheckIn | undefined, vitals: VitalReport[]): Factor[] {
   const reported = (id: ReportedId): Factor => {
     const cfg = REPORTED.find((r) => r.id === id);
     // The table above is exhaustive over ReportedId; this only satisfies the
@@ -138,33 +151,43 @@ function buildFactors(checkIn: CheckIn | undefined): Factor[] {
   };
 
   return [
-    {
-      id: "sleep-measured",
-      label: "Sleep",
-      // `assessRecovery` is handed an explicit null by the coach hook and types
-      // that as `no-data`. From the athlete's side the truthful reason is that
-      // nothing is connected, so NO SENSOR is what is shown here.
-      score: unavailable("not-connected"),
-      note: checkIn
-        ? "No sleep source is connected, so ICEFALL is not reading last night. The sleep quality you reported in today's check-in is a separate, self-reported figure and it is counted."
-        : "No sleep source is connected, so ICEFALL is not reading last night and nothing has been assumed about it.",
-    },
+    ...vitals.map(measuredFactor),
     {
       id: "hrv",
       label: "HRV",
       score: unavailable("not-connected"),
-      note: "ICEFALL cannot read heart-rate variability. No browser exposes it and no wearable is linked, so there is nothing here to show.",
-    },
-    {
-      id: "resting-hr",
-      label: "Resting HR",
-      score: unavailable("not-connected"),
-      note: "No resting heart rate is available. Even with one, a single reading is shown for context and never scored — without your own baseline it means nothing.",
+      // Deliberately NOT "no browser exposes it". A ring measures HRV and may
+      // well be connected; the true statement is that ICEFALL does not use it,
+      // and that stays true whatever anybody connects.
+      note: "Heart-rate variability is not an input to ICEFALL's recovery. Reading it well needs a baseline of your own nights and a view of the trend, and ICEFALL has neither, so it is left out rather than shown as a number that changes nothing.",
     },
     reported("soreness"),
     reported("stress"),
     reported("energy"),
   ];
+}
+
+/**
+ * One measured vital as a factor row.
+ *
+ * NO BAR IS DRAWN FOR A MEASURED VITAL, and that is the point of the `null`
+ * score. A bar on this screen means "this share of the better end", which is a
+ * statement about a 1-to-5 slider; six hours of sleep is not 60% of anything,
+ * and drawing it as a fill would invent a scale nobody chose. The figure, its
+ * instrument and its date are rendered as text beside the label instead, so a
+ * reading can never be mistaken for a rating.
+ */
+function measuredFactor(v: VitalReport): Factor {
+  return {
+    id: v.id,
+    label: v.label,
+    score: unavailable(v.reason ?? "no-data"),
+    note: v.note,
+    // Only a figure that exists gets the badge. Badging an absence "Measured"
+    // would claim an instrument took a reading that it did not.
+    qualifier: v.value === null ? undefined : "measured",
+    reading: v.value === null ? null : `${v.value} ${v.unit}`,
+  };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -210,7 +233,7 @@ type Intel = ReturnType<typeof useCoachIntel>;
 
 function TodayTab({ intel, checkIn }: { intel: Intel; checkIn: CheckIn | undefined }) {
   const { recovery } = intel;
-  const factors = buildFactors(checkIn);
+  const factors = buildFactors(checkIn, recovery.vitals);
 
   return (
     <>
@@ -252,7 +275,13 @@ function TodayTab({ intel, checkIn }: { intel: Intel; checkIn: CheckIn | undefin
               key={f.id}
               className={i === 0 ? "px-4 py-4" : "border-t border-hairline px-4 py-4"}
             >
-              <FactorBar label={f.label} score={f.score} note={f.note} qualifier={f.qualifier} />
+              <FactorBar
+                label={f.label}
+                score={f.score}
+                note={f.note}
+                qualifier={f.qualifier}
+                reading={f.reading}
+              />
             </div>
           ))}
         </Card>

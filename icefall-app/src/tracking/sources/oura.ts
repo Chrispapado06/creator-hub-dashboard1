@@ -123,6 +123,68 @@ export function signupReturnUrl(): string {
   }
 }
 
+/* -------------------------------------------------------------------------- */
+/* The legal hold                                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * OURA IS BUILT AND SWITCHED OFF. THIS IS THE SWITCH.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Everything in this file works. The tables are written (migrations
+ * 20260903060000 and _hardening), the server is written
+ * (`icefall-web/api/_oura*.mjs`), the consent is written
+ * (`src/health/consent.ts`). What is NOT settled is whether ICEFALL is allowed
+ * to ship it, and two clauses of Oura's Developer API Agreement decide that:
+ *
+ *   CLAUSE 1 — CHARGING. The agreement forbids "charging Users in any manner
+ *   for access to" Oura functionality. ICEFALL is a paid subscription. Whether
+ *   a general subscription that happens to display a member's own Oura data is
+ *   "charging for access to Oura functionality" is a lawyer's reading, not an
+ *   engineer's. If it is, the integration cannot ship in a paid product at all.
+ *
+ *   CLAUSE 2 — AI TRAINING. Oura data may NEVER be used to train or improve
+ *   any AI model. ICEFALL has a Coach. It is scripted today and
+ *   `VITE_COACH_ENDPOINT` is unset — but the day a model sits behind that
+ *   endpoint, putting an Oura HRV into its prompt is arguably the "ingestion
+ *   into a context window" that Strava's equivalent clause names outright.
+ *   Nothing in the code prevents that today except the Coach having no model,
+ *   and "there is no model yet" is not a control.
+ *
+ * ── WHY A CONSTANT AND NOT AN ENVIRONMENT VARIABLE ──────────────────────────
+ *
+ * A `VITE_` flag can be set on a whim, by anyone with dashboard access, to
+ * unblock a demo — and nothing about that act records that a lawyer looked at
+ * the two clauses above. It would also be a build-time value, so a preview
+ * deploy could differ from production without anybody noticing which one real
+ * people were using. Lifting a legal hold should cost a commit and a reviewer.
+ * So it is a `const`, and the only way past it is a diff.
+ *
+ * ── THREE LOCKS, NOT ONE ────────────────────────────────────────────────────
+ *
+ * This one stops the app asking. `functions/health/oura.ts` stops the shared
+ * connection path offering it. `icefall-web/api/_oura.mjs` (`ouraReady`) stops
+ * the server issuing an authorize URL or accepting a callback even to a stale
+ * build that still had the button. All three must be lifted together, and they
+ * are deliberately in three repositories' worth of separate files so that no
+ * single edit — and no single mistake — can switch Oura on for real people.
+ *
+ * WHAT IS DELIBERATELY NOT BLOCKED: reading a summary that is already stored,
+ * and DISCONNECTING. Someone already connected must still be able to see and
+ * delete what ICEFALL holds. A hold that trapped data would be worse than the
+ * thing it was protecting against.
+ */
+export const OURA_LEGAL_HOLD = true;
+
+/** Said once, here, and printed verbatim wherever the hold is shown. */
+export const OURA_LEGAL_HOLD_SENTENCE =
+  "ICEFALL has not switched Oura on. Two terms in Oura's developer agreement are " +
+  "unresolved — whether a paid subscription counts as charging for access to Oura " +
+  "functionality, and a ban on Oura data ever being used to train or improve an AI " +
+  "model. Until both are settled in writing, there is nothing here to connect to. " +
+  "This is ICEFALL's decision, not Oura's.";
+
 /**
  * How old a fetched summary may be before its values stop being shown.
  *
@@ -390,6 +452,10 @@ export const OURA_SCORES: OuraMetricId[] = [
 export type OuraUnavailable =
   /* Nothing has been set up. */
   | "not-configured"
+  /* ICEFALL has switched Oura off in its own code — see OURA_LEGAL_HOLD.
+     Kept apart from `not-configured` because they have opposite answers to
+     "what would make this work": one wants a key, the other wants a lawyer. */
+  | "legal-hold"
   | "signed-out"
   | "consent-not-given"
   | "not-connected"
@@ -417,6 +483,7 @@ export type OuraUnavailable =
  */
 export const OURA_UNAVAILABLE_COPY: Record<OuraUnavailable, string> = {
   "not-configured": "This build is not set up to connect a ring.",
+  "legal-hold": OURA_LEGAL_HOLD_SENTENCE,
   "signed-out": "Sign in to see your ring measurements.",
   "consent-not-given": "Storing health measurements needs your permission first.",
   "not-connected": "No Oura ring is connected.",
@@ -528,6 +595,10 @@ const EMPTY_CONTEXT: OuraContext = {
 export type OuraStatus =
   | "checking"
   | "not-configured"
+  /* ICEFALL's own hold. Reported ahead of `not-configured` because it is true
+     whatever the configuration says, and a card that blamed a missing server
+     would name a reason a server would fix. */
+  | "legal-hold"
   | "signed-out"
   | "consent-required"
   | "disconnected"
@@ -687,9 +758,14 @@ function asUnavailable(raw: unknown): OuraUnavailable {
  */
 export class OuraService {
   private stateValue: OuraState = {
-    status: DEMO || !API_BASE ? "not-configured" : "checking",
-    detail:
-      DEMO || !API_BASE
+    /* THE HOLD IS READ FIRST. It is true before anything is measured and it
+       stays true whatever the answer would have been, so it is never masked by
+       "this build has no server" — a sentence that would send somebody to fix
+       the wrong thing. */
+    status: OURA_LEGAL_HOLD ? "legal-hold" : DEMO || !API_BASE ? "not-configured" : "checking",
+    detail: OURA_LEGAL_HOLD
+      ? OURA_LEGAL_HOLD_SENTENCE
+      : DEMO || !API_BASE
         ? "This build cannot connect to a ring — it has no server to do the token exchange, and that exchange can never happen in the app."
         : undefined,
     consent: null,
@@ -701,6 +777,19 @@ export class OuraService {
   private summaryValue: OuraSummary | null = null;
 
   private listeners = new Set<(s: OuraState) => void>();
+
+  /**
+   * The refresh currently in flight, if any.
+   *
+   * `refresh()` is called on mount by every hook that reads the ring, and since
+   * the resolved vitals now feed `useCoachIntel`, that is once per mounted
+   * coach screen rather than once per settings visit. Without this, opening the
+   * coach fired several identical reads at the same endpoint against an
+   * application-wide rate limit that is shared by every ICEFALL user. Callers
+   * still get a promise that resolves when the read is done; they just share
+   * one read.
+   */
+  private inFlight: Promise<void> | null = null;
 
   get state(): OuraState {
     return this.stateValue;
@@ -758,6 +847,8 @@ export class OuraService {
     switch (s.status) {
       case "not-configured":
         return "not-configured";
+      case "legal-hold":
+        return "legal-hold";
       case "signed-out":
         return "signed-out";
       case "consent-required":
@@ -783,8 +874,21 @@ export class OuraService {
    * the data in memory before the person had agreed to anything.
    */
   async refresh(): Promise<void> {
+    if (this.inFlight) return this.inFlight;
+    const run = this.runRefresh().finally(() => {
+      this.inFlight = null;
+    });
+    this.inFlight = run;
+    return run;
+  }
+
+  private async runRefresh(): Promise<void> {
     if (DEMO || !API_BASE) {
-      this.set({ status: "not-configured", busy: false });
+      this.set({
+        status: OURA_LEGAL_HOLD ? "legal-hold" : "not-configured",
+        detail: OURA_LEGAL_HOLD ? OURA_LEGAL_HOLD_SENTENCE : this.stateValue.detail,
+        busy: false,
+      });
       return;
     }
 
@@ -872,11 +976,19 @@ export class OuraService {
       this.summaryValue = null;
       const reason = asUnavailable(body.reason);
       const disconnected = reason === "not-connected";
+      /* A HELD BUILD THAT IS NOT CONNECTED SAYS SO IN THE RIGHT WORDS.
+         "No ring is connected" invites a Connect button; the hold is why there
+         is not one. An `attention` state is left alone — that describes a
+         connection that EXISTS and has broken, and somebody in that position
+         needs the real fault, not a policy notice. */
       this.set({
-        status: disconnected ? "disconnected" : "attention",
+        status: disconnected ? (OURA_LEGAL_HOLD ? "legal-hold" : "disconnected") : "attention",
         reason: disconnected ? undefined : reason,
         consent,
-        detail: OURA_UNAVAILABLE_COPY[reason],
+        detail:
+          disconnected && OURA_LEGAL_HOLD
+            ? OURA_LEGAL_HOLD_SENTENCE
+            : OURA_UNAVAILABLE_COPY[reason],
         busy: false,
         refreshError: undefined,
       });
@@ -924,6 +1036,16 @@ export class OuraService {
    * a separate question from `state.status`.
    */
   canConnect(): { ok: true } | { ok: false; error: string } {
+    /*
+     * THE HOLD IS CHECKED FIRST, AND IT IS THE APP'S HALF OF A THREE-PART
+     * LOCK. `connect()` calls this before anything else, so no screen can
+     * start an Oura flow while `OURA_LEGAL_HOLD` is true — and because the
+     * screens ask this question before drawing the button, there is no dead
+     * control either. The server refuses independently
+     * (`icefall-web/api/_oura.mjs`, `ouraReady`), which is what protects real
+     * people against a stale build that still had one.
+     */
+    if (OURA_LEGAL_HOLD) return { ok: false, error: OURA_LEGAL_HOLD_SENTENCE };
     if (DEMO || !API_BASE) {
       return {
         ok: false,

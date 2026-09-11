@@ -1,5 +1,25 @@
 import { known, unavailable } from "@/coach/types";
 import type { Score, Unavailable } from "@/coach/types";
+import {
+  compareRequirements,
+  reviewedSkillLabels,
+  reviewedTrainingFigures,
+} from "@/objectives/compare";
+import type { AthleteFacts, Observed, RequirementComparison } from "@/objectives/compare";
+import {
+  REQUIREMENT_STATE_COPY,
+  requirementSetState,
+  reviewAttribution,
+} from "@/objectives/requirements";
+import type {
+  ObjectiveRequirementSet,
+  RequirementSetState,
+} from "@/objectives/requirements";
+import {
+  ascentPaceFor,
+  asAltitudeIllnessHistory,
+  type AltitudeIllnessHistory,
+} from "@/services/acclimatisation";
 import { assessPeak } from "@/services/peakAssessment";
 import type { PeakAssessment } from "@/services/peakAssessment";
 import { activityById } from "@/tracking/activities";
@@ -102,6 +122,27 @@ export interface ObjectiveReadiness {
   biggestGap: { id: Dimension; label: string; recommendation: string } | null;
   /** Non-null whenever the class of objective needs a certified guide. */
   professionalAdvice: string | null;
+  /**
+   * WHAT THE DIMENSIONS ABOVE WERE COMPARED AGAINST.
+   *
+   * Until a certified guide has reviewed a mountain's requirements, every
+   * figure in this assessment comes from the ELEVATION BAND — the class of
+   * mountain, not the mountain. That is a real and defensible answer, and it is
+   * also not what an athlete reading a page headed "Matterhorn" assumes they
+   * are being told. So the basis travels WITH the result rather than being left
+   * to each screen to remember, and `note` is a finished sentence that is true
+   * in every state.
+   *
+   * `source` is the short form for a caller that wants to branch; `note` is the
+   * one a screen should render.
+   */
+  requirementBasis: {
+    source: "reviewed-requirements" | "elevation-band";
+    state: RequirementSetState;
+    note: string;
+    /** Who signed the requirements. Null on anything band-derived. */
+    attribution: string | null;
+  };
   disclaimer: string;
 }
 
@@ -171,9 +212,16 @@ const ALTITUDE_RELEVANT_M = 3000;
  */
 const ALTITUDE_BASELINE_M = 2000;
 
-/** Barometric and GPS altitude both drift; these only reject impossible values. */
-const ALTITUDE_PLAUSIBLE_MIN_M = -500;
-const ALTITUDE_PLAUSIBLE_MAX_M = 8900;
+/**
+ * Barometric and GPS altitude both drift; these only reject impossible values.
+ *
+ * EXPORTED so there is one rule and not two. `objectives/objectiveDebrief.ts`
+ * gates a typed high point on the same bounds: a figure this engine would throw
+ * away must not be allowed into the profile, or the debrief would write a
+ * number no other screen in the app would ever agree with.
+ */
+export const ALTITUDE_PLAUSIBLE_MIN_M = -500;
+export const ALTITUDE_PLAUSIBLE_MAX_M = 8900;
 
 /** Data hygiene only, matching src/coach/load.ts. Not reward capping. */
 const MAX_PLAUSIBLE_ASCENT_M = 8000;
@@ -257,6 +305,75 @@ const TRAINING_REFERENCE: Record<PeakAssessment["band"], TrainingReference> = {
 };
 
 /**
+ * The reference figures for one assessment, plus the clause that names where
+ * they came from.
+ *
+ * The two travel together deliberately. Every sentence the fitness dimension
+ * writes quotes these numbers, and a number quoted without saying whose it is
+ * reads as a fact about the mountain — which, on an unreviewed objective, it is
+ * not. Bundling them makes it impossible to swap the figures and forget the
+ * sentence.
+ */
+interface TrainingReferenceUse {
+  ref: TrainingReference;
+  /** Fits after "measured against". No leading capital, no full stop. */
+  note: string;
+}
+
+/**
+ * ICEFALL's own band benchmarks, overlaid field by field with anything a
+ * certified guide set for THIS mountain.
+ *
+ * Partial answers are normal: a guide may set a single-day ascent and say
+ * nothing about weekly volume. Each field falls back on its own, and the note
+ * says which of the three the guide actually supplied rather than implying they
+ * signed all of them.
+ */
+function trainingReferenceFor(
+  band: PeakAssessment["band"],
+  peakName: string,
+  set: ObjectiveRequirementSet | undefined,
+): TrainingReferenceUse {
+  const base = TRAINING_REFERENCE[band];
+  const figures = reviewedTrainingFigures(set);
+
+  if (!figures) {
+    return {
+      ref: base,
+      note: `ICEFALL's training benchmarks for this class of objective — ${metres(base.dayAscentM)} in a day, ${base.sustainedHours} hours on the move, ${metres(base.weeklyAscentM)} a week — not against the route itself, which ICEFALL does not hold`,
+    };
+  }
+
+  const ref: TrainingReference = {
+    dayAscentM: figures.dayAscentM ?? base.dayAscentM,
+    sustainedHours: figures.sustainedHours ?? base.sustainedHours,
+    weeklyAscentM: figures.weeklyAscentM ?? base.weeklyAscentM,
+  };
+
+  const fromGuides: string[] = [];
+  if (figures.dayAscentM !== undefined) fromGuides.push(`${metres(ref.dayAscentM)} in a day`);
+  if (figures.sustainedHours !== undefined)
+    fromGuides.push(`${ref.sustainedHours} hours on the move`);
+  if (figures.weeklyAscentM !== undefined) fromGuides.push(`${metres(ref.weeklyAscentM)} a week`);
+
+  const rest = [
+    figures.dayAscentM === undefined ? `${metres(ref.dayAscentM)} in a day` : null,
+    figures.sustainedHours === undefined ? `${ref.sustainedHours} hours on the move` : null,
+    figures.weeklyAscentM === undefined ? `${metres(ref.weeklyAscentM)} a week` : null,
+  ].filter((x): x is string => x !== null);
+
+  const tail =
+    rest.length > 0
+      ? `, alongside ICEFALL's own band benchmark for ${joinList(rest)}`
+      : "";
+
+  return {
+    ref,
+    note: `the figures certified guides reviewed for ${peakName} — ${joinList(fromGuides)}${tail}`,
+  };
+}
+
+/**
  * How much each fitness signal moves the dimension.
  *
  * The single long day carries the most because that is the shape of the event:
@@ -301,6 +418,19 @@ function joinList(items: string[]): string {
 function sentenceList(items: string[]): string {
   const joined = joinList(items);
   return joined.charAt(0).toUpperCase() + joined.slice(1);
+}
+
+/**
+ * Appends one sentence to a dimension's summary.
+ *
+ * Used to say that ICEFALL has a mountain's written requirements and is NOT
+ * comparing against them. It lives out here rather than inside
+ * `technicalDimension` because that function has three return paths and the
+ * sentence has to survive all of them — a caveat you can forget to add on one
+ * branch is worse than no caveat at all.
+ */
+function withCaveat(d: DimensionResult, caveat: string | null): DimensionResult {
+  return caveat ? { ...d, summary: `${d.summary} ${caveat}` } : d;
 }
 
 function normalise(s: string): string {
@@ -491,9 +621,10 @@ function hasSelfReport(f?: SelfReportedFitness): f is SelfReportedFitness {
  * and the ceiling is what stops the funnel handing out a confident number to
  * someone who has simply answered generously.
  */
-function selfReportedFitness(f: SelfReportedFitness, ref: TrainingReference): DimensionResult {
+function selfReportedFitness(f: SelfReportedFitness, use: TrainingReferenceUse): DimensionResult {
   const label = "Fitness";
   const SELF_REPORT_CEILING = 70;
+  const ref = use.ref;
 
   const say = (
     v: number | undefined,
@@ -547,17 +678,18 @@ function selfReportedFitness(f: SelfReportedFitness, ref: TrainingReference): Di
     label,
     score,
     provenance: "self-reported",
-    summary: `Based on what you told us, not on anything ICEFALL has seen. It is held below ${SELF_REPORT_CEILING} for that reason, and it is measured against ICEFALL's benchmarks for this class of objective — ${metres(ref.dayAscentM)} in a day, ${ref.sustainedHours} hours on the move, ${metres(ref.weeklyAscentM)} a week — not against the route. Record a few sessions and this becomes an observation instead of an estimate.`,
+    summary: `Based on what you told us, not on anything ICEFALL has seen. It is held below ${SELF_REPORT_CEILING} for that reason, and it is measured against ${use.note}. Record a few sessions and this becomes an observation instead of an estimate.`,
     requirements,
   };
 }
 
 function fitnessDimension(
   ev: Evidence,
-  ref: TrainingReference,
+  use: TrainingReferenceUse,
   reported?: SelfReportedFitness,
 ): DimensionResult {
   const label = "Fitness";
+  const ref = use.ref;
 
   const bigDayReq: Requirement = {
     label: `A single day of ${metres(ref.dayAscentM)} ascent`,
@@ -589,7 +721,7 @@ function fitnessDimension(
   const requirements = [bigDayReq, sustainedReq, volumeReq];
 
   if (ev.observedDays === null) {
-    if (hasSelfReport(reported)) return selfReportedFitness(reported, ref);
+    if (hasSelfReport(reported)) return selfReportedFitness(reported, use);
     return {
       id: "fitness",
       label,
@@ -601,7 +733,7 @@ function fitnessDimension(
   }
 
   if (ev.windowSessions < MIN_FITNESS_SESSIONS || ev.observedDays < MIN_FITNESS_HISTORY_DAYS) {
-    if (hasSelfReport(reported)) return selfReportedFitness(reported, ref);
+    if (hasSelfReport(reported)) return selfReportedFitness(reported, use);
     return {
       id: "fitness",
       label,
@@ -622,7 +754,7 @@ function fitnessDimension(
   );
 
   const parts = [
-    `Measured against ICEFALL's training benchmarks for this class of objective — ${metres(ref.dayAscentM)} in a day, ${ref.sustainedHours} hours on the move, ${metres(ref.weeklyAscentM)} a week — not against the route itself, which ICEFALL does not hold.`,
+    `Measured against ${use.note}.`,
     `${volumeReq.note} ${bigDayReq.note} ${sustainedReq.note}`,
   ];
 
@@ -639,8 +771,16 @@ function fitnessDimension(
 /* Dimension: technical                                                        */
 /* -------------------------------------------------------------------------- */
 
-/** Does a reported skill plausibly cover a required one? */
-function skillClaimed(required: string, claims: string[]): boolean {
+/**
+ * Does a reported skill plausibly cover a required one?
+ *
+ * EXPORTED so that the passport and `objectives/skillGaps.ts` can credit an
+ * athlete's claims with the SAME test this engine uses, rather than keeping
+ * private copies that drift. A skill counted here and not there would put a
+ * tick on the readiness screen and a gap on the course screen for the same
+ * competence, on the same day.
+ */
+export function skillClaimed(required: string, claims: string[]): boolean {
   const want = normalise(required);
   return claims.some((raw) => {
     const got = normalise(raw);
@@ -668,10 +808,21 @@ function technicalDimension(
   assessment: PeakAssessment,
   ev: Evidence,
   claims: string[] | undefined,
+  /**
+   * Competences certified guides named for THIS mountain, where a reviewed
+   * requirement set exists. Empty otherwise, and then the band's own list
+   * stands exactly as it did before.
+   *
+   * A reviewed list also makes the dimension APPLICABLE on ground the band
+   * alone would not score. If a guide has written down that an objective needs
+   * roped glacier travel, the fact that ICEFALL's elevation bands call it a
+   * mountain hike is ICEFALL being wrong, not the guide.
+   */
+  reviewedSkills: string[],
 ): DimensionResult {
   const label = "Technical";
-  const applicable = assessment.band >= 3;
-  const skills = assessment.skills;
+  const applicable = assessment.band >= 3 || reviewedSkills.length > 0;
+  const skills = reviewedSkills.length > 0 ? reviewedSkills : assessment.skills;
 
   if (!applicable) {
     return {
@@ -706,6 +857,14 @@ function technicalDimension(
 
   const kitNote = `Kit this class of ground normally demands: ${joinList(assessment.technicalKit.map((k) => k.toLowerCase()))}.`;
 
+  // Who says these are the competences. The kit line stays band-derived either
+  // way — a reviewed requirement set lists what the athlete must be able to do,
+  // not what ICEFALL sells.
+  const demandedBy =
+    reviewedSkills.length > 0
+      ? "certified guides list for this objective"
+      : "this class of objective normally demands";
+
   if (reported.length > 0) {
     const held = requirements.filter((r) => r.met === true).length;
     const score = capped((held / skills.length) * 100, SELF_REPORT_CEILING);
@@ -716,7 +875,7 @@ function technicalDimension(
       label,
       score,
       summary: [
-        `You have reported ${held} of the ${skills.length} competences this class of objective normally demands.`,
+        `You have reported ${held} of the ${skills.length} competences ${demandedBy}.`,
         missing.length > 0
           ? `Nothing has been reported for ${joinList(missing)} — learn those from a qualified instructor rather than on the objective.`
           : "Every competence on the list has been reported.",
@@ -751,7 +910,7 @@ function technicalDimension(
     label,
     score: unavailable("not-reported"),
     summary: [
-      `This class of objective normally demands ${joinList(skills.map((s) => s.toLowerCase()))}.`,
+      `${reviewedSkills.length > 0 ? "Certified guides list" : "This class of objective normally demands"} ${joinList(skills.map((sk) => sk.toLowerCase()))}${reviewedSkills.length > 0 ? " for this objective" : ""}.`,
       "ICEFALL has no way to see any of that from a training feed and will not infer it from how much you run or climb, so there is no score here until you tell it what you hold.",
       kitNote,
     ].join(" "),
@@ -818,11 +977,33 @@ function bestAltitude(
 function altitudeDimension(
   peakElevationM: number,
   peakName: string,
-  assessment: PeakAssessment,
   evidence: AltitudeEvidence,
+  /**
+   * The altitude-illness answer from the questionnaire, or null when it was
+   * never given. It changes the SCHEDULE and nothing else — see below.
+   */
+  altitudeIllness: AltitudeIllnessHistory | null,
 ): DimensionResult {
   const label = "Altitude";
-  const needsAcclimatisation = assessment.acclimatisation !== undefined;
+
+  /*
+   * THE ONE THING A DECLARED HISTORY MAY MOVE ON THIS SCREEN.
+   *
+   * `pace` is the ascent schedule for this peak, narrowed when the athlete has
+   * reported altitude illness before. It is non-null on exactly the peaks that
+   * used to carry `assessment.acclimatisation` — `assessPeak` now reads the
+   * same module for its unnarrowed wording, so the two cannot disagree.
+   *
+   * IT MUST NOT TOUCH THE SCORE, and it does not. The score below compares how
+   * high this athlete has been against how high they are going; a history of
+   * altitude illness says nothing about where they have been, and scoring it
+   * down would be ICEFALL predicting how somebody will respond to altitude —
+   * exactly what the block above this function refuses to do. It would also
+   * push a health disclosure into the single number that leaves this app on a
+   * shared readiness card.
+   */
+  const pace = ascentPaceFor(peakElevationM, altitudeIllness);
+  const needsAcclimatisation = pace !== null;
 
   if (peakElevationM < ALTITUDE_RELEVANT_M) {
     return {
@@ -845,13 +1026,25 @@ function altitudeDimension(
     },
   ];
 
-  if (needsAcclimatisation) {
+  if (pace !== null) {
     requirements.push({
-      label: "A staged acclimatisation plan for this trip",
+      // The label changes when the athlete's answer changed the figures, so
+      // the narrowing is visible at a glance rather than buried in the note.
+      label: pace.narrowed
+        ? "A staged acclimatisation plan for this trip, at the slower pace ICEFALL now asks for"
+        : "A staged acclimatisation plan for this trip",
       // Permanently null, and correctly so. The itinerary is the single biggest
-      // determinant of how this goes and ICEFALL cannot see it.
+      // determinant of how this goes and ICEFALL cannot see it. A slower
+      // schedule does not change that — it is a planning aid, not a pass.
       met: null,
-      note: `${assessment.acclimatisation} ICEFALL cannot see your itinerary, so this is not assessed here — plan it with your guide or operator.`,
+      note: [
+        pace.guidance,
+        "ICEFALL cannot see your itinerary, so this is not assessed here — plan it with your guide or operator.",
+        pace.medicalNote,
+        pace.caveat,
+      ]
+        .filter(Boolean)
+        .join(" "),
     });
   }
 
@@ -881,11 +1074,12 @@ function altitudeDimension(
     `${peakName} stands at ${metres(peakElevationM)}. The highest ICEFALL can stand behind for you is ${metres(evidence.highestM)}, from ${evidence.source}.`,
   ];
 
-  if (needsAcclimatisation) {
+  if (pace !== null) {
     parts.push(
       "Having reached an altitude once is not the same as being acclimatised for it — acclimatisation is lost within a few weeks at low elevation — so this dimension stops short of full marks whatever your history.",
     );
-    parts.push(assessment.acclimatisation as string);
+    parts.push(pace.guidance);
+    if (pace.caveat) parts.push(pace.caveat);
   }
 
   parts.push(framing);
@@ -1146,6 +1340,19 @@ export function assessObjectiveReadiness(args: {
     maxAltitudeM?: number;
     disciplineExperience?: Record<string, string>;
     /**
+     * The altitude-illness answer, as the raw stored string — narrowed here
+     * rather than at each call site, so an unrecognised value becomes "not
+     * stated" instead of quietly taking the default schedule.
+     *
+     * PASS IT ONLY WHERE THE ATHLETE IS THE READER. It changes no score and no
+     * field that leaves the app, so `ShareReadiness`, `People` and
+     * `GroupWorkspace` deliberately omit it: a declared health history has no
+     * business travelling to a shared card or a group roster, and none of the
+     * three renders the dimension prose it would change anyway. `Benchmark`
+     * and `CommandCentre` — the athlete's own objective screens — pass it.
+     */
+    altitudeIllness?: string | null;
+    /**
      * What the athlete says they are currently doing, from the readiness test.
      * Used ONLY when nothing is recorded, and the result is always flagged
      * `provenance: "self-reported"` so it can never pass as observed.
@@ -1156,6 +1363,20 @@ export function assessObjectiveReadiness(args: {
       longestDayHours?: number;
     };
   };
+  /**
+   * This objective's STRUCTURED requirements, where ICEFALL holds a record.
+   *
+   * Optional, and absent is the normal case: today every curated mountain's
+   * record is unreviewed and empty (see `data/mock/mountainRequirements.ts`),
+   * and a discovered peak has no record at all. Passing an unreviewed set is
+   * not wasted — it is how `requirementBasis` learns to say "this mountain's
+   * requirements exist and have not been reviewed" rather than the weaker
+   * "ICEFALL holds none".
+   *
+   * Only a set a certified guide has signed changes any figure. The gate is
+   * `requirementSetState`, and every path below goes through it.
+   */
+  requirements?: ObjectiveRequirementSet;
   /** Injectable for tests. Defaults to now. */
   now?: Date;
 }): ObjectiveReadiness {
@@ -1167,15 +1388,50 @@ export function assessObjectiveReadiness(args: {
   // shapes the season window alone, which this module does not surface, so an
   // unknown latitude changes nothing about what follows.
   const assessment = assessPeak(peak.elevationM, peak.lat ?? 0, peak.lon);
-  const reference = TRAINING_REFERENCE[assessment.band];
+
+  /* ---- What this assessment is measured against --------------------------- */
+
+  // The gate. `usable` means a set exists, at least two certified guides signed
+  // it, and it contains at least one figure; anything else and the band
+  // benchmarks stand, exactly as they did before this existed.
+  const requirementState = requirementSetState(args.requirements);
+  const usingReviewed = requirementState === "usable";
+  const reference = trainingReferenceFor(
+    assessment.band,
+    peak.name,
+    usingReviewed ? args.requirements : undefined,
+  );
+  const guideSkills = usingReviewed ? reviewedSkillLabels(args.requirements) : [];
+
+  /**
+   * The sentence appended to the technical dimension when ICEFALL HAS this
+   * mountain's written requirements and is not using them.
+   *
+   * Only for `unreviewed` and `empty`. On `missing` — a peak discovered from
+   * OpenStreetMap — the existing copy already says the assessment is about a
+   * class of mountain, and adding "nobody has reviewed its requirements" would
+   * imply there were requirements to review.
+   */
+  const unreviewedCaveat =
+    requirementState === "unreviewed" || requirementState === "empty"
+      ? `ICEFALL holds ${peak.name}'s own written requirements but has not compared you against them: ${requirementState === "unreviewed" ? "no certified guide has reviewed them yet" : "the guides who reviewed them set no figures ICEFALL can check"}.`
+      : null;
 
   const summits = (args.summitsLogged ?? []).filter((s) => Number.isFinite(s.elevationM));
   const evidence = readEvidence(args.activities, now);
   const altitude = bestAltitude(evidence, summits, args.selfReported?.maxAltitudeM);
 
   const fitness = fitnessDimension(evidence, reference, args.selfReported?.fitness);
-  const technical = technicalDimension(assessment, evidence, args.selfReported?.technicalSkills);
-  const altitudeResult = altitudeDimension(peak.elevationM, peak.name, assessment, altitude);
+  const technical = withCaveat(
+    technicalDimension(assessment, evidence, args.selfReported?.technicalSkills, guideSkills),
+    unreviewedCaveat,
+  );
+  const altitudeResult = altitudeDimension(
+    peak.elevationM,
+    peak.name,
+    altitude,
+    asAltitudeIllnessHistory(args.selfReported?.altitudeIllness),
+  );
   const experience = experienceDimension(
     peak.elevationM,
     assessment,
@@ -1194,7 +1450,11 @@ export function assessObjectiveReadiness(args: {
   // walk would be a number pretending to be a finding.
   const applicable = dimensions.filter((d) => {
     if (d.id === "fitness") return true;
-    if (d.id === "technical" || d.id === "experience") return assessment.band >= 3;
+    // Technical must use the SAME test `technicalDimension` used, guide list
+    // included. If the two disagreed, a dimension could be scored and then left
+    // out of the composite — the weakest link quietly not counting.
+    if (d.id === "technical") return assessment.band >= 3 || guideSkills.length > 0;
+    if (d.id === "experience") return assessment.band >= 3;
     return peak.elevationM >= ALTITUDE_RELEVANT_M;
   });
 
@@ -1251,6 +1511,189 @@ export function assessObjectiveReadiness(args: {
     dimensions,
     biggestGap,
     professionalAdvice: professionalAdviceFor(assessment, technical),
+    requirementBasis: {
+      source: usingReviewed ? "reviewed-requirements" : "elevation-band",
+      state: requirementState,
+      note: REQUIREMENT_STATE_COPY[requirementState],
+      attribution: usingReviewed ? reviewAttribution(args.requirements) : null,
+    },
     disclaimer: OBJECTIVE_READINESS_DISCLAIMER,
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/* The per-requirement view                                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The same athlete, checked line by line against an objective's structured
+ * requirements.
+ *
+ * `assessObjectiveReadiness` answers "how do I stand"; this answers "which of
+ * this mountain's demands does my record reach". They are different questions
+ * and they are shown in different places, but they MUST be built from the same
+ * evidence — so this lives here, beside `readEvidence`, rather than letting a
+ * screen assemble its own figures and put a second, disagreeing version of the
+ * athlete on the page.
+ *
+ * On anything but a set two certified guides have signed, this returns the
+ * empty comparison carrying the sentence the app should say instead. That is
+ * the state everything is in today.
+ */
+export function compareToRequirements(args: {
+  requirements: ObjectiveRequirementSet | undefined;
+  objectiveId: string;
+  objectiveName: string;
+  activities: RecordedActivity[];
+  summitsLogged?: { name: string; elevationM: number; date: string }[];
+  selfReported?: {
+    technicalSkills?: string[];
+    maxAltitudeM?: number;
+    fitness?: SelfReportedFitness;
+  };
+  now?: Date;
+}): RequirementComparison {
+  return compareRequirements({
+    set: args.requirements,
+    objectiveId: args.objectiveId,
+    objectiveName: args.objectiveName,
+    facts: athleteFactsFrom(args),
+  });
+}
+
+/** What `athleteFactsFrom` needs. The comparison args minus the objective. */
+export interface AthleteFactsInput {
+  activities: RecordedActivity[];
+  summitsLogged?: { name: string; elevationM: number; date: string }[];
+  selfReported?: {
+    technicalSkills?: string[];
+    maxAltitudeM?: number;
+    fitness?: SelfReportedFitness;
+  };
+  now?: Date;
+}
+
+/**
+ * The athlete, as `compare.ts` is allowed to see them.
+ *
+ * EXTRACTED FROM `compareToRequirements` RATHER THAN COPIED, so that anything
+ * else needing these figures — the shareable readiness report is the first —
+ * gets the SAME merge, the same provenance and the same altitude exception.
+ * A second builder somewhere else would put two versions of the same person on
+ * two screens, which is the failure every comment in this file is guarding
+ * against.
+ */
+export function athleteFactsFrom(args: AthleteFactsInput): AthleteFacts {
+  const ev = readEvidence(args.activities, args.now ?? new Date());
+  const reportedFitness = args.selfReported?.fitness;
+
+  /**
+   * Recorded wins where both exist, and the loser is not averaged in — a
+   * measurement and an estimate of the same thing are not two readings. Where
+   * only the estimate exists it is used AND labelled, which is the rule the
+   * fitness dimension already follows.
+   */
+  const pick = (recorded: number | null, reported: number | undefined): Observed<number> | null => {
+    if (recorded !== null && Number.isFinite(recorded) && recorded > 0)
+      return { value: recorded, provenance: "recorded" };
+    if (typeof reported === "number" && Number.isFinite(reported) && reported > 0)
+      return { value: reported, provenance: "self-reported" };
+    return null;
+  };
+
+  // Altitude is the exception: the HIGHER of the two stands, because reaching a
+  // height is a fact about the past that a twelve-week recording window cannot
+  // contradict. Marked summits are folded in by the comparison engine itself.
+  const recordedAlt = ev.highestRecordedAltitudeM;
+  const reportedAlt = args.selfReported?.maxAltitudeM;
+  let highestAltitude: Observed<number> | null =
+    recordedAlt !== null ? { value: recordedAlt, provenance: "recorded" } : null;
+  if (
+    typeof reportedAlt === "number" &&
+    Number.isFinite(reportedAlt) &&
+    reportedAlt > 0 &&
+    (highestAltitude === null || reportedAlt > highestAltitude.value)
+  ) {
+    highestAltitude = { value: reportedAlt, provenance: "self-reported" };
+  }
+
+  const facts: AthleteFacts = {
+    reportedSkillLabels: (args.selfReported?.technicalSkills ?? []).filter(
+      (c) => c.trim().length > 0,
+    ),
+    highestAltitude,
+    biggestDayAscentM: pick(ev.biggestDayAscentM, reportedFitness?.biggestDayAscentM),
+    longestDayHours: pick(ev.longestDayHours, reportedFitness?.longestDayHours),
+    weeklyAscentM: pick(ev.weeklyAscentM, reportedFitness?.weeklyAscentM),
+    summits: (args.summitsLogged ?? []).filter((s) => Number.isFinite(s.elevationM)),
+  };
+
+  return facts;
+}
+
+/* -------------------------------------------------------------------------- */
+/* How much evidence, and how old                                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * What a document built from this record has to disclose about its own age.
+ *
+ * A readiness page handed to an operator is worth less every day and is
+ * misleading once it is stale — forwarded in March, a January page describes
+ * somebody who has since had six weeks off. So the page prints how many
+ * sessions its figures came from, the span they cover, and the date of the most
+ * recent one.
+ *
+ * IT LIVES HERE, beside `readEvidence`, because it has to apply exactly the
+ * same exclusions: the same twelve-week window, the same rejection of
+ * unparseable and future timestamps, and the same removal of SIMULATED
+ * recordings. A count assembled in a screen would sooner or later report more
+ * sessions than the figures beside it were actually derived from.
+ *
+ * `firstSessionOn` is the earliest session ICEFALL holds AT ALL, not the
+ * earliest in the window — it is the answer to "how long have you been
+ * recording", which is the question that tells a reader whether an empty-looking
+ * record is a quiet athlete or a new install.
+ */
+export interface ReportEvidenceCounts {
+  /** Sessions inside the window, simulated recordings removed. */
+  recordedSessions: number;
+  /** The window in words, identical to the one every figure is quoted under. */
+  windowLabel: string;
+  /** ISO date of the earliest session held, or null. */
+  firstSessionOn: string | null;
+  /** ISO date of the most recent session held, or null. */
+  latestSessionOn: string | null;
+}
+
+export const RECORDED_WINDOW_LABEL = "the last twelve weeks";
+
+export function reportEvidenceCounts(
+  activities: RecordedActivity[],
+  now = new Date(),
+): ReportEvidenceCounts {
+  const today = startOfDay(now);
+  const windowStart = today.getTime() - (FITNESS_WINDOW_DAYS - 1) * DAY_MS;
+
+  let recordedSessions = 0;
+  let first: number | null = null;
+  let latest: number | null = null;
+
+  for (const a of activities) {
+    const started = new Date(a.startedAt).getTime();
+    if (!Number.isFinite(started)) continue;
+    if (started > now.getTime() + DAY_MS) continue;
+    if (a.simulated === true) continue;
+
+    if (first === null || started < first) first = started;
+    if (latest === null || started > latest) latest = started;
+    if (started >= windowStart) recordedSessions += 1;
+  }
+
+  return {
+    recordedSessions,
+    windowLabel: RECORDED_WINDOW_LABEL,
+    firstSessionOn: first === null ? null : dayKey(first),
+    latestSessionOn: latest === null ? null : dayKey(latest),
   };
 }

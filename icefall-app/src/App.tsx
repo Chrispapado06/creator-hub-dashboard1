@@ -10,6 +10,8 @@ import { IcefallMark } from "@/components/ui/IcefallMark";
 import { Button } from "@/components/ui/primitives";
 import { useSessionState } from "@/auth/session";
 import { useProfileHydration } from "@/settings/hydrate";
+import { useCoachingHydration } from "@/settings/hydrate";
+import { useCoachingBinding } from "@/coach/profileBinding";
 import { useApp } from "@/state/AppState";
 import { DEMO } from "@/offline/offline";
 import { GlassFilterDefs } from "@/components/ui/LiquidGlassButton";
@@ -67,6 +69,13 @@ const ReadinessScreen = lazy(() => import("@/screens/coach/ReadinessScreen"));
 const RecoveryScreen = lazy(() => import("@/screens/coach/RecoveryScreen"));
 const SessionDetail = lazy(() => import("@/screens/coach/SessionDetail"));
 const CheckIn = lazy(() => import("@/screens/coach/CheckIn"));
+/* What the Coach remembers about this athlete, and the delete for every line
+   of it. Reached from the chat screen, where the memory is actually used. */
+const CoachMemory = lazy(() => import("@/screens/coach/CoachMemory"));
+const PlanChanges = lazy(() => import("@/screens/coach/PlanChanges"));
+const WeeklyReview = lazy(() => import("@/screens/coach/WeeklyReview"));
+const Benchmarks = lazy(() => import("@/screens/coach/Benchmarks"));
+const SkillGaps = lazy(() => import("@/screens/coach/SkillGaps"));
 
 const Welcome = lazy(() => import("@/screens/auth/Auth").then((m) => ({ default: m.Welcome })));
 const CreateAccount = lazy(() =>
@@ -102,6 +111,10 @@ const SettingsSection = lazy(() => import("@/screens/settings/Sections"));
 const Badges = lazy(() => import("@/screens/settings/Badges"));
 const HealthSources = lazy(() => import("@/screens/settings/HealthSources"));
 const Connections = lazy(() => import("@/screens/settings/Connections"));
+/* Its own route rather than a case in `Sections.tsx`: that file is nineteen
+   small screens and this one is not small, and a static segment outranks the
+   `:section` parameter below however they are ordered. */
+const CoachingProfile = lazy(() => import("@/screens/settings/CoachingProfile"));
 const PublicProfile = lazy(() => import("@/screens/PublicProfile"));
 const PostDetail = lazy(() => import("@/screens/social/PostDetail"));
 const HouseRulesScreen = lazy(() => import("@/screens/social/HouseRulesScreen"));
@@ -175,6 +188,18 @@ const CommandCentre = lazy(() => import("@/screens/mountain/CommandCentre"));
 const Conditions = lazy(() => import("@/screens/mountain/Conditions"));
 const MountainChecklist = lazy(() => import("@/screens/mountain/Checklist"));
 const Benchmark = lazy(() => import("@/screens/mountain/Benchmark"));
+/* TRIP MODE — the in-field screens. Split like everything else, and the split
+   is what makes them work with no signal: Workbox precaches every hashed chunk
+   (`vite.config.ts` globPatterns), so a route nobody has opened still opens
+   cold on a mountain. See `src/trip/offline.test.ts`. */
+const TripMode = lazy(() => import("@/screens/trip/TripMode"));
+const LakeLouiseCheck = lazy(() => import("@/screens/trip/LakeLouiseCheck"));
+
+/* Objectives — the post-trip debrief and the page an operator reads. Lazy for
+   the same reason as everything else here, and both are pure client screens:
+   the report is built from the local record and sends nothing anywhere. */
+const ObjectiveDebrief = lazy(() => import("@/screens/objectives/ObjectiveDebrief"));
+const ReadinessReport = lazy(() => import("@/screens/objectives/ReadinessReport"));
 
 // Growth
 const Pricing = lazy(() => import("@/screens/growth/Pricing"));
@@ -243,6 +268,46 @@ function AppShell() {
    * (nobody) are both no-ops inside it.
    */
   useProfileHydration(session === undefined ? undefined : (session?.user.id ?? null));
+
+  /*
+   * AND SO DOES THE COACHING PROFILE, WHICH IS THE HALF THAT CHANGES WHAT THE
+   * APP PRESCRIBES.
+   *
+   * Equipment, training days, session length, technical skills, altitude,
+   * strength experience, limitations and the objective's date used to stop at
+   * the phone entirely — `Onboarding.finish()` wrote them to `localStorage` and
+   * nothing carried them anywhere. A second device therefore signed in with
+   * every engine back at its never-answered default: sessions capped at
+   * moderate with no kit constraint, the generator's own six-day week, a
+   * technical readiness dimension withheld for want of skills its owner had
+   * already declared.
+   *
+   * Here for the same reason the profile fetch is here rather than in
+   * `Auth.tsx`: a password sign-in, a provider redirect, a cold-start restore
+   * and a session arriving from another tab all end at this shell, and hanging
+   * it off the sign-in form would have covered one of the four. The merge rules
+   * are `settings/hydrate.ts`'s — the same three, not a second set — and the
+   * mapping between the patch and the four stores these answers actually live
+   * in is `coach/profileBinding.ts`, shared with the screen that edits them.
+   */
+  const coaching = useCoachingBinding();
+  /*
+   * GATED ON `onboarded`, AND NOT AS A TIDINESS MEASURE. A device that is
+   * signed in and has NOT been through the questions is about to be: the
+   * restore door for that case is `Auth.tsx` → `completeOnboarding`, which
+   * creates the objective once. Letting the fetch land first would give that
+   * device an objective, and `Onboarding.finish()` would then `addGoal` a
+   * second one for the same mountain — with `usePrimaryGoal` picking whichever
+   * date is sooner and the whole app orienting on a duplicate.
+   *
+   * `null` is "nothing to ask about", which is exactly right here, and the
+   * effect re-runs the moment onboarding finishes and this shell re-renders.
+   */
+  useCoachingHydration(
+    !onboarded ? null : session === undefined ? undefined : (session?.user.id ?? null),
+    coaching.device,
+    coaching.apply,
+  );
 
   if (!DEMO) {
     if (session === undefined) return <PageLoader />;
@@ -570,10 +635,17 @@ export default function App() {
                 see the note on /connect above for the three places a rename
                 has to reach. */}
             <Route path="/settings/connections" element={<Connections />} />
+            <Route path="/settings/coaching" element={<CoachingProfile />} />
             <Route path="/settings/:section" element={<SettingsSection />} />
 
             <Route path="/goals" element={<Goals />} />
             <Route path="/goals/:id" element={<GoalDetail />} />
+            {/* AFTER the trip: what happened, what it changes about the
+                profile, and the page an operator or guide can read. Keyed on
+                the GOAL id, because an objective is the only thing in the app
+                that an attempt can be an attempt at. */}
+            <Route path="/objective/:goalId/debrief" element={<ObjectiveDebrief />} />
+            <Route path="/objective/:goalId/report" element={<ReadinessReport />} />
             {/* Guides live under Explore; these keep old links alive. */}
             <Route path="/guides" element={<Navigate to="/explore/guides" replace />} />
             <Route path="/guides/:id" element={<Navigate to="/explore/guides" replace />} />
@@ -581,6 +653,15 @@ export default function App() {
             <Route path="/mountain/:goalId/conditions" element={<Conditions />} />
             <Route path="/mountain/:goalId/checklist" element={<MountainChecklist />} />
             <Route path="/mountain/:goalId/benchmark" element={<Benchmark />} />
+            {/*
+              TRIP MODE. Deliberately NOT behind an entitlement check: the
+              self-check routes into the descent advice in `coach/safety.ts`,
+              and that may never be a paid feature. `/trip/check` is reachable
+              with no trip open for the same reason — the questionnaire is the
+              safety surface and must not wait behind a setup form.
+            */}
+            <Route path="/trip" element={<TripMode />} />
+            <Route path="/trip/check" element={<LakeLouiseCheck />} />
             {/* `new` before `:id` — otherwise the compose route is read as a thread id. */}
             <Route path="/notifications" element={<Notifications />} />
             {/*
@@ -638,12 +719,29 @@ export default function App() {
               <Route path="chat" element={<CoachChat />} />
               <Route path="plan" element={<CoachPlanTab />} />
               <Route path="plan/calendar" element={<PlanCalendar />} />
+              {/* The history of everything anybody changed about the plan, with
+                  Undo. Reached from the plan screen's header — a history nobody
+                  can find is the same as no history at all. */}
+              <Route path="plan/changes" element={<PlanChanges />} />
+              {/* PHASE 4. The week just gone, against what the plan asked for,
+                  with the few changes that follow. It is COMPUTED when the
+                  athlete next opens the app and waits here — ICEFALL cannot
+                  reach a closed PWA, and the screen says so rather than
+                  implying a Sunday-evening notification. Reached from the hub
+                  while it is unread, and from Plan at any time. */}
+              <Route path="review" element={<WeeklyReview />} />
               <Route path="fuel" element={<CoachFuel />} />
               <Route path="progress" element={<CoachProgressTab />} />
               <Route path="progress/history" element={<CoachProgress />} />
+              {/* Phase 3. Two screens that measure rather than ask: a repeatable
+                  loaded ascent, and the competences this objective wants beside
+                  the ones the athlete has reported. Reached from Progress. */}
+              <Route path="benchmarks" element={<Benchmarks />} />
+              <Route path="skills" element={<SkillGaps />} />
               <Route path="readiness" element={<ReadinessScreen />} />
               <Route path="recovery" element={<RecoveryScreen />} />
               <Route path="check-in" element={<CheckIn />} />
+              <Route path="memory" element={<CoachMemory />} />
               <Route path="session/:date" element={<SessionDetail />} />
               <Route path="training" element={<Training />} />
               <Route path="nutrition" element={<FuelDetails />} />

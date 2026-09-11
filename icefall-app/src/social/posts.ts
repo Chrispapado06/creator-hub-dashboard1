@@ -138,6 +138,79 @@ export function useOwnPosts(): OwnPost[] {
 }
 
 /* -------------------------------------------------------------------------- */
+/* What a post may say about an activity                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * AN ATTACHED ACTIVITY, AS EVERYONE ELSE MAY SEE IT.
+ *
+ * ============================================================================
+ * WHY THIS TYPE EXISTS INSTEAD OF A RULE IN A CODE REVIEW
+ * ============================================================================
+ *
+ * A post attaches an activity by id and the card reads the recording live, so
+ * until now the card held the WHOLE `RecordedActivity` and simply chose not to
+ * render some of it. Chief among the fields it chose not to render: the start
+ * time. Nothing enforced that choice — one `fmtTime(activity.startedAt)` added
+ * in good faith by anybody, at any point, and every post an athlete had ever
+ * made would begin announcing what time they leave the house.
+ *
+ * Start times plus a route are a routine. Repeated over weeks they say which
+ * mornings somebody is out, for how long, and therefore when their home is
+ * empty. That is not a thing to leave resting on a convention, so the card is
+ * handed THIS instead — a shape with no clock on it. A start time cannot be put
+ * on a post by accident now, because a post has nothing to put it in.
+ *
+ * `dateKey` is the calendar day and nothing finer. A day is what a post is
+ * about; an hour is a pattern.
+ *
+ * If ICEFALL ever offers "include my start time" as a choice the athlete makes
+ * themselves, it goes on `OwnPost` as a flag the ATHLETE sets, and this
+ * function grows a second parameter. It does not go in by quietly widening the
+ * type. See `START_TIME_PRIVACY` in `tracking/timeOfDay.ts`.
+ */
+export interface PostedActivity {
+  /**
+   * NO `id`, AND THAT IS NOT AN OVERSIGHT.
+   *
+   * An activity's id is `act-<epoch milliseconds>` (`recorder.ts`) or
+   * `manual-<epoch milliseconds>-…` — which is to say the id IS the start
+   * instant, written in a format anyone can decode. Handing it to the card
+   * alongside a promise that the card carries no start time would have made
+   * this whole type a piece of theatre the first time posts left the device.
+   *
+   * The card does not need it: the post it is rendering already holds
+   * `activityId` for its own "View activity" link, and that link is followed on
+   * the athlete's own phone against the athlete's own store.
+   */
+  title: string;
+  activityTypeId: RecordedActivity["activityTypeId"];
+  /** The calendar day it happened, `YYYY-MM-DD`. NEVER a time of day. */
+  dateKey: string;
+  distanceM: number;
+  elevationGainM: number;
+  movingSec: number;
+  durationSec: number;
+  simulated: boolean;
+}
+
+export function activityForPost(a: RecordedActivity): PostedActivity {
+  return {
+    title: a.title,
+    activityTypeId: a.activityTypeId,
+    /* Sliced, deliberately, and this is the ONE place in the app where cutting
+       the time off a timestamp is the correct thing to do rather than the bug
+       that hid the athlete's mornings from their own coach. */
+    dateKey: a.startedAt.slice(0, 10),
+    distanceM: a.distanceM,
+    elevationGainM: a.elevationGainM,
+    movingSec: a.movingSec,
+    durationSec: a.durationSec,
+    simulated: a.simulated,
+  };
+}
+
+/* -------------------------------------------------------------------------- */
 /* Summit verification                                                         */
 /* -------------------------------------------------------------------------- */
 

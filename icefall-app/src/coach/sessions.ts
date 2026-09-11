@@ -87,6 +87,19 @@ export type Modification =
   | { kind: "time"; minutes: number }
   | { kind: "equipment"; equipment: Equipment[] }
   | { kind: "discomfort"; area: string }
+  /**
+   * The STANDING limitations declared in onboarding, not a complaint about
+   * today. `areas` is the athlete's own labels, e.g. ["Knee", "Heart"].
+   *
+   * Kept apart from `discomfort` on purpose, because the two are different
+   * claims and deserve different sessions. "My knee feels sore" is a report
+   * about this morning and earns a lighter session with the finisher gone.
+   * "I have a knee" is permanent, and easing every session for the rest of the
+   * athlete's training would quietly cap their plan without anyone deciding to.
+   * This one swaps the movements that load the joint hardest and leaves the
+   * rest of the prescription alone.
+   */
+  | { kind: "limitation"; areas: string[] }
   | { kind: "fatigue" };
 
 /**
@@ -96,8 +109,43 @@ export type Modification =
  * statement about training movements, not about mountain experience, and a
  * caller mapping from `User.experience` should decide that mapping explicitly
  * rather than have it happen silently here.
+ *
+ * THE ANSWER THIS READS NOW EXISTS (2026-09-11). For months this argument had
+ * no honest source. The only experience ICEFALL held was the per-discipline
+ * MOUNTAIN experience from signup, and reading "twenty years of alpine
+ * climbing" as "ready to load a barbell" is exactly the silent inference this
+ * file refuses to make. So signup asks its own question — how much strength
+ * and gym work the athlete has actually done — and `movementExperience` on the
+ * coach profile carries that answer and nothing else. `User.experience` still
+ * must not be piped in here, and no caller may map one onto the other.
  */
-type Experience = "beginner" | "intermediate" | "advanced" | "expert";
+export type MovementExperience = "beginner" | "intermediate" | "advanced" | "expert";
+type Experience = MovementExperience;
+
+const MOVEMENT_EXPERIENCE_LEVELS: readonly MovementExperience[] = [
+  "beginner",
+  "intermediate",
+  "advanced",
+  "expert",
+];
+
+/**
+ * A stored string back to the union, or `undefined`.
+ *
+ * Every caller reads this out of a profile that may have been written by an
+ * older build, by a restore, or by a version of signup that never asked. Any
+ * value this does not recognise — the empty string, a level renamed since —
+ * comes back `undefined`, which `buildSession` already handles as never stated:
+ * difficulty capped at moderate, fewer movements, and a caution that says so.
+ * Guessing the nearest level instead would put an athlete who stated nothing
+ * under a heavier bar on the strength of a typo.
+ */
+export function movementExperience(
+  value: string | null | undefined,
+): MovementExperience | undefined {
+  if (typeof value !== "string") return undefined;
+  return MOVEMENT_EXPERIENCE_LEVELS.find((e) => e === value);
+}
 
 /* -------------------------------------------------------------------------- */
 /* Constants                                                                   */
@@ -731,6 +779,52 @@ function purposeFor(focus: TrainingFocus, goalName?: string): string {
   };
 
   return base[focus] + clause[focus];
+}
+
+/* -------------------------------------------------------------------------- */
+/* Equipment                                                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The stored profile keeps equipment as `string[]` so persisted data can never
+ * crash a type change in the exercise library. Narrowing happens here, once.
+ */
+const EQUIPMENT_IDS: readonly string[] = [
+  "none",
+  "dumbbells",
+  "barbell",
+  "kettlebell",
+  "step",
+  "pull-up-bar",
+  "bench",
+  "resistance-band",
+  "treadmill",
+  "stairs",
+  "pack",
+  "hangboard",
+];
+
+/**
+ * What the athlete has told us they own, or `undefined` when they have told us
+ * nothing.
+ *
+ * The distinction is load-bearing and easy to get wrong. `buildSession` reads an
+ * empty array as "this athlete owns nothing at all" and prescribes bodyweight
+ * only; it reads `undefined` as "we were never told", prescribes normally, and
+ * adds a caution saying the session assumes the movements are available. An
+ * untouched profile starts as `[]` (see EMPTY_COACH_PROFILE in AppState), so
+ * passing it straight through would silently convert "never asked" into a
+ * confident claim about the athlete's garage. Empty therefore means unstated.
+ *
+ * It lives beside `buildSession` rather than in the screen that used to own it
+ * because a second caller arrived: the coach's chat context builds today's
+ * session too, to tell the model what was already done about a declared
+ * limitation. Two copies of this narrowing would have meant the chat and the
+ * session screen quietly describing two different sessions.
+ */
+export function statedEquipment(ids: string[]): Equipment[] | undefined {
+  const known = ids.filter((id): id is Equipment => EQUIPMENT_IDS.includes(id));
+  return known.length > 0 ? known : undefined;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1436,6 +1530,37 @@ function matchArea(area: string): { label: string; groups: MuscleGroup[] } | nul
   return null;
 }
 
+/**
+ * Whether this engine can act on an area at all.
+ *
+ * Exported so a screen can PROMISE only what the engine delivers. `matchArea`
+ * maps words to the muscle groups a movement loads, so it can train around a
+ * knee and can do nothing at all about asthma, a heart or recent surgery. A
+ * screen that reads this asks the matcher rather than keeping its own list,
+ * because the two lists drifting apart is how a page ends up claiming a
+ * limitation shaped a session it never touched.
+ */
+export function canTrainAround(area: string): boolean {
+  return matchArea(area) !== null;
+}
+
+/**
+ * The engine's OWN NAME for the area a phrase describes, or null.
+ *
+ * `canTrainAround` answers whether an area can be acted on; this answers what
+ * the engine will call it. The post-activity debrief needs the second one: an
+ * athlete types "left knee was grumbling on the descent" and the next session
+ * has to be able to say "your knee" — the engine's label — rather than quote
+ * the sentence back, which would put athlete-typed free text into the app's own
+ * voice and onto a screen that reads as ICEFALL speaking.
+ *
+ * Same matcher as `canTrainAround`, so a screen can never promise an area the
+ * modification engine will then fail to act on.
+ */
+export function trainableAreaLabel(area: string): string | null {
+  return matchArea(area)?.label ?? null;
+}
+
 function loadsArea(ex: Exercise, groups: MuscleGroup[]): boolean {
   return [...ex.primary, ...ex.secondary].some((g) => groups.includes(g));
 }
@@ -1608,6 +1733,306 @@ function modifyDiscomfort(
   };
 }
 
+/* ---- Declared limitations ------------------------------------------------ */
+
+/**
+ * The deferral that goes with every declared-limitation adjustment.
+ *
+ * Deliberately not `ASSESSMENT_LINE`. That one says "if it is still there in a
+ * few days" — the right sentence for something that started this morning, and
+ * the wrong one for something the athlete told us about at sign-up and has
+ * presumably lived with for years. Both refuse to assess; only the timeframe
+ * differs.
+ */
+const DECLARED_ASSESSMENT_LINE =
+  "ICEFALL is not assessing any of this. What may be loaded, and when, is for a doctor or physiotherapist who can examine you.";
+
+/**
+ * Prescribe less into one movement, without touching the rest of the session.
+ *
+ * Returns `changed: false` honestly. An item already at the floor — two sets,
+ * or ten minutes — comes back untouched, and the caller must not then name it
+ * in a sentence claiming it was reduced.
+ */
+function lightenItem(
+  item: SessionItem,
+  intensity: string,
+): { item: SessionItem; changed: boolean; minutesRemoved: number } {
+  const sets =
+    item.sets === undefined ? undefined : Math.min(item.sets, Math.max(MIN_SETS, item.sets - 1));
+  const durationMin =
+    item.durationMin === undefined
+      ? undefined
+      : reduceMinutes(item.durationMin, 0.8, MIN_MAIN_MINUTES);
+
+  const changed = sets !== item.sets || durationMin !== item.durationMin;
+  if (!changed) return { item, changed: false, minutesRemoved: 0 };
+
+  /*
+   * Minutes are counted only where the item CARRIED minutes. A set-based
+   * movement losing a set plainly takes less time, but by how much is
+   * unknowable without a rest figure this module refuses to invent — so it
+   * contributes nothing here, and the Duration tile is left alone rather than
+   * moved by a guess.
+   */
+  const minutesRemoved =
+    item.durationMin !== undefined && durationMin !== undefined
+      ? item.durationMin - durationMin
+      : 0;
+
+  return { item: { ...item, sets, durationMin, intensity }, changed: true, minutesRemoved };
+}
+
+/**
+ * Train one declared area out of the session.
+ *
+ * TWO MECHANISMS, AND WHICH ONE FIRES DEPENDS ON THE ATHLETE.
+ *
+ * 1. SWAP. A movement flagged `highJointLoad` that loads the area is replaced
+ *    by a gentler one, or dropped when nothing in the library clears the bar.
+ *    This is the same rule the sore-area path uses.
+ *
+ *    IT WENT LIVE ON 2026-09-11, and the history is worth keeping because it
+ *    is a lesson about arguments nobody passes. This branch fired zero times
+ *    in the whole app for months. The cause was not the difficulty band, as an
+ *    earlier note here claimed — it was `experience`, which neither caller
+ *    supplied, so every session in ICEFALL was built under
+ *    `UNSTATED_EXPERIENCE_CAP` and `highJointLoad` movements never reached a
+ *    session to be swapped out of one. Signup now asks its own strength
+ *    question and both callers pass the answer.
+ *
+ *    RE-MEASURED after wiring it, over 210 builds per level (every focus,
+ *    seven equipment combinations, all five difficulties), counting sessions
+ *    whose declared-knee explanation names a swap or a drop:
+ *
+ *      unstated      swap 0    dropped 0
+ *      beginner      swap 0    dropped 0
+ *      intermediate  swap 5    dropped 0
+ *      advanced      swap 10   dropped 5
+ *      expert        swap 10   dropped 20
+ *
+ *    So an athlete who states nothing still gets the LIGHTEN branch and only
+ *    that — which is correct, not a shortfall: the movements a swap exists to
+ *    remove are the ones an unstated profile is never offered in the first
+ *    place.
+ *
+ * 2. LIGHTEN. Everything else in the working blocks that loads the area keeps
+ *    its place and carries a set less, or a fifth off its clock. This is the
+ *    branch that changes a real session.
+ *
+ * WHY NOT SIMPLY REMOVE EVERY MOVEMENT THAT TOUCHES THE AREA, which is what
+ * "stop loading it" sounds like it should mean. A knee maps to quads and
+ * hamstrings; deleting all of it leaves a mountaineer's strength day with no
+ * leg work at all, and a plan that trains no legs is not a plan that protects
+ * a knee on a descent. Less load into it, named movement by named movement, is
+ * a claim this library can actually support.
+ *
+ * Warm-ups and cool-downs are left alone deliberately. They are mobility and
+ * preparation, the load in them is trivial, and shaving a minute off an ankle
+ * mobilisation would pad the explanation with changes nobody can feel.
+ */
+function trainAroundArea(
+  session: CoachSession,
+  match: { label: string; groups: MuscleGroup[] },
+  kit: Equipment[],
+): {
+  blocks: SessionBlock[];
+  swaps: string[];
+  dropped: string[];
+  lightened: string[];
+  minutesRemoved: number;
+} {
+  const swaps: string[] = [];
+  const dropped: string[] = [];
+  const lightened: string[] = [];
+  let minutesRemoved = 0;
+  const intensity = `Lighter than planned — less into the ${match.label}`;
+
+  const blocks = mapBlocks(session, (block) => {
+    const working = block.kind === "main" || block.kind === "finisher";
+    const items: SessionItem[] = [];
+
+    for (const item of block.items) {
+      const ex = exerciseById(item.exerciseId);
+      if (!ex || !loadsArea(ex, match.groups)) {
+        items.push(item);
+        continue;
+      }
+
+      if (ex.highJointLoad === true) {
+        const alt = gentlerThan(ex, kit);
+        if (!alt) {
+          dropped.push(ex.name);
+          continue;
+        }
+        swaps.push(`${ex.name} → ${alt.name}`);
+        items.push(
+          itemFrom(alt, {
+            intensity,
+            durationMin: item.durationMin,
+            extraNote: `In place of ${ex.name}, which loads the joint harder.`,
+          }),
+        );
+        continue;
+      }
+
+      if (!working) {
+        items.push(item);
+        continue;
+      }
+
+      const eased = lightenItem(item, intensity);
+      if (eased.changed) {
+        lightened.push(ex.name);
+        minutesRemoved += eased.minutesRemoved;
+      }
+      items.push(eased.item);
+    }
+
+    return { ...block, items };
+  });
+
+  return { blocks, swaps, dropped, lightened, minutesRemoved };
+}
+
+/**
+ * Apply the limitations declared at sign-up to a planned session.
+ *
+ * WHY THIS EXISTS. The onboarding step promised "so sessions stop loading
+ * something that should not be loaded", and until this function the answer
+ * reached the model's prompt and nothing else — the session an athlete with a
+ * declared knee opened was byte-for-byte the session everybody else opened.
+ * The engine does the work here, in plain code, so the change is the same on
+ * every device and the model has something true to describe rather than a
+ * workout to invent.
+ *
+ * The other half of the promise is the half that is easy to skip: an area this
+ * engine CANNOT act on is named and said out loud. `matchArea` maps words to
+ * muscle groups, so it can train around a knee and can do nothing whatsoever
+ * about a heart, asthma or recent surgery. Those answers get a sentence saying
+ * exactly that, rather than a silent no-op behind a screen that says "Trained
+ * around". Returns an empty explanation only when nothing was declared.
+ */
+function modifyLimitations(
+  session: CoachSession,
+  areas: string[],
+): { session: CoachSession; explanation: string } {
+  const declared = areas.map((a) => a.trim()).filter((a) => a.length > 0);
+  if (declared.length === 0) return { session, explanation: "" };
+
+  const named = joinNames(declared.map((a) => a.toLowerCase()));
+
+  if (session.isRest) {
+    return {
+      session,
+      explanation: `Today is a rest day, so there is nothing here loading your ${named}. ${DECLARED_ASSESSMENT_LINE}`,
+    };
+  }
+
+  const kit = inferKit(session);
+  const lines: string[] = [];
+  const adjusted: string[] = [];
+  let working = session;
+  let minutesRemoved = 0;
+
+  for (const area of declared) {
+    const match = matchArea(area);
+
+    // Nothing this engine can act on. Said plainly, in the same list as the
+    // areas it did act on, so the two are never confused for each other.
+    if (!match) {
+      lines.push(
+        `${area}: ICEFALL builds sessions from movements and the joints they load, so it has no way to change a session for this. Nothing here has been adjusted for it — that belongs with a doctor or physiotherapist who can examine you, before you train against it.`,
+      );
+      continue;
+    }
+
+    const result = trainAroundArea(working, match, kit);
+    working = { ...working, blocks: result.blocks };
+    minutesRemoved += result.minutesRemoved;
+
+    const parts: string[] = [];
+    if (result.swaps.length > 0)
+      parts.push(`swapped out of the heavier joint loading — ${joinNames(result.swaps)}`);
+    if (result.dropped.length > 0) {
+      parts.push(
+        `${joinNames(result.dropped)} had no lighter replacement in the library, so ${result.dropped.length === 1 ? "it is" : "they are"} out of this session entirely`,
+      );
+    }
+    if (result.lightened.length > 0) {
+      parts.push(
+        `${joinNames(result.lightened)} ${result.lightened.length === 1 ? "carries" : "carry"} less than planned`,
+      );
+    }
+
+    // Nothing in today's work reaches the area, or everything that does was
+    // already at the floor. Either way the session is unchanged, and saying so
+    // is the point — a screen headed "Trained around" above an untouched
+    // session is the claim this whole path exists to avoid making.
+    if (parts.length === 0) {
+      lines.push(
+        `${area}: nothing in this session loads the ${match.label} in a way ICEFALL can reduce further, so it stands as planned.`,
+      );
+      continue;
+    }
+
+    // Two declared answers can map to one area — "ankle or foot" and a typed
+    // "foot" both land on the ankle. Named once, or the closing sentence reads
+    // as a bug.
+    if (!adjusted.includes(match.label)) adjusted.push(match.label);
+    lines.push(`${area}: ${parts.join("; ")}.`);
+  }
+
+  if (adjusted.length === 0) {
+    // Every declared area was either unmatched or absent from today's work.
+    // The session object is returned untouched rather than reconstructed, so
+    // nothing downstream reads a new identity as a change.
+    return { session, explanation: `${lines.join(" ")} ${DECLARED_ASSESSMENT_LINE}` };
+  }
+
+  lines.push(
+    `Everything else in this session is as prescribed. A standing limitation changes what is loaded into the ${joinNames(adjusted)}, not how hard you train in general — an answer given once at sign-up should not quietly leave someone training every session lighter for the rest of their plan. You are still the only one who can feel what a movement is doing, so end any set that provokes it rather than finishing it.`,
+  );
+  lines.push(DECLARED_ASSESSMENT_LINE);
+
+  /*
+   * THE HEADER IS PART OF THE SESSION.
+   *
+   * Timed work that was shortened has to move the Duration tile with it, or the
+   * screen prints "60 min" over fifty-two minutes of work — the small untruth
+   * rule 1 exists to stop. Only measured minutes move it: a movement that lost
+   * a set contributes nothing, because this module has no honest way to price a
+   * set in minutes and will not invent one. The provenance survives the change,
+   * so a figure that was never anything but ICEFALL's own default still says so
+   * after being reduced.
+   */
+  const duration = Math.max(0, working.durationMin - minutesRemoved);
+  const wasDefaulted = working.targets.some(
+    (t) => t.label === DURATION_LABEL && t.value.includes("ICEFALL default"),
+  );
+  const targets =
+    minutesRemoved > 0
+      ? setTarget(
+          working.targets,
+          DURATION_LABEL,
+          wasDefaulted ? `${duration} min (from ICEFALL's default)` : `${duration} min`,
+        )
+      : working.targets;
+
+  return {
+    session: {
+      ...working,
+      durationMin: duration,
+      cautions: [
+        ...working.cautions,
+        `Built around your declared ${joinNames(adjusted)}. ICEFALL has changed what is prescribed into it; it has not judged what you can load.`,
+      ],
+      targets: refreshDerivedTargets(targets, working.blocks),
+    },
+    explanation: lines.join(" "),
+  };
+}
+
 /* ---- Fatigue ------------------------------------------------------------- */
 
 /** Interval work becomes continuous steady work rather than disappearing. */
@@ -1706,6 +2131,8 @@ export function modifySession(
       return modifyEquipment(session, mod.equipment);
     case "discomfort":
       return modifyDiscomfort(session, mod.area);
+    case "limitation":
+      return modifyLimitations(session, mod.areas);
     case "fatigue":
       return modifyFatigue(session);
   }

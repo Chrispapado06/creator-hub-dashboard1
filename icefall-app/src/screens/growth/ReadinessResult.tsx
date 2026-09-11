@@ -567,7 +567,9 @@ export default function ReadinessResult() {
   );
 
   /** The human-written record. A reference entry has none and is not scored. */
-  const curated = objective?.peak.curatedId ? sync.mountainById(objective.peak.curatedId) : undefined;
+  const curated = objective?.peak.curatedId
+    ? sync.mountainById(objective.peak.curatedId)
+    : undefined;
 
   const readiness = useMemo<ObjectiveReadiness | null>(() => {
     if (!objective || !curated) return null;
@@ -835,18 +837,23 @@ export default function ReadinessResult() {
           <p className="mt-3 text-[13px] leading-relaxed text-mist">
             {account
               ? "Your assessment is held on this device against your objective, and it updates itself as you record sessions and tell ICEFALL more."
-              : "Create your free ICEFALL account to save your assessment."}
+              : "Create your free ICEFALL account to build your plan from this assessment."}
           </p>
 
-          {/* The account is a profile on this device and nothing more — there is
-              no account server. Saying "save your assessment" without saying
-              where it is saved would imply a backend that does not exist, so the
-              qualification sits directly under the ask rather than in a footer. */}
+          {/* WAS "ICEFALL is not connected to an account server" — corrected
+              2026-09-11. It is connected: signing up creates a real account and
+              `syncOnboarding` upserts the onboarding answers onto
+              `athlete_profiles`. What stayed true is the narrower fact this
+              paragraph existed for — the ASSESSMENT is uploaded nowhere. It is
+              recomputed on the device, so the old ask ("save your assessment")
+              was promising a store that still does not exist, and the ask above
+              now offers the plan instead. The qualification stays directly
+              under it rather than sitting in a footer. */}
           <p className="mt-4 border-l border-hairline pl-3 text-[11px] leading-relaxed text-mist-dim">
-            ICEFALL is not connected to an account server. An account is a profile on this device:
-            your answers and this assessment stay on your phone, nothing is uploaded, no payment
-            method is asked for and nothing is charged. The assessment is recomputed from your
-            answers each time you open it.
+            An ICEFALL account holds your email address and the answers you gave when you signed up,
+            so a new phone picks up your training rather than asking everything again. This
+            assessment is not among them: it stays on this device and is recomputed from your
+            answers each time you open it. No payment method is asked for and nothing is charged.
           </p>
 
           <Button

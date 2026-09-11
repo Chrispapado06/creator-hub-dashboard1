@@ -1,4 +1,4 @@
-import { BarChart3, Play, Share2, Watch } from "lucide-react";
+import { BarChart3, PencilLine, Play, Share2, Watch } from "lucide-react";
 import { Link, Navigate, useParams } from "react-router-dom";
 import { Badge, Button, Divider, SectionLabel, Metric } from "@/components/ui/primitives";
 import { RouteMap } from "@/components/ui/RouteMap";
@@ -29,7 +29,10 @@ import { DEFAULT_BODY_MASS_KG, useApp } from "@/state/AppState";
 import { cn } from "@/lib/utils";
 import { SendToStrava } from "@/strava/SendToStrava";
 import { activityById as trackedType } from "@/tracking/activities";
+import { startClockLabel } from "@/tracking/timeOfDay";
 import { WATCH_PROVIDER_NAME } from "@/watch/types";
+import { PolarCredit } from "@/health/PolarCredit";
+import { ActivityDebriefSection } from "@/components/tracker/ActivityDebrief";
 
 /** Screen 05 — what the mountain gave back. Works for recorded and seeded activities alike. */
 export default function ActivitySummary() {
@@ -65,7 +68,14 @@ export default function ActivitySummary() {
       <div className="px-5">
         <ScreenHeader
           title={activity.title}
-          subtitle={`${activity.location} · ${fmtDate(activity.startedAt)} · ${fmtTime(activity.startedAt)}`}
+          /* The start read in the zone it was RECORDED in, when the recording
+             carries one — so a session from a trip abroad is not re-clocked
+             into whatever zone the phone is in today. Falls back to this
+             device's clock for older records, which is what it always showed.
+             See `tracking/timeOfDay.ts`. */
+          subtitle={`${activity.location} · ${fmtDate(activity.startedAt)} · ${
+            (recorded && startClockLabel(recorded)) ?? fmtTime(activity.startedAt)
+          }`}
           back="/activity"
           action={
             <Button asChild size="icon" variant="secondary" aria-label="Share activity">
@@ -101,6 +111,29 @@ export default function ActivitySummary() {
             attribution in tooltips, footnotes or expandable containers"); for
             the other three vendors it is just honesty about what ICEFALL did
             and did not measure. */}
+        {/* SELF-REPORTED PROVENANCE, in the same place and the same shape as
+            the imported one below. Rule 5: measured beats self-reported, and
+            self-reported stays labelled — on the screen that shows the figures,
+            not only on the card that links to it. */}
+        {recorded?.origin.kind === "manual" && (
+          <Rise className="pt-5">
+            <div className="flex items-start gap-2.5">
+              <PencilLine size={16} strokeWidth={1.8} className="mt-0.5 shrink-0 text-mist" />
+              <div className="min-w-0">
+                <p className="text-[13px] text-snow">
+                  {recorded.origin.source === "coach"
+                    ? "Added from what you told your coach"
+                    : "Added by hand"}
+                </p>
+                <p className="mt-1 text-[11.5px] leading-relaxed text-mist">
+                  ICEFALL did not record this activity. The figures are the ones you reported, and
+                  they do not count toward personal bests, achievements or leaderboards.
+                </p>
+              </div>
+            </div>
+          </Rise>
+        )}
+
         {recorded?.origin.kind === "imported" && (
           <Rise className="pt-5">
             <div className="flex items-start gap-2.5">
@@ -120,6 +153,28 @@ export default function ActivitySummary() {
                     or edited by hand.
                   </p>
                 )}
+                {/* "OTHER" HAS TWO MEANINGS AND THIS SEPARATES THEM. An
+                    imported activity lands on `other` either because the
+                    outing genuinely has no ICEFALL category, or because
+                    `watch/map.ts` has no entry for whatever word the vendor
+                    used. Only the second case prints this line, and it prints
+                    the vendor's word verbatim so the athlete can report the
+                    exact value that is missing. Shown ONLY for `other`: for a
+                    sport that mapped, the vendor's word adds nothing and would
+                    just be clutter on every imported activity. */}
+                {recorded.activityTypeId === "other" && recorded.origin.vendorSport ? (
+                  <p className="mt-1 text-[11.5px] leading-relaxed text-mist">
+                    {WATCH_PROVIDER_NAME[recorded.origin.provider]} called this{" "}
+                    <span className="text-snow">{recorded.origin.vendorSport}</span>. ICEFALL has no
+                    matching activity type yet, so it is filed as Other — every measured figure
+                    above is unaffected.
+                  </p>
+                ) : null}
+                {/* Polar's API agreement requires the literal text credit
+                    "Source: Polar" wherever Polar data appears. This block
+                    builds its own sentence rather than using the provenance
+                    label, so it carries its own credit. See PolarCredit.tsx. */}
+                {recorded.origin.provider === "polar" && <PolarCredit className="mt-1.5 block" />}
               </div>
             </div>
           </Rise>
@@ -202,13 +257,16 @@ export default function ActivitySummary() {
         {/* Route */}
         <Rise className="pt-9">
           <SectionLabel>Route</SectionLabel>
-          {recorded?.origin.kind === "imported" && recorded.points.length === 0 ? (
-            /* v1 imports NO TRACK — there is nothing to draw, real or seeded.
-               A synthetic route under a real imported activity would be a
+          {recorded && recorded.origin.kind !== "icefall" && recorded.points.length === 0 ? (
+            /* NO TRACK, FOR EITHER OF TWO REASONS, AND NEITHER GETS A DRAWN
+               ROUTE. v1 imports bring across a summary and no points; a manual
+               entry is a sentence somebody reported and never had points to
+               begin with. A synthetic route under either one would be a
                fabricated map, not a fallback. */
             <p className="mt-3 text-[12px] leading-relaxed text-mist">
-              No GPS track — ICEFALL brings across the summary of an imported activity, not the
-              route.
+              {recorded.origin.kind === "manual"
+                ? "No GPS track — this session was added from what you reported, not recorded."
+                : "No GPS track — ICEFALL brings across the summary of an imported activity, not the route."}
             </p>
           ) : (
             /* THE MAP IS THE PICTURE. It was framed and radiused inside the
@@ -257,6 +315,29 @@ export default function ActivitySummary() {
         {/* PH-01 — the splits table and the elevation profile came out here
             too. The route map and the conditions stay: those are what the
             activity WAS, rather than an analysis of it. */}
+
+        {/*
+            THE DEBRIEF, SECOND CHANCE.
+            The completion screen asks first, while it is fresh. This is the
+            screen an athlete comes back to, and a debrief that could only be
+            given in the sixty seconds after a session would be a feature most
+            people never use once. It renders the saved answers instead of the
+            questions where one has already been given, so returning here is
+            never a second interrogation.
+
+            RECORDED ACTIVITIES ONLY. The seeded DEV feed is not this athlete's
+            training (see `tracking/feed.ts`); asking how a session they never
+            did felt would put an opinion on a fixture.
+        */}
+        {recorded && (
+          <Rise className="pt-8">
+            <ActivityDebriefSection
+              activityId={recorded.id}
+              activityStartedAt={recorded.startedAt}
+              className="mt-0"
+            />
+          </Rise>
+        )}
 
         {/* Coach */}
         {activity.insight && (

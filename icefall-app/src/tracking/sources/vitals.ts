@@ -1,11 +1,13 @@
 import {
   OURA_METRICS,
   OURA_UNAVAILABLE_COPY,
+  coachReason,
   type OuraMetricId,
   type OuraSummary,
   type OuraUnavailable,
 } from "./oura";
 import type { HealthDaySummary, HealthValue } from "./health";
+import type { MeasuredSource, MeasuredVital, Unavailable } from "@/coach/types";
 
 /**
  * The resolver: one answer per metric, from a fixed order of sources.
@@ -79,7 +81,17 @@ import type { HealthDaySummary, HealthValue } from "./health";
 /* Vocabulary                                                                 */
 /* -------------------------------------------------------------------------- */
 
-export type VitalSource = "oura" | "apple-health" | "health-connect";
+/**
+ * The instruments, defined once in `@/coach/types` and aliased here.
+ *
+ * The list has to be the same on both sides of the app — a coach module names
+ * the instrument behind a number, this module decides which instrument won —
+ * and two copies of a union that must agree is how they stop agreeing. The
+ * definition sits in the coach's vocabulary rather than here because that file
+ * imports nothing and can therefore be read by a pure module that must never
+ * reach a network.
+ */
+export type VitalSource = MeasuredSource;
 
 export type VitalId =
   /* Both sources can report these. */
@@ -351,35 +363,41 @@ export function resolveVitals(
 /* -------------------------------------------------------------------------- */
 
 /**
- * The exact shape `assessRecovery` wants, with the distinction it depends on.
+ * The exact shape `assessRecovery` wants, with the distinctions it depends on.
  *
- * `coach/hooks.ts` passes `restingHeartRateBpm: undefined` today and explains
- * why in a comment worth preserving:
+ * WHAT CHANGED, AND WHY. This used to hand the coach two bare numbers and a
+ * pair of source names. That was enough to display a figure and not enough to
+ * act on one, for two reasons that are the whole of this phase:
  *
- *   "undefined, not null: null claims the source was consulted and had no data
- *    for last night, which reads to the athlete as 'you failed to log it'.
- *    There is no source at all."
+ *   1. RULE 5. A resting heart rate a ring measured and a "slept badly" a
+ *      person typed are different evidence. Two `number | null` fields cannot
+ *      carry that difference, so the recovery model could only have flattened
+ *      them together. They now arrive as `MeasuredVital`s, which say what the
+ *      instrument was and stay structurally distinct from the check-in all the
+ *      way to the screen.
  *
- * That distinction is now load-bearing rather than decorative, because with a
- * ring connected there IS a source and it CAN come back empty. So:
+ *   2. THE READING'S OWN TIME. Oura's sleep reaches Oura's cloud only when the
+ *      person opens the Oura app, so "last night" can legitimately arrive a day
+ *      late. A number with no date beside it is a number that will eventually
+ *      be presented as today's when it is not, and recovery is a screen people
+ *      plan a mountain day from. `measuredOn` travels with the value, and the
+ *      recovery model refuses to score a reading that arrives without one.
+ *
+ * The three-state `value` is unchanged and still load-bearing:
  *
  *   undefined  no source is connected that could have measured this
  *   null       a source was connected, was asked, and had nothing
- *   number     a measurement, from the source named in `sources`
- *
- * `sources` is returned alongside so a screen can say which instrument the
- * coach used. A recovery score computed partly from a ring should not look
- * identical to one computed from a phone.
+ *   number     a measurement, from the source named in `source`
  */
 export interface CoachVitalInputs {
-  restingHeartRateBpm: number | null | undefined;
-  sleepMinutes: number | null | undefined;
-  sources: { restingHeartRate?: VitalSource; sleep?: VitalSource };
+  restingHeartRate: MeasuredVital;
+  sleep: MeasuredVital;
 }
 
 /** Reasons that mean "nothing is connected", as opposed to "nothing recorded". */
 const NO_SOURCE: VitalUnavailable[] = [
   "not-configured",
+  "legal-hold",
   "signed-out",
   "consent-not-given",
   "consent-withdrawn",
@@ -392,18 +410,56 @@ const NO_SOURCE: VitalUnavailable[] = [
   "unreachable",
 ];
 
-function coachField(v: Vital): number | null | undefined {
-  if (v.value !== null) return v.value;
-  return v.reason && NO_SOURCE.includes(v.reason) ? undefined : null;
+/**
+ * This module's thirteen reasons in the coach's five, with the true sentence
+ * kept alongside.
+ *
+ * `oura.ts` already owns that narrowing for its twelve and argues each mapping
+ * where it is defined, so this delegates rather than writing a second table
+ * that could disagree with the first. `unsupported` is the one it has never
+ * heard of: it means no native shell exists, which is a different sentence from
+ * "you have not connected anything" and points at a different fix — install the
+ * app, rather than link a device. The closest true family is still "no sensor
+ * is feeding this", and the note carries the rest.
+ */
+function coachAbsence(reason: VitalUnavailable): { reason: Unavailable; note: string } {
+  if (reason === "unsupported") {
+    return { reason: "not-connected", note: VITAL_UNAVAILABLE_COPY.unsupported };
+  }
+  return coachReason(reason);
+}
+
+/**
+ * One resolved vital as the coach's `MeasuredVital`.
+ *
+ * `undefined` versus `null` is decided by `NO_SOURCE` and nowhere else: a ring
+ * that is connected and simply did not record last night is a different fact
+ * from no ring, and the two produce different sentences on the recovery screen.
+ */
+function measured(v: Vital): MeasuredVital {
+  if (v.value !== null) {
+    return { value: v.value, source: v.source, measuredOn: v.measuredOn };
+  }
+
+  const reason = v.reason ?? "not-connected";
+  const { reason: coach, note } = coachAbsence(reason);
+
+  return {
+    // No instrument at all, or an instrument that answered with nothing. The
+    // reason decides which, and the reason came from the source, not from here.
+    value: NO_SOURCE.includes(reason) ? undefined : null,
+    reason: coach,
+    note,
+    // Kept even on an absence: `no-recent-data` means the most recent reading
+    // is too old to be today's, and the day it WAS measured is the useful half
+    // of that sentence.
+    measuredOn: v.measuredOn,
+  };
 }
 
 export function coachVitalInputs(vitals: Vitals): CoachVitalInputs {
-  const rhr = vitals.restingHeartRate;
-  const sleep = vitals.sleepMinutes;
-
   return {
-    restingHeartRateBpm: coachField(rhr),
-    sleepMinutes: coachField(sleep),
-    sources: { restingHeartRate: rhr.source, sleep: sleep.source },
+    restingHeartRate: measured(vitals.restingHeartRate),
+    sleep: measured(vitals.sleepMinutes),
   };
 }

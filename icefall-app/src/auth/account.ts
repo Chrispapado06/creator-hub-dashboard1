@@ -331,10 +331,58 @@ export async function syncOnboarding(answers: Record<string, unknown>): Promise<
   try {
     const { data: sess } = await supabase.auth.getSession();
     if (!sess.session) return;
+    /*
+     * THE TYPED COLUMNS, FILLED — SIX OF THE SEVEN HAD NEVER BEEN WRITTEN BY
+     * ANYTHING.
+     *
+     * `athlete_profiles` was created with typed columns for exactly the answers
+     * the product computes on — body mass, height, year of birth, typical
+     * session length, training days, maximum altitude — beside `experience` and
+     * the blob. Only `experience` was ever sent. The rest sat null on every row
+     * while the same answers rode along inside `answers` as untyped jsonb, so
+     * anything that ever wanted to reason across athletes would have been
+     * reading a blob and trusting it.
+     *
+     * THEY ARE IN THE SAME `create table` AS THE ROW, so there is no migration
+     * seam here and none is invented: if the row can be upserted, these columns
+     * exist. (The constrained columns added later — gender, sex at birth,
+     * heard_about — do have a seam, which is why they keep their own functions
+     * in `settings/sync.ts` and are not named on this write.)
+     *
+     * EVERY VALUE IS TESTED BEFORE IT IS SENT, because each column carries a
+     * CHECK: body mass 20-400, height 50-260, birth year 1900-now, session
+     * 1-1440, altitude 0-9000, days a subset of 0-6. A value outside one of
+     * those fails the WHOLE upsert with `23514` — which would take
+     * `onboarded_at` down with it and send this athlete back through every
+     * question on their next sign-in. An answer this app cannot vouch for is
+     * left out; the blob still carries it, and being absent from a column is
+     * recoverable in a way a failed signup is not.
+     *
+     * `undefined` is dropped by `JSON.stringify` on the way out, so an omitted
+     * key is not sent at all and the column keeps whatever it holds. That is
+     * the difference between "not answered" and "answered nothing", kept.
+     */
+    const int = (v: unknown, lo: number, hi: number): number | undefined =>
+      typeof v === "number" && Number.isFinite(v) && v >= lo && v <= hi ? Math.round(v) : undefined;
+    const days = Array.isArray(answers.trainingDays)
+      ? answers.trainingDays.filter((d): d is number => Number.isInteger(d) && d >= 0 && d <= 6)
+      : undefined;
+
     await supabase.from("athlete_profiles").upsert(
       {
         id: sess.session.user.id,
         experience: typeof answers.experience === "string" ? answers.experience : null,
+        body_mass_kg:
+          typeof answers.bodyMassKg === "number" &&
+          answers.bodyMassKg > 20 &&
+          answers.bodyMassKg < 400
+            ? answers.bodyMassKg
+            : undefined,
+        height_cm: int(answers.heightCm, 50, 260),
+        birth_year: int(answers.birthYear, 1900, new Date().getFullYear()),
+        typical_session_min: int(answers.typicalSessionMin, 1, 1440),
+        training_days: days,
+        max_altitude_m: int(answers.maxAltitudeM, 0, 9000),
         answers,
         answers_version: 1,
         onboarded_at: new Date().toISOString(),

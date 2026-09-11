@@ -38,11 +38,27 @@ interface Rate {
 export const MODEL_RATES: Record<CoachModel, Rate> = {
   // $1.00 / $5.00 per MTok — the right default for a short, grounded reply.
   "claude-haiku-4-5": { input: 1_000_000, output: 5_000_000, cachedInput: 100_000 },
-  // $3.00 / $15.00 per MTok.
-  "claude-sonnet-5": { input: 3_000_000, output: 15_000_000, cachedInput: 300_000 },
+  // $2.00 / $10.00 per MTok. CORRECTED 2026-09-11: this row said $3/$15, which
+  // is Sonnet 4.6's price, not Sonnet 5's. Nothing was ever billed at the wrong
+  // figure — the number is only used to decide when to stop — but a table that
+  // over-states a price stops the coach early and reports a spend that did not
+  // happen. The server keeps the same three rows; the two must not drift.
+  "claude-sonnet-5": { input: 2_000_000, output: 10_000_000, cachedInput: 200_000 },
   // $5.00 / $25.00 per MTok.
   "claude-opus-5": { input: 5_000_000, output: 25_000_000, cachedInput: 500_000 },
 };
+
+/**
+ * Whether a name the SERVER sent back is one this table can price.
+ *
+ * The proxy chooses the model now (it routes on the question's purpose and the
+ * athlete's plan), so the reply says which one answered. Anything unrecognised
+ * — a model added server-side before an app release — is priced as the default
+ * rather than dropped, because a cost of zero is the one wrong answer that
+ * would let spend run unnoticed.
+ */
+export const isCoachModel = (v: unknown): v is CoachModel =>
+  typeof v === "string" && v in MODEL_RATES;
 
 /** What the Coach runs on unless overridden. Cheapest that answers well. */
 export const DEFAULT_COACH_MODEL: CoachModel = "claude-haiku-4-5";

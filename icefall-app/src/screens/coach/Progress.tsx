@@ -157,10 +157,15 @@ export default function Progress() {
     },
     { label: "Strength", sub: "Load bearing and stability", status: NOT_ENOUGH, to: "/coach/readiness" },
     {
+      /* Phase 3: this row now leads to the competence list itself rather than
+         to the readiness screen that scores it. The score says how much of the
+         list an athlete has reported; /coach/skills says WHICH lines are open
+         and what kind of course teaches each one, which is the question
+         somebody tapping "Technical skills" is actually asking. */
       label: "Technical skills",
       sub: "Crampons, rope, movement",
       status: statusFromDimension(dim("technical")),
-      to: "/coach/readiness",
+      to: "/coach/skills",
     },
     { label: "Recovery", sub: "Sleep, nutrition, rest days", status: recoveryStatus, to: "/coach/recovery" },
   ];
@@ -273,6 +278,17 @@ export default function Progress() {
                     Your activity history will appear here as you complete sessions.
                   </p>
                 )}
+                {/* Phase 3. Shown whether or not anything is recorded: the whole
+                    point of a benchmark is that the first one can be done on a
+                    hill this weekend with a watch and a bathroom scale, by
+                    somebody whose feed is empty. */}
+                <Link
+                  to="/coach/benchmarks"
+                  className="mt-3 flex items-center gap-1.5 text-[15px] text-azure"
+                >
+                  Benchmark tests
+                  <ChevronRight size={15} strokeWidth={1.8} aria-hidden="true" />
+                </Link>
               </>
             ) : (
               <p className="display mt-4 text-[20px] italic leading-snug text-mist">

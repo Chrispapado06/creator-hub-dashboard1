@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowRight,
@@ -39,6 +39,15 @@ import { ObjectiveActions, type MountainRef } from "@/components/domain/Objectiv
 import { useMountainGallery } from "@/components/domain/MountainImage";
 import { SaveButton, SaveCircle, SavedToast, useSaveFlash } from "@/components/ui/SaveControl";
 import { TerrainMap } from "@/components/map/TerrainMap";
+import {
+  BASIS_LABEL,
+  NO_COSTS_RECORDED,
+  costsFor,
+  daysFromDurationLabel,
+  money,
+  requiredTotal,
+  type MountainCostRecord,
+} from "@/data/mountainCosts";
 import { cn } from "@/lib/utils";
 import { fmtCountdown, fmtDate, fmtElevation } from "@/lib/format";
 import { sync } from "@/services/repository";
@@ -203,25 +212,38 @@ export function MountainPage({ data }: { data: MountainPageData }) {
    * The guides tab stays for both: who will take you up a mountain is a
    * commercial listing, not an assessment of the mountain.
    */
-  const tabs = useMemo(() => {
-    const list: { value: Tab; label: string }[] = [{ value: "overview", label: "Overview" }];
-    if (curated?.routes.length) list.push({ value: "routes", label: "Routes" });
-    if (curated) {
-      list.push(
-        { value: "preparation", label: "Preparation" },
-        { value: "equipment", label: "Equipment" },
-      );
-    }
-    // The value stays `expeditions` — it is the "who takes you up" tab either
-    // way, and renaming it would churn every reference for a label change.
-    list.push({
-      value: "expeditions",
-      label: data.elevationM >= EXPEDITION_TERRAIN_M ? "Expeditions" : "Guides",
-    });
-    return list;
-  }, [curated, data.elevationM]);
+  /*
+   * FOUR GROUPS ON ONE SCROLL, not five tabs.
+   *
+   * Tabs hid four fifths of the page behind a guess about which word meant
+   * what. The four groups below are the four questions somebody actually
+   * arrives with — could I, what does it take, who takes me, and when — and
+   * every one of them answers itself in a line before it asks you to read
+   * anything. Depth that used to be a tab is now behind a row.
+   *
+   * A reference entry keeps only the two groups it can answer honestly. The
+   * chips for the others are ABSENT rather than empty, the same way the page
+   * drops the grade: the missing furniture is the signal.
+   */
+  const groups = useMemo(() => {
+    const g: { id: GroupId; label: string }[] = [{ id: "couldi", label: "Could I?" }];
+    if (curated) g.push({ id: "takes", label: "What it takes" });
+    g.push({ id: "who", label: "Who & how" });
+    if (curated) g.push({ id: "when", label: "When & safety" });
+    return g;
+  }, [curated]);
 
-  const [tab, setTab] = useState<Tab>("overview");
+  const active = useScrollSpy(groups.map((g) => g.id));
+  const [routeSheet, setRouteSheet] = useState(false);
+  const [aboutSheet, setAboutSheet] = useState(false);
+  const [costSheet, setCostSheet] = useState(false);
+  const costs = costsFor(data.curatedId);
+
+  const supportLine = curated
+    ? curated.requiresProfessionalSupport
+      ? "ICEFALL's assessment is that this one wants a certified guide."
+      : "ICEFALL's assessment is that this one can be climbed independently, with the skills below."
+    : "";
 
   return (
     <Screen padded={false}>
@@ -234,28 +256,119 @@ export function MountainPage({ data }: { data: MountainPageData }) {
       )}
 
       <div className="sticky top-0 z-20 -mt-px border-b border-hairline bg-obsidian/95 backdrop-blur">
-        <div className="no-scrollbar flex gap-5 overflow-x-auto px-5">
-          {tabs.map((t) => (
+        <div className="no-scrollbar flex gap-1.5 overflow-x-auto px-3 py-2">
+          {groups.map((g) => (
             <button
-              key={t.value}
+              key={g.id}
               type="button"
-              onClick={() => setTab(t.value)}
+              onClick={() => jumpToGroup(g.id)}
               className={cn(
-                "section-label shrink-0 border-b-[1.5px] py-3.5 text-[9px] tracking-[0.13em] transition-colors",
-                tab === t.value
-                  ? "border-azure text-snow"
-                  : "border-transparent text-mist-dim hover:text-mist",
+                "shrink-0 rounded-full border px-2.5 py-2 text-[11.5px] font-semibold whitespace-nowrap transition-colors",
+                active === g.id
+                  ? "border-azure/45 bg-azure/15 text-snow"
+                  : "border-hairline bg-graphite text-mist-dim hover:text-mist",
               )}
             >
-              {t.label}
+              {g.label}
             </button>
           ))}
         </div>
       </div>
 
-      <Stagger key={tab} className="px-5 pb-4">
-        {tab === "overview" && (
-          <>
+      <div className="pb-4">
+        {/* ---- Could I? -------------------------------------------------- */}
+        <MountainGroup
+          id="couldi"
+          kicker="Could I?"
+          title={curated ? "Where you stand" : "What ICEFALL knows"}
+          lead={curated ? `${curated.difficultyLabel}. ${supportLine}` : REFERENCE_NO_READINESS}
+        >
+          {curated ? (
+            <Preparation data={data} curated={curated} part="standing" />
+          ) : (
+            <p className="pt-1 text-[13px] leading-relaxed text-mist">{REFERENCE_NEXT_STEP}</p>
+          )}
+        </MountainGroup>
+
+        {/* ---- What it takes --------------------------------------------- */}
+        {curated && (
+          <MountainGroup
+            id="takes"
+            kicker="What it takes"
+            title="The climb, and the training for it"
+            lead={`${curated.routes.length} ${curated.routes.length === 1 ? "route" : "routes"} on ICEFALL's record. ${curated.typicalDurationLabel}.`}
+          >
+            <TerrainShowcase data={data} />
+            <WalkableRoutes data={data} />
+            <Preparation data={data} curated={curated} part="training" />
+            <DepthRow
+              title="Route details"
+              sub="Every route, the technical kit, the recommended system"
+              onClick={() => setRouteSheet(true)}
+            />
+          </MountainGroup>
+        )}
+
+        {/* ---- Who & how -------------------------------------------------- */}
+        <MountainGroup
+          id="who"
+          kicker="Who & how"
+          title={data.elevationM >= EXPEDITION_TERRAIN_M ? "Expeditions and operators" : "Guides"}
+          lead={
+            data.elevationM >= EXPEDITION_TERRAIN_M
+              ? "Who runs trips here, and what ICEFALL can and cannot check about them."
+              : "Who will take you up, and what ICEFALL can and cannot check about them."
+          }
+        >
+          <Expeditions data={data} />
+          <CostsBlock data={data} onOpen={() => setCostSheet(true)} />
+        </MountainGroup>
+
+        {/* ---- When & safety ---------------------------------------------- */}
+        {curated && (
+          <MountainGroup
+            id="when"
+            kicker="When & safety"
+            title="Best months"
+            lead={`${curated.bestSeasons.map((sn) => SEASON_LABEL[sn]).join(" · ")}. ICEFALL's assessment for this mountain.`}
+          >
+            <Preparation data={data} curated={curated} part="season" />
+            <AscentsAndConditions data={data} />
+          </MountainGroup>
+        )}
+
+        {/* ---- the page's own footer: one row ------------------------------ */}
+        <div className="border-t border-hairline px-5 pt-4">
+          <DepthRow
+            title={`About ${data.name}`}
+            sub="The facts, their sources, photography and what you have logged here"
+            onClick={() => setAboutSheet(true)}
+          />
+        </div>
+      </div>
+
+      <ActionBar data={data} facts={facts} />
+
+      {routeSheet && curated && (
+        <Sheet title="Route details" onClose={() => setRouteSheet(false)}>
+          <div className="px-5 pb-6">
+            <Routes mountain={curated} />
+            <Equipment curated={curated} />
+          </div>
+        </Sheet>
+      )}
+
+      {costSheet && costs && (
+        <Sheet title="Costs & permits" onClose={() => setCostSheet(false)}>
+          <div className="px-5 pb-6">
+            <CostBreakdown record={costs} curated={curated} />
+          </div>
+        </Sheet>
+      )}
+
+      {aboutSheet && (
+        <Sheet title={`About ${data.name}`} onClose={() => setAboutSheet(false)}>
+          <div className="px-5 pb-6">
             <Overview
               data={data}
               gallery={gallery}
@@ -263,26 +376,382 @@ export function MountainPage({ data }: { data: MountainPageData }) {
               facts={facts}
               factsState={factsState}
             />
-            <AscentsAndConditions data={data} />
-          </>
-        )}
-        {tab === "routes" && curated && <Routes mountain={curated} />}
-        {tab === "preparation" && curated && <Preparation data={data} curated={curated} />}
-        {tab === "equipment" && curated && <Equipment curated={curated} />}
-        {tab === "expeditions" && <Expeditions data={data} />}
-      </Stagger>
-
-      <ActionBar data={data} facts={facts} />
+          </div>
+        </Sheet>
+      )}
     </Screen>
   );
 }
 
+/* -------------------------------------------------------------------------- */
+/* The terrain showcase, the walkable routes, and what it costs               */
+/* -------------------------------------------------------------------------- */
+
 /**
- * The two things you can do with a mountain, always reachable.
+ * THE MOUNTAIN IN 3D, FULL WIDTH, AS THE FIRST THING UNDER "what it takes".
  *
- * Sticks to the bottom of the scroller rather than the viewport, so it never
- * covers content on a short screen and never fights the tab bar.
+ * Charlie, 11 Sep 2026: "Implement the 3D map with a showcase of camps and
+ * trails people can follow." This was already built — `TerrainMap` renders
+ * real elevation from the public AWS terrain tiles over OpenFreeMap vector
+ * tiles, and it has had a working 3D camera and toggle for weeks. What it did
+ * not have was anywhere worth seeing it: a 240px thumbnail under a
+ * "Terrain" label at the bottom of the Overview tab.
+ *
+ * WHAT IS DELIBERATELY NOT DRAWN ON IT: camps, huts and route lines. ICEFALL
+ * holds no coordinates for the Goûter hut, for Barafu, or for any camp on any
+ * of the fourteen curated mountains — `MountainRoute` carries a name, a grade,
+ * a distance and an ascent, and no geometry at all. Pins at plausible-looking
+ * places on a real map is the most convincing lie this app could tell, so the
+ * caption says what the map is showing and what it is not, and the walkable
+ * routes below it are the real lines ICEFALL does hold.
  */
+function TerrainShowcase({ data }: { data: MountainPageData }) {
+  if (data.lat === undefined || data.lon === undefined) return null;
+  return (
+    <Rise className="pt-5">
+      <div className="-mx-5">
+        <TerrainMap
+          track={[{ lat: data.lat, lon: data.lon }]}
+          current={{ lat: data.lat, lon: data.lon }}
+          follow={false}
+          start3D
+          className="h-[300px]"
+        />
+      </div>
+      <p className="mt-2.5 text-[11px] leading-relaxed text-mist-dim">
+        Real elevation, tilted. The summit is marked; camps, huts and the climbing
+        lines are not — ICEFALL holds no coordinates for them on this mountain, and
+        a pin in a plausible place would be worse than none.
+      </p>
+    </Rise>
+  );
+}
+
+/**
+ * The lines somebody can actually follow, which are walking routes.
+ *
+ * These are real: curated treks with real geometry. They are kept visibly
+ * apart from the climbing routes above, because a fortnight's valley walking
+ * and a summit day are not the same product and were once listed together.
+ */
+function WalkableRoutes({ data }: { data: MountainPageData }) {
+  const treks = data.curatedId ? treksForMountain(data.curatedId) : [];
+  if (treks.length === 0) return null;
+  return (
+    <Rise className="pt-6">
+      <SectionLabel>Routes you can follow on the ground</SectionLabel>
+      <p className="mt-1.5 text-[13px] leading-relaxed text-mist">
+        {treks.length} {treks.length === 1 ? "route walks" : "routes walk"} to or around{" "}
+        {data.name}, each with a mapped line. Walking, not climbing.
+      </p>
+      <div className="mt-2">
+        {treks.map((t, i) => (
+          <Link
+            key={t.id}
+            to={`/explore/trek/${t.id}`}
+            className={cn(
+              "flex min-h-[44px] items-center justify-between gap-3 py-3",
+              i !== 0 && "border-t border-hairline",
+            )}
+          >
+            <span className="min-w-0 flex-1 truncate text-[14px] text-snow">{t.name}</span>
+            <span className="shrink-0 tabular-nums text-[12px] text-mist-dim">
+              {t.durationDays ? `${t.durationDays[0]}–${t.durationDays[1]} days` : "—"}
+            </span>
+            <ChevronRight size={16} strokeWidth={1.7} className="shrink-0 text-mist-dim" />
+          </Link>
+        ))}
+      </div>
+    </Rise>
+  );
+}
+
+/**
+ * WHAT IT COSTS — the permit answer, the required total, and one row in.
+ *
+ * The figures come from `data/mountainCosts.ts`, where each one was read off a
+ * named page on a recorded date. Two things are on the page rather than in the
+ * sheet, because they are the two a reader came for: whether a permit is
+ * needed at all, and roughly what the unavoidable fees add up to.
+ *
+ * THE TOTAL SAYS WHAT IT IS. It is the REQUIRED lines only, for the curated
+ * duration, per person — not the price of the trip. On Everest that distinction
+ * is the difference between USD 15,000 and a six-figure expedition, so the
+ * caption says so in words rather than leaving the number to be misread.
+ */
+function CostsBlock({ data, onOpen }: { data: MountainPageData; onOpen: () => void }) {
+  const record = costsFor(data.curatedId);
+
+  if (!record) {
+    return (
+      <Rise className="pt-6">
+        <SectionLabel>Costs &amp; permits</SectionLabel>
+        <p className="mt-1.5 text-[13px] leading-relaxed text-mist">{NO_COSTS_RECORDED}</p>
+      </Rise>
+    );
+  }
+
+  const span = data.curated ? daysFromDurationLabel(data.curated.typicalDurationLabel) : null;
+  const total = span ? requiredTotal(record, span.days, span.nights) : null;
+
+  return (
+    <Rise className="pt-6">
+      <SectionLabel>Costs &amp; permits</SectionLabel>
+
+      <p className="mt-1.5 text-[15px] leading-snug font-semibold text-snow">
+        {record.permit.statement}
+      </p>
+      {record.permit.kind === "none" && record.permit.insteadRequired && (
+        <p className="mt-1.5 text-[13px] leading-relaxed text-mist">
+          {record.permit.insteadRequired}
+        </p>
+      )}
+      {record.permit.kind === "required" && (
+        <p className="mt-1.5 text-[13px] leading-relaxed text-mist">{record.permit.obtainedBy}</p>
+      )}
+
+      {total && span && (
+        <div className="mt-4 border-t border-hairline pt-3.5">
+          <p className="tnum text-[22px] leading-tight font-semibold text-snow">
+            {money(total.min, total.max, total.currency)}
+          </p>
+          <p className="mt-1 text-[12px] leading-relaxed text-mist-dim">
+            Unavoidable fees only, per person, for {span.days} days. Not the price of the trip —
+            a guide, travel, insurance and kit are all on top.
+          </p>
+        </div>
+      )}
+
+      <SourceLine record={record} />
+
+      <DepthRow
+        title="See the full breakdown"
+        sub="Every fee, what it covers, and what is not in the total"
+        onClick={onOpen}
+      />
+    </Rise>
+  );
+}
+
+/** Who published these figures, and when we read them. Never omitted. */
+function SourceLine({ record }: { record: MountainCostRecord }) {
+  const official = record.sourceKind === "issuer";
+  return (
+    <p className="mt-3 text-[11px] leading-relaxed text-mist-dim">
+      <a
+        href={record.source.url}
+        target="_blank"
+        rel="noreferrer"
+        className="text-azure underline decoration-azure/40 underline-offset-2"
+      >
+        {record.source.label}
+      </a>{" "}
+      · read {fmtDate(record.checked)} ·{" "}
+      {official ? (
+        <span className="text-mist">published by the body that charges it</span>
+      ) : (
+        <span className="text-amber">
+          not the issuer&rsquo;s own page — confirm before you pay
+        </span>
+      )}
+    </p>
+  );
+}
+
+/** Every line, what it covers, and everything the total leaves out. */
+function CostBreakdown({
+  record,
+  curated,
+}: {
+  record: MountainCostRecord;
+  curated: Mountain | undefined;
+}) {
+  const span = curated ? daysFromDurationLabel(curated.typicalDurationLabel) : null;
+  const total = span ? requiredTotal(record, span.days, span.nights) : null;
+
+  return (
+    <>
+      <p className="text-[13px] leading-relaxed text-mist">{record.permit.statement}</p>
+      {record.permit.kind === "required" && (
+        <div className="mt-3">
+          <KV k="Issued by" v={record.permit.issuedBy} />
+          <KV k="Obtained by" v={record.permit.obtainedBy} />
+          {record.permit.leadTime && <KV k="Lead time" v={record.permit.leadTime} />}
+        </div>
+      )}
+      {record.permit.kind === "none" && record.permit.insteadRequired && (
+        <div className="mt-3">
+          <KV k="Required instead" v={record.permit.insteadRequired} />
+        </div>
+      )}
+
+      <p className="section-label mt-6 text-mist-dim">The fees</p>
+      <div className="mt-1">
+        {record.lines.map((l, i) => (
+          <div key={l.label} className={cn("py-3.5", i !== 0 && "border-t border-hairline")}>
+            <div className="flex items-baseline justify-between gap-3">
+              <p className="min-w-0 flex-1 text-[14px] leading-snug text-snow">{l.label}</p>
+              <p className="tnum shrink-0 text-[14px] font-semibold text-snow">
+                {money(l.min, l.max, l.currency)}
+              </p>
+            </div>
+            <p className="mt-0.5 text-[12px] text-mist-dim">
+              {BASIS_LABEL[l.basis]}
+              {l.requirement === "optional" ? " · optional" : " · required"}
+            </p>
+            {l.note && <p className="mt-1.5 text-[12px] leading-relaxed text-mist">{l.note}</p>}
+          </div>
+        ))}
+      </div>
+
+      {total && span && (
+        <div className="mt-2 border-t border-hairline pt-3.5">
+          <div className="flex items-baseline justify-between gap-3">
+            <p className="text-[14px] text-snow">Required fees, {span.days} days</p>
+            <p className="tnum text-[17px] font-semibold text-snow">
+              {money(total.min, total.max, total.currency)}
+            </p>
+          </div>
+          <p className="mt-1 text-[12px] leading-relaxed text-mist-dim">Per person.</p>
+        </div>
+      )}
+
+      {record.caveats && record.caveats.length > 0 && (
+        <>
+          <p className="section-label mt-6 text-mist-dim">What this total does not include</p>
+          <ul className="mt-1.5 space-y-2">
+            {record.caveats.map((c) => (
+              <li key={c} className="flex gap-3 text-[13px] leading-relaxed text-mist">
+                <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-amber" />
+                {c}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      <SourceLine record={record} />
+    </>
+  );
+}
+
+function KV({ k, v }: { k: string; v: string }) {
+  return (
+    <div className="border-t border-hairline py-3 first:border-t-0 first:pt-0">
+      <p className="section-label text-[9px] text-mist-dim">{k}</p>
+      <p className="mt-1 text-[13px] leading-relaxed text-mist">{v}</p>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* The group shell, the depth row and the scroll-spy                          */
+/* -------------------------------------------------------------------------- */
+
+type GroupId = "couldi" | "takes" | "who" | "when";
+
+/**
+ * A group: its question, its one-line answer, then whatever it holds.
+ *
+ * No card round the group. The hairline and the space are the separation —
+ * a border on top of a border is the thing the owner keeps sending back.
+ */
+function MountainGroup({
+  id,
+  kicker,
+  title,
+  lead,
+  children,
+}: {
+  id: GroupId;
+  kicker: string;
+  title: string;
+  lead: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section
+      id={`mg-${id}`}
+      className="scroll-mt-[104px] border-t border-hairline px-5 pt-5 pb-6 first:border-t-0"
+    >
+      <p className="section-label text-azure">{kicker}</p>
+      <h2 className="mt-1.5 text-[19px] leading-tight font-semibold text-snow">{title}</h2>
+      <p className="mt-2 text-[14px] leading-relaxed text-mist">{lead}</p>
+      {children}
+    </section>
+  );
+}
+
+/** One row into depth. The same shape everywhere, so it reads as one idea. */
+function DepthRow({
+  title,
+  sub,
+  onClick,
+}: {
+  title: string;
+  sub: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="mt-5 flex min-h-[44px] w-full items-center gap-3 border-t border-hairline pt-4 text-left"
+    >
+      <span className="min-w-0 flex-1">
+        <span className="block text-[15px] font-semibold text-snow">{title}</span>
+        <span className="mt-0.5 block text-[13px] leading-snug text-mist-dim">{sub}</span>
+      </span>
+      <ChevronRight size={18} strokeWidth={1.7} className="shrink-0 text-mist-dim" />
+    </button>
+  );
+}
+
+/** Scroll the group under the chips rather than under the sticky bar. */
+function jumpToGroup(id: GroupId) {
+  const el = document.getElementById(`mg-${id}`);
+  if (!el) return;
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  el.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "start" });
+}
+
+/**
+ * Which group is under the chips right now.
+ *
+ * `Screen` is a scrolling div, not the window, so this listens to the nearest
+ * scrolling ancestor and falls back to the window rather than silently never
+ * firing.
+ */
+function useScrollSpy(ids: GroupId[]): GroupId {
+  const key = ids.join("|");
+  const [activeId, setActiveId] = useState<GroupId>(ids[0]);
+
+  useEffect(() => {
+    const els = ids
+      .map((id) => document.getElementById(`mg-${id}`))
+      .filter((el): el is HTMLElement => Boolean(el));
+    if (els.length === 0) return;
+
+    const root = els[0].closest<HTMLElement>(".overflow-y-auto");
+    const onScroll = () => {
+      /* Just below the sticky chips, and BELOW where `scroll-mt` parks a
+         group after a chip tap — at 112 a jumped-to group landed 6px under
+         the line and the chip for the PREVIOUS group stayed lit. */
+      const line = (root ? root.getBoundingClientRect().top : 0) + 132;
+      let best = els[0];
+      for (const el of els) if (el.getBoundingClientRect().top <= line) best = el;
+      setActiveId(best.id.replace("mg-", "") as GroupId);
+    };
+
+    onScroll();
+    const target: HTMLElement | Window = root ?? window;
+    target.addEventListener("scroll", onScroll, { passive: true });
+    return () => target.removeEventListener("scroll", onScroll);
+  }, [key]);
+
+  return activeId;
+}
+
 function ActionBar({ data, facts }: { data: MountainPageData; facts: PeakFacts | null }) {
   const { objectives, addObjective, removeObjective } = useApp();
   const objective = objectiveRef(data, facts);
@@ -464,7 +933,18 @@ function MountainHero({
 
   return (
     <div className="relative">
-      <div className="relative h-[330px] w-full overflow-hidden bg-slate">
+      {/*
+        THE PICTURE IS THE FIRST THING, WITH NOTHING ABOVE IT.
+        The route is on `isFullScreenRoute` now, so there is no app top bar and
+        no Explore header here: this runs edge to edge and up under the status
+        bar. Sized exactly as the trek and trail heroes are, because Charlie
+        asked for the same treatment and two pages with the same job should not
+        drift apart by a handful of pixels.
+      */}
+      <div
+        className="on-dark relative w-full shrink-0 overflow-hidden bg-slate"
+        style={{ height: "46vh", maxHeight: "440px", minHeight: "310px" }}
+      >
         <img
           src={images[i]}
           alt={data.name}
@@ -740,27 +1220,29 @@ interface Stat {
   icon: typeof MountainIcon;
 }
 
+/**
+ * The figures under the hero. NO BOXES.
+ *
+ * This was a bordered card holding five bordered cells, and Charlie has now
+ * rejected that shape twice: "I said no boxes that look ai made". The trail
+ * page already had the answer — a plain grid between two hairlines, the figure
+ * first and the label under it — so this is that, not a third invention.
+ *
+ * The value leads because it is what a reader is looking for; the label and
+ * its provenance sit underneath in the sizes the trail page uses.
+ */
 function StatRow({ stats }: { stats: Stat[] }) {
   return (
-    <div className="px-5 py-4">
-      <Card inset={false} className="no-scrollbar flex overflow-x-auto">
-        {stats.map((s, i) => (
-          <div
-            key={s.label}
-            className={cn(
-              "min-w-[132px] shrink-0 px-4 py-3.5",
-              i !== 0 && "border-l border-hairline",
-            )}
-          >
-            <div className="flex items-center gap-1.5">
-              <s.icon size={12} strokeWidth={1.5} className="shrink-0 text-azure/70" />
-              <p className="section-label text-[9px] text-mist-dim">{s.label}</p>
-            </div>
-            <p className="tnum mt-2 text-[14px] leading-snug text-snow">{s.value}</p>
+    <div className="px-5">
+      <div className="no-scrollbar flex gap-x-6 overflow-x-auto border-y border-hairline py-4">
+        {stats.map((s) => (
+          <div key={s.label} className="min-w-[92px] shrink-0">
+            <p className="tnum text-[17px] leading-tight font-semibold text-snow">{s.value}</p>
+            <p className="section-label mt-1.5 text-[9px] text-mist-dim">{s.label}</p>
             {s.hint && <p className="mt-1 text-[10px] leading-snug text-mist-dim">{s.hint}</p>}
           </div>
         ))}
-      </Card>
+      </div>
     </div>
   );
 }
@@ -1060,46 +1542,12 @@ function Overview({
        * all. Listing them together would put a fortnight's valley walking under
        * the same heading as a summit route.
        */}
-      {data.curatedId && treksForMountain(data.curatedId).length > 0 && (
-        <Rise className="pt-6">
-          <SectionLabel>Treks here</SectionLabel>
-          <Card className="mt-3">
-            <p className="text-sm text-mist/70">
-              {treksForMountain(data.curatedId).length}{" "}
-              {treksForMountain(data.curatedId).length === 1 ? "route" : "routes"} walk to or around{" "}
-              {data.name} — walking, not climbing.
-            </p>
-            <div className="mt-3 space-y-1.5">
-              {treksForMountain(data.curatedId).map((t) => (
-                <Link
-                  key={t.id}
-                  to={`/explore/trek/${t.id}`}
-                  className="flex items-baseline justify-between gap-3 rounded-xl bg-obsidian/40 px-3 py-2"
-                >
-                  <span className="min-w-0 truncate text-sm text-mist">{t.name}</span>
-                  <span className="shrink-0 text-xs tabular-nums text-mist/45">
-                    {t.durationDays ? `${t.durationDays[0]}–${t.durationDays[1]} days` : "—"}
-                  </span>
-                </Link>
-              ))}
-            </div>
-          </Card>
-        </Rise>
-      )}
+      {/* "Treks here" moved to "What it takes" as `WalkableRoutes`, next to the
+          3D map, where the routes somebody can actually follow belong. */}
 
-      {data.lat !== undefined && data.lon !== undefined && (
-        <Rise className="pt-6">
-          <SectionLabel>Terrain</SectionLabel>
-          <div className="mt-3 overflow-hidden rounded-card border border-hairline">
-            <TerrainMap
-              track={[{ lat: data.lat, lon: data.lon }]}
-              current={{ lat: data.lat, lon: data.lon }}
-              follow={false}
-              className="h-[240px]"
-            />
-          </div>
-        </Rise>
-      )}
+      {/* The terrain map moved to "What it takes", full width and in 3D, where
+          it is the showcase Charlie asked for rather than a 240px thumbnail
+          buried at the bottom of a tab. See `TerrainShowcase`. */}
 
       {objective && (
         <Rise className="pt-6">
@@ -1171,13 +1619,33 @@ function Routes({ mountain }: { mountain: Mountain }) {
  * ICEFALL recommends a certified mountain guide" advisory, the acclimatisation
  * paragraph, the season window. All derived from elevation and latitude.
  */
-function Preparation({ data, curated }: { data: MountainPageData; curated: Mountain }) {
+/**
+ * Preparation, split three ways so the chip groups can each take their own
+ * half of it. Nothing moved out of this function — the same blocks render,
+ * under whichever heading now asks for them:
+ *
+ *   "standing" → the goal ring, the open gaps, technical ground, required
+ *                experience.  This is "Could I?".
+ *   "training" → what the mountain asks you to train.  "What it takes".
+ *   "season"   → the best-season assessment.  "When & safety".
+ */
+type PrepPart = "standing" | "training" | "season";
+
+function Preparation({
+  data,
+  curated,
+  part,
+}: {
+  data: MountainPageData;
+  curated: Mountain;
+  part: PrepPart;
+}) {
   const goal = data.goal;
   return (
     <>
-      {goal ? (
-        <Rise className="pt-1">
-          <Card>
+      {part === "standing" && (goal ? (
+        <Rise className="pt-5">
+          <div className="border-t border-hairline pt-4">
             <div className="flex items-center gap-5">
               <ProgressRing value={goal.preparation} size={78} stroke={3} />
               <div className="min-w-0">
@@ -1198,23 +1666,21 @@ function Preparation({ data, curated }: { data: MountainPageData; curated: Mount
               <span className="flex-1">View the full training plan</span>
               <ChevronRight size={15} strokeWidth={1.7} />
             </Link>
-          </Card>
+          </div>
         </Rise>
       ) : (
-        <Rise className="pt-1">
-          <Card>
-            <p className="text-[13px] leading-relaxed text-mist">
-              Set this mountain as your goal and ICEFALL builds a training plan backwards from your
-              target date, then tracks preparation against what you actually complete.
-            </p>
-          </Card>
+        <Rise className="pt-5">
+          <p className="border-t border-hairline pt-4 text-[13px] leading-relaxed text-mist">
+            Set this mountain as your goal and ICEFALL builds a training plan backwards from your
+            target date, then tracks preparation against what you actually complete.
+          </p>
         </Rise>
-      )}
+      ))}
 
-      {goal?.gaps && goal.gaps.length > 0 && (
+      {part === "standing" && goal?.gaps && goal.gaps.length > 0 && (
         <Rise className="pt-6">
           <SectionLabel>What stands between you and the summit</SectionLabel>
-          <Card className="mt-3" inset={false}>
+          <div className="mt-2">
             <ul>
               {goal.gaps.map((g, i) => {
                 // Everything here is outstanding by definition — a gap that
@@ -1224,7 +1690,7 @@ function Preparation({ data, curated }: { data: MountainPageData; curated: Mount
                   <li
                     key={g}
                     className={cn(
-                      "flex items-start gap-3 px-4 py-3.5",
+                      "flex items-start gap-3 py-3",
                       i !== 0 && "border-t border-hairline",
                     )}
                   >
@@ -1248,12 +1714,12 @@ function Preparation({ data, curated }: { data: MountainPageData; curated: Mount
             </ul>
             <Link
               to="/coach/training"
-              className="flex items-center gap-2 border-t border-hairline px-4 py-3.5 text-[13px] text-azure transition-colors hover:text-azure-bright"
+              className="flex min-h-[44px] items-center gap-2 border-t border-hairline py-3 text-[13px] text-azure transition-colors hover:text-azure-bright"
             >
               <span className="flex-1">View full preparation plan</span>
               <ArrowRight size={15} strokeWidth={1.7} />
             </Link>
-          </Card>
+          </div>
         </Rise>
       )}
 
@@ -1265,9 +1731,10 @@ function Preparation({ data, curated }: { data: MountainPageData; curated: Mount
         * the Equipment tab under "Equipment essentials". Two headings, both
         * describing the other one's contents. They now say what they hold.
         */}
+      {part === "training" && (
       <Rise className="pt-6">
         <SectionLabel>Training this mountain asks for</SectionLabel>
-        <Card className="mt-3">
+        <div className="mt-2">
           <ul className="space-y-2.5">
             {curated.trainingRequirements.map((s) => (
               <li key={s} className="flex gap-3 text-[13px] leading-relaxed text-mist">
@@ -1289,12 +1756,14 @@ function Preparation({ data, curated }: { data: MountainPageData; curated: Mount
               ground.
             </Disclaimer>
           )}
-        </Card>
+        </div>
       </Rise>
+      )}
 
+      {part === "standing" && (
       <Rise className="pt-6">
         <SectionLabel>Technical ground</SectionLabel>
-        <Card className="mt-3">
+        <div className="mt-2">
           <ul className="space-y-2.5">
             {curated.technicalRequirements.map((t) => (
               <li key={t} className="flex gap-3 text-[13px] leading-relaxed text-mist">
@@ -1303,15 +1772,16 @@ function Preparation({ data, curated }: { data: MountainPageData; curated: Mount
               </li>
             ))}
           </ul>
-        </Card>
+        </div>
       </Rise>
+      )}
 
+      {part === "standing" && (
       <Rise className="pt-6">
         <SectionLabel>Required experience</SectionLabel>
-        <Card className="mt-3">
-          <p className="text-[13px] leading-relaxed text-mist">{curated.requiredExperience}</p>
-        </Card>
+        <p className="mt-2 text-[13px] leading-relaxed text-mist">{curated.requiredExperience}</p>
       </Rise>
+      )}
 
       {/*
         * THE SEASON NOTE IS GONE, and it was a live contradiction rather than
@@ -1321,9 +1791,10 @@ function Preparation({ data, curated }: { data: MountainPageData; curated: Mount
         * September" from `assessPeak`. Summer is the one season the expert
         * record excludes. The badges are the assessment; nothing else is.
         */}
+      {part === "season" && (
       <Rise className="pt-6">
         <SectionLabel>Best season</SectionLabel>
-        <Card className="mt-3">
+        <div className="mt-2">
           <div className="flex flex-wrap gap-2">
             {curated.bestSeasons.map((sn) => (
               <Badge key={sn} tone="azure" size="md">
@@ -1335,10 +1806,14 @@ function Preparation({ data, curated }: { data: MountainPageData; curated: Mount
             ICEFALL's assessment for this mountain. Conditions in any given year can close a season
             entirely — check a mountain forecast and the local guides office before committing.
           </p>
-        </Card>
+        </div>
       </Rise>
 
-      {data.preparationFooter && <Rise className="pt-8">{data.preparationFooter}</Rise>}
+      )}
+
+      {part === "season" && data.preparationFooter && (
+        <Rise className="pt-8">{data.preparationFooter}</Rise>
+      )}
     </>
   );
 }

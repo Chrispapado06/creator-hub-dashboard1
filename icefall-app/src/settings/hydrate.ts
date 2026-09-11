@@ -153,7 +153,7 @@
  * navigating to `/home` mounts it. Once per account per app load; nothing here
  * runs on a timer, on reconnect, or on a token refresh.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   fetchInterestTags,
@@ -637,5 +637,303 @@ export function useProfileHydration(uid: string | null | undefined): void {
         tell: true,
       });
     });
+  }, [uid]);
+}
+
+/* ========================================================================== */
+/* The coaching answers — same three rules, a different table                  */
+/* ========================================================================== */
+
+/**
+ * THE OTHER HALF OF THE QUESTIONNAIRE COMES BACK TOO.
+ *
+ * Everything above this line is about `public.profiles` — the face, the name,
+ * the bio, the links. The answers that decide what ICEFALL PRESCRIBES live on
+ * `public.athlete_profiles`: equipment, training days, session length, skills,
+ * altitude, strength experience, limitations, the objective and its date. Until
+ * `sync.ts` grew `saveCoachingAnswers` / `fetchCoachingAnswers`, half of them
+ * never left the phone at all and the other half were uploaded and never read
+ * back.
+ *
+ * ── THE RULES ARE THE ONES IN THIS FILE'S HEADER. ALL THREE, UNCHANGED ─────
+ *
+ * They are not restated here and they are not adjusted here. `mayTakeCoaching`
+ * below is the same shape as `mayTake` above: rule 1 (the device is holding it
+ * unsent — it wins and stays queued), the in-flight guard, then rule 2 (the
+ * server holds a value — it wins), then rule 3 (the server's column is empty —
+ * the device keeps what it has; a fetch fills and corrects, it never empties).
+ *
+ * ── THE ONE FIELD WITH AN EXCEPTION, AND WHY IT IS NOT A FOURTH RULE ───────
+ *
+ * `objective` is restored ONLY onto a device that has none. The server holds a
+ * name, an elevation and a date; the device holds a `Goal`, which is that plus
+ * an id, a `trainingStartedAt`, a `preparation` figure derived from sessions
+ * this athlete has actually completed, and a gap list. Rule 2 applied literally
+ * would replace a training history with a name — and creating a second goal
+ * instead would point Home, the Coach and the kit checklist at the same
+ * mountain twice, with `usePrimaryGoal` picking whichever date is sooner.
+ *
+ * That is not the merge rule failing. It is rule 2's own justification not
+ * holding: "either this phone sent it, or it is this athlete's more recent word
+ * on the subject" is true of a bio and false of an object the device has been
+ * accumulating evidence into. Where the device has no objective there is
+ * nothing to protect and the ordinary rule runs.
+ *
+ * ── WHAT IS NOT CLEARED ON AN ACCOUNT CHANGE, SAID PLAINLY ────────────────
+ *
+ * `handleAccountChange` wipes the profile fields, and it does NOT wipe the
+ * coaching answers — for the reason the header already gives for `heightCm`
+ * and `birthYear`, plus one more that is specific to these. They are answers
+ * about what somebody can train with and train around, they live in `AppState`
+ * alongside the recorded training this app refuses to delete on a sign-in, and
+ * a wipe would happen offline while the refill needs a signal: the athlete who
+ * signs in on a plane would land with no equipment, no days and no limitations
+ * and no way to get them back until they have a network.
+ *
+ * What this costs on a shared phone is bounded and worth stating: rule 2
+ * replaces every answer the ARRIVING athlete has given, so what can survive is
+ * only a field the arriving athlete has never answered — and the marks saying
+ * which fields were typed and not sent ARE cleared with the rest, because those
+ * describe the previous person's editing. The residue is real; it is smaller
+ * than it was before this module existed, and it is not silent.
+ */
+import {
+  fetchCoachingAnswers,
+  forgetAllUnsentCoachingFields,
+  forgetUnsentCoachingFields,
+  noteUnsentCoachingField,
+  saveCoachingAnswers,
+  unsentCoachingFields,
+  type CoachingAnswersEdit,
+  type CoachingFieldName,
+  type ServerCoachingAnswers,
+} from "@/settings/sync";
+
+/**
+ * What this device currently holds, in the vocabulary `sync.ts` speaks.
+ *
+ * A SNAPSHOT AND NOT A STORE: the caller builds it from `AppState` and the
+ * settings store, which is where each of these answers actually lives. This
+ * module reads it twice — once before the request and once after — and that
+ * comparison is the in-flight guard. `objective` present means this device has
+ * one; its contents are not compared.
+ */
+export interface DeviceCoachingAnswers extends CoachingAnswersEdit {
+  objective?: CoachingAnswersEdit["objective"];
+}
+
+export type CoachingHydration =
+  | { kind: "idle" }
+  | { kind: "fetching" }
+  | {
+      kind: "hydrated";
+      applied: readonly CoachingFieldName[];
+      keptUnsent: readonly CoachingFieldName[];
+    }
+  | { kind: "failed"; failure: ProfileFetchFailure; message: string; tell: boolean };
+
+let coachingState: CoachingHydration = { kind: "idle" };
+const coachingListeners = new Set<(s: CoachingHydration) => void>();
+
+function setCoachingState(next: CoachingHydration) {
+  coachingState = next;
+  coachingListeners.forEach((l) => l(next));
+}
+
+/** For the one sentence the coaching-profile screen may say about a fetch. */
+export function useCoachingHydrationState(): CoachingHydration {
+  const [value, setValue] = useState(coachingState);
+  useEffect(() => {
+    coachingListeners.add(setValue);
+    setValue(coachingState);
+    return () => {
+      coachingListeners.delete(setValue);
+    };
+  }, []);
+  return value;
+}
+
+/**
+ * RULE 3, ASKED ONCE: is this something the server actually said?
+ *
+ * `undefined` is a question that was never answered — the column is not on this
+ * deployment, the request failed, or the record predates the field. `null` and
+ * an empty list are ANSWERS, and they are empty ones. Neither may empty a box
+ * on this phone.
+ *
+ * The one deliberate exception is a NUMBER OF ZERO, which is why this is not a
+ * truthiness test: `maxAltitudeM: 0` is "I have never been above 1,000 m",
+ * which is an answer worth restoring. `bestAltitude` is what decides zero is
+ * not a floor to reason from; this function does not get to decide it by
+ * throwing the value away.
+ */
+function serverSaidSomething(value: unknown): boolean {
+  if (value === undefined || value === null) return false;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === "string") return value.length > 0;
+  if (typeof value === "object") return Object.keys(value as object).length > 0;
+  return true;
+}
+
+/**
+ * The merge, as a pure function, so it can be read in one sitting and reasoned
+ * about without a session, a network or a React tree.
+ */
+export function mergeCoachingAnswers(
+  server: ServerCoachingAnswers,
+  before: DeviceCoachingAnswers,
+  now: DeviceCoachingAnswers,
+  unsent: readonly CoachingFieldName[],
+): {
+  patch: CoachingAnswersEdit;
+  applied: CoachingFieldName[];
+  keptUnsent: CoachingFieldName[];
+} {
+  const patch: CoachingAnswersEdit = {};
+  const applied: CoachingFieldName[] = [];
+  const keptUnsent: CoachingFieldName[] = [];
+
+  const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
+  const take = <K extends keyof CoachingAnswersEdit & CoachingFieldName>(
+    field: K,
+    value: ServerCoachingAnswers[K & keyof ServerCoachingAnswers],
+  ) => {
+    if (unsent.includes(field)) {
+      keptUnsent.push(field);
+      return;
+    }
+    if (!serverSaidSomething(value)) return;
+    /* Changed while the request was out — somebody is editing. Left alone. */
+    if (!same(before[field], now[field])) return;
+    if (same(now[field], value)) return;
+    patch[field] = value as CoachingAnswersEdit[K];
+    applied.push(field);
+  };
+
+  take("experience", server.experience ?? undefined);
+  take("bodyMassKg", server.bodyMassKg ?? undefined);
+  take("heightCm", server.heightCm ?? undefined);
+  take("birthYear", server.birthYear ?? undefined);
+  take("typicalSessionMin", server.typicalSessionMin ?? undefined);
+  take("trainingDays", server.trainingDays);
+  take("maxAltitudeM", server.maxAltitudeM ?? undefined);
+  take("disciplines", server.disciplines);
+  take("disciplineExperience", server.disciplineExperience);
+  take("availableEquipment", server.availableEquipment);
+  take("technicalSkills", server.technicalSkills);
+  take("movementExperience", server.movementExperience ?? undefined);
+  take("limitations", server.limitations);
+  take("limitationsNote", server.limitationsNote ?? undefined);
+  take("altitudeIllness", server.altitudeIllness ?? undefined);
+  take("trainingBaseline", server.trainingBaseline ?? undefined);
+
+  /* The exception argued at the top of this section. A device with an objective
+     keeps it; a device with none is given the athlete's own back. */
+  if (unsent.includes("objective")) keptUnsent.push("objective");
+  else if (now.objective === undefined && server.objective?.goalName) {
+    patch.objective = { ...server.objective, goalName: server.objective.goalName };
+    applied.push("objective");
+  }
+
+  return { patch, applied, keptUnsent };
+}
+
+/** Accounts whose coaching answers have been fetched on this app load. */
+const coachingDone = new Set<string>();
+let coachingLatest: string | null = null;
+
+/**
+ * Fetch and merge the coaching answers once per account per app load, and send
+ * anything this phone is holding unsent.
+ *
+ * `device` is a GETTER rather than a value because the guard needs two readings
+ * a network round trip apart; `apply` is where the patch lands, and it is the
+ * caller's because these answers live in `AppState` and the settings store,
+ * neither of which this module is allowed to reach into.
+ */
+export function useCoachingHydration(
+  uid: string | null | undefined,
+  device: () => DeviceCoachingAnswers,
+  apply: (patch: CoachingAnswersEdit) => void,
+): void {
+  /* Held in refs so a caller may pass fresh closures on every render — which it
+     will, since they close over app state — without restarting the fetch. */
+  const deviceRef = useRef(device);
+  const applyRef = useRef(apply);
+  deviceRef.current = device;
+  applyRef.current = apply;
+
+  useEffect(() => {
+    if (!uid) return;
+    coachingLatest = uid;
+
+    /* The previous person's marks describe the previous person's editing. The
+       profile half clears its own in `handleAccountChange`; this is the same
+       act for this half, and it is gated on the same comparison. */
+    const previous = profileOwner();
+    if (previous !== null && previous !== uid) {
+      forgetAllUnsentCoachingFields();
+      coachingDone.clear();
+    }
+
+    if (coachingDone.has(uid)) return;
+    coachingDone.add(uid);
+
+    void (async () => {
+      setCoachingState({ kind: "fetching" });
+      const before = deviceRef.current();
+      const unsent = unsentCoachingFields();
+
+      const result = await fetchCoachingAnswers();
+      if (coachingLatest !== uid) return;
+
+      if (!result.ok) {
+        setCoachingState({
+          kind: "failed",
+          failure: result.failure,
+          message: result.message,
+          tell: result.failure !== "no-backend" && result.failure !== "signed-out",
+        });
+      } else {
+        const { patch, applied, keptUnsent } = mergeCoachingAnswers(
+          result.coaching,
+          before,
+          deviceRef.current(),
+          unsent,
+        );
+        if (Object.keys(patch).length > 0) applyRef.current(patch);
+        setCoachingState({ kind: "hydrated", applied, keptUnsent });
+      }
+
+      /*
+       * THE QUEUE DRAINS HERE, and it reads the CURRENT values rather than a
+       * stored copy — see `COACHING_UNSENT_KEY` in `sync.ts` for why there is
+       * no outbox. Fire and forget: rule 1 has already kept every unsent answer
+       * on screen, so nothing the athlete can see is waiting on this.
+       *
+       * The marks are dropped on ATTEMPT and re-applied on failure, which is
+       * the same promise `forgetUnsentProfileField` makes: a mark means "this
+       * phone has never tried", and leaving it set after a try would make every
+       * later fetch refuse the server for ever.
+       */
+      if (unsent.length === 0) return;
+      const held = deviceRef.current();
+      const send: CoachingAnswersEdit = {};
+      for (const field of unsent) {
+        const value = held[field];
+        if (value !== undefined) (send as Record<string, unknown>)[field] = value;
+      }
+      if (Object.keys(send).length === 0) {
+        forgetUnsentCoachingFields(unsent);
+        return;
+      }
+      forgetUnsentCoachingFields(unsent);
+      const sent = await saveCoachingAnswers(send);
+      const failed = (Object.keys(sent.fields) as CoachingFieldName[]).filter(
+        (f) => sent.fields[f]?.state !== "saved",
+      );
+      for (const field of failed) noteUnsentCoachingField(field);
+    })();
   }, [uid]);
 }

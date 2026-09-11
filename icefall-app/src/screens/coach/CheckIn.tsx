@@ -5,7 +5,7 @@ import { Rise, Screen, ScreenHeader, Stagger } from "@/components/layout/chrome"
 import { QualifierBadge, ScoreValue, UnavailableState } from "@/components/coach/DataState";
 import { CHECKIN_FIELDS, type CheckInField, type RecoveryStatus } from "@/coach/recovery";
 import { CHECK_IN_MAX, CHECK_IN_MIN, COACH_DISCLAIMER } from "@/coach/types";
-import type { CheckIn as CheckInReport } from "@/coach/types";
+import type { CheckIn as CheckInReport, CheckInAnswers } from "@/coach/types";
 import { useCoachIntel } from "@/coach/hooks";
 import { useApp } from "@/state/AppState";
 import { cn } from "@/lib/utils";
@@ -72,7 +72,7 @@ function answersFrom(saved: CheckInReport | undefined): Answers {
  * report must not reach `saveCheckIn`, because every consumer downstream
  * treats a stored field as something the athlete actually said.
  */
-function completeReport(a: Answers): Omit<CheckInReport, "date"> | null {
+function completeReport(a: Answers): CheckInAnswers | null {
   const { energy, soreness, sleep, stress, motivation } = a;
   if (
     typeof energy !== "number" ||
@@ -112,8 +112,13 @@ export default function CheckIn() {
     setShowAssessment(true);
   };
 
-  const counted = recovery.inputs.filter((i) => i.value !== null);
-  const missing = recovery.inputs.filter((i) => i.value === null);
+  /* SPLIT ON WHETHER IT WAS COUNTED, NOT ON WHETHER IT HAS A NUMBER. A measured
+     reading that is several nights old, or that arrived without the day it
+     belongs to, has a value and is deliberately not scored — putting it under
+     "what went into it" would tell the athlete a night shaped their score when
+     it did not. */
+  const counted = recovery.inputs.filter((i) => i.counted);
+  const missing = recovery.inputs.filter((i) => !i.counted);
   const missingHealthSource = missing.some(
     (i) => i.id === "sleepDuration" || i.id === "restingHeartRate",
   );
@@ -280,16 +285,26 @@ export default function CheckIn() {
                       <Card key={input.id} className="flex flex-col items-center py-5 text-center">
                         {/* A null with no reason is an upstream bug; `no-data`
                             is the weakest honest claim available. */}
-                        <UnavailableState reason={input.reason ?? "no-data"} size="sm" />
+                        {/* A reading that exists but was not counted keeps its
+                            figure. Replacing it with a NO DATA icon would deny
+                            a measurement the athlete can see on the Recovery
+                            screen; the caption says why it was left out. */}
+                        {input.value === null ? (
+                          <UnavailableState reason={input.reason ?? "no-data"} size="sm" />
+                        ) : (
+                          <span className="tnum text-[18px] font-light text-snow">
+                            {input.value}
+                          </span>
+                        )}
                         <p className="mt-3 text-[11px] leading-relaxed text-mist">{input.label}</p>
                       </Card>
                     ))}
                   </div>
                   {missingHealthSource && (
                     <p className="mt-3 text-[12px] leading-relaxed text-mist-dim">
-                      Sleep duration and resting heart rate would come from Apple Health or Health
-                      Connect. No browser can read either, so on the web they stay empty rather than
-                      being estimated.
+                      Sleep duration and resting heart rate come from a connected ring, Apple
+                      Health or Health Connect. Nothing is connected that can read them, so they
+                      stay empty rather than being estimated.
                     </p>
                   )}
                 </>

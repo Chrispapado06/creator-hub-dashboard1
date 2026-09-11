@@ -28,16 +28,24 @@ import { useCoachIntel, type CoachIntel } from "@/coach/hooks";
 import {
   buildSession,
   modifySession,
+  movementExperience,
   PRIMARY_TARGET_LABELS,
+  statedEquipment,
   type CoachSession,
   type Modification,
   type SessionBlock,
   type SessionItem,
 } from "@/coach/sessions";
 import { exerciseById, type Equipment, type Exercise } from "@/coach/exercises";
+import { limitationLabels } from "@/coach/limitations";
 import { COACH_DISCLAIMER, isKnown, type Score, type Unavailable } from "@/coach/types";
+import { sessionReasonFor } from "@/coach/sessionReason";
+import { SAFETY_DISCLAIMER, SAFETY_MESSAGES } from "@/coach/safety";
+import { useDebriefs } from "@/tracking/debrief";
+import { debriefSignals } from "@/tracking/debriefEffects";
+import { requirementSetFor } from "@/data/mock/mountainRequirements";
 import { useApp } from "@/state/AppState";
-import { useTraining } from "@/tracking/training";
+import { useTraining, useTrainingShape } from "@/tracking/training";
 import { FOCUS_LABELS, fmtDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Goal, TrainingDay, TrainingWeek } from "@/types";
@@ -68,46 +76,6 @@ import type { Goal, TrainingDay, TrainingWeek } from "@/types";
  *     actions — offering "a lighter version" of a rest day is how rest quietly
  *     stops being rest, and the plan's hard days depend on it not doing so.
  */
-
-/* -------------------------------------------------------------------------- */
-/* Equipment                                                                   */
-/* -------------------------------------------------------------------------- */
-
-/**
- * The stored profile keeps equipment as `string[]` so persisted data can never
- * crash a type change in the exercise library. Narrowing happens here, once.
- */
-const EQUIPMENT_IDS: readonly string[] = [
-  "none",
-  "dumbbells",
-  "barbell",
-  "kettlebell",
-  "step",
-  "pull-up-bar",
-  "bench",
-  "resistance-band",
-  "treadmill",
-  "stairs",
-  "pack",
-  "hangboard",
-];
-
-/**
- * What the athlete has told us they own, or `undefined` when they have told us
- * nothing.
- *
- * The distinction is load-bearing and easy to get wrong. `buildSession` reads an
- * empty array as "this athlete owns nothing at all" and prescribes bodyweight
- * only; it reads `undefined` as "we were never told", prescribes normally, and
- * adds a caution saying the session assumes the movements are available. An
- * untouched profile starts as `[]` (see EMPTY_COACH_PROFILE in AppState), so
- * passing it straight through would silently convert "never asked" into a
- * confident claim about the athlete's garage. Empty therefore means unstated.
- */
-function statedEquipment(ids: string[]): Equipment[] | undefined {
-  const known = ids.filter((id): id is Equipment => EQUIPMENT_IDS.includes(id));
-  return known.length > 0 ? known : undefined;
-}
 
 /* -------------------------------------------------------------------------- */
 /* Locating the day                                                            */
@@ -245,20 +213,53 @@ function SessionView({
   );
 
   /**
-   * `experience` is deliberately not passed.
+   * The MOVEMENT-experience answer, and only that one.
    *
-   * sessions.ts caps movement difficulty at moderate when it is unstated and
-   * says so in a caution the screen renders — which is the honest outcome,
-   * because the only experience ICEFALL holds is the athlete's mountain
-   * experience from onboarding, and mapping "experienced on hills" onto "ready
-   * to load a barbell" is exactly the kind of silent inference the coach is not
-   * allowed to make. When a movement-experience answer exists it should be
-   * passed here explicitly.
+   * This comment used to say experience was deliberately not passed, because
+   * the only experience ICEFALL held was the athlete's MOUNTAIN experience and
+   * reading "experienced on hills" as "ready to load a barbell" is the silent
+   * inference the coach may not make. That reasoning has not changed — what
+   * changed is that signup now asks its own question about strength and gym
+   * work, so there is an answer to pass that means what this argument means.
+   *
+   * `movementExperience` is the engine's own parser rather than a cast: an
+   * unanswered profile, or one written before the question existed, comes back
+   * `undefined`, sessions stay capped at moderate, and the caution saying so
+   * still renders. `user.experience` must never be substituted here.
    */
-  const base = useMemo(
-    () => buildSession({ day, goalName: intel.goal?.name, equipment }),
-    [day, intel.goal?.name, equipment],
+  const experience = useMemo(
+    () => movementExperience(coachProfile.movementExperience),
+    [coachProfile.movementExperience],
   );
+
+  const built = useMemo(
+    () => buildSession({ day, goalName: intel.goal?.name, equipment, experience }),
+    [day, intel.goal?.name, equipment, experience],
+  );
+
+  /**
+   * The limitations declared at sign-up, folded in BEFORE anything the athlete
+   * does on this screen.
+   *
+   * Order is the point. These are not a modification the athlete asked for
+   * today, so they are not in `mods`, they carry no "You said:" line, and
+   * "Reset to planned" does not undo them — planned, for someone who declared a
+   * knee, means the session that was already built around the knee. Anything
+   * they then apply here ("I only have 30 minutes") composes on top of it.
+   *
+   * `explanation` is empty only when nothing was declared. When an area is one
+   * the engine cannot act on — asthma, heart, recent surgery — it comes back
+   * non-empty and says so, which is why the panel below renders on the string
+   * rather than on a count of what changed.
+   */
+  const trainedAround = useMemo(() => {
+    const areas = limitationLabels(coachProfile.limitations ?? []);
+    if (areas.length === 0) return null;
+    const result = modifySession(built, { kind: "limitation", areas });
+    return result.explanation === "" ? null : result;
+  }, [built, coachProfile.limitations]);
+
+  const base = trainedAround?.session ?? built;
 
   const { session, changes } = useMemo(() => applyMods(base, mods), [base, mods]);
 
@@ -272,6 +273,57 @@ function SessionView({
   };
 
   const intensityTarget = session.targets.find((t) => t.label === INTENSITY_LABEL);
+
+  /**
+   * WHY THIS DAY IS HERE, derived — see `coach/sessionReason.ts`.
+   *
+   * Deliberately computed from `day` (the planned day, adjustments already
+   * applied by `useTraining`) rather than from `session` (what this screen has
+   * done to it since). The reason answers why the PLAN asks for this, and an
+   * athlete who has just shortened the session to 30 minutes has not changed
+   * what the mountain demands — the "What changed" panel above already says
+   * what they did to it.
+   *
+   * Null is a real and frequent answer: a rest day, or a day whose reason
+   * cannot be derived from anything real. The section does not render then. A
+   * generic sentence per session type is the thing this replaces, not a
+   * fallback for it.
+   */
+  /**
+   * WHAT THE LAST DEBRIEF MEANS FOR THIS SESSION.
+   *
+   * Two outcomes and they are not variants of each other:
+   *
+   *   `trainAround`  an ordinary ache the session engine can work around. It is
+   *                  OFFERED, never applied. A session that quietly became
+   *                  easier is a session the athlete puts the weight back on,
+   *                  and an app that changes work without saying so is one they
+   *                  stop believing when it says something important.
+   *   `medical`      the debrief note fired the safety layer. There is no
+   *                  lighter version of this session to offer, so none is —
+   *                  the fixed message is shown and the modify panel is not
+   *                  reached for. Easing Thursday for a suspected fracture
+   *                  LOOKS, on screen, exactly like the app having handled it.
+   */
+  const debriefs = useDebriefs();
+  const carried = useMemo(() => debriefSignals(debriefs), [debriefs]);
+
+  const shape = useTrainingShape();
+  const reason = useMemo(
+    () =>
+      training.plan && training.goal
+        ? sessionReasonFor({
+            day,
+            week,
+            plan: training.plan,
+            goal: training.goal,
+            mountain: training.mountain,
+            requirements: requirementSetFor(training.mountain),
+            shape,
+          })
+        : null,
+    [day, week, training.plan, training.goal, training.mountain, shape],
+  );
 
   return (
     <Screen padded={false}>
@@ -306,6 +358,87 @@ function SessionView({
             </p>
           </Rise>
 
+          {/* ---- Trained around -------------------------------------------- */}
+          {/*
+              Above "What changed" because it happened first: this is the
+              session as planned FOR THIS ATHLETE, and everything below it is
+              what they then asked for on top. Flat rather than carded, and
+              without the azure "You said:" accent, so it does not read as
+              something they did today.
+
+              It renders whenever a limitation was declared — including when
+              the engine could not act on it. A screen that appears only on
+              success would leave someone who declared a heart condition
+              looking at an ordinary session with no sign anyone had read the
+              answer, which is the exact impression the onboarding step is not
+              allowed to give.
+          */}
+          {trainedAround && (
+            <Rise className="pt-6">
+              <SectionLabel>Trained around</SectionLabel>
+              <p className="mt-3 text-[13px] leading-relaxed text-mist">
+                {trainedAround.explanation}
+              </p>
+            </Rise>
+          )}
+
+          {/* ---- Carried over from a debrief -------------------------------- */}
+          {/*
+              Between "Trained around" (declared at signup, already folded in)
+              and "What changed" (asked for on this screen, just now). That is
+              where it belongs in time: it is something the athlete said after
+              their LAST session, which is neither a standing fact about them
+              nor a request about today.
+          */}
+          {!session.isRest && carried.medical && (
+            <Rise className="pt-6">
+              <SectionLabel>From your last debrief</SectionLabel>
+              <div className="mt-3 rounded-card border border-danger/55 bg-danger/[0.07] p-4">
+                <p className="section-label text-danger">Not something to train around</p>
+                {/* The safety layer's own words, whole. No paraphrase: the
+                    message is fixed precisely so that no screen rewrites it. */}
+                {SAFETY_MESSAGES[carried.medical.category].split("\n\n").map((para, i) => (
+                  <p key={i} className="mt-3 text-[13.5px] leading-relaxed text-snow">
+                    {para}
+                  </p>
+                ))}
+                <Disclaimer className="mt-4">{SAFETY_DISCLAIMER}</Disclaimer>
+              </div>
+              <p className="mt-3 text-[12px] leading-relaxed text-mist-dim">
+                ICEFALL has not adjusted this session around it. There is no version of this work
+                that is safe while that is unresolved, so it has not offered one.
+              </p>
+            </Rise>
+          )}
+
+          {!session.isRest && !carried.medical && carried.trainAround && (
+            <Rise className="pt-6">
+              <SectionLabel>From your last debrief</SectionLabel>
+              <p className="mt-3 text-[13px] leading-relaxed text-mist">
+                You reported {carried.trainAround.area} pain after{" "}
+                {fmtDate(carried.trainAround.at, { weekday: "long" })}&apos;s session. ICEFALL can
+                build this session around it — the movements that load it hardest get swapped, and
+                it will tell you which.
+              </p>
+              <button
+                type="button"
+                onClick={() =>
+                  addMod(`My ${carried.trainAround!.area} is sore`, {
+                    kind: "discomfort",
+                    area: carried.trainAround!.area,
+                  })
+                }
+                className="mt-3.5 inline-flex h-11 items-center gap-2 rounded-[10px] border border-azure/60 px-4 text-[13px] text-azure transition-colors hover:bg-azure/[0.08]"
+              >
+                <SlidersHorizontal size={14} strokeWidth={1.7} />
+                Train around my {carried.trainAround.area}
+              </button>
+              <p className="mt-2.5 text-[11px] leading-relaxed text-mist-dim">
+                Offered, not applied. Nothing in this session has been changed until you tap it.
+              </p>
+            </Rise>
+          )}
+
           {/* ---- Adaptations ----------------------------------------------- */}
           {changes.length > 0 && (
             <Rise className="pt-6">
@@ -336,6 +469,31 @@ function SessionView({
                   </div>
                 ))}
               </div>
+            </Rise>
+          )}
+
+          {/* ---- Why this day ---------------------------------------------- */}
+          {/*
+              ABOVE "Purpose", and the order is the argument. "Purpose" says
+              what this kind of session trains — true, well written, and the
+              same paragraph for every athlete on every week of every plan.
+              This one says why THIS day, in THIS week, is the size it is, and
+              every number in it came from the plan or from the objective's own
+              record. Read together, the general reason should never be the
+              first thing an athlete meets.
+
+              Flat, not carded. It is a sentence about the session already on
+              the screen, not a distinct object.
+          */}
+          {reason && (
+            <Rise className="pt-6">
+              <SectionLabel>Why this day</SectionLabel>
+              <p className="mt-3 text-[13px] leading-relaxed text-snow/90">{reason.text}</p>
+              {/* Never omitted. An athlete has to be able to tell a figure two
+                  certified guides signed from one this app derived. */}
+              <p className="mt-2.5 text-[11px] leading-relaxed text-mist-dim">
+                {reason.attribution}
+              </p>
             </Rise>
           )}
 
@@ -615,7 +773,12 @@ const CHECK_IN_SCALE = " / 5";
  */
 const HRV_FACTOR = {
   label: "Heart-rate variability",
-  detail: "No browser API exposes HRV, and ICEFALL will not infer it from anything else.",
+  // Was "no browser API exposes HRV", which stopped being the reason the moment
+  // a ring could be connected — an Oura ring measures it. The durable reason is
+  // that ICEFALL does not use it: reading HRV honestly needs a baseline of this
+  // athlete's own nights and a view of the trend, and ICEFALL keeps neither.
+  detail:
+    "ICEFALL does not use HRV. Reading it needs a baseline of your own nights and a view of the trend, and ICEFALL keeps neither — so it is left out rather than inferred from something else.",
 } as const;
 
 /**
@@ -625,17 +788,28 @@ const HRV_FACTOR = {
  * derived, or the named reason there is no value. Nothing falls through to a
  * zero or a dash.
  */
+/**
+ * One recovery input row.
+ *
+ * `kind` REPLACED A BOOLEAN, and that is the point. The row used to ask "is
+ * this self-reported?" and badge everything else ESTIMATED — which was fine
+ * while the only two kinds were a slider and some arithmetic, and became a
+ * rule-5 violation the moment an instrument could supply one of these figures:
+ * a night an Oura ring counted would have been shown to the athlete as an
+ * ICEFALL estimate.
+ */
 function InputRow({
   label,
   value,
   reason,
-  scaled,
+  kind,
 }: {
   label: string;
   value: number | null;
   reason?: Unavailable;
-  scaled: boolean;
+  kind: "self-reported" | "measured" | "derived";
 }) {
+  const scaled = kind === "self-reported";
   if (value === null) {
     const copy = UNAVAILABLE_COPY[reason ?? "no-data"];
     return (
@@ -653,7 +827,7 @@ function InputRow({
     <div className="flex items-center justify-between gap-4 border-t border-hairline py-3 first:border-t-0">
       <p className="text-[12px] leading-snug text-mist">{label}</p>
       <div className="flex shrink-0 items-center gap-2.5">
-        <QualifierBadge kind={scaled ? "self-reported" : "estimated"} />
+        <QualifierBadge kind={kind === "derived" ? "estimated" : kind} />
         <span className="tnum text-[14px] font-light text-snow">
           {value}
           {scaled && <span className="text-[11px] text-mist">{CHECK_IN_SCALE}</span>}
@@ -677,7 +851,13 @@ function BeforeYouStart({
   checkedIn,
 }: {
   readiness: { score: Score; guidance: string; missing: string[] };
-  recoveryInputs: { id: string; label: string; value: number | null; reason?: Unavailable }[];
+  recoveryInputs: {
+    id: string;
+    label: string;
+    value: number | null;
+    reason?: Unavailable;
+    kind?: "self-reported" | "measured" | "derived";
+  }[];
   checkedIn: boolean;
 }) {
   return (
@@ -732,9 +912,11 @@ function BeforeYouStart({
       )}
 
       {/* Every input the recovery assessment looked at, present or absent, with
-          its provenance attached. Sleep duration and resting heart rate arrive
-          here with reason "not-connected" — the honest NO SENSOR state — rather
-          than as a filled bar the athlete could mistake for a reading. */}
+          its provenance attached. Each row carries its own `kind`, so a figure
+          an instrument measured, a figure the athlete rated and a figure
+          ICEFALL derived are badged as three different things rather than
+          collapsed into two. Sleep duration and resting heart rate are absent
+          with a named reason whenever no instrument is connected. */}
       <div className="mt-5 border-t border-hairline pt-4">
         <p className="section-label">What ICEFALL read today</p>
         <div className="mt-2">
@@ -744,7 +926,7 @@ function BeforeYouStart({
               label={input.label}
               value={input.value}
               reason={input.reason}
-              scaled={SELF_REPORTED_INPUTS.has(input.id)}
+              kind={input.kind ?? (SELF_REPORTED_INPUTS.has(input.id) ? "self-reported" : "derived")}
             />
           ))}
         </div>

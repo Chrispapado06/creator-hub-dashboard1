@@ -303,7 +303,12 @@ export const FEATURES: Feature[] = [
     tiers: ["pro"],
   },
 
-  // ---- Expedition — NONE of this is built ----------------------------------
+  // ---- Expedition ----------------------------------------------------------
+  // Trip mode and the acclimatisation schedule ARE built (src/trip/*, and the
+  // screens at /trip and /trip/check). The three rows still marked comingSoon
+  // below are not. This header used to read "NONE of this is built", which was
+  // a comment describing a STATE rather than recording a decision — exactly the
+  // kind that goes quietly false. Check the rows, not this line.
   {
     id: "exp.planning",
     label: "Expedition planning",
@@ -312,11 +317,22 @@ export const FEATURES: Feature[] = [
     comingSoon: true,
   },
   {
+    /*
+     * FREE, AND THAT IS A SAFETY DECISION RATHER THAN A PRICING ONE.
+     *
+     * The acclimatisation schedule shares a screen with the Lake Louise
+     * self-check, and that check routes into the descent advice in
+     * `coach/safety.ts`. Anything that could make an athlete at 4,200 m meet a
+     * paywall on the way to the word "descend" is not a feature ICEFALL sells.
+     * `src/screens/trip/TripMode.tsx` carries no entitlement check, and the
+     * route in App.tsx says why.
+     */
     id: "exp.acclimatisation",
-    label: "Acclimatisation planning",
+    label: "Acclimatisation schedule and altitude self-check",
+    detail:
+      "A nightly sleeping-altitude ceiling from your objective's elevation, and the Lake Louise questionnaire. Both work offline. Never charged for.",
     group: "Expedition",
-    tiers: ["pro"],
-    comingSoon: true,
+    tiers: ["free", "pro"],
   },
   {
     id: "exp.weather",
@@ -333,11 +349,14 @@ export const FEATURES: Feature[] = [
     comingSoon: true,
   },
   {
+    /* Free for the same reason as `exp.acclimatisation` above — the trip screen
+       is where the self-check lives. */
     id: "exp.mode",
-    label: "Expedition mode",
+    label: "Trip mode",
+    detail:
+      "The in-field screen: tonight's ceiling, the self-check, the nights you slept at, and the pre-trip timeline. Computed on the phone, so it works with no signal.",
     group: "Expedition",
-    tiers: ["pro"],
-    comingSoon: true,
+    tiers: ["free", "pro"],
   },
 ];
 

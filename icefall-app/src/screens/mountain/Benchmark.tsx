@@ -9,6 +9,7 @@ import { FactorBar, ScoreRing, TrendLine, type TrendPoint } from "@/components/c
 import { LockedPreview, UpgradePrompt } from "@/components/growth/UpgradePrompt";
 
 import { assessObjectiveReadiness } from "@/coach/mountainReadiness";
+import { requirementSetFor } from "@/data/mock/mountainRequirements";
 import type { Dimension, DimensionResult, ObjectiveReadiness } from "@/coach/mountainReadiness";
 import {
   DEMAND_ID,
@@ -218,6 +219,10 @@ export default function Benchmark() {
         Object.keys(coachProfile.disciplineExperience).length > 0
           ? coachProfile.disciplineExperience
           : undefined,
+      // Narrows the acclimatisation schedule on the altitude dimension and
+      // touches no score. This screen is the athlete's own, which is the
+      // condition the engine attaches to this field.
+      altitudeIllness: coachProfile.altitudeIllness,
     }),
     [coachProfile],
   );
@@ -229,6 +234,12 @@ export default function Benchmark() {
       activities,
       summitsLogged,
       selfReported,
+      // Passed even though every record is currently unreviewed and empty. It
+      // changes no figure — the engine gates on `requirementSetState` — but it
+      // is what lets the screen say "ICEFALL holds this mountain's written
+      // requirements and no guide has reviewed them" instead of the vaguer
+      // "ICEFALL holds no requirements for this objective".
+      requirements: requirementSetFor(objective.curated),
     });
   }, [objective, activities, summitsLogged, selfReported]);
 
@@ -514,6 +525,12 @@ export default function Benchmark() {
         {/* ---- Framing ---------------------------------------------------- */}
         <Rise className="pt-8">
           <Disclaimer>{readiness.disclaimer}</Disclaimer>
+          {/*
+            What the four dimensions above were actually compared against. Sits
+            with the other framing rather than beside the score, because it is
+            the same kind of statement: a limit on what the number means.
+          */}
+          <Disclaimer className="mt-4">{readiness.requirementBasis.note}</Disclaimer>
           <Disclaimer className="mt-4">{ASSESSMENT_DISCLAIMER}</Disclaimer>
         </Rise>
       </Stagger>

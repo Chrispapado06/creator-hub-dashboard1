@@ -8,6 +8,7 @@ import { FOCUS_LABELS, fmtDistance, fmtElevation } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/state/AppState";
 import { REFERENCE_PLAN_NOTE } from "@/services/peakTier";
+import { usePlanChangeHistory } from "@/tracking/adjustments";
 import { useTraining } from "@/tracking/training";
 import type { TrainingDay, TrainingWeek } from "@/types";
 import { ACCENT, Chip, CoachCard, CoachHead, Eyebrow, ON_PRIMARY, PRIMARY, TINT } from "./shell";
@@ -75,6 +76,11 @@ type DayState = "rest" | "completed" | "today" | "upcoming" | "unmarked";
 
 export default function Plan() {
   const training = useTraining();
+  /* The plan `training` hands back is the generator's baseline with the stored
+     changes already applied. This is the same set, read for the count on the
+     link below — a history nobody can find is the same as no history at all. */
+  const { entries } = usePlanChangeHistory(training.goal?.id);
+  const changeCount = entries.filter((e) => !e.undoneAt).length;
   const { toggleSession } = useApp();
   const todayKey = isoDate(new Date());
 
@@ -255,6 +261,27 @@ export default function Plan() {
                                     : "The plan carries no notes for this session.")}
                               </p>
 
+                              {/* WHY THIS DAY IS NOT WHAT THE PLAN FIRST ASKED
+                                  FOR. A session that quietly differs from the
+                                  block it sits in is a plan changing by itself;
+                                  the change, the reason and whose reason it is
+                                  belong on the day, not only in the history.
+                                  Flat lines, no container — the tint behind
+                                  this detail is the card, and a second box
+                                  inside it is the thing the owner has objected
+                                  to four times. */}
+                              {day.adjusted?.map((a) => (
+                                <p
+                                  key={a.id}
+                                  className="mt-2 text-[13px] leading-relaxed text-mist"
+                                >
+                                  {a.summary}
+                                  {a.why
+                                    ? ` — “${a.why}”, ${a.by === "coach" ? "your coach" : "you"}`
+                                    : ""}
+                                </p>
+                              ))}
+
                               <div className="mt-4 flex items-center gap-3">
                                 <Link
                                   to={`/coach/session/${day.date}`}
@@ -293,9 +320,25 @@ export default function Plan() {
                   })}
                 </ol>
 
-                <div className="px-5 py-4">
+                <div className="flex items-center justify-between gap-4 px-5 py-4">
                   <Link to="/coach/plan/calendar" className="text-[15px] text-azure">
                     Full calendar and phases →
+                  </Link>
+                  {/* Azure, not gold: these are the athlete's own changes to
+                      their own plan, and gold is reserved for a paid placement. */}
+                  <Link to="/coach/plan/changes" className="shrink-0 text-[15px] text-azure">
+                    {changeCount > 0 ? `Changes · ${changeCount}` : "Changes"}
+                  </Link>
+                </div>
+
+                {/* THE WEEKLY REVIEW IS REACHABLE HERE FOR GOOD, not only while
+                    it is unread on the hub. A review somebody dismissed and
+                    then wanted to re-read is exactly the thing that must not
+                    become unreachable — the Explore redesign shipped that way
+                    once and came back as "new explore doesnt work". */}
+                <div className="flex items-center justify-between gap-4 border-t border-hairline px-5 py-4">
+                  <Link to="/coach/review" className="text-[15px] text-azure">
+                    Weekly review →
                   </Link>
                 </div>
               </CoachCard>

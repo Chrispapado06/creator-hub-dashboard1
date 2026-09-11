@@ -2850,3 +2850,674 @@ export async function saveSexAtBirth(edit: SexAtBirthEdit): Promise<SexAtBirthRe
   );
   return fields;
 }
+/* -------------------------------------------------------------------------- */
+/* The coaching answers — the other half of the questionnaire                  */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * THE ANSWERS THAT USED TO STOP AT THE PHONE.
+ *
+ * ── WHAT WAS MISSING ────────────────────────────────────────────────────────
+ *
+ * `auth/account.ts:syncOnboarding` upserts the athlete's row with the answers
+ * blob, and `saveSignupAnswers` / `saveSexAtBirth` above write three typed
+ * columns. Between them they carried gender, sex at birth, where somebody heard
+ * about ICEFALL, their name, disciplines, experience, limitations, altitude
+ * illness and current training.
+ *
+ * They did NOT carry the half of the questionnaire that `Onboarding.finish()`
+ * writes into the local `CoachProfile`: available equipment, training days,
+ * typical session length, technical skills, the altitude band, the per-
+ * discipline levels, strength experience, weight, height, year of birth, or the
+ * objective's own date. Those went to `localStorage` and nowhere else. Sign in
+ * on a second phone and every engine that reads them was back at its
+ * never-answered default — sessions capped at moderate with no kit constraint,
+ * a six-session week on the generator's own days, a technical readiness
+ * dimension withheld for want of the skills its owner had already declared.
+ *
+ * ── THE TWO SEAMS, AND WHY A FIELD'S FATE IS ITS SEAM'S FATE ────────────────
+ *
+ * `public.athlete_profiles` was created (20260830100000) with typed columns for
+ * exactly the answers the product computes on — `experience`, `body_mass_kg`,
+ * `height_cm`, `birth_year`, `typical_session_min`, `training_days`,
+ * `max_altitude_m` — and a `jsonb answers` blob for everything else, so that
+ * rewording a question costs no migration. NOTHING IN THE APP HAS EVER WRITTEN
+ * SIX OF THOSE SEVEN COLUMNS. They are not a pending migration and they are not
+ * a feature flag: they are in the same `create table` as the row itself, so if
+ * the row exists they exist.
+ *
+ * So there are two seams and they fail independently:
+ *
+ *   COLUMNS  one UPDATE naming only columns from that original migration.
+ *   ANSWERS  a read of the blob, a merge, and a write back.
+ *
+ * The result names them separately, because a field's outcome is its seam's
+ * outcome and a single tick over both would be true of one half.
+ *
+ * ── WHY THE BLOB IS READ BEFORE IT IS WRITTEN ──────────────────────────────
+ *
+ * PostgREST cannot merge jsonb — `answers = answers || '{…}'` needs SQL this
+ * module does not get to run — so a write of the blob replaces it whole. And
+ * the device does NOT hold the whole blob: `completeOnboarding` deliberately
+ * never persisted `gender`, `sexAtBirth` or `heardAbout` locally, so a phone
+ * writing the blob from what it holds would DELETE all three from the server,
+ * silently, the first time somebody edited their equipment.
+ *
+ * So the current blob is fetched, the edit is spread over it, and the result is
+ * written back. IT FAILS CLOSED: a read that does not come back means the blob
+ * is not written at all, and the result says so. Losing an edit is recoverable
+ * — the phone still holds it and the marks below say it is unsent. Overwriting
+ * somebody's answer about their body with a blank is not.
+ *
+ * The race this leaves is stated rather than glossed: two devices editing the
+ * same athlete's blob in the same few seconds, last write wins. One person, one
+ * account, a deliberate act on a settings screen — and the alternative is an
+ * RPC and a migration for a collision nobody has had.
+ *
+ * ── WHAT THIS DOES NOT WRITE ───────────────────────────────────────────────
+ *
+ * `onboarded_at` is not on either seam. It is the flag `nextStepForSession`
+ * routes on, it is written once by `syncOnboarding` when somebody finishes the
+ * questions, and an edit screen re-stamping it would be claiming a signup
+ * happened today. `gender`, `heard_about` and `sex_at_birth` keep their own
+ * functions above; this one never names those columns.
+ */
+
+/** The columns from 20260830100000. Read back to prove the write, never assumed. */
+const COACHING_COLUMNS =
+  "experience, body_mass_kg, height_cm, birth_year, typical_session_min, training_days, max_altitude_m";
+
+/**
+ * ONE NAME PER ANSWER, so a screen can say which ones arrived.
+ *
+ * Spelled as the app spells them, not as the database does — the translation
+ * belongs in this module and in one direction, the same rule `ProfileEdit`
+ * follows. Which seam each rides on is in `COACHING_SEAM` below.
+ */
+export type CoachingFieldName =
+  | "experience"
+  | "bodyMassKg"
+  | "heightCm"
+  | "birthYear"
+  | "typicalSessionMin"
+  | "trainingDays"
+  | "maxAltitudeM"
+  | "disciplines"
+  | "disciplineExperience"
+  | "availableEquipment"
+  | "technicalSkills"
+  | "movementExperience"
+  | "limitations"
+  | "limitationsNote"
+  | "altitudeIllness"
+  | "trainingBaseline"
+  | "objective";
+
+/**
+ * An edit. EVERY KEY IS OPTIONAL AND ABSENT MEANS NOT TOUCHED.
+ *
+ * `null` where it appears is an ANSWER — the athlete declined, or cleared the
+ * field — and is written as SQL NULL or as JSON null. The two are different
+ * facts and this module keeps them different, exactly as `SignupAnswerEdit`
+ * does for `"prefer-not-to-say"`.
+ */
+export interface CoachingAnswersEdit {
+  /* ---- typed columns ---- */
+  experience?: string;
+  bodyMassKg?: number;
+  heightCm?: number | null;
+  birthYear?: number | null;
+  typicalSessionMin?: number | null;
+  trainingDays?: number[];
+  maxAltitudeM?: number | null;
+  /* ---- the answers blob ---- */
+  disciplines?: string[];
+  disciplineExperience?: Record<string, string>;
+  availableEquipment?: string[];
+  technicalSkills?: string[];
+  movementExperience?: string | null;
+  limitations?: string[];
+  limitationsNote?: string;
+  altitudeIllness?: string | null;
+  trainingBaseline?: string | null;
+  /**
+   * The objective, as one field because it is one thing. A plan is built from
+   * the mountain AND the date, and half of it restored is a plan built for a
+   * horizon nobody chose.
+   */
+  objective?: {
+    goalName: string;
+    goalMountainId?: string;
+    goalElevationM?: number;
+    goalTargetDate?: string;
+    goalTrainingStartedAt?: string;
+    goalDateAssumed?: boolean;
+  };
+}
+
+/** Which request carries each answer. A field's outcome is its seam's outcome. */
+const COACHING_SEAM: Record<CoachingFieldName, "columns" | "answers"> = {
+  experience: "columns",
+  bodyMassKg: "columns",
+  heightCm: "columns",
+  birthYear: "columns",
+  typicalSessionMin: "columns",
+  trainingDays: "columns",
+  maxAltitudeM: "columns",
+  disciplines: "answers",
+  disciplineExperience: "answers",
+  availableEquipment: "answers",
+  technicalSkills: "answers",
+  movementExperience: "answers",
+  limitations: "answers",
+  limitationsNote: "answers",
+  altitudeIllness: "answers",
+  trainingBaseline: "answers",
+  objective: "answers",
+};
+
+/** The blob could not be read, so it was deliberately not written. */
+export const COACHING_BLOB_NOT_READ =
+  "ICEFALL could not read the answers already on your account, so it did not write over them — the rest of your answers are safe and this change is still on this phone. Try again when you have a signal.";
+
+/** The row is not there. Almost always: this account never finished signup. */
+export const COACHING_NO_ROW =
+  "ICEFALL's server holds no coaching record for this account yet, so there was nothing to update. Your answers are on this phone and nothing has been lost.";
+
+/**
+ * What became of an edit, per seam plus per field.
+ *
+ * `fields` is filled from the seams rather than measured separately — that is
+ * the honest shape, and pretending otherwise would let a screen tick one field
+ * of a request in which all of them shared a fate.
+ */
+export interface CoachingAnswersResult {
+  columns: FieldResult | null;
+  answers: FieldResult | null;
+  fields: Partial<Record<CoachingFieldName, FieldResult>>;
+}
+
+/** Everything on the edit, named. Used for the result and for the unsent marks. */
+function coachingFieldsIn(edit: CoachingAnswersEdit): CoachingFieldName[] {
+  return (Object.keys(COACHING_SEAM) as CoachingFieldName[]).filter(
+    (name) => edit[name] !== undefined,
+  );
+}
+
+/**
+ * Save a coaching edit.
+ *
+ * Never throws: it is called from a settings screen that has already written
+ * the answer locally, and from a hydration that runs while the app is opening.
+ */
+export async function saveCoachingAnswers(
+  edit: CoachingAnswersEdit,
+): Promise<CoachingAnswersResult> {
+  const asked = coachingFieldsIn(edit);
+  const empty: CoachingAnswersResult = {
+    columns: null,
+    answers: null,
+    fields: {},
+  };
+  if (asked.length === 0) return empty;
+
+  const wantsColumns = asked.some((f) => COACHING_SEAM[f] === "columns");
+  const wantsAnswers = asked.some((f) => COACHING_SEAM[f] === "answers");
+
+  let session: Gate;
+  try {
+    session = await gate();
+  } catch {
+    session = { ok: false, failure: "unreachable", message: SYNC_UNREACHABLE };
+  }
+
+  const spread = (columns: FieldResult | null, answers: FieldResult | null) => {
+    const fields: CoachingAnswersResult["fields"] = {};
+    for (const name of asked) {
+      const seam = COACHING_SEAM[name] === "columns" ? columns : answers;
+      if (seam) fields[name] = seam;
+    }
+    return { columns, answers, fields };
+  };
+
+  if (!session.ok) {
+    /*
+     * `keptOnDevice` is TRUE here, unlike `saveSignupAnswers` — and the
+     * difference is real rather than a slip. That function had no queue and
+     * said so. This one does: `noteUnsentCoachingField` marks the answer, the
+     * device is the copy, and `settings/hydrate.ts` sends it on the next app
+     * open. A screen may therefore say it is waiting, because it is.
+     */
+    const waiting: FieldResult = {
+      state: "queued",
+      keptOnDevice: true,
+      message: session.message,
+    };
+    return spread(wantsColumns ? waiting : null, wantsAnswers ? waiting : null);
+  }
+
+  /* ---- Seam 1: the typed columns ---------------------------------------- */
+  let columns: FieldResult | null = null;
+  if (wantsColumns) {
+    const values: Row = {};
+    if (edit.experience !== undefined) values.experience = edit.experience;
+    if (edit.bodyMassKg !== undefined) values.body_mass_kg = edit.bodyMassKg;
+    if (edit.heightCm !== undefined) values.height_cm = edit.heightCm;
+    if (edit.birthYear !== undefined) values.birth_year = edit.birthYear;
+    if (edit.typicalSessionMin !== undefined) values.typical_session_min = edit.typicalSessionMin;
+    if (edit.trainingDays !== undefined) values.training_days = edit.trainingDays;
+    if (edit.maxAltitudeM !== undefined) values.max_altitude_m = edit.maxAltitudeM;
+
+    const deadline = withTimeout(WRITE_TIMEOUT_MS);
+    /* `.abortSignal()` BEFORE `.maybeSingle()`, for the reason spelled out at
+       the live-columns write above: the other order compiles away the deadline. */
+    const query = session.loose
+      .from("athlete_profiles")
+      .update(values)
+      .eq("id", session.uid)
+      .select(COACHING_COLUMNS);
+
+    let outcome: WriteOutcome;
+    try {
+      outcome = await interpretWrite(
+        (deadline ? query.abortSignal(deadline) : query).maybeSingle(),
+      );
+    } catch {
+      outcome = { ok: false, state: "queued", message: SYNC_UNREACHABLE };
+    }
+
+    columns = outcome.ok
+      ? {
+          state: "saved",
+          keptOnDevice: false,
+          message: "Saved to your ICEFALL account.",
+        }
+      : {
+          state: outcome.state,
+          /* `queued` really is queued — see the note above. `not-yet-on-server`
+             is not, and must not claim to be: these seven columns arrived with
+             the table, so that answer means something is wrong with the
+             deployment rather than with the timing, and no amount of retrying
+             fixes it. */
+          keptOnDevice: outcome.state === "queued",
+          message: outcome.message === SYNC_NO_ROW ? COACHING_NO_ROW : outcome.message,
+        };
+  }
+
+  /* ---- Seam 2: the answers blob, read before it is written --------------- */
+  let answers: FieldResult | null = null;
+  if (wantsAnswers) {
+    const patch: Record<string, unknown> = {};
+    if (edit.disciplines !== undefined) patch.disciplines = edit.disciplines;
+    if (edit.disciplineExperience !== undefined) {
+      patch.disciplineExperience = edit.disciplineExperience;
+    }
+    if (edit.availableEquipment !== undefined) patch.availableEquipment = edit.availableEquipment;
+    if (edit.technicalSkills !== undefined) patch.technicalSkills = edit.technicalSkills;
+    if (edit.movementExperience !== undefined) patch.movementExperience = edit.movementExperience;
+    if (edit.limitations !== undefined) patch.limitations = edit.limitations;
+    if (edit.limitationsNote !== undefined) patch.limitationsNote = edit.limitationsNote;
+    if (edit.altitudeIllness !== undefined) patch.altitudeIllness = edit.altitudeIllness;
+    if (edit.trainingBaseline !== undefined) patch.trainingBaseline = edit.trainingBaseline;
+    if (edit.objective !== undefined) Object.assign(patch, edit.objective);
+
+    const readDeadline = withTimeout(READ_TIMEOUT_MS);
+    const read = session.loose.from("athlete_profiles").select("answers").eq("id", session.uid);
+
+    let current: Row | null | "failed";
+    try {
+      const res = await (readDeadline ? read.abortSignal(readDeadline) : read).maybeSingle();
+      current = res.error ? "failed" : ((res.data as Row | null) ?? null);
+    } catch {
+      current = "failed";
+    }
+
+    if (current === "failed") {
+      answers = {
+        state: "failed",
+        keptOnDevice: true,
+        message: COACHING_BLOB_NOT_READ,
+      };
+    } else if (current === null) {
+      /* No row. An UPDATE would match nothing anyway, and an upsert here would
+         be this module creating a half-formed athlete record with answers and
+         no `onboarded_at` — which is exactly what `saveSignupAnswers` refuses
+         to do, and for the same reason: `storedOnboarding()` would then believe
+         somebody had finished signup when they had not. */
+      answers = {
+        state: "failed",
+        keptOnDevice: true,
+        message: COACHING_NO_ROW,
+      };
+    } else {
+      const held = current.answers;
+      const merged = {
+        ...(held && typeof held === "object" && !Array.isArray(held)
+          ? (held as Record<string, unknown>)
+          : {}),
+        ...patch,
+      };
+
+      const deadline = withTimeout(WRITE_TIMEOUT_MS);
+      const query = session.loose
+        .from("athlete_profiles")
+        .update({ answers: merged })
+        .eq("id", session.uid)
+        .select("answers");
+
+      let outcome: WriteOutcome;
+      try {
+        outcome = await interpretWrite(
+          (deadline ? query.abortSignal(deadline) : query).maybeSingle(),
+        );
+      } catch {
+        outcome = { ok: false, state: "queued", message: SYNC_UNREACHABLE };
+      }
+
+      answers = outcome.ok
+        ? {
+            state: "saved",
+            keptOnDevice: false,
+            message: "Saved to your ICEFALL account.",
+          }
+        : {
+            state: outcome.state,
+            keptOnDevice: outcome.state === "queued",
+            message: outcome.message === SYNC_NO_ROW ? COACHING_NO_ROW : outcome.message,
+          };
+    }
+  }
+
+  return spread(columns, answers);
+}
+
+/**
+ * THIS ATHLETE'S COACHING ANSWERS, AS THE SERVER HOLDS THEM.
+ *
+ * The read-side twin of `ServerProfile`, with the same rule about absence:
+ * `undefined` means NOT ANSWERED — the request failed, or the record predates
+ * that question — and `null` is a MEASURED empty. A merge may never clear a
+ * field on the strength of a question that was never answered.
+ *
+ * TWO SEAMS AGAIN, IN PARALLEL, sharing one deadline. A failure on one costs
+ * its own fields and nothing else: a deployment that would not hand over the
+ * blob must still return somebody's training days.
+ */
+export interface ServerCoachingAnswers {
+  experience?: string | null;
+  bodyMassKg?: number | null;
+  heightCm?: number | null;
+  birthYear?: number | null;
+  typicalSessionMin?: number | null;
+  trainingDays?: number[];
+  maxAltitudeM?: number | null;
+  disciplines?: string[];
+  disciplineExperience?: Record<string, string>;
+  availableEquipment?: string[];
+  technicalSkills?: string[];
+  movementExperience?: string | null;
+  limitations?: string[];
+  limitationsNote?: string | null;
+  altitudeIllness?: string | null;
+  trainingBaseline?: string | null;
+  objective?: {
+    goalName?: string;
+    goalMountainId?: string;
+    goalElevationM?: number;
+    goalTargetDate?: string;
+    goalTrainingStartedAt?: string;
+    goalDateAssumed?: boolean;
+  };
+}
+
+export type FetchCoachingResult =
+  | { ok: true; uid: string; coaching: ServerCoachingAnswers }
+  | { ok: false; failure: ProfileFetchFailure; message: string };
+
+/** A finite number off a row, or undefined. Postgres `numeric` comes back as a
+    STRING through PostgREST — `body_mass_kg` is `numeric(5,2)` — so a bare
+    `typeof === "number"` silently dropped every athlete's weight. */
+function numberOf(row: Row, column: string): number | null | undefined {
+  const value = row[column];
+  if (value === null) return null;
+  if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
+  if (typeof value === "string") {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : undefined;
+  }
+  return undefined;
+}
+
+/** Day indices off `training_days`, which is `smallint[]`. */
+function daysOf(value: unknown): number[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const days = value
+    .map((d) => (typeof d === "number" ? d : Number(d)))
+    .filter((d) => Number.isInteger(d) && d >= 0 && d <= 6);
+  return days;
+}
+
+/** A `Record<string,string>` out of raw jsonb, or undefined. */
+function stringMapOf(value: unknown): Record<string, string> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof v === "string") out[k] = v;
+  }
+  return out;
+}
+
+function stringsOf(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.filter((v): v is string => typeof v === "string");
+}
+
+/**
+ * Fetch the signed-in athlete's coaching answers.
+ *
+ * Never throws, for the same reason `fetchMyProfile` does not: this runs while
+ * the app is opening, and a rejected promise there is a screen that never
+ * settles.
+ *
+ * IT WRITES NOTHING. What to do with a server value that disagrees with the
+ * device is decided in exactly one place — `settings/hydrate.ts` — which is
+ * where the three merge rules live for the profile too.
+ */
+export async function fetchCoachingAnswers(): Promise<FetchCoachingResult> {
+  const session = await gate();
+  if (!session.ok) {
+    if (session.failure === "unreachable") {
+      return {
+        ok: false,
+        failure: "unreachable",
+        message: PROFILE_NOT_FETCHED_UNREACHABLE,
+      };
+    }
+    return { ok: false, failure: session.failure, message: session.message };
+  }
+
+  if (typeof navigator !== "undefined" && navigator.onLine === false) {
+    return {
+      ok: false,
+      failure: "offline",
+      message: PROFILE_NOT_FETCHED_OFFLINE,
+    };
+  }
+
+  const deadline = withTimeout(READ_TIMEOUT_MS);
+  const columns = session.loose
+    .from("athlete_profiles")
+    .select(COACHING_COLUMNS)
+    .eq("id", session.uid);
+  const blob = session.loose
+    .from("athlete_profiles")
+    .select("answers, onboarded_at")
+    .eq("id", session.uid);
+
+  const [columnRes, blobRes] = await Promise.all([
+    (deadline ? columns.abortSignal(deadline) : columns).maybeSingle(),
+    (deadline ? blob.abortSignal(deadline) : blob).maybeSingle(),
+  ]);
+
+  /*
+   * BOTH SEAMS FAILING IS A FAILED FETCH; one failing is not. The blob is the
+   * one that decides whether there is anything here at all, because
+   * `onboarded_at` rides with it — so its "no row" is the answer to "does this
+   * account have a coaching record", and the columns seam cannot say.
+   */
+  if (blobRes.error && columnRes.error) {
+    return { ok: false, ...readFailureFor(blobRes.error) };
+  }
+  if (!blobRes.error && !blobRes.data && !columnRes.data) {
+    return { ok: false, failure: "no-row", message: PROFILE_NOT_ON_SERVER };
+  }
+
+  const coaching: ServerCoachingAnswers = {};
+
+  if (!columnRes.error && columnRes.data) {
+    const row = columnRes.data as Row;
+    coaching.experience = textOf(row, "experience");
+    coaching.bodyMassKg = numberOf(row, "body_mass_kg");
+    coaching.heightCm = numberOf(row, "height_cm");
+    coaching.birthYear = numberOf(row, "birth_year");
+    coaching.typicalSessionMin = numberOf(row, "typical_session_min");
+    coaching.maxAltitudeM = numberOf(row, "max_altitude_m");
+    coaching.trainingDays = daysOf(row.training_days);
+  }
+
+  if (!blobRes.error && blobRes.data) {
+    const raw = (blobRes.data as Row).answers;
+    if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+      const a = raw as Record<string, unknown>;
+      /* The blob is a jsonb column an older build wrote and a newer one reads,
+         so every field is narrowed rather than trusted. Anything unrecognised
+         is left ABSENT — a value that is not the shape the app expects is not
+         an answer, and it must not be allowed to look like one. */
+      coaching.disciplines = stringsOf(a.disciplines);
+      coaching.disciplineExperience = stringMapOf(a.disciplineExperience);
+      coaching.availableEquipment = stringsOf(a.availableEquipment);
+      coaching.technicalSkills = stringsOf(a.technicalSkills);
+      if (typeof a.movementExperience === "string" || a.movementExperience === null) {
+        coaching.movementExperience = a.movementExperience;
+      }
+      coaching.limitations = stringsOf(a.limitations);
+      if (typeof a.limitationsNote === "string") coaching.limitationsNote = a.limitationsNote;
+      if (typeof a.altitudeIllness === "string" || a.altitudeIllness === null) {
+        coaching.altitudeIllness = a.altitudeIllness;
+      }
+      if (typeof a.trainingBaseline === "string" || a.trainingBaseline === null) {
+        coaching.trainingBaseline = a.trainingBaseline;
+      }
+      /* The blob's own copies win over the columns for the three answers that
+         are in both places — but only when the column said nothing. The column
+         is the typed, constrained copy and is what a report would read; the
+         blob is what an older build wrote before these columns were ever
+         filled, which is every record until this change. */
+      if (coaching.typicalSessionMin === undefined && typeof a.typicalSessionMin === "number") {
+        coaching.typicalSessionMin = a.typicalSessionMin;
+      }
+      if (coaching.maxAltitudeM === undefined && typeof a.maxAltitudeM === "number") {
+        coaching.maxAltitudeM = a.maxAltitudeM;
+      }
+      if (coaching.trainingDays === undefined) coaching.trainingDays = daysOf(a.trainingDays);
+      if (coaching.bodyMassKg === undefined && typeof a.bodyMassKg === "number") {
+        coaching.bodyMassKg = a.bodyMassKg;
+      }
+      if (coaching.heightCm === undefined && typeof a.heightCm === "number") {
+        coaching.heightCm = a.heightCm;
+      }
+      if (coaching.birthYear === undefined && typeof a.birthYear === "number") {
+        coaching.birthYear = a.birthYear;
+      }
+      if (coaching.experience === undefined && typeof a.experience === "string") {
+        coaching.experience = a.experience;
+      }
+      if (typeof a.goalName === "string" && a.goalName.length > 0) {
+        coaching.objective = {
+          goalName: a.goalName,
+          ...(typeof a.goalMountainId === "string" ? { goalMountainId: a.goalMountainId } : {}),
+          ...(typeof a.goalElevationM === "number" ? { goalElevationM: a.goalElevationM } : {}),
+          ...(typeof a.goalTargetDate === "string" ? { goalTargetDate: a.goalTargetDate } : {}),
+          ...(typeof a.goalTrainingStartedAt === "string"
+            ? { goalTrainingStartedAt: a.goalTrainingStartedAt }
+            : {}),
+          ...(typeof a.goalDateAssumed === "boolean" ? { goalDateAssumed: a.goalDateAssumed } : {}),
+        };
+      }
+    }
+  }
+
+  return { ok: true, uid: session.uid, coaching };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Coaching answers typed and not yet sent                                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * THE SAME RECORD `UNSENT_KEY` KEEPS FOR THE PROFILE, FOR THE SAME REASON.
+ *
+ * `settings/hydrate.ts` rule 1: a value this device is holding unsent wins over
+ * the server's and stays queued. A device can PROVE a value is unsent and can
+ * never prove one was sent — so an answer is marked the moment the edit screen
+ * writes it locally, and the mark is cleared the moment a send has been
+ * ATTEMPTED. Between those two points the server's older value may not replace
+ * it, which is what stops a reload mid-edit from quietly undoing the edit.
+ *
+ * SEPARATE KEY FROM THE PROFILE'S, because they are separate tables with
+ * separate write paths and a shared list would let a failed bio hold back an
+ * unrelated equipment answer.
+ *
+ * THERE IS NO OUTBOX HERE AND DELIBERATELY NOT. The profile's outbox stores a
+ * COPY of the edit because `settings/store.ts` may have moved on since. The
+ * coaching answers cannot drift that way: the device's own `CoachProfile` IS
+ * the answer, so the mark names the field and the sender reads the current
+ * value. A stored copy could only ever be staler than the live one.
+ */
+const COACHING_UNSENT_KEY = "icefall.coaching.unsent.v1";
+
+function readCoachingUnsent(): CoachingFieldName[] {
+  try {
+    const raw = localStorage.getItem(COACHING_UNSENT_KEY);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (f): f is CoachingFieldName => typeof f === "string" && f in COACHING_SEAM,
+    );
+  } catch {
+    return [];
+  }
+}
+
+function writeCoachingUnsent(fields: readonly CoachingFieldName[]): void {
+  try {
+    if (fields.length === 0) localStorage.removeItem(COACHING_UNSENT_KEY);
+    else localStorage.setItem(COACHING_UNSENT_KEY, JSON.stringify(fields));
+  } catch {
+    /* Storage refused. The mark is a courtesy — its absence costs a merge that
+       prefers the server, never a lost local value, because the local value is
+       the CoachProfile itself and nothing here writes that. */
+  }
+}
+
+/** Somebody changed this answer on this phone and nothing has been sent. */
+export function noteUnsentCoachingField(field: CoachingFieldName): void {
+  const held = readCoachingUnsent();
+  if (!held.includes(field)) writeCoachingUnsent([...held, field]);
+}
+
+/** A send has been ATTEMPTED for these — not that it succeeded. A failure is
+    reported to the caller, which decides whether to mark them again. */
+export function forgetUnsentCoachingFields(fields: readonly CoachingFieldName[]): void {
+  writeCoachingUnsent(readCoachingUnsent().filter((f) => !fields.includes(f)));
+}
+
+export function unsentCoachingFields(): readonly CoachingFieldName[] {
+  return readCoachingUnsent();
+}
+
+/** The marks describe one person's edits. On an account change they go. */
+export function forgetAllUnsentCoachingFields(): void {
+  writeCoachingUnsent([]);
+}

@@ -1,7 +1,7 @@
 import { Loader2, Mountain as MountainIcon, Plus, Search, X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useMemo, useState } from "react";
-import { Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
 import { Badge, Button, Card, Disclaimer, SectionLabel } from "@/components/ui/primitives";
 import { ProgressRing } from "@/components/ui/charts";
 import { Rise, Screen, ScreenHeader, SegmentedTabs, Stagger } from "@/components/layout/chrome";
@@ -306,6 +306,25 @@ export default function Goals() {
           {list.map((g) => (
             <Rise key={g.id}>
               <GoalCard goal={g} />
+              {/* AFTER THE TRIP. Two flat links rather than a second card: the
+                  objective is one object and these are things you do to it, not
+                  separate objects. The debrief is where an attempt gets closed
+                  and where the only post-trip writes to the profile are
+                  proposed; the readiness page is the one an operator reads. */}
+              <div className="mt-2 flex gap-5 px-1">
+                <Link
+                  to={`/objective/${g.id}/debrief`}
+                  className="text-[12.5px] text-mist transition-colors hover:text-azure"
+                >
+                  {g.status === "completed" ? "Trip debrief" : "Been? Debrief the trip"}
+                </Link>
+                <Link
+                  to={`/objective/${g.id}/report`}
+                  className="text-[12.5px] text-mist transition-colors hover:text-azure"
+                >
+                  Readiness page
+                </Link>
+              </div>
             </Rise>
           ))}
           {list.length === 0 && (

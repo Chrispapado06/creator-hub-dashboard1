@@ -10,13 +10,14 @@ import { fmtElevation } from "@/lib/format";
 import { sync } from "@/services/repository";
 import { TIER_EYEBROW } from "@/services/peakTier";
 import { PEAK_ATTRIBUTION, rememberPeaks, searchPeaks, type Peak } from "@/services/peaks";
-import { useApp } from "@/state/AppState";
+import { useApp, type CoachProfile } from "@/state/AppState";
 import {
   READINESS_QUESTIONS,
   READINESS_RESULT_ROUTE,
   READINESS_SELF_REPORT_NOTICE,
   READINESS_TEST_DISCLAIMER,
   READINESS_TEST_VERSION,
+  coachProfileConflictsFrom,
   coachProfilePatchFrom,
   countdownLabel,
   daysUntil,
@@ -30,11 +31,13 @@ import {
   type ReadinessQuestionId,
   type ReadinessResultNavState,
   type ReadinessTestAnswers,
+  withoutConflicts,
 } from "@/growth/readinessTest";
 // Type-only, so this erases at build and the result screen stays in its own
 // lazy chunk. It exports the shape deliberately, so the funnel hands over what
 // that screen actually parses rather than a payload of its own invention.
 import type { ReadinessResultState } from "@/screens/growth/ReadinessResult";
+import type { CoachProfileConflict } from "@/growth/readinessTest";
 
 /**
  * The free Readiness Test — the top of the funnel.
@@ -744,6 +747,33 @@ export default function ReadinessTest() {
   // navigate twice and push two entries onto the history stack.
   const submitted = useRef(false);
 
+  /**
+   * THE TEST IS NOT ALLOWED TO QUIETLY REWRITE A SIGNUP ANSWER.
+   *
+   * `coachProfilePatchFrom` was applied the instant the tenth question was
+   * answered. This test is free, has no account behind it and is the top of the
+   * marketing funnel — so an athlete who spent fifteen minutes on the signup
+   * questionnaire could have their declared mountaineering level replaced, or
+   * REMOVED outright by answering "None yet", by a rung they tapped on a
+   * landing page, with no screen ever mentioning their profile.
+   *
+   * So when the patch would CHANGE something already stored, the two answers
+   * are put side by side and the athlete decides. Filling an empty field is not
+   * a replacement and is not asked about — nothing is lost, and a question
+   * nobody needs to read is how people learn to tap through the one that
+   * matters.
+   *
+   * HOLDING THE WHOLE HAND-OFF, NOT JUST THE PATCH. The result screen is
+   * reached by `navigate`, so the state goes into this ref and the navigation
+   * happens on whichever answer they give — never before, or they would be
+   * reading their result with the question still unanswered behind them.
+   */
+  const [pending, setPending] = useState<{
+    conflicts: CoachProfileConflict[];
+    patch: Partial<CoachProfile>;
+    go: () => void;
+  } | null>(null);
+
   const finish = useCallback(() => {
     if (submitted.current || !objective || !dateKey || !complete) return;
     submitted.current = true;
@@ -775,7 +805,8 @@ export default function ReadinessTest() {
     // Only the two things the athlete actually answered. Technical skills,
     // equipment and training days are deliberately not in the patch — see
     // coachProfilePatchFrom.
-    updateCoachProfile(coachProfilePatchFrom(answers, coachProfile));
+    const patch = coachProfilePatchFrom(answers, coachProfile);
+    const conflicts = coachProfileConflictsFrom(answers, coachProfile);
 
     /**
      * The hand-off, in the result screen's own exported shape.
@@ -802,10 +833,24 @@ export default function ReadinessTest() {
         curatedId: answers.objective.curatedId,
       },
       targetDate: parseDateKey(dateKey)?.toISOString(),
+      /*
+       * THE TEST'S OWN ANSWERS, WHATEVER THEY DECIDE ABOUT THEIR PROFILE.
+       * The result is a reading of what they just said; refusing to overwrite a
+       * stored answer is a statement about the PROFILE, not a retraction of the
+       * test, and scoring the result against the older figure would hand them a
+       * reading of a questionnaire they did not just fill in.
+       */
       selfReported: selfReportFrom(answers, coachProfile),
       answers,
     };
-    navigate(READINESS_RESULT_ROUTE, { state });
+    const go = () => navigate(READINESS_RESULT_ROUTE, { state });
+
+    if (conflicts.length === 0) {
+      updateCoachProfile(patch);
+      go();
+      return;
+    }
+    setPending({ conflicts, patch, go });
   }, [objective, dateKey, complete, choices, coachProfile, updateCoachProfile, navigate]);
 
   const back = () => {
@@ -820,6 +865,89 @@ export default function ReadinessTest() {
   };
 
   /* ---- Render ------------------------------------------------------------ */
+
+  /*
+   * THE CONFIRMATION, IN PLACE OF THE QUESTIONS RATHER THAN OVER THEM.
+   *
+   * No modal and no sheet: the athlete has finished, there is nothing behind
+   * this to go back to, and a dialogue floating over ten answered questions
+   * would be asking them to read a decision through their own answers. Flat
+   * rows, both figures side by side, and two buttons of equal weight — "keep"
+   * is not a cancel and is not styled as one, because it is the answer that
+   * preserves what they already told ICEFALL.
+   */
+  if (pending) {
+    return (
+      <div className="flex h-full flex-col bg-obsidian">
+        <div
+          className="no-scrollbar flex-1 overflow-y-auto px-5 pb-8"
+          style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 34px)" }}
+        >
+          <p className="section-label text-mist-dim">Before your result</p>
+          <h1 className="mt-3 text-[26px] font-light leading-[1.15] text-snow">
+            This test answers something
+            <br />
+            you have already answered.
+          </h1>
+          <p className="mt-4 text-[13px] leading-relaxed text-mist">
+            You gave {pending.conflicts.length === 1 ? "this" : "these"} at signup. Your result is
+            built from what you just said either way — this is only about what your profile keeps.
+          </p>
+
+          <div className="mt-7">
+            {pending.conflicts.map((c) => (
+              <div key={c.field} className="border-t border-hairline py-4 first:border-t-0">
+                <p className="text-[13.5px] text-snow">{c.label}</p>
+                <div className="mt-2.5 flex items-baseline gap-2 text-[12.5px]">
+                  <span className="w-[86px] shrink-0 text-mist-dim">You said</span>
+                  <span className="text-snow">{c.existing}</span>
+                </div>
+                <div className="mt-1.5 flex items-baseline gap-2 text-[12.5px]">
+                  <span className="w-[86px] shrink-0 text-mist-dim">This test</span>
+                  <span className={c.incoming === null ? "text-mist" : "text-azure"}>
+                    {c.incoming ?? "Nothing — it would be removed"}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-8 space-y-2.5">
+            <Button
+              size="lg"
+              className="w-full"
+              onClick={() => {
+                updateCoachProfile(pending.patch);
+                pending.go();
+              }}
+            >
+              Replace with this test&rsquo;s answer
+            </Button>
+            <button
+              type="button"
+              onClick={() => {
+                /* Not "do nothing": the uncontested half of the patch is still
+                   an answer they just gave, and a field they had never filled
+                   is filled. `withoutConflicts` removes only what was refused. */
+                updateCoachProfile(
+                  withoutConflicts(pending.patch, pending.conflicts, coachProfile),
+                );
+                pending.go();
+              }}
+              className="h-12 w-full rounded-pill border border-hairline-strong text-[13.5px] text-snow transition-colors hover:border-azure/50"
+            >
+              Keep what I had
+            </button>
+          </div>
+
+          <Disclaimer className="mt-7">
+            Either way this test changes nothing else on your profile. Your technical skills, your
+            equipment and your training days are not asked here and are never touched by it.
+          </Disclaimer>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full flex-col bg-obsidian">

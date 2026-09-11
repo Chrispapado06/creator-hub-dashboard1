@@ -386,21 +386,38 @@ function SkillsPage({ passport }: { passport: Passport }) {
               {group.skills.map((skill) => (
                 <div
                   key={skill.label}
-                  className="flex items-center gap-2.5 border-b border-hairline py-[6px] last:border-b-0"
+                  className="border-b border-hairline py-[6px] last:border-b-0"
                 >
-                  <span
-                    className={cn(
-                      "min-w-0 flex-1 text-[11px] leading-tight",
-                      skill.reported ? "text-snow" : "text-mist-dim",
+                  <div className="flex items-center gap-2.5">
+                    <span
+                      className={cn(
+                        "min-w-0 flex-1 text-[11px] leading-tight",
+                        skill.reported ? "text-snow" : "text-mist-dim",
+                      )}
+                    >
+                      {skill.label}
+                    </span>
+                    {skill.reported ? (
+                      <QualifierBadge kind="self-reported" />
+                    ) : (
+                      <span className="section-label shrink-0 text-[8px]">
+                        {/* A certificate does NOT make this "reported" — see
+                            passport/certificates.ts. It changes the words from
+                            "nothing here" to "a course, not a claim", which is
+                            the truth, and it never says "verified". */}
+                        {skill.certificates.length > 0 ? "Course on file" : "Not reported"}
+                      </span>
                     )}
-                  >
-                    {skill.label}
-                  </span>
-                  {skill.reported ? (
-                    <QualifierBadge kind="self-reported" />
-                  ) : (
-                    <span className="section-label shrink-0 text-[8px]">Not reported</span>
-                  )}
+                  </div>
+                  {skill.certificates.map((c) => (
+                    <p
+                      key={`${c.courseName}-${c.completedOn}`}
+                      className="mt-[3px] text-[8.5px] leading-tight text-mist-dim"
+                    >
+                      {c.courseName} — {c.awardedBy}, {c.completedOn}. Self-reported; ICEFALL has
+                      not checked this certificate.
+                    </p>
+                  ))}
                 </div>
               ))}
             </div>

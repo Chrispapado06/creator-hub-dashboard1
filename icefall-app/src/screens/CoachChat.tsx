@@ -1,7 +1,7 @@
-import { ArrowUp, Lock } from "lucide-react";
+import { ArrowUp, Lock, Plus } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Disclaimer } from "@/components/ui/primitives";
 import { IcefallMark } from "@/components/ui/IcefallMark";
 import { ShiningText } from "@/components/ui/ShiningText";
@@ -9,6 +9,9 @@ import { WordReveal } from "@/components/ui/WordReveal";
 import { cn } from "@/lib/utils";
 import { SUGGESTED_PROMPTS, askCoach } from "@/services/coach";
 import { useCoachContext } from "@/coach/context";
+import { checkSafety } from "@/coach/safety";
+import { useCoachTranscript } from "@/coach/conversations";
+import { rememberFrom } from "@/coach/notes";
 import { creditsLeft, isExhausted, remainingMicros } from "@/coach/budget";
 import { useApp } from "@/state/AppState";
 import { UpgradePrompt } from "@/components/growth/UpgradePrompt";
@@ -16,6 +19,30 @@ import { useUpgradeCopy } from "@/growth/upgradeCopy";
 import type { CoachMessage } from "@/types";
 import { DEMO } from "@/offline/offline";
 import { ACCENT, CoachHead, Eyebrow, TINT } from "@/screens/coach/shell";
+import { PlanChangeRows } from "@/components/coach/PlanChangeRows";
+import { RouteCards } from "@/components/coach/RouteCards";
+import {
+  clearSuggestedRoutes,
+  recordSuggestedRoutes,
+  useSuggestedRoutes,
+  type SuggestedRoutes,
+} from "@/coach/suggestedRoutes";
+import { ProfessionalCards } from "@/components/coach/ProfessionalCards";
+import {
+  clearProfessionals,
+  recordProfessionals,
+  useSuggestedProfessionals,
+  type SuggestedProfessionals,
+} from "@/coach/suggestedProfessionals";
+import { hasProfessionalCards } from "@/coach/professionals";
+import { useCoachActions } from "@/coach/planActions";
+import {
+  clearChanges,
+  recordChange,
+  updateChange,
+  useCoachChanges,
+  type CoachChange,
+} from "@/coach/pendingChanges";
 import { TABBAR_STICKY_BOTTOM } from "@/components/layout/chrome";
 
 /**
@@ -40,6 +67,33 @@ export default function CoachChat() {
   const ctx = useCoachContext();
   const session = ctx.today.session;
 
+  /*
+   * THE TOOL PATH — Phase 2.
+   *
+   * `useCoachActions` binds the athlete's real objective, their real plan, the
+   * adjustments already on it and today's readiness and recovery; `preview`
+   * computes what a change the coach asked for would do, and `commit` does it.
+   * Nothing on this screen decides any of that — it renders the result and owns
+   * two taps.
+   *
+   * SAFETY IS STILL AHEAD OF ALL OF IT. `send` below calls `checkSafety` and
+   * returns before `askCoach` is reached, so a message reporting a symptom
+   * never produces a request, never reaches the model and therefore never
+   * produces a tool call. That ordering is the first thing in `send` and must
+   * stay the first thing in `send`.
+   */
+  const changes = useCoachChanges();
+  const { preview, commit, undo: undoChange } = useCoachActions();
+  /*
+   * ROUTE CARDS — Phase 2, step 3, and it is the same shape as `changes` above
+   * for the same reason: a thing attached to one bubble, kept beside the
+   * transcript rather than inside it. In memory only; see `@/coach/suggestedRoutes`.
+   */
+  const suggestedRoutes = useSuggestedRoutes();
+  /* The guides and companies each answer showed. Same store shape and same
+     in-memory-only rule as the routes above; see `@/coach/suggestedProfessionals`. */
+  const suggestedProfessionals = useSuggestedProfessionals();
+
   /**
    * PH-14a — THE CHAT OPENS EMPTY, AND THE GREETING IS AN INTRO RATHER THAN A
    * MESSAGE.
@@ -63,7 +117,26 @@ export default function CoachChat() {
    * Chat design of 2026-09-04 and it keeps PH-14a's promise: it announces no
    * analysis it does not deliver.
    */
-  const [messages, setMessages] = useState<CoachMessage[]>([]);
+  /*
+   * THE TRANSCRIPT IS NO LONGER COMPONENT STATE — Phase 1, step 4.
+   *
+   * It used to be `useState<CoachMessage[]>([])`, which React threw away the
+   * moment this route unmounted: tapping PLAN and coming back erased the
+   * conversation, and there was no way to read yesterday's answer. On a free
+   * tier that sells three conversations a month, the counter still went down.
+   *
+   * `useCoachTranscript` is the same array from the same screen's point of
+   * view — `messages` in, `append` instead of `setMessages` — backed by
+   * `icefall.coach.conversations.v1`. There is one copy, not a state array and
+   * a store that can drift, and deleting the thread on /coach/memory empties
+   * this screen immediately rather than at the next reload.
+   *
+   * ON THE DEVICE, NOT THE SERVER, and deliberately: there is no column for a
+   * coach transcript, the migration that would add one is an unapplied draft,
+   * and a sync to a table that does not exist fails silently while looking
+   * exactly like success. See `@/coach/conversations`.
+   */
+  const { messages, append, startNew, hasHistory } = useCoachTranscript();
   const [draft, setDraft] = useState("");
   const [thinking, setThinking] = useState(false);
   /* The id of the reply currently writing itself out, or null. Deliberately one
@@ -112,7 +185,10 @@ export default function CoachChat() {
   const firedRef = useRef(false);
 
   useEffect(() => {
-    if (typeof inbound !== "string" || !inbound.trim() || firedRef.current || atLimit) return;
+    if (typeof inbound !== "string" || !inbound.trim() || firedRef.current) return;
+    // The allowance holds an ordinary question back (see above) — but never a
+    // symptom report. `send` answers that one from plain code, unbilled.
+    if (atLimit && !checkSafety(inbound)) return;
     firedRef.current = true;
     navigate("/coach/chat", { replace: true, state: null });
     void send(inbound);
@@ -125,23 +201,176 @@ export default function CoachChat() {
 
   async function send(text: string) {
     const q = text.trim();
-    if (!q || thinking || atLimit) return;
+    if (!q || thinking) return;
+
+    /*
+     * SAFETY RUNS FIRST — BEFORE THE COUNTER, BEFORE THE LIMIT, BEFORE THE WAIT.
+     *
+     * Roadmap rule 3: safety never depends on the model. `checkSafety` is plain
+     * code with no network imports, so it answers offline, signed out and on a
+     * demo build. `askCoach` calls it too, but three things below it could not
+     * be reached from in there and all three are wrong for an emergency:
+     *
+     *   - `recordCoachInteraction()` would spend one of three free monthly
+     *     conversations on being told to descend;
+     *   - `atLimit` would drop the question in silence once they were spent;
+     *   - the 5-9s "Thinking…" floor would hold the answer back from somebody
+     *     with a headache at 4,200 m while a line swept on screen.
+     *
+     * So the reply is appended here and the function returns. It is not given
+     * to `revealId`, so it renders whole rather than being typed out — the
+     * reveal is a flourish, and this is not the message to make anyone watch.
+     */
+    const safety = checkSafety(q);
+    if (safety) {
+      const at = new Date().toISOString();
+      const stamp = Date.now();
+      /* BOTH IN ONE CALL. Two `append`s in the same tick would each read the
+         stored thread and the second would overwrite the first, losing the
+         question the emergency card is answering. */
+      append(
+        { id: `a-${stamp}`, role: "athlete", body: q, at },
+        {
+          id: `safety-${stamp}`,
+          role: "coach",
+          body: safety.body,
+          disclaimer: safety.disclaimer,
+          at,
+        },
+      );
+      setDraft("");
+      return;
+    }
+
+    if (atLimit) return;
 
     // Count the question. Only decrements on a metered (Free) tier — the athlete
     // gets all of their allowance, and the LAST one still gets an answer.
     recordCoachInteraction();
 
-    setMessages((m) => [
-      ...m,
-      { id: `a-${Date.now()}`, role: "athlete", body: q, at: new Date().toISOString() },
-    ]);
+    append({ id: `a-${Date.now()}`, role: "athlete", body: q, at: new Date().toISOString() });
     setDraft("");
+
+    /*
+     * WHAT THE COACH KEEPS FROM THIS MESSAGE — plain code, before the model is
+     * called and whether or not it answers.
+     *
+     * NO MODEL WRITES A NOTE (rule 1). `rememberFrom` is a closed list of five
+     * regex rules in `@/coach/notes`; what it stores is the athlete's own
+     * sentence, verbatim, and only when the sentence is first-person, is not a
+     * question, and says something meant to hold. It refuses outright on
+     * anything the symptom layer fires on, so an acute report never becomes a
+     * permanent fact about somebody.
+     *
+     * Called HERE rather than after the reply so a note survives a failed
+     * request: what the athlete said is worth keeping regardless of whether
+     * the coach managed to answer it.
+     *
+     * It is fire-and-forget on purpose. Nothing on this screen announces "I
+     * will remember that" — the honest place to see what was kept is
+     * /coach/memory, linked at the top, where it can also be deleted.
+     */
+    rememberFrom(q);
     setThinking(true);
     const askedAt = Date.now();
 
-    const { message, spentMicros } = await askCoach(q, ctx, messages, remainingMicros(coachBudget));
+    const { message, spentMicros, action, routes, professionals } = await askCoach(
+      q,
+      ctx,
+      messages,
+      remainingMicros(coachBudget),
+    );
     // Bank what it actually cost, from the usage the proxy reported.
     if (spentMicros > 0) recordCoachSpend(spentMicros);
+
+    /*
+     * THE COACH ASKED FOR A CHANGE — SO THE APP MAKES IT, OR REFUSES IT.
+     *
+     * RULE 1 IS THIS SIX LINES. `preview` runs the generator twice, applies the
+     * guard and answers small-or-big; `commit` writes it. The model's part
+     * ended when it named a tool and a day. The message body below is written
+     * HERE, from `proposal.summary` — which came out of the engine — and never
+     * from the model's prose, which the proxy dropped for exactly this reason.
+     *
+     * SMALL CHANGES ARE COMMITTED BEFORE THE MESSAGE IS APPENDED. If the
+     * message went up first the athlete would read "Cut Sat 20 Sep to 90 min"
+     * and then the plan would change under it a frame later; committing first
+     * means the sentence is true when it appears.
+     */
+    let change: CoachChange | null = null;
+    if (action) {
+      const proposal = preview(action);
+      if (proposal.outcome === "applied") {
+        const result = commit(proposal);
+        change = {
+          messageId: message.id,
+          proposal,
+          status: result.ok ? "applied" : "failed",
+          recordIds: result.recordIds,
+          problem: result.problem,
+        };
+      } else {
+        change = {
+          messageId: message.id,
+          proposal,
+          status: proposal.outcome === "refused" ? "refused" : "pending",
+          recordIds: [],
+          problem: "",
+        };
+      }
+      recordChange(change);
+    }
+
+    /*
+     * THE COACH SUGGESTED ROUTES — SO THE APP DRAWS THEM, OR SAYS IT COULD NOT.
+     *
+     * `routes.cards` has ALREADY been resolved against the shortlist the app
+     * retrieved for this question (`resolveRouteCards`), so by the time it
+     * arrives here every id that did not exist has become nothing. This screen
+     * decides none of that; it stores which bubble the pictures belong under.
+     *
+     * An empty `cards` is a real outcome rather than a null case — the coach
+     * named routes ICEFALL could not match — and it is why nothing is recorded
+     * in that branch: a component asked to draw no cards would draw a heading
+     * over a gap. The sentence in `routes.summary` carries the whole answer.
+     */
+    if (routes && routes.cards.length > 0) {
+      recordSuggestedRoutes({
+        messageId: message.id,
+        cards: routes.cards,
+        basis: routes.basis,
+        nearLabel: routes.nearLabel,
+      });
+    }
+
+    /*
+     * WHO THEY COULD HIRE — Phase 2, step 3.
+     *
+     * NOT A TOOL RESULT. `professionals` is present whenever the app itself
+     * classified the question as asking who to hire; the model chose nothing
+     * here, so there is no id to resolve and nothing to refuse. The screen
+     * stores which bubble the cards belong under and decides none of it.
+     *
+     * RECORDED EVEN WHEN THERE IS NOTHING TO DRAW, and that is the opposite
+     * decision to the routes above, deliberately. An empty route list means
+     * the coach named trails ICEFALL could not match, and a heading over a gap
+     * would be worse than the sentence. An empty GUIDE list means nobody has
+     * listed with ICEFALL — which is the production state, and the honest
+     * empty state the roadmap asks for is a thing to render rather than a
+     * thing to omit. `ProfessionalCards` returns null itself when there is
+     * genuinely nothing to say.
+     */
+    if (
+      professionals &&
+      (hasProfessionalCards(professionals) ||
+        /* The empty state is worth drawing — it is the production state — but
+           only once there is an objective to have searched against. With no
+           objective the reply already says to set one, and a card headed "no
+           guides listed" under it answers a question nobody asked. */
+        (professionals.guideCatalogueEmpty && professionals.objectiveName !== null))
+    ) {
+      recordProfessionals({ messageId: message.id, shortlist: professionals });
+    }
 
     /*
      * A 5-10 SECOND FLOOR ON THE "Thinking…" LINE — THE OWNER'S EXPLICIT
@@ -196,8 +425,59 @@ export default function CoachChat() {
      * The athlete would watch the whole conversation rewrite itself every time
      * they typed a character.
      */
-    setRevealId(message.id);
-    setMessages((m) => [...m, message]);
+    /*
+     * WHAT GOES IN THE TRANSCRIPT ON A TOOL TURN.
+     *
+     * `message.body` arrives empty — the proxy drops the model's prose when a
+     * tool was called, because it was composed before the change was attempted
+     * and may describe an outcome the guard was about to refuse. So the body is
+     * written here, in the app's voice, from what actually happened:
+     *
+     *   applied  -> "Cut Sat 20 Sep to 90 min." — past tense, and true.
+     *   confirm  -> "…Nothing changed yet." — the offer is below, not in here.
+     *   refused  -> the guard's own sentence, which names the real figures.
+     *
+     * IT MATTERS THAT THIS IS THE STORED TEXT, not only the displayed text.
+     * The transcript is what goes back to the model as history on the next
+     * turn, so the model's record of what it did is the app's record of what
+     * the app did — and a coach that was refused cannot come back a message
+     * later believing it succeeded.
+     */
+    /*
+     * ON A ROUTE TURN THE BODY IS THE APP'S SENTENCE TOO, and for the first of
+     * the two reasons above: the proxy drops the model's prose whenever a tool
+     * was called, so without this the bubble is empty.
+     *
+     * `routes.summary` names the routes and states no figure — no length, no
+     * ascent, no grade — which is what lets it be the thing that PERSISTS. The
+     * cards live in memory for this session; the sentence goes into the
+     * transcript, and after a reload it is still exactly as true as it was,
+     * with the routes still findable by name in Explore.
+     *
+     * `change` and `routes` cannot both be set: the proxy returns one tool call
+     * per turn and the two parsers refuse each other's names. The ordering
+     * below is therefore a formality rather than a precedence, but it is
+     * written as one so that a future second tool call cannot silently drop a
+     * plan change in favour of a picture.
+     */
+    const shown: CoachMessage = change
+      ? {
+          ...message,
+          body:
+            change.status === "applied"
+              ? `${change.proposal.summary}.`
+              : change.status === "failed"
+                ? `Nothing changed. ${change.problem}`
+                : change.proposal.outcome === "refused"
+                  ? change.proposal.note
+                  : `${change.proposal.summary} — nothing changed yet. ${change.proposal.note}`,
+        }
+      : routes
+        ? { ...message, body: routes.summary }
+        : message;
+
+    setRevealId(shown.id);
+    append(shown);
     setThinking(false);
   }
 
@@ -232,6 +512,54 @@ export default function CoachChat() {
           </span>
         </div>
 
+        {/*
+          THE MEMORY IS REACHABLE FROM WHERE IT IS USED.
+
+          A coach that remembers things about somebody has to put the door to
+          those things in front of them, not three taps into Settings. This row
+          is the door: what it kept, what it is carrying into the next answer,
+          and a delete on every line of it.
+
+          NO BOXES — two text controls and spacing, under the two pills that
+          already say what this screen is. A bordered card here would wrap the
+          same sentence twice.
+
+          "New conversation" only appears once there IS one, because on an
+          empty thread it does nothing and a control that does nothing is worse
+          than a missing one. The old thread is not deleted by it; it moves to
+          the list on /coach/memory.
+        */}
+        <div className="mt-3 flex items-center justify-between gap-3">
+          <Link to="/coach/memory" className="text-[13px] text-azure">
+            {hasHistory ? "What I remember" : "What I remember · nothing yet"}
+          </Link>
+          {messages.length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                /* The offers belong to the conversation that made them: a
+                   Confirm sitting under a thread the athlete has closed is a
+                   change nobody is still discussing. Applied changes are
+                   untouched — they are rows in the plan's own history. */
+                clearChanges();
+                /* The pictures belong to the thread that produced them, the
+                   same rule as the offers above. A route suggested inside a
+                   conversation the athlete has closed is a recommendation
+                   nobody is still making. */
+                clearSuggestedRoutes();
+                /* Same rule again: a guide offered inside a conversation the
+                   athlete has closed is a recommendation nobody is making. */
+                clearProfessionals();
+                startNew();
+              }}
+              className="inline-flex items-center gap-1 text-[13px] text-mist transition-colors hover:text-snow"
+            >
+              <Plus size={14} strokeWidth={2} aria-hidden="true" />
+              New conversation
+            </button>
+          )}
+        </div>
+
         <div className="mt-5 space-y-4">
           {/* The intro card — the coach introducing itself, NOT a turn. See the
               PH-14a note above: it names what it answers from and promises to
@@ -253,7 +581,53 @@ export default function CoachChat() {
           )}
 
           {messages.map((m) => (
-            <Bubble key={m.id} message={m} reveal={m.id === revealId} />
+            <Bubble
+              key={m.id}
+              message={m}
+              reveal={m.id === revealId}
+              change={changes.find((c) => c.messageId === m.id)}
+              routes={suggestedRoutes.find((r) => r.messageId === m.id)}
+              professionals={suggestedProfessionals.find((r) => r.messageId === m.id)}
+              onApply={() => {
+                const c = changes.find((x) => x.messageId === m.id);
+                if (!c || c.status !== "pending") return;
+                /*
+                 * RE-PREVIEWED AT THE MOMENT OF THE TAP, NOT APPLIED FROM THE
+                 * OFFER.
+                 *
+                 * Minutes may have passed. The athlete may have ticked a
+                 * session off, logged an activity, or checked in — and a
+                 * check-in is exactly the thing that turns the guard's answer
+                 * from yes to no. Committing the proposal computed earlier
+                 * would apply a change against a state that has gone.
+                 */
+                const fresh = preview(c.proposal.action);
+                if (fresh.outcome === "refused") {
+                  updateChange(m.id, { status: "refused", problem: fresh.note });
+                  return;
+                }
+                const result = commit(fresh);
+                updateChange(m.id, {
+                  status: result.ok ? "applied" : "failed",
+                  recordIds: result.recordIds,
+                  problem: result.problem,
+                });
+              }}
+              onDecline={() => updateChange(m.id, { status: "declined" })}
+              onUndo={() => {
+                const c = changes.find((x) => x.messageId === m.id);
+                if (!c || c.recordIds.length === 0) return;
+                /* Undo goes through the same guard as everything else — see
+                   `planGuard.ts`. It is refused when it would put a hard
+                   session back on a day readiness has already downgraded, and
+                   the reason is shown rather than the tap being swallowed. */
+                const verdict = undoChange(c.recordIds[0]);
+                updateChange(m.id, {
+                  status: verdict.allowed ? "undone" : "applied",
+                  problem: verdict.allowed ? "" : verdict.reason,
+                });
+              }}
+            />
           ))}
 
           <AnimatePresence>
@@ -374,7 +748,25 @@ export default function CoachChat() {
   );
 }
 
-function Bubble({ message, reveal = false }: { message: CoachMessage; reveal?: boolean }) {
+function Bubble({
+  message,
+  reveal = false,
+  change,
+  routes,
+  professionals,
+  onApply,
+  onDecline,
+  onUndo,
+}: {
+  message: CoachMessage;
+  reveal?: boolean;
+  change?: CoachChange;
+  routes?: SuggestedRoutes;
+  professionals?: SuggestedProfessionals;
+  onApply: () => void;
+  onDecline: () => void;
+  onUndo: () => void;
+}) {
   const isCoach = message.role === "coach";
 
   return (
@@ -434,6 +826,25 @@ function Bubble({ message, reveal = false }: { message: CoachMessage; reveal?: b
               message that took the plain path would print its asterisks. */}
           <WordReveal text={message.body} animate={reveal} stagger={0.066} duration={0.46} />
         </div>
+        {/* The change this message is about, if it is about one. Rendered from
+            the engine's before and after — never from the reply above it. */}
+        {change && (
+          <PlanChangeRows change={change} onApply={onApply} onDecline={onDecline} onUndo={onUndo} />
+        )}
+        {/* The routes this message suggested, drawn by the app from ICEFALL's
+            own records for the ids the coach picked — never from the reply
+            above them. Absent after a reload, by design; the body still names
+            them. See `@/coach/suggestedRoutes`. */}
+        {routes && <RouteCards suggestion={routes} />}
+
+        {/* The guides and companies this message was about, drawn by the app
+            from ICEFALL's own catalogue and ordered by the marketplace's own
+            matcher — never from the reply above them, which is told not to
+            repeat the list. Paid slots sit in their own labelled section
+            underneath, and take no part in the order. Absent after a reload,
+            by design. See `@/coach/suggestedProfessionals`. */}
+        {professionals && <ProfessionalCards shortlist={professionals.shortlist} />}
+
         {message.disclaimer && (
           <Disclaimer className="mt-2.5 text-left">{message.disclaimer}</Disclaimer>
         )}

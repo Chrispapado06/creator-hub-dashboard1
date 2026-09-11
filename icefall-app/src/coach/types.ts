@@ -113,14 +113,43 @@ export const CHECK_IN_MAX = 5;
  * before writing the arithmetic.
  */
 export interface CheckIn {
-  /** Local calendar date, YYYY-MM-DD. */
+  /** Local calendar date, YYYY-MM-DD. The key: one report per day. */
   date: string;
+  /**
+   * WHEN THEY ACTUALLY FILLED IT IN — the full instant, plus the zone.
+   *
+   * The date alone made a check-in a fact about a day, and a check-in is not a
+   * fact about a day: "slept badly, legs heavy" at half past five in the
+   * morning is a report on the night, and the same five answers at nine in the
+   * evening are a report on the day's training. A coach that cannot tell those
+   * apart is reading the wrong thing, and one that reads a morning check-in as
+   * an assessment of a session the athlete has not yet done is reading
+   * something that has not happened.
+   *
+   * Optional because reports stored before this existed have only a date, and
+   * nothing invents a time for them. `at` is an ISO instant; `timeZone` is the
+   * IANA name of where they were, so a check-in filled in at base camp is not
+   * re-read later in the zone the phone came home to. See
+   * `tracking/timeOfDay.ts` — the same argument, the same fields.
+   */
+  at?: string;
+  timeZone?: string | null;
+  utcOffsetMin?: number | null;
   energy: number;
   soreness: number;
   sleep: number;
   stress: number;
   motivation: number;
 }
+
+/**
+ * The five answers alone — what a screen collects, before the app stamps it.
+ *
+ * The clock is `AppState`'s to write, not a screen's: `saveCheckIn` is the one
+ * write boundary for a report and it stamps the date, the instant and the zone
+ * together so the three can never disagree.
+ */
+export type CheckInAnswers = Omit<CheckIn, "date" | "at" | "timeZone" | "utcOffsetMin">;
 
 /* -------------------------------------------------------------------------- */
 /* Framing                                                                     */
@@ -132,3 +161,73 @@ export interface CheckIn {
  */
 export const COACH_DISCLAIMER =
   "The coach works from the sessions you record and from what you report. It is a planning aid, not a measurement of your body: it cannot tell you whether you are recovered, whether you are injured, or how you will respond to altitude. If something hurts, have it assessed by a doctor or a physiotherapist. For anything glaciated or technical, take instruction from an IFMGA-certified guide.";
+
+/* -------------------------------------------------------------------------- */
+/* Measured vitals                                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * An instrument that can measure a vital.
+ *
+ * Lives here rather than in the tracking layer because both sides need it and
+ * only one of them may own it: `tracking/sources/vitals.ts` aliases its
+ * `VitalSource` to this, so there is exactly one list and it cannot drift.
+ * A coach module may then name the instrument behind a number without
+ * importing anything that talks to a network.
+ */
+export type MeasuredSource = "oura" | "apple-health" | "health-connect";
+
+/** What to call each instrument on screen and in a sentence. */
+export const MEASURED_SOURCE_LABEL: Record<MeasuredSource, string> = {
+  oura: "your Oura ring",
+  "apple-health": "Apple Health",
+  "health-connect": "Health Connect",
+};
+
+/**
+ * ONE READING FROM ONE INSTRUMENT, OR THE REASON THERE ISN'T ONE.
+ *
+ * This is rule 5 made into a type. A figure a device measured and a figure a
+ * person typed are different evidence, and the difference has to survive the
+ * journey from the sensor to the screen — so a measured vital travels as this
+ * shape, never as a bare number that could be mistaken for a slider.
+ *
+ * `value` IS THREE-STATE, and the distinction is load-bearing:
+ *
+ *   undefined  no instrument is connected that could have measured this
+ *   null       an instrument was connected, was asked, and had nothing
+ *   number     a measurement, taken by the instrument named in `source`
+ *
+ * Collapsing the first two would tell an athlete who has connected nothing
+ * that they failed to record something, and tell an athlete whose ring sat on
+ * a charger that they have no ring.
+ *
+ * `measuredOn` IS THE DAY THE INSTRUMENT ATTRIBUTES THE READING TO, never the
+ * day ICEFALL fetched it. It is not decoration and it is not optional in
+ * practice: Oura's sleep only reaches Oura's cloud when the person opens the
+ * Oura app, so last night can legitimately arrive a day late and a figure
+ * shown without its date is a figure that will eventually be wrong. A reading
+ * that arrives with no date is treated as unscoreable rather than as today's.
+ */
+export interface MeasuredVital {
+  value: number | null | undefined;
+  /** The instrument. Absent exactly when there is no number. */
+  source?: MeasuredSource;
+  /** YYYY-MM-DD, the day the instrument says it measured. */
+  measuredOn?: string;
+  /** Which absence, in the coach's five-word vocabulary. */
+  reason?: Unavailable;
+  /**
+   * The source's own, truer sentence for the absence — "your Oura membership
+   * has lapsed" rather than "no source connected". Carried because narrowing
+   * twelve reasons to five loses the one thing that tells a person what to do.
+   */
+  note?: string;
+}
+
+/** No instrument at all, with the coach-side reason for saying so. */
+export const noSource = (reason: Unavailable = "not-connected", note?: string): MeasuredVital => ({
+  value: undefined,
+  reason,
+  note,
+});

@@ -13,6 +13,7 @@ import { useRecordedActivities } from "@/tracking/feed";
 import { useCoachIntel } from "@/coach/hooks";
 import { computeTrainingLoad } from "@/coach/load";
 import { assessRecovery } from "@/coach/recovery";
+import type { VitalReport } from "@/coach/recovery";
 import { computeReadiness } from "@/coach/readiness";
 import { COACH_DISCLAIMER, CHECK_IN_MAX, CHECK_IN_MIN, known, unavailable } from "@/coach/types";
 import type { CheckIn, Score } from "@/coach/types";
@@ -144,10 +145,19 @@ function useReadinessSeries(args: {
 
       const load = computeTrainingLoad(upTo, end);
       const recovery = assessRecovery({
+        /*
+          NO `vitals` FOR A PAST DAY, and the omission is the honest answer
+          rather than a shortcut. Measured vitals are resolved live from
+          whatever is connected right now; ICEFALL keeps no history of them on
+          the device — `tracking/sources/oura.ts` refuses to write health
+          measurements to storage at all — so there is no last Tuesday's sleep
+          to hand this. Omitting the field says "no source was consulted for
+          this day", which is true. The previous code passed an explicit
+          `null`, which claims a source WAS consulted and had nothing, and
+          reads to an athlete as a night they failed to record.
+        */
         checkIn: byDate.get(key),
-        // No health bridge exists on the web, then or now.
-        restingHeartRateBpm: null,
-        sleepMinutes: null,
+        now: end,
         recentLoad: { acute: load.acute, chronic: load.chronic },
         hardSessionHoursAgo: hoursSinceHardSession(upTo, end),
       });
@@ -176,6 +186,8 @@ interface Factor {
   score: Score;
   note: string;
   qualifier?: DataQualifier;
+  /** A measured figure with its unit, rendered as text rather than as a bar. */
+  reading?: string | null;
 }
 
 /**
@@ -184,17 +196,22 @@ interface Factor {
  * Three come from the composite. Three do not exist as measurements in this
  * build and are declared as such:
  *
- *   HRV    no API on any browser, no wearable bridge — NO SENSOR, always.
- *   Sleep  same. `assessRecovery` is handed an explicit null by the coach hook
- *          and types that as `no-data`, but from the athlete's side the true
- *          reason is that nothing is connected, so NO SENSOR is what is shown.
+ *   HRV    ICEFALL does not use heart-rate variability. Said that way rather
+ *          than "no browser exposes it", which stops being true the moment a
+ *          ring is connected, while this stays true whatever anybody connects.
+ *   Sleep  a real measurement when an instrument is connected, rendered from
+ *          `recovery.vitals` so the figure, the instrument and the night it
+ *          belongs to are the same ones the Recovery screen shows. It is an
+ *          input to RECOVERY, which is a component of this number; it is not a
+ *          component of readiness in its own right, and the note says so.
  *   Stress the athlete's own report, or NOT REPORTED. Never inferred from load.
  */
 function buildFactors(args: {
   components: { id: string; label: string; score: Score; note: string }[];
   checkIn: CheckIn | undefined;
+  sleep: VitalReport | undefined;
 }): Factor[] {
-  const { components, checkIn } = args;
+  const { components, checkIn, sleep } = args;
   const byId = new Map(components.map((c) => [c.id, c]));
 
   const from = (id: string, label: string): Factor => {
@@ -215,13 +232,22 @@ function buildFactors(args: {
       id: "hrv",
       label: "HRV",
       score: unavailable("not-connected"),
-      note: "ICEFALL cannot read heart-rate variability. No browser exposes it and no wearable is linked, so there is nothing here to show.",
+      note: "Heart-rate variability is not an input to ICEFALL's readiness. Reading it well needs a baseline of your own nights and a view of the trend, and ICEFALL has neither.",
     },
     {
       id: "sleep",
       label: "Sleep",
-      score: unavailable("not-connected"),
-      note: "No sleep source is connected. Last night is not in this number, and nothing has been assumed about it.",
+      score: unavailable(sleep?.reason ?? "not-connected"),
+      /* The same reading, the same instrument and the same night the Recovery
+         screen shows — read from the one assessment rather than re-derived, so
+         two screens cannot disagree about the athlete's own sleep. */
+      reading: sleep && sleep.value !== null ? `${sleep.value} ${sleep.unit}` : null,
+      qualifier: sleep && sleep.value !== null ? ("measured" as const) : undefined,
+      note:
+        sleep && sleep.value !== null
+          ? `${sleep.note} It reaches this number through Recovery, which is one of the components above — it is not a separate component of readiness.`
+          : (sleep?.note ??
+            "No sleep source is connected. Last night is not in this number, and nothing has been assumed about it."),
     },
     // "Training load" upstream. Named "Recent load" here because that is what
     // the component actually reads — the last seven days against the athlete's
@@ -317,7 +343,11 @@ function TodayTab({
   activities: RecordedActivity[];
 }) {
   const { readiness, load } = intel;
-  const factors = buildFactors({ components: readiness.components, checkIn });
+  const factors = buildFactors({
+    components: readiness.components,
+    checkIn,
+    sleep: intel.recovery.vitals.find((v) => v.id === "sleepDuration"),
+  });
 
   const series = useReadinessSeries({
     activities,
@@ -366,7 +396,13 @@ function TodayTab({
               key={f.id}
               className={i === 0 ? "px-4 py-4" : "border-t border-hairline px-4 py-4"}
             >
-              <FactorBar label={f.label} score={f.score} note={f.note} qualifier={f.qualifier} />
+              <FactorBar
+                label={f.label}
+                score={f.score}
+                note={f.note}
+                qualifier={f.qualifier}
+                reading={f.reading}
+              />
             </div>
           ))}
         </Card>

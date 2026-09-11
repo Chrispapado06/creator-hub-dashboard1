@@ -8,6 +8,7 @@ import {
   CloudOff,
   ShieldCheck,
   Database,
+  Dumbbell,
   FileText,
   HeartPulse,
   Info,
@@ -26,6 +27,7 @@ import {
 import { Rise, Screen, ScreenHeader, Stagger } from "@/components/layout/chrome";
 import { ActionRow, Group, LinkRow } from "@/components/settings/kit";
 import { ThemePicker } from "@/components/settings/ThemePicker";
+import { CoachLanguagePicker } from "@/components/settings/CoachLanguagePicker";
 import { useApp, usePrimaryGoal } from "@/state/AppState";
 import { useSettings } from "@/settings/store";
 import { fmtDate } from "@/lib/format";
@@ -150,6 +152,16 @@ export default function Settings() {
           </div>
         </Group>
 
+        {/* ---- The coach's language ---------------------------------------
+            Beside Appearance rather than under Coach, because it is a choice
+            about how the app speaks to you and that is where a phone puts it.
+            It changes the coach's prose only: the interface stays English, and
+            the control says so above the list rather than leaving somebody to
+            tap Español and wonder why the tab bar did not move. */}
+        <Group label="Coach language">
+          <CoachLanguagePicker />
+        </Group>
+
         {/* ---- Profile ----------------------------------------------------
             No "Share profile" row here: it is one of the two buttons in the
             card directly above, and the list repeated it forty pixels lower.
@@ -229,6 +241,16 @@ export default function Settings() {
 
         {/* ---- Mountains --------------------------------------------------- */}
         <Group label="Mountains">
+          {/* FIRST IN THIS GROUP DELIBERATELY. Every answer in it changes what
+              ICEFALL prescribes, and until this screen existed there was no way
+              to change any of them — the questionnaire asked once and that was
+              the end of it. */}
+          <LinkRow
+            to="/settings/coaching"
+            icon={Dumbbell}
+            title="Coaching profile"
+            detail="Your training days, kit, limitations, altitude and your objective's date."
+          />
           <LinkRow
             to="/settings/mountains"
             icon={MountainIcon}

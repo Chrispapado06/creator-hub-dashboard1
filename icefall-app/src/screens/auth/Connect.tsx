@@ -203,7 +203,14 @@ const PROVIDERS: readonly Provider[] = [
     id: "coros",
     name: "COROS",
     short: "COROS",
-    blurb: "Bring activities you recorded on a COROS watch into ICEFALL.",
+    /* NOT "bring activities across" — that is exactly what ICEFALL cannot do
+       for COROS yet (`readsActivities` is false server-side; see
+       icefall-supabase/.../watch/coros.ts). This row's job is to describe what
+       tapping it DOES, which is link the account. The sentence that says
+       activities cannot yet be read is `corosReadingNote` in `ListScreen`,
+       derived from the server rather than written here, so it disappears on
+       its own the day the mapper is written. */
+    blurb: "Link the COROS account your watch syncs to.",
     built: true,
   },
 ];
@@ -660,6 +667,12 @@ function ListScreen({
             {stravaWhy ? ` ${stravaWhy}` : ""}
             {ouraWhy ? ` ${ouraWhy}` : ""}
             {corosWhy ? ` ${corosWhy}` : ""}
+            {/* A row that CAN be tapped and still will not produce activities
+                needs its own sentence — `corosWhy` above only covers rows that
+                cannot be tapped at all, and the two are different facts. */}
+            {corosIntegrated && !watch.byProvider.coros.readsActivities
+              ? " A COROS account can be linked, but ICEFALL cannot read COROS activities yet."
+              : ""}
           </p>
           {/* A sentence that says "sign in" beside a control that signs you in.
               This page sits outside the shell, so a signed-out person can reach
@@ -840,7 +853,12 @@ const REASSURANCE: Record<
     {
       icon: MoveRight,
       title: "One direction — ICEFALL only reads",
-      body: "ICEFALL brings across activities you record on your watch when you choose. It sends nothing back.",
+      /* Was "ICEFALL brings across activities you record on your watch when
+         you choose", which promises an import COROS cannot yet deliver. What
+         is TRUE of all four vendors, and of COROS today, is the direction: the
+         permission is read-only and ICEFALL writes nothing back. Whether a
+         read succeeds is the card's business in Settings, not this bullet's. */
+      body: "This permission only reads. ICEFALL never writes anything to your watch account.",
     },
     {
       icon: ShieldCheck,
@@ -1191,6 +1209,20 @@ function Connecting({
                   COROS keeps accounts in a regional data centre, and the connection has to point at
                   the right one. Pick where your COROS account is registered.
                 </p>
+                {/* SAID BEFORE THEY TAP, NOT AFTER. Linking the account works;
+                    reading activities out of it does not yet, and somebody who
+                    finds that out only once the watch is connected and nothing
+                    arrives has been misled by omission. Derived from the
+                    server's own answer, so it disappears by itself the day
+                    COROS's response mapper is written — nobody has to remember
+                    to delete this. */}
+                {!corosConn.readsActivities && (
+                  <p className="mt-2 text-[11.5px] leading-relaxed text-azure">
+                    Linking works, but ICEFALL cannot read COROS activities yet — COROS has not
+                    published how its activity data is shaped. Connecting now means the account is
+                    ready the day it can; it does not mean activities will start arriving.
+                  </p>
+                )}
               </>
             ) : (
               !blocked && (

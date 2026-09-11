@@ -3,6 +3,7 @@ import type { Readiness } from "@/coach/readiness";
 import type { RecoveryAssessment } from "@/coach/recovery";
 import type { TrainingLoad } from "@/coach/load";
 import type { CoachMemory } from "@/coach/memory";
+import { assessDowngrade } from "@/coach/downgrade";
 
 /**
  * The daily briefing — what the Coach opens with.
@@ -26,10 +27,16 @@ export interface Briefing {
   note: string;
 }
 
-const HARD_FOCUS: TrainingFocus[] = ["intervals", "long-mountain", "strength"];
-
-/** Low enough that a hard session should be actively discouraged. */
-const LOW_READINESS = 50;
+/**
+ * The sessions this briefing will refuse to present on a downgraded day.
+ *
+ * EXPORTED because the plan guard needs the same list: "harder" has to mean
+ * the same thing to the screen that hides a hard session and to the gate that
+ * refuses to move one onto today. Two lists would eventually disagree, and the
+ * disagreement would be invisible until a long mountain day landed on a day the
+ * dashboard had already taken away.
+ */
+export const HARD_FOCUS: TrainingFocus[] = ["intervals", "long-mountain", "strength"];
 
 function greetingFor(now: Date, firstName: string): string {
   const h = now.getHours();
@@ -54,11 +61,13 @@ export function buildBriefing(args: {
   const plannedFocus = args.today?.focus ?? null;
   const plannedHard = plannedFocus !== null && HARD_FOCUS.includes(plannedFocus);
 
-  // Any of these means today should be easier than the plan says.
-  const easeOff =
-    recovery.status === "poor" ||
-    load.trend === "spike" ||
-    (score !== null && score < LOW_READINESS);
+  /* Any of these means today should be easier than the plan says.
+     COMPUTED IN ONE PLACE — see `@/coach/downgrade` for why this moved out of
+     here: Phase 2's plan guard needs the identical fact, and a second copy of
+     the expression is how the dashboard ends up saying "recovery recommended"
+     beside a plan that just accepted a long mountain day onto the same date. */
+  const downgrade = assessDowngrade({ readiness, recovery, load });
+  const easeOff = downgrade.downgraded;
 
   /* ---- Status ------------------------------------------------------------ */
 
@@ -84,7 +93,7 @@ export function buildBriefing(args: {
       // changed and why, so the athlete isn't left wondering where it went.
       training = {
         title: "Easy session or rest",
-        detail: `Your plan has ${args.today.title.toLowerCase()} today. Given ${reasonForEasing(recovery, load, score)}, hold the intensity down — the session keeps its value later in the week.`,
+        detail: `Your plan has ${args.today.title.toLowerCase()} today. Given ${downgrade.shortReason}, hold the intensity down — the session keeps its value later in the week.`,
         focus: "recovery",
       };
     } else {
@@ -126,17 +135,6 @@ export function buildBriefing(args: {
       : null,
     note,
   };
-}
-
-function reasonForEasing(
-  recovery: RecoveryAssessment,
-  load: TrainingLoad,
-  score: number | null,
-): string {
-  if (recovery.status === "poor") return "what you reported this morning";
-  if (load.trend === "spike") return "how far your last week sits above your normal pattern";
-  if (score !== null && score < LOW_READINESS) return "where your readiness sits";
-  return "the last few days";
 }
 
 function nutritionLine(focus: TrainingFocus | null, durationMin?: number): string {

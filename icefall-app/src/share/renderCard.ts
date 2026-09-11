@@ -126,6 +126,20 @@ export interface ShareCardData {
   durationSec: number;
   elevationGainM: number;
   paceSecPerKm: number | null;
+  /**
+   * THE DAY, AND DELIBERATELY NOT THE HOUR.
+   *
+   * A share card is made to be posted somewhere public. A start time on it,
+   * beside a route drawn from real coordinates, is a published routine — which
+   * door, which hour, how often. Start times are private by default
+   * (`START_TIME_PRIVACY` in `tracking/timeOfDay.ts`) and this is one of the
+   * surfaces that rule was written for.
+   *
+   * So `dateLabel` is a DATE. If ICEFALL ever offers to put a time on a card it
+   * is a control the athlete taps, on the card designer, defaulting to off —
+   * not a field that quietly starts carrying a clock because a caller passed
+   * one.
+   */
   dateLabel: string;
   track: TrackPoint[];
   athleteName?: string;

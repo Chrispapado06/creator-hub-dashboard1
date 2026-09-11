@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { healthService, type HealthDaySummary } from "./health";
 import { ouraService, type OuraState, type OuraSummary } from "./oura";
 import { resolveVitals, type Vitals } from "./vitals";
@@ -88,5 +88,13 @@ export function useVitals(): { vitals: Vitals; loading: boolean } {
 
   const known = platform === "health-connect" ? "health-connect" : "apple-health";
 
-  return { vitals: resolveVitals(oura, phone, known), loading };
+  /* MEMOISED BECAUSE IDENTITY IS LOAD-BEARING DOWNSTREAM. `resolveVitals` is
+     pure and cheap, so recomputing it per render costs nothing — but it builds
+     a fresh object every time, and `useCoachIntel` now lists the result in a
+     `useMemo` dependency array. An unmemoised value there would rebuild the
+     whole coach intel on every render of every coach screen, and hand a new
+     `recovery` object to any effect watching it. */
+  const vitals = useMemo(() => resolveVitals(oura, phone, known), [oura, phone, known]);
+
+  return { vitals, loading };
 }

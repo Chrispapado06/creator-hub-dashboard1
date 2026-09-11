@@ -178,6 +178,8 @@ export function ActivityCard({ activity }: { activity: Activity }) {
                 <Badge tone="alert">Simulated</Badge>
               ) : activity.origin?.kind === "imported" ? (
                 <Badge>Imported · {WATCH_PROVIDER_NAME[activity.origin.provider]}</Badge>
+              ) : activity.origin?.kind === "manual" ? (
+                <Badge>Reported</Badge>
               ) : null}
             </div>
             <h3 className="mt-1.5 truncate text-[15px] font-normal text-snow">{activity.title}</h3>

@@ -2,10 +2,12 @@ import { useCallback, useEffect, useState } from "react";
 
 import { supabase } from "@/backend/client";
 import { clearCursor, readCursor, writeCursor } from "./cursor";
+import { clearUnmappedSports } from "./unmappedSports";
 import { importWatchActivity } from "@/tracking/import";
 import {
   WATCH_PROVIDERS,
   type WatchActivity,
+  type WatchActivityReading,
   type WatchAvailability,
   type WatchProvider,
   type WatchReturnPath,
@@ -73,6 +75,14 @@ export interface WatchConnection {
   lastImportAt: string | null;
   /** Connected AND granted the permission an import needs. Not the same thing. */
   canImport: boolean;
+  /**
+   * Whether ICEFALL can read this vendor's activity responses at all — the
+   * server's own answer, not an assumption made here. False for COROS today:
+   * the account links, the permission is granted, and there is still no
+   * mapper for what COROS sends back. A card that showed only `canImport`
+   * would say "Connected" and then report "nothing new" forever.
+   */
+  readsActivities: boolean;
 }
 
 export interface WatchStatus {
@@ -91,6 +101,11 @@ function emptyConnection(provider: WatchProvider, state: WatchProviderState): Wa
     connectedAt: null,
     lastImportAt: readCursor(provider).lastRunAt,
     canImport: false,
+    /* Assumed true until the server says otherwise, so a build that cannot
+       reach `/providers` does not accuse a working vendor of being unreadable.
+       The one vendor this is wrong for is corrected the moment the answer
+       arrives, and nothing is shown to the athlete before it does. */
+    readsActivities: true,
   };
 }
 
@@ -98,6 +113,16 @@ function initialByProvider(state: WatchProviderState): Record<WatchProvider, Wat
   const out = {} as Record<WatchProvider, WatchConnection>;
   for (const p of WATCH_PROVIDERS) out[p] = emptyConnection(p, state);
   return out;
+}
+
+/** Only `"not-implemented"`, said out loud by the server, makes this false. A
+    missing map, a missing key or an older server all leave it true — absence of
+    an answer is not an accusation. */
+function readsFor(
+  reading: Partial<Record<WatchProvider, WatchActivityReading>> | null,
+  p: WatchProvider,
+): boolean {
+  return reading?.[p] !== "not-implemented";
 }
 
 export function useWatchStatus(): WatchStatus {
@@ -130,13 +155,20 @@ export function useWatchStatus(): WatchStatus {
 
       const providersUrl = functionUrl("providers");
       let availability: Record<WatchProvider, WatchAvailability> | null = null;
+      /* Separately nullable from `availability`: a server too old to send
+         `activityReading` still answers `providers`, and the right response to
+         a missing field is to say nothing about readability rather than to
+         invent an answer for it. */
+      let reading: Partial<Record<WatchProvider, WatchActivityReading>> | null = null;
       if (providersUrl) {
         try {
           const res = await fetch(providersUrl);
           const body = (await res.json().catch(() => ({}))) as {
             providers?: Record<WatchProvider, WatchAvailability>;
+            activityReading?: Record<WatchProvider, WatchActivityReading>;
           };
           if (res.ok && body.providers) availability = body.providers;
+          if (res.ok && body.activityReading) reading = body.activityReading;
         } catch {
           availability = null;
         }
@@ -160,7 +192,7 @@ export function useWatchStatus(): WatchStatus {
               : a === "needs-registration"
                 ? "needs-registration"
                 : "not-connected"; // provisional for "ready" — replaced below
-        next[p] = emptyConnection(p, state);
+        next[p] = { ...emptyConnection(p, state), readsActivities: readsFor(reading, p) };
         if (a === "ready") readyProviders.push(p);
       }
 
@@ -183,7 +215,10 @@ export function useWatchStatus(): WatchStatus {
       for (const p of readyProviders) {
         const row = rows.find((r: { provider: string }) => r.provider === p);
         if (!row) {
-          next[p] = emptyConnection(p, "not-connected");
+          next[p] = {
+            ...emptyConnection(p, "not-connected"),
+            readsActivities: readsFor(reading, p),
+          };
           continue;
         }
         const scope = String(row.scope ?? "");
@@ -197,6 +232,7 @@ export function useWatchStatus(): WatchStatus {
           connectedAt: row.connected_at ?? null,
           lastImportAt: cursor.lastRunAt,
           canImport: CAN_IMPORT_SCOPE[p] !== "" && scope.includes(CAN_IMPORT_SCOPE[p]),
+          readsActivities: readsFor(reading, p),
         };
       }
 
@@ -354,11 +390,17 @@ async function finalizeOnce(ticket: string): Promise<WatchFinalizeOutcome> {
  * not, so a later reconnect always starts a clean import window rather than
  * resuming a stale one — a cursor pointing at an account this device is no
  * longer connected to is not useful to keep.
+ *
+ * `clearUnmappedSports(provider)` goes with it: the list of sport values this
+ * vendor sent that ICEFALL had no word for belongs to the connection that
+ * produced it, and keeping notes about an account somebody has just
+ * disconnected is the opposite of what disconnecting means.
  */
 export async function disconnectWatch(
   provider: WatchProvider,
 ): Promise<{ ok: boolean; revokedAtVendor: boolean }> {
   clearCursor(provider);
+  clearUnmappedSports(provider);
   if (!supabase) return { ok: false, revokedAtVendor: false };
   const url = functionUrl(`${provider}/disconnect`);
   const { data: session } = await supabase.auth.getSession();
@@ -392,6 +434,10 @@ export type ImportFailure =
   | "vendor-unreachable"
   | "rate-limited"
   | "no-mapping"
+  /* DIFFERENT FROM `no-mapping`. That one means a vendor sent a shape ICEFALL
+     could not read; this one means ICEFALL never had a reader for that vendor
+     to begin with, and the athlete's watch and sync are not at fault. */
+  | "reading-not-built"
   | "unreachable";
 
 export type ImportOutcome =
@@ -441,9 +487,16 @@ export async function importWatchActivities(
       const res = await fetch(providersUrl);
       const body = (await res.json().catch(() => ({}))) as {
         providers?: Record<WatchProvider, WatchAvailability>;
+        activityReading?: Record<WatchProvider, WatchActivityReading>;
       };
       if (res.ok && body.providers && body.providers[provider] !== "ready") {
         return { ok: false, reason: "not-available" };
+      }
+      /* The same cheap precondition, for the second question. Caught here as
+         well as server-side so the cursor is never touched and no "nothing
+         new since …" can be produced for a vendor ICEFALL cannot read. */
+      if (res.ok && body.activityReading?.[provider] === "not-implemented") {
+        return { ok: false, reason: "reading-not-built" };
       }
     } catch {
       /* If the public check itself is unreachable, fall through and let the
@@ -482,6 +535,7 @@ export async function importWatchActivities(
         vendor_revoked: "revoked",
         rate_limited: "rate-limited",
         vendor_unreachable: "vendor-unreachable",
+        reading_not_built: "reading-not-built",
       };
       return { ok: false, reason: map[body.error ?? ""] ?? "unreachable" };
     }

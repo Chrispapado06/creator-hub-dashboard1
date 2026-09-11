@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { Discipline, ExperienceLevel, Goal, User } from "@/types";
-import type { CheckIn as CoachCheckIn } from "@/coach/types";
+import type { CheckIn as CoachCheckIn, CheckInAnswers } from "@/coach/types";
+import { deviceTimeZone, deviceUtcOffsetMin } from "@/tracking/timeOfDay";
 import {
   FREE_COACH_INTERACTIONS_PER_MONTH,
   TRIAL_DAYS,
@@ -24,6 +25,11 @@ import type { Sex } from "@/coach/fuelDay";
    only sex input the daily energy estimate has, and this is the only sanctioned
    way to write it from outside the Fuel screen. */
 import { rememberSexForEnergy } from "@/coach/fuelRecord";
+/* The two body answers this state does not own. `completeOnboarding` restores
+   height and year of birth on a second device, and they live in the settings
+   store because that is where `fuelDay.dailyEnergyFor` reads them from — one
+   blob comes back, each answer goes home. Neither module imports the other. */
+import { currentSettings, patchSettings, type SettingsState } from "@/settings/store";
 
 /**
  * Personalisation is the product's central principle, so onboarding answers,
@@ -356,6 +362,15 @@ export interface OnboardingAnswers {
   limitationsNote?: string;
   /** Constrains ascent-rate guidance. Diagnoses nothing. */
   altitudeIllness?: string | null;
+  /**
+   * Strength and gym experience, as given on its own signup step.
+   *
+   * Here so the answer leaves the phone with the rest of the blob. NOTE that
+   * `completeOnboarding` does not read it back yet — restoring a profile onto a
+   * second device is its own piece of work, and half of this interface is in
+   * the same position. Nothing in the app claims otherwise.
+   */
+  movementExperience?: string | null;
   /** Where training starts FROM, so a plan is not built for a body at rest. */
   trainingBaseline?: string | null;
   /**
@@ -456,6 +471,56 @@ export interface OnboardingAnswers {
   goalName: string;
   goalMountainId?: string;
   goalElevationM?: number;
+  /**
+   * THE OBJECTIVE'S OWN DATE, so a second device rebuilds the same plan.
+   *
+   * `completeOnboarding` used to date every restored objective with
+   * `monthsAhead(10)` — a horizon nobody chose — and `buildPlanForGoal` builds
+   * the entire plan backwards from this field, so a phone that restored an
+   * objective got a different plan length from the phone that set it. An ISO
+   * instant, the same shape `addGoal` and `monthsAhead` write; absent means the
+   * record predates this field and the ten-month fallback still applies, with
+   * `goalDateAssumed` saying so.
+   */
+  goalTargetDate?: string;
+  /** When the build began, so the restored plan starts where it started. */
+  goalTrainingStartedAt?: string;
+  /** True when the date was inferred from "not sure yet" rather than named. */
+  goalDateAssumed?: boolean;
+
+  /* ---- The coaching profile ------------------------------------------------
+   *
+   * EVERY ONE OF THESE USED TO STOP AT THE PHONE. `Onboarding.finish()` wrote
+   * them to the local `CoachProfile` through `updateCoachProfile` and they were
+   * not on this interface at all, so `syncOnboarding` never carried them and a
+   * second device signed in with no equipment, no training days, no skills and
+   * no altitude — every engine that reads them quietly back at its
+   * never-answered default, with nothing on screen saying the answers had been
+   * left behind.
+   *
+   * They are optional because absent has to keep meaning NEVER ASKED: every
+   * record written before this block exists, and `completeOnboarding` below
+   * refuses to write a field this object does not carry rather than writing an
+   * empty one over an answer the device already holds.
+   */
+  /** Discipline id → level. Free-form keys: three offered disciplines have no
+      member of the `Discipline` union and their levels live only here. */
+  disciplineExperience?: Record<string, string>;
+  /** Equipment ids from `@/coach/exercises`. */
+  availableEquipment?: string[];
+  /** 0 = Sunday … 6 = Saturday. */
+  trainingDays?: number[];
+  /** Minutes. A cap the generator applies, so there is no default. */
+  typicalSessionMin?: number;
+  technicalSkills?: string[];
+  /** The altitude band's LOWER bound, in metres. 0 is a real answer. */
+  maxAltitudeM?: number;
+  /* Body numbers. Weight lives in this state; height and year of birth live in
+     `settings/store.ts` — they are carried here so one blob restores all three,
+     and `completeOnboarding` puts each back where its readers look for it. */
+  bodyMassKg?: number;
+  heightCm?: number;
+  birthYear?: number;
 }
 
 interface Persisted {
@@ -534,7 +599,6 @@ const EMPTY_COACH_PROFILE: CoachProfile = {
   disciplineExperience: {},
   availableEquipment: [],
   trainingDays: [],
-  typicalSessionMin: 60,
   technicalSkills: [],
 };
 
@@ -621,9 +685,36 @@ export interface CoachProfile {
   availableEquipment: string[];
   /** 0 = Sunday … 6 = Saturday. Days the athlete can normally train. */
   trainingDays: number[];
-  typicalSessionMin: number;
+  /**
+   * Minutes the athlete calls a normal session. ABSENT MEANS UNANSWERED.
+   *
+   * It used to default to 60 here, and 60 was then written into the coach's
+   * system prompt as a fact about people who had never been asked — the same
+   * bug as the invented 72 kg body mass argued in `coach/context.ts`. It is
+   * now a cap the plan generator applies to every session but the long
+   * mountain day, so a default would also silently shorten the week of every
+   * athlete who signed up before the question existed.
+   */
+  typicalSessionMin?: number;
   /** Technical competences the athlete claims. Never inferred from activity. */
   technicalSkills: string[];
+  /**
+   * How much strength and gym work the athlete has done — a MOVEMENT answer,
+   * and deliberately not the mountain experience above.
+   *
+   * It caps how hard a prescribed movement may be and how many the main block
+   * carries (`MAX_DIFFICULTY` / `MAIN_ITEM_COUNT` in `coach/sessions.ts`).
+   * Optional, and `undefined` has to keep meaning "never asked": everybody who
+   * signed up before this question existed, plus anyone who chose "rather not
+   * say". Under that value sessions are capped at moderate and say so, which is
+   * the right outcome — so there is no default and there must be no backfill.
+   *
+   * Typed as a string rather than the engine's union on purpose. This interface
+   * describes what is on the device, where a value written by an older build
+   * can be anything; `movementExperience()` in `coach/sessions.ts` is the one
+   * place that decides whether a stored string is a level the engine knows.
+   */
+  movementExperience?: string;
   /** Highest altitude actually reached, self-reported. */
   maxAltitudeM?: number;
   /**
@@ -780,9 +871,77 @@ interface AppStateValue {
   hasKudos: (postId: string) => boolean;
   toggleKudos: (postId: string) => void;
   addGoal: (g: Omit<Goal, "id" | "status" | "preparation">) => void;
+  /**
+   * Move an objective's target date. Returns whether it moved.
+   *
+   * ── THIS WAS THE ONLY EDIT AppState OFFERED ON A GOAL, UNTIL `completeGoal` ──
+   *
+   * The paragraph below still records WHY the surface is this small, and that
+   * reasoning stands. It no longer says "the only", because `completeGoal`
+   * below is the second — a comment asserting a state the code has moved past
+   * is worse than no comment, because it is evidence somebody would rely on.
+   *
+   * `targetDate` is the
+   * one answer in the whole questionnaire that the app builds an engine output
+   * from and then could never change: `buildPlanForGoal` derives the plan's
+   * length, its Base/Build/Peak/Taper split and the countdown on Home from it,
+   * and there was no screen anywhere that wrote it — an athlete whose expedition
+   * moved had to delete the objective and lose its record.
+   *
+   * FALSE when the id is not an objective this athlete created. The seeded
+   * fixtures are DEV-only and are not theirs to move; returning false lets the
+   * screen say so rather than appearing to save.
+   */
+  setGoalTargetDate: (id: string, iso: string) => boolean;
+  /**
+   * The three answers that are the athlete's own description of themselves
+   * rather than a training constraint, changed after signup.
+   *
+   * ABSENT MEANS NOT TOUCHED, in every key — the same rule the restore and the
+   * server merge follow. An empty `disciplines` array is an ANSWER ("none of
+   * these yet") and is written as one; that is why the keys are optional rather
+   * than the values nullable.
+   *
+   * `name` is here because the coaching profile shows it back, NOT because this
+   * is where a name is changed — `profiles.display_name` is, through
+   * `settings/sync.ts:saveProfile` and the Edit profile screen. Anything that
+   * writes it here and not there leaves the two disagreeing in public.
+   */
+  updateAthleteBasics: (patch: {
+    name?: string;
+    disciplines?: Discipline[];
+    experience?: ExperienceLevel;
+  }) => void;
   /** Only goals the athlete created can be removed; the seeded ones are fixtures. */
   removeGoal: (id: string) => void;
   canRemoveGoal: (id: string) => boolean;
+  /**
+   * Finish an objective. The second, and last, edit AppState offers on a goal.
+   *
+   * `Goal.status` and `Goal.completedAt` have existed since the type was
+   * written and are read in eight places — `usePrimaryGoalWithProgress` already
+   * filters on `status === "active"`, `useGoalsWithProgress` already pins a
+   * finished goal to 100 — but NOTHING HAS EVER WRITTEN THEM. Every completed
+   * goal in the repository is a fixture. In the running app an objective could
+   * only be deleted, never finished, which meant the record of a trip somebody
+   * actually did could be kept only by leaving a dead countdown on Home for
+   * ever.
+   *
+   * `completedOn` is a CALENDAR DATE the athlete gives — the day the attempt
+   * ended, which is routinely not today — and never the clock. The same
+   * discipline as `tracking/adjustments.ts`, for the same reason: a date is a
+   * fact about the world; a timestamp taken here is a fact about when somebody
+   * got round to filling in a form.
+   *
+   * FALSE when the id is not an objective this athlete created, matching
+   * `canRemoveGoal`: the seeded DEV fixtures are not theirs to finish, and a
+   * screen that gets `false` says so rather than appearing to save.
+   *
+   * Deliberately NOT reversible here. "Un-finish this" is a different feature
+   * with a different question behind it, and nothing in the app needs it yet.
+   */
+  completeGoal: (id: string, completedOn: string) => boolean;
+  canCompleteGoal: (id: string) => boolean;
   objectives: SavedObjective[];
   addObjective: (o: Omit<SavedObjective, "addedAt">) => void;
   removeObjective: (id: string) => void;
@@ -817,7 +976,7 @@ interface AppStateValue {
   checkIns: CoachCheckIn[];
   /** Today's check-in, or undefined when it hasn't been done. Never a default. */
   todaysCheckIn: CoachCheckIn | undefined;
-  saveCheckIn: (c: Omit<CoachCheckIn, "date">) => void;
+  saveCheckIn: (c: CheckInAnswers) => void;
   coachProfile: CoachProfile;
   updateCoachProfile: (patch: Partial<CoachProfile>) => void;
   /** This month's Coach AI spend, in micro-dollars. Resets on the month boundary. */
@@ -1062,6 +1221,94 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
      */
     const sexNarrowing = rememberSexForEnergyFromSignup(a.sexAtBirth);
 
+    /*
+     * THE REST OF THE PROFILE, WHICH THIS FUNCTION USED TO DROP ON THE FLOOR.
+     *
+     * It wrote five things — onboarded, name, disciplines, experience and any
+     * goal — and every other answer on the object went nowhere. That was
+     * invisible at signup, because `Onboarding.finish()` writes the coaching
+     * profile itself a few lines earlier. It was not invisible on a SECOND
+     * DEVICE: `screens/auth/Auth.tsx` restores the server's answers blob and
+     * calls this function with it, so the new phone arrived with no equipment,
+     * no training days, no session length, no skills, no altitude and no
+     * limitations — and every engine that reads those fell back to its
+     * never-answered behaviour while the athlete had answered months ago.
+     *
+     * THE MERGE RULE IS THE ONE IN `settings/hydrate.ts`, NOT A SECOND ONE.
+     * A key this object does not carry is a question that was never answered —
+     * an older `answers_version`, a partial write, a record from before the
+     * field existed — and a fetch FILLS AND CORRECTS BUT NEVER EMPTIES. So
+     * every field below is written only when it is actually present, and an
+     * absent key leaves whatever this device holds exactly where it is.
+     *
+     * The device cannot be holding an UNSENT edit at this moment, which is the
+     * rule's third case: this runs on a sign-in, and `settings/hydrate.ts` has
+     * already parked or restored anything the previous account left queued.
+     */
+    const profilePatch: Partial<CoachProfile> = {};
+    if (a.disciplineExperience) {
+      /* Narrowed on the way in, not trusted: this arrives as raw `jsonb` from
+         `storedOnboarding`, so a key whose value is not one of the four levels
+         is dropped rather than handed to `experienceDimension` to render. */
+      const levels: CoachProfile["disciplineExperience"] = {};
+      for (const [id, level] of Object.entries(a.disciplineExperience)) {
+        if (
+          level === "beginner" ||
+          level === "intermediate" ||
+          level === "advanced" ||
+          level === "expert"
+        ) {
+          levels[id] = level;
+        }
+      }
+      if (Object.keys(levels).length > 0) profilePatch.disciplineExperience = levels;
+    }
+    if (a.availableEquipment && a.availableEquipment.length > 0) {
+      profilePatch.availableEquipment = a.availableEquipment;
+    }
+    if (a.trainingDays && a.trainingDays.length > 0) profilePatch.trainingDays = a.trainingDays;
+    if (typeof a.typicalSessionMin === "number")
+      profilePatch.typicalSessionMin = a.typicalSessionMin;
+    if (a.technicalSkills && a.technicalSkills.length > 0) {
+      profilePatch.technicalSkills = a.technicalSkills;
+    }
+    /* 0 is a REAL answer — "never above 1,000 m" — so this is a type test and
+       not a truth test. `bestAltitude` is what decides that zero is not a floor
+       worth reasoning from; this function does not get to decide it by
+       dropping the value. */
+    if (typeof a.maxAltitudeM === "number") profilePatch.maxAltitudeM = a.maxAltitudeM;
+    if (a.limitations && a.limitations.length > 0) profilePatch.limitations = a.limitations;
+    if (a.limitationsNote) profilePatch.limitationsNote = a.limitationsNote;
+    if (a.altitudeIllness) profilePatch.altitudeIllness = a.altitudeIllness;
+    if (a.trainingBaseline) profilePatch.trainingBaseline = a.trainingBaseline;
+    /* `null` is the decline and `undefined` is never-asked, and the engine
+       treats them identically — capped at moderate, with the cap in the
+       session's own cautions. So only a real level is written; neither absence
+       may overwrite a level this device already holds. */
+    if (typeof a.movementExperience === "string") {
+      profilePatch.movementExperience = a.movementExperience;
+    }
+
+    /*
+     * HEIGHT AND YEAR OF BIRTH LIVE IN `settings/store.ts`, not in this state,
+     * so they are put back where `fuelDay.dailyEnergyFor` looks for them.
+     *
+     * Outside `setState` for the reason the sex answer is: the updater runs
+     * twice under StrictMode and a storage write does not belong in a function
+     * React may treat as pure. Written only when the blob carries one AND this
+     * device is not already holding one — `declined.heightDeclined` is what
+     * records "asked and refused", and an absent number here must not be read
+     * as a refusal.
+     */
+    const held = currentSettings();
+    const bodyPatch: Partial<SettingsState> = {};
+    if (typeof a.heightCm === "number" && held.heightCm === undefined)
+      bodyPatch.heightCm = a.heightCm;
+    if (typeof a.birthYear === "number" && held.birthYear === undefined) {
+      bodyPatch.birthYear = a.birthYear;
+    }
+    if (Object.keys(bodyPatch).length > 0) patchSettings(bodyPatch);
+
     setState((s) => {
       /**
        * Only create a goal when the athlete named one we don't already track —
@@ -1091,8 +1338,16 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
                 subtitle: "Custom objective",
                 elevationM: a.goalElevationM,
                 mountainId: a.goalMountainId,
-                trainingStartedAt: new Date().toISOString(),
-                targetDate: monthsAhead(10),
+                trainingStartedAt: a.goalTrainingStartedAt ?? new Date().toISOString(),
+                /*
+                 * THE DATE THE ATHLETE ACTUALLY NAMED, when the record carries
+                 * one. `monthsAhead(10)` is a horizon nobody chose, and
+                 * `buildPlanForGoal` builds the whole plan backwards from this
+                 * field — so a restored objective used to produce a different
+                 * plan from the one on the phone that set it. The fallback
+                 * stays for records written before `goalTargetDate` existed.
+                 */
+                targetDate: a.goalTargetDate ?? monthsAhead(10),
                 preparation: 5,
                 status: "active" as const,
                 gaps: [
@@ -1110,6 +1365,18 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         disciplines: a.disciplines,
         experience: a.experience,
         customGoals,
+        /* Merged, never replaced: `profilePatch` holds only the keys the record
+           actually carries, so a field it says nothing about keeps whatever is
+           already on this device. */
+        coachProfile: { ...EMPTY_COACH_PROFILE, ...(s.coachProfile ?? {}), ...profilePatch },
+        /* Weight defaults to 72 kg for everybody who has never given one, so
+           `bodyMassKg` alone cannot say whether it is real — which is what
+           `bodyMassKgSet` exists for. Only a number on the record is written,
+           and never over one this device already holds. */
+        bodyMassKg:
+          typeof a.bodyMassKg === "number" && s.bodyMassKg === undefined
+            ? a.bodyMassKg
+            : s.bodyMassKg,
       };
     });
 
@@ -1356,11 +1623,28 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
   const todaysCheckIn = useMemo(() => checkIns.find((c) => c.date === todayKey()), [checkIns]);
 
-  const saveCheckIn = useCallback((c: Omit<CoachCheckIn, "date">) => {
+  /*
+   * THE ONE WRITE BOUNDARY FOR A CHECK-IN, AND THEREFORE THE ONE CLOCK.
+   *
+   * The date, the instant and the zone are stamped together here rather than in
+   * the screen, so they cannot disagree — and the time is stamped at all
+   * because a report made before a session and a report made after it say
+   * different things, and until now both arrived as "Tuesday". See `CheckIn`
+   * in @/coach/types.
+   */
+  const saveCheckIn = useCallback((c: CheckInAnswers) => {
+    const now = new Date();
     const date = todayKey();
+    const entry: CoachCheckIn = {
+      ...c,
+      date,
+      at: now.toISOString(),
+      timeZone: deviceTimeZone(),
+      utcOffsetMin: deviceUtcOffsetMin(now),
+    };
     setState((s) => {
       const rest = (s.checkIns ?? []).filter((x) => x.date !== date);
-      return { ...s, checkIns: [{ ...c, date }, ...rest].slice(0, 180) };
+      return { ...s, checkIns: [entry, ...rest].slice(0, 180) };
     });
   }, []);
 
@@ -1858,12 +2142,87 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     }));
   }, []);
 
+  const updateAthleteBasics = useCallback(
+    (patch: { name?: string; disciplines?: Discipline[]; experience?: ExperienceLevel }) => {
+      setState((s) => ({
+        ...s,
+        ...(patch.name !== undefined ? { name: patch.name } : {}),
+        ...(patch.disciplines !== undefined ? { disciplines: patch.disciplines } : {}),
+        ...(patch.experience !== undefined ? { experience: patch.experience } : {}),
+      }));
+    },
+    [],
+  );
+
   const removeGoal = useCallback((id: string) => {
     setState((s) => ({ ...s, customGoals: s.customGoals.filter((g) => g.id !== id) }));
   }, []);
 
+  /*
+   * The date, moved — and NOTHING ELSE MOVED WITH IT.
+   *
+   * `preparation` is derived from completed sessions and `trainingStartedAt`
+   * records when the build actually began; neither is a claim about the target
+   * date and neither is touched here. Moving a date must not silently rewrite
+   * how prepared somebody is, and re-stamping the start would erase the weeks
+   * they have already trained.
+   *
+   * The plan is not stored, so there is nothing to invalidate: `buildPlanForGoal`
+   * recomputes from `targetDate` on every read, which is why this one write is
+   * enough for Home, the Coach hub and the week to follow.
+   */
+  const setGoalTargetDate = useCallback(
+    (id: string, iso: string): boolean => {
+      if (!state.customGoals.some((g) => g.id === id)) return false;
+      setState((s) => ({
+        ...s,
+        customGoals: s.customGoals.map((g) => (g.id === id ? { ...g, targetDate: iso } : g)),
+      }));
+      return true;
+    },
+    [state.customGoals],
+  );
+
   const canRemoveGoal = useCallback(
     (id: string) => state.customGoals.some((g) => g.id === id),
+    [state.customGoals],
+  );
+
+  /*
+   * The objective, finished — and NOTHING ELSE FINISHED WITH IT.
+   *
+   * `preparation` is left exactly as it was: it counts sessions done against
+   * sessions planned, and an expedition that turned back in a storm did not
+   * retroactively complete its training. `useGoalsWithProgress` shows a
+   * finished goal at 100 for display, which is a rendering decision made there
+   * and visible there; this write does not bake it into the record.
+   *
+   * The plan is not stored, so there is nothing to tear down — every screen
+   * recomputes from the goal, and `usePrimaryGoalWithProgress` stops choosing
+   * this one the moment `status` changes.
+   *
+   * IDEMPOTENT ON AN ALREADY-FINISHED GOAL: the first completion date stands.
+   * Re-answering a debrief must not quietly restamp the day somebody came home.
+   */
+  const completeGoal = useCallback(
+    (id: string, completedOn: string): boolean => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(completedOn)) return false;
+      if (!state.customGoals.some((g) => g.id === id)) return false;
+      setState((s) => ({
+        ...s,
+        customGoals: s.customGoals.map((g) =>
+          g.id === id && g.status !== "completed"
+            ? { ...g, status: "completed", completedAt: completedOn }
+            : g,
+        ),
+      }));
+      return true;
+    },
+    [state.customGoals],
+  );
+
+  const canCompleteGoal = useCallback(
+    (id: string) => state.customGoals.some((g) => g.id === id && g.status !== "completed"),
     [state.customGoals],
   );
 
@@ -1917,7 +2276,11 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       toggleKudos,
       addGoal,
       removeGoal,
+      setGoalTargetDate,
+      updateAthleteBasics,
       canRemoveGoal,
+      completeGoal,
+      canCompleteGoal,
       objectives,
       addObjective,
       removeObjective,
@@ -2001,7 +2364,11 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       toggleKudos,
       addGoal,
       removeGoal,
+      setGoalTargetDate,
+      updateAthleteBasics,
       canRemoveGoal,
+      completeGoal,
+      canCompleteGoal,
       objectives,
       addObjective,
       removeObjective,

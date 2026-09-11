@@ -489,6 +489,11 @@ function ConnectionSummary({ state }: { state: OuraState }) {
   const line: Record<OuraState["status"], string> = {
     checking: "Checking…",
     "not-configured": "Not available in this build",
+    /* Its own line, never folded into "Not available in this build". A build
+       could be perfect and this would still say the same thing — the reason is
+       ICEFALL's unresolved agreement with Oura, printed underneath in
+       `state.detail`, and no button is drawn while it stands. */
+    "legal-hold": "Not switched on",
     "signed-out": "Signed out",
     "consent-required": "Waiting on your permission",
     disconnected: "No ring connected",

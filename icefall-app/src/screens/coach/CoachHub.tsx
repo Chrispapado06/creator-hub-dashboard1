@@ -20,11 +20,13 @@ import { Rise, Screen, Stagger } from "@/components/layout/chrome";
 import { UpgradePrompt } from "@/components/growth/UpgradePrompt";
 import { creditsLeft, isExhausted } from "@/coach/budget";
 import { useCoachIntel } from "@/coach/hooks";
+import { useWeeklyReview } from "@/coach/weeklyReviewStore";
 import { COACH_DISCLAIMER } from "@/coach/types";
 import { useUpgradeCopy } from "@/growth/upgradeCopy";
 import { FOCUS_LABELS, fmtDistance, fmtElevation } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/state/AppState";
+import { daysBetween, todayISO, useTrip } from "@/trip/trip";
 import type { TrainingDay } from "@/types";
 import {
   ACCENT,
@@ -362,6 +364,19 @@ export default function CoachHub() {
   const { goal, kind } = useObjective();
   const { coachInteractionsLeft, coachBudget } = useApp();
   const coachCopy = useUpgradeCopy("coach");
+  /* THE WEEK JUST GONE, COMPUTED WHEN THIS SCREEN LOADED AND WAITING.
+     This row is the whole of what "proactive" can honestly be in a PWA: there
+     is no native wrapper and no Apple push certificate, so nothing can reach a
+     closed app, and the row's own words are about a review that is HERE rather
+     than one that was sent. It appears only while the review is unread and only
+     when there is a real one — `unseen` is false for "your first week has not
+     finished yet", because a badge promising something to read has to be one. */
+  const { unseen: reviewWaiting, review } = useWeeklyReview();
+
+  /* THE OPEN TRIP, if there is one. Read here rather than inside the row so the
+     row itself stays a flat link with no logic in it. */
+  const { trip: openTrip } = useTrip();
+  const tripDay = openTrip ? daysBetween(openTrip.startDate, todayISO()) + 1 : 0;
 
   const [draft, setDraft] = useState("");
 
@@ -549,6 +564,70 @@ export default function CoachHub() {
               </div>
             </div>
           )}
+        </Rise>
+
+        {/* ---- The weekly review, while it is unread ------------------------ */}
+        {/* A FLAT ROW, not a card: no boxes. It is a link and a sentence, and
+            the sentence is the app's own count off the engine rather than a
+            teaser. */}
+        {reviewWaiting && review.window ? (
+          <Rise className="mt-5">
+            <Link
+              to="/coach/review"
+              className="-mx-5 flex items-center gap-3 border-y border-hairline px-5 py-3.5"
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block text-[11px] uppercase tracking-[0.1em] text-mist-dim">
+                  Weekly review · waiting for you
+                </span>
+                <span className="mt-1 block text-[14px] leading-relaxed text-snow">
+                  {review.window.label.charAt(0).toUpperCase() + review.window.label.slice(1)}:{" "}
+                  {review.counts.completedRecorded + review.counts.completedTicked} of{" "}
+                  {review.counts.prescribed} sessions completed
+                  {review.proposals.length > 0
+                    ? `, and ${review.proposals.length === 1 ? "one change" : `${review.proposals.length} changes`} to look at`
+                    : ""}
+                  .
+                </span>
+              </span>
+              <ChevronRight
+                size={16}
+                strokeWidth={1.8}
+                aria-hidden="true"
+                className="shrink-0 text-mist"
+              />
+            </Link>
+          </Rise>
+        ) : null}
+
+        {/* ---- Trip mode ---------------------------------------------------
+            A FLAT ROW, and always present rather than conditional on a trip
+            being open: this is the way to the altitude self-check, and a
+            safety surface you can only reach after filling in a setup form is
+            a safety surface people do not reach. The sentence changes with the
+            state; the row does not come and go. */}
+        <Rise className="mt-5">
+          <Link
+            to="/trip"
+            className="-mx-5 flex items-center gap-3 border-b border-hairline px-5 py-3.5"
+          >
+            <span className="min-w-0 flex-1">
+              <span className="block text-[11px] uppercase tracking-[0.1em] text-mist-dim">
+                {openTrip ? `Trip · day ${tripDay}` : "Trip mode"}
+              </span>
+              <span className="mt-1 block text-[14px] leading-relaxed text-snow">
+                {openTrip
+                  ? `${openTrip.name} — tonight's sleeping ceiling, the altitude self-check, and what you have recorded.`
+                  : "The altitude self-check and the acclimatisation schedule. Works with no signal, and is not a paid feature."}
+              </span>
+            </span>
+            <ChevronRight
+              size={16}
+              strokeWidth={1.8}
+              aria-hidden="true"
+              className="shrink-0 text-mist"
+            />
+          </Link>
         </Rise>
 
         {/* ---- Today's plan ------------------------------------------------ */}

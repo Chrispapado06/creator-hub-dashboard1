@@ -30,8 +30,10 @@ import {
 } from "@/components/map/icefallStyle";
 import { cn } from "@/lib/utils";
 import { fmtDate, fmtDistance, fmtDuration, fmtElevation, fmtPace, fmtTime } from "@/lib/format";
+import { startClockLabel } from "@/tracking/timeOfDay";
 import { loadActivities } from "@/tracking/store";
 import { activityById } from "@/tracking/activities";
+import { ActivityDebriefSection } from "@/components/tracker/ActivityDebrief";
 import { useMountainImage } from "@/components/domain/MountainImage";
 
 /**
@@ -82,6 +84,19 @@ export default function ActivityComplete() {
 
       <div className="px-5">
         <SummarySection activity={activity} />
+        {/*
+         * THE DEBRIEF — not in the 1:1 mockup, added second on purpose.
+         *
+         * It is the only thing on this screen ICEFALL cannot work out for
+         * itself, and the only one with a shelf life: an effort rating given
+         * an hour later is a different answer, and one given the next day is a
+         * memory. Everything below it — the replay, the share, the date and
+         * the temperature — is a record that will still be there tomorrow.
+         *
+         * It disappears into a summary of the answers once given, so a second
+         * visit to this screen is not a second interrogation.
+         */}
+        <ActivityDebriefSection activityId={activity.id} activityStartedAt={activity.startedAt} />
         <Replay activity={activity} />
         <ShareSection onShare={() => navigate(`/activity/${activity.id}/share`)} />
         <FactsRow activity={activity} />
@@ -216,7 +231,7 @@ function Header({
 
         <p className="tnum mt-1.5 text-[14px] text-mist">
           {fmtDate(activity.startedAt, { day: "numeric", month: "short", year: "numeric" })} ·{" "}
-          {fmtTime(activity.startedAt)}
+          {startClockLabel(activity) ?? fmtTime(activity.startedAt)}
           {activity.simulated && " · simulated"}
         </p>
 
@@ -656,7 +671,14 @@ function FactsRow({ activity }: { activity: Activity }) {
         label="Date"
         value={fmtDate(activity.startedAt, { day: "numeric", month: "short", year: "2-digit" })}
       />
-      <Fact icon={Clock} label="Start Time" value={fmtTime(activity.startedAt)} />
+      {/* The clock in the zone it was recorded in, qualified when it needs to be:
+          another zone gets named, and a start nobody gave says so rather than
+          presenting ICEFALL's own placement as the athlete's morning. */}
+      <Fact
+        icon={Clock}
+        label="Start Time"
+        value={startClockLabel(activity) ?? fmtTime(activity.startedAt)}
+      />
       {/*
        * TEMPERATURE ONLY. The mockup reads "12°C · Clear", but a recording
        * stores `temperatureC` and no sky condition — there is no observation

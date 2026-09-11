@@ -1369,6 +1369,10 @@ function ActivityTab({ recorded }: { recorded: ReturnType<typeof useRecordedActi
                   <Badge tone="alert">Simulated</Badge>
                 ) : r.origin.kind === "imported" ? (
                   <Badge>Imported · {WATCH_PROVIDER_NAME[r.origin.provider]}</Badge>
+                ) : r.origin.kind === "manual" ? (
+                  /* Self-reported stays labelled, on every surface it appears
+                     on — not only the one screen that wrote it. */
+                  <Badge>Reported</Badge>
                 ) : null}
               </div>
               <p className="mt-0.5 text-[11.5px] text-mist-dim">

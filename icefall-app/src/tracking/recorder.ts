@@ -1,3 +1,4 @@
+import { stampStartTime } from "./timeOfDay";
 import { GpsFilter, Rolling, gpsQualityFor, haversine, type FilterResult } from "./filters";
 import {
   MIN_DISPLAY_AVG_SPEED_MPS,
@@ -839,6 +840,11 @@ export class ActivityRecorder {
       title: type.label,
       startedAt: new Date(this.startedAt ?? Date.now()).toISOString(),
       endedAt: new Date(this.endedAt ?? Date.now()).toISOString(),
+      /* The zone the athlete was actually in, captured here because this is the
+         last moment anybody knows it. Read back later the instant alone cannot
+         say whether this was a 04:30 start or an evening walk — see
+         `tracking/timeOfDay.ts`. `measured`: the device stamped its own clock. */
+      ...stampStartTime(new Date(this.startedAt ?? Date.now()), "measured"),
       simulated: this.opts.simulated,
       origin: { kind: "icefall" },
 

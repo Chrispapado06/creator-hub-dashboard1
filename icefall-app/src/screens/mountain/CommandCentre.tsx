@@ -605,6 +605,10 @@ export default function CommandCentre() {
           Object.keys(coachProfile.disciplineExperience).length > 0
             ? coachProfile.disciplineExperience
             : undefined,
+        // Narrows the acclimatisation schedule on the altitude dimension and
+        // touches no score. This screen is the athlete's own, which is the
+        // condition the engine attaches to this field.
+        altitudeIllness: coachProfile.altitudeIllness,
       },
     });
   }, [goal, elevationM, lat, lon, surveyed, recorded, summitsLogged, coachProfile]);

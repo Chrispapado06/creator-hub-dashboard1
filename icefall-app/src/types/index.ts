@@ -166,6 +166,29 @@ export type TrainingFocus =
   | "rest"
   | "technical";
 
+/**
+ * A change somebody made to this day, as the day itself carries it.
+ *
+ * The record it comes from lives in `tracking/adjustments.ts`; this is the
+ * flattened form the calendar and the session screen render, so a screen
+ * drawing a day never has to go and look up whether it was adjusted.
+ *
+ * `summary` IS THE APP'S OWN SENTENCE and `why` is the reason given. They are
+ * kept apart on purpose: `why` may be the coach's words, which is what `by`
+ * says, and the two must never be shown as one voice.
+ */
+export interface TrainingDayAdjustment {
+  /** The adjustment record's id. Undo names exactly this. */
+  id: string;
+  by: "athlete" | "coach";
+  /** Why, in the words of whoever `by` names. */
+  why: string;
+  /** ISO timestamp the change was made. */
+  at: string;
+  /** One past-tense line, written by the app: "Moved to Sun 21 Sep". */
+  summary: string;
+}
+
 export interface TrainingDay {
   /** ISO date. */
   date: string;
@@ -177,6 +200,13 @@ export interface TrainingDay {
   durationMin?: number;
   difficulty: Difficulty;
   completed: boolean;
+  /**
+   * Set by `applyAdjustments` when a stored change touched this day, in the
+   * order the changes were applied. ABSENT on a day nobody has changed, and
+   * absent on the baseline `buildPlanForGoal` returns — the generator does not
+   * know this field exists, which is what keeps it a pure baseline.
+   */
+  adjusted?: TrainingDayAdjustment[];
 }
 
 export interface TrainingWeek {

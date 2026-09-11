@@ -25,7 +25,9 @@ import {
   type WatchFinalizeOutcome,
 } from "@/watch/connection";
 import { WATCH_PROVIDERS, WATCH_PROVIDER_NAME, type WatchProvider } from "@/watch/types";
+import { unmappedSports } from "@/watch/unmappedSports";
 import { WatchStatusMark, WatchTile } from "@/watch/WatchTile";
+import HealthAccounts from "./HealthAccounts";
 
 /**
  * CONNECTED ACCOUNTS — other services this account is linked to.
@@ -149,10 +151,21 @@ function watchOutcomeForWord(word: string, name: string): Outcome | null {
   }
 }
 
-const watchConnectedOutcome = (name: string): Outcome => ({
-  tone: "good",
+/**
+ * TWO ENDINGS, BECAUSE THE CONNECTION SUCCEEDING AND THE IMPORT WORKING ARE
+ * DIFFERENT FACTS. Every vendor reaches this line the same way — consent
+ * granted, token stored, account linked — but COROS cannot yet be read for
+ * activities (`readsActivities`), and telling somebody ICEFALL "can now bring
+ * across activities" when it provably cannot is the exact sentence this phase
+ * exists to delete. The good-news tone is kept in both: the link really did
+ * work, and that is worth saying.
+ */
+const watchConnectedOutcome = (name: string, readsActivities: boolean): Outcome => ({
+  tone: readsActivities ? "good" : "warn",
   title: `${name} connected`,
-  body: `ICEFALL can now bring across activities you record on your ${name} watch. Nothing arrives automatically — you choose when to check.`,
+  body: readsActivities
+    ? `ICEFALL can now bring across activities you record on your ${name} watch. Nothing arrives automatically — you choose when to check.`
+    : `Your ${name} account is linked and the permission was granted. Activities cannot be brought across yet, though: ${name} has not published the shape of the data it sends back, so ICEFALL has nothing to read it with. This is ICEFALL's missing piece, not a problem with your watch — nothing you do in the ${name} app will change it.`,
 });
 
 const watchPartialOutcome = (name: string): Outcome => ({
@@ -204,6 +217,13 @@ const WATCH_IMPORT_COPY: Record<ImportFailure, (name: string) => string> = {
     `${name} is limiting how often ICEFALL may ask. Nothing was brought across — try again in a few minutes.`,
   "no-mapping": (name) =>
     `ICEFALL cannot yet read the shape of the data ${name} returned, so nothing was brought across. Nothing was changed.`,
+  /* Not the same sentence as `no-mapping` above, and the difference matters to
+     the person reading it: that one means the vendor sent something
+     unexpected, this one means ICEFALL never had a reader for this vendor. The
+     wording has to rule out the two things they will otherwise blame — their
+     watch's sync, and their own settings. */
+  "reading-not-built": (name) =>
+    `ICEFALL cannot read ${name} activities yet. Your watch and your ${name} sync are fine — ${name} has not published how its activity data is shaped, so ICEFALL has nothing to read it with. Nothing was brought across and nothing was changed.`,
   unreachable: () =>
     "ICEFALL could not finish. Nothing was brought across, and nothing was changed.",
 };
@@ -294,6 +314,7 @@ export default function Connections() {
     if (
       !params.get("strava") &&
       !params.get("watch") &&
+      !params.get("health") &&
       !params.get("provider") &&
       !params.get("ticket")
     ) {
@@ -302,6 +323,12 @@ export default function Connections() {
     const next = new URLSearchParams(params);
     next.delete("strava");
     next.delete("watch");
+    /* `health` joins `strava` and `watch` here rather than being stripped by
+       `HealthAccounts` itself. One owner of the address on this screen; three
+       would race, and the losing two would delete a parameter the third had
+       not read yet. Child components read their arrival during render, which
+       happens before this effect, so nothing is lost by stripping it here. */
+    next.delete("health");
     next.delete("provider");
     next.delete("ticket");
     setParams(next, { replace: true });
@@ -324,7 +351,9 @@ export default function Connections() {
       if (res.ok) {
         setWatchOutcomeByProvider((prev) => ({
           ...prev,
-          [provider]: res.canImport ? watchConnectedOutcome(name) : watchPartialOutcome(name),
+          [provider]: res.canImport
+            ? watchConnectedOutcome(name, watch.byProvider[provider].readsActivities)
+            : watchPartialOutcome(name),
         }));
         /* COROS opens a deeper-history window for roughly 24 hours after
            authorization and never again without a reconnect — see
@@ -653,7 +682,9 @@ export default function Connections() {
         WATCH ACCOUNTS — the same doctrine as the Strava card above, generalised
         to four vendors. One box per provider (the same exception the owner's
         no-boxes rule leaves room for), in WATCH_PROVIDERS order: COROS first,
-        because it is the one that works.
+        because it is the one that CONNECTS. It is not yet the one that
+        imports — its card says so itself, from the server's `activityReading`
+        answer rather than from anything hardcoded here.
       */}
       <Rise className="pt-8">
         <SectionLabel>Watch accounts</SectionLabel>
@@ -685,6 +716,18 @@ export default function Connections() {
             it.
           </Fact>
         </div>
+        {/* THE SECTION ABOVE IS WRITTEN IN THE PRESENT TENSE, and for at least
+            one vendor that tense is currently wrong. Rather than hedge all
+            three Facts into uselessness, the exception is named here and named
+            by vendor, derived from the server's own answer so it disappears
+            without an edit the day that vendor becomes readable. */}
+        {WATCH_PROVIDERS.filter((p) => !watch.byProvider[p].readsActivities).map((p) => (
+          <p key={p} className="mt-3 text-[11.5px] leading-relaxed text-mist-dim">
+            Not yet from {WATCH_PROVIDER_NAME[p]}: {WATCH_PROVIDER_NAME[p]} has not published how
+            its activity data is shaped, so an account can be linked but nothing can be read out of
+            it.
+          </p>
+        ))}
       </Rise>
 
       <Rise className="pt-6">
@@ -702,7 +745,70 @@ export default function Connections() {
           has synced, not the moment you stop recording.
         </p>
       </Rise>
+
+      {/*
+        HEALTH AND RECOVERY — a third section, and a third kind of thing.
+
+        Strava moves an activity out. A watch brings an outing in. These four
+        bring physiology in: heart-rate variability, sleep stages, a recovery
+        score, a body weight. That needs its own explicit permission and its own
+        per-reading description, which is why it is its own component rather
+        than a fifth entry in the watch list above.
+      */}
+      <HealthAccounts />
     </SettingsPage>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Sports ICEFALL had no word for                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * THE FALLTHROUGH, SAID OUT LOUD.
+ *
+ * `watch/map.ts` files anything it does not recognise as "Other" and keeps the
+ * vendor's own word for it. That used to be the end of it: the athlete saw a
+ * mountaineering day filed as "Other" and had no way to tell whether ICEFALL
+ * had no word for their sport or whether the sport genuinely had no category,
+ * and nobody building ICEFALL could find out which value was missing without
+ * a real account to import from.
+ *
+ * So the miss is shown to the one person who can actually report it, with the
+ * vendor's exact string, because that string is what an ICEFALL builder needs
+ * to add the mapping — "it says Other" is not actionable, `activityId 83` is.
+ * Nothing is sent anywhere: this is read off the device by the person whose
+ * watch produced it.
+ *
+ * Renders nothing at all when every sport mapped, which is the normal case and
+ * must stay silent.
+ */
+function UnmappedSportsNote({ connection }: { connection: WatchConnection }) {
+  /* Read once per card render rather than held in state: the list only changes
+     when an import runs, and an import already triggers `reload()`. */
+  const missing = unmappedSports(connection.provider);
+  if (!missing.length) return null;
+  const name = WATCH_PROVIDER_NAME[connection.provider];
+
+  return (
+    <div className="space-y-1.5 pt-1.5">
+      <p className="text-mist">
+        {missing.length === 1
+          ? `One sport ${name} sent has no ICEFALL equivalent yet, so those activities were filed as Other:`
+          : `${missing.length} sports ${name} sent have no ICEFALL equivalent yet, so those activities were filed as Other:`}
+      </p>
+      {missing.slice(0, 6).map((u) => (
+        <p key={`${u.provider}:${u.sport}`} className="text-mist-dim">
+          <span className="text-snow">{u.sport === "" ? "(no sport given)" : u.sport}</span> —{" "}
+          {u.count === 1 ? "1 activity" : `${u.count} activities`}
+        </p>
+      ))}
+      {missing.length > 6 && <p className="text-mist-dim">and {missing.length - 6} more.</p>}
+      <p className="text-mist-dim">
+        Everything measured — time, distance, ascent, heart rate — came across intact; only the name
+        of the sport is missing. Telling us these values is what lets them be added.
+      </p>
+    </div>
   );
 }
 
@@ -838,11 +944,26 @@ function WatchCard({
               Permission to read activities was not granted, so nothing can be brought across yet.
             </p>
           )}
-          <p className="text-mist-dim">
-            ICEFALL brings across each activity's summary — time, distance, ascent, heart rate. It
-            does not bring the GPS track, so an imported activity draws no map and cannot be sent on
-            to Strava.
-          </p>
+          {connection.readsActivities ? (
+            <p className="text-mist-dim">
+              ICEFALL brings across each activity's summary — time, distance, ascent, heart rate. It
+              does not bring the GPS track, so an imported activity draws no map and cannot be sent
+              on to Strava.
+            </p>
+          ) : (
+            /* THE SENTENCE THAT WAS MISSING. Without it this card read
+               "Connected", offered a "Check for activities" button, and
+               returned "nothing new" forever — which an athlete can only read
+               as a fact about their own watch. Naming whose gap it is costs
+               one sentence and stops that. */
+            <p className="text-azure">
+              Activities cannot be brought across from {name} yet. {name} has not published how its
+              activity data is shaped, so ICEFALL has nothing to read it with. Your watch and your{" "}
+              {name} sync are not the problem, and nothing you change in the {name} app will make
+              activities appear here.
+            </p>
+          )}
+          <UnmappedSportsNote connection={connection} />
         </div>
       )}
 
@@ -873,6 +994,21 @@ function WatchCard({
         <p className="mt-4 border-t border-hairline pt-3.5 text-[11.5px] leading-relaxed text-mist-dim">
           {WATCH_REASON_SENTENCE[provider]}
         </p>
+      ) : connection.state === "connected" && !connection.readsActivities ? (
+        /* NO "CHECK FOR ACTIVITIES" BUTTON WHERE THERE IS NOTHING TO CHECK —
+           the same control-ladder rule as every branch above. The connection
+           itself is still removable, because it is real. */
+        <div className="mt-4 flex gap-2 border-t border-hairline pt-3.5">
+          <Button
+            size="sm"
+            variant={confirmOff ? "danger" : "secondary"}
+            className="flex-1"
+            disabled={busy}
+            onClick={() => (confirmOff ? void disconnect() : setConfirmOff(true))}
+          >
+            {confirmOff ? "Tap again to disconnect" : "Disconnect"}
+          </Button>
+        </div>
       ) : connection.state === "connected" ? (
         <div className="mt-4 flex gap-2 border-t border-hairline pt-3.5">
           <Button

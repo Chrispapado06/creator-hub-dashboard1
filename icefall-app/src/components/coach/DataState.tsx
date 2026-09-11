@@ -1,4 +1,4 @@
-import { CircleDashed, Hourglass, Lock, PenLine, Sigma, Unplug, UserRound } from "lucide-react";
+import { Activity, CircleDashed, Hourglass, Lock, PenLine, Sigma, Unplug, UserRound } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { isKnown, type Score, type Unavailable } from "@/coach/types";
@@ -24,6 +24,7 @@ import { isKnown, type Score, type Unavailable } from "@/coach/types";
  *   NOT ENOUGH DATA  recorded, but too thin to compute from   too-little-history · no-data
  *   ESTIMATED        a real value, derived rather than measured
  *   SELF-REPORTED    a real value, but an opinion not a measurement
+ *   MEASURED         a real value, taken by an instrument
  *
  * The last two are qualifiers rather than absences: the number is genuine, but
  * the athlete is owed the provenance before they act on it. A derived figure and
@@ -48,8 +49,14 @@ import { isKnown, type Score, type Unavailable } from "@/coach/types";
  * `self-reported` — the athlete's own opinion of how they feel. Never call this
  *                   a measurement: it moves with mood, and treating it as
  *                   physiology is exactly the overreach house rule 2 forbids.
+ * `measured`      — an instrument took this reading. The counterpart to
+ *                   `self-reported`, and it exists because the absence of a
+ *                   badge is not a claim: an unbadged number on a screen where
+ *                   most numbers are opinions reads as one more opinion. When a
+ *                   ring measured somebody's sleep, the screen should say so in
+ *                   the same register it uses to say the opposite.
  */
-export type DataQualifier = "estimated" | "self-reported";
+export type DataQualifier = "estimated" | "self-reported" | "measured";
 
 const QUALIFIER_COPY: Record<DataQualifier, { label: string; detail: string; icon: LucideIcon }> = {
   estimated: {
@@ -68,6 +75,14 @@ const QUALIFIER_COPY: Record<DataQualifier, { label: string; detail: string; ico
     // both: a check-in is the athlete's own report, and so is a skill.
     detail: "Your own report, not a measurement.",
     icon: UserRound,
+  },
+  measured: {
+    label: "Measured",
+    // Says WHAT it is, never what it means. A device measured a quantity; that
+    // is the whole claim, and the instrument's name and the day it measured are
+    // rendered beside the figure by the screen rather than crammed in here.
+    detail: "Taken by a connected device, not reported by you.",
+    icon: Activity,
   },
 };
 

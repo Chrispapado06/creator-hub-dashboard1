@@ -68,8 +68,7 @@ export function suggestedTreksFor(objectiveName: string | null | undefined): Tre
   const wanted = new Set(countryTokens(mountain.country));
   const sameCountry = TREKS.filter(
     (t) =>
-      !t.mountainIds.includes(mountain.id) &&
-      countryTokens(t.country).some((c) => wanted.has(c)),
+      !t.mountainIds.includes(mountain.id) && countryTokens(t.country).some((c) => wanted.has(c)),
   );
 
   const treks = [...linked, ...sameCountry].slice(0, MAX_SUGGESTIONS);
@@ -96,45 +95,20 @@ export function isTrekQuestion(q: string): boolean {
   return TREK_QUESTION.test(q);
 }
 
-/** One trek as a line of facts — exactly what the record holds, nothing else. */
-function trekLine(t: Trek): string {
-  const parts = [
-    trekDuration(t),
-    t.difficulty ?? "difficulty not graded",
-    t.maxAltitudeM ? `high point ${t.maxAltitudeM} m` : null,
-    t.season ? `season ${t.season}` : null,
-  ].filter(Boolean);
-  return `- ${t.name} (${t.country}): ${parts.join(" · ")}. ${t.summary}`;
-}
-
-/**
- * The block appended to the system prompt when the question is about treks.
+/*
+ * `trekContextBlock` WAS HERE AND IS GONE — Phase 2, step 3.
  *
- * It is handed to the model as DATA with a closed-world rule, because the
- * model's failure mode here is not rudeness but generosity: inventing a
- * lovely-sounding trek ICEFALL does not hold.
+ * It built the closed-world trek block for the system prompt. That job moved to
+ * `coach/routeSuggestions.ts`, which builds ONE block covering treks and trails
+ * together, because a question asking where to walk can want either and two
+ * blocks would eventually have disagreed with each other about what "near"
+ * meant. Deleted rather than left standing for exactly that reason: a second
+ * definition of the closed world is a second thing to keep true.
+ *
+ * The retrieval above it — `suggestedTreksFor` — is unchanged and is what the
+ * new block calls, so there is still only one answer to "which treks are near
+ * this objective".
  */
-export function trekContextBlock(objectiveName: string | null | undefined): string {
-  const s = suggestedTreksFor(objectiveName);
-
-  if (s.treks.length === 0) {
-    return `TREKS ICEFALL HOLDS NEAR THEIR OBJECTIVE
-None. ${
-      s.objectiveName
-        ? `ICEFALL's trek catalogue has nothing linked to ${s.objectiveName} or its country.`
-        : "They have no objective set, so there is no 'near' to search."
-    }
-- If asked for trek suggestions, say exactly that and point them to Explore → Treks to browse the full catalogue.
-- NEVER name a trek that is not in a list provided to you. No exceptions.`;
-  }
-
-  return `TREKS ICEFALL HOLDS NEAR THEIR OBJECTIVE (${s.objectiveName} — matched by ${s.basis})
-${s.treks.map(trekLine).join("\n")}
-
-- These are the ONLY treks you may suggest or name. They come from ICEFALL's own records.
-- Relay durations, difficulty and season exactly as written above — never adjust them.
-- Whether a trek suits their fitness is not established by this list; say the difficulty and let them judge, or defer to a guide.`;
-}
 
 /**
  * The scripted coach's answer to a trek question — the same retrieval, spoken

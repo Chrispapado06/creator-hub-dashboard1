@@ -29,9 +29,10 @@ import { PlatformMark, hasPlatformMark } from "@/components/ui/BrandMarks";
 import { cn } from "@/lib/utils";
 import { fmtDate, fmtElevation } from "@/lib/format";
 import { monthsAhead } from "@/data/mock/clock";
+import { ascentPaceFor, asAltitudeIllnessHistory } from "@/services/acclimatisation";
 import { sync } from "@/services/repository";
 import { PEAK_ATTRIBUTION, otherName, searchPeaks, type Peak } from "@/services/peaks";
-import { buildPlanForGoal } from "@/tracking/training";
+import { buildPlanForGoal, planShapeFor, type TrainingShape } from "@/tracking/training";
 import {
   useApp,
   type Gender,
@@ -45,6 +46,26 @@ import { saveSexAtBirth, saveSignupAnswers } from "@/settings/sync";
 import type { Discipline, ExperienceLevel, Goal } from "@/types";
 import type { Equipment } from "@/coach/exercises";
 import { SESSION_INTENTS, type IntentId } from "@/coach/sessionIntent";
+import { LIMITATIONS } from "@/coach/limitations";
+import {
+  ALTITUDE_BANDS,
+  ALTITUDE_ILLNESS,
+  BASELINES,
+  DISCIPLINES,
+  EQUIPMENT,
+  isoDayKey,
+  LEVELS,
+  LEVEL_TO_EXPERIENCE,
+  MOVEMENT_LEVELS,
+  parseIsoDayLocal,
+  pickEquipment,
+  SESSION_LENGTHS,
+  SKILL_GROUPS,
+  TIMELINES,
+  WEEK,
+  type Level,
+} from "@/coach/answers";
+import { canTrainAround, type MovementExperience } from "@/coach/sessions";
 import { useSettings } from "@/settings/store";
 
 /**
@@ -55,17 +76,22 @@ import { useSettings } from "@/settings/store";
  * and then ignores them is theatre, and the payoff screen at the end is the
  * proof — it states, per answer, what changed.
  *
- * Which means it also has to state what did NOT change. Two answers here are
- * currently stored on the profile and read by nothing:
+ * Which means it also has to state what did NOT change — and, when an answer
+ * is finally wired up, that the caveat comes out in the same commit as the
+ * wiring. Three did on 2026-09-11:
  *
- *   · trainingDays      — buildPlanForGoal lays down a fixed seven-day week
- *                         (six sessions, one rest day) and does not consult it
- *   · typicalSessionMin — buildSession takes its length from the plan's day,
- *                         and SessionDetail passes equipment only
+ *   · trainingDays      — the generated week now sits on the days the athlete
+ *                         gave, and a day they gave that a week does not use
+ *                         says so rather than going blank
+ *   · typicalSessionMin — every session but the long mountain day is cut to it,
+ *                         distance and vertical scaled with the time
+ *   · trainingBaseline  — how many sessions week 1 has and how much volume they
+ *                         carry, built up from what they already do
  *
- * They are asked because they belong on the profile and the athlete expects to
- * be asked, and the payoff says plainly that they do not yet move a session.
- * The moment either is wired up, delete the caveat — do not delete the answer.
+ * All three are `tracking/training.ts`. Until that day each of them reached one
+ * line of the coach's system prompt and nothing else, and three screens here
+ * said so in words. Those words are gone; do not reinstate them without taking
+ * the engine out too.
  *
  * Everything else is genuinely consumed:
  *
@@ -91,64 +117,11 @@ const DURATION = 0.38;
 /* Answer vocabularies                                                         */
 /* -------------------------------------------------------------------------- */
 
-type Level = "beginner" | "intermediate" | "advanced" | "expert";
-
-const LEVELS: { id: Level; label: string }[] = [
-  { id: "beginner", label: "Beginner" },
-  { id: "intermediate", label: "Intermediate" },
-  { id: "advanced", label: "Advanced" },
-  { id: "expert", label: "Expert" },
-];
-
-/**
- * Eight disciplines are offered; the app's `Discipline` union holds six.
- *
- * Mountain biking, alpine skiing and "other" have no member of that union, and
- * inventing one here would ripple through activity types and fixtures. They are
- * offered anyway — people do them — and they are not thrown away: every
- * selected discipline gets an experience row, and every row is written to
- * `disciplineExperience`, which is keyed by free-form string. Only the six the
- * union recognises reach `OnboardingAnswers.disciplines`.
- */
-interface DisciplineOption {
-  id: string;
-  label: string;
-  icon: typeof Footprints;
-  /** Present when this maps onto the app's own `Discipline` union. */
-  discipline?: Discipline;
-}
-
-const DISCIPLINES: DisciplineOption[] = [
-  { id: "hiking", label: "Hiking", icon: Footprints, discipline: "hiking" },
-  { id: "trail-running", label: "Trail running", icon: Wind, discipline: "trail-running" },
-  {
-    id: "mountaineering",
-    label: "Mountaineering",
-    icon: MountainSnow,
-    discipline: "mountaineering",
-  },
-  { id: "climbing", label: "Climbing", icon: Anchor, discipline: "climbing" },
-  { id: "ski-touring", label: "Ski touring", icon: Compass, discipline: "ski-touring" },
-  { id: "mountain-biking", label: "Mountain biking", icon: Bike },
-  { id: "alpine-skiing", label: "Alpine skiing", icon: Snowflake },
-  { id: "other", label: "Something else", icon: MoreHorizontal },
-];
-
-/**
- * A display-level summary only.
- *
- * `User.experience` is a single value and this flow asks per discipline, so the
- * strongest level is taken. Note what this is NOT used for: sessions.ts refuses
- * to map mountain experience onto movement difficulty, and nothing here changes
- * that — an athlete who has climbed for twenty years still gets a conservative
- * first barbell session, which is the correct outcome.
- */
-const LEVEL_TO_EXPERIENCE: Record<Level, ExperienceLevel> = {
-  beginner: "new",
-  intermediate: "developing",
-  advanced: "experienced",
-  expert: "advanced",
-};
+/* The lists themselves live in `@/coach/answers` — the edit screen in settings
+   asks the same questions, and one vocabulary is the only way the two can stay
+   the same question. What is left here is signup's alone: the curated
+   suggestions below read the mountain repository, and the objective picker is
+   not offered anywhere else. */
 
 const SUGGESTED_MOUNTAIN_IDS = ["mont-blanc", "matterhorn", "everest", "mount-olympus"];
 
@@ -170,175 +143,6 @@ const SUGGESTIONS: Peak[] = SUGGESTED_MOUNTAIN_IDS.flatMap((id) => {
     },
   ];
 });
-
-const TIMELINES: { id: string; label: string; months: number; assumed?: boolean }[] = [
-  { id: "6m", label: "Within 6 months", months: 6 },
-  { id: "1y", label: "Within a year", months: 12 },
-  { id: "2y", label: "Within two years", months: 24 },
-  // A plan has to be built backwards from a date, so "not sure" still needs
-  // one. Twelve months is used and the payoff screen says it was assumed.
-  { id: "unsure", label: "Not sure yet", months: 12, assumed: true },
-];
-
-/** JS day indices, Monday first. `CoachProfile.trainingDays` is 0 = Sunday. */
-const WEEK: { day: number; label: string; full: string }[] = [
-  { day: 1, label: "Mon", full: "Monday" },
-  { day: 2, label: "Tue", full: "Tuesday" },
-  { day: 3, label: "Wed", full: "Wednesday" },
-  { day: 4, label: "Thu", full: "Thursday" },
-  { day: 5, label: "Fri", full: "Friday" },
-  { day: 6, label: "Sat", full: "Saturday" },
-  { day: 0, label: "Sun", full: "Sunday" },
-];
-
-/**
- * `Date` → bare `YYYY-MM-DD`, LOCAL. Never `toISOString().slice(0,10)`, which is
- * the UTC day and therefore tomorrow for anyone east of Greenwich in the
- * evening — the mirror of the bug fixed in `f2cb54c` at the render end.
- */
-function isoDayKey(d: Date): string {
-  const p = (n: number) => (n < 10 ? `0${n}` : `${n}`);
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
-
-/** Bare `YYYY-MM-DD` → local `Date`, or null. Strict: rejects 2027-02-31. */
-function parseIsoDayLocal(key: string): Date | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key);
-  if (!m) return null;
-  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
-  const date = new Date(y, mo - 1, d);
-  if (date.getFullYear() !== y || date.getMonth() !== mo - 1 || date.getDate() !== d) return null;
-  return date;
-}
-
-const SESSION_LENGTHS = [30, 45, 60, 90, 120];
-
-/** Labels for the real `Equipment` union — see src/coach/exercises.ts. */
-/**
- * What ICEFALL must train AROUND — owner addition, 2026-09-01.
- *
- * THE BOUNDARY, AND WHY IT IS THE WHOLE POINT OF THIS QUESTION.
- *
- * The coach's system prompt already says "You are NOT a doctor. Defer anything
- * medical." That instruction stays, and this answer does not soften it. What
- * this list does is CONSTRAIN WHAT MAY BE PRESCRIBED — it must never invite
- * diagnosis, interpretation or reassurance.
- *
- * So: the coach may avoid loading a declared knee. It may not say what is wrong
- * with the knee, may not suggest it is healing, and may not adjust "because of"
- * a condition in a way that reads as a medical judgement. The answer travels as
- * a hard constraint list, never as clinical context — §6am's closed world in a
- * new place: the coach chooses from what it may prescribe rather than reasoning
- * about a body it has never examined.
- *
- * These are broad categories on purpose. A finer list would invite people to
- * describe a diagnosis, which is exactly the thing this must not collect.
- */
-const LIMITATIONS: { id: string; label: string }[] = [
-  { id: "knee", label: "Knee" },
-  { id: "back", label: "Back" },
-  { id: "shoulder", label: "Shoulder" },
-  { id: "ankle-foot", label: "Ankle or foot" },
-  { id: "breathing", label: "Asthma or breathing" },
-  { id: "heart", label: "Heart" },
-  { id: "recent-surgery", label: "Recent surgery" },
-  { id: "other", label: "Something else" },
-];
-
-/** Where the athlete is starting FROM, not where they are going. */
-const BASELINES: { id: string; label: string; note: string }[] = [
-  { id: "none", label: "Not training right now", note: "The plan starts from here, and builds." },
-  { id: "occasional", label: "Occasionally", note: "Less than once a week." },
-  { id: "1-2", label: "1–2 days a week", note: "" },
-  { id: "3-4", label: "3–4 days a week", note: "" },
-  { id: "5-plus", label: "5+ days a week", note: "" },
-];
-
-/**
- * Altitude illness history. Constrains ascent-rate guidance; diagnoses nothing.
- *
- * "Never been high enough to know" is a real and common answer, and collapsing
- * it into "never" would turn an absence of exposure into a clean record.
- */
-const ALTITUDE_ILLNESS: { id: string; label: string; note: string }[] = [
-  { id: "never", label: "Never", note: "Been to altitude and had no trouble." },
-  { id: "mild", label: "Mild", note: "Headache, poor sleep, loss of appetite." },
-  { id: "serious", label: "Serious", note: "HAPE or HACE, or a descent for symptoms." },
-  { id: "unknown", label: "Never been high enough to know", note: "Not the same as never." },
-];
-
-const EQUIPMENT: { id: Equipment; label: string; note?: string }[] = [
-  { id: "none", label: "Bodyweight only", note: "No kit at all" },
-  { id: "dumbbells", label: "Dumbbells" },
-  { id: "barbell", label: "Barbell" },
-  { id: "kettlebell", label: "Kettlebell" },
-  { id: "pull-up-bar", label: "Pull-up bar" },
-  { id: "bench", label: "Bench" },
-  { id: "step", label: "Step or box" },
-  { id: "resistance-band", label: "Resistance band" },
-  { id: "treadmill", label: "Treadmill" },
-  { id: "stairs", label: "Stairs" },
-  { id: "pack", label: "Weighted pack" },
-  { id: "hangboard", label: "Hangboard" },
-];
-
-/**
- * The technical competences ICEFALL can actually check an objective against.
- *
- * Every string here is one of the skills `peakAssessment` lists for a band, so
- * `mountainReadiness.skillClaimed` matches it and the requirement is marked as
- * reported. That constraint is the whole point: offering "lead rock" — which no
- * band asks for — would look thorough and do nothing but drag the technical
- * score down, because any claim at all switches that dimension from "withheld"
- * to scored. A tile that cannot be credited is not offered.
- */
-const SKILL_GROUPS: { title: string; skills: string[] }[] = [
-  {
-    title: "Hill and scrambling ground",
-    skills: [
-      "Navigation in poor visibility",
-      "Grade I–II scrambling",
-      "Comfort with exposure",
-      "Rockfall awareness",
-    ],
-  },
-  {
-    title: "Snow, ice and glacier",
-    skills: [
-      "Crampon and ice-axe technique",
-      "Self-arrest on steep snow",
-      "Roped glacier travel",
-      "Crevasse rescue",
-      "Efficient rope work on mixed ground",
-      "Reading snow and serac hazard",
-    ],
-  },
-  {
-    title: "Altitude and expedition",
-    skills: [
-      "Staged acclimatisation",
-      "Recognising acute mountain sickness",
-      "Cold-injury prevention",
-      "Fixed-line ascent and descent",
-      "Supplementary oxygen systems",
-    ],
-  },
-];
-
-/**
- * Bands, stored as the lower bound.
- *
- * The bottom band stores 0, which `bestAltitude` ignores because it requires a
- * value above zero. That is correct: "I have never been above 1,000 m" is an
- * answer, but it is not an altitude floor worth reasoning from.
- */
-const ALTITUDE_BANDS: { id: string; label: string; lowerM: number }[] = [
-  { id: "b0", label: "Under 1,000 m", lowerM: 0 },
-  { id: "b1", label: "1,000 – 3,000 m", lowerM: 1000 },
-  { id: "b2", label: "3,000 – 4,500 m", lowerM: 3000 },
-  { id: "b3", label: "4,500 – 6,000 m", lowerM: 4500 },
-  { id: "b4", label: "Above 6,000 m", lowerM: 6000 },
-];
 
 /**
  * Gender.
@@ -614,7 +418,11 @@ interface HeardAboutOption {
 
 const HEARD_ABOUT: HeardAboutOption[] = [
   { id: "friend", label: "A friend, or someone I climb with", icon: Users },
-  { id: "guide-or-operator", label: "A guide, a club, or an expedition company", icon: MountainSnow },
+  {
+    id: "guide-or-operator",
+    label: "A guide, a club, or an expedition company",
+    icon: MountainSnow,
+  },
   { id: "instagram", label: "Instagram" },
   { id: "youtube", label: "YouTube" },
   { id: "tiktok", label: "TikTok" },
@@ -869,6 +677,7 @@ type StepKey =
   | "days"
   | "length"
   | "equipment"
+  | "movement"
   | "skills"
   | "altitude"
   | "altitudeIllness"
@@ -898,6 +707,7 @@ const ALL_QUESTION_STEPS: StepKey[] = [
   "days",
   "length",
   "equipment",
+  "movement",
   "skills",
   "altitude",
   "altitudeIllness",
@@ -957,6 +767,12 @@ export default function Onboarding() {
   const [days, setDays] = useState<number[]>([]);
   const [sessionMin, setSessionMin] = useState<number | null>(null);
   const [equipment, setEquipment] = useState<Equipment[]>([]);
+  /**
+   * `null` until the step is answered, and "unstated" is one of the answers.
+   * The gate below reads the difference: nobody may pass this step without
+   * deciding, and deciding to say nothing is a decision the engine handles.
+   */
+  const [movementLevel, setMovementLevel] = useState<MovementExperience | "unstated" | null>(null);
   const [skills, setSkills] = useState<string[]>([]);
   const [altitudeId, setAltitudeId] = useState<string | null>(null);
   const [name, setName] = useState(account?.name ?? "");
@@ -1045,6 +861,9 @@ export default function Onboarding() {
       "days",
       "length",
       "equipment",
+      // Straight after "equipment", because the two are the same question asked
+      // twice: what you can train with, and what you can train with it.
+      "movement",
       "skills",
       "altitude",
       "altitudeIllness",
@@ -1090,9 +909,21 @@ export default function Onboarding() {
       disciplineExperience: levels,
       availableEquipment: equipment,
       trainingDays: days,
-      // The stored default is 60; an unanswered step must not silently claim a
-      // different one, so the same 60 is written back.
-      typicalSessionMin: sessionMin ?? 60,
+      // No fallback. The profile no longer holds a default 60, because this
+      // number is now a cap the plan generator applies — writing 60 for an
+      // unanswered step would cut the week of somebody who never answered.
+      // The step gates until answered, so `null` here can only mean a build
+      // that changed under the athlete mid-flow.
+      typicalSessionMin: sessionMin ?? undefined,
+      /*
+       * `undefined` for the decline, and that is the whole point of writing it.
+       * "Rather not say" and "never asked" produce the same session — capped at
+       * moderate, with a caution saying why — so this field must not invent a
+       * level to stand in for silence. It is the strength answer ONLY; nothing
+       * here may fall back to `disciplineExperience` above.
+       */
+      movementExperience:
+        movementLevel === null || movementLevel === "unstated" ? undefined : movementLevel,
       technicalSkills: skills,
       maxAltitudeM: ALTITUDE_BANDS.find((b) => b.id === altitudeId)?.lowerM,
     });
@@ -1113,6 +944,28 @@ export default function Onboarding() {
      * own goals, or AppState needs a way to retarget an existing one. Neither
      * belongs in this file.
      */
+    /*
+     * THE OBJECTIVE AS THE SERVER WILL HOLD IT, kept out of `answers` below on
+     * purpose.
+     *
+     * `answers.goalName` stays "" because `completeOnboarding` creates a goal
+     * from it, and `addGoal` a few lines down has already created this one —
+     * two calls, two goals, both for the same mountain. The SERVER has the
+     * opposite problem: a record with no objective restores a phone with no
+     * objective and therefore no plan, which is what happened on every second
+     * device until now. So the objective rides to the server on its own keys,
+     * and `completeOnboarding` reads them only on the restore path, where there
+     * is nothing to duplicate.
+     */
+    let objective: {
+      goalName: string;
+      goalMountainId?: string;
+      goalElevationM?: number;
+      goalTargetDate: string;
+      goalTrainingStartedAt: string;
+      goalDateAssumed: boolean;
+    } | null = null;
+
     if (goalPeak) {
       const timeline = TIMELINES.find((t) => t.id === timelineId) ?? TIMELINES[1];
       const curated = goalPeak.curatedId ? sync.mountainById(goalPeak.curatedId) : undefined;
@@ -1157,6 +1010,15 @@ export default function Onboarding() {
           "Baseline fitness assessment outstanding",
         ],
       });
+
+      objective = {
+        goalName: goalPeak.name,
+        ...(goalPeak.curatedId ? { goalMountainId: goalPeak.curatedId } : {}),
+        ...(typeof goalPeak.elevationM === "number" ? { goalElevationM: goalPeak.elevationM } : {}),
+        goalTargetDate: targetDate,
+        goalTrainingStartedAt: trainingStartedAt,
+        goalDateAssumed: !picked && Boolean(timeline.assumed),
+      };
 
       setCreated({
         peak: goalPeak,
@@ -1203,6 +1065,9 @@ export default function Onboarding() {
       limitationsNote: limitationsNote.trim(),
       altitudeIllness,
       trainingBaseline: baseline,
+      // `null` is the decline here, and absent is never-asked — so unlike the
+      // three below this one does NOT collapse to undefined. See MOVEMENT_LEVELS.
+      movementExperience: movementLevel === "unstated" ? null : movementLevel,
       /*
        * `?? undefined`, never `?? null` and never a fallback value. The
        * gate above cannot be passed without answering, so these are only
@@ -1225,7 +1090,30 @@ export default function Onboarding() {
       experience: strongest ? LEVEL_TO_EXPERIENCE[strongest] : "new",
       // Deliberately blank: completeOnboarding would otherwise create a second
       // goal on a hardcoded ten-month horizon, ignoring the timeline answer.
+      // The server gets the real objective — see `objective` above.
       goalName: "",
+      /*
+       * THE HALF OF THE QUESTIONNAIRE THAT USED TO STOP AT THIS PHONE.
+       *
+       * All seven went to the local `CoachProfile` twenty lines above and were
+       * not on this object at all, so `syncOnboarding` never carried them and a
+       * second device restored an athlete with no equipment, no training days,
+       * no session length, no skills and no altitude. They are written here in
+       * the SAME shape `coach/profileBinding.ts` sends and
+       * `settings/hydrate.ts` merges, so signup and the edit screen cannot put
+       * two different records on one account.
+       *
+       * `?? undefined` on the two optional numbers, never a fallback value:
+       * absent has to keep meaning never-answered, and a 60 or a 0 written here
+       * would be ICEFALL answering on somebody's behalf — the bug argued at
+       * `CoachProfile.typicalSessionMin`.
+       */
+      disciplineExperience: levels,
+      availableEquipment: equipment,
+      trainingDays: days,
+      typicalSessionMin: sessionMin ?? undefined,
+      technicalSkills: skills,
+      maxAltitudeM: ALTITUDE_BANDS.find((b) => b.id === altitudeId)?.lowerM,
     };
     /*
      * The body answers, written where each is actually read.
@@ -1325,7 +1213,19 @@ export default function Onboarding() {
      * payoff panel reports it — this paragraph may not promise a benefit the
      * panel is about to have to walk back.
      */
-    void syncOnboarding({ ...answers }).then(() => {
+    /* The body numbers go with them. They are read from the same three pieces of
+       state the local writes above use — never re-parsed differently — so the
+       server's copy and this phone's copy are the same number or neither is
+       written. */
+    void syncOnboarding({
+      ...answers,
+      ...(objective ?? {}),
+      ...(Number.isFinite(kg) && kg > 0 ? { bodyMassKg: kg } : {}),
+      ...(!heightPrivate && Number.isFinite(cm) && cm > 0 ? { heightCm: Math.round(cm) } : {}),
+      ...(!birthYearPrivate && Number.isFinite(year) && year > 1900
+        ? { birthYear: Math.round(year) }
+        : {}),
+    }).then(() => {
       void saveSignupAnswers({
         gender: gender ?? undefined,
         heardAbout: heardAbout ?? undefined,
@@ -1355,6 +1255,7 @@ export default function Onboarding() {
     goalPeak,
     heardAbout,
     levels,
+    movementLevel,
     name,
     sessionMin,
     sexAtBirth,
@@ -1407,7 +1308,7 @@ export default function Onboarding() {
       out.push("No fixed days — the week stays flexible");
     }
 
-    if (sessionMin !== null) out.push(`Sessions at ${sessionMin} minutes`);
+    if (sessionMin !== null) out.push(`Cutting sessions to ${sessionMin} minutes`);
 
     if (baseline) {
       const b = BASELINES.find((x) => x.id === baseline);
@@ -1415,10 +1316,36 @@ export default function Onboarding() {
     }
 
     if (limitations.length > 0) {
-      const labels = limitations
-        .map((id) => LIMITATIONS.find((l) => l.id === id)?.label.toLowerCase())
-        .filter(Boolean);
-      out.push(`Working around your ${labels.join(", ")}`);
+      const labels = limitations.map(
+        (id) => LIMITATIONS.find((l) => l.id === id)?.label.toLowerCase() ?? id,
+      );
+      /*
+       * THIS LINE IS EARNED, AND ONLY SINCE 2026-09-11. It was written when
+       * `limitations` reached the model's prompt and nothing else, and for
+       * that whole period it claimed a generator that did not exist. It now
+       * describes `modifyLimitations` in `coach/sessions.ts`, folded into
+       * every session before the athlete touches it (`SessionDetail`).
+       *
+       * IT IS EARNED PER AREA, WHICH IS WHY THERE ARE TWO LINES. The engine
+       * works from the joints a movement loads, so it can train around a knee,
+       * a back, a shoulder or an ankle and can do nothing at all about asthma,
+       * a heart or recent surgery. Leaving both under one "working around your
+       * knee, heart" would make this screen the one place ICEFALL claims to
+       * have handled something it cannot touch.
+       *
+       * `canTrainAround` IS the engine's matcher, asked directly rather than
+       * copied. A second hand-written list here would be right today and wrong
+       * the first time somebody adds an area to DISCOMFORT_AREAS.
+       */
+      const shaped = labels.filter((l) => canTrainAround(l));
+      const unshaped = labels.filter((l) => !canTrainAround(l));
+
+      if (shaped.length > 0) out.push(`Working around your ${shaped.join(", ")}`);
+      if (unshaped.length > 0) {
+        out.push(
+          `Noting your ${unshaped.join(", ")} — sessions cannot be built around ${unshaped.length === 1 ? "it" : "them"}`,
+        );
+      }
     }
 
     if (equipment.includes("none")) {
@@ -1427,8 +1354,41 @@ export default function Onboarding() {
       out.push(`Built for the ${equipment.length} pieces of kit you have`);
     }
 
+    /*
+     * EARNED FROM 2026-09-11, like the limitations lines above. The difficulty
+     * cap is applied by `buildSession` in `coach/sessions.ts`, which the session
+     * screen and the coach's own context both call with this answer — so this
+     * line describes a generator that exists rather than an intention.
+     */
+    if (movementLevel !== null) {
+      out.push(
+        movementLevel === "unstated"
+          ? "Movements capped at moderate — strength experience not stated"
+          : `Movements graded no harder than ${MOVEMENT_LEVELS.find((m) => m.id === movementLevel)?.label.toLowerCase()}`,
+      );
+    }
+
     if (altitudeIllness === "mild" || altitudeIllness === "serious") {
-      out.push("Conservative ascent rates, as you asked");
+      /*
+       * THIS LINE READ "nothing here changes an ascent rate yet" UNTIL THE
+       * ENGINE LANDED, and it had to: the answer reached `coach/context.ts`
+       * and stopped, so a promised rate would have been a rate nothing
+       * computed. `services/acclimatisation.ts` now computes one, and this
+       * line quotes IT rather than describing an intention.
+       *
+       * It is asked per objective, not stated flatly, because the schedule
+       * only exists above 3,500 m. On a lower objective there is nothing to
+       * make conservative and the line says exactly that — the same per-case
+       * honesty the limitations lines above are built on.
+       */
+      const pace = goalPeak ? ascentPaceFor(goalPeak.elevationM, altitudeIllness) : null;
+      out.push(
+        pace?.narrowed
+          ? `Ascent slowed to ${pace.maxSleepGainM} m of sleeping altitude a night`
+          : goalPeak
+            ? "Altitude illness recorded — this objective has no staged ascent to slow"
+            : "Altitude illness recorded — it slows the ascent once you set an objective",
+      );
     }
 
     return out;
@@ -1440,6 +1400,7 @@ export default function Onboarding() {
     equipment,
     goalPeak,
     limitations,
+    movementLevel,
     noFixedDays,
     questions.length,
     sessionMin,
@@ -1517,6 +1478,10 @@ export default function Onboarding() {
         // "Bodyweight only" is in the list as a real option, so non-empty IS
         // answered — no extra tile needed here.
         return equipment.length > 0;
+      case "movement":
+        // "Rather not say" is one of the rows, so `null` here can only mean the
+        // step was never touched.
+        return movementLevel !== null;
       case "skills":
         return skills.length > 0 || noSkills;
       case "altitude":
@@ -1524,7 +1489,9 @@ export default function Onboarding() {
       case "body":
         // Weight is genuinely required — it is the calorie estimate's only
         // input. Height and year accept "prefer not to say" as the answer.
-        return validWeight && (validHeight || heightPrivate) && (validBirthYear || birthYearPrivate);
+        return (
+          validWeight && (validHeight || heightPrivate) && (validBirthYear || birthYearPrivate)
+        );
       case "altitudeIllness":
         return altitudeIllness !== null;
       case "baseline":
@@ -1750,7 +1717,9 @@ export default function Onboarding() {
                         {(() => {
                           // The curated grade where one exists; otherwise the
                           // country, which is a fact. See `services/peakTier.ts`.
-                          const c = goalPeak.curatedId ? sync.mountainById(goalPeak.curatedId) : undefined;
+                          const c = goalPeak.curatedId
+                            ? sync.mountainById(goalPeak.curatedId)
+                            : undefined;
                           const tail = c?.difficultyLabel ?? goalPeak.country;
                           return tail ? ` · ${tail}` : "";
                         })()}
@@ -1889,7 +1858,7 @@ export default function Onboarding() {
                 <StepHead
                   eyebrow="Training days"
                   title="Which days are yours?"
-                  subtitle="The days you can normally train, saved to your profile."
+                  subtitle="Your plan is built on these days and no others. Pick three and you get three sessions, not six you will miss."
                 />
                 <div className="mt-7 grid grid-cols-4 gap-2">
                   {WEEK.map((d) => {
@@ -1932,9 +1901,9 @@ export default function Onboarding() {
                 >
                   <span className="block text-[13px] text-snow">No fixed days — it varies</span>
                   <span className="mt-1 block pr-6 text-[11px] leading-relaxed text-mist-dim">
-                    Recorded on your profile as its own answer. Either way, the generated week is
-                    currently a fixed six sessions and one rest day — ICEFALL does not yet move
-                    sessions onto the days you pick.
+                    Recorded as its own answer. Your plan then keeps the standard week — sessions
+                    Monday to Wednesday and Friday to Sunday, rest on Thursday — because ICEFALL
+                    will not invent days you did not give it.
                   </span>
                   {noFixedDays && <Ticked />}
                 </button>
@@ -1959,10 +1928,10 @@ export default function Onboarding() {
                   ))}
                 </div>
                 <EmptyMeaning>
-                  Recorded on your profile. Sessions are still prescribed at the length the plan
-                  sets for that kind of day — ICEFALL does not yet cut them to this number. When one
-                  does not fit, the session screen will rebuild it around the time you actually
-                  have.
+                  Every session is cut to this, and the distance and vertical come down with the
+                  time — the one exception is the long mountain day, which this question already
+                  sets aside. When a session still does not fit, the session screen will rebuild it
+                  around the time you actually have.
                 </EmptyMeaning>
               </>
             )}
@@ -1982,7 +1951,7 @@ export default function Onboarding() {
                         key={e.id}
                         selected={on}
                         className="p-3.5"
-                        onClick={() => setEquipment((s) => toggle(s, e.id))}
+                        onClick={() => setEquipment((s) => pickEquipment(s, e.id))}
                       >
                         <span className="block pr-5 text-[13px] leading-snug text-snow">
                           {e.label}
@@ -1998,7 +1967,35 @@ export default function Onboarding() {
                   Choosing nothing is different from choosing "bodyweight only". Nothing means you
                   have not told ICEFALL, so sessions are built as normal with a note that they
                   assume the movements are available. "Bodyweight only" is a statement, and sessions
-                  are then built without equipment at all.
+                  are then built without equipment at all — which is why it clears the rest of the
+                  list, and why picking anything else clears it.
+                </EmptyMeaning>
+              </>
+            )}
+
+            {step === "movement" && (
+              <>
+                <StepHead
+                  eyebrow="Strength work"
+                  title="How much strength training have you done?"
+                  subtitle="Not the same question as your mountain experience, and ICEFALL will not read one as the other. This one sets how hard a movement it is willing to put in front of you."
+                />
+                <div className="mt-7 space-y-2">
+                  {MOVEMENT_LEVELS.map((m) => (
+                    <ChoiceRow
+                      key={m.id}
+                      label={m.label}
+                      detail={m.note}
+                      selected={movementLevel === m.id}
+                      onClick={() => setMovementLevel(m.id)}
+                    />
+                  ))}
+                </div>
+                <EmptyMeaning>
+                  This one changes your sessions directly: it is the ceiling on how hard a movement
+                  may be prescribed, and how many the main block carries. Years on the hill do not
+                  move it — loading a bar is a different skill, and assuming one from the other is
+                  how people get hurt in a gym rather than on a mountain.
                 </EmptyMeaning>
               </>
             )}
@@ -2109,9 +2106,21 @@ export default function Onboarding() {
                 <StepHead
                   eyebrow="Your name"
                   title="Last one."
-                  // Not "you can change it later in Settings" — no screen edits
-                  // the name today, and promising one would be a small lie.
-                  subtitle="What ICEFALL should call you. It stays on this device; there is no account server behind it."
+                  /*
+                   * WAS "It stays on this device; there is no account server
+                   * behind it" — true while these screens matched an email
+                   * against localStorage, false since the real one landed on
+                   * 2026-08-30. This name travels: it goes into the `answers`
+                   * blob `syncOnboarding` upserts onto `athlete_profiles`, and
+                   * `storedOnboarding` hands it back when the same person signs
+                   * in on another phone.
+                   *
+                   * Still no "you can change it later in Settings". Settings
+                   * edits `profiles.display_name`, which is the name OTHER
+                   * people see — a different field from this one, and pointing
+                   * at it here would send somebody to change the wrong thing.
+                   */
+                  subtitle="What ICEFALL should call you. It is saved with your account, so signing in on another phone does not ask you everything again."
                 />
                 <input
                   value={name}
@@ -2282,7 +2291,14 @@ export default function Onboarding() {
                       setHeightCm(v);
                     }}
                     placeholder="178"
-                    note="Recorded only. Nothing in ICEFALL uses it yet."
+                    /* WAS "Recorded only. Nothing in ICEFALL uses it yet." —
+                       corrected 2026-09-11. Height moves a number the athlete
+                       can see on the Fuel screen: `coach/fuelDay.ts` picks
+                       Mifflin-St Jeor over an equation with no height term in
+                       it. "With your year of birth" is not a hedge — that
+                       equation needs both, so height alone changes nothing,
+                       and the next question is the other half. */
+                    note="Used with your year of birth for the resting-energy figure behind your calorie estimate. Without both, that estimate uses an equation with no height in it."
                     privacy={{
                       on: heightPrivate,
                       toggle: () => {
@@ -2300,7 +2316,11 @@ export default function Onboarding() {
                       setBirthYear(v);
                     }}
                     placeholder="1994"
-                    note="Recorded only. ICEFALL will not turn your age into a heart-rate zone — that formula is a population average, not a measurement of you."
+                    /* "Recorded only" was wrong here for the same reason as
+                       height: age is a term in the same resting-energy
+                       equation. The heart-rate half of the sentence was and
+                       remains true, and is the part worth keeping. */
+                    note="Age is a term in the resting-energy equation, so it narrows your calorie estimate. It is never turned into a heart-rate zone — that formula is a population average, not a measurement of you."
                     privacy={{
                       on: birthYearPrivate,
                       toggle: () => {
@@ -2378,7 +2398,7 @@ export default function Onboarding() {
                 <StepHead
                   eyebrow="Altitude"
                   title="Have you had altitude sickness?"
-                  subtitle="This constrains how fast ICEFALL is willing to suggest you go up. It is not a diagnosis and ICEFALL will not offer one — altitude illness is a medical matter for a doctor who can see you."
+                  subtitle="If you have had it, ICEFALL takes the conservative end of the published ascent guidance for your objective — fewer metres of sleeping altitude a night, and more nights at the same height. A slower schedule is a planning aid and not protection. It is not a diagnosis and ICEFALL will not offer one: altitude illness is a medical matter for a doctor who can see you."
                 />
                 <div className="mt-7 space-y-2.5">
                   {ALTITUDE_ILLNESS.map((o) => (
@@ -2407,7 +2427,7 @@ export default function Onboarding() {
                 <StepHead
                   eyebrow="Right now"
                   title="How much are you training at the moment?"
-                  subtitle="Where you are starting FROM. Without it a plan is built backwards from your date alone, and a beginner gets the same week as somebody already training five days — which is how people arrive at the mountain injured."
+                  subtitle="Where you are starting FROM. It sets how many sessions your first week has and how much each one asks for — a beginner and somebody already training five days should not get the same week, and that is how people arrive at the mountain injured."
                 />
                 <div className="mt-7 space-y-2.5">
                   {BASELINES.map((o) => (
@@ -2523,10 +2543,14 @@ export default function Onboarding() {
                 disciplines={disciplines}
                 levels={levels}
                 days={days}
-                sessionMin={sessionMin ?? 60}
+                sessionMin={sessionMin}
+                baseline={baseline}
                 equipment={equipment}
+                movementLevel={movementLevel}
+                limitations={noLimitations ? [] : limitations}
                 skills={skills}
                 altitudeId={altitudeId}
+                altitudeIllness={altitudeIllness}
                 gender={gender}
                 sexAtBirth={sexAtBirth}
                 sexNarrowing={sexNarrowing}
@@ -2704,9 +2728,13 @@ function Payoff({
   levels,
   days,
   sessionMin,
+  baseline,
   equipment,
+  movementLevel,
+  limitations,
   skills,
   altitudeId,
+  altitudeIllness,
   gender,
   sexAtBirth,
   sexNarrowing,
@@ -2716,10 +2744,25 @@ function Payoff({
   disciplines: string[];
   levels: Record<string, Level>;
   days: number[];
-  sessionMin: number;
+  /**
+   * Minutes, or null if the step was somehow never answered.
+   *
+   * NOT defaulted to 60 on the way in. This screen's whole claim is that it
+   * reports what the athlete's answers did, and a filled-in 60 would have it
+   * describing a cap the plan was not given.
+   */
+  sessionMin: number | null;
+  /** A `BASELINES` id, or null if the step was somehow never answered. */
+  baseline: string | null;
   equipment: Equipment[];
+  /** The strength answer. "unstated" is the decline; null cannot reach here. */
+  movementLevel: MovementExperience | "unstated" | null;
+  /** The declared-limitation ids, as chosen. Empty for "nothing right now". */
+  limitations: string[];
   skills: string[];
   altitudeId: string | null;
+  /** The raw questionnaire id. Narrowed below rather than trusted as a union. */
+  altitudeIllness: string | null;
   gender: Gender | null;
   sexAtBirth: SexAtBirth | null;
   /**
@@ -2740,6 +2783,21 @@ function Payoff({
    * created, so the week count and the session count on this screen are the
    * ones the athlete will actually see.
    */
+  /**
+   * The athlete's own week, in the shape the generator takes.
+   *
+   * The same object the app hands `buildPlanForGoal` from now on, so the
+   * numbers below are the plan they are about to be given rather than a second
+   * description of it.
+   */
+  const shape = useMemo<TrainingShape>(
+    () => ({ trainingDays: days, typicalSessionMin: sessionMin, trainingBaseline: baseline }),
+    [days, sessionMin, baseline],
+  );
+
+  /** Session counts and the build-up, read back out of the generator. */
+  const weekShape = useMemo(() => planShapeFor(shape), [shape]);
+
   const plan = useMemo(() => {
     if (!created) return null;
     const curated = created.peak.curatedId ? sync.mountainById(created.peak.curatedId) : undefined;
@@ -2753,14 +2811,14 @@ function Payoff({
       preparation: 0,
       status: "active",
     };
-    const built = buildPlanForGoal(preview, curated);
+    const built = buildPlanForGoal(preview, curated, new Date(), shape);
     const week = built.weeks[0];
     return {
       totalWeeks: built.totalWeeks,
       sessionsPerWeek: week ? week.days.filter((d) => d.focus !== "rest").length : 0,
       restDays: week ? week.days.filter((d) => d.focus === "rest").length : 0,
     };
-  }, [created]);
+  }, [created, shape]);
 
   /*
    * The guide sentence below reads the field that HOLDS the judgement —
@@ -2773,7 +2831,27 @@ function Payoff({
 
   const dayNames = WEEK.filter((w) => days.includes(w.day)).map((w) => w.label);
   const equipmentLabels = EQUIPMENT.filter((e) => equipment.includes(e.id)).map((e) => e.label);
+  /*
+   * Split by what the session engine can actually do, not by category, and
+   * asked of the engine rather than listed here — same reason as the building
+   * screen. A knee, a back, a shoulder and an ankle reach `modifyLimitations`;
+   * asthma, a heart and recent surgery reach the coach's constraints and go no
+   * further, and this panel is titled "what your answers changed".
+   */
+  const limitationLabelsChosen = limitations.map(
+    (id) => LIMITATIONS.find((l) => l.id === id)?.label.toLowerCase() ?? id,
+  );
+  const limitationsShaped = limitationLabelsChosen.filter((l) => canTrainAround(l));
+  const limitationsUnshaped = limitationLabelsChosen.filter((l) => !canTrainAround(l));
   const band = ALTITUDE_BANDS.find((b) => b.id === altitudeId);
+
+  /*
+   * Read back out of the same engine the readiness screen uses, against the
+   * goal that was just created — so the figures on this panel are the figures
+   * the athlete will meet, and cannot be a hand-written approximation of them.
+   */
+  const altitudeIllnessAnswer = asAltitudeIllnessHistory(altitudeIllness);
+  const ascentPace = created ? ascentPaceFor(created.peak.elevationM, altitudeIllnessAnswer) : null;
   const disciplineCount = disciplines.length;
   const namedLevels = disciplines
     .map((id) => {
@@ -2830,8 +2908,23 @@ function Payoff({
               />
               <Line
                 label="Each week"
-                value={`${plan.sessionsPerWeek} sessions · ${plan.restDays} rest`}
-                effect="The shape of the generated week. The rest day is part of the plan, not a gap in it."
+                /*
+                 * WEEK 1, and where it ends up — not one steady number.
+                 * `plan.sessionsPerWeek` is read off the first week the
+                 * generator actually built, so for anybody being built up it
+                 * is smaller than the week they finish on, and printing it
+                 * alone would read as the whole plan.
+                 */
+                value={
+                  weekShape.rampWeeks > 0
+                    ? `${plan.sessionsPerWeek} sessions, building to ${weekShape.fullSessions}`
+                    : `${plan.sessionsPerWeek} sessions · ${plan.restDays} rest`
+                }
+                effect={
+                  weekShape.rampWeeks > 0
+                    ? `Laid onto the days you gave. Week one is held to ${plan.sessionsPerWeek} because of where you told us you are starting from; one session is added every second week, and the volume climbs with it, until you are on all ${weekShape.fullSessions}.`
+                    : "Laid onto the days you gave. The rest day is part of the plan, not a gap in it."
+                }
               />
             </>
           ) : (
@@ -2844,17 +2937,53 @@ function Payoff({
 
           <Line
             label="Session length"
-            value={`${sessionMin} min`}
-            effect="Saved to your profile. It does not yet shorten a prescribed session — the session screen is where you rebuild one around the time you have."
+            value={sessionMin === null ? "Not stated" : `${sessionMin} min`}
+            /*
+             * The exemption is STATED, not buried. The question asked about a
+             * day you are not doing something long in the mountains, so the
+             * long day is outside what was answered — and an athlete who opens
+             * a four-hour Saturday after saying "45 minutes" is owed the
+             * reason here rather than left to conclude the answer was ignored.
+             */
+            effect={
+              sessionMin === null
+                ? "Nothing recorded, so sessions are prescribed at the length the plan sets for that kind of day."
+                : "Every session is cut to this, and the distance and vertical come down with the time. The long mountain day is the exception, because that is the day the question set aside — it stays as long as the objective needs."
+            }
           />
 
           <Line
             label="Training days"
             value={dayNames.length > 0 ? dayNames.join(", ") : "Not stated"}
             effect={
-              dayNames.length > 0
-                ? "Saved to your profile. The generated week is not yet cut to these days. If the plan asks for more days than you have, move what you can and leave the rest — a missed session is not a debt."
-                : "Nothing recorded, and nothing is lost by it — the generated week is the same either way."
+              dayNames.length === 0
+                ? "Nothing recorded, so your plan keeps the standard week — Monday to Wednesday and Friday to Sunday, rest on Thursday. ICEFALL will not invent days you did not give it."
+                : [
+                    `Your sessions sit on these days and no others. Everything else is a rest day.`,
+                    weekShape.heldBackDays > 0
+                      ? "You gave every day of the week; one of them is kept as rest whatever else happens, because a week without one is not a training week."
+                      : "",
+                    "A session you miss is not a debt — nothing here counts it against you.",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")
+            }
+          />
+
+          <Line
+            label="Starting from"
+            value={BASELINES.find((b) => b.id === baseline)?.label ?? "Not stated"}
+            /*
+             * This line did not exist while the answer changed nothing, which
+             * was the right call then. It exists now because the answer is the
+             * one that decides how heavy week one is, and an athlete whose
+             * first week is deliberately short should be told that it is
+             * deliberate rather than left thinking the plan is thin.
+             */
+            effect={
+              weekShape.rampWeeks > 0
+                ? `Your first week is built for where you are now, not where the objective is: ${weekShape.startSessions} ${weekShape.startSessions === 1 ? "session" : "sessions"} carrying less than the block asks for, working up to ${weekShape.fullSessions} over about ${weekShape.rampWeeks} weeks.`
+                : "You are already training at the level these blocks are written for, so the plan starts at full weight from week one."
             }
           />
 
@@ -2865,6 +2994,44 @@ function Payoff({
               equipmentLabels.length > 0
                 ? "Your sessions will only prescribe movements this kit can do. Anything needing something else is substituted or left out."
                 : "You told us nothing, so sessions are built as normal and carry a note that they assume the movements are available. That is the honest reading of silence — not that you own nothing."
+            }
+          />
+
+          <Line
+            label="Strength experience"
+            value={
+              movementLevel === null || movementLevel === "unstated"
+                ? "Not stated"
+                : (MOVEMENT_LEVELS.find((m) => m.id === movementLevel)?.label ?? "Not stated")
+            }
+            effect={
+              movementLevel === null || movementLevel === "unstated"
+                ? "Nothing is withheld for this. Sessions are built with movement difficulty capped at moderate and kept short on movements, and every session says so in its own cautions rather than leaving you to work it out. Tell ICEFALL later and the rest of the library opens."
+                : "Every session is built with movements graded to this and no harder, and the main block carries more of them the further up you are. It is read as strength experience and nothing else — what you have done in the mountains is a separate answer and does not move this one."
+            }
+          />
+
+          <Line
+            label="Training around"
+            value={
+              limitationLabelsChosen.length > 0
+                ? limitationLabelsChosen.join(", ")
+                : "Nothing stated"
+            }
+            effect={
+              limitationLabelsChosen.length === 0
+                ? "Nothing recorded, so sessions are built as prescribed. If that changes, tell the coach in a session and it will rebuild that day around it."
+                : [
+                    limitationsShaped.length > 0
+                      ? `Every session you open is built around your ${limitationsShaped.join(", ")} before you touch it: the movements that load it carry less than the plan asked for, and the session screen names each one.`
+                      : "",
+                    limitationsUnshaped.length > 0
+                      ? `ICEFALL builds sessions from movements and the joints they load, so it cannot change a session for your ${limitationsUnshaped.join(", ")}. Nothing is adjusted for ${limitationsUnshaped.length === 1 ? "it" : "them"} — the coach is told not to prescribe into ${limitationsUnshaped.length === 1 ? "it" : "them"}, and that is all.`
+                      : "",
+                    "ICEFALL is not assessing any of this. What may be loaded, and when, is for a doctor or physiotherapist who can examine you.",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")
             }
           />
 
@@ -2885,6 +3052,37 @@ function Payoff({
               band && band.lowerM > 0
                 ? `Used as a floor of ${fmtElevation(band.lowerM)} m for altitude readiness — never as a claim that you are acclimatised now.`
                 : "No altitude floor is recorded, so altitude readiness stays unreported until a recorded session or a logged summit gives ICEFALL one."
+            }
+          />
+
+          {/*
+            ALTITUDE ILLNESS FINALLY HAS A LINE HERE, because it finally does
+            something. While the answer reached the coach's prompt and nothing
+            else there was no honest line to write — and rather than write a
+            flattering one this panel simply had no row for the question, which
+            was its own kind of silence.
+
+            All four answers get a sentence, including the two that change no
+            number. "Never" is the one that most needs saying out loud: it buys
+            nothing, and an athlete who reads a faster schedule into it has been
+            misled by this screen rather than by the engine.
+          */}
+          <Line
+            label="Altitude illness"
+            value={
+              altitudeIllnessAnswer
+                ? (ALTITUDE_ILLNESS.find((o) => o.id === altitudeIllnessAnswer)?.label ??
+                  "Not stated")
+                : "Not stated"
+            }
+            effect={
+              ascentPace?.narrowed
+                ? `Your objective's acclimatisation schedule is built at the conservative end from here on: no more than ${ascentPace.maxSleepGainM} m of sleeping altitude a night above 3,000 m, with an extra night for roughly every ${ascentPace.restNightEveryM} m gained. It appears on your readiness screen and the coach quotes those figures rather than any of its own. It changes no training session, and a slower schedule is a planning aid — it does not make a mountain safe.`
+                : altitudeIllnessAnswer === "mild" || altitudeIllnessAnswer === "serious"
+                  ? "Recorded, and it will slow the acclimatisation schedule the moment your objective is high enough to have one — above 3,500 m. Below that there is no staged ascent to slow, so nothing here pretends there is."
+                  : altitudeIllnessAnswer === "never"
+                    ? "Recorded, and deliberately worth nothing. Having been well at altitude once is not evidence about the next trip, so it buys no faster schedule — the coach is told in as many words not to suggest one because of it."
+                    : "Recorded as exactly what it is: not yet known. ICEFALL does not read it as a clean record, and nothing is assumed about how you will respond."
             }
           />
 
@@ -2962,7 +3160,9 @@ function Payoff({
       </div>
 
       <div className="mt-5 rounded-card border border-hairline bg-graphite p-4">
-        <p className="section-label text-azure/85">Why the skills and altitude questions mattered</p>
+        <p className="section-label text-azure/85">
+          Why the skills and altitude questions mattered
+        </p>
         <p className="mt-3 text-[12px] leading-relaxed text-mist">
           Nothing in a training feed says whether you can move on crampons, travel roped on a
           glacier or get a partner out of a crevasse — and no amount of volume implies it. The same

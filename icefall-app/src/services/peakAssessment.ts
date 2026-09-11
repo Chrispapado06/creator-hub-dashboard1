@@ -1,3 +1,4 @@
+import { ascentPaceFor } from "@/services/acclimatisation";
 import type { Difficulty, Season } from "@/types";
 
 /**
@@ -321,12 +322,21 @@ export function assessPeak(elevationM: number, lat: number, lon?: number): PeakA
     seasons,
     seasonNote: note,
     requiresGuide: spec.band >= 4,
-    acclimatisation:
-      elevationM >= 5500
-        ? "Plan several weeks of staged acclimatisation, gaining no more than 300–500 m of sleeping altitude per night above 3,000 m."
-        : elevationM >= 3500
-          ? "Sleep at altitude beforehand if you can. Above 3,000 m, climb high and sleep low."
-          : undefined,
+    /*
+     * THE SCHEDULE IS NO LONGER WRITTEN HERE, and that is the point.
+     *
+     * These two sentences used to be inline literals. They are now the
+     * unnarrowed case of `services/acclimatisation.ts`, which is the same
+     * module that narrows the schedule for an athlete who has reported
+     * altitude illness. One source, so the mountain page and the readiness
+     * screen cannot end up describing different ascents up the same peak.
+     *
+     * `null` is passed on purpose and must stay `null`: `assessPeak` knows an
+     * elevation and a latitude, its own disclaimer says so, and it has no
+     * business holding anybody's health history. The history is applied by the
+     * caller that legitimately holds it — see `coach/mountainReadiness.ts`.
+     */
+    acclimatisation: ascentPaceFor(elevationM, null)?.guidance,
   };
 }
 

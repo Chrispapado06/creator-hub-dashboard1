@@ -53,15 +53,23 @@ export function finalizeActivity(raw: RecordedActivity): FinalizedActivity {
    */
   const simulated = raw.simulated === true;
   const imported = raw.origin.kind === "imported";
+  /* A MANUAL ENTRY IS BARRED ON THE SAME GROUND AS AN IMPORT, and the ground is
+     stated rather than inherited: ICEFALL did not record it. The figures are a
+     sentence the athlete typed — or, with the coach's `log_activity` tool, a
+     sentence the athlete said and a model transcribed. A personal best is a
+     claim about what somebody did, and it has to be a claim ICEFALL can stand
+     behind. The session still counts as training: it is in the feed, in the
+     load curve, in weekly totals and in preparation against the plan. */
+  const manual = raw.origin.kind === "manual";
 
   // History is filtered too: a simulated session must not raise the bar a later
   // real activity has to clear, nor count toward the weekly-consistency bonus.
   // Imports are excluded from the comparison set for the same reason.
   const ownHistory = history.filter((h) => !h.simulated && h.origin.kind === "icefall");
 
-  const records = simulated || imported ? [] : detectRecords(raw, ownHistory);
-  const achievements =
-    simulated || imported ? [] : detectAchievements(raw, meta.earnedAchievements);
+  const unverified = simulated || imported || manual;
+  const records = unverified ? [] : detectRecords(raw, ownHistory);
+  const achievements = unverified ? [] : detectAchievements(raw, meta.earnedAchievements);
   const insight = buildInsight(raw);
 
   const activity: RecordedActivity = {
@@ -73,7 +81,7 @@ export function finalizeActivity(raw: RecordedActivity): FinalizedActivity {
 
   saveActivity(activity);
 
-  if (!simulated && !imported) {
+  if (!unverified) {
     saveMeta({
       earnedAchievements: [...meta.earnedAchievements, ...achievements.map((a) => a.id)],
     });
@@ -90,7 +98,11 @@ export function finalizeActivity(raw: RecordedActivity): FinalizedActivity {
         ? [
             `Imported from ${WATCH_PROVIDER_NAME[raw.origin.provider]} — it counts toward your training, not toward records or leaderboards.`,
           ]
-        : [],
+        : manual
+          ? [
+              "Added from what you reported — it counts toward your training, not toward records or leaderboards.",
+            ]
+          : [],
     records,
     achievements,
   };

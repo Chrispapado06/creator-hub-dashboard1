@@ -75,7 +75,19 @@ export const TABBAR_STICKY_BOTTOM =
  * `useDetailBack`, directly below. A route in this list without one is a page a
  * reader cannot leave, which is worse than any layout problem it fixes.
  */
-const FULL_SCREEN_ROUTES = ["/explore/trail/:id", "/explore/trek/:id"] as const;
+const FULL_SCREEN_ROUTES = [
+  "/explore/trail/:id",
+  "/explore/trek/:id",
+  /*
+   * A MOUNTAIN IS THE SAME KIND OF THING AS A TREK. Charlie, 11 Sep 2026, on
+   * the mountain page: "Images to be like the treks where it take whole upper
+   * part with images to scroll through". A photograph cannot own the top of
+   * the screen while the Explore header and its three tabs sit above it, so
+   * the route joins the list the rule was written for.
+   */
+  "/explore/mountain/:id",
+  "/explore/peak/:id",
+] as const;
 
 /** True on a page that carries no bottom navigation and reserves no room for it. */
 export function isFullScreenRoute(pathname: string): boolean {

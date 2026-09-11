@@ -123,18 +123,33 @@ export function ScoreRing({
 /* FactorBar                                                                  */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * One factor: a label, a 0-100 bar, and one line about what it saw.
+ *
+ * `reading` IS THE MEASURED-VITAL CASE and it is deliberately not a score.
+ * Six hours of sleep is not sixty per cent of anything, and 48 bpm has no
+ * favourable end without the athlete's own baseline, so a measured vital
+ * arrives with a null score and a figure in its own unit. The row then prints
+ * the figure, draws NO BAR — a fill would invent a scale nobody chose — and
+ * keeps the note, which is where the instrument and the day it measured are
+ * said. Without this, a real reading fell through the `value === null` branch
+ * below and rendered as "Unavailable" with its own sentence thrown away.
+ */
 export function FactorBar({
   label,
   score,
   note,
   qualifier,
+  reading,
 }: {
   label: string;
   score: Score;
   note: string;
   qualifier?: DataQualifier;
+  reading?: string | null;
 }) {
   const value = isKnown(score) ? score.value : null;
+  const hasReading = typeof reading === "string" && reading.length > 0;
 
   return (
     <div className="py-3">
@@ -146,6 +161,8 @@ export function FactorBar({
             {Math.round(value)}
             <span className="text-mist-dim">/100</span>
           </span>
+        ) : hasReading ? (
+          <span className="tnum shrink-0 text-[12px] text-snow">{reading}</span>
         ) : (
           <span className="shrink-0 text-[11px] text-mist-dim">Unavailable</span>
         )}
@@ -153,7 +170,10 @@ export function FactorBar({
 
       <div
         className="mt-2 h-[3px] w-full overflow-hidden rounded-full"
-        style={{ background: TRACK }}
+        // The empty track is the shape of a missing score. A measured reading is
+        // not a missing score, so it gets no track either — nothing here is
+        // waiting to be filled in.
+        style={{ background: hasReading ? "transparent" : TRACK }}
       >
         {/* No bar at all when the value is unknown. A zero-width azure fill and a
             genuine score of zero must not look the same. */}
@@ -169,7 +189,7 @@ export function FactorBar({
         )}
       </div>
 
-      {value === null ? (
+      {value === null && !hasReading ? (
         <UnavailableState reason={score.reason ?? "no-data"} size="sm" className="mt-2.5" />
       ) : (
         note && <p className="mt-2 text-[11px] leading-relaxed text-mist-dim">{note}</p>
