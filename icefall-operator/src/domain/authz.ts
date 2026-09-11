@@ -25,9 +25,11 @@
  * Everything defaults to DENY. A missing record is not permission.
  */
 
+import { COMPANY_ROLES, STORED_COMPANY_ROLES } from "./types";
 import type {
   CompanyMountain,
   CompanyRole,
+  StoredCompanyRole,
   CompanyTrek,
   CompanyUser,
   ContentVersion,
@@ -71,8 +73,35 @@ export function hasRole(session: Session | null, role: CompanyRole): boolean {
   return isActive(session) && session!.user.role === role;
 }
 
-/** Mirrors `is_company_admin(company_id)` for the caller's own company. */
+/** Active, and holding one of these roles. The building block of the matrix. */
+function roleIs(session: Session | null, ...roles: readonly CompanyRole[]): boolean {
+  return isActive(session) && roles.includes(session!.user.role);
+}
+
+/**
+ * Mirrors `is_company_admin(company_id)` for the caller's own company — the
+ * database function, exactly: `company_role = 'admin'` and nothing else.
+ */
 export const isCompanyAdmin = (s: Session | null): boolean => hasRole(s, "admin");
+
+/**
+ * ADMIN POWERS — `admin` or `owner`.
+ *
+ * Why this exists beside `isCompanyAdmin`. The owner is now a role in the union
+ * (brief §4) as well as a derived fact, and an owner must not hold FEWER powers
+ * than the admins they appoint. But `is_company_admin()` in the live schema
+ * tests `company_role = 'admin'` alone, so this predicate and that function are
+ * not yet twins.
+ *
+ * TODAY THEY CANNOT DISAGREE: the check constraint refuses to store `owner`, so
+ * no live row carries it and the two return the same answer for every row that
+ * exists. The moment the constraint widens they CAN disagree, and the widening
+ * migration must widen `is_company_admin()` in the same statement or the client
+ * will offer an owner a button Postgres refuses. That requirement is written
+ * into `icefall-sessions/requests/13-operator-six-roles.md` rather than left to
+ * be noticed.
+ */
+export const isCompanyAdminTier = (s: Session | null): boolean => roleIs(s, "owner", "admin");
 
 /* ========================================================================== */
 /* Rule 2 — only the mountains ICEFALL assigned                               */
@@ -191,13 +220,15 @@ export function canEditPlacement(): false {
 /**
  * THE OWNER ACCOUNT — "Super Admin" in the owner's words.
  *
- * `CompanyRole` still has exactly two values and this file did not add a third.
- * The reasoning in `types.ts` has not changed: a third value would have to be
- * written by the invite path, stored by a schema that has no room for it, and
- * understood by every screen that switches on the role — three places to
- * disagree, for a distinction the data already carries.
+ * TWO WAYS TO BE THE OWNER, AND ONLY ONE OF THEM IS STORABLE TODAY.
  *
- * Because it does carry it. `company_users.invited_by` is null on exactly one
+ * `CompanyRole` now carries `owner` as a value (brief §4), but the live check
+ * constraint still refuses to store it — see `types.ts` and
+ * `icefall-supabase/migrations/20260828100000_crm_foundation.sql:333`. So the
+ * DERIVED reading below is not superseded by the new role; it is the only one
+ * that works against the database as it stands, and it stays.
+ *
+ * `company_users.invited_by` is null on exactly one
  * account per company: the one ICEFALL created when the company was taken on.
  * Everybody else was invited by somebody. So the founding account is not a new
  * fact to be stored — it is a fact already recorded, read here instead of
@@ -213,6 +244,10 @@ export function canEditPlacement(): false {
  * asks the schema owner for the stored tier that would fix that.
  */
 export function isOwnerAccount(user: CompanyUser): boolean {
+  // The stored role, once the schema can hold it. Checked FIRST so that an
+  // owner appointed by name is the owner whoever invited them.
+  if (user.role === "owner") return true;
+  // The derived reading, which is the only one any live row can satisfy today.
   return user.role === "admin" && user.invitedBy === null;
 }
 
@@ -255,21 +290,49 @@ export function hasGrant(session: Session | null, permission: GrantablePermissio
 }
 
 /* ========================================================================== */
-/* The two roles (spec §3)                                                    */
+/* The six roles (brief §4) — the matrix                                      */
 /* ========================================================================== */
 
 /**
- * Company Admin owns content and setup; Sales owns conversations and follow-up.
- * That is the whole matrix — a switch, not a configurable permission set,
- * because the spec is explicit that operators must not get an enterprise
- * permission builder.
+ * THE PERMISSION MATRIX, still one object of predicates and still not a config.
+ *
+ * `Permission` is `keyof typeof PERMISSIONS`, so the set of capabilities stays
+ * a closed union the compiler checks: a screen cannot ask for a capability
+ * nobody defined, and a capability cannot be deleted while a screen still asks
+ * for it. That property is the reason this shape survived the widening — a
+ * `Record<Role, Record<Capability, boolean>>` would have been a table anyone
+ * could edit into a role this portal has never been tested against, which is
+ * exactly the "enterprise permission builder" the spec rules out.
+ *
+ * WHAT CHANGED: each line now names the roles that hold it, instead of naming
+ * one role predicate. WHAT DID NOT CHANGE: what `admin` and `sales` may do.
+ * Every line below returns for those two exactly what it returned before —
+ * this is a widening, and section 21 of the test suite asserts it line by line.
+ * If you are editing this object, that is the invariant to keep.
+ *
+ * THE SIX, in one sentence each (brief §4):
+ *
+ *   owner              everything, including the things that commit or end the
+ *                      company — billing, and deletion of its data.
+ *   admin              everything operational; not the owner-only two.
+ *   sales              leads, proposals, customers. No settings, no content.
+ *   operations         departures, tasks, suppliers, rosters. No pricing
+ *                      approval — a custom offer is a commitment, not a task.
+ *   guide_coordinator  guides, assignments, availability; READ-ONLY on
+ *                      anything commercial.
+ *   finance_read_only  reads the commercial record and exports it. Writes
+ *                      NOTHING — not a note, not an availability change.
+ *
+ * FOUR OF THOSE SIX CANNOT BE STORED YET. See `roleFromStored`. A capability
+ * that only a new role holds is therefore unreachable in production today, and
+ * saying so is the point of `unstorableRoles()`.
  */
 export const PERMISSIONS = {
-  editCompanyProfile: (s: Session | null) => isCompanyAdmin(s),
-  editProducts: (s: Session | null) => isCompanyAdmin(s),
-  uploadMedia: (s: Session | null) => isCompanyAdmin(s),
-  submitForApproval: (s: Session | null) => isCompanyAdmin(s),
-  manageStaff: (s: Session | null) => isCompanyAdmin(s),
+  editCompanyProfile: (s: Session | null) => isCompanyAdminTier(s),
+  editProducts: (s: Session | null) => isCompanyAdminTier(s),
+  uploadMedia: (s: Session | null) => isCompanyAdminTier(s),
+  submitForApproval: (s: Session | null) => isCompanyAdminTier(s),
+  manageStaff: (s: Session | null) => isCompanyAdminTier(s),
 
   /**
    * Create a custom offer for one customer — a price this company will honour,
@@ -288,22 +351,331 @@ export const PERMISSIONS = {
    */
   createOffers: (s: Session | null) => isCompanyOwner(s) || hasGrant(s, "createOffers"),
 
-  /* Both roles. Sales exists to do these. */
+  /**
+   * OWNER ONLY, AND NOTHING IN THIS PORTAL CALLS EITHER OF THEM.
+   *
+   * The brief gives the owner "everything including billing/deletion", so the
+   * two are named here rather than left to be invented by whoever builds the
+   * screen. No billing exists in ICEFALL — no processor, no subscription, no
+   * price for the portal — and no delete-my-company path exists either.
+   * Declaring the rule is honest; a Billing tab would not be. When either is
+   * built it finds one answer waiting instead of a new one made on the day.
+   */
+  manageBilling: (s: Session | null) => isCompanyOwner(s),
+  deleteCompanyData: (s: Session | null) => isCompanyOwner(s),
+
+  /**
+   * Read the commercial record OUT of ICEFALL — the one thing
+   * `finance_read_only` exists to do that a plain reader does not.
+   *
+   * Also uncalled today: this portal has no export. Kept separate from
+   * `viewAnalytics` because reading a figure on screen and carrying the
+   * customer list into a spreadsheet are different acts, and the second is the
+   * one an operator's own data-protection duty turns on.
+   */
+  exportCommercialData: (s: Session | null) => roleIs(s, "owner", "admin", "finance_read_only"),
+
+  /* ---- reads: every role, including the two that write nothing ---------- */
+  /** Everyone can READ the conversation. Only some may answer it. */
   viewInbox: (s: Session | null) => isActive(s),
-  replyToCustomer: (s: Session | null) => isActive(s),
-  addInternalNote: (s: Session | null) => isActive(s),
-  manageLeads: (s: Session | null) => isActive(s),
   viewAnalytics: (s: Session | null) => isActive(s),
-  /** Read-only catalogue, so sales can answer a question about a trip. */
+  /** Read-only catalogue, so anyone can answer a question about a trip. */
   viewProducts: (s: Session | null) => isActive(s),
-  /** Availability is operational, not a marketing claim. Both roles. */
-  setDepartureAvailability: (s: Session | null) => isActive(s),
+
+  /* ---- writes ----------------------------------------------------------- */
+  /**
+   * A message the customer receives. NOT finance (writes nothing) and NOT the
+   * guide coordinator, whose commercial reading is read-only by definition.
+   */
+  replyToCustomer: (s: Session | null) => roleIs(s, "owner", "admin", "sales", "operations"),
+  /**
+   * Internal, and a write. Everyone who runs part of the trip needs it; finance
+   * does not get it, because "writes NOTHING" was stated as a boundary and a
+   * note is the smallest thing that would quietly cross it.
+   */
+  addInternalNote: (s: Session | null) =>
+    roleIs(s, "owner", "admin", "sales", "operations", "guide_coordinator"),
+  /** The sales pipeline. Operations and guides do not move somebody's lead. */
+  manageLeads: (s: Session | null) => roleIs(s, "owner", "admin", "sales"),
+  /**
+   * Availability is operational, not a marketing claim — which is why the two
+   * operational roles hold it and finance does not.
+   */
+  setDepartureAvailability: (s: Session | null) =>
+    roleIs(s, "owner", "admin", "sales", "operations", "guide_coordinator"),
+
+  /* ---- the CRM operating system (brief §4–§6) --------------------------- */
+  /*
+   * THE COMPANY'S OWN RECORDS, gated by the six roles the brief describes:
+   * sales owns customers and proposals, operations owns departures and
+   * suppliers, the guide coordinator owns assignments, finance reads and
+   * exports and WRITES NOTHING, and pricing approval belongs to the two roles
+   * that may commit the company. Each line names its roles; none reuses a
+   * neighbour's predicate, so a change to one cannot move another.
+   *
+   * These gate the MEMORY adapter today. No live table exists for any of
+   * these entities, so there is no policy to mirror yet; when the schema lands
+   * (`requests/17-operator-crm-operating-system-schema.md`) each line below is
+   * the client half of a row-level policy and must match it one for one.
+   */
+
+  /** Customers, groups and the reviewable dedupe. Sales work; operations reads. */
+  manageContacts: (s: Session | null) => roleIs(s, "owner", "admin", "sales"),
+  /** Draft, version and send a proposal. NOT approve one — see the next line. */
+  manageProposals: (s: Session | null) => roleIs(s, "owner", "admin", "sales"),
+  /**
+   * INTERNAL APPROVAL OF A PRICE. Owner and admin only: a proposal is a
+   * commitment to a customer, and operations does not approve pricing (brief
+   * §4). A proposal cannot be `sent` without this having happened.
+   */
+  approveProposals: (s: Session | null) => roleIs(s, "owner", "admin"),
+  /**
+   * The commercial record: booking status, due amounts, financial events.
+   * `finance_read_only` READS these and holds `viewReports`/`exportData`
+   * instead — the role is defined by writing nothing.
+   */
+  manageBookingsFinance: (s: Session | null) => roleIs(s, "owner", "admin"),
+  /** Participants, their information statuses and documents. */
+  manageParticipants: (s: Session | null) => roleIs(s, "owner", "admin", "sales", "operations"),
+  /**
+   * READ the two sensitive fields — medical and fitness — and the content of a
+   * medical document. Brief §3.3: sensitive fields are permissioned and
+   * separated from sales notes. Sales is deliberately absent: a salesperson
+   * needs to know the paperwork is complete, not what it says. The ADAPTER
+   * redacts for everyone else; a screen never decides this.
+   */
+  viewSensitiveParticipantData: (s: Session | null) => roleIs(s, "owner", "admin", "operations"),
+  /** The operational side of a departure — status, name, meeting point, roster. */
+  manageDepartures: (s: Session | null) => roleIs(s, "owner", "admin", "operations"),
+  /** Operational tasks and guide assignments. The coordinator's own work. */
+  manageTasks: (s: Session | null) => roleIs(s, "owner", "admin", "operations", "guide_coordinator"),
+  manageSuppliers: (s: Session | null) => roleIs(s, "owner", "admin", "operations"),
+  /** Read the CRM reports. Every active role, finance included — it is what finance is for. */
+  viewReports: (s: Session | null) => isActive(s),
+  /**
+   * Carry the CRM record out of the portal. The brief's name for the power
+   * `exportCommercialData` above already models; the two hold the SAME roles
+   * and must keep doing so — one is the ICEFALL commercial scorecard, this one
+   * is the company's own CRM data, and finance is the role both exist for.
+   */
+  exportData: (s: Session | null) => roleIs(s, "owner", "admin", "finance_read_only"),
+  /** Connect an email, payments or accounting provider. Settings; sales does not touch them. */
+  manageIntegrations: (s: Session | null) => roleIs(s, "owner", "admin"),
+
+  /* ---- Phase 2 / Phase 3 operations records (`@/domain/ops`) ------------- */
+  /*
+   * The sibling records of the CRM entities: templates, ops detail on tasks,
+   * guide availability, document requests, the referral lifecycle. Each line
+   * names its roles. `finance_read_only` appears ONLY on the read; nothing it
+   * holds here writes. The guide coordinator holds availability and nothing
+   * commercial, as the role is defined.
+   */
+  /** Author and edit message templates. Comms are sales work; a rendered draft is gated separately (`replyToCustomer` / `addInternalNote`). */
+  manageTemplates: (s: Session | null) => roleIs(s, "owner", "admin", "sales"),
+  /** A guide's stated availability windows. The coordinator's own record. */
+  manageGuideAvailability: (s: Session | null) => roleIs(s, "owner", "admin", "operations", "guide_coordinator"),
+  /** Permits, transport legs, lodging, equipment and supplier confirmations on a task. */
+  manageOpsRecords: (s: Session | null) => roleIs(s, "owner", "admin", "operations"),
+  /** Request, receive and review participant documents. Medical ones ALSO need `viewSensitiveParticipantData`. */
+  manageDocuments: (s: Session | null) => roleIs(s, "owner", "admin", "operations"),
+  /** Read the derived data-quality report. Every active role — finance included; it is a read. */
+  viewDataQuality: (s: Session | null) => isActive(s),
+  /** Respond to an ICEFALL introduction and confirm a referred booking. The pipeline's owners. */
+  acceptReferrals: (s: Session | null) => roleIs(s, "owner", "admin", "sales"),
+
+  /* ---- field operations (brief §8 Phase 4, built as records — `@/domain/field`) ---- */
+  /*
+   * Equipment, rooming and dispatch are FIELD OPS: the two roles that run the
+   * trip hold them, plus the owner. The guide coordinator assigns people, not
+   * kit or vehicles. Nothing here forecasts and nothing here moves money.
+   */
+  manageEquipment: (s: Session | null) => roleIs(s, "owner", "admin", "operations"),
+  manageRooming: (s: Session | null) => roleIs(s, "owner", "admin", "operations"),
+  manageDispatch: (s: Session | null) => roleIs(s, "owner", "admin", "operations"),
+  /**
+   * THE GUIDE FEE LEDGER — what is owed and what the operator says they paid.
+   * A commercial record, so owner and admin write it; `finance_read_only`
+   * READS it through `viewGuideFees` and writes nothing, per the role's
+   * definition. Recording "paid" here is a statement, not a payment.
+   */
+  manageGuideFees: (s: Session | null) => roleIs(s, "owner", "admin"),
+  viewGuideFees: (s: Session | null) => roleIs(s, "owner", "admin", "finance_read_only"),
+  /** Rules the operator WRITES for a trip's price. A commitment, so the two roles that may commit. */
+  managePricingSchedules: (s: Session | null) => roleIs(s, "owner", "admin"),
+  /** Operator-written, internal-only rule automations. Nothing they do sends. */
+  manageAutomations: (s: Session | null) => roleIs(s, "owner", "admin"),
+  /** A record of where a trip is distributed by hand. Sales keeps it; no integration exists. */
+  manageChannelListings: (s: Session | null) => roleIs(s, "owner", "admin", "sales"),
 } as const;
 
 export type Permission = keyof typeof PERMISSIONS;
 
+export const ALL_PERMISSIONS = Object.keys(PERMISSIONS) as readonly Permission[];
+
 export function can(session: Session | null, permission: Permission): boolean {
   return PERMISSIONS[permission](session);
+}
+
+/* ========================================================================== */
+/* Rule 3d — THE DEGRADATION RULE: six modelled, two storable                 */
+/* ========================================================================== */
+
+/**
+ * THE FACT THIS WHOLE SECTION EXISTS FOR, quoted rather than paraphrased:
+ *
+ *   -- Two roles, deliberately. The operator portal is not an enterprise product
+ *   -- and a configurable permission matrix is not wanted.
+ *   company_role text not null check (company_role in ('admin', 'sales')),
+ *
+ *   icefall-supabase/migrations/20260828100000_crm_foundation.sql:331-333
+ *
+ * The matrix above models six roles because the owner chose six. The database
+ * accepts two. Both are true at once, and the gap between them is not a bug to
+ * be smoothed over in a helper — it is a schema change that has not happened,
+ * owned by another session, requested in
+ * `icefall-sessions/requests/13-operator-six-roles.md`.
+ *
+ * WHICH DIRECTION IS SAFE.
+ *
+ *   NARROWING IS SAFE. Reading a role as one that holds a SUBSET of its powers
+ *   costs somebody a button. They ask a colleague, or they ask ICEFALL. The
+ *   failure is visible, immediate and reversible.
+ *
+ *   WIDENING IS NOT. Reading an unknown or unstorable value as `admin` hands a
+ *   stranger the company profile, the trip catalogue and the staff list. The
+ *   failure is silent: nothing errors, nothing looks wrong, and the first
+ *   evidence is a change nobody made. So no branch in this file, ever, may end
+ *   `return "admin"`.
+ *
+ * AND — THE PART THAT IS EASY TO GET WRONG — THERE IS NO SAFE SUBSTITUTE AMONG
+ * THE TWO STORABLE ROLES FOR THREE OF THE FOUR NEW ONES. `sales` is not a
+ * narrowing of `operations`: it holds `manageLeads`, which operations is not
+ * meant to have. It is emphatically not a narrowing of `finance_read_only`,
+ * which is defined by writing nothing and would gain three writes. So storing
+ * `sales` "for now" against a member the company means as finance is not a
+ * degradation, it is a promotion.
+ *
+ * THE FOURTH, `owner`, IS THE EXCEPTION, and only because it holds everything:
+ * every role narrows onto it trivially, so storing an owner as `admin` really
+ * is a narrowing — which is exactly what this portal already does, since the
+ * founding account is an `admin` row read as the owner through `invitedBy`.
+ *
+ * `isNarrowing()` below is not decoration: it is the check that separates those
+ * two cases, and section 21 of the tests runs it over every pair.
+ */
+
+const ROLE_SET: ReadonlySet<string> = new Set<string>(COMPANY_ROLES);
+const STORED_ROLE_SET: ReadonlySet<string> = new Set<string>(STORED_COMPANY_ROLES);
+
+/** Is this one of the six the product models? */
+export function isCompanyRole(value: unknown): value is CompanyRole {
+  return typeof value === "string" && ROLE_SET.has(value);
+}
+
+/** Is this one of the two `company_users.company_role` will accept? */
+export function isStorableRole(role: CompanyRole): role is StoredCompanyRole {
+  return STORED_ROLE_SET.has(role);
+}
+
+/** The four the live check constraint refuses. Computed, never listed twice. */
+export function unstorableRoles(): readonly CompanyRole[] {
+  return COMPANY_ROLES.filter((r) => !isStorableRole(r));
+}
+
+/**
+ * What came back from the database, read honestly.
+ *
+ * A DISCRIMINATED UNION AND NOT A `CompanyRole`, on purpose. A function that
+ * returned a role would have to invent one for a value it did not recognise,
+ * and there is no honest value to invent — which is precisely the "empty state
+ * that looks like a measured zero" the honesty doctrine forbids, wearing
+ * different clothes. Making the caller branch is the enforcement.
+ *
+ *   `ok`         the value is one of the six. `storable` says whether the live
+ *                schema can hold it, so a caller can tell the difference
+ *                between a role the product knows and a role the database
+ *                agreed to. A role that is `ok` but not storable means the
+ *                constraint has widened since this file was written, or the row
+ *                did not come from `company_users` — either way it is readable,
+ *                and honoured.
+ *   `unreadable` the value is not one of the six. NOT an error to swallow and
+ *                NOT a reason to fall back: the caller must refuse the session,
+ *                and say which value it refused.
+ */
+export type RoleReading =
+  | { readonly state: "ok"; readonly role: CompanyRole; readonly storable: boolean }
+  | { readonly state: "unreadable"; readonly value: string; readonly reason: string };
+
+export function roleFromStored(value: unknown): RoleReading {
+  if (typeof value !== "string" || value.trim() === "") {
+    return {
+      state: "unreadable",
+      value: value === null ? "null" : value === undefined ? "undefined" : String(value),
+      reason:
+        "No role on the membership row. `company_users.company_role` is `not null`, so a row without one " +
+        "did not come from that table — treat the member as having no access rather than guessing at one.",
+    };
+  }
+  const v = value.trim();
+  if (isCompanyRole(v)) {
+    return { state: "ok", role: v, storable: isStorableRole(v) };
+  }
+  return {
+    state: "unreadable",
+    value: v,
+    // Named, so whoever reads the log knows whether the schema moved or the
+    // data is wrong. Note what this does NOT do: pick the nearest role.
+    reason:
+      `"${v}" is not one of the six roles this portal models ` +
+      `(${COMPANY_ROLES.join(", ")}). It is not treated as an admin, a sales ` +
+      `employee, or anything else — an unrecognised role grants nothing.`,
+  };
+}
+
+/**
+ * Every capability a role holds, DERIVED by asking the matrix above rather than
+ * restated beneath it. A second table would be a second answer, and the two
+ * would disagree the first time somebody edited one.
+ *
+ * THE PROBE IS ACTIVE AND INVITED. `status: "active"` because a disabled user
+ * holds nothing whatever their role, and this function is about the role.
+ * `invitedBy` non-null because the OWNER ACCOUNT is derived from `invitedBy`
+ * being null — probing with null would hand `createOffers` to every role and
+ * make this a report on the account rather than the role. The `owner` ROLE
+ * still reads as an owner account, which is correct: that is what the role is.
+ */
+function probeSession(role: CompanyRole): Session {
+  return {
+    user: {
+      id: "role-probe",
+      companyId: "role-probe",
+      profileId: "role-probe",
+      displayName: "role probe",
+      email: "role-probe@example.invalid",
+      role,
+      status: "active",
+      invitedBy: "role-probe-inviter",
+      createdAt: "1970-01-01T00:00:00.000Z",
+    },
+  };
+}
+
+export function capabilitiesFor(role: CompanyRole): readonly Permission[] {
+  const s = probeSession(role);
+  return ALL_PERMISSIONS.filter((p) => can(s, p));
+}
+
+/**
+ * Would reading a member as `to` instead of `from` only ever take powers away?
+ *
+ * The one question worth asking before any substitution — including the
+ * substitution the two-role constraint invites. True means every capability
+ * `to` holds, `from` holds as well. False means the swap would GRANT something,
+ * and no amount of "just for now" makes that safe.
+ */
+export function isNarrowing(from: CompanyRole, to: CompanyRole): boolean {
+  const held = new Set<Permission>(capabilitiesFor(from));
+  return capabilitiesFor(to).every((p) => held.has(p));
 }
 
 /* ========================================================================== */
@@ -325,7 +697,7 @@ export function isEditableState(state: ContentVersionState): boolean {
  */
 export function canEditVersion(session: Session | null, version: ContentVersion): boolean {
   if (!ownsCompany(session, version.companyId)) return false;
-  if (!isCompanyAdmin(session)) return false;
+  if (!isCompanyAdminTier(session)) return false;
   return isEditableState(version.state);
 }
 
@@ -339,7 +711,7 @@ export function canEditVersion(session: Session | null, version: ContentVersion)
  */
 export function canEditProductDirectly(session: Session | null, product: Product): boolean {
   if (!ownsCompany(session, product.companyId)) return false;
-  if (!isCompanyAdmin(session)) return false;
+  if (!isCompanyAdminTier(session)) return false;
   return product.status === "draft";
 }
 
@@ -357,7 +729,7 @@ export function canAttachProductToMountain(
   mountainId: string,
 ): boolean {
   if (!ownsCompany(session, product.companyId)) return false;
-  if (!isCompanyAdmin(session)) return false;
+  if (!isCompanyAdminTier(session)) return false;
   return canManageMountain(session, access, mountainId);
 }
 
@@ -366,75 +738,37 @@ export function canAttachProductToMountain(
 /* ========================================================================== */
 
 /**
- * Spec §2 and §5: no phone numbers, email addresses, messaging handles or direct
- * booking links in public-facing operator content.
+ * MOVED, AND NARROWED. The guard now lives in `./contactGuard`, which splits
+ * the rule across two explicitly named surfaces:
  *
- * The purpose is not censorship — an enquiry that leaves the platform stops
- * being attributable, and the operator loses the record of where their booking
- * came from just as surely as ICEFALL does.
+ *   PUBLISHED / ICEFALL-FACING — guard on. Product and company content,
+ *   channel names and messages, post captions, offers sent to a climber, lead
+ *   tags: text somebody outside the operator's company will read.
  *
- * TWO DIFFERENT ENFORCEMENTS, AND THE DIFFERENCE IS DELIBERATE:
+ *   PRIVATE CRM — guard off. A contact's own phone, email and address,
+ *   emergency contacts, participant records, internal notes, supplier details:
+ *   text only that one company will ever read.
  *
- *   PUBLISHED CONTENT — ADVISORY. The database's own
- *   `looks_like_contact_details()` sets a flag on the version and the Approval
- *   Center surfaces it; it does not refuse the submission. Session 03's argument
- *   is right: a regex that blocks teaches operators to evade it, and "call the
- *   hut on arrival to confirm beds" is not a violation. A human sees it before
- *   anything is published, so advisory is enough.
+ * The rule protects ICEFALL's commercial relationship — an enquiry that leaves
+ * the platform stops being attributable, and the operator loses the record of
+ * where their booking came from just as surely as ICEFALL does. It was never
+ * protecting private customer data from the company that owns it. A CRM that
+ * cannot store a customer's phone number is not a CRM.
  *
- *   A REPLY TO A CUSTOMER — BLOCKING. There is no reviewer between an operator's
- *   message and the climber reading it. The escape happens immediately and
- *   cannot be recalled, so this is the only point at which the rule can be
- *   enforced at all. Advisory here would mean not enforced.
+ * `guardContactDetails(surface, fields)` makes the call site NAME which of the
+ * two it is, with no default, so the distinction cannot be lost in a refactor.
+ * The reasoning in full is in the header of `contactGuard.ts`.
  *
- * The matcher over-catches on purpose. A false positive costs one rephrase; a
- * miss publishes a customer escape route.
+ * Re-exported here because every consumer already imports it from `authz`, and
+ * because a permission boundary belongs beside the other permission boundaries.
  */
-const CONTACT_PATTERNS: readonly { readonly label: string; readonly re: RegExp }[] = [
-  { label: "an email address", re: /[\w.+-]+@[\w-]+\.[\w.]{2,}/i },
-  // +977 1 4410 xxx, (0)20 7946 0000, 555-0143 — seven or more digits with the
-  // usual separators, which is a phone number and almost never anything else.
-  { label: "a phone number", re: /(?:\+|\(0\)|\b00)?[\d][\d\s().-]{6,}\d/ },
-  { label: "a WhatsApp or Telegram handle", re: /\b(?:wa\.me|whatsapp|t\.me|telegram|viber|wechat|signal)\b/i },
-  { label: "a website or booking link", re: /\b(?:https?:\/\/|www\.)\S+/i },
-  { label: "a website or booking link", re: /\b[\w-]+\.(?:com|net|org|io|co|travel|np|ch|fr)\b/i },
-  { label: "a social handle", re: /(?:^|\s)@[\w.]{2,}/ },
-];
-
-export interface ContactDetailFinding {
-  label: string;
-  excerpt: string;
-}
-
-/** Every pattern found, so the operator is told all of them at once. */
-export function findContactDetails(text: string | null | undefined): ContactDetailFinding[] {
-  if (!text) return [];
-  const found: ContactDetailFinding[] = [];
-  const seen = new Set<string>();
-  for (const { label, re } of CONTACT_PATTERNS) {
-    const m = text.match(re);
-    if (m && !seen.has(label)) {
-      seen.add(label);
-      found.push({ label, excerpt: m[0].trim().slice(0, 48) });
-    }
-  }
-  return found;
-}
-
-export const hasContactDetails = (text: string | null | undefined): boolean =>
-  findContactDetails(text).length > 0;
-
-/** Checks a whole record's free-text fields in one pass. */
-export function findContactDetailsIn(
-  fields: Readonly<Record<string, string | null | undefined>>,
-): Record<string, ContactDetailFinding[]> {
-  const out: Record<string, ContactDetailFinding[]> = {};
-  for (const [key, value] of Object.entries(fields)) {
-    const hits = findContactDetails(value);
-    if (hits.length) out[key] = hits;
-  }
-  return out;
-}
-
-/** The flag name the schema sets on a version. Advisory, surfaced in review. */
-export const CONTACT_FLAG = "possible_contact_details";
+export {
+  CONTACT_FLAG,
+  PRIVATE_TO_THIS_COMPANY,
+  PUBLISHED_TO_CLIMBERS,
+  blocksForContactDetails,
+  findContactDetails,
+  guardContactDetails,
+  hasContactDetails,
+} from "./contactGuard";
+export type { ContactDetailFinding, ContactDetailFindings, ContactSurface } from "./contactGuard";

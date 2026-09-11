@@ -209,6 +209,39 @@
 
 @layer components {
   /* The uppercase tracked micro-label used throughout the reference. */
+  /*
+    SCROLL REVEAL — additive, and it cannot hide content.
+
+    There is no hidden default state. `.icefall-rise` is added only once an
+    element has entered the viewport, and it plays a keyframe that starts from
+    transparent — so anything that never receives the class is simply visible.
+    A page with no JavaScript, a crawler, or a shared-link preview all get the
+    whole page.
+
+    Nothing above the fold uses it: the first frame is never animated, because
+    that frame is what a thumbnail and a skimming reader get.
+  */
+  @keyframes icefall-rise {
+    from {
+      opacity: 0;
+      transform: translateY(16px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .icefall-rise {
+    animation: icefall-rise 700ms var(--ease-alpine) both;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .icefall-rise {
+      animation: none;
+    }
+  }
+
   .section-label {
     font-size: 10px;
     line-height: 1;

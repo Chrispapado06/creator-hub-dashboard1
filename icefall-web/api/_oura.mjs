@@ -99,8 +99,47 @@ function readConfigured(env) {
   return Boolean(storeConfig(env));
 }
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * THE LEGAL HOLD — the server half of a three-part lock
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Two clauses of Oura's Developer API Agreement have not been cleared:
+ *
+ *   1. CHARGING. It forbids "charging Users in any manner for access to" Oura
+ *      functionality. ICEFALL is a paid subscription. Whether a general
+ *      subscription that happens to display a member's own Oura data falls
+ *      under that is a lawyer's reading, not an engineer's.
+ *
+ *   2. AI TRAINING. Oura data may NEVER be used to train or improve any AI
+ *      model. ICEFALL has a Coach; it is scripted today, and the day a model
+ *      sits behind `VITE_COACH_ENDPOINT`, an Oura HRV in its prompt is
+ *      arguably the ingestion that clause forbids.
+ *
+ * A CONSTANT, NOT AN ENVIRONMENT VARIABLE, and the reasoning is the same as in
+ * `icefall-app/src/tracking/sources/oura.ts`: a secret can be flipped in a
+ * dashboard by anyone in a hurry, and nothing about that records that the two
+ * clauses were read. Lifting a legal hold should cost a commit and a reviewer.
+ *
+ * THE SERVER IS THE LOCK THAT ACTUALLY PROTECTS PEOPLE. The app's own flag
+ * stops the button being drawn; this one refuses even a stale build that still
+ * has one, and refuses a hand-crafted request outright.
+ *
+ * WHAT IT DELIBERATELY DOES NOT BLOCK: `/summary` and `/disconnect`, neither of
+ * which calls `ouraReady`. Anybody already connected must still be able to see
+ * and delete what ICEFALL holds. A hold that trapped somebody's health data
+ * inside ICEFALL would be worse than the thing it exists to prevent.
+ *
+ * To lift it: this constant, plus `OURA_LEGAL_HOLD` in
+ * `icefall-app/src/tracking/sources/oura.ts`, plus `OURA_LEGAL_HOLD_CLEARED`
+ * in `icefall-supabase/supabase/functions/health/oura.ts`. Three files, on
+ * purpose — no single edit switches Oura on.
+ */
+const OURA_LEGAL_HOLD = true;
+
 /** Everything the write side needs, or the honest reason it is not there. */
 export function ouraReady(env = {}) {
+  if (OURA_LEGAL_HOLD) return { ready: false, reason: "legal_hold" };
   if (!ouraConfigured(env)) return { ready: false, reason: "oura_not_configured" };
   if (!readConfigured(env)) return { ready: false, reason: "supabase_not_configured" };
   if (!storeWritable(env)) return { ready: false, reason: "server_credentials_missing" };
@@ -110,15 +149,31 @@ export function ouraReady(env = {}) {
   return { ready: true, reason: "" };
 }
 
-const notConfigured = (reason) => ({
-  status: 503,
-  body: {
-    ok: false,
-    code: "not_configured",
-    reason,
-    error: "The Oura connection isn't set up on this deployment yet.",
-  },
-});
+/*
+ * `legal_hold` gets its own code and its own sentence. "Isn't set up on this
+ * deployment yet" would name a reason a deployment could fix, and send whoever
+ * read it to add a key that changes nothing — the same mistake as reporting a
+ * missing measurement as a zero.
+ */
+const HOLD_SENTENCE =
+  "ICEFALL has not switched Oura on. Two terms in Oura's developer agreement are " +
+  "unresolved — whether a paid subscription counts as charging for access to Oura " +
+  "functionality, and a ban on Oura data ever being used to train or improve an AI " +
+  "model. Until both are settled in writing, there is nothing here to connect to. " +
+  "This is ICEFALL's decision, not Oura's.";
+
+const notConfigured = (reason) =>
+  reason === "legal_hold"
+    ? { status: 503, body: { ok: false, code: "legal_hold", reason, error: HOLD_SENTENCE } }
+    : {
+        status: 503,
+        body: {
+          ok: false,
+          code: "not_configured",
+          reason,
+          error: "The Oura connection isn't set up on this deployment yet.",
+        },
+      };
 
 /* -- the return-URL allowlist ---------------------------------------------- */
 

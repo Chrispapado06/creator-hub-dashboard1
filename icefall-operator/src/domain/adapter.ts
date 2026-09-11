@@ -23,7 +23,15 @@
 
 import type { Session } from "./authz";
 import type {
+  Activity,
+  ActivityDirection,
+  ActivityStatus,
+  ActivityType,
+  AuditEntityType,
+  AuditEvent,
+  AvailabilityStatus,
   Booking,
+  BookingStatus,
   Channel,
   ChannelMessage,
   ChannelMessageStats,
@@ -31,28 +39,60 @@ import type {
   CompanyMountain,
   CompanyTrek,
   CompanyUser,
+  CommunicationPreferences,
+  ConsentStatus,
+  Contact,
+  ContactGroup,
   Conversation,
   ConversationNote,
   ContentEntityType,
   ContentVersion,
+  DepartureStatus,
+  Document,
+  DocumentType,
+  FinancialEvent,
+  FinancialEventSource,
+  FinancialEventStatus,
+  FinancialEventType,
   FunnelCounts,
+  GuideResource,
+  ItineraryDay,
   Lead,
   LeadNote,
   LeadStatus,
   Message,
   Mountain,
   OperatorNotification,
+  Participant,
+  ParticipantInformationField,
+  ParticipantStatus,
   Post,
   PostComment,
   PostMedia,
+  PreferredDates,
   Product,
   ProductDeparture,
   ProductKind,
   Placement,
   PromoVideo,
+  Proposal,
+  ProposalStatus,
+  ProposalVersion,
+  ReferralEvent,
+  RequirementStatus,
+  StoredCompanyRole,
+  Supplier,
+  SupplierStatus,
+  SupplierType,
+  Task,
+  TaskStatus,
+  TaskType,
   Trek,
+  TripBrief,
 } from "./types";
-import type { Reading } from "./honesty";
+import type { Cents, Reading } from "./honesty";
+import type { Quote } from "../money/model";
+import type { DuplicateContactCandidate } from "./crm/contacts";
 
 /**
  * An exact reporting range — both ends ISO `YYYY-MM-DD`, both INCLUSIVE.
@@ -354,6 +394,273 @@ export interface NewChannelMessageInput {
   promoNote?: string | null;
 }
 
+
+/* ========================================================================== */
+/* THE CRM OPERATING SYSTEM — inputs (brief §4–§6)                            */
+/* ========================================================================== */
+
+/*
+ * EVERY INPUT BELOW OMITS `companyId`, `id`, `createdAt`, `updatedAt` AND
+ * `createdBy`: scope and authorship come from the session, exactly as for
+ * every other write on this seam. An input that could name another company is
+ * an input that could leak into one.
+ *
+ * Every field on these records is PRIVATE SURFACE (see the CRM block in
+ * `types.ts`). No contact guard runs on any of them, by decision, not omission.
+ */
+
+/** Brief §4 Contact, minus the fields the adapter owns. */
+export interface NewContactInput {
+  firstName: string;
+  lastName: string;
+  email?: string | null;
+  phone?: string | null;
+  country?: string | null;
+  language?: string | null;
+  consentStatus?: ConsentStatus;
+  /** Set only when `consentStatus` is `given`; the adapter refuses the pair otherwise. */
+  marketingConsentAt?: string | null;
+  communicationPreferences?: Partial<CommunicationPreferences>;
+  /**
+   * Link the new contact to an existing `Lead` (the brief's inquiry). The
+   * lead must be the caller's own; `Lead.contactId` is set on success.
+   */
+  linkLeadId?: string | null;
+}
+
+export type ContactPatch = Partial<Omit<NewContactInput, "linkLeadId">>;
+
+export interface NewContactGroupInput {
+  name: string;
+  leaderContactId: string;
+  /** Must include the leader; the adapter adds them if omitted. */
+  memberContactIds: string[];
+}
+
+export type ContactGroupPatch = Partial<NewContactGroupInput>;
+
+/** Where an activity hangs. At least one of the three must be set. */
+export interface ActivityRef {
+  contactId?: string | null;
+  /** A `Lead.id`. */
+  inquiryId?: string | null;
+  bookingId?: string | null;
+}
+
+export interface NewActivityInput extends ActivityRef {
+  type: ActivityType;
+  direction: ActivityDirection;
+  /**
+   * `sent` IS REFUSED HERE AND IN `setActivityStatus`. Nothing in this app can
+   * send, so nothing in this app can have sent. Omit for `draft`.
+   */
+  status?: Exclude<ActivityStatus, "sent">;
+  subject: string;
+  bodyOrReference?: string | null;
+  scheduledAt?: string | null;
+}
+
+export interface NewTaskInput {
+  departureId?: string | null;
+  type: TaskType;
+  /** A `CompanyUser.id` on the caller's team, active. */
+  assigneeId: string;
+  supplierId?: string | null;
+  title: string;
+  description?: string | null;
+  dueAt?: string | null;
+}
+
+export type TaskPatch = Partial<Omit<NewTaskInput, "type">>;
+
+export interface TaskFilter {
+  departureId?: string;
+  assigneeId?: string;
+  status?: TaskStatus;
+}
+
+export interface NewTripBriefInput {
+  /** A `Lead.id` — the caller's own. */
+  inquiryId: string;
+  /** A `Mountain.id`. Defaults to the lead's `mountainId` when omitted. */
+  objectiveId?: string | null;
+  preferredDates?: Partial<PreferredDates>;
+  flexibilitySummary?: string | null;
+  groupSummary?: string | null;
+  experienceSummary?: string | null;
+  operatorAssumptions?: string | null;
+  requirementsToConfirm?: string[];
+  internalNotes?: string | null;
+}
+
+export type TripBriefPatch = Partial<Omit<NewTripBriefInput, "inquiryId">>;
+
+/**
+ * A proposal and its FIRST version, created together — a proposal with no
+ * version is a header with nothing behind it.
+ */
+export interface NewProposalInput {
+  /** A `Lead.id` — the caller's own. */
+  inquiryId: string;
+  tripBriefId?: string | null;
+  /** ISO 4217. Required — never assumed. */
+  currency: string;
+  totalMinor: Cents;
+  depositMinor: Cents;
+  balanceMinor: Cents;
+  /** A LOCAL day, `YYYY-MM-DD`. */
+  validUntil?: string | null;
+  cancellationPolicyReference?: string | null;
+  version: NewProposalVersionContent;
+}
+
+/** The header fields a DRAFT or IN-REVIEW proposal may still change in place. */
+export interface ProposalPatch {
+  tripBriefId?: string | null;
+  currency?: string;
+  totalMinor?: Cents;
+  depositMinor?: Cents;
+  balanceMinor?: Cents;
+  validUntil?: string | null;
+  cancellationPolicyReference?: string | null;
+}
+
+/** What a version SAYS. The number and the author are the adapter's. */
+export interface NewProposalVersionContent {
+  itineraryContent?: ItineraryDay[];
+  inclusions?: string[];
+  exclusions?: string[];
+  requirements?: string[];
+  /** The shared `Quote` from `src/money/model.ts`. */
+  pricingSnapshot?: Quote | null;
+  changeSummary?: string | null;
+}
+
+/**
+ * A NEW VERSION on an existing proposal, with any header change that goes with
+ * it. Header money moves WITH the version so the snapshot and the header agree
+ * in the same write; on a committed (sent or later) proposal this is the ONLY
+ * way to change anything, and the proposal returns to `draft` unapproved.
+ */
+export interface NewProposalVersionInput extends NewProposalVersionContent {
+  /** Required from version 2 onwards — say what changed and why. */
+  changeSummary: string;
+  header?: ProposalPatch;
+}
+
+export interface ProposalFilter {
+  inquiryId?: string;
+  status?: ProposalStatus;
+}
+
+/** Brief §4 Booking commercial fields the operator may set. Status has its own method. */
+export interface BookingCommercialPatch {
+  proposalId?: string | null;
+  departureId?: string | null;
+  primaryContactId?: string | null;
+  quotedTotalMinor?: Cents | null;
+  depositDueMinor?: Cents | null;
+  balanceDueMinor?: Cents | null;
+  depositDueAt?: string | null;
+  balanceDueAt?: string | null;
+  externalReference?: string | null;
+  /*
+   * NO `paymentProviderReference` HERE. No provider is connected; the field
+   * is written by a provider adapter that does not exist, never by a person.
+   */
+}
+
+export interface NewFinancialEventInput {
+  bookingId: string;
+  type: FinancialEventType;
+  /**
+   * `confirmed` is refused unless `source` is a provider or an operator
+   * confirmation. Omit for `draft`.
+   */
+  status?: FinancialEventStatus;
+  amountMinor: Cents | null;
+  currency: string;
+  source: FinancialEventSource;
+  externalReference?: string | null;
+  effectiveAt?: string | null;
+}
+
+export interface NewParticipantInput {
+  contactId: string;
+  inquiryId?: string | null;
+  proposalId?: string | null;
+  /** Only `lead` or `invited` at creation; the rest is derived or later. */
+  status?: Extract<ParticipantStatus, "lead" | "invited">;
+  retentionUntil?: string | null;
+}
+
+export interface ParticipantFilter {
+  /** Participants on this departure's roster. */
+  departureId?: string;
+  inquiryId?: string;
+  status?: ParticipantStatus;
+}
+
+export interface NewDocumentInput {
+  participantId: string;
+  type: DocumentType;
+  status?: RequirementStatus;
+  expiresAt?: string | null;
+  /** A path in a private store. NEVER a URL. */
+  storageReference?: string | null;
+  consentReference?: string | null;
+}
+
+/** `reviewedBy` / `reviewedAt` are stamped by the adapter when status becomes `reviewed`. */
+export interface DocumentPatch {
+  status?: RequirementStatus;
+  expiresAt?: string | null;
+  storageReference?: string | null;
+  consentReference?: string | null;
+}
+
+/** The operational fields of a departure — `DEPARTURE_OPERATIONS_FIELDS`. */
+export interface DepartureOperationsPatch {
+  status?: DepartureStatus;
+  name?: string | null;
+  capacity?: number | null;
+  meetingPoint?: string | null;
+  internalNotes?: string | null;
+  proposalId?: string | null;
+}
+
+export interface NewSupplierInput {
+  name: string;
+  type: SupplierType;
+  country?: string | null;
+  contactDetails?: string | null;
+  contractReference?: string | null;
+  status?: SupplierStatus;
+}
+
+export type SupplierPatch = Partial<Omit<NewSupplierInput, "status">>;
+
+export interface NewGuideResourceInput {
+  profileIdOrExternalContactId: string;
+  role: string;
+  qualificationsReference?: string | null;
+  insuranceStatus?: RequirementStatus;
+  availabilityStatus?: AvailabilityStatus;
+  contactPreferences?: string | null;
+  /*
+   * NO `verificationStatus`. Every guide is created `not_submitted`, and no
+   * method on this seam raises it to `verified` — the operator is not the
+   * verifying party.
+   */
+}
+
+export type GuideResourcePatch = Partial<NewGuideResourceInput>;
+
+export interface AuditFilter {
+  entityType?: AuditEntityType;
+  entityId?: string;
+}
+
 export interface OperatorBackend {
   /* ---- identity -------------------------------------------------------- */
   signIn(email: string): Promise<Session | null>;
@@ -382,9 +689,20 @@ export interface OperatorBackend {
    * `companyId` is NOT part of `input` on purpose: an invite is always scoped
    * to the caller's own company, never aimed at another one.
    */
+  /**
+   * ROLE IS `StoredCompanyRole`, NOT `CompanyRole`, AND THAT IS DELIBERATE.
+   *
+   * The product models six roles (brief §4); `company_users.company_role` still
+   * accepts two — `check (company_role in ('admin', 'sales'))`,
+   * `icefall-supabase/migrations/20260828100000_crm_foundation.sql:333`. An
+   * invite ends as a row in that table, so offering the other four here would
+   * be offering an invitation the database refuses. Narrowing the parameter
+   * makes that a compile error today rather than a write failure later, and it
+   * widens by itself the moment `StoredCompanyRole` widens.
+   */
   inviteTeamMember(
     session: Session,
-    input: { displayName: string; email: string; role: CompanyUser["role"] },
+    input: { displayName: string; email: string; role: StoredCompanyRole },
   ): Promise<WriteResult<CompanyUser>>;
 
   /* ---- mountains ------------------------------------------------------- */
@@ -530,8 +848,9 @@ export interface OperatorBackend {
   /**
    * Publishes a post — public the moment it succeeds, no review step, because
    * none exists (moderation is the CRM's queue, after the fact). The caption
-   * is operator-authored public text and runs the same `findContactDetailsIn`
-   * guard as every other such field; a story expiry in the past is refused.
+   * is operator-authored public text and runs the same
+   * `guardContactDetails("published", …)` guard as every other ICEFALL-facing
+   * field; a story expiry in the past is refused.
    * Every refusal reason is shown verbatim.
    */
   createPost?(session: Session, input: NewPostInput): Promise<WriteResult<Post>>;
@@ -595,8 +914,8 @@ export interface OperatorBackend {
    * Opens a channel. Admin only — the same permission that publishes company
    * content, because a channel IS published company content.
    *
-   * Both the name and the description run the `findContactDetailsIn` guard,
-   * and blockingly. A channel is promotional text pointed straight at climbers
+   * Both the name and the description run the contact guard on the
+   * `"published"` surface, and blockingly. A channel is promotional text pointed straight at climbers
    * with no reviewer in between, so it is exactly where a phone number gets
    * smuggled — and a channel NAME is read far more often than its description.
    */
@@ -714,4 +1033,166 @@ export interface OperatorBackend {
   getAnalytics(session: Session, window: AnalyticsWindow): Promise<AnalyticsSummary>;
   getNotifications(session: Session): Promise<OperatorNotification[]>;
   markNotificationRead(session: Session, id: string): Promise<void>;
+
+  /* ---- THE CRM OPERATING SYSTEM (brief §4–§6) --------------------------- */
+  /*
+   * THE COMPANY'S OWN RECORDS. Contacts, activities, tasks, trip briefs,
+   * proposals, the commercial record, participants, departures' operational
+   * side, suppliers, guides, ICEFALL referrals and the audit trail.
+   *
+   * ALL OPTIONAL, for exactly the reason `getTreks` and `getPosts` are: two
+   * other implementations of this seam — `src/offline/backend.ts` and
+   * `src/backend/supabaseBackend.ts` — are frozen this wave, and NO LIVE TABLE
+   * EXISTS for any of these entities (asked for in
+   * `icefall-sessions/requests/17-operator-crm-operating-system-schema.md`).
+   * A screen finding a method absent renders `CRM_NOTICES.NOT_CONNECTED` from
+   * `@/domain/crm` — it does not draw an empty list, because an empty list
+   * says "you have no customers". When the tables land these become required.
+   *
+   * SESSION-SCOPED, EVERY ONE. No `companyId` parameter anywhere.
+   *
+   * EVERY MUTATING METHOD WRITES AN `AuditEvent`. `listAuditEvents` is how a
+   * screen shows the trail; nothing here deletes one.
+   */
+
+  /* -- Contacts -- */
+  listContacts?(session: Session): Promise<Contact[]>;
+  getContact?(session: Session, contactId: string): Promise<Contact | null>;
+  createContact?(session: Session, input: NewContactInput): Promise<WriteResult<Contact>>;
+  updateContact?(session: Session, contactId: string, patch: ContactPatch): Promise<WriteResult<Contact>>;
+  /**
+   * Candidates that LOOK LIKE `draft`, for a person to review. Never merges;
+   * an empty list means nothing matched by email, phone or full name — not
+   * that no duplicate exists.
+   */
+  findDuplicateContacts?(session: Session, draft: { firstName: string; lastName: string; email?: string | null; phone?: string | null }): Promise<DuplicateContactCandidate[]>;
+  /**
+   * EXPLICIT AND AUDITED. Every reference to `dropId` — leads, participants,
+   * activities, groups, bookings — is repointed at `keepId`, and the dropped
+   * row's stripped snapshot is kept in the audit event. Refuses two ids that
+   * are the same, or either that is not the caller's.
+   */
+  mergeContacts?(session: Session, keepId: string, dropId: string): Promise<WriteResult<Contact>>;
+  listContactGroups?(session: Session): Promise<ContactGroup[]>;
+  createContactGroup?(session: Session, input: NewContactGroupInput): Promise<WriteResult<ContactGroup>>;
+  updateContactGroup?(session: Session, groupId: string, patch: ContactGroupPatch): Promise<WriteResult<ContactGroup>>;
+
+  /* -- Communication / Activity -- */
+  /** The timeline for a contact, an inquiry or a booking — newest first. */
+  listActivitiesFor?(session: Session, ref: ActivityRef): Promise<Activity[]>;
+  /** `status: "sent"` is refused — see `Activity` in `types.ts`. */
+  createActivity?(session: Session, input: NewActivityInput): Promise<WriteResult<Activity>>;
+  /** Likewise refuses `sent`. */
+  setActivityStatus?(session: Session, activityId: string, status: ActivityStatus): Promise<WriteResult<Activity>>;
+
+  /* -- Tasks -- */
+  listTasks?(session: Session, filter?: TaskFilter): Promise<Task[]>;
+  createTask?(session: Session, input: NewTaskInput): Promise<WriteResult<Task>>;
+  updateTask?(session: Session, taskId: string, patch: TaskPatch): Promise<WriteResult<Task>>;
+  /** `completed` stamps `completedAt`; anything else clears it. */
+  setTaskStatus?(session: Session, taskId: string, status: TaskStatus): Promise<WriteResult<Task>>;
+
+  /* -- Trip briefs -- */
+  getTripBriefForInquiry?(session: Session, inquiryId: string): Promise<TripBrief | null>;
+  createTripBrief?(session: Session, input: NewTripBriefInput): Promise<WriteResult<TripBrief>>;
+  updateTripBrief?(session: Session, tripBriefId: string, patch: TripBriefPatch): Promise<WriteResult<TripBrief>>;
+
+  /* -- Proposals -- */
+  listProposals?(session: Session, filter?: ProposalFilter): Promise<Proposal[]>;
+  getProposal?(session: Session, proposalId: string): Promise<Proposal | null>;
+  /** Creates the proposal AND version 1. `deposit + balance === total` or refused. */
+  createProposal?(session: Session, input: NewProposalInput): Promise<WriteResult<Proposal>>;
+  /** Header edit — DRAFT / INTERNAL_REVIEW ONLY. A sent proposal is refused; use `createProposalVersion`. */
+  updateProposal?(session: Session, proposalId: string, patch: ProposalPatch): Promise<WriteResult<Proposal>>;
+  /**
+   * Internal approval — `approveProposals` (owner/admin). Stamps
+   * `approvedBy`/`approvedAt`. Required before `sent`.
+   */
+  approveProposal?(session: Session, proposalId: string): Promise<WriteResult<Proposal>>;
+  /**
+   * Status moves per `PROPOSAL_TRANSITIONS` in `@/domain/crm`. `sent` is
+   * refused without `approvedBy`, with the reason.
+   */
+  setProposalStatus?(session: Session, proposalId: string, status: ProposalStatus): Promise<WriteResult<Proposal>>;
+  /** Every version, oldest first. Which is current is derived — `currentVersion()`. */
+  listProposalVersions?(session: Session, proposalId: string): Promise<ProposalVersion[]>;
+  /**
+   * APPENDS a version. On a committed proposal this is the only edit path:
+   * the prior version is untouched (superseded by derivation), the approval
+   * is cleared and the status returns to `draft`.
+   */
+  createProposalVersion?(session: Session, proposalId: string, input: NewProposalVersionInput): Promise<WriteResult<ProposalVersion>>;
+
+  /* -- The commercial record -- */
+  getBooking?(session: Session, bookingId: string): Promise<Booking | null>;
+  /** The brief's commercial fields. `paymentProviderReference` is not settable. */
+  updateBookingCommercial?(session: Session, bookingId: string, patch: BookingCommercialPatch): Promise<WriteResult<Booking>>;
+  /**
+   * `paid` requires CONFIRMED received events adding up to the quoted total;
+   * `refunded` requires a confirmed `refund_issued`. A status is never proof
+   * of money — the events are what carry the source.
+   */
+  setBookingStatus?(session: Session, bookingId: string, status: BookingStatus): Promise<WriteResult<Booking>>;
+  /** All of the company's events, or one booking's. Oldest first. */
+  listFinancialEvents?(session: Session, bookingId?: string): Promise<FinancialEvent[]>;
+  createFinancialEvent?(session: Session, input: NewFinancialEventInput): Promise<WriteResult<FinancialEvent>>;
+  /** `confirmed` is refused unless the event's source is a provider or an operator confirmation. */
+  setFinancialEventStatus?(session: Session, eventId: string, status: FinancialEventStatus): Promise<WriteResult<FinancialEvent>>;
+
+  /* -- Participants and documents -- */
+  /**
+   * REDACTED AT THE ADAPTER for a caller without `viewSensitiveParticipantData`:
+   * `fitnessInformationStatus` and `medicalInformationStatus` come back as
+   * `REDACTED`. A screen renders that as hidden-from-role, never as blank.
+   */
+  listParticipants?(session: Session, filter?: ParticipantFilter): Promise<Participant[]>;
+  getParticipant?(session: Session, participantId: string): Promise<Participant | null>;
+  createParticipant?(session: Session, input: NewParticipantInput): Promise<WriteResult<Participant>>;
+  /**
+   * Moves ONE information field and re-derives `status`. Writing a sensitive
+   * field requires `viewSensitiveParticipantData` as well as
+   * `manageParticipants` — you cannot set what you may not read.
+   */
+  setParticipantFieldStatus?(session: Session, participantId: string, field: ParticipantInformationField, status: RequirementStatus): Promise<WriteResult<Participant>>;
+  /**
+   * Lifecycle only: `lead`, `invited`, `completed`, `cancelled`. The three
+   * derived statuses are REFUSED — see `DERIVED_PARTICIPANT_STATUSES`.
+   */
+  setParticipantStatus?(session: Session, participantId: string, status: ParticipantStatus): Promise<WriteResult<Participant>>;
+  /** A medical document is redacted (status and reference) without the sensitive permission. */
+  listDocumentsFor?(session: Session, participantId: string): Promise<Document[]>;
+  createDocument?(session: Session, input: NewDocumentInput): Promise<WriteResult<Document>>;
+  /** `reviewed` stamps `reviewedBy`/`reviewedAt` from the session. Also moves the matching participant field. */
+  updateDocument?(session: Session, documentId: string, patch: DocumentPatch): Promise<WriteResult<Document>>;
+
+  /* -- Departures, the operational side -- */
+  /** Every departure across the company's products — the operations list. */
+  listDepartures?(session: Session): Promise<ProductDeparture[]>;
+  getDeparture?(session: Session, departureId: string): Promise<ProductDeparture | null>;
+  /**
+   * THE THIRD WRITE GROUP — `DEPARTURE_OPERATIONS_FIELDS` only. Dates and
+   * price still go through a version; availability still goes through
+   * `setDepartureAvailability`. Nothing here can touch either.
+   */
+  updateDepartureOperations?(session: Session, departureId: string, patch: DepartureOperationsPatch): Promise<WriteResult<ProductDeparture>>;
+  /** Replaces the roster. Every id must be the company's own participant; refused past `capacity`. */
+  setDepartureRoster?(session: Session, departureId: string, participantIds: string[]): Promise<WriteResult<ProductDeparture>>;
+
+  /* -- Suppliers and guides -- */
+  listSuppliers?(session: Session): Promise<Supplier[]>;
+  createSupplier?(session: Session, input: NewSupplierInput): Promise<WriteResult<Supplier>>;
+  updateSupplier?(session: Session, supplierId: string, patch: SupplierPatch): Promise<WriteResult<Supplier>>;
+  setSupplierStatus?(session: Session, supplierId: string, status: SupplierStatus): Promise<WriteResult<Supplier>>;
+  listGuideResources?(session: Session): Promise<GuideResource[]>;
+  /** Always `verificationStatus: "not_submitted"`. */
+  createGuideResource?(session: Session, input: NewGuideResourceInput): Promise<WriteResult<GuideResource>>;
+  updateGuideResource?(session: Session, guideId: string, patch: GuideResourcePatch): Promise<WriteResult<GuideResource>>;
+
+  /* -- The ICEFALL section -- */
+  /** Read-only. ICEFALL writes these; no booking or commission follows from one. */
+  listReferralEvents?(session: Session): Promise<ReferralEvent[]>;
+
+  /* -- Audit -- */
+  /** Newest first. */
+  listAuditEvents?(session: Session, filter?: AuditFilter): Promise<AuditEvent[]>;
 }

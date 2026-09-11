@@ -15,7 +15,7 @@
 
 import type { AnalyticsRange, AnalyticsSummary, AnalyticsWindow, DashboardSummary, DraftInput, MountainPerformance, NewProductInput, OperatorBackend, OperatorInsights, OwnerPerformance, ProductPerformance, SourceCount, SourceQuality, StageReach, TrendPoint, WriteResult } from "../adapter";
 import type { Session } from "../authz";
-import { can, canEditVersion, canManageMountain, findContactDetailsIn, isCompanyAdmin, ownsCompany } from "../authz";
+import { can, canEditVersion, canManageMountain, guardContactDetails, isCompanyAdmin, ownsCompany } from "../authz";
 import { conversionRate, estimatedGmv, measured, OPERATOR_NOTICES, unavailable, type Reading } from "../honesty";
 import { demoListingViews } from "../demo";
 import { formatDayShort, NOW, parseDay, TODAY } from "../dates";
@@ -35,6 +35,9 @@ import type {
  */
 import { youtubeIdFrom } from "@/editor/VideoField";
 import * as seed from "./seed";
+import { buildAuditEvent } from "../crm/audit";
+import type { AuditEntityType } from "../types";
+import { crmMethods } from "./crm";
 
 /**
  * Tags are trimmed, de-duplicated case-insensitively, capped and length-bound.
@@ -98,6 +101,25 @@ const db = {
   channelMembers: [...seed.CHANNEL_MEMBERS],
   channelMessages: [...seed.CHANNEL_MESSAGES],
   channelMessageViews: [...seed.CHANNEL_MESSAGE_VIEWS],
+  /*
+   * THE CRM OPERATING SYSTEM (brief §4) — in-memory stand-ins for tables that
+   * do not exist yet (`requests/17-operator-crm-operating-system-schema.md`).
+   * The methods over them live in `./crm.ts`; the store is this one object.
+   */
+  contacts: seed.CONTACTS.map((c) => ({ ...c })),
+  contactGroups: seed.CONTACT_GROUPS.map((g) => ({ ...g, memberContactIds: [...g.memberContactIds] })),
+  activities: seed.ACTIVITIES.map((a) => ({ ...a })),
+  tasks: seed.TASKS.map((t) => ({ ...t })),
+  tripBriefs: seed.TRIP_BRIEFS.map((b) => ({ ...b })),
+  proposals: seed.PROPOSALS.map((p) => ({ ...p })),
+  proposalVersions: [...seed.PROPOSAL_VERSIONS],
+  financialEvents: [...seed.FINANCIAL_EVENTS],
+  participants: seed.PARTICIPANTS.map((p) => ({ ...p })),
+  documents: seed.DOCUMENTS.map((d) => ({ ...d })),
+  suppliers: seed.SUPPLIERS.map((x) => ({ ...x })),
+  guideResources: seed.GUIDE_RESOURCES.map((g) => ({ ...g })),
+  referralEvents: [...seed.REFERRAL_EVENTS],
+  auditEvents: [...seed.AUDIT_EVENTS],
 };
 
 /** Restores the seed. Used between tests so one cannot leak into the next. */
@@ -129,6 +151,20 @@ export function resetStore(): void {
   db.channelMembers = [...seed.CHANNEL_MEMBERS];
   db.channelMessages = [...seed.CHANNEL_MESSAGES];
   db.channelMessageViews = [...seed.CHANNEL_MESSAGE_VIEWS];
+  db.contacts = seed.CONTACTS.map((c) => ({ ...c }));
+  db.contactGroups = seed.CONTACT_GROUPS.map((g) => ({ ...g, memberContactIds: [...g.memberContactIds] }));
+  db.activities = seed.ACTIVITIES.map((a) => ({ ...a }));
+  db.tasks = seed.TASKS.map((t) => ({ ...t }));
+  db.tripBriefs = seed.TRIP_BRIEFS.map((b) => ({ ...b }));
+  db.proposals = seed.PROPOSALS.map((p) => ({ ...p }));
+  db.proposalVersions = [...seed.PROPOSAL_VERSIONS];
+  db.financialEvents = [...seed.FINANCIAL_EVENTS];
+  db.participants = seed.PARTICIPANTS.map((p) => ({ ...p }));
+  db.documents = seed.DOCUMENTS.map((d) => ({ ...d }));
+  db.suppliers = seed.SUPPLIERS.map((x) => ({ ...x }));
+  db.guideResources = seed.GUIDE_RESOURCES.map((g) => ({ ...g }));
+  db.referralEvents = [...seed.REFERRAL_EVENTS];
+  db.auditEvents = [...seed.AUDIT_EVENTS];
 }
 
 let idCounter = 0;
@@ -136,6 +172,39 @@ const nextId = (prefix: string) => `${prefix}-${++idCounter}`;
 
 const deny = <T>(reason: string): WriteResult<T> => ({ ok: false, reason });
 const ok = <T>(value: T): WriteResult<T> => ({ ok: true, value });
+
+/**
+ * THE AUDIT TRAIL — one line in every mutating method (brief §4 Audit Event).
+ *
+ * Built by the same `buildAuditEvent` the seed and `./crm.ts` use, so every
+ * event in the store was made one way. Snapshots are stripped of sensitive
+ * content there. `before`/`after` are whatever the method holds — the builder
+ * reduces them to the keys that changed.
+ */
+function audit(
+  session: Session,
+  entityType: AuditEntityType,
+  entityId: string,
+  action: string,
+  before: Record<string, unknown> | null,
+  after: Record<string, unknown> | null,
+): void {
+  db.auditEvents = [
+    ...db.auditEvents,
+    buildAuditEvent({
+      id: nextId("au"),
+      companyId: session.user.companyId,
+      actorId: session.user.id,
+      entityType,
+      entityId,
+      action,
+      before,
+      after,
+      createdAt: NOW,
+    }),
+  ];
+}
+const rec = (x: object): Record<string, unknown> => x as Record<string, unknown>;
 
 const DENY_OTHER_COMPANY = "That belongs to another company.";
 const DENY_ROLE = "Only a Company Admin can change published content.";
@@ -275,6 +344,7 @@ export const memoryBackend: OperatorBackend = {
     if (u.id === session.user.id) return deny("You cannot disable your own account.");
     const updated: CompanyUser = { ...u, status };
     db.users = db.users.map((x) => (x.id === u.id ? updated : x));
+    audit(session, "company_user", u.id, "status_changed", { status: u.status }, { status });
     return ok(updated);
   },
 
@@ -303,6 +373,7 @@ export const memoryBackend: OperatorBackend = {
       createdAt: NOW,
     };
     db.users = [...db.users, user];
+    audit(session, "company_user", user.id, "invited", null, rec(user));
     return ok(user);
   },
 
@@ -382,6 +453,7 @@ export const memoryBackend: OperatorBackend = {
       updatedAt: NOW,
     };
     db.products = [...db.products, product];
+    audit(session, "product", product.id, "created", null, rec(product));
     return ok(product);
   },
 
@@ -407,6 +479,7 @@ export const memoryBackend: OperatorBackend = {
       spotsLeft: patch.spotsLeft === undefined ? d.spotsLeft : patch.spotsLeft,
     };
     db.departures = db.departures.map((x) => (x.id === d.id ? updated : x));
+    audit(session, "departure", d.id, "availability_updated", rec(d), rec(updated));
     return ok(updated);
   },
 
@@ -453,6 +526,7 @@ export const memoryBackend: OperatorBackend = {
         updatedAt: NOW,
       };
       db.versions = db.versions.map((v) => (v.id === existing.id ? updated : v));
+      audit(session, "content_version", existing.id, "draft_updated", rec(existing), rec(updated));
       return ok(updated);
     }
 
@@ -475,6 +549,7 @@ export const memoryBackend: OperatorBackend = {
       updatedAt: NOW,
     };
     db.versions = [...db.versions, version];
+    audit(session, "content_version", version.id, "draft_created", null, rec(version));
     return ok(version);
   },
 
@@ -513,7 +588,7 @@ export const memoryBackend: OperatorBackend = {
     for (const [k, val] of Object.entries(v.payload)) {
       if (typeof val === "string") textFields[k] = val;
     }
-    const contact = findContactDetailsIn(textFields);
+    const contact = guardContactDetails("published", textFields);
     const fields = Object.keys(contact);
     if (fields.length) {
       const labels = [...new Set(Object.values(contact).flat().map((f) => f.label))];
@@ -530,6 +605,7 @@ export const memoryBackend: OperatorBackend = {
       updatedAt: NOW,
     };
     db.versions = db.versions.map((x) => (x.id === v.id ? updated : x));
+    audit(session, "content_version", v.id, "submitted", { state: v.state }, { state: updated.state });
     return ok(updated);
   },
 
@@ -540,6 +616,7 @@ export const memoryBackend: OperatorBackend = {
     if (v.state !== "pending") return deny("Only a submission awaiting review can be withdrawn.");
     const updated: ContentVersion = { ...v, state: "draft", submittedAt: null, submittedBy: null, updatedAt: NOW };
     db.versions = db.versions.map((x) => (x.id === v.id ? updated : x));
+    audit(session, "content_version", v.id, "withdrawn", { state: v.state }, { state: "draft" });
     return ok(updated);
   },
 
@@ -570,7 +647,7 @@ export const memoryBackend: OperatorBackend = {
     // The same rule as published content, for the same reason: a reply that
     // moves the conversation to WhatsApp takes the booking with it, and the
     // operator loses the attribution as surely as ICEFALL does.
-    const contact = findContactDetailsIn({ body: text });
+    const contact = guardContactDetails("published", { body: text });
     if (contact.body) {
       return deny(
         `That reply contains ${contact.body.map((f) => f.label).join(" and ")}. ${OPERATOR_NOTICES.NO_CONTACT_DETAILS}`,
@@ -600,6 +677,7 @@ export const memoryBackend: OperatorBackend = {
           : l,
       );
     }
+    audit(session, "conversation", conversationId, "message_sent", null, { messageId: message.id, leadId: c.leadId });
     return ok(message);
   },
 
@@ -630,6 +708,7 @@ export const memoryBackend: OperatorBackend = {
       createdAt: NOW,
     };
     db.notes = [...db.notes, note];
+    audit(session, "conversation", conversationId, "note_added", null, { noteId: note.id });
     return ok(note);
   },
 
@@ -682,8 +761,11 @@ export const memoryBackend: OperatorBackend = {
       };
       db.bookings = [...db.bookings, booking];
       db.leads = db.leads.map((x) => (x.id === l.id ? { ...updated, bookingId: booking.id } : x));
+      audit(session, "booking", booking.id, "created", null, rec(booking));
     }
-    return ok(db.leads.find((x) => x.id === l.id)!);
+    const after = db.leads.find((x) => x.id === l.id)!;
+    audit(session, "inquiry", l.id, "status_changed", rec(l), rec(after));
+    return ok(after);
   },
 
   async assignLead(session, leadId, companyUserId) {
@@ -696,6 +778,7 @@ export const memoryBackend: OperatorBackend = {
     }
     const updated: Lead = { ...l, ownerId: companyUserId };
     db.leads = db.leads.map((x) => (x.id === l.id ? updated : x));
+    audit(session, "inquiry", l.id, "assigned", { ownerId: l.ownerId }, { ownerId: companyUserId });
     return ok(updated);
   },
 
@@ -713,9 +796,29 @@ export const memoryBackend: OperatorBackend = {
     const name = input.customerName.trim();
     if (!name) return deny("Give the customer a name.");
 
-    if (Object.keys(findContactDetailsIn({ customerName: name })).length > 0) {
-      return deny(OPERATOR_NOTICES.NO_CONTACT_DETAILS);
-    }
+    /*
+     * PRIVATE CRM — the guard does not apply, and this is the one call site the
+     * boundary split actually changed.
+     *
+     * A lead the company added themselves is their own contact record. Nobody
+     * outside this company reads `customerName`: `origin` is hard-coded
+     * "company" and `conversationId` stays null, so there is no ICEFALL thread
+     * and no ICEFALL screen showing it to a climber. Refusing "Sam Okafor
+     * (sam@okafor.example)" here was refusing an operator the right to write
+     * down their own customer's details in their own CRM — the guard reaching
+     * past the thing it protects.
+     *
+     * WHAT STILL CATCHES IT. If that name ever travels to a climber it crosses
+     * a published boundary on the way, and the guard is there: an offer's body
+     * carries the customer's first name and `sendMessage` runs
+     * `guardContactDetails("published", …)` over the assembled body before it
+     * reaches the thread. The rule is enforced where the text leaves the
+     * company, not where it is stored.
+     *
+     * So there is no guard call here, deliberately — not a call with the guard
+     * turned off. `guardContactDetails("private", …)` returning nothing would
+     * be the same no-op written twice as long.
+     */
 
     if (input.productId) {
       const p = db.products.find((x) => x.id === input.productId);
@@ -767,6 +870,7 @@ export const memoryBackend: OperatorBackend = {
         },
       ];
     }
+    audit(session, "inquiry", lead.id, "created", null, rec(lead));
     return ok(lead);
   },
 
@@ -780,10 +884,11 @@ export const memoryBackend: OperatorBackend = {
      * tag is the same escape route as typing it into a note.
      */
     const cleaned = normaliseTags(tags);
-    const hits = findContactDetailsIn(Object.fromEntries(cleaned.map((t, i) => [`tag${i}`, t])));
+    const hits = guardContactDetails("published", Object.fromEntries(cleaned.map((t, i) => [`tag${i}`, t])));
     if (Object.keys(hits).length > 0) return deny(OPERATOR_NOTICES.NO_CONTACT_DETAILS);
     const updated: Lead = { ...l, tags: cleaned };
     db.leads = db.leads.map((x) => (x.id === l.id ? updated : x));
+    audit(session, "inquiry", l.id, "tags_updated", { tags: l.tags }, { tags: cleaned });
     return ok(updated);
   },
 
@@ -844,7 +949,7 @@ export const memoryBackend: OperatorBackend = {
      * as it is for a customer reply and for the same reason: advisory would
      * mean not enforced.
      */
-    const contact = findContactDetailsIn({ caption });
+    const contact = guardContactDetails("published", { caption });
     if (contact.caption) {
       return deny(
         `That caption contains ${contact.caption.map((f) => f.label).join(" and ")}. ${OPERATOR_NOTICES.NO_CONTACT_DETAILS}`,
@@ -899,6 +1004,7 @@ export const memoryBackend: OperatorBackend = {
       removedReason: null,
     };
     db.posts = [...db.posts, post];
+    audit(session, "post", post.id, "created", null, rec(post));
     return ok(post);
   },
 
@@ -918,6 +1024,7 @@ export const memoryBackend: OperatorBackend = {
     }
     db.posts = db.posts.filter((x) => x.id !== p.id);
     db.postComments = db.postComments.filter((c) => c.postId !== p.id);
+    audit(session, "post", p.id, "deleted", rec(p), null);
     return ok(p);
   },
 
@@ -955,6 +1062,7 @@ export const memoryBackend: OperatorBackend = {
     if (input === null || input.trim() === "") {
       // Clearing is allowed, and is a choice the record can represent.
       db.promoVideos = db.promoVideos.filter((s) => s.companyId !== session.user.companyId);
+      audit(session, "promo_video", session.user.companyId, "cleared", null, { video: cleared });
       return ok(cleared);
     }
 
@@ -969,6 +1077,7 @@ export const memoryBackend: OperatorBackend = {
     db.promoVideos = existing
       ? db.promoVideos.map((s) => (s.companyId === session.user.companyId ? { ...s, video } : s))
       : [...db.promoVideos, { companyId: session.user.companyId, video }];
+    audit(session, "promo_video", session.user.companyId, "set", existing ? { video: existing.video } : null, { video });
     return ok(video);
   },
 
@@ -1024,7 +1133,7 @@ export const memoryBackend: OperatorBackend = {
      * a channel NAME is read every time the list is drawn, far more often than
      * anyone opens the description.
      */
-    const contact = findContactDetailsIn({ name, description });
+    const contact = guardContactDetails("published", { name, description });
     const refusal = contactRefusal(contact, "That channel");
     if (refusal) return deny(refusal);
 
@@ -1043,6 +1152,7 @@ export const memoryBackend: OperatorBackend = {
       createdAt: NOW,
     };
     db.channels = [...db.channels, channel];
+    audit(session, "channel", channel.id, "created", null, rec(channel));
     return ok(channel);
   },
 
@@ -1072,11 +1182,12 @@ export const memoryBackend: OperatorBackend = {
       next.description = description || null;
     }
 
-    const contact = findContactDetailsIn({ name: next.name, description: next.description });
+    const contact = guardContactDetails("published", { name: next.name, description: next.description });
     const refusal = contactRefusal(contact, "That channel");
     if (refusal) return deny(refusal);
 
     db.channels = db.channels.map((x) => (x.id === c.id ? next : x));
+    audit(session, "channel", c.id, "updated", rec(c), rec(next));
     return ok(next);
   },
 
@@ -1098,6 +1209,7 @@ export const memoryBackend: OperatorBackend = {
 
     const next: Channel = { ...c, archivedAt: NOW };
     db.channels = db.channels.map((x) => (x.id === c.id ? next : x));
+    audit(session, "channel", c.id, "archived", { archivedAt: null }, { archivedAt: NOW });
     return ok(next);
   },
 
@@ -1141,7 +1253,7 @@ export const memoryBackend: OperatorBackend = {
      * a post caption and a customer reply, so the same rule, enforced the same
      * way. Advisory would mean not enforced.
      */
-    const contact = findContactDetailsIn({ body, promoNote });
+    const contact = guardContactDetails("published", { body, promoNote });
     const refusal = contactRefusal(contact, "That message");
     if (refusal) return deny(refusal);
 
@@ -1201,6 +1313,7 @@ export const memoryBackend: OperatorBackend = {
       createdAt: NOW,
     };
     db.channelMessages = [...db.channelMessages, message];
+    audit(session, "channel_message", message.id, "posted", null, rec(message));
     return ok(message);
   },
 
@@ -1222,6 +1335,7 @@ export const memoryBackend: OperatorBackend = {
     db.channelMessages = db.channelMessages.filter((x) => x.id !== m.id);
     // `on delete cascade` in the migration; the same effect here.
     db.channelMessageViews = db.channelMessageViews.filter((v) => v.messageId !== m.id);
+    audit(session, "channel_message", m.id, "deleted", rec(m), null);
     return ok(m);
   },
 
@@ -1624,6 +1738,14 @@ export const memoryBackend: OperatorBackend = {
       n.id === id && n.companyUserId === session.user.id ? { ...n, readAt: NOW } : n,
     );
   },
+
+  /* ---- THE CRM OPERATING SYSTEM (brief §4–§6) --------------------------- */
+  /*
+   * Implemented in `./crm.ts` over THIS store, with THIS file's scoping and
+   * lookup helpers passed in, so there is still one `mine()` and one `db`.
+   * See the header of that file for the rules it enforces.
+   */
+  ...crmMethods({ db, nextId, mine, myLead, myProduct, strictDay }),
 };
 
 /* -------------------------------------------------------------------------- */

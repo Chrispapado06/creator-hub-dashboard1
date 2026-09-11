@@ -1,11 +1,19 @@
 /**
  * Team — Members, and who is allowed to do what.
  *
- * THREE TIERS ON THIS SCREEN, TWO ROLES IN THE DATA. `CompanyRole` still has
- * exactly two values (spec §3, §13); the account owner is not a third role but
- * the one member of the company nobody invited, read off `invitedBy` by
- * `isOwnerAccount` in `authz.ts`. That is why the Roles tab has three panels
- * and the invite form still offers two.
+ * THREE TIERS ON THIS SCREEN, SIX ROLES IN THE MODEL, TWO IN THE DATABASE.
+ * `CompanyRole` now carries all six the owner chose (brief §4), but
+ * `company_users.company_role` still accepts `admin` and `sales` only —
+ * `icefall-supabase/migrations/20260828100000_crm_foundation.sql:333`. So the
+ * invite form offers exactly the two that can be saved, and this screen keeps
+ * describing the three tiers that can actually exist: the two stored roles, and
+ * the account owner, who is not a stored role at all but the one member nobody
+ * invited, read off `invitedBy` by `isOwnerAccount` in `authz.ts`.
+ *
+ * A panel for a role no member can hold would be a promise, not a description.
+ * When the check constraint widens (requested in
+ * `icefall-sessions/requests/13-operator-six-roles.md`) the other four earn
+ * their panels here.
  *
  * The Roles tab EXPLAINS the model, it does not configure it. A configurable
  * matrix would let a company build a role the rest of this portal has never
@@ -47,7 +55,7 @@ import { Monogram } from "@/components/Shell";
 import { Button, Card, Field, Notice, PageHeader, Pill, Tabs, inputClass } from "@/components/ui";
 import { can, isOwnerAccount } from "@/domain/authz";
 import { formatDay } from "@/domain/dates";
-import type { CompanyRole, CompanyUser } from "@/domain/types";
+import type { CompanyRole, CompanyUser, StoredCompanyRole } from "@/domain/types";
 import { useAsync, useOperator, useSession } from "@/state/OperatorContext";
 
 /** The three tiers as this screen speaks about them. Only two are roles. */
@@ -59,9 +67,23 @@ const TIER_LABEL: Record<Tier, string> = {
   sales: "Sales Employee",
 };
 
-const ROLE_LABEL: Record<CompanyRole, string> = { admin: "Company Admin", sales: "Sales Employee" };
+/**
+ * Every role gets a label, including the four no row can hold yet — a member
+ * list that rendered a raw `guide_coordinator` would be this screen failing to
+ * explain the thing it exists to explain.
+ */
+const ROLE_LABEL: Record<CompanyRole, string> = {
+  owner: "Account owner",
+  admin: "Company Admin",
+  sales: "Sales Employee",
+  operations: "Operations",
+  guide_coordinator: "Guide coordinator",
+  finance_read_only: "Finance (read only)",
+};
 
-const tierOf = (u: CompanyUser): Tier => (isOwnerAccount(u) ? "owner" : u.role);
+/** The owner first, because it overrides the stored role; then the role itself. */
+const roleLabelFor = (u: CompanyUser): string =>
+  isOwnerAccount(u) ? TIER_LABEL.owner : ROLE_LABEL[u.role];
 
 /** One sentence each, because that is what people actually read. */
 const TIER_LEAD: Record<Tier, string> = {
@@ -116,7 +138,8 @@ export default function Team() {
 
   const [tab, setTab] = useState<"members" | "roles">("members");
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ displayName: "", email: "", role: "sales" as CompanyRole });
+  // `StoredCompanyRole`: the invite ends as a database row, and the row accepts two.
+  const [form, setForm] = useState({ displayName: "", email: "", role: "sales" as StoredCompanyRole });
   const [message, setMessage] = useState<{ tone: "neutral" | "rejected"; text: string } | null>(null);
 
   /**
@@ -277,7 +300,7 @@ export default function Team() {
                   </span>
                 </div>
                 <div className="text-[12.5px] text-muted">
-                  {TIER_LABEL[tierOf(u)]}
+                  {roleLabelFor(u)}
                   {isOwnerAccount(u) && (
                     <span className="block text-[10.5px] text-faint">Company Admin, and the founding account</span>
                   )}

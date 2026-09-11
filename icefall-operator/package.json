@@ -9,9 +9,10 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "npx tsx tests/authz.test.ts"
+    "test": "npx tsx tests/authz.test.ts && npx tsx tests/crm.test.ts && npx tsx tests/supabaseSocial.test.ts && npx tsx tests/supabaseLeads.test.ts && npx tsx tests/supabaseCrm.test.ts && npx tsx tests/field.test.ts && npx tsx tests/ops.test.ts && npx tsx tests/finance.test.ts"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.112.3",
     "lucide-react": "^0.454.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

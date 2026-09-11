@@ -1,3 +1,4 @@
+import { DEMO_FIXTURES } from "@/domain/runtime";
 /**
  * Local-day handling.
  *
@@ -88,5 +89,11 @@ export function timeAgo(isoTimestamp: string, nowIso: string): string {
  * today matches one taken next week. When this app is wired to Supabase, this
  * becomes `new Date().toISOString()` and nothing else changes.
  */
-export const NOW = "2026-08-28T09:20:00.000Z";
+/**
+ * THE APP CLOCK. Frozen at 28 Aug 2026 under DEMO/OFFLINE builds and the test
+ * runner, so screenshots and assertions are stable; the REAL time on a live
+ * build, where a frozen clock would mislabel every "ago" and every reporting
+ * window. Evaluated once at module load — the same constant semantics as before.
+ */
+export const NOW = DEMO_FIXTURES ? "2026-08-28T09:20:00.000Z" : new Date().toISOString();
 export const TODAY = NOW.slice(0, 10);

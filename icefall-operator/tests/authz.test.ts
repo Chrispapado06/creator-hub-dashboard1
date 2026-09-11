@@ -47,6 +47,13 @@ import { centsFromEuros, lineTotal, offerMessageBody, operatorOfferTotals } from
 import { GUIDE_COMMISSION_PCT, STANDARD_POLICY, totalsFor } from "../src/money/model";
 import type { Quote } from "../src/money/model";
 /*
+ * Added for the auth-surface suite (section 21) at the end of this file. Only
+ * `messages.ts` can be imported here: the rest of the auth surface reaches
+ * `backend/client.ts`, which reads `import.meta.env` and therefore does not
+ * exist outside Vite. The other rules are asserted over the source.
+ */
+import { AUTH_MESSAGES, classifyAuthError, friendly } from "../src/auth/messages";
+/*
  * Added for section 14 — the guard suite over the batch that built OP-03,
  * OP-05a, OP-06 and OP-08a. It asserts nothing new about the product; it
  * re-asserts the rules that batch stood closest to.
@@ -98,7 +105,8 @@ import { FOLLOWS, POSTS, POST_COMMENTS, PROMO_VIDEOS } from "../src/domain/memor
 import { isStory, storyState } from "../src/domain/types";
 import type { Company, MediaAsset } from "../src/domain/types";
 import { NOW } from "../src/domain/dates";
-import { findContactDetailsIn } from "../src/domain/authz";
+import { guardContactDetails } from "../src/domain/authz";
+import type { ContactSurface } from "../src/domain/authz";
 /*
  * Added for section 19 — the guard suite over the control-kit sweep (CTRL-OP):
  * the retirement of native date inputs and `<select>`s behind the kit in
@@ -136,7 +144,41 @@ import {
   COMPANIES as SEED_COMPANIES,
 } from "../src/domain/memory/seed";
 import { COMPANIES as CANONICAL_COMPANIES } from "../src/domain/companies";
+/*
+ * Added for section 21 — the six-role widening (brief §4). Two things are under
+ * test and only one of them is a feature: the new roles, and the promise that
+ * adding them took nothing from, and gave nothing to, the two roles that were
+ * already here and that every screen in this portal is built against.
+ */
+import {
+  ALL_PERMISSIONS,
+  capabilitiesFor,
+  isCompanyAdminTier,
+  isCompanyRole,
+  isNarrowing,
+  isStorableRole,
+  roleFromStored,
+  unstorableRoles,
+} from "../src/domain/authz";
+import type { Permission } from "../src/domain/authz";
+import { COMPANY_ROLES, STORED_COMPANY_ROLES } from "../src/domain/types";
+import type { CompanyRole } from "../src/domain/types";
+
 import type { Channel, ChannelMessage, ChannelMessageStats } from "../src/domain/types";
+/*
+ * Added for section 22 — the guard suite over the batch that widened the roles
+ * and connected this portal to the live Supabase project. Nothing here tests a
+ * new feature. Every check guards a rule whose failure would be SILENT: a
+ * capability nobody granted, a customer's own phone number scanned in the
+ * company's own CRM, a marketplace position an operator moved themselves, or
+ * an ICEFALL revenue figure carrying a booking ICEFALL did not bring.
+ */
+import {
+  PRIVATE_TO_THIS_COMPANY,
+  PUBLISHED_TO_CLIMBERS,
+  blocksForContactDetails,
+} from "../src/domain/authz";
+import type { Booking } from "../src/domain/types";
 
 let passed = 0;
 const failures: string[] = [];
@@ -2943,8 +2985,23 @@ async function run() {
         .join("\n");
 
     /* An altitude may be: absent, a literal the record holds, a type, or a read
-     * of some record's OWN maxAltitudeM. Nothing else. */
-    const ALLOWED = /^(null|undefined|\d[\d_]*|number \| null|null \| number|[A-Za-z_$][\w$]*(\?)?\.maxAltitudeM)$/;
+     * of some record's OWN maxAltitudeM. Nothing else.
+     *
+     * THE LAST ALTERNATION IS THE DATABASE ROW'S OWN COLUMN, added when
+     * `src/backend/` began mapping live rows. `int(row.max_altitude_m)` is the
+     * same act as `product.maxAltitudeM` — the record's own figure, read and
+     * passed through — it is simply spelled in the schema's words, and the
+     * reader around it is the string/bigint coercion PostgREST forces. Without
+     * this, no honest mapper could populate the field at all, and the guard
+     * would be deleted rather than obeyed, which is the failure mode its own
+     * comment about explanations warns about.
+     *
+     * IT LOSES NO TEETH. Only `max_altitude_m` is allowed inside the reader;
+     * `elevation_m` in the same expression is caught one branch earlier, by the
+     * altitude-and-elevation test that runs before this regex is consulted, and
+     * that pairing is proved below. */
+    const ALLOWED =
+      /^(null|undefined|\d[\d_]*|number \| null|null \| number|[A-Za-z_$][\w$]*(\?)?\.maxAltitudeM|[A-Za-z_$][\w$]*\([A-Za-z_$][\w$]*(\?)?\.max_altitude_m\))$/;
 
     function substitutions(source: string): string[] {
       const out: string[] = [];
@@ -2977,12 +3034,23 @@ async function run() {
       "const maxAltitudeM = mountains.find((m) => m.id === id)!.elevationM;",
       "maxAltitudeM:\n      mountain.elevationM,",
       "maxAltitudeM: product.maxAltitudeM ?? 8849,",
+      /* The database-row spellings of the same substitution, now that
+         `src/backend/` maps live rows. Allowing the record's own
+         `max_altitude_m` must not have opened a door to the peak's. */
+      "maxAltitudeM: int(row.elevation_m),",
+      "maxAltitudeM: int(mountain.elevation_m),",
+      "maxAltitudeM: row.max_altitude_m ?? peak.elevation_m,",
     ];
     for (const bad of wouldBeCaught) {
       assert(substitutions(bad).length > 0, `the guard must catch: ${bad}`);
     }
     eq(substitutions("maxAltitudeM: product.maxAltitudeM,").length, 0, "...while the honest pass-through is fine");
     eq(substitutions("maxAltitudeM: null,").length, 0, "...and so is an explicit absence");
+    eq(
+      substitutions("maxAltitudeM: int(row.max_altitude_m),").length,
+      0,
+      "...and so is the record's own column, read off a database row",
+    );
     eq(
       substitutions("/* never from mountain.elevationM */\n  maxAltitudeM: product.maxAltitudeM,").length,
       0,
@@ -4787,7 +4855,7 @@ async function run() {
     ]) {
       /* The same predicate every operator-authored field runs. */
       assert(
-        Object.keys(findContactDetailsIn({ caption: smuggle.caption })).length > 0,
+        Object.keys(guardContactDetails("published", { caption: smuggle.caption })).length > 0,
         `the guard sees ${smuggle.what} in the caption`,
       );
       const res = await be.createPost!(r, { caption: smuggle.caption, media: null });
@@ -6136,6 +6204,1642 @@ async function run() {
 
     /* The admin can, so the refusals above are the role and not a broken method. */
     eq((await be.postChannelMessage!(r, CHANNEL_LANTERN_DISPATCH, { body: "Office opens at six." })).ok, true, "the Company Admin can send");
+    resetStore();
+  });
+
+  /* ====================================================================== */
+  /* 21. THE CONTACT-DETAILS BOUNDARY — published vs private CRM            */
+  /* ====================================================================== */
+  /*
+   * The guard protects ICEFALL's commercial relationship: an enquiry that
+   * leaves the platform stops being attributable. It was never protecting a
+   * company's private record of its own customer, and a CRM that cannot store
+   * a customer's phone number is not a CRM.
+   *
+   * These assert the split is a real boundary rather than a weakening: the
+   * published surface refuses exactly what it always refused, the private
+   * surface stores freely, and the matcher still SEES the detail on both — so
+   * the private result is "this rule does not apply here", not "we looked and
+   * found nothing".
+   */
+
+  await check("THE PUBLISHED SURFACE REFUSES EVERYTHING IT ALWAYS DID", () => {
+    for (const text of [
+      "Write to bookings@lanternridge.example",
+      "Ring 07700 900123 before nine",
+      "Fastest answers on WhatsApp",
+      "Dates at www.lanternridge.example",
+    ]) {
+      const hits = guardContactDetails("published", { field: text });
+      assert(Object.keys(hits).length > 0, `the published surface must still refuse: ${text}`);
+      assert(hits.field![0]!.label.length > 0, "and name what it found, so the refusal can say it");
+      assert(hits.field![0]!.excerpt.length > 0, "and quote it back");
+    }
+  });
+
+  await check("THE PRIVATE CRM SURFACE STORES FREELY — and the matcher still sees the detail", () => {
+    const fields = {
+      phone: "+977 1 4410 220",
+      email: "sam.okafor@example.com",
+      emergencyContact: "Ama Okafor, 07700 900123",
+      note: "Prefers WhatsApp for pre-trip questions.",
+    };
+
+    eq(
+      Object.keys(guardContactDetails("private", fields)).length,
+      0,
+      "a customer's own details in the company's own CRM are not an escape route",
+    );
+
+    /*
+     * THE SAME TEXT, ON THE OTHER SURFACE. If this were zero the private result
+     * above would prove nothing — it would mean the matcher had stopped working
+     * rather than that the boundary had been drawn.
+     */
+    eq(
+      Object.keys(guardContactDetails("published", fields)).length,
+      4,
+      "every one of those fields is refused when it is pointed at a climber",
+    );
+    for (const value of Object.values(fields)) {
+      assert(findContactDetails(value).length > 0, `the matcher itself still reads: ${value}`);
+    }
+  });
+
+  await check("the surface is a named type with no default — neither value can be reached by accident", () => {
+    /*
+     * A compile-time assertion written so it also runs. `ContactSurface` has
+     * exactly two members; if a third is ever added, or either is renamed, this
+     * stops compiling and the author has to come and read the file header.
+     */
+    const surfaces: ContactSurface[] = ["published", "private"];
+    eq(surfaces.length, 2, "two surfaces, named, and nothing in between");
+
+    /* And the two behave as opposites on identical input, which is the point. */
+    const text = { x: "call +44 20 7946 0000" };
+    assert(Object.keys(guardContactDetails("published", text)).length === 1, "published: refused");
+    assert(Object.keys(guardContactDetails("private", text)).length === 0, "private: stored");
+  });
+
+  await check("NO CALL SITE MAY HIDE ITS SURFACE, and no boolean may stand in for one", () => {
+    const srcRoot = new URL("../src/", import.meta.url);
+    const walk = (dir: URL, out: string[] = []): string[] => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        if (entry.isDirectory()) walk(new URL(`${entry.name}/`, dir), out);
+        else if (/\.tsx?$/.test(entry.name)) out.push(new URL(entry.name, dir).pathname);
+      }
+      return out;
+    };
+    const files = walk(srcRoot);
+    assert(files.length > 40, `the scan must actually have read the app — found ${files.length} files`);
+
+    let callSites = 0;
+    const unnamed: string[] = [];
+    const flags: string[] = [];
+    const privateCallSites: string[] = [];
+
+    for (const file of files) {
+      const rel = file.split("/src/")[1] ?? file;
+      const source = readFileSync(file, "utf8");
+
+      /*
+       * THE FLAG THE OWNER RULED OUT. `skipGuard` is the shape that gets passed
+       * `true` by a tired refactor because it carries no meaning of its own.
+       * Its absence is asserted, not merely intended.
+       *
+       * COMMENTS ARE STRIPPED FIRST, following the precedent in section 14:
+       * naming a forbidden shape in order to forbid it is not adopting it, and
+       * `contactGuard.ts`'s own header does exactly that.
+       */
+      const code = source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
+      if (/\bskip(Guard|ContactGuard|ContactCheck)\b/.test(code)) flags.push(rel);
+
+      if (rel === "domain/contactGuard.ts") continue; // the definition, not a call
+
+      for (const m of code.matchAll(/guardContactDetails\(\s*([^,\s]+)/g)) {
+        callSites++;
+        const surface = m[1];
+        if (surface === '"published"') continue;
+        if (surface === '"private"') {
+          privateCallSites.push(rel);
+          continue;
+        }
+        unnamed.push(`${rel} → ${surface}`);
+      }
+    }
+
+    assert(callSites > 5, `the guard must actually be called in the app — found ${callSites} call sites`);
+    eq(flags.length, 0, `no boolean may stand in for the surface:\n      ${flags.join("\n      ")}`);
+    eq(
+      unnamed.length,
+      0,
+      `every call site must name its surface as a literal, not a variable:\n      ${unnamed.join("\n      ")}`,
+    );
+
+    /*
+     * TODAY THERE ARE NONE, and that is a fact about the product rather than
+     * about the boundary: the private CRM modules — contacts, participants,
+     * emergency contacts, supplier details — have not been built yet. The
+     * boundary is laid before them so that when they land their authors have a
+     * surface to name rather than a guard to argue with.
+     *
+     * When the first private module ships this number changes, and whoever
+     * changes it should be able to say which module and why.
+     */
+    /*
+     * THE FIRST PRIVATE MODULE HAS SHIPPED, and this is the number changing as
+     * the comment above asked. `domain/memory/fieldAdapter.ts` (Phase 4 field
+     * operations) claims it: a driver's phone number on a dispatch, a supplier
+     * reference on a vehicle, an operator's own note on a room assignment.
+     * None of it reaches a climber; all of it is the company's own record, and
+     * a CRM that cannot store a driver's number is not a CRM.
+     *
+     * The assertion is kept as an EXACT set rather than a floor, so the next
+     * module to claim `"private"` still has to say which one and why.
+     */
+    eq(
+      new Set(privateCallSites).size,
+      1,
+      `only the field-operations module claims the private surface:\n      ${[...new Set(privateCallSites)].join("\n      ")}`,
+    );
+    assert(
+      [...new Set(privateCallSites)].every((f) => f === "domain/memory/fieldAdapter.ts"),
+      `an unexpected module claims the private surface: ${[...new Set(privateCallSites)].join(", ")}`,
+    );
+  });
+
+  await check("A LEAD IS THE COMPANY'S OWN RECORD — a customer's own contact detail may be written down", async () => {
+    resetStore();
+    const r = await signIn(RAVI);
+
+    /*
+     * The one behaviour this split changed. `createLead` used to refuse this
+     * name outright: `origin` is hard-coded "company" and `conversationId`
+     * stays null, so nobody outside Lantern will ever read it, and refusing it
+     * was refusing an operator the right to write down their own customer.
+     */
+    const made = await be.createLead(r, {
+      customerName: "Sam Okafor (sam.okafor@example.com)",
+      productId: null,
+      mountainId: null,
+      source: "Referral",
+    });
+    assert(made.ok, "the operator's own contact record accepts the customer's own email");
+    eq(made.value.customerName, "Sam Okafor (sam.okafor@example.com)", "stored exactly as typed");
+    eq(made.value.origin, "company", "still their own lead, never forged into an Icefall one");
+    eq(made.value.conversationId, null, "and still no Icefall thread — nobody outside Lantern reads this");
+
+    resetStore();
+  });
+
+  await check("...AND THE PUBLISHED BOUNDARY STILL CATCHES IT IF IT TRAVELS", async () => {
+    resetStore();
+    const r = await signIn(RAVI);
+    const conv = (await be.getConversations(r))[0];
+    assert(conv, "Ravi has a conversation to attempt this against");
+    const before = (await be.getMessages(r, conv.id)).length;
+
+    /*
+     * The rule is enforced where text LEAVES the company, not where it is
+     * stored. An offer body carries the customer's first name, so a
+     * phone-number-shaped name reaches `sendMessage` — which refuses it.
+     */
+    const res = await be.sendMessage(r, conv.id, "Offer for 07700900123 — 21 days on the hill.");
+    eq(res.ok, false, "a contact detail crossing into a climber's thread is refused, however it got there");
+    if (!res.ok) assert(res.reason.trim().length > 0, "with a reason shown verbatim");
+    eq((await be.getMessages(r, conv.id)).length, before, "and nothing was written");
+
+    resetStore();
+  });
+
+  await check("the private surface never becomes an advisory the operator has to argue with", () => {
+    /*
+     * An empty result on the private surface must be a MEASURED "this rule does
+     * not apply", not an unmeasured "we found nothing" — the honesty doctrine
+     * applied to the guard itself. So it must be indistinguishable from a clean
+     * published field in shape, and a screen must have nothing to display.
+     */
+    const dirty = guardContactDetails("private", { phone: "+977 1 4410 220" });
+    const clean = guardContactDetails("published", { phone: "Kathmandu office" });
+    eq(Object.keys(dirty).length, Object.keys(clean).length, "same shape, nothing to render");
+    eq(JSON.stringify(dirty), "{}", "and nothing retained about the operator's own customer");
+  });
+
+  /* ===== 21. THE AUTH SURFACE — client, session, sign-in ================== */
+
+  /*
+   * `src/backend/client.ts`, `src/auth/session.ts`, `src/auth/account.ts` and
+   * `src/auth/messages.ts`: the connection to the live Supabase project.
+   *
+   * NOTHING IN THE PORTAL CALLS THEM YET — every screen still reads
+   * `OperatorBackend`. These tests exist precisely because of that gap: the
+   * rules below are easiest to remove in the change that finally wires them up,
+   * which is the change least likely to remember why they were written.
+   */
+
+  /* ---- 21.1 The 42501 the CRM session paid for -------------------------- */
+
+  await check("42501 READS AS SIGNED OUT, NOT AS A BROKEN APP", () => {
+    /* Every grant in this schema is `to authenticated`, so an expired JWT is
+       served as `anon` and Postgres refuses AT THE GRANT, before the function
+       body runs. `accept_invitations()` answers exactly this from a perfectly
+       healthy server. */
+    const denied = { code: "42501", message: "permission denied for function accept_invitations" };
+
+    eq(classifyAuthError(denied), "refused", "42501 is a refusal, never a deployment fact");
+
+    const said = friendly(denied);
+    assert(said !== denied.message, "the raw Postgres sentence is never what an operator reads");
+    eq(said, AUTH_MESSAGES.REFUSED_UNKNOWN, "it maps to the refusal sentence");
+    assert(/sign in again/i.test(said), "and names the thing that usually fixes it");
+    assert(
+      !/deploy|not yet built|coming soon|unavailable feature/i.test(said),
+      "and claims NOTHING about what is deployed — that is a different fact",
+    );
+
+    /* The same code is also a genuine RLS refusal for somebody properly signed
+       in. Indistinguishable from the code alone, so the caller's knowledge is
+       what picks the sentence — and neither sentence asserts the other's cause. */
+    const forbidden = friendly(denied, { signedIn: true });
+    eq(forbidden, AUTH_MESSAGES.REFUSED_SIGNED_IN, "with a session in hand it is a permission answer");
+    assert(!/expired/i.test(forbidden), "somebody demonstrably signed in is not told their sign-in expired");
+    assert(/permission/i.test(forbidden), "they are told the true reason instead");
+  });
+
+  await check("the other refusals arrive by different routes and land in the same place", () => {
+    eq(classifyAuthError({ code: "PGRST301" }), "refused", "PostgREST's JWT refusal");
+    eq(
+      classifyAuthError({ message: "new row violates row-level security policy" }),
+      "refused",
+      "an RLS refusal that arrives with no code — some client paths drop it",
+    );
+    eq(
+      classifyAuthError({ message: 'permission denied for table leads' }),
+      "refused",
+      "and a table refusal, ditto",
+    );
+    eq(
+      classifyAuthError({ message: "not signed in" }),
+      "refused",
+      "accept_invitations() raises this in words when auth.uid() is null — same fact",
+    );
+  });
+
+  /* ---- 21.2 The message a human acts on ---------------------------------- */
+
+  await check("a wrong password says what to do, and an unknown fault says what happened", () => {
+    const creds = friendly({ message: "Invalid login credentials" });
+    eq(creds, AUTH_MESSAGES.CREDENTIALS, "the developer sentence is replaced");
+    assert(/email and password/i.test(creds), "and the operator is told which two things did not match");
+
+    /* Anything unrecognised passes through UNCHANGED. A wrong-but-friendly
+       message is worse than an unfamiliar accurate one: it makes a real fault
+       unsearchable. */
+    const odd = "server closed the connection unexpectedly";
+    eq(friendly({ message: odd }), odd, "an unrecognised fault is not rewritten");
+
+    eq(classifyAuthError({ message: "TypeError: Failed to fetch" }), "unreachable", "no answer at all");
+    eq(friendly({ message: "TypeError: Failed to fetch" }), AUTH_MESSAGES.UNREACHABLE, "…said plainly");
+
+    /* An error with nothing in it is not evidence of a cause, so none is named. */
+    const empty = friendly(null);
+    eq(empty, AUTH_MESSAGES.UNEXPLAINED, "an empty failure says it is unexplained");
+    assert(
+      !/connection|network|password|permission/i.test(empty),
+      "and does not guess at a cause it has no evidence for",
+    );
+  });
+
+  /* ---- 21.3 No sign-up, no second door ---------------------------------- */
+
+  await check("THERE IS NO SELF-REGISTRATION IN THIS PORTAL", () => {
+    const authDir = new URL("../src/auth/", import.meta.url);
+    const sources = readdirSync(authDir)
+      .filter((f) => /\.tsx?$/.test(f))
+      .map((f) => readFileSync(new URL(f, authDir), "utf8"));
+    assert(sources.length >= 3, `the scan must have read the auth files — found ${sources.length}`);
+
+    /* Comments off first: this file argues at length about the sign-up that must
+       not exist, and naming it is not building it. */
+    const stripComments = (code: string): string =>
+      code.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    const all = sources.map(stripComments).join("\n");
+    for (const door of ["signUp(", "signInWithOtp(", "signInWithOAuth(", "signInWithIdToken("]) {
+      eq(all.includes(door), false, `no ${door} — accounts come from an invitation, never a form`);
+    }
+    /* `profiles_insert_self` would mint an ATHLETE, not an operator: the hole is
+       not "anybody gets in", it is "anybody gets a useless account nobody can
+       explain". The reasoning has to stay in the file, not only in a commit. */
+    assert(
+      /invitation/i.test(all) && /accept_invitations/.test(all),
+      "and the file says where membership does come from",
+    );
+  });
+
+  /* ---- 21.4 The three-state session ------------------------------------- */
+
+  await check("the session has THREE states, and 'not known yet' is one of them", () => {
+    const src = readFileSync(new URL("../src/auth/session.ts", import.meta.url), "utf8");
+    assert(
+      /useState<Session \| null \| undefined>/.test(src),
+      "undefined | null | Session, in the state itself",
+    );
+    assert(
+      /supabase \? undefined : null/.test(src),
+      "unknown while a client exists; a flat null when there is nobody who could be signed in",
+    );
+    assert(
+      /onAuthStateChange/.test(src),
+      "a sign-out in another tab closes this tab's gate without a page load",
+    );
+    /* The event is a wake-up: the payload is not stored, because with "remember
+       me" off it describes another tab's session this tab cannot read. */
+    assert(
+      /onAuthStateChange\(\(\) =>/.test(src),
+      "the callback takes no payload — it re-reads getSession() instead of trusting the relay",
+    );
+  });
+
+  /* ---- 21.5 The client, and what its predicate may not be used for ------- */
+
+  await check("the client is publishable-key only, DEMO-safe, and no screen branches on it", () => {
+    const src = readFileSync(new URL("../src/backend/client.ts", import.meta.url), "utf8");
+
+    assert(src.includes("VITE_SUPABASE_PUBLISHABLE_KEY"), "the publishable key, by its exact name");
+    eq(src.includes("VITE_SUPABASE_ANON_KEY"), false, "never ..._ANON_KEY — the wrong name fails silently");
+    assert(/!DEMO && url && key/.test(src), "a DEMO build constructs no client at all");
+    assert(/persistSession: true/.test(src), "a returning operator is not signed out by a page reload");
+
+    /* No secret, anywhere in the app. */
+    const srcRoot = new URL("../src/", import.meta.url);
+    const walkSrc = (dir: URL, out: string[] = []): string[] => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        if (entry.isDirectory()) walkSrc(new URL(`${entry.name}/`, dir), out);
+        else if (/\.tsx?$/.test(entry.name)) out.push(new URL(entry.name, dir).pathname);
+      }
+      return out;
+    };
+    const files = walkSrc(srcRoot);
+    assert(files.length > 40, `the scan must actually have read the app — found ${files.length} files`);
+
+    const leaked: string[] = [];
+    const branching: string[] = [];
+    for (const file of files) {
+      const code = readFileSync(file, "utf8");
+      const where = file.split("/src/")[1] ?? file;
+      if (/SERVICE_ROLE|service_role/.test(code) && !/never appear|must never/.test(code)) {
+        leaked.push(where);
+      }
+      /*
+       * `isBackendConfigured()` means A CLIENT EXISTS. It does not mean this
+       * portal measured anything, so no screen may use it to decide whether to
+       * show an honest notice — that is how `icefall-admin` came to announce
+       * "Connected — reading live data" with no client at all.
+       */
+      if (/^(screens|components)\//.test(where) && /isBackendConfigured/.test(code)) {
+        branching.push(where);
+      }
+    }
+    eq(leaked.join(", "), "", "no service-role key anywhere in this app");
+    eq(branching.join(", "), "", "no screen decides what to claim from the presence of a client");
+  });
+
+  /* ---- 21.6 And the rule that outlives every session --------------------- */
+
+  await check("placement is still not the operator's to move, connected or not", () => {
+    eq(canEditPlacement(), false, "canEditPlacement must be false, always");
+    eq(canEditPlacement.length, 0, "and takes no argument that could ever make it true");
+  });
+
+
+  /* ======================================================================== */
+  /* 21. SIX ROLES MODELLED, TWO STORABLE (brief §4)                          */
+  /* ======================================================================== */
+
+  /*
+   * The owner chose six roles. The live database accepts two:
+   *
+   *   company_role text not null check (company_role in ('admin', 'sales'))
+   *   — icefall-supabase/migrations/20260828100000_crm_foundation.sql:333
+   *
+   * Both halves are tested here, because both halves are true, and the danger
+   * of a widening like this is not that the new roles are wrong — nothing uses
+   * them yet — but that the OLD ones quietly changed while nobody was looking.
+   * Every screen in this portal is built against `admin` and `sales`.
+   */
+
+  /* ----- 21.1 THE WIDENING TOOK NOTHING AND GAVE NOTHING ----------------- */
+
+  await check("THE WIDENING INVARIANT: admin and sales resolve exactly as they did before the six roles", () => {
+    /*
+     * The recorded baseline — what these two held on the day the union had two
+     * values in it. Written out rather than derived, because a baseline derived
+     * from the thing it is checking is not a baseline.
+     *
+     * `createOffers` is false for BOTH: it belongs to the owner ACCOUNT, which
+     * is `invitedBy === null`, not to the admin role. `capabilitiesFor` probes
+     * with an invited user for exactly that reason.
+     */
+    const BEFORE: Record<"admin" | "sales", Record<string, boolean>> = {
+      admin: {
+        editCompanyProfile: true,
+        editProducts: true,
+        uploadMedia: true,
+        submitForApproval: true,
+        manageStaff: true,
+        createOffers: false,
+        viewInbox: true,
+        replyToCustomer: true,
+        addInternalNote: true,
+        manageLeads: true,
+        viewAnalytics: true,
+        viewProducts: true,
+        setDepartureAvailability: true,
+      },
+      sales: {
+        editCompanyProfile: false,
+        editProducts: false,
+        uploadMedia: false,
+        submitForApproval: false,
+        manageStaff: false,
+        createOffers: false,
+        viewInbox: true,
+        replyToCustomer: true,
+        addInternalNote: true,
+        manageLeads: true,
+        viewAnalytics: true,
+        viewProducts: true,
+        setDepartureAvailability: true,
+      },
+    };
+
+    for (const role of ["admin", "sales"] as const) {
+      const held = new Set<string>(capabilitiesFor(role));
+      for (const [permission, expected] of Object.entries(BEFORE[role])) {
+        eq(
+          held.has(permission),
+          expected,
+          `${role} → ${permission} must still be ${expected} — the six roles are a widening, not a re-cut`,
+        );
+      }
+    }
+  });
+
+  await check("the widening invariant holds through the REAL sessions the screens use, not only the probe", async () => {
+    resetStore();
+    const r = await signIn(RAVI); // Company Admin, and the founding account
+    const m = await signIn(MARTA); // Sales Employee
+
+    eq(can(r, "editCompanyProfile"), true, "Ravi still owns the profile");
+    eq(can(r, "editProducts"), true, "...and trip content");
+    eq(can(r, "manageStaff"), true, "...and the team");
+    eq(can(r, "submitForApproval"), true, "...and the submission to Icefall");
+    eq(can(r, "createOffers"), true, "...and, as the founding account, the custom offer");
+
+    eq(can(m, "editCompanyProfile"), false, "Sales still cannot edit the company profile");
+    eq(can(m, "editProducts"), false, "...nor trip content");
+    eq(can(m, "uploadMedia"), false, "...nor upload media");
+    eq(can(m, "submitForApproval"), false, "...nor submit anything");
+    eq(can(m, "manageStaff"), false, "...nor manage staff");
+    eq(can(m, "createOffers"), false, "...nor commit the company to a price");
+    eq(can(m, "viewInbox"), true, "and Sales still works the inbox");
+    eq(can(m, "replyToCustomer"), true, "...replies to customers");
+    eq(can(m, "manageLeads"), true, "...owns the follow-up");
+    eq(can(m, "setDepartureAvailability"), true, "...and may still say a departure is full");
+
+    /* The backend agrees with the matrix — a predicate nobody enforces is a lie. */
+    const invite = await be.inviteTeamMember(m, {
+      displayName: "Six Roles Test",
+      email: "sixroles@lanternridge.example",
+      role: "sales",
+    });
+    eq(invite.ok, false, "a Sales employee still cannot invite anybody after the widening");
+    resetStore();
+  });
+
+  await check("the three NEW capabilities are refused to sales, and two of them to every admin", async () => {
+    resetStore();
+    const r = await signIn(RAVI);
+    const m = await signIn(MARTA);
+
+    /* Owner-only, and Ravi is the founding account. */
+    eq(can(r, "manageBilling"), true, "the owner holds billing");
+    eq(can(r, "deleteCompanyData"), true, "...and deletion");
+    eq(can(m, "manageBilling"), false, "Sales holds neither");
+    eq(can(m, "deleteCompanyData"), false, "...neither");
+
+    /*
+     * AN INVITED ADMIN IS NOT THE OWNER — the same line `createOffers` had to
+     * hold, now guarding two more powers that end a company rather than run it.
+     */
+    const invitedAdmin: Session = { user: { ...m.user, role: "admin", invitedBy: "cu-ravi" } };
+    eq(can(invitedAdmin, "editCompanyProfile"), true, "an invited admin is a full Company Admin");
+    eq(can(invitedAdmin, "manageBilling"), false, "...and still does not hold billing");
+    eq(can(invitedAdmin, "deleteCompanyData"), false, "...and cannot delete the company's data");
+    eq(can(invitedAdmin, "exportCommercialData"), true, "...but may export, like any admin");
+    eq(can(m, "exportCommercialData"), false, "Sales may not carry the commercial record out");
+    resetStore();
+  });
+
+  await check("a disabled user is refused EVERY permission, including the ones added with the new roles", () => {
+    const disabled = COMPANY_USERS.find((u) => u.status === "disabled");
+    assert(disabled, "the seed must carry a disabled user for this to mean anything");
+    const ghost: Session = { user: disabled };
+    /* Structural: a permission added later is caught without editing this test. */
+    for (const key of ALL_PERMISSIONS) {
+      eq(can(ghost, key), false, `a disabled user must be refused ${key}`);
+    }
+    eq(
+      ALL_PERMISSIONS.length,
+      Object.keys(PERMISSIONS).length,
+      "ALL_PERMISSIONS must be the whole matrix, or the loop above proves less than it looks",
+    );
+    /* And the role, whatever it is, is still not the floor — `isActive` is. */
+    for (const role of COMPANY_ROLES) {
+      const asRole: Session = { user: { ...disabled, role } };
+      eq(capabilitiesFor(role).length > 0, true, `${role} holds something when active`);
+      eq(
+        ALL_PERMISSIONS.every((p) => !can(asRole, p)),
+        true,
+        `...and nothing at all while disabled, including ${role}`,
+      );
+    }
+  });
+
+  /* ----- 21.2 The six, and which of them the database can hold ----------- */
+
+  await check("all six roles are modelled, and exactly two of them are storable", () => {
+    eq(
+      COMPANY_ROLES.join(","),
+      "owner,admin,sales,operations,guide_coordinator,finance_read_only",
+      "the six the owner chose (brief §4), in order",
+    );
+    eq(
+      STORED_COMPANY_ROLES.join(","),
+      "admin,sales",
+      "the two `company_users.company_role` accepts — migration 20260828100000_crm_foundation.sql:333",
+    );
+    eq(
+      unstorableRoles().join(","),
+      "owner,operations,guide_coordinator,finance_read_only",
+      "the four that cannot persist until the check constraint widens",
+    );
+    for (const r of STORED_COMPANY_ROLES) {
+      eq(isStorableRole(r), true, `${r} is storable`);
+      eq(isCompanyRole(r), true, `${r} is one of the six`);
+    }
+  });
+
+  await check("each new role holds what the brief says it holds, and not the neighbouring role's powers", () => {
+    const held = (r: CompanyRole) => new Set<Permission>(capabilitiesFor(r));
+
+    /* owner — everything, including the two that commit or end the company. */
+    eq(
+      capabilitiesFor("owner").length,
+      ALL_PERMISSIONS.length,
+      "the owner holds every capability in the matrix; a role above the owner would be a contradiction",
+    );
+
+    /* operations — departures, tasks, suppliers, rosters; no pricing approval. */
+    const ops = held("operations");
+    eq(ops.has("setDepartureAvailability"), true, "operations runs the departures");
+    eq(ops.has("addInternalNote"), true, "...and writes the operational note");
+    eq(ops.has("createOffers"), false, "...and approves no price — an offer is a commitment, not a task");
+    eq(ops.has("editProducts"), false, "...and does not author the catalogue");
+    eq(ops.has("manageLeads"), false, "...and does not work somebody else's pipeline");
+    eq(ops.has("manageStaff"), false, "...and does not manage the team");
+
+    /* guide_coordinator — guides, assignments, availability; read-only commercially. */
+    const gc = held("guide_coordinator");
+    eq(gc.has("setDepartureAvailability"), true, "the guide coordinator sets availability");
+    eq(gc.has("viewProducts"), true, "...and reads the commercial record");
+    eq(gc.has("viewAnalytics"), true, "...including the numbers");
+    eq(gc.has("replyToCustomer"), false, "...and does not answer the customer");
+    eq(gc.has("manageLeads"), false, "...and does not move a lead");
+    eq(gc.has("editProducts"), false, "...and writes no commercial content");
+
+    /* finance_read_only — reads commercial, exports it, writes NOTHING. */
+    const fin = held("finance_read_only");
+    eq(fin.has("viewAnalytics"), true, "finance reads the figures");
+    eq(fin.has("viewProducts"), true, "...and the catalogue");
+    eq(fin.has("exportCommercialData"), true, "...and may take them to the accountant");
+    const WRITES: readonly Permission[] = [
+      "editCompanyProfile",
+      "editProducts",
+      "uploadMedia",
+      "submitForApproval",
+      "manageStaff",
+      "createOffers",
+      "manageBilling",
+      "deleteCompanyData",
+      "replyToCustomer",
+      "addInternalNote",
+      "manageLeads",
+      "setDepartureAvailability",
+      /* The CRM operating system (brief §4). Finance READS the commercial
+       * record through viewReports/exportData and writes none of it. */
+      "manageContacts",
+      "manageProposals",
+      "approveProposals",
+      "manageBookingsFinance",
+      "manageParticipants",
+      "viewSensitiveParticipantData",
+      "manageDepartures",
+      "manageTasks",
+      "manageSuppliers",
+      "manageIntegrations",
+      /* Phase 2 / 3 operations records (`@/domain/ops`). Finance reads
+       * `viewDataQuality` and writes none of these. */
+      "manageTemplates",
+      "manageGuideAvailability",
+      "manageOpsRecords",
+      "manageDocuments",
+      "acceptReferrals",
+      /* Phase 4 field operations (`@/domain/field`). Finance READS the
+       * guide-fee ledger (`viewGuideFees`, in its capability set above) and
+       * writes no fee, no schedule and no rule — recording that a guide was
+       * paid is a commercial assertion, and the read-only role does not make
+       * assertions. */
+      "manageEquipment",
+      "manageRooming",
+      "manageDispatch",
+      "manageGuideFees",
+      "managePricingSchedules",
+      "manageAutomations",
+      "manageChannelListings",
+    ];
+    for (const w of WRITES) {
+      eq(fin.has(w), false, `finance_read_only writes NOTHING — including ${w}`);
+    }
+    eq(
+      WRITES.length + capabilitiesFor("finance_read_only").length,
+      ALL_PERMISSIONS.length,
+      "every capability is either one finance holds or one of the writes listed above — no third category slipped in",
+    );
+  });
+
+  await check("the owner ROLE and the founding ACCOUNT both read as the owner, and neither is an accident", () => {
+    const someone = COMPANY_USERS.find((u) => u.status === "active")!;
+    /* The stored role, once the schema can hold it — owner however invited. */
+    eq(isOwnerAccount({ ...someone, role: "owner", invitedBy: "cu-ravi" }), true, "an appointed owner is the owner");
+    /* The derived reading, which is the only one a live row can satisfy today. */
+    eq(isOwnerAccount({ ...someone, role: "admin", invitedBy: null }), true, "so is the founding account");
+    eq(isOwnerAccount({ ...someone, role: "admin", invitedBy: "cu-ravi" }), false, "an invited admin is not");
+    eq(isOwnerAccount({ ...someone, role: "sales", invitedBy: null }), false, "and neither is an uninvited sales row");
+
+    /* The tier predicate the content screens use. */
+    eq(isCompanyAdminTier({ user: { ...someone, role: "owner" } }), true, "the owner holds admin powers");
+    eq(isCompanyAdminTier({ user: { ...someone, role: "admin" } }), true, "so does the admin");
+    for (const r of ["sales", "operations", "guide_coordinator", "finance_read_only"] as const) {
+      eq(isCompanyAdminTier({ user: { ...someone, role: r } }), false, `${r} does not hold admin powers`);
+    }
+  });
+
+  /* ----- 21.3 THE DEGRADATION RULE --------------------------------------- */
+
+  await check("roleFromStored reads the six, states which cannot persist, and NEVER falls back to admin", () => {
+    for (const r of COMPANY_ROLES) {
+      const reading = roleFromStored(r);
+      assert(reading.state === "ok", `${r} is one of the six and must read as ok`);
+      if (reading.state !== "ok") return;
+      eq(reading.role, r, `${r} reads back as itself, not as something near it`);
+      eq(
+        reading.storable,
+        r === "admin" || r === "sales",
+        `${r}: the reading must state whether the live check constraint can hold it`,
+      );
+    }
+
+    /*
+     * THE ONE THAT MATTERS. Every one of these is a value that could arrive from
+     * a schema change nobody told this app about, a typo in a manual insert, or
+     * an attacker with a write path. None of them may become an admin, and none
+     * may become a role at all.
+     */
+    const NOT_ROLES: readonly unknown[] = [
+      null,
+      undefined,
+      "",
+      "   ",
+      "Admin", // case matters: the constraint stores lower case
+      "administrator",
+      "company_admin", // the vocabulary this schema deliberately did not use
+      "sales_employee",
+      "super_admin", // ICEFALL STAFF's word — a different axis entirely
+      "operations_manager",
+      "owner ", // trailing space is trimmed, so this one DOES read — see below
+      "root",
+      0,
+      1,
+      true,
+      {},
+      ["admin"],
+    ];
+    for (const value of NOT_ROLES) {
+      const reading = roleFromStored(value);
+      if (value === "owner ") {
+        eq(reading.state, "ok", "a trimmable value is read, not refused — whitespace is not a role");
+        continue;
+      }
+      eq(reading.state, "unreadable", `${JSON.stringify(value)} must not read as a role`);
+      if (reading.state !== "unreadable") continue;
+      assert(reading.reason.trim().length > 0, "an unreadable role must say why, not fail silently");
+      /*
+       * The reading ECHOES the offending value — "Admin" with a capital A is
+       * refused and named, which is how somebody debugging a manual insert
+       * finds it. What it must not do is CARRY a role, and the union is what
+       * stops it: there is no `.role` on this branch to be read by mistake.
+       */
+      eq("role" in reading, false, `${JSON.stringify(value)} must hand back no role at all`);
+    }
+
+    /* Structural: no branch of this function may hand back a storable role for
+     * something it did not recognise. The union is the enforcement — a caller
+     * cannot read `.role` off an `unreadable` reading — and this asserts the
+     * union is actually discriminated rather than optional. */
+    const bad = roleFromStored("not_a_role");
+    eq("role" in bad, false, "an unreadable reading carries no role to be picked up by accident");
+  });
+
+  await check("THERE IS NO SAFE SUBSTITUTE for the three new working roles, and exactly one for the owner", () => {
+    /*
+     * The tempting shortcut this test exists to kill: "the database only takes
+     * two, so store the nearest one for now." There is no nearest one.
+     *
+     * `sales` holds `manageLeads`, which operations and the guide coordinator
+     * are not meant to have, and three writes that `finance_read_only` is
+     * DEFINED by not having. `admin` holds the content and staff powers. So
+     * every substitution available is a PROMOTION, and a promotion nobody
+     * decided is the silent failure this whole file exists to prevent.
+     */
+    /*
+     * THE THREE WORKING ROLES. No storable role is a narrowing of any of them,
+     * so there is no "store the nearest one for now" available at all.
+     */
+    for (const from of unstorableRoles().filter((r) => r !== "owner")) {
+      for (const to of STORED_COMPANY_ROLES) {
+        eq(
+          isNarrowing(from, to),
+          false,
+          `storing ${from} as ${to} would GRANT powers ${from} was never given — that is not a degradation`,
+        );
+      }
+    }
+
+    /*
+     * THE OWNER IS THE EXCEPTION, and only because it holds EVERYTHING: every
+     * role is a narrowing of it, so both storable roles are technically safe.
+     * `admin` is the one that also leaves the company able to work, and it is
+     * the one already in use — the founding account is an `admin` row read as
+     * the owner through `invitedBy`. This is written out rather than skipped so
+     * that a change making it untrue fails here.
+     */
+    eq(isNarrowing("owner", "admin"), true, "owner → admin is the one substitution in use, and it is a narrowing");
+    eq(isNarrowing("owner", "sales"), true, "owner → sales loses more, and is safe for the same reason");
+    eq(
+      capabilitiesFor("owner").length,
+      ALL_PERMISSIONS.length,
+      "...and the reason is that the owner holds the whole matrix, not a lucky overlap",
+    );
+
+    /* Named individually, because these three are the substitutions somebody
+     * under deadline pressure would actually reach for. */
+    eq(isNarrowing("operations", "sales"), false, "sales holds manageLeads; operations was not given it");
+    eq(isNarrowing("guide_coordinator", "sales"), false, "sales answers customers; the guide coordinator does not");
+    eq(
+      isNarrowing("finance_read_only", "sales"),
+      false,
+      "finance_read_only is DEFINED by writing nothing — storing it as sales hands it three writes",
+    );
+
+    /* Narrowing is a real relation and the function can find one, or the block
+     * above would pass by always answering false. */
+    eq(isNarrowing("owner", "finance_read_only"), true, "finance is a narrowing of owner");
+    /*
+     * OPERATIONS AND SALES ARE NOW INCOMPARABLE — and that is the stronger
+     * statement of "no safe substitute". Before the CRM operating system,
+     * operations held a strict subset of sales, so an operations member could
+     * at least be stored as sales at the cost of nothing they were owed.
+     * Brief §4 gave operations its own powers — departures, tasks, suppliers,
+     * participants, the sensitive fields — none of which sales holds. Neither
+     * direction narrows: storing either as the other GRANTS something.
+     */
+    eq(isNarrowing("sales", "operations"), false, "operations now holds departures, tasks and suppliers, which sales does not");
+    eq(isNarrowing("operations", "sales"), false, "...and sales still holds the pipeline, which operations does not");
+    eq(isNarrowing("owner", "operations"), true, "the owner is still above operations, so the relation still finds a narrowing");
+    eq(isNarrowing("admin", "owner"), false, "and the relation is not symmetric");
+    for (const r of COMPANY_ROLES) eq(isNarrowing(r, r), true, `${r} narrows onto itself`);
+  });
+
+  await check("the invite path cannot write a role the database would refuse", async () => {
+    resetStore();
+    const r = await signIn(RAVI);
+    /*
+     * `inviteTeamMember` takes `StoredCompanyRole`, so the four unstorable roles
+     * are a COMPILE error rather than a runtime failure — which is why this test
+     * cannot pass one and instead asserts the runtime consequence: whatever the
+     * portal does write, the check constraint accepts.
+     */
+    const res = await be.inviteTeamMember(r, {
+      displayName: "Storable Only",
+      email: "storable@lanternridge.example",
+      role: "sales",
+    });
+    assert(res.ok, "the admin may invite");
+    if (!res.ok) return;
+    eq(
+      STORED_COMPANY_ROLES.includes(res.value.role as (typeof STORED_COMPANY_ROLES)[number]),
+      true,
+      "every role this portal writes must be one `check (company_role in ('admin','sales'))` accepts",
+    );
+    /* And nobody may invite ABOVE themselves — the escalation the request file
+     * asks the schema owner to enforce server-side. Asserted here as the client
+     * half: sales cannot invite at all, so it cannot invite an admin. */
+    const m = await signIn(MARTA);
+    const escalation = await be.inviteTeamMember(m, {
+      displayName: "Escalation",
+      email: "escalation@lanternridge.example",
+      role: "admin",
+    });
+    eq(escalation.ok, false, "a Sales employee cannot invite an admin — or anyone");
+    eq(
+      __store.users.some((u) => u.email === "escalation@lanternridge.example"),
+      false,
+      "and no row was written",
+    );
+    resetStore();
+  });
+
+  await check("AFTER THE WIDENING, placement is STILL not the operator's to move — for any of the six", () => {
+    eq(canEditPlacement(), false, "canEditPlacement is false, always");
+    eq(
+      canEditPlacement.length,
+      0,
+      "it takes no argument: no role among the six, storable or not, could change the answer",
+    );
+    /* And no capability in the matrix is about placement, under any name. */
+    const placementish = ALL_PERMISSIONS.filter((p) => /placement|slot|position|featur/i.test(p));
+    eq(
+      placementish.join(",") || "none",
+      "none",
+      `the matrix must contain no placement capability — found: ${placementish.join(", ") || "nothing"}`,
+    );
+  });
+
+
+  /* ===== 22. THE LIVE-BACKEND BATCH — what the connection must not move ==== *
+   *
+   * Section 21 asserted the six-role widening against the matrix as it stood on
+   * the day it was written. This section asserts the things that batch, and the
+   * Supabase connection that followed it, could take away WITHOUT ANY TEST
+   * FAILING — the gaps rather than the features.
+   *
+   * Each check below exists because its failure is SILENT. Nothing errors, no
+   * screen looks wrong, and the first evidence is a capability somebody has
+   * that nobody granted, a customer's phone number scanned in a private CRM
+   * field, a marketplace position an operator moved themselves, or an ICEFALL
+   * revenue figure carrying a booking ICEFALL had nothing to do with.
+   */
+
+  /** Source with comments removed, following the precedent in section 14. */
+  const codeOf22 = (src: string): string =>
+    src.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/^[ \t]*\/\/.*$/gm, " ");
+
+  /*
+   * A finance_read_only session. ACTIVE and INVITED, so the reading is about
+   * the ROLE: a suspended account holds nothing whatever its role, and an
+   * uninvited one would read as the founding account and pick up the offer.
+   */
+  const financeProbe22: Session = {
+    user: {
+      id: "cu-finance-probe",
+      companyId: "co-finance-probe",
+      profileId: "pr-finance-probe",
+      displayName: "Finance Probe",
+      email: "finance-probe@example.invalid",
+      role: "finance_read_only",
+      status: "active",
+      invitedBy: "cu-finance-inviter",
+      createdAt: "1970-01-01T00:00:00.000Z",
+    },
+  };
+
+  /* ---- 22.1 The widening baseline must COVER the matrix, not a slice ------ */
+
+  await check("THE WIDENING BASELINE IS COMPLETE — every permission in the matrix is pinned for admin and sales", () => {
+    /*
+     * WHY THIS EXISTS BESIDE THE EXISTING BASELINE. Section 21's table iterates
+     * ITS OWN KEYS, so a capability added tomorrow is not compared against
+     * anything: the loop simply does not visit it, the test still passes, and
+     * `admin` or `sales` can quietly gain or lose a power. This one iterates
+     * `ALL_PERMISSIONS` — the matrix itself — so an unpinned capability is a
+     * FAILURE rather than an omission, and whoever adds the seventeenth has to
+     * write down what the two working roles may do with it.
+     *
+     * The values are the recorded position, written out rather than derived. A
+     * baseline derived from the thing it checks is not a baseline.
+     */
+    const PINNED: Record<"admin" | "sales", Record<Permission, boolean>> = {
+      admin: {
+        editCompanyProfile: true,
+        editProducts: true,
+        uploadMedia: true,
+        submitForApproval: true,
+        manageStaff: true,
+        /* The offer belongs to the owner ACCOUNT (`invitedBy === null`), never
+         * to the admin ROLE — which is why the probe is an invited user. */
+        createOffers: false,
+        manageBilling: false,
+        deleteCompanyData: false,
+        exportCommercialData: true,
+        viewInbox: true,
+        viewAnalytics: true,
+        viewProducts: true,
+        replyToCustomer: true,
+        addInternalNote: true,
+        manageLeads: true,
+        setDepartureAvailability: true,
+        /* The CRM operating system (brief §4): admin holds all of it. */
+        manageContacts: true,
+        manageProposals: true,
+        approveProposals: true,
+        manageBookingsFinance: true,
+        manageParticipants: true,
+        viewSensitiveParticipantData: true,
+        manageDepartures: true,
+        manageTasks: true,
+        manageSuppliers: true,
+        viewReports: true,
+        exportData: true,
+        manageIntegrations: true,
+        /* Phase 2 / 3 operations records (`@/domain/ops`): admin holds all of them. */
+        manageTemplates: true,
+        manageGuideAvailability: true,
+        manageOpsRecords: true,
+        manageDocuments: true,
+        viewDataQuality: true,
+        acceptReferrals: true,
+        /* Phase 4 field operations (`@/domain/field`, owner override of the
+         * brief deferral): admin runs the yard — equipment, rooming, dispatch —
+         * and owns the money-shaped and rule-shaped ones too. */
+        manageEquipment: true,
+        manageRooming: true,
+        manageDispatch: true,
+        manageGuideFees: true,
+        viewGuideFees: true,
+        managePricingSchedules: true,
+        manageAutomations: true,
+        manageChannelListings: true,
+      },
+      sales: {
+        editCompanyProfile: false,
+        editProducts: false,
+        uploadMedia: false,
+        submitForApproval: false,
+        manageStaff: false,
+        createOffers: false,
+        manageBilling: false,
+        deleteCompanyData: false,
+        exportCommercialData: false,
+        viewInbox: true,
+        viewAnalytics: true,
+        viewProducts: true,
+        replyToCustomer: true,
+        addInternalNote: true,
+        manageLeads: true,
+        setDepartureAvailability: true,
+        /* The CRM operating system (brief §4): sales owns customers, proposals
+         * and participants' paperwork; not pricing approval, not the money,
+         * not operations, not the sensitive fields, not settings, not export. */
+        manageContacts: true,
+        manageProposals: true,
+        approveProposals: false,
+        manageBookingsFinance: false,
+        manageParticipants: true,
+        viewSensitiveParticipantData: false,
+        manageDepartures: false,
+        manageTasks: false,
+        manageSuppliers: false,
+        viewReports: true,
+        exportData: false,
+        manageIntegrations: false,
+        /* Phase 2 / 3 operations records (`@/domain/ops`): sales authors
+         * templates and responds to ICEFALL introductions — comms and pipeline
+         * work — and reads data quality. Availability, ops detail on tasks and
+         * participant documents are operations' and the coordinator's. */
+        manageTemplates: true,
+        manageGuideAvailability: false,
+        manageOpsRecords: false,
+        manageDocuments: false,
+        viewDataQuality: true,
+        acceptReferrals: true,
+        /* Phase 4: none of the yard is sales'. The one exception is
+         * distribution — where a trip is listed is a selling decision — and
+         * READING the guide-fee ledger is not, so sales does not get it. */
+        manageEquipment: false,
+        manageRooming: false,
+        manageDispatch: false,
+        manageGuideFees: false,
+        viewGuideFees: false,
+        managePricingSchedules: false,
+        manageAutomations: false,
+        manageChannelListings: true,
+      },
+    };
+
+    for (const role of ["admin", "sales"] as const) {
+      const held = new Set<Permission>(capabilitiesFor(role));
+      /* Driven by the MATRIX, so a new capability has nowhere to hide. */
+      for (const p of ALL_PERMISSIONS) {
+        const expected = PINNED[role][p];
+        assert(
+          typeof expected === "boolean",
+          `"${p}" is in the matrix but not in the recorded baseline — decide, in writing, what ${role} may do with it`,
+        );
+        eq(
+          held.has(p),
+          expected,
+          `${role} → ${p} must still be ${expected}: the six roles were a widening, not a re-cut`,
+        );
+      }
+      /* And nothing may be pinned that the matrix no longer defines, or the
+       * table would drift into asserting a capability nobody implements. */
+      for (const p of Object.keys(PINNED[role]) as Permission[]) {
+        assert(
+          (ALL_PERMISSIONS as readonly string[]).includes(p),
+          `the baseline pins "${p}", which is no longer a capability — remove it or restore it`,
+        );
+      }
+    }
+
+    /* The two counts agreeing is what makes the two loops above a closed set. */
+    eq(
+      ALL_PERMISSIONS.length,
+      Object.keys(PINNED.admin).length,
+      "the baseline and the matrix must be the same size",
+    );
+    eq(
+      new Set(ALL_PERMISSIONS).size,
+      ALL_PERMISSIONS.length,
+      "no capability may be listed twice — a duplicate would mask a disagreement",
+    );
+  });
+
+  /* ---- 22.2 Owner-only is DERIVED, and finance holds no write ------------- */
+
+  await check("NO ROLE BUT THE OWNER HOLDS AN OWNER-ONLY CAPABILITY — derived from the matrix, not listed under it", () => {
+    const heldBy = new Map<CompanyRole, ReadonlySet<Permission>>(
+      COMPANY_ROLES.map((r) => [r, new Set<Permission>(capabilitiesFor(r))] as const),
+    );
+
+    /*
+     * DERIVED, on purpose: "owner-only" is computed by asking every role, so a
+     * capability that quietly leaks to a fifth role changes this set and fails
+     * here. A hand-written list would have gone on agreeing with itself.
+     */
+    const ownerOnly = ALL_PERMISSIONS.filter(
+      (p) => heldBy.get("owner")!.has(p) && COMPANY_ROLES.every((r) => r === "owner" || !heldBy.get(r)!.has(p)),
+    );
+    eq(
+      JSON.stringify([...ownerOnly].sort()),
+      JSON.stringify(["createOffers", "deleteCompanyData", "manageBilling"]),
+      `the owner-only set is the offer, billing and deletion — found ${JSON.stringify(ownerOnly)}`,
+    );
+
+    /* Said the other way round, per role, so the failure names the culprit. */
+    for (const role of COMPANY_ROLES) {
+      if (role === "owner") continue;
+      for (const p of ownerOnly) {
+        eq(
+          heldBy.get(role)!.has(p),
+          false,
+          `${role} must not hold "${p}" — it commits or ends the company, and only the owner may`,
+        );
+      }
+    }
+  });
+
+  await check("FINANCE_READ_ONLY WRITES NOTHING — its whole capability set is six reads, derived", () => {
+    /*
+     * The existing suite lists the writes finance must not hold. This states
+     * the same rule from the other side and closes the gap that list leaves: a
+     * NEW write added to the matrix tomorrow is not on anybody's list, so an
+     * enumeration of writes cannot catch it. An exhaustive statement of what
+     * finance DOES hold catches it the moment it appears.
+     */
+    const fin = [...capabilitiesFor("finance_read_only")].sort();
+    eq(
+      JSON.stringify(fin),
+      /* `viewDataQuality` (`@/domain/ops`) is a READ — the derived data-quality report finance is owed. */
+      /* `viewGuideFees` (`@/domain/field`) is a READ: the guide-fee ledger is a
+         commercial record, so finance reads it and cannot write a fee. */
+      JSON.stringify(["exportCommercialData", "exportData", "viewAnalytics", "viewDataQuality", "viewGuideFees", "viewInbox", "viewProducts", "viewReports"]),
+      `finance_read_only reads the commercial record and the CRM reports and exports both, and does nothing else — found ${JSON.stringify(fin)}`,
+    );
+
+    /*
+     * WRITE-SHAPED, DERIVED. Anything at least one role holds that finance does
+     * not is, by construction, the set finance is excluded from; every member
+     * of it must be false for finance. This is the same assertion without a
+     * maintained list in the middle of it.
+     */
+    const notFinance = ALL_PERMISSIONS.filter((p) => !fin.includes(p));
+    assert(notFinance.length > 0, "the two sets must actually differ, or this proves nothing");
+    for (const p of notFinance) {
+      eq(can(financeProbe22, p), false, `finance_read_only must be refused "${p}"`);
+    }
+
+    /* A finance session that is not active holds nothing at all, either. */
+    for (const p of ALL_PERMISSIONS) {
+      eq(
+        can({ user: { ...financeProbe22.user, status: "suspended" } }, p),
+        false,
+        `a suspended finance account is refused "${p}" as well — status outranks role`,
+      );
+    }
+  });
+
+  /* ---- 22.3 The stored-role degradation stays explicit -------------------- */
+
+  await check("AN UNRECOGNISED STORED ROLE ACQUIRES NOTHING — not admin, not sales, not anything", () => {
+    /*
+     * The hostile list, extended past section 21's with the shapes a role
+     * string actually arrives in when something has gone wrong: a homoglyph
+     * from a copy-paste, a value with a control character, a value that is two
+     * roles, and the sort of thing an injection attempt looks like. NONE of
+     * them may read as a role, and the important half is that none may read as
+     * `admin` — the only reading that would hand over the company profile, the
+     * trip catalogue and the staff list in silence.
+     */
+    const HOSTILE: readonly unknown[] = [
+      "аdmin", // Cyrillic а — indistinguishable on screen, not the same string
+      "admın", // dotless ı
+      "ADMIN",
+      "aDmIn",
+      /*
+       * NOTE the two that are NOT here: a trailing newline and a trailing
+       * space. Both TRIM to a role and are read as one — whitespace is not a
+       * role, and trimming is a narrowing normalisation. The padded loop
+       * below asserts that boundary from the other side.
+       */
+      "admin\u0000", // a control character is not whitespace and is not trimmed
+      "admin,sales",
+      "admin sales",
+      "admin;--",
+      "' OR company_role='admin",
+      "adminn",
+      "sadmin",
+      "owner_admin",
+      "icefall_staff",
+      "service_role",
+      "postgres",
+      "authenticated",
+      "anon",
+      "*",
+      "%",
+      Number.NaN,
+      Symbol("admin").toString(),
+    ];
+
+    for (const value of HOSTILE) {
+      const reading = roleFromStored(value);
+      eq(
+        reading.state,
+        "unreadable",
+        `${JSON.stringify(String(value))} must not read as one of the six — an unrecognised role grants nothing`,
+      );
+      if (reading.state !== "unreadable") continue;
+      eq("role" in reading, false, "and it must carry no role at all for a caller to pick up");
+      eq(
+        "storable" in reading,
+        false,
+        "nor a storable flag — the unreadable branch is not a role that merely cannot persist",
+      );
+      assert(reading.reason.trim().length > 0, "and it must say why, in words a person can act on");
+    }
+
+    /*
+     * TRIMMING IS THE ONLY NORMALISATION, and it is a narrowing one: whitespace
+     * is not a role, so " admin " is the same value. Anything MORE than that —
+     * lower-casing, stripping punctuation, nearest-match — is how "Admin"
+     * becomes an admin, so the boundary is asserted rather than assumed.
+     */
+    for (const r of COMPANY_ROLES) {
+      const padded = roleFromStored(`  ${r}\t`);
+      eq(padded.state, "ok", `"${r}" padded with whitespace still reads as itself`);
+      if (padded.state === "ok") eq(padded.role, r, "and as itself exactly");
+      eq(roleFromStored(r.toUpperCase()).state, "unreadable", `"${r.toUpperCase()}" is not case-folded into a role`);
+    }
+
+    /*
+     * STRUCTURAL, because the runtime sweep can only prove it about the values
+     * it thought of. No branch of this function may hand back a role literal:
+     * the only role it may return is the one it read. If a fallback is ever
+     * added — `return { state: "ok", role: "admin", ... }` for an unknown value
+     * — this fails on the way in.
+     */
+    const authzSrc22 = readFileSync(new URL("../src/domain/authz.ts", import.meta.url), "utf8");
+    const fn = authzSrc22.match(/export function roleFromStored\([\s\S]*?\n\}/);
+    assert(fn, "roleFromStored must still be a plain exported function in domain/authz.ts");
+    const body = codeOf22(fn![0]);
+    const literalRole = body.match(/role:\s*"[^"]*"/);
+    eq(
+      literalRole === null,
+      true,
+      `roleFromStored must never name a role literal — found ${literalRole?.[0] ?? ""}. ` +
+        "The only role it may return is the one it actually read.",
+    );
+    for (const r of COMPANY_ROLES) {
+      eq(
+        new RegExp(`return[^;]*"${r}"`).test(body),
+        false,
+        `no branch may return the literal "${r}" — widening an unknown value into a role is the failure this guards`,
+      );
+    }
+  });
+
+  /* ---- 22.4 The contact guard's surface must be NAMED --------------------- */
+
+  await check("THE GUARD HAS NO DEFAULT SURFACE — the parameter is required, and an unknown surface guards anyway", () => {
+    /*
+     * ARITY IS THE MECHANICAL PROOF. A default (`surface: ContactSurface =
+     * "private"`) is invisible at every call site and would disable the guard
+     * everywhere at once — and it drops `Function.length` from 2 to 1. So the
+     * absence of a default is asserted as a number rather than trusted to
+     * review.
+     */
+    eq(guardContactDetails.length, 2, "guardContactDetails takes the surface and the fields — neither has a default");
+    eq(blocksForContactDetails.length, 2, "and so does the predicate built on it");
+
+    /* The two named constants are the two surfaces and nothing else. */
+    eq(PUBLISHED_TO_CLIMBERS, "published", "the published constant names the published surface");
+    eq(PRIVATE_TO_THIS_COMPANY, "private", "and the private one the private surface");
+
+    /*
+     * AND IT FAILS SAFE. Only the exact string `"private"` turns the guard off,
+     * so a value that is neither — a renamed surface, a typo, a third surface
+     * added without reading the header — is GUARDED, which is the direction
+     * that costs somebody a refusal rather than leaking a phone number.
+     */
+    const strange = "crm" as unknown as ContactSurface;
+    const findings = guardContactDetails(strange, { body: "reach me on +44 20 7946 0000" });
+    assert(
+      Object.keys(findings).length > 0,
+      "an unrecognised surface must still be guarded — only the exact word `private` turns the rule off",
+    );
+    eq(blocksForContactDetails(strange, { body: "wa.me/9779800000000" }), true, "...and must still block");
+  });
+
+  await check("A PUBLISHED SURFACE REFUSES THE NUMBER AND THE WHATSAPP LINK VERBATIM; THE PRIVATE CRM STORES THEM", async () => {
+    /* Verbatim, one string at a time, so a failure names the text that got through. */
+    const MUST_REFUSE: readonly string[] = [
+      "+977 1 4410 123",
+      "call 555-0143",
+      "wa.me/9779800000000",
+      "https://wa.me/447700900000",
+      "whatsapp me",
+      "t.me/lanternridge",
+      "book direct at lanternridge.com",
+      "sam@okafor.example",
+    ];
+    for (const text of MUST_REFUSE) {
+      assert(
+        blocksForContactDetails(PUBLISHED_TO_CLIMBERS, { body: text }),
+        `the published surface must refuse "${text}" — an enquiry that leaves ICEFALL stops being attributable`,
+      );
+      eq(
+        blocksForContactDetails(PRIVATE_TO_THIS_COMPANY, { body: text }),
+        false,
+        `...and the private CRM must store "${text}" — a CRM that cannot hold a customer's phone number is not a CRM`,
+      );
+    }
+
+    /*
+     * THE PRIVATE SURFACE DOES NOT EVEN LOOK. `contactGuard.ts` says the text
+     * is "not scanned, not sampled, not logged" — that is a behavioural claim
+     * and this is the observation of it: the field's value is a getter that
+     * counts its own reads. Zero reads on `private` is the claim proved; the
+     * published call afterwards proves the probe can count.
+     */
+    let reads = 0;
+    const watched = Object.defineProperty({} as Record<string, string>, "note", {
+      enumerable: true,
+      get() {
+        reads += 1;
+        return "customer's mobile is +44 20 7946 0000";
+      },
+    });
+    eq(Object.keys(guardContactDetails(PRIVATE_TO_THIS_COMPANY, watched)).length, 0, "private: nothing to report");
+    eq(reads, 0, "and the text was never read — the rule does not apply, so there is nothing to scan");
+    guardContactDetails(PUBLISHED_TO_CLIMBERS, watched);
+    assert(reads > 0, "the published surface DOES read it — the probe works, so the zero above means something");
+
+    /* The whole rule, end to end, through the backend the app actually calls:
+     * the number is refused on the way to a climber and written down in the
+     * company's own record. */
+    resetStore();
+    const r = await signIn(RAVI);
+    const convo = (await be.getConversations(r))[0];
+    assert(convo, "Lantern has a conversation to try this against");
+    const sent = await be.sendMessage(r, convo.id, "Skip ICEFALL — WhatsApp me on +977 1 4410 123");
+    eq(sent.ok, false, "the message to the climber is refused");
+    const stored = await be.getMessages(r, convo.id);
+    eq(
+      stored.some((m) => m.body.includes("4410 123")),
+      false,
+      "and nothing was written — a refused message must not be half-sent",
+    );
+    const lead = await be.createLead(r, {
+      customerName: "Private Record Priya (+44 20 7946 0000)",
+      productId: null,
+      mountainId: null,
+      source: "Phone",
+    });
+    assert(lead.ok, "the same detail is the company's own contact record, and goes in");
+    if (lead.ok) {
+      assert(
+        lead.value.customerName.includes("+44 20 7946 0000"),
+        "stored verbatim — the operator wrote down their own customer's number",
+      );
+    }
+    resetStore();
+  });
+
+  /* ---- 22.5 Placement is unwriteable on BOTH backends --------------------- */
+
+  await check("PLACEMENT IS STILL UNWRITEABLE — on the memory backend AND on the Supabase one", () => {
+    /* The predicate itself, unchanged by the connection or the six roles. */
+    eq(canEditPlacement(), false, "canEditPlacement is false — every operator, every role, always");
+    eq(canEditPlacement.length, 0, "it takes no argument, so nothing about the caller could change the answer");
+
+    /*
+     * THE MEMORY BACKEND, at runtime. `Object.keys` is the real surface — an
+     * interface can be edited without anyone noticing, but a method that exists
+     * shows up here.
+     */
+    const memorySurface = Object.keys(be).filter((k) => /placement|slot|position|featur/i.test(k));
+    eq(
+      JSON.stringify(memorySurface.sort()),
+      JSON.stringify(["getPlacements"]),
+      `the memory backend's placement surface is one read — found ${JSON.stringify(memorySurface)}`,
+    );
+
+    /*
+     * THE SUPABASE BACKEND, over its source. It cannot be imported here: it
+     * reaches `backend/client.ts`, which reads `import.meta.env` and the `@/`
+     * alias, and neither exists under `tsx`. The precedent is
+     * `tests/supabaseSocial.test.ts`, which reads the same files for the same
+     * reason — and a rule that IS the absence of a method is exactly the kind
+     * a source read can prove.
+     *
+     * `supabaseBackend` is `{ ...supabaseLeads, ...supabaseSocial,
+     * ...companyMethods }`, so every key it can possibly have is a method
+     * declared in one of these three files.
+     */
+    const SUPABASE_FILES = [
+      "../src/backend/supabaseBackend.ts",
+      "../src/backend/supabaseLeads.ts",
+      "../src/backend/supabaseSocial.ts",
+    ] as const;
+
+    const declared: string[] = [];
+    for (const rel of SUPABASE_FILES) {
+      const code = codeOf22(readFileSync(new URL(rel, import.meta.url), "utf8"));
+      for (const m of code.matchAll(/^[ \t]*(?:async[ \t]+)?([A-Za-z_$][\w$]*)[ \t]*\(/gm)) {
+        declared.push(m[1]!);
+      }
+
+      /*
+       * AND NO WRITE REACHES THE TABLE BY ANOTHER NAME. A method could be
+       * called anything; the table cannot. `placements` is SELECT-only for
+       * `authenticated` — ICEFALL staff included — because all four write paths
+       * are functions that record an audit event in the same statement, and a
+       * policy can permit a write but cannot compel the writer to log it.
+       */
+      for (const verb of ["insert", "update", "upsert", "delete"] as const) {
+        const re = new RegExp(`from\\(\\s*["'\`]placements["'\`]\\s*\\)[\\s\\S]{0,200}?\\.${verb}\\(`);
+        eq(
+          re.test(code),
+          false,
+          `${rel} must never .${verb}() the placements table — the grant was taken away, not narrowed`,
+        );
+      }
+      const rpcs = [...code.matchAll(/\.rpc\(\s*["'`]([^"'`]+)/g)].map((m) => m[1]!);
+      for (const name of rpcs) {
+        eq(
+          /placement|slot|position|featur/i.test(name),
+          false,
+          `${rel} calls rpc("${name}") — a placement write disguised as a function is still a placement write`,
+        );
+      }
+    }
+
+    assert(declared.length > 50, `the scan must actually have read the three files — found ${declared.length} names`);
+    const supabasePlacement = [...new Set(declared)].filter((k) => /placement|slot|position|featur/i.test(k)).sort();
+    eq(
+      JSON.stringify(supabasePlacement),
+      JSON.stringify(["getPlacements"]),
+      `the Supabase backend's placement surface is one read — found ${JSON.stringify(supabasePlacement)}`,
+    );
+
+    /* The seam both backends implement declares no writer either, so no third
+     * implementation could add one and still typecheck as the same interface. */
+    const seam = codeOf22(readFileSync(new URL("../src/domain/adapter.ts", import.meta.url), "utf8"));
+    const seamPlacement = [...seam.matchAll(/^[ \t]*([A-Za-z_$][\w$]*)\??\s*\(/gm)]
+      .map((m) => m[1]!)
+      .filter((k) => /placement|slot|position|featur/i.test(k));
+    eq(
+      JSON.stringify([...new Set(seamPlacement)].sort()),
+      JSON.stringify(["getPlacements"]),
+      `OperatorBackend declares one placement method and it is a read — found ${JSON.stringify(seamPlacement)}`,
+    );
+
+    /* And no capability in the matrix is about placement, under any name — so
+     * there is nothing for a screen to check before offering the button. */
+    const placementish = ALL_PERMISSIONS.filter((p) => /placement|slot|position|featur/i.test(p));
+    eq(placementish.length, 0, `the matrix must hold no placement capability — found ${JSON.stringify(placementish)}`);
+  });
+
+  /* ---- 22.6 The origin rule survives the connection ----------------------- */
+
+  await check("A COMPANY-ORIGIN BOOKING IS NOT ICEFALL REVENUE — and the lead is still in the operator's pipeline", async () => {
+    resetStore();
+    const r = await signIn(RAVI);
+
+    const beforeAnalytics = await be.getAnalytics(r, "month");
+    const beforeDashboard = await be.getDashboard(r);
+
+    const made = await be.createLead(r, {
+      customerName: "Own Effort Ottilie",
+      productId: "p-everest-south-col",
+      mountainId: null,
+      source: "Trade show",
+    });
+    assert(made.ok, "the operator adds a lead they found themselves");
+    if (!made.ok) return;
+    eq(made.value.origin, "company", "hard-coded as their own, never forged into an ICEFALL enquiry");
+
+    /*
+     * A CONFIRMED BOOKING WITH A REPORTED VALUE, written straight into the
+     * store because the portal has no booking-creation path — the record
+     * arrives from elsewhere. This is the exact shape that WOULD be counted if
+     * the origin split were ever quietly dropped.
+     */
+    const ownBooking: Booking = {
+      id: "bk-origin-guard",
+      status: "confirmed",
+      leadId: made.value.id,
+      companyId: r.user.companyId,
+      productId: "p-everest-south-col",
+      mountainId: "everest",
+      value: { status: "reported", cents: 999_900 },
+      currency: "EUR",
+      bookedAt: NOW,
+      startsOn: null,
+      referralPctAtBooking: null,
+    };
+    __store.bookings = [...__store.bookings, ownBooking];
+
+    const afterAnalytics = await be.getAnalytics(r, "month");
+    const afterDashboard = await be.getDashboard(r);
+
+    eq(
+      JSON.stringify(afterAnalytics.estimatedGmv),
+      JSON.stringify(beforeAnalytics.estimatedGmv),
+      "ICEFALL revenue must not move — we take no credit for a booking we did not bring",
+    );
+    eq(
+      afterAnalytics.funnel.enquiries,
+      beforeAnalytics.funnel.enquiries,
+      "...and neither does the ICEFALL funnel",
+    );
+    eq(
+      afterDashboard.bookings,
+      beforeDashboard.bookings,
+      "...nor the dashboard's booking count, which is the same scorecard in a tile",
+    );
+
+    /* THE LEAD IS NOT HIDDEN — excluded from ICEFALL's scorecard is not
+     * excluded from the operator's own workspace. */
+    const pipeline = await be.getLeads(r);
+    assert(
+      pipeline.some((l) => l.id === made.value.id),
+      "the company-origin lead is in the pipeline the operator works — it is their lead",
+    );
+    const insights = await be.getInsights(r, "month");
+    assert(
+      insights.sourceQuality.some((x) => x.source === "Trade show"),
+      "...and in Insights, where the operator judges their own sales work",
+    );
+
+    /*
+     * THE CONTROL. An ICEFALL-origin booking of the same shape DOES move both
+     * figures — without this, every assertion above would pass on a backend
+     * that simply counted nothing.
+     */
+    const icefallLead = pipeline.find((l) => l.origin === "icefall");
+    assert(icefallLead, "the seed has an ICEFALL-origin enquiry to compare against");
+    if (!icefallLead) return;
+    __store.bookings = [
+      ...__store.bookings,
+      { ...ownBooking, id: "bk-origin-control", leadId: icefallLead.id },
+    ];
+    const control = await be.getAnalytics(r, "month");
+    const controlDash = await be.getDashboard(r);
+    assert(
+      JSON.stringify(control.estimatedGmv) !== JSON.stringify(beforeAnalytics.estimatedGmv),
+      "an ICEFALL-origin booking DOES count — otherwise the exclusion above proves nothing",
+    );
+    eq(controlDash.bookings, beforeDashboard.bookings + 1, "...and appears in the booking count");
+    resetStore();
+  });
+
+  /* ---- 22.7 A count is still not a list ---------------------------------- */
+
+  await check("CHANNEL STATS CARRY NO IDENTITY — every channel, every row, two fields and nothing else", async () => {
+    resetStore();
+    const r = await signIn(RAVI);
+    const j = await signIn(JO);
+    assert(be.getChannelMessageStats, "the stats method must exist");
+
+    /*
+     * EVERY CHANNEL OF BOTH COMPANIES, not one. A leak added to a code path
+     * that only an archived or empty channel reaches would pass a single-row
+     * check and still be a leak.
+     */
+    let rowsSeen = 0;
+    for (const session of [r, j]) {
+      const channels = await be.getChannels(session);
+      assert(channels.length > 0, "each company has channels to sweep");
+      for (const ch of channels) {
+        const rows = await be.getChannelMessageStats!(session, ch.id);
+        for (const row of rows) {
+          rowsSeen += 1;
+          eq(
+            JSON.stringify(Object.keys(row).sort()),
+            JSON.stringify(["messageId", "views"]),
+            `${ch.id}: a stats row is exactly { messageId, views } — got ${JSON.stringify(Object.keys(row))}`,
+          );
+          eq(typeof row.views, "number", "the count is a number, not a name");
+          eq(Number.isInteger(row.views) && row.views >= 0, true, "counted people are whole, non-negative people");
+          /* And the id it does carry is a MESSAGE's, never a person's. */
+          const messages = await be.getChannelMessages(session, ch.id);
+          assert(
+            messages.some((m) => m.id === row.messageId),
+            `${row.messageId} must be a message in this channel and nothing else`,
+          );
+        }
+      }
+    }
+    assert(rowsSeen > 0, `the sweep must have seen rows — found ${rowsSeen}`);
+
+    /*
+     * AND THE SAME SHAPE ON THE SUPABASE SIDE, read from source for the reason
+     * given in 22.5. The rule here is what the returned object is BUILT from:
+     * field by field, never spread, so a column added to the view tomorrow
+     * cannot ride out to a caller.
+     */
+    for (const rel of ["../src/domain/memory/adapter.ts", "../src/backend/supabaseSocial.ts"] as const) {
+      const code = codeOf22(readFileSync(new URL(rel, import.meta.url), "utf8"));
+      const fn = code.match(/async getChannelMessageStats\([\s\S]*?\n {2}\},/);
+      assert(fn, `${rel} must still declare getChannelMessageStats as a method`);
+      const body = fn![0];
+      const returned = body.match(/return\s*\{[^{}]*\}/g) ?? [];
+      assert(returned.length > 0, `${rel}: the method must return an object literal built field by field`);
+      for (const lit of returned) {
+        /*
+         * TOP-LEVEL KEYS ONLY. `profileId` appears in the memory adapter's
+         * BODY — it is what a distinct-people count is counted over — and that
+         * is correct. The rule is about what LEAVES: a key on the returned row.
+         */
+        const inner = lit.slice(lit.indexOf("{") + 1, lit.lastIndexOf("}"));
+        const keys: string[] = [];
+        let depth = 0;
+        let start = 0;
+        for (let i = 0; i <= inner.length; i += 1) {
+          const c = inner[i];
+          if (c === "(" || c === "[") depth += 1;
+          else if (c === ")" || c === "]") depth -= 1;
+          if (i === inner.length || (c === "," && depth === 0)) {
+            const part = inner.slice(start, i).trim();
+            if (part) keys.push((part.split(":")[0] ?? part).trim());
+            start = i + 1;
+          }
+        }
+        eq(
+          JSON.stringify(keys.slice().sort()),
+          JSON.stringify(["messageId", "views"]),
+          `${rel}: the returned row is exactly { messageId, views } — found ${JSON.stringify(keys)}`,
+        );
+        for (const forbidden of ["profileId", "profile_id", "viewedAt", "viewed_at", "displayName", "email", "..."]) {
+          eq(
+            lit.includes(forbidden),
+            false,
+            `${rel}: the returned row must not carry \`${forbidden}\` — a count is not a list, and a spread is how one becomes one`,
+          );
+        }
+      }
+    }
     resetStore();
   });
 

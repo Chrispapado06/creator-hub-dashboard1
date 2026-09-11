@@ -62,6 +62,7 @@ import {
   TagRow,
 } from "@/components/leads";
 import { OfferComposer } from "@/components/offer";
+import { can } from "@/domain/authz";
 import { timeAgo, NOW } from "@/domain/dates";
 import type { Conversation, Lead } from "@/domain/types";
 import { useAsync, useOperator, useSession } from "@/state/OperatorContext";
@@ -623,6 +624,17 @@ function ThreadPane({
               says plainly that ICEFALL cannot deliver that one.
             */}
             <Button onClick={() => setOffering(true)}>Custom offer</Button>
+            {/*
+              A full proposal — itinerary, inclusions, pricing, versions — opens
+              in its own builder pre-filled from this lead and its trip brief,
+              so nothing is retyped. Shown only to roles the adapter would let
+              create one.
+            */}
+            {lead && can(session, "manageProposals") && (
+              <Button onClick={() => navigate(`/operator/proposals/new?lead=${encodeURIComponent(lead.id)}`)}>
+                Create proposal
+              </Button>
+            )}
             {lead && (
               <AssignMenu
                 ownerId={lead.ownerId}

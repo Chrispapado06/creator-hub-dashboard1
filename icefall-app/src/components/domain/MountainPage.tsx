@@ -38,7 +38,7 @@ import { PhotoGallery } from "@/components/domain/PhotoGallery";
 import { ObjectiveActions, type MountainRef } from "@/components/domain/ObjectiveActions";
 import { useMountainGallery } from "@/components/domain/MountainImage";
 import { SaveButton, SaveCircle, SavedToast, useSaveFlash } from "@/components/ui/SaveControl";
-import { TerrainMap } from "@/components/map/TerrainMap";
+import { MountainMap3D } from "@/components/map/MountainMap3D";
 import {
   BASIS_LABEL,
   NO_COSTS_RECORDED,
@@ -48,6 +48,58 @@ import {
   requiredTotal,
   type MountainCostRecord,
 } from "@/data/mountainCosts";
+import {
+  CAMP_KIND_LABEL,
+  OSM_ATTRIBUTION,
+  OSM_COPYRIGHT_URL,
+  campsFor,
+  mapCaption,
+  osmUrl,
+  type MountainCampRecord,
+} from "@/data/mountainCamps";
+import {
+  HAZARD_STANDARD,
+  MONTHS,
+  MONTH_LABEL,
+  MONTH_SHORT,
+  NO_HAZARDS_RECORDED,
+  NO_MONTH_RATING,
+  NO_SEASON_RECORDED,
+  RATING_LABEL,
+  RATING_MEANING,
+  SEVERITY_LABEL,
+  monthPictureFor,
+  ratedMonthCount,
+  seasonComparison,
+  seasonFor,
+  type Hazard,
+  type Month,
+  type MonthEntry,
+  type MonthRating,
+  type MountainSeasonRecord,
+} from "@/data/mountainSeason";
+import {
+  CEILING_KIND_LABEL,
+  NO_CEILING_RECORDED,
+  NO_CHARGING_RECORDED,
+  NO_RESCUE_RECORDED,
+  ceilingGapSentence,
+  highestCeilingM,
+  rescueFor,
+  sourcesIn,
+  type MountainRescueRecord,
+} from "@/data/mountainRescue";
+import {
+  BACKING_LABEL,
+  NO_FACTS_RECORDED,
+  backingStrength,
+  factsFor,
+  figureLabel,
+  partyLabel,
+  type Backing,
+  type LocalName,
+  type MountainFactRecord,
+} from "@/data/mountainFacts";
 import { cn } from "@/lib/utils";
 import { fmtCountdown, fmtDate, fmtElevation } from "@/lib/format";
 import { sync } from "@/services/repository";
@@ -247,7 +299,12 @@ export function MountainPage({ data }: { data: MountainPageData }) {
 
   return (
     <Screen padded={false}>
-      <MountainHero data={data} gallery={gallery} facts={facts} />
+      <MountainHero
+        data={data}
+        gallery={gallery}
+        facts={facts}
+        onOpenRecord={() => setAboutSheet(true)}
+      />
 
       {curated ? (
         <ObjectiveStats curated={curated} elevationM={data.elevationM} />
@@ -333,6 +390,9 @@ export function MountainPage({ data }: { data: MountainPageData }) {
             lead={`${curated.bestSeasons.map((sn) => SEASON_LABEL[sn]).join(" · ")}. ICEFALL's assessment for this mountain.`}
           >
             <Preparation data={data} curated={curated} part="season" />
+            <SeasonSection data={data} curated={curated} />
+            <HazardSection data={data} />
+            <RescueSection data={data} />
             <AscentsAndConditions data={data} />
           </MountainGroup>
         )}
@@ -391,39 +451,138 @@ export function MountainPage({ data }: { data: MountainPageData }) {
  * THE MOUNTAIN IN 3D, FULL WIDTH, AS THE FIRST THING UNDER "what it takes".
  *
  * Charlie, 11 Sep 2026: "Implement the 3D map with a showcase of camps and
- * trails people can follow." This was already built — `TerrainMap` renders
- * real elevation from the public AWS terrain tiles over OpenFreeMap vector
- * tiles, and it has had a working 3D camera and toggle for weeks. What it did
- * not have was anywhere worth seeing it: a 240px thumbnail under a
- * "Terrain" label at the bottom of the Overview tab.
+ * trails people can follow." The terrain half was already built — real
+ * elevation, a real camera. What it did not have was anything on it.
  *
- * WHAT IS DELIBERATELY NOT DRAWN ON IT: camps, huts and route lines. ICEFALL
- * holds no coordinates for the Goûter hut, for Barafu, or for any camp on any
- * of the fourteen curated mountains — `MountainRoute` carries a name, a grade,
- * a distance and an ascent, and no geometry at all. Pins at plausible-looking
- * places on a real map is the most convincing lie this app could tell, so the
- * caption says what the map is showing and what it is not, and the walkable
- * routes below it are the real lines ICEFALL does hold.
+ * IT NOW HAS CAMPS, AND THAT MOVED THE HONESTY PROBLEM RATHER THAN SOLVING
+ * IT. The caption used to be a fixed sentence ending "ICEFALL holds no
+ * coordinates for them on this mountain". That sentence was true when nothing
+ * was marked and became a lie the moment anything was — on the one screen
+ * where a lie about what is and is not surveyed could get somebody hurt. So
+ * the caption is no longer written here at all: `mapCaption` derives it from
+ * the same record that supplies the markers, and the three cases it has to
+ * tell apart — camps marked, harvested-and-none, never-harvested — are that
+ * function's problem, next to the data that decides them.
+ *
+ * WHAT IS STILL NOT DRAWN: the climbing lines. `MountainRoute` carries a name,
+ * a grade, a distance and an ascent, and no geometry at all, so there is
+ * nothing to draw and nothing is drawn. Joining two real camps with a plausible
+ * line would be an invented line over real photography, which is worse than a
+ * blank one.
  */
 function TerrainShowcase({ data }: { data: MountainPageData }) {
+  /* null here means "never harvested", not "has none" — see `campsFor`. Both
+     end up with an empty marker array and DIFFERENT captions, which is the
+     entire point of keeping the record rather than just its camps. */
+  const record = campsFor(data.curatedId);
+
+  /*
+   * MEMOISED, AND NOT AS A MICRO-OPTIMISATION. `MountainMap3D` re-frames the
+   * camera whenever the `camps` array identity changes. This page re-renders
+   * on every scroll tick, because the chip rail is a scroll-spy — so a fresh
+   * array here would drag the camera back to its default framing under the
+   * reader's finger every time they scrolled or panned. Same record in, same
+   * array out.
+   */
+  const mapCamps = useMemo(
+    () =>
+      (record?.camps ?? []).map((c) => ({
+        name: c.name,
+        lat: c.lat,
+        lon: c.lon,
+        elevationM: c.elevationM,
+      })),
+    [record],
+  );
+
+  /* AFTER the hook, not before it. A peak with no coordinates renders nothing,
+     but bailing out above `useMemo` would make the hook conditional and change
+     the hook order between two mountains — the same bug the map component
+     guards against with its build-time OFFLINE constant. */
   if (data.lat === undefined || data.lon === undefined) return null;
+
   return (
     <Rise className="pt-5">
       <div className="-mx-5">
-        <TerrainMap
-          track={[{ lat: data.lat, lon: data.lon }]}
-          current={{ lat: data.lat, lon: data.lon }}
-          follow={false}
-          start3D
-          className="h-[300px]"
+        <MountainMap3D
+          lat={data.lat}
+          lon={data.lon}
+          name={data.name}
+          camps={mapCamps}
+          className="h-[340px] w-full"
         />
       </div>
-      <p className="mt-2.5 text-[11px] leading-relaxed text-mist-dim">
-        Real elevation, tilted. The summit is marked; camps, huts and the climbing
-        lines are not — ICEFALL holds no coordinates for them on this mountain, and
-        a pin in a plausible place would be worse than none.
-      </p>
+      <p className="mt-2.5 text-[11px] leading-relaxed text-mist-dim">{mapCaption(record)}</p>
+      {record && record.camps.length > 0 && <CampRows record={record} />}
     </Rise>
+  );
+}
+
+/**
+ * THE CAMPS AS FLAT ROWS, each one a tap to the OpenStreetMap object it was
+ * read off. No cards: a row, a hairline, and the altitude on the right.
+ *
+ * TWO THINGS THIS DELIBERATELY DOES NOT DO. It does not fill in a missing
+ * altitude — "not recorded" is printed where OSM carries no `ele` tag, because
+ * a climber reading 3,850 m that ICEFALL interpolated off a DEM has been told
+ * something nobody surveyed. And it does not order the rows by walking order,
+ * only by altitude, because on Kilimanjaro two routes merge and the
+ * acclimatisation day crosses Lava Tower higher than the camps on either side
+ * of it — so "lowest first" is the claim, and it is one that is always true.
+ *
+ * THE ATTRIBUTION IS NOT DECORATION. OpenStreetMap is ODbL, which obliges
+ * credit wherever the data is shown; the string is imported required rather
+ * than typed here so it cannot go missing in an edit.
+ */
+function CampRows({ record }: { record: MountainCampRecord }) {
+  const n = record.camps.length;
+  return (
+    <div className="pt-6">
+      <SectionLabel>Camps and huts</SectionLabel>
+      <p className="mt-1.5 text-[13px] leading-relaxed text-mist">
+        {n} {n === 1 ? "place" : "places"} OpenStreetMap maps on the {record.routeBasis}, lowest
+        first. Each row opens the map object it was read from.
+      </p>
+      <div className="mt-2">
+        {record.camps.map((c, i) => (
+          <a
+            key={`${c.osmType}/${c.osmId}`}
+            href={osmUrl(c)}
+            target="_blank"
+            rel="noreferrer"
+            className={cn(
+              "flex min-h-[44px] items-center gap-3 py-3",
+              i !== 0 && "border-t border-hairline",
+            )}
+          >
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[14px] text-snow">{c.name}</span>
+              <span className="mt-0.5 block truncate text-[11px] text-mist-dim">
+                {CAMP_KIND_LABEL[c.kind]}
+                {c.nameEn ? ` · ${c.nameEn}` : ""}
+              </span>
+            </span>
+            <span className="shrink-0 tabular-nums text-[12px] text-mist-dim">
+              {c.elevationM !== null ? `${fmtElevation(c.elevationM)} m` : "not recorded"}
+            </span>
+            <ExternalLink size={14} strokeWidth={1.7} className="shrink-0 text-mist-dim" />
+          </a>
+        ))}
+      </div>
+      <p className="mt-3 text-[11px] leading-relaxed text-mist-dim">
+        Altitudes are OpenStreetMap's own where it carries one; "not recorded" means it carries
+        none and ICEFALL has not filled the gap in. {OSM_ATTRIBUTION}{" "}
+        <a
+          href={OSM_COPYRIGHT_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="underline underline-offset-2"
+        >
+          Licence
+        </a>
+        .
+      </p>
+    </div>
   );
 }
 
@@ -522,7 +681,7 @@ function CostsBlock({ data, onOpen }: { data: MountainPageData; onOpen: () => vo
         </div>
       )}
 
-      <SourceLine record={record} />
+      <SourceLine {...costSourceProps(record)} />
 
       <DepthRow
         title="See the full breakdown"
@@ -533,29 +692,85 @@ function CostsBlock({ data, onOpen }: { data: MountainPageData; onOpen: () => vo
   );
 }
 
-/** Who published these figures, and when we read them. Never omitted. */
-function SourceLine({ record }: { record: MountainCostRecord }) {
-  const official = record.sourceKind === "issuer";
+/**
+ * WHO PUBLISHED THIS, AND WHEN WE READ IT. Never omitted, and now ONE
+ * component for all five data files rather than one per file.
+ *
+ * It started life taking a `MountainCostRecord` and reaching into it. Four
+ * more sourced files landed the same day — camps, facts, rescue, seasons —
+ * and each of them carries the same three things under different field names
+ * (`source`/`sourceKind`/`checked` on a cost record, a `SourceRef` with `kind`
+ * everywhere else). Copying this component five times is how the five sheet
+ * implementations drifted before `Sheet` existed, so it takes the three values
+ * instead of a record and the callers unpack.
+ *
+ * `kind` has THREE values here, because `mountainSeason.ts` has three. A
+ * peer-reviewed paper is not a tourist board and is not the park service, and
+ * flattening "study" into either would be laundering in one direction or
+ * slandering in the other.
+ *
+ * TWO CLASSES THAT DID NOTHING, fixed on the way past: this line and the
+ * caveat bullets in `CostBreakdown` asked for `text-amber` and `bg-alert`.
+ * Neither exists in the theme — measured in the live app on 2026-09-11, both
+ * computed to the inherited colour, so the one sentence on the costs block
+ * warning a reader not to trust the figure rendered in the same grey as the
+ * rest of the line. The token is `alert`.
+ */
+function SourceLine({
+  label,
+  url,
+  kind,
+  checked,
+  issuerNote,
+  secondaryNote,
+  className,
+}: {
+  label: string;
+  url: string;
+  kind: "issuer" | "study" | "secondary";
+  checked: string;
+  issuerNote?: string;
+  secondaryNote?: string;
+  className?: string;
+}) {
   return (
-    <p className="mt-3 text-[11px] leading-relaxed text-mist-dim">
+    <p className={cn("mt-3 text-[11px] leading-relaxed text-mist-dim", className)}>
       <a
-        href={record.source.url}
+        href={url}
         target="_blank"
         rel="noreferrer"
         className="text-azure underline decoration-azure/40 underline-offset-2"
       >
-        {record.source.label}
+        {label}
       </a>{" "}
-      · read {fmtDate(record.checked)} ·{" "}
-      {official ? (
-        <span className="text-mist">published by the body that charges it</span>
+      · read {fmtDate(checked)} ·{" "}
+      {kind === "issuer" ? (
+        <span className="text-mist">
+          {issuerNote ?? "an official publication, not a second-hand summary"}
+        </span>
+      ) : kind === "study" ? (
+        <span className="text-mist">
+          a published study — authoritative about its own measurements and nothing else
+        </span>
       ) : (
-        <span className="text-amber">
-          not the issuer&rsquo;s own page — confirm before you pay
+        <span className="text-alert">
+          {secondaryNote ?? "not the issuer\u2019s own page — check it before you rely on it"}
         </span>
       )}
     </p>
   );
+}
+
+/** A cost record's three source values, in the shape `SourceLine` takes. */
+function costSourceProps(record: MountainCostRecord) {
+  return {
+    label: record.source.label,
+    url: record.source.url,
+    kind: record.sourceKind,
+    checked: record.checked,
+    issuerNote: "published by the body that charges it",
+    secondaryNote: "not the issuer\u2019s own page — confirm before you pay",
+  } as const;
 }
 
 /** Every line, what it covers, and everything the total leaves out. */
@@ -622,7 +837,7 @@ function CostBreakdown({
           <ul className="mt-1.5 space-y-2">
             {record.caveats.map((c) => (
               <li key={c} className="flex gap-3 text-[13px] leading-relaxed text-mist">
-                <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-amber" />
+                <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-alert" />
                 {c}
               </li>
             ))}
@@ -630,7 +845,7 @@ function CostBreakdown({
         </>
       )}
 
-      <SourceLine record={record} />
+      <SourceLine {...costSourceProps(record)} />
     </>
   );
 }
@@ -917,10 +1132,12 @@ function MountainHero({
   data,
   gallery,
   facts,
+  onOpenRecord,
 }: {
   data: MountainPageData;
   gallery: ReturnType<typeof useMountainGallery>;
   facts: PeakFacts | null;
+  onOpenRecord: () => void;
 }) {
   const curated = data.curated;
   const tier = tierOf(curated);
@@ -930,6 +1147,22 @@ function MountainHero({
   const [options, setOptions] = useState(false);
   const images = gallery.images;
   const i = Math.min(frame, Math.max(0, images.length - 1));
+  /*
+   * THE NAME ON THE LOCAL MAP BELONGS AT THE TOP OF THE PAGE.
+   *
+   * सगरमाथा is not a footnote about Everest; on the ground it is the name.
+   * `mountainFacts.ts` holds the native labels Wikidata carries, with a source
+   * and a read date for each, and the first that is not already the title goes
+   * under the title here.
+   *
+   * IT IS A BUTTON, AND THAT IS NOT DECORATION. Rule one of this app is that a
+   * sourced fact shows its source; a 13px line over a photograph cannot carry
+   * one, so the line opens the record sheet where the name, its language, what
+   * it means (or the reason nobody has established what it means) and the page
+   * it was read from all sit together.
+   */
+  const heroLocalName =
+    factsFor(data.curatedId)?.localNames.find((n) => n.name !== data.name) ?? null;
 
   return (
     <div className="relative">
@@ -1032,7 +1265,18 @@ function MountainHero({
                   under an English title (富士山 under Mount Fuji), or the
                   English name under a Latin local one (Mount Ararat under
                   Ağrı Dağı). Never both — a row holds one or the other. */}
-              {data.localName && data.localName !== data.name ? (
+              {heroLocalName ? (
+                <button
+                  type="button"
+                  onClick={onOpenRecord}
+                  aria-label={`${heroLocalName.name} — the ${heroLocalName.language} name. Open the record to see where it comes from.`}
+                  className="mt-1 flex items-center gap-1.5 text-left"
+                >
+                  <span className="text-[14px] text-mist">{heroLocalName.name}</span>
+                  <span className="text-[11px] text-mist-dim">{heroLocalName.language}</span>
+                  <ChevronRight size={12} strokeWidth={1.8} className="text-mist-dim" />
+                </button>
+              ) : data.localName && data.localName !== data.name ? (
                 <p className="mt-1 text-[13px] text-mist-dim">{data.localName}</p>
               ) : (
                 data.englishName &&
@@ -1524,6 +1768,11 @@ function Overview({
         </Card>
       </Rise>
 
+      {/* THE RECORD — first ascent, prominence, the names it is known by.
+          Curated mountains only: `mountainFacts.ts` covers the fourteen, and a
+          reference entry's facts already come through `usePeakFacts`. */}
+      {curated && <PeakRecord record={factsFor(data.curatedId)} />}
+
       <Rise className="pt-6">
         <SectionLabel>Photography</SectionLabel>
         <PhotoGallery
@@ -1791,7 +2040,17 @@ function Preparation({
         * September" from `assessPeak`. Summer is the one season the expert
         * record excludes. The badges are the assessment; nothing else is.
         */}
-      {part === "season" && (
+      {/*
+        * THE BADGE BLOCK NOW STANDS DOWN WHERE A SOURCED MONTH STRIP EXISTS.
+        *
+        * `SeasonSection` renders directly under this one and its comparison
+        * line already names ICEFALL's own seasons in words — as does the
+        * group's lead, two rows above. Three statements of "Summer" inside one
+        * screen is the kind of repetition that put this page at 13,000px.
+        * Where no month record exists (K2, Broad Peak, Annapurna, Eiger,
+        * Toubkal) the badges are all there is and they stay.
+        */}
+      {part === "season" && seasonFor(data.curatedId) === null && (
       <Rise className="pt-6">
         <SectionLabel>Best season</SectionLabel>
         <div className="mt-2">
@@ -2014,6 +2273,959 @@ function Expeditions({ data }: { data: MountainPageData }) {
  * same design Camptocamp's outings and komoot's Highlights proved: attach the
  * content to the place, and the place's page becomes the community.
  */
+/* -------------------------------------------------------------------------- */
+/* The record — first ascent, prominence, the names it is known by            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * THE MOUNTAIN'S OWN RECORD, in the "About" sheet, where depth belongs.
+ *
+ * `data/mountainFacts.ts` is built so that dishonesty is hard to express: its
+ * `Maybe<T>` has no null branch, so a missing first ascent carries the REASON
+ * it is missing and cannot silently render as a blank. Six of the fourteen
+ * curated mountains hold no first ascent — Kilimanjaro and Aconcagua among
+ * them — and each says why in its own words.
+ *
+ * TWO LEVELS OF PROVENANCE, BOTH SHOWN. `SourceLine` says where ICEFALL read
+ * the figure; `backing` says what THAT page cites for itself, which for
+ * Wikidata is the question that matters. Mount Olympus's height cites a
+ * peer-reviewed paper and Gran Paradiso's prominence cites only an import from
+ * the German Wikipedia. Printing both as "Wikidata" and stopping there would
+ * flatten a real difference into a uniform grey.
+ */
+/**
+ * WHAT A SECONDARY SOURCE IS, IN THE RECORD SHEET SPECIFICALLY.
+ *
+ * The default warning on `SourceLine` is "check it before you rely on it",
+ * which is the right sentence for a hut tariff and the wrong one here: every
+ * row in this sheet but one is Wikidata, the reader will see the line eight
+ * times, and the useful thing to say is WHY it is secondary rather than what
+ * to do about it. What to do about it is the `backing` line directly above.
+ */
+const AGGREGATOR_NOTE = "an aggregator, never the body whose fact it is";
+
+function BackingLine({ backing }: { backing: Backing | null }) {
+  const strength = backingStrength(backing);
+  return (
+    <p className="mt-1.5 text-[11px] leading-relaxed text-mist-dim">
+      {BACKING_LABEL[strength]}
+      {backing ? ` — ${backing.text}` : ""}
+      {backing?.url && (
+        <>
+          {" "}
+          <a
+            href={backing.url}
+            target="_blank"
+            rel="noreferrer"
+            className="text-azure underline decoration-azure/40 underline-offset-2"
+          >
+            Open it
+          </a>
+        </>
+      )}
+    </p>
+  );
+}
+
+/** One fact, or one named absence. The same shape for both. */
+function FactRow({
+  k,
+  children,
+}: {
+  k: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="border-t border-hairline py-3.5 first:border-t-0 first:pt-0">
+      <p className="section-label text-[9px] text-mist-dim">{k}</p>
+      {children}
+    </div>
+  );
+}
+
+function Absent({ why, consulted }: { why: string; consulted?: { label: string; url: string; kind: "issuer" | "secondary"; checked: string } }) {
+  return (
+    <>
+      <p className="mt-1.5 text-[13px] leading-relaxed text-mist-dim">Not recorded. {why}</p>
+      {consulted && (
+        <SourceLine
+          label={consulted.label}
+          url={consulted.url}
+          kind={consulted.kind}
+          checked={consulted.checked}
+          secondaryNote={AGGREGATOR_NOTE}
+        />
+      )}
+    </>
+  );
+}
+
+function LocalNameRow({ n }: { n: LocalName }) {
+  return (
+    <>
+      <p className="mt-1.5 text-[15px] leading-snug text-snow">{n.name}</p>
+      <p className="mt-0.5 text-[12px] text-mist">
+        {n.language}
+        {n.romanisation
+          ? ` · ${n.romanisation}${n.romanisationScheme ? ` (${n.romanisationScheme})` : ""}`
+          : ""}
+      </p>
+      {n.meaning.known ? (
+        <>
+          <p className="mt-1.5 text-[13px] leading-relaxed text-mist">
+            {n.meaning.value.text}
+          </p>
+          <SourceLine
+            label={n.meaning.value.source.label}
+            url={n.meaning.value.source.url}
+            kind={n.meaning.value.source.kind}
+            checked={n.meaning.value.source.checked}
+          />
+        </>
+      ) : (
+        <p className="mt-1.5 text-[12px] leading-relaxed text-mist-dim">
+          What it means is not recorded. {n.meaning.why}
+        </p>
+      )}
+      <SourceLine
+        label={n.source.label}
+        url={n.source.url}
+        kind={n.source.kind}
+        checked={n.source.checked}
+        secondaryNote={AGGREGATOR_NOTE}
+        className="mt-2"
+      />
+    </>
+  );
+}
+
+function PeakRecord({ record }: { record: MountainFactRecord | null }) {
+  if (!record) {
+    return (
+      <Rise className="pt-6">
+        <SectionLabel>The record</SectionLabel>
+        <p className="mt-2 text-[13px] leading-relaxed text-mist-dim">{NO_FACTS_RECORDED}</p>
+      </Rise>
+    );
+  }
+
+  return (
+    <Rise className="pt-6">
+      <SectionLabel>The record</SectionLabel>
+      <p className="mt-1.5 text-[12px] leading-relaxed text-mist-dim">
+        Read off Wikidata on {fmtDate(record.wikidata.read)}, statement by statement, with what
+        each statement cites for itself shown beside it.{" "}
+        <a
+          href={record.wikidata.url}
+          target="_blank"
+          rel="noreferrer"
+          className="text-azure underline decoration-azure/40 underline-offset-2"
+        >
+          {record.wikidata.qid}
+        </a>
+      </p>
+
+      <div className="mt-3">
+        <FactRow k="First ascent">
+          {record.firstAscent.known ? (
+            <>
+              <p className="mt-1.5 text-[14px] leading-snug text-snow">
+                {record.firstAscent.value.dateLabel}
+              </p>
+              <p className="mt-1 text-[13px] leading-relaxed text-mist">
+                {partyLabel(record.firstAscent.value.party)}
+                {record.firstAscent.value.expedition
+                  ? ` · ${record.firstAscent.value.expedition}`
+                  : ""}
+              </p>
+              {record.firstAscent.value.note && (
+                <p className="mt-1.5 text-[12px] leading-relaxed text-mist-dim">
+                  {record.firstAscent.value.note}
+                </p>
+              )}
+              <BackingLine backing={record.firstAscent.value.backing} />
+              <SourceLine
+                label={record.firstAscent.value.source.label}
+                url={record.firstAscent.value.source.url}
+                kind={record.firstAscent.value.source.kind}
+                checked={record.firstAscent.value.source.checked}
+                className="mt-2"
+              />
+            </>
+          ) : (
+            <Absent
+              why={record.firstAscent.why}
+              consulted={record.firstAscent.consulted}
+            />
+          )}
+        </FactRow>
+
+        <FactRow k="Prominence">
+          {record.prominence.known ? (
+            <Figure f={record.prominence.value} />
+          ) : (
+            <Absent why={record.prominence.why} consulted={record.prominence.consulted} />
+          )}
+        </FactRow>
+
+        <FactRow k="Topographic isolation">
+          {record.isolation.known ? (
+            <Figure f={record.isolation.value} />
+          ) : (
+            <Absent why={record.isolation.why} consulted={record.isolation.consulted} />
+          )}
+        </FactRow>
+
+        <FactRow k="Parent peak">
+          {record.parentPeak.known ? (
+            <>
+              <p className="mt-1.5 text-[14px] leading-snug text-snow">
+                {record.parentPeak.value.name}
+              </p>
+              {record.parentPeak.value.caution && (
+                <p className="mt-1.5 text-[12px] leading-relaxed text-alert">
+                  {record.parentPeak.value.caution}
+                </p>
+              )}
+              <BackingLine backing={record.parentPeak.value.backing} />
+              <SourceLine
+                label={record.parentPeak.value.source.label}
+                url={record.parentPeak.value.source.url}
+                kind={record.parentPeak.value.source.kind}
+                checked={record.parentPeak.value.source.checked}
+                secondaryNote={AGGREGATOR_NOTE}
+                className="mt-2"
+              />
+            </>
+          ) : (
+            <Absent why={record.parentPeak.why} consulted={record.parentPeak.consulted} />
+          )}
+        </FactRow>
+
+        {/* AN EMPTY LIST MEANS WIKIDATA CARRIES NO NATIVE LABEL. It does not
+            mean the mountain has no local name — K2's "Chhogori" sits in
+            Wikidata as an unreferenced alias and is deliberately not here. */}
+        <FactRow k={record.localNames.length === 1 ? "Local name" : "Local names"}>
+          {record.localNames.length === 0 ? (
+            <p className="mt-1.5 text-[13px] leading-relaxed text-mist-dim">
+              Wikidata carries no native-language label for this mountain. That is a gap in the
+              record, not evidence that it has no local name.
+            </p>
+          ) : (
+            record.localNames.map((n, i) => (
+              <div key={n.name} className={cn(i !== 0 && "mt-4 border-t border-hairline pt-3.5")}>
+                <LocalNameRow n={n} />
+              </div>
+            ))
+          )}
+        </FactRow>
+      </div>
+
+      {record.officialNames && record.officialNames.length > 0 && (
+        <>
+          <p className="section-label mt-6 text-mist-dim">Its official name, over time</p>
+          <div className="mt-1">
+            {record.officialNames.map((o, i) => (
+              <div
+                key={`${o.name}-${o.from ?? "x"}-${o.by}`}
+                className={cn("py-3.5", i !== 0 && "border-t border-hairline")}
+              >
+                <div className="flex items-baseline justify-between gap-3">
+                  <p className="min-w-0 flex-1 text-[14px] leading-snug text-snow">{o.name}</p>
+                  <p className="tnum shrink-0 text-[12px] text-mist-dim">
+                    {o.from ? o.from.slice(0, 4) : "—"}
+                    {o.until ? `–${o.until.slice(0, 4)}` : o.from ? "–" : ""}
+                  </p>
+                </div>
+                <p className="mt-1 text-[12.5px] leading-relaxed text-mist">Made official by {o.by}.</p>
+                {o.disputedBy && o.disputedBy.length > 0 && (
+                  <p className="mt-1 text-[12px] leading-relaxed text-alert">
+                    Disputed by {o.disputedBy.join(", ")}.
+                  </p>
+                )}
+                <BackingLine backing={o.backing} />
+                <SourceLine
+                  label={o.source.label}
+                  url={o.source.url}
+                  kind={o.source.kind}
+                  checked={o.source.checked}
+                  secondaryNote={AGGREGATOR_NOTE}
+                  className="mt-2"
+                />
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {record.namingNote && (
+        <p className="mt-4 text-[12.5px] leading-relaxed text-mist">{record.namingNote}</p>
+      )}
+
+      {/* RECORDED, NOT RESOLVED. Three of the four mountains whose height
+          Wikidata gives to two decimal places disagree with ICEFALL's own
+          card. A reader who can see the disagreement is better off than a
+          reader shown one tidy number. */}
+      {record.disagreements && record.disagreements.length > 0 && (
+        <>
+          <p className="section-label mt-6 text-mist-dim">Where the sources disagree</p>
+          <ul className="mt-1.5 space-y-2">
+            {record.disagreements.map((d) => (
+              <li key={d} className="flex gap-3 text-[13px] leading-relaxed text-mist">
+                <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-alert" />
+                {d}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </Rise>
+  );
+}
+
+function Figure({ f }: { f: Parameters<typeof figureLabel>[0] }) {
+  return (
+    <>
+      <p className="tnum mt-1.5 text-[14px] leading-snug text-snow">{figureLabel(f)}</p>
+      {f.caution && (
+        <p className="mt-1.5 text-[12px] leading-relaxed text-alert">{f.caution}</p>
+      )}
+      <BackingLine backing={f.backing} />
+      <SourceLine
+        label={f.source.label}
+        url={f.source.url}
+        kind={f.source.kind}
+        checked={f.source.checked}
+        secondaryNote={AGGREGATOR_NOTE}
+        className="mt-2"
+      />
+    </>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* When & safety — the sourced months, the hazards, and who comes             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * TWELVE MONTHS, ONE ROW, AND THE STATUS IS A WORD.
+ *
+ * The prototype put these in a 2x6 grid and the owner sent it back: a year is
+ * a line, and reading it as two stacked half-years makes December neighbour
+ * June. So: twelve cells across, January on the left, and they get narrow —
+ * about 26px each on a 390px screen. Nothing legible fits in 26px except the
+ * month's own three letters, which is exactly what goes there.
+ *
+ * WHICH MEANS THE STATUS CANNOT LIVE IN THE CELL, and ICEFALL's standing rule
+ * is that a band is a word, never a colour on its own. The word is on screen
+ * twice regardless: in the legend under the strip, where each tint is named,
+ * and in the selected month's own line, which always shows "September — Season
+ * shut" in full. The tint is a second channel for people scanning, not the
+ * only one.
+ *
+ * A NULL SLOT IS NOT A NEUTRAL SLOT. `monthPictureFor` returns null for a
+ * month no source speaks to, and eight of Gran Paradiso's twelve are null.
+ * Those cells are empty rather than tinted, the legend names the state, and
+ * selecting one prints `NO_MONTH_RATING` — which says it is neither a good
+ * month nor a bad one, only an unrecorded one.
+ */
+const RATING_CELL: Record<MonthRating, string> = {
+  best: "bg-azure/35 text-snow",
+  possible: "bg-azure/[0.13] text-mist",
+  avoid: "bg-white/[0.07] text-mist-dim",
+};
+
+const RATING_SWATCH: Record<MonthRating, string> = {
+  best: "bg-azure/60",
+  possible: "bg-azure/[0.22]",
+  avoid: "bg-white/[0.12]",
+};
+
+function SeasonSection({ data, curated }: { data: MountainPageData; curated: Mountain }) {
+  const record = seasonFor(data.curatedId);
+  const picture = monthPictureFor(data.curatedId);
+  /* Today's month, so the strip opens on the question the reader is standing
+     in. Computed once — a re-render every scroll tick must not move it. */
+  const [month, setMonth] = useState<Month>(() => (new Date().getMonth() + 1) as Month);
+  const [sheet, setSheet] = useState(false);
+
+  if (!record || !picture) {
+    return (
+      <Rise className="pt-7">
+        <SectionLabel>Month by month</SectionLabel>
+        <p className="mt-1.5 text-[13px] leading-relaxed text-mist">{NO_SEASON_RECORDED}</p>
+      </Rise>
+    );
+  }
+
+  const entry: MonthEntry | null = picture[month - 1];
+  const ratings = new Set(
+    picture.filter((e): e is MonthEntry => e !== null).map((e) => e.rating),
+  );
+  const hasUnrated = picture.some((e) => e === null);
+  const comparison = seasonComparison(record, curated.bestSeasons);
+  const rated = ratedMonthCount(record);
+
+  return (
+    <Rise className="pt-7">
+      <SectionLabel>Month by month</SectionLabel>
+      {/* Said only where it is not twelve. "Nine of the twelve" is information;
+          "twelve of the twelve" is a sentence the strip already makes. */}
+      {rated < 12 && (
+        <p className="mt-1.5 text-[13px] leading-relaxed text-mist">
+          {rated} of the twelve months are rated by a named published source. The rest are blank
+          because nothing ICEFALL holds speaks to them.
+        </p>
+      )}
+
+      <div className="mt-3 flex gap-[3px]">
+        {MONTHS.map((m) => {
+          const e = picture[m - 1];
+          const on = m === month;
+          return (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setMonth(m)}
+              aria-pressed={on}
+              aria-label={`${MONTH_LABEL[m]} — ${e ? RATING_LABEL[e.rating] : "not rated"}`}
+              className={cn(
+                "min-w-0 flex-1 rounded-[3px] py-2.5 text-center text-[9px] font-semibold tracking-tight uppercase transition-colors",
+                e ? RATING_CELL[e.rating] : "bg-white/[0.02] text-mist-dim/70",
+                on && "outline outline-1 outline-snow/70",
+              )}
+            >
+              {MONTH_SHORT[m]}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* The word, in full, for whichever month is selected. This line is why
+          the 26px cells are allowed to carry only a tint. */}
+      <p className="mt-3 text-[14px] leading-snug font-semibold text-snow">
+        {MONTH_LABEL[month]} — {entry ? RATING_LABEL[entry.rating] : "Not rated"}
+      </p>
+      <p className="mt-1.5 text-[13px] leading-relaxed text-mist">
+        {entry ? entry.reason : NO_MONTH_RATING}
+      </p>
+      {/* The verbatim quote is depth, and it is in the sheet against its own
+          window. The sentence above it is the source's claim in ICEFALL's
+          words and carries the same source line either way. */}
+      {entry?.note && (
+        <p className="mt-2 text-[12px] leading-relaxed text-mist-dim">{entry.note}</p>
+      )}
+      {entry && (
+        <SourceLine
+          label={entry.source.label}
+          url={entry.source.url}
+          kind={entry.source.kind}
+          checked={entry.source.checked}
+          /* The record says whether this issuer SETS the season or merely
+             reports on it. The Tanzania Meteorological Authority forecasts the
+             rains; it does not decree them, so it carries no role and falls
+             back to the neutral issuer wording. */
+          issuerNote={entry.source.issuerRole}
+        />
+      )}
+
+      {/* The legend, which is where the tints get their names. */}
+      <div className="mt-3 flex flex-wrap items-center gap-x-3.5 gap-y-1.5 text-[10.5px] text-mist-dim">
+        {(["best", "possible", "avoid"] as MonthRating[])
+          .filter((r) => ratings.has(r))
+          .map((r) => (
+            <span key={r} className="inline-flex items-center gap-1.5">
+              <span className={cn("h-2.5 w-3.5 rounded-[2px]", RATING_SWATCH[r])} />
+              {RATING_LABEL[r]}
+            </span>
+          ))}
+        {hasUnrated && (
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2.5 w-3.5 rounded-[2px] bg-white/[0.03]" />
+            Not rated
+          </span>
+        )}
+      </div>
+
+      {/*
+        * ICEFALL'S OWN SEASON BADGES AND THE SOURCED MONTHS, SIDE BY SIDE.
+        *
+        * `seasonComparison` reports the difference and has no power to resolve
+        * it — which is the whole point, because the last time this page
+        * derived a season it printed a line contradicting the curated badges
+        * two rows above it. Where they disagree the sentence says so and names
+        * both. Where no month is rated "best" at all — Kilimanjaro, where
+        * nothing ICEFALL found calls any month good for climbing — the
+        * function returns null and that gets its own sentence rather than
+        * being read as agreement.
+        */}
+      <p className="mt-3.5 border-t border-hairline pt-3.5 text-[12px] leading-relaxed text-mist-dim">
+        {comparison
+          ? comparison.sentence
+          : "No source ICEFALL holds names a best month on this mountain. ICEFALL's own seasons are at the top of this section; nothing here confirms or contradicts them."}
+      </p>
+
+      <DepthRow
+        title="Where these months come from"
+        sub="Every window, the source behind it, and what the three words mean"
+        onClick={() => setSheet(true)}
+      />
+
+      {sheet && (
+        <Sheet title="Month by month" onClose={() => setSheet(false)}>
+          <div className="px-5 pb-6">
+            <p className="section-label mt-1 text-mist-dim">What the words mean</p>
+            <div className="mt-1">
+              {(["best", "possible", "avoid"] as MonthRating[]).map((r) => (
+                <KV key={r} k={RATING_LABEL[r]} v={RATING_MEANING[r]} />
+              ))}
+              {hasUnrated && <KV k="Not rated" v={NO_MONTH_RATING} />}
+            </div>
+
+            <p className="section-label mt-6 text-mist-dim">The windows</p>
+            <div className="mt-1">
+              {record.windows.map((w, i) => (
+                <div
+                  key={`${w.rating}-${w.months.join()}`}
+                  className={cn("py-3.5", i !== 0 && "border-t border-hairline")}
+                >
+                  <div className="flex items-baseline justify-between gap-3">
+                    <p className="min-w-0 flex-1 text-[14px] leading-snug text-snow">
+                      {w.months.map((m) => MONTH_SHORT[m]).join(" · ")}
+                    </p>
+                    <p className="shrink-0 text-[12px] text-mist-dim">{RATING_LABEL[w.rating]}</p>
+                  </div>
+                  <p className="mt-1.5 text-[13px] leading-relaxed text-mist">{w.reason}</p>
+                  {w.quote && (
+                    <p className="mt-2 border-l border-hairline pl-3 text-[12px] leading-relaxed text-mist-dim italic">
+                      &ldquo;{w.quote}&rdquo;
+                    </p>
+                  )}
+                  {w.note && (
+                    <p className="mt-2 text-[12px] leading-relaxed text-mist-dim">{w.note}</p>
+                  )}
+                  <SourceLine
+                    label={w.source.label}
+                    url={w.source.url}
+                    kind={w.source.kind}
+                    checked={w.source.checked}
+                    issuerNote={w.source.issuerRole}
+                  />
+                </div>
+              ))}
+            </div>
+
+            {comparison?.note && (
+              <>
+                <p className="section-label mt-6 text-mist-dim">
+                  Against ICEFALL&rsquo;s own seasons
+                </p>
+                <p className="mt-1.5 text-[13px] leading-relaxed text-mist">
+                  {comparison.sentence}
+                </p>
+                <p className="mt-2 text-[13px] leading-relaxed text-mist-dim">
+                  {comparison.note}
+                </p>
+              </>
+            )}
+          </div>
+        </Sheet>
+      )}
+    </Rise>
+  );
+}
+
+/**
+ * HAZARDS — FLAT ROWS, AND ONLY ONES WITH A PUBLISHED SOURCE BEHIND THEM.
+ *
+ * This is the section most likely to be filled with plausible sentences, and
+ * a plausible sentence here is how somebody gets hurt. `mountainSeason.ts`
+ * takes the decision, not this component: a hazard exists in the data only
+ * with a name, a place on the route, when it is worst and a named page. Nine
+ * of the fourteen curated mountains hold none, including K2, whose Bottleneck
+ * serac is real and famous and could not be sourced to a page that says where
+ * and when — so nine of them show a sentence saying so instead. That sentence
+ * is not "this mountain is safe" and does not read like it.
+ */
+function HazardSection({ data }: { data: MountainPageData }) {
+  const [open, setOpen] = useState<Hazard | null>(null);
+  const record: MountainSeasonRecord | null = seasonFor(data.curatedId);
+  const hazards = record?.hazards ?? [];
+
+  if (hazards.length === 0) {
+    return (
+      <Rise className="pt-7">
+        <SectionLabel>Hazards</SectionLabel>
+        <p className="mt-1.5 text-[13px] leading-relaxed text-mist">
+          {record?.hazardsAbsentReason ?? NO_HAZARDS_RECORDED}
+        </p>
+      </Rise>
+    );
+  }
+
+  return (
+    <Rise className="pt-7">
+      <SectionLabel>Hazards</SectionLabel>
+      {/* HAZARD_STANDARD — the bar a hazard clears to appear at all — is at the
+          top of every hazard's sheet rather than three lines above the rows.
+          On a mountain with NO hazards it is the page (`hazardsAbsentReason`
+          above), which is where it earns its space. */}
+      <div className="mt-2">
+        {hazards.map((h, i) => (
+          <button
+            key={h.name}
+            type="button"
+            onClick={() => setOpen(h)}
+            className={cn(
+              "flex min-h-[44px] w-full items-start gap-3 py-3.5 text-left",
+              i !== 0 && "border-t border-hairline",
+            )}
+          >
+            <span className="min-w-0 flex-1">
+              <span className="block text-[14px] leading-snug text-snow">{h.name}</span>
+              <span className="mt-0.5 line-clamp-1 text-[11.5px] leading-snug text-mist-dim">
+                {h.routeScope}
+              </span>
+              <span className="mt-1 line-clamp-2 text-[12px] leading-snug text-mist">
+                Worst &mdash; {h.worst}
+              </span>
+              <span
+                className={cn(
+                  "mt-1.5 block text-[10.5px] tracking-[0.08em] uppercase",
+                  h.severity === "deaths-recorded" ? "text-alert" : "text-mist-dim",
+                )}
+              >
+                {SEVERITY_LABEL[h.severity]}
+              </span>
+            </span>
+            <ChevronRight
+              size={18}
+              strokeWidth={1.7}
+              className="mt-0.5 shrink-0 text-mist-dim"
+            />
+          </button>
+        ))}
+      </div>
+
+      {open && (
+        <Sheet title={open.name} onClose={() => setOpen(null)}>
+          <div className="px-5 pb-6">
+            <p className="mt-1 text-[12px] leading-relaxed text-mist-dim">{HAZARD_STANDARD}</p>
+            <div className="mt-4">
+              <KV k="Where" v={open.routeScope} />
+              <KV k="What it is" v={open.what} />
+              <KV k="When it is worst" v={open.worst} />
+              <KV k="How hard the evidence is" v={SEVERITY_LABEL[open.severity]} />
+            </div>
+            <SourceLine
+              label={open.source.label}
+              url={open.source.url}
+              kind={open.source.kind}
+              checked={open.source.checked}
+            />
+
+            {open.evidence && open.evidence.length > 0 && (
+              <>
+                <p className="section-label mt-6 text-mist-dim">What has been recorded</p>
+                <div className="mt-1">
+                  {open.evidence.map((e, i) => (
+                    <div
+                      key={e.statement}
+                      className={cn("py-3.5", i !== 0 && "border-t border-hairline")}
+                    >
+                      <p className="text-[13px] leading-relaxed text-mist">{e.statement}</p>
+                      <SourceLine
+                        label={e.source.label}
+                        url={e.source.url}
+                        kind={e.source.kind}
+                        checked={e.source.checked}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {/* TWO SOURCES, ONE QUESTION, DIFFERENT ANSWERS — and the page shows
+                both. On the Grand Couloir one study puts the worst hours at
+                18:00–20:00 and another puts 75% of the rockfall between 10:00
+                and 16:00. Picking one and printing it would be lying by
+                selection on the one section where that matters most. */}
+            {open.disagreement && (
+              <>
+                <p className="section-label mt-6 text-mist-dim">
+                  Another published source says otherwise
+                </p>
+                <p className="mt-1.5 text-[13px] leading-relaxed text-mist">
+                  {open.disagreement.statement}
+                </p>
+                <SourceLine
+                  label={open.disagreement.source.label}
+                  url={open.disagreement.source.url}
+                  kind={open.disagreement.source.kind}
+                  checked={open.disagreement.source.checked}
+                />
+              </>
+            )}
+          </div>
+        </Sheet>
+      )}
+    </Rise>
+  );
+}
+
+/**
+ * IF IT GOES WRONG — the number, who comes, and how high a helicopter reaches.
+ *
+ * The number is on the page and not behind a row, because a reader looking for
+ * it is not browsing. The rest — who pays, what the insurance rule is, every
+ * ceiling and its kind, the disagreements — is one tap down.
+ *
+ * THE CEILING IS THE FACT THIS SECTION EXISTS FOR, and it is the one most
+ * easily misread. `highestCeilingM` returns the MAXIMUM recorded figure, which
+ * on Everest is a one-off 7,800 m record flight rather than the 6,400 m a
+ * helicopter routinely reaches — the best day anybody ever had. So the page
+ * prints the KIND beside the number, in words, every time.
+ */
+function RescueSection({ data }: { data: MountainPageData }) {
+  const record = rescueFor(data.curatedId);
+  const [sheet, setSheet] = useState(false);
+
+  if (!record) {
+    return (
+      <Rise className="pt-7">
+        <SectionLabel>If it goes wrong</SectionLabel>
+        <p className="mt-1.5 text-[13px] leading-relaxed text-mist">{NO_RESCUE_RECORDED}</p>
+      </Rise>
+    );
+  }
+
+  const ceilingM = highestCeilingM(record);
+  const top = ceilingM === null ? null : record.helicopter.ceilings.find((c) => c.metres === ceilingM) ?? null;
+  const gap = ceilingGapSentence(record, data.elevationM);
+
+  return (
+    <Rise className="pt-7">
+      <SectionLabel>If it goes wrong</SectionLabel>
+      <p className="mt-1.5 text-[13px] leading-relaxed text-mist">{record.summary}</p>
+
+      <div className="mt-2">
+        {record.numbers.map((n, i) => (
+          <div
+            key={`${n.number}-${n.label}`}
+            className={cn("py-3.5", i !== 0 && "border-t border-hairline")}
+          >
+            <div className="flex items-baseline gap-3">
+              <p className="tnum shrink-0 text-[17px] leading-none font-semibold text-snow">
+                {n.number}
+              </p>
+              <p className="min-w-0 flex-1 text-[13px] leading-snug text-mist">{n.label}</p>
+            </div>
+            {n.note && (
+              <p className="mt-1.5 text-[11.5px] leading-relaxed text-mist-dim">{n.note}</p>
+            )}
+            <SourceLine
+              label={n.source.label}
+              url={n.source.url}
+              kind={n.source.kind}
+              checked={n.source.checked}
+              className="mt-2"
+            />
+          </div>
+        ))}
+      </div>
+
+      <div className="border-t border-hairline pt-3.5">
+        {top ? (
+          <>
+            <div className="flex items-baseline justify-between gap-3">
+              <p className="min-w-0 flex-1 text-[13px] leading-snug text-mist">
+                {CEILING_KIND_LABEL[top.kind]}
+              </p>
+              <p className="tnum shrink-0 text-[17px] font-semibold text-snow">
+                {fmtElevation(top.metres)} m
+              </p>
+            </div>
+            {gap && <p className="mt-1.5 text-[12px] leading-relaxed text-mist-dim">{gap}</p>}
+          </>
+        ) : (
+          /* The full sentence — why an absent ceiling is not an absent limit —
+             is in the sheet under "Helicopter". This line must still say both
+             halves, because a row reading only "not published" would be read
+             as "there is no limit". */
+          <p className="text-[12px] leading-relaxed text-mist-dim">
+            No helicopter ceiling is published for this mountain that ICEFALL could find — which
+            is not the same as there being none.
+          </p>
+        )}
+      </div>
+
+      <DepthRow
+        title="Who comes, who pays"
+        sub="The responders by name, the charging rule, every published ceiling"
+        onClick={() => setSheet(true)}
+      />
+
+      {sheet && (
+        <Sheet title="Rescue" onClose={() => setSheet(false)}>
+          <div className="px-5 pb-6">
+            <p className="text-[13px] leading-relaxed text-mist">{record.summary}</p>
+
+            <p className="section-label mt-6 text-mist-dim">Who turns up</p>
+            <div className="mt-1">
+              {record.responders.map((r) => (
+                <KV key={r.name} k={r.name} v={r.role} />
+              ))}
+            </div>
+
+            <p className="section-label mt-6 text-mist-dim">Who pays</p>
+            <p className="mt-1.5 text-[13px] leading-relaxed text-mist">
+              {record.charging.kind === "not-recorded"
+                ? NO_CHARGING_RECORDED
+                : record.charging.statement}
+            </p>
+            {record.charging.kind !== "not-recorded" && (
+              <SourceLine
+                label={record.charging.source.label}
+                url={record.charging.source.url}
+                kind={record.charging.source.kind}
+                checked={record.charging.source.checked}
+              />
+            )}
+
+            <p className="section-label mt-6 text-mist-dim">Insurance</p>
+            <p className="mt-1.5 text-[13px] leading-relaxed text-mist">
+              {record.insurance.kind === "not-recorded"
+                ? "ICEFALL has not established whether rescue insurance is required here. Assume it is, and check with your operator before you travel."
+                : record.insurance.statement}
+            </p>
+            {record.insurance.kind !== "not-recorded" && (
+              <SourceLine
+                label={record.insurance.source.label}
+                url={record.insurance.source.url}
+                kind={record.insurance.source.kind}
+                checked={record.insurance.source.checked}
+              />
+            )}
+
+            <p className="section-label mt-6 text-mist-dim">Helicopter</p>
+            <p className="mt-1.5 text-[13px] leading-relaxed text-mist">
+              {record.helicopter.availability === "not-recorded"
+                ? "ICEFALL has not established what helicopter cover exists here. That is not the same as there being none."
+                : record.helicopter.availability === "flown-not-guaranteed"
+                  ? `Flown${record.helicopter.operator ? ` by ${record.helicopter.operator}` : ""}, and the operator itself says it cannot be relied on.`
+                  : `Flown${record.helicopter.operator ? ` by ${record.helicopter.operator}` : ""}.`}
+            </p>
+            {record.helicopter.ceilings.length === 0 ? (
+              <p className="mt-2 text-[13px] leading-relaxed text-mist-dim">
+                {NO_CEILING_RECORDED}
+              </p>
+            ) : (
+              <div className="mt-1">
+                {record.helicopter.ceilings.map((c, i) => (
+                  <div
+                    key={`${c.kind}-${c.metres}`}
+                    className={cn("py-3.5", i !== 0 && "border-t border-hairline")}
+                  >
+                    <div className="flex items-baseline justify-between gap-3">
+                      <p className="min-w-0 flex-1 text-[14px] leading-snug text-snow">
+                        {CEILING_KIND_LABEL[c.kind]}
+                      </p>
+                      <p className="tnum shrink-0 text-[14px] font-semibold text-snow">
+                        {fmtElevation(c.metres)} m
+                      </p>
+                    </div>
+                    <p className="mt-1 text-[12px] leading-relaxed text-mist">{c.statement}</p>
+                    <SourceLine
+                      label={c.source.label}
+                      url={c.source.url}
+                      kind={c.source.kind}
+                      checked={c.source.checked}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+            {record.helicopter.limits && record.helicopter.limits.length > 0 && (
+              <ul className="mt-3 space-y-2">
+                {record.helicopter.limits.map((l) => (
+                  <li key={l.statement} className="flex gap-3 text-[13px] leading-relaxed text-mist">
+                    <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-alert" />
+                    {l.statement}
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {record.disagreements && record.disagreements.length > 0 && (
+              <>
+                <p className="section-label mt-6 text-mist-dim">Sources that disagree</p>
+                {record.disagreements.map((d) => (
+                  <div key={d.about} className="mt-1.5">
+                    <p className="text-[13px] leading-snug text-snow">{d.about}</p>
+                    {d.positions.map((pos) => (
+                      <div key={pos.statement} className="mt-2">
+                        <p className="text-[13px] leading-relaxed text-mist">{pos.statement}</p>
+                        <SourceLine
+                          label={pos.source.label}
+                          url={pos.source.url}
+                          kind={pos.source.kind}
+                          checked={pos.source.checked}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </>
+            )}
+
+            {record.caveats && record.caveats.length > 0 && (
+              <>
+                <p className="section-label mt-6 text-mist-dim">What this does not tell you</p>
+                <ul className="mt-1.5 space-y-2">
+                  {record.caveats.map((c) => (
+                    <li key={c} className="flex gap-3 text-[13px] leading-relaxed text-mist">
+                      <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-alert" />
+                      {c}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+
+            {/* Every page behind this record, including the ones only a caveat
+                quotes. `sourcesIn` folds those in so the list is complete
+                rather than complete-looking. */}
+            <RescueSources record={record} />
+          </div>
+        </Sheet>
+      )}
+    </Rise>
+  );
+}
+
+function RescueSources({ record }: { record: MountainRescueRecord }) {
+  const sources = sourcesIn(record);
+  return (
+    <>
+      <p className="section-label mt-6 text-mist-dim">Every page behind this</p>
+      <div className="mt-1">
+        {sources.map((s, i) => (
+          <div key={s.url} className={cn("py-2", i !== 0 && "border-t border-hairline")}>
+            <SourceLine
+              label={s.label}
+              url={s.url}
+              kind={s.kind}
+              checked={s.checked}
+              className="mt-0"
+            />
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
 function AscentsAndConditions({ data }: { data: MountainPageData }) {
   useSummitLogs(); // subscribe, so a new log appears without a reload
   useOwnPosts();

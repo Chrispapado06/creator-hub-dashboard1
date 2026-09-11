@@ -2,6 +2,14 @@ import { Suspense, lazy, useEffect } from "react";
 import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import Waitlist from "@/screens/Waitlist";
 import Join from "@/screens/Join";
+import SignIn from "@/site/SignIn";
+import { SiteLayout, SITE_LIVE } from "@/site/SiteChrome";
+import SiteHome from "@/site/Home";
+import Features from "@/site/Features";
+import SiteGuides from "@/site/Guides";
+import SiteExpeditions from "@/site/Expeditions";
+import Pricing from "@/site/Pricing";
+import About from "@/site/About";
 import { useAuth } from "@/lib/auth";
 
 /**
@@ -70,6 +78,27 @@ export default function App() {
         call the same `signUp` — one account system, two doors.
       */}
       <Route path="/join" element={<Join />} />
+      <Route path="/sign-in" element={<SignIn />} />
+
+      {/*
+        THE PUBLIC SITE — six pages, owner instruction 2026-09-08.
+
+        `/` STILL SERVES THE WAITLIST. `SITE_LIVE` in `site/SiteChrome.tsx` is the
+        single switch: flip it and the home page becomes the site instead. Until
+        then Home is reachable at /home so it can be reviewed, and nothing a
+        visitor sees at the root changes.
+
+        The switch must NOT be flipped before the terms and privacy pages exist
+        — see `LEGAL_PAGES_EXIST` in `screens/Join.tsx`.
+      */}
+      <Route element={<SiteLayout />}>
+        <Route path="/home" element={<SiteHome />} />
+        <Route path="/features" element={<Features />} />
+        <Route path="/guides" element={<SiteGuides />} />
+        <Route path="/expeditions" element={<SiteExpeditions />} />
+        <Route path="/pricing" element={<Pricing />} />
+        <Route path="/about" element={<About />} />
+      </Route>
       <Route
         path="/app/*"
         element={
@@ -88,7 +117,7 @@ export default function App() {
           }
         />
       )}
-      <Route path="*" element={<Waitlist />} />
+      <Route path="*" element={SITE_LIVE ? <SiteLayout /> : <Waitlist />} />
     </Routes>
   );
 }

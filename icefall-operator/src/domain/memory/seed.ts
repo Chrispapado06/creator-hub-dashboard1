@@ -56,7 +56,24 @@ import type {
   ProductDeparture,
   PromoVideoSlot,
   Trek,
+  Activity,
+  AuditEvent,
+  Contact,
+  ContactGroup,
+  Document,
+  FinancialEvent,
+  GuideResource,
+  Participant,
+  Proposal,
+  ProposalVersion,
+  ReferralEvent,
+  Supplier,
+  Task,
+  TripBrief,
 } from "../types";
+import { buildAuditEvent } from "../crm/audit";
+import { deriveParticipantStatus, informationOf } from "../crm/participants";
+import { moneySplitProblem } from "../crm/proposals";
 
 export const LANTERN = "co-lantern";
 export const COLDHARBOUR = "co-coldharbour";
@@ -891,12 +908,35 @@ export const PRODUCTS: Product[] = [
 ];
 
 export const DEPARTURES: ProductDeparture[] = [
-  { id: "d-1", productId: "p-everest-south-col", departureDate: "2027-04-04", endDate: "2027-06-04", availability: "limited", spotsTotal: 8, spotsLeft: 2, priceCents: 5_800_000 },
+  {
+    id: "d-1", productId: "p-everest-south-col", departureDate: "2027-04-04", endDate: "2027-06-04", availability: "limited", spotsTotal: 8, spotsLeft: 2, priceCents: 5_800_000,
+    /*
+     * THE OPERATIONAL RECORD (brief §4 Departure) — the third field group.
+     * `capacity` is the headcount the team will actually run; `spotsTotal`
+     * above is what the listing advertises. They agree here and need not.
+     */
+    status: "planning",
+    name: "South Col 2027 — Team A",
+    capacity: 8,
+    meetingPoint: "Kathmandu — hotel briefing, 2 April 2027, 09:00 local",
+    internalNotes: "Permit application opens January. Astrid to confirm by October. One client (Hanne) fully documented; roster otherwise open.",
+    participantIds: ["pa-hanne"],
+    proposalId: null,
+  },
   { id: "d-2", productId: "p-everest-south-col", departureDate: "2028-04-02", endDate: "2028-06-02", availability: "available", spotsTotal: 8, spotsLeft: 8, priceCents: 6_100_000 },
   { id: "d-3", productId: "p-everest-base-camp", departureDate: "2026-10-12", endDate: "2026-10-23", availability: "full", spotsTotal: 12, spotsLeft: 0, priceCents: 290_000 },
   // spotsLeft null — "not stated", which is NOT the same statement as "none left".
   { id: "d-4", productId: "p-everest-base-camp-trek", departureDate: "2026-11-02", endDate: "2026-11-13", availability: "available", spotsTotal: null, spotsLeft: null, priceCents: 290_000 },
-  { id: "d-5", productId: "p-ama-dablam-sw-ridge", departureDate: "2026-10-20", endDate: "2026-11-16", availability: "available", spotsTotal: 6, spotsLeft: 5, priceCents: 860_000 },
+  {
+    id: "d-5", productId: "p-ama-dablam-sw-ridge", departureDate: "2026-10-20", endDate: "2026-11-16", availability: "available", spotsTotal: 6, spotsLeft: 5, priceCents: 860_000,
+    status: "confirmed",
+    name: "Ama Dablam SW Ridge — autumn 2026",
+    capacity: 6,
+    meetingPoint: "Lukla — Paradise Lodge, 20 October 2026, 08:00 local",
+    internalNotes: "Cook team not yet booked (see the blocked task). Charlotte's insurance certificate still outstanding.",
+    participantIds: ["pa-charlotte"],
+    proposalId: "pr-priya",
+  },
   { id: "d-6", productId: "p-everest-three-passes-trek", departureDate: "2026-10-05", endDate: "2026-10-22", availability: "available", spotsTotal: 10, spotsLeft: 6, priceCents: 340_000 },
 ];
 
@@ -1125,20 +1165,20 @@ export const NOTES: ConversationNote[] = [
 
 export const LEADS: Lead[] = [
   // ---- The mockup's named August leads, newest first -----------------------
-  { id: "l-hanne", companyId: LANTERN, customerId: "cust-hanne", customerName: "Hanne Bakken", conversationId: "cvn-hanne", productId: "p-everest-south-col", mountainId: "everest", status: "qualified", origin: "icefall", tags: ["Deposit paid", "Repeat client"], ownerId: "cu-ravi", bookingId: null, source: "website", createdAt: "2026-08-28T08:20:00.000Z", firstResponseAt: "2026-08-28T08:35:00.000Z", qualifiedAt: "2026-08-28T08:50:00.000Z", quotedAt: null, bookedAt: null, lostAt: null, lostReason: null },
-  { id: "l-tomas", companyId: LANTERN, customerId: "cust-tomas", customerName: "Tomás Ferreira", conversationId: "cvn-tomas", productId: "p-everest-base-camp", mountainId: "everest", status: "new", origin: "icefall", tags: ["First-timer"], ownerId: null, bookingId: null, source: "icefall-app", createdAt: "2026-08-27T16:20:00.000Z", firstResponseAt: null, qualifiedAt: null, quotedAt: null, bookedAt: null, lostAt: null, lostReason: null },
-  { id: "l-luis", companyId: LANTERN, customerId: "cust-luis", customerName: "Luis Miguel", conversationId: "cvn-luis", productId: "p-everest-base-camp", mountainId: "everest", status: "contacted", origin: "icefall", tags: ["Group of 4"], ownerId: "cu-marta", bookingId: null, source: "website", createdAt: "2026-08-27T09:00:00.000Z", firstResponseAt: "2026-08-27T11:30:00.000Z", qualifiedAt: null, quotedAt: null, bookedAt: null, lostAt: null, lostReason: null },
-  { id: "l-paulo", companyId: LANTERN, customerId: "cust-paulo", customerName: "Paulo Almeida", conversationId: null, productId: "p-ama-dablam-sw-ridge", mountainId: "ama-dablam", status: "lost", origin: "icefall", tags: [], ownerId: "cu-marta", bookingId: null, source: "website", createdAt: "2026-08-26T11:00:00.000Z", firstResponseAt: "2026-08-26T14:00:00.000Z", qualifiedAt: null, quotedAt: null, bookedAt: null, lostAt: "2026-08-27T09:30:00.000Z", lostReason: "Went with another operator on price." },
-  { id: "l-sophie", companyId: LANTERN, customerId: "cust-sophie", customerName: "Sophie Dubois", conversationId: "cvn-sophie", productId: null, mountainId: "mont-blanc", status: "contacted", origin: "icefall", tags: ["Needs dates"], ownerId: "cu-marta", bookingId: null, source: "other", createdAt: "2026-08-25T15:10:00.000Z", firstResponseAt: "2026-08-25T17:00:00.000Z", qualifiedAt: null, quotedAt: null, bookedAt: null, lostAt: null, lostReason: null },
-  { id: "l-priya", companyId: LANTERN, customerId: "cust-priya", customerName: "Priya Raman", conversationId: "cvn-priya", productId: "p-ama-dablam-sw-ridge", mountainId: "ama-dablam", status: "quoted", origin: "icefall", tags: ["Awaiting quote reply", "Group of 4"], ownerId: "cu-marta", bookingId: null, source: "marketplace", createdAt: "2026-08-24T14:00:00.000Z", firstResponseAt: "2026-08-25T10:05:00.000Z", qualifiedAt: "2026-08-25T10:30:00.000Z", quotedAt: "2026-08-25T15:00:00.000Z", bookedAt: null, lostAt: null, lostReason: null },
-  { id: "l-aoife", companyId: LANTERN, customerId: "cust-aoife", customerName: "Aoife Brennan", conversationId: null, productId: "p-everest-base-camp", mountainId: "everest", status: "lost", origin: "icefall", tags: [], ownerId: null, bookingId: null, source: "icefall-app", createdAt: "2026-08-24T09:40:00.000Z", firstResponseAt: "2026-08-24T15:00:00.000Z", qualifiedAt: null, quotedAt: null, bookedAt: null, lostAt: "2026-08-26T10:00:00.000Z", lostReason: "Dates didn't work for her group." },
-  { id: "l-charlotte", companyId: LANTERN, customerId: "cust-charlotte", customerName: "Charlotte Martin", conversationId: null, productId: "p-ama-dablam-sw-ridge", mountainId: "ama-dablam", status: "booked", origin: "icefall", tags: ["Deposit paid"], ownerId: "cu-marta", bookingId: "bk-charlotte", source: "website", createdAt: "2026-08-18T10:00:00.000Z", firstResponseAt: "2026-08-18T14:00:00.000Z", qualifiedAt: "2026-08-20T09:00:00.000Z", quotedAt: "2026-08-22T09:00:00.000Z", bookedAt: "2026-08-25T09:00:00.000Z", lostAt: null, lostReason: null },
+  { id: "l-hanne", companyId: LANTERN, customerId: "cust-hanne", customerName: "Hanne Bakken", contactId: "ct-hanne", conversationId: "cvn-hanne", productId: "p-everest-south-col", mountainId: "everest", status: "qualified", origin: "icefall", tags: ["Deposit paid", "Repeat client"], ownerId: "cu-ravi", bookingId: null, source: "website", createdAt: "2026-08-28T08:20:00.000Z", firstResponseAt: "2026-08-28T08:35:00.000Z", qualifiedAt: "2026-08-28T08:50:00.000Z", quotedAt: null, bookedAt: null, lostAt: null, lostReason: null },
+  { id: "l-tomas", companyId: LANTERN, customerId: "cust-tomas", customerName: "Tomás Ferreira", contactId: "ct-tomas", conversationId: "cvn-tomas", productId: "p-everest-base-camp", mountainId: "everest", status: "new", origin: "icefall", tags: ["First-timer"], ownerId: null, bookingId: null, source: "icefall-app", createdAt: "2026-08-27T16:20:00.000Z", firstResponseAt: null, qualifiedAt: null, quotedAt: null, bookedAt: null, lostAt: null, lostReason: null },
+  { id: "l-luis", companyId: LANTERN, customerId: "cust-luis", customerName: "Luis Miguel", contactId: "ct-luis", conversationId: "cvn-luis", productId: "p-everest-base-camp", mountainId: "everest", status: "contacted", origin: "icefall", tags: ["Group of 4"], ownerId: "cu-marta", bookingId: null, source: "website", createdAt: "2026-08-27T09:00:00.000Z", firstResponseAt: "2026-08-27T11:30:00.000Z", qualifiedAt: null, quotedAt: null, bookedAt: null, lostAt: null, lostReason: null },
+  { id: "l-paulo", companyId: LANTERN, customerId: "cust-paulo", customerName: "Paulo Almeida", contactId: "ct-paulo", conversationId: null, productId: "p-ama-dablam-sw-ridge", mountainId: "ama-dablam", status: "lost", origin: "icefall", tags: [], ownerId: "cu-marta", bookingId: null, source: "website", createdAt: "2026-08-26T11:00:00.000Z", firstResponseAt: "2026-08-26T14:00:00.000Z", qualifiedAt: null, quotedAt: null, bookedAt: null, lostAt: "2026-08-27T09:30:00.000Z", lostReason: "Went with another operator on price." },
+  { id: "l-sophie", companyId: LANTERN, customerId: "cust-sophie", customerName: "Sophie Dubois", contactId: "ct-sophie", conversationId: "cvn-sophie", productId: null, mountainId: "mont-blanc", status: "contacted", origin: "icefall", tags: ["Needs dates"], ownerId: "cu-marta", bookingId: null, source: "other", createdAt: "2026-08-25T15:10:00.000Z", firstResponseAt: "2026-08-25T17:00:00.000Z", qualifiedAt: null, quotedAt: null, bookedAt: null, lostAt: null, lostReason: null },
+  { id: "l-priya", companyId: LANTERN, customerId: "cust-priya", customerName: "Priya Raman", contactId: "ct-priya", conversationId: "cvn-priya", productId: "p-ama-dablam-sw-ridge", mountainId: "ama-dablam", status: "quoted", origin: "icefall", tags: ["Awaiting quote reply", "Group of 4"], ownerId: "cu-marta", bookingId: null, source: "marketplace", createdAt: "2026-08-24T14:00:00.000Z", firstResponseAt: "2026-08-25T10:05:00.000Z", qualifiedAt: "2026-08-25T10:30:00.000Z", quotedAt: "2026-08-25T15:00:00.000Z", bookedAt: null, lostAt: null, lostReason: null },
+  { id: "l-aoife", companyId: LANTERN, customerId: "cust-aoife", customerName: "Aoife Brennan", contactId: "ct-aoife", conversationId: null, productId: "p-everest-base-camp", mountainId: "everest", status: "lost", origin: "icefall", tags: [], ownerId: null, bookingId: null, source: "icefall-app", createdAt: "2026-08-24T09:40:00.000Z", firstResponseAt: "2026-08-24T15:00:00.000Z", qualifiedAt: null, quotedAt: null, bookedAt: null, lostAt: "2026-08-26T10:00:00.000Z", lostReason: "Dates didn't work for her group." },
+  { id: "l-charlotte", companyId: LANTERN, customerId: "cust-charlotte", customerName: "Charlotte Martin", contactId: "ct-charlotte", conversationId: null, productId: "p-ama-dablam-sw-ridge", mountainId: "ama-dablam", status: "booked", origin: "icefall", tags: ["Deposit paid"], ownerId: "cu-marta", bookingId: "bk-charlotte", source: "website", createdAt: "2026-08-18T10:00:00.000Z", firstResponseAt: "2026-08-18T14:00:00.000Z", qualifiedAt: "2026-08-20T09:00:00.000Z", quotedAt: "2026-08-22T09:00:00.000Z", bookedAt: "2026-08-25T09:00:00.000Z", lostAt: null, lostReason: null },
   // Booked, then cancelled — the booking record below is `cancelled` and this
   // lead ends `lost`. Both stamps stay: history is what happened, in order.
-  { id: "l-benjamin", companyId: LANTERN, customerId: "cust-benjamin", customerName: "Benjamin Lee", conversationId: null, productId: "p-everest-south-col", mountainId: "everest", status: "lost", origin: "icefall", tags: [], ownerId: "cu-marta", bookingId: "bk-benjamin", source: "marketplace", createdAt: "2026-08-12T10:00:00.000Z", firstResponseAt: "2026-08-12T15:00:00.000Z", qualifiedAt: "2026-08-14T09:00:00.000Z", quotedAt: "2026-08-16T09:00:00.000Z", bookedAt: "2026-08-20T09:00:00.000Z", lostAt: "2026-08-24T09:00:00.000Z", lostReason: "Cancelled after booking — schedule conflict." },
+  { id: "l-benjamin", companyId: LANTERN, customerId: "cust-benjamin", customerName: "Benjamin Lee", contactId: "ct-benjamin", conversationId: null, productId: "p-everest-south-col", mountainId: "everest", status: "lost", origin: "icefall", tags: [], ownerId: "cu-marta", bookingId: "bk-benjamin", source: "marketplace", createdAt: "2026-08-12T10:00:00.000Z", firstResponseAt: "2026-08-12T15:00:00.000Z", qualifiedAt: "2026-08-14T09:00:00.000Z", quotedAt: "2026-08-16T09:00:00.000Z", bookedAt: "2026-08-20T09:00:00.000Z", lostAt: "2026-08-24T09:00:00.000Z", lostReason: "Cancelled after booking — schedule conflict." },
 
   // ---- Coldharbour's — must never appear in Lantern's portal ---------------
-  { id: "l-x", companyId: COLDHARBOUR, customerId: "cust-x", customerName: "Ellis Warren", conversationId: "cvn-x", productId: "p-coldharbour-denali", mountainId: "denali", status: "new", origin: "icefall", tags: [], ownerId: null, bookingId: null, source: "website", createdAt: "2026-08-26T18:00:00.000Z", firstResponseAt: null, qualifiedAt: null, quotedAt: null, bookedAt: null, lostAt: null, lostReason: null },
+  { id: "l-x", companyId: COLDHARBOUR, customerId: "cust-x", customerName: "Ellis Warren", contactId: "ct-x", conversationId: "cvn-x", productId: "p-coldharbour-denali", mountainId: "denali", status: "new", origin: "icefall", tags: [], ownerId: null, bookingId: null, source: "website", createdAt: "2026-08-26T18:00:00.000Z", firstResponseAt: null, qualifiedAt: null, quotedAt: null, bookedAt: null, lostAt: null, lostReason: null },
 ];
 
 /**
@@ -1153,9 +1193,9 @@ export const LEADS: Lead[] = [
  * message them. Their `source` is the operator's own words.
  */
 export const COMPANY_ADDED_LEADS: Lead[] = [
-  { id: "l-own-1", companyId: LANTERN, customerId: "cu-own-1", customerName: "Bruno Kessler", conversationId: null, productId: "p-everest-south-col", mountainId: "everest", status: "quoted", origin: "company", tags: ["Referral", "Group of 4"], ownerId: "cu-ravi", bookingId: null, source: "Referral — Pemba", createdAt: "2026-08-19T09:00:00.000Z", firstResponseAt: "2026-08-19T09:30:00.000Z", qualifiedAt: "2026-08-20T09:00:00.000Z", quotedAt: "2026-08-21T09:00:00.000Z", bookedAt: null, lostAt: null, lostReason: null },
-  { id: "l-own-2", companyId: LANTERN, customerId: "cu-own-2", customerName: "Andrés Pulido", conversationId: null, productId: "p-ama-dablam-sw-ridge", mountainId: "ama-dablam", status: "contacted", origin: "company", tags: ["Phone enquiry"], ownerId: "cu-marta", bookingId: null, source: "Phone", createdAt: "2026-08-23T11:00:00.000Z", firstResponseAt: "2026-08-23T11:20:00.000Z", qualifiedAt: null, quotedAt: null, bookedAt: null, lostAt: null, lostReason: null },
-  { id: "l-own-3", companyId: LANTERN, customerId: "cu-own-3", customerName: "Ingvild Sæther", conversationId: null, productId: "p-everest-base-camp-trek", mountainId: "everest", status: "new", origin: "company", tags: ["Repeat client"], ownerId: null, bookingId: null, source: "Walk-in", createdAt: "2026-08-27T13:00:00.000Z", firstResponseAt: null, qualifiedAt: null, quotedAt: null, bookedAt: null, lostAt: null, lostReason: null },
+  { id: "l-own-1", companyId: LANTERN, customerId: "cu-own-1", customerName: "Bruno Kessler", contactId: "ct-bruno", conversationId: null, productId: "p-everest-south-col", mountainId: "everest", status: "quoted", origin: "company", tags: ["Referral", "Group of 4"], ownerId: "cu-ravi", bookingId: null, source: "Referral — Pemba", createdAt: "2026-08-19T09:00:00.000Z", firstResponseAt: "2026-08-19T09:30:00.000Z", qualifiedAt: "2026-08-20T09:00:00.000Z", quotedAt: "2026-08-21T09:00:00.000Z", bookedAt: null, lostAt: null, lostReason: null },
+  { id: "l-own-2", companyId: LANTERN, customerId: "cu-own-2", customerName: "Andrés Pulido", contactId: "ct-andres", conversationId: null, productId: "p-ama-dablam-sw-ridge", mountainId: "ama-dablam", status: "contacted", origin: "company", tags: ["Phone enquiry"], ownerId: "cu-marta", bookingId: null, source: "Phone", createdAt: "2026-08-23T11:00:00.000Z", firstResponseAt: "2026-08-23T11:20:00.000Z", qualifiedAt: null, quotedAt: null, bookedAt: null, lostAt: null, lostReason: null },
+  { id: "l-own-3", companyId: LANTERN, customerId: "cu-own-3", customerName: "Ingvild Sæther", contactId: "ct-ingvild", conversationId: null, productId: "p-everest-base-camp-trek", mountainId: "everest", status: "new", origin: "company", tags: ["Repeat client"], ownerId: null, bookingId: null, source: "Walk-in", createdAt: "2026-08-27T13:00:00.000Z", firstResponseAt: null, qualifiedAt: null, quotedAt: null, bookedAt: null, lostAt: null, lostReason: null },
 ];
 
 /** Stage a filler lead reached. `lost` here means lost before qualification. */
@@ -1266,6 +1306,18 @@ export const BOOKINGS: Booking[] = [
     currency: "EUR",
     bookedAt: "2026-08-28T08:55:00.000Z",
     startsOn: "2027-04-04",
+    // Brief §4 commercial fields. The events in FINANCIAL_EVENTS below agree with these.
+    proposalId: null,
+    departureId: "d-1",
+    primaryContactId: "ct-hanne",
+    quotedTotalMinor: 1_245_000,
+    depositDueMinor: 249_000,
+    balanceDueMinor: 996_000,
+    depositDueAt: "2026-09-11T00:00:00.000Z",
+    balanceDueAt: "2027-02-21T00:00:00.000Z",
+    externalReference: "LR-INV-2026-071",
+    // NO PROVIDER IS CONNECTED. Null, and honest about why — see the type.
+    paymentProviderReference: null,
     /**
      * NULL, and it stays null: the operator-side referral rate has not been
      * settled — the owner is deciding between two figures. Because the rate
@@ -1285,6 +1337,16 @@ export const BOOKINGS: Booking[] = [
     currency: "EUR",
     bookedAt: "2026-08-27T15:00:00.000Z",
     startsOn: "2026-10-12",
+    proposalId: null,
+    departureId: "d-3",
+    primaryContactId: "ct-luis",
+    quotedTotalMinor: 215_000,
+    depositDueMinor: 43_000,
+    balanceDueMinor: 172_000,
+    depositDueAt: "2026-09-10T00:00:00.000Z",
+    balanceDueAt: "2026-08-31T00:00:00.000Z",
+    externalReference: "LR-INV-2026-069",
+    paymentProviderReference: null,
     referralPctAtBooking: null,
   },
   {
@@ -1300,6 +1362,17 @@ export const BOOKINGS: Booking[] = [
     currency: "EUR",
     bookedAt: "2026-08-25T09:00:00.000Z",
     startsOn: "2026-10-20",
+    // No proposal: `pr-priya` is on Priya's enquiry, and a booking may only cite a proposal on its own.
+    proposalId: null,
+    departureId: "d-5",
+    primaryContactId: "ct-charlotte",
+    quotedTotalMinor: 690_000,
+    depositDueMinor: 138_000,
+    balanceDueMinor: 552_000,
+    depositDueAt: "2026-09-08T00:00:00.000Z",
+    balanceDueAt: "2026-09-08T00:00:00.000Z",
+    externalReference: "LR-INV-2026-066",
+    paymentProviderReference: null,
     referralPctAtBooking: null,
   },
   {
@@ -1313,6 +1386,16 @@ export const BOOKINGS: Booking[] = [
     currency: "EUR",
     bookedAt: "2026-08-20T09:00:00.000Z",
     startsOn: "2027-04-04",
+    proposalId: null,
+    departureId: "d-1",
+    primaryContactId: "ct-benjamin",
+    quotedTotalMinor: 1_245_000,
+    depositDueMinor: 249_000,
+    balanceDueMinor: 996_000,
+    depositDueAt: "2026-09-03T00:00:00.000Z",
+    balanceDueAt: "2027-02-21T00:00:00.000Z",
+    externalReference: "LR-INV-2026-058",
+    paymentProviderReference: null,
     referralPctAtBooking: null,
   },
 ];
@@ -1918,3 +2001,385 @@ export const CHANNEL_MESSAGE_VIEWS: ChannelMessageViewRow[] = [
   ...channelViews("cmsg-cd-1", COLDHARBOUR_MEMBERS, 13, 0, "2026-08-06T20:00:00.000Z"),
   ...channelViews("cmsg-cd-2", COLDHARBOUR_MEMBERS, 9, 4, "2026-08-22T17:30:00.000Z"),
 ];
+
+/* -------------------------------------------------------------------------- */
+/* THE CRM OPERATING SYSTEM — brief §4, the company's own records             */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * DEMO WORLD, CONSISTENT WITH THE ROWS ABOVE. Every contact here is a person
+ * who already appears as a lead (plus two travelling companions and one
+ * Coldharbour customer, so isolation has a real other side). Every proposal
+ * is on a lead that is `quoted`; every financial event sits on a booking that
+ * already exists, in a state that matches the booking's; every participant is
+ * a contact on one of those leads. Nothing below adds a booking, an enquiry or
+ * a revenue figure — the dashboard arithmetic above is untouched.
+ *
+ * NOTHING HERE IS A REAL PERSON, SUPPLIER OR PROVIDER. Emails end in
+ * `.example`; phone numbers are format-valid and unassigned; supplier names
+ * are invented. No payment provider appears, because none is connected —
+ * every received amount below has a PERSON as its source, and the ones a
+ * person has only been told about stop at `reported`.
+ */
+
+const T = (iso: string) => iso; // a UTC timestamp, written out; a reminder that nothing here reads a clock
+
+export const CONTACTS: Contact[] = [
+  { id: "ct-hanne", companyId: LANTERN, firstName: "Hanne", lastName: "Bakken", email: "hanne.bakken@example.no", phone: "+47 400 00 101", country: "Norway", language: "en", consentStatus: "given", marketingConsentAt: T("2026-08-28T08:50:00.000Z"), communicationPreferences: { preferredChannel: "email", doNotContact: false }, createdAt: T("2026-08-28T08:20:00.000Z"), updatedAt: T("2026-08-28T08:50:00.000Z") },
+  { id: "ct-tomas", companyId: LANTERN, firstName: "Tomás", lastName: "Ferreira", email: "tomas.ferreira@example.pt", phone: null, country: "Portugal", language: "pt", consentStatus: "not_asked", marketingConsentAt: null, communicationPreferences: { preferredChannel: "message", doNotContact: false }, createdAt: T("2026-08-27T16:20:00.000Z"), updatedAt: T("2026-08-27T16:20:00.000Z") },
+  { id: "ct-luis", companyId: LANTERN, firstName: "Luis", lastName: "Miguel", email: "luis.miguel@example.es", phone: "+34 600 000 102", country: "Spain", language: "es", consentStatus: "given", marketingConsentAt: T("2026-08-27T11:30:00.000Z"), communicationPreferences: { preferredChannel: "email", doNotContact: false }, createdAt: T("2026-08-27T09:00:00.000Z"), updatedAt: T("2026-08-27T15:00:00.000Z") },
+  { id: "ct-paulo", companyId: LANTERN, firstName: "Paulo", lastName: "Almeida", email: "p.almeida@example.br", phone: null, country: "Brazil", language: "pt", consentStatus: "declined", marketingConsentAt: null, communicationPreferences: { preferredChannel: null, doNotContact: true }, createdAt: T("2026-08-26T11:00:00.000Z"), updatedAt: T("2026-08-27T09:30:00.000Z") },
+  { id: "ct-sophie", companyId: LANTERN, firstName: "Sophie", lastName: "Dubois", email: "sophie.dubois@example.fr", phone: "+33 6 00 00 01 03", country: "France", language: "fr", consentStatus: "not_asked", marketingConsentAt: null, communicationPreferences: { preferredChannel: "email", doNotContact: false }, createdAt: T("2026-08-25T15:10:00.000Z"), updatedAt: T("2026-08-25T17:00:00.000Z") },
+  { id: "ct-priya", companyId: LANTERN, firstName: "Priya", lastName: "Raman", email: "priya.raman@example.in", phone: "+91 90000 00104", country: "India", language: "en", consentStatus: "given", marketingConsentAt: T("2026-08-25T10:30:00.000Z"), communicationPreferences: { preferredChannel: "email", doNotContact: false }, createdAt: T("2026-08-24T14:00:00.000Z"), updatedAt: T("2026-08-25T15:00:00.000Z") },
+  { id: "ct-aoife", companyId: LANTERN, firstName: "Aoife", lastName: "Brennan", email: "aoife.brennan@example.ie", phone: null, country: "Ireland", language: "en", consentStatus: "not_asked", marketingConsentAt: null, communicationPreferences: { preferredChannel: "email", doNotContact: false }, createdAt: T("2026-08-24T09:40:00.000Z"), updatedAt: T("2026-08-26T10:00:00.000Z") },
+  { id: "ct-charlotte", companyId: LANTERN, firstName: "Charlotte", lastName: "Martin", email: "charlotte.martin@example.fr", phone: "+33 6 00 00 01 05", country: "France", language: "fr", consentStatus: "given", marketingConsentAt: T("2026-08-20T09:00:00.000Z"), communicationPreferences: { preferredChannel: "phone", doNotContact: false }, createdAt: T("2026-08-18T10:00:00.000Z"), updatedAt: T("2026-08-25T09:00:00.000Z") },
+  { id: "ct-benjamin", companyId: LANTERN, firstName: "Benjamin", lastName: "Lee", email: "ben.lee@example.sg", phone: "+65 8000 0106", country: "Singapore", language: "en", consentStatus: "withdrawn", marketingConsentAt: null, communicationPreferences: { preferredChannel: "email", doNotContact: true }, createdAt: T("2026-08-12T10:00:00.000Z"), updatedAt: T("2026-08-24T09:00:00.000Z") },
+  // The company's own leads — a referral, a phone call, a walk-in.
+  { id: "ct-bruno", companyId: LANTERN, firstName: "Bruno", lastName: "Kessler", email: "bruno.kessler@example.ch", phone: "+41 79 000 01 07", country: "Switzerland", language: "de", consentStatus: "given", marketingConsentAt: T("2026-08-19T09:30:00.000Z"), communicationPreferences: { preferredChannel: "phone", doNotContact: false }, createdAt: T("2026-08-19T09:00:00.000Z"), updatedAt: T("2026-08-21T09:00:00.000Z") },
+  { id: "ct-andres", companyId: LANTERN, firstName: "Andrés", lastName: "Pulido", email: null, phone: "+57 300 000 0108", country: "Colombia", language: "es", consentStatus: "not_asked", marketingConsentAt: null, communicationPreferences: { preferredChannel: "phone", doNotContact: false }, createdAt: T("2026-08-23T11:00:00.000Z"), updatedAt: T("2026-08-23T11:20:00.000Z") },
+  { id: "ct-ingvild", companyId: LANTERN, firstName: "Ingvild", lastName: "Sæther", email: "ingvild.saether@example.no", phone: null, country: "Norway", language: "no", consentStatus: "given", marketingConsentAt: T("2026-08-27T13:00:00.000Z"), communicationPreferences: { preferredChannel: "email", doNotContact: false }, createdAt: T("2026-08-27T13:00:00.000Z"), updatedAt: T("2026-08-27T13:00:00.000Z") },
+  // Bruno's party — contacts with no enquiry of their own, which is what a group mostly is.
+  { id: "ct-matthias", companyId: LANTERN, firstName: "Matthias", lastName: "Kessler", email: "matthias.kessler@example.ch", phone: null, country: "Switzerland", language: "de", consentStatus: "not_asked", marketingConsentAt: null, communicationPreferences: { preferredChannel: "email", doNotContact: false }, createdAt: T("2026-08-19T09:10:00.000Z"), updatedAt: T("2026-08-19T09:10:00.000Z") },
+  { id: "ct-elena", companyId: LANTERN, firstName: "Elena", lastName: "Kessler", email: "elena.kessler@example.ch", phone: null, country: "Switzerland", language: "de", consentStatus: "not_asked", marketingConsentAt: null, communicationPreferences: { preferredChannel: "email", doNotContact: false }, createdAt: T("2026-08-19T09:10:00.000Z"), updatedAt: T("2026-08-19T09:10:00.000Z") },
+  // ---- Coldharbour's — must never appear in Lantern's portal --------------
+  { id: "ct-x", companyId: COLDHARBOUR, firstName: "Ellis", lastName: "Warren", email: "ellis.warren@example.com", phone: "+1 907 000 0109", country: "United States", language: "en", consentStatus: "not_asked", marketingConsentAt: null, communicationPreferences: { preferredChannel: "email", doNotContact: false }, createdAt: T("2026-08-26T18:00:00.000Z"), updatedAt: T("2026-08-26T18:00:00.000Z") },
+];
+
+export const CONTACT_GROUPS: ContactGroup[] = [
+  // Charlotte booked the October Ama Dablam departure; Priya is quoted for the same trip and travels with her.
+  { id: "cg-martin", companyId: LANTERN, name: "Martin party — Ama Dablam, October 2026", leaderContactId: "ct-charlotte", memberContactIds: ["ct-charlotte", "ct-priya"] },
+  { id: "cg-kessler", companyId: LANTERN, name: "Kessler family — South Col 2027", leaderContactId: "ct-bruno", memberContactIds: ["ct-bruno", "ct-matthias", "ct-elena"] },
+];
+
+/**
+ * THE TIMELINE. Note the statuses: `received` for what came in, `draft` and
+ * `scheduled` for what is going out, and NOTHING `sent` — no provider is
+ * connected, so nothing has been sent by this app. Where a person did send
+ * something through their own mail it is logged as a `note` about that fact.
+ */
+export const ACTIVITIES: Activity[] = [
+  { id: "ac-1", companyId: LANTERN, contactId: "ct-priya", inquiryId: "l-priya", bookingId: null, type: "email", direction: "inbound", status: "received", subject: "Technical grade for Ama Dablam", bodyOrReference: "Asked what grade to be leading before the SW ridge. Answered in the Icefall thread.", scheduledAt: null, sentAt: null, createdBy: "cu-marta", createdAt: T("2026-08-24T14:05:00.000Z") },
+  { id: "ac-2", companyId: LANTERN, contactId: "ct-priya", inquiryId: "l-priya", bookingId: null, type: "note", direction: "internal", status: "received", subject: "Proposal v1 sent by our own mail", bodyOrReference: "PDF of proposal v1 sent from the office mailbox on 25 Aug. Logged here; this app did not send it.", scheduledAt: null, sentAt: null, createdBy: "cu-marta", createdAt: T("2026-08-25T15:10:00.000Z") },
+  { id: "ac-3", companyId: LANTERN, contactId: "ct-charlotte", inquiryId: "l-charlotte", bookingId: "bk-charlotte", type: "call", direction: "outbound", status: "scheduled", subject: "Chase insurance certificate", bodyOrReference: "Call before the 15th — certificate still outstanding.", scheduledAt: T("2026-09-02T09:00:00.000Z"), sentAt: null, createdBy: "cu-marta", createdAt: T("2026-08-27T10:00:00.000Z") },
+  { id: "ac-4", companyId: LANTERN, contactId: "ct-hanne", inquiryId: "l-hanne", bookingId: "bk-hanne", type: "email", direction: "outbound", status: "draft", subject: "Welcome pack — South Col 2027", bodyOrReference: "Draft welcome pack. To be sent from the office mailbox once Ravi has read it.", scheduledAt: null, sentAt: null, createdBy: "cu-ravi", createdAt: T("2026-08-28T09:00:00.000Z") },
+  { id: "ac-5", companyId: LANTERN, contactId: "ct-bruno", inquiryId: "l-own-1", bookingId: null, type: "meeting", direction: "internal", status: "scheduled", subject: "Pricing review — Kessler group", bodyOrReference: null, scheduledAt: T("2026-09-01T14:00:00.000Z"), sentAt: null, createdBy: "cu-ravi", createdAt: T("2026-08-21T09:05:00.000Z") },
+  { id: "ac-x", companyId: COLDHARBOUR, contactId: "ct-x", inquiryId: "l-x", bookingId: null, type: "note", direction: "internal", status: "received", subject: "Waitlist", bodyOrReference: "Add to June waitlist.", scheduledAt: null, sentAt: null, createdBy: "cu-jo", createdAt: T("2026-08-26T18:30:00.000Z") },
+];
+
+export const SUPPLIERS: Supplier[] = [
+  { id: "sup-khumbu", companyId: LANTERN, name: "Khumbu Base Logistics (invented)", type: "ground_handler", country: "Nepal", contactDetails: "Thamel office — ask for the autumn desk. Landline on the contract.", contractReference: "KBL-2026-07", status: "active", createdAt: T("2026-03-10T10:00:00.000Z"), updatedAt: T("2026-08-20T10:00:00.000Z") },
+  { id: "sup-dudhkoshi", companyId: LANTERN, name: "Dudh Koshi Air Services (invented)", type: "transport", country: "Nepal", contactDetails: "Charter desk, Kathmandu domestic terminal.", contractReference: null, status: "active", createdAt: T("2026-04-02T10:00:00.000Z"), updatedAt: T("2026-04-02T10:00:00.000Z") },
+  { id: "sup-x", companyId: COLDHARBOUR, name: "Kahiltna Ski Charters (invented)", type: "transport", country: "United States", contactDetails: null, contractReference: null, status: "active", createdAt: T("2026-05-20T10:00:00.000Z"), updatedAt: T("2026-05-20T10:00:00.000Z") },
+];
+
+/**
+ * ONE GUIDE, UNVERIFIED — and staying that way until somebody who may verify
+ * does. `qualificationsReference` is where HER claim is filed; the status says
+ * nobody has checked it. Astrid is on Lantern's public team list above with the
+ * same role, so the two records describe one person consistently.
+ */
+export const GUIDE_RESOURCES: GuideResource[] = [
+  { id: "gr-astrid", companyId: LANTERN, profileIdOrExternalContactId: "ext-astrid-lindqvist", role: "Western guide, 8,000 m", qualificationsReference: "Guide's own statement: IFMGA carnet, copy on file (unverified)", verificationStatus: "not_submitted", insuranceStatus: "requested", availabilityStatus: "not_stated", contactPreferences: "Email first. Satellite messenger only while on the mountain.", createdAt: T("2026-06-14T10:00:00.000Z"), updatedAt: T("2026-08-20T10:00:00.000Z") },
+];
+
+export const TASKS: Task[] = [
+  { id: "tk-1", companyId: LANTERN, departureId: "d-1", type: "permit", assigneeId: "cu-ravi", supplierId: null, title: "Everest permit application — Department of Tourism", description: "Window opens in January. Passport scans needed first (tk-6).", status: "in_progress", dueAt: T("2027-01-15T00:00:00.000Z"), completedAt: null, createdAt: T("2026-08-12T10:00:00.000Z"), updatedAt: T("2026-08-26T10:00:00.000Z") },
+  { id: "tk-2", companyId: LANTERN, departureId: "d-1", type: "guide", assigneeId: "cu-ravi", supplierId: null, title: "Confirm Astrid Lindqvist as western guide, Team A", description: "Verbal yes in June. Written confirmation and insurance certificate still to come.", status: "open", dueAt: T("2026-10-31T00:00:00.000Z"), completedAt: null, createdAt: T("2026-06-14T10:00:00.000Z"), updatedAt: T("2026-06-14T10:00:00.000Z") },
+  {
+    // THE BLOCKED ONE. Blocked is a state with a reason, written down.
+    id: "tk-3", companyId: LANTERN, departureId: "d-5", type: "supplier", assigneeId: "cu-ravi", supplierId: "sup-khumbu", title: "Book base camp cook team for Ama Dablam", description: "Blocked: Khumbu Base Logistics has not issued autumn rates. Chased 19 Aug; no reply.", status: "blocked", dueAt: T("2026-09-20T00:00:00.000Z"), completedAt: null, createdAt: T("2026-08-05T10:00:00.000Z"), updatedAt: T("2026-08-19T12:00:00.000Z"),
+  },
+  { id: "tk-4", companyId: LANTERN, departureId: "d-5", type: "transport", assigneeId: "cu-marta", supplierId: "sup-dudhkoshi", title: "Lukla flights — 6 clients + 4 crew, 19 October", description: null, status: "open", dueAt: T("2026-09-30T00:00:00.000Z"), completedAt: null, createdAt: T("2026-08-05T10:05:00.000Z"), updatedAt: T("2026-08-05T10:05:00.000Z") },
+  { id: "tk-5", companyId: LANTERN, departureId: "d-5", type: "participant_follow_up", assigneeId: "cu-marta", supplierId: null, title: "Charlotte Martin — insurance certificate outstanding", description: "Requested 20 Aug. Not received.", status: "open", dueAt: T("2026-09-15T00:00:00.000Z"), completedAt: null, createdAt: T("2026-08-20T10:00:00.000Z"), updatedAt: T("2026-08-20T10:00:00.000Z") },
+  { id: "tk-6", companyId: LANTERN, departureId: "d-1", type: "document", assigneeId: "cu-marta", supplierId: null, title: "Collect passport scans for the 2027 permit", description: "Hanne's received and reviewed.", status: "completed", dueAt: T("2026-08-31T00:00:00.000Z"), completedAt: T("2026-08-28T08:58:00.000Z"), createdAt: T("2026-08-12T10:10:00.000Z"), updatedAt: T("2026-08-28T08:58:00.000Z") },
+  { id: "tk-x", companyId: COLDHARBOUR, departureId: null, type: "other", assigneeId: "cu-jo", supplierId: "sup-x", title: "2027 charter block booking", description: null, status: "open", dueAt: null, completedAt: null, createdAt: T("2026-08-22T10:00:00.000Z"), updatedAt: T("2026-08-22T10:00:00.000Z") },
+];
+
+export const TRIP_BRIEFS: TripBrief[] = [
+  {
+    id: "tb-priya",
+    companyId: LANTERN,
+    inquiryId: "l-priya",
+    objectiveId: "ama-dablam",
+    preferredDates: { startDay: "2026-10-18", endDay: "2026-11-20" },
+    flexibilitySummary: "Can start up to a week later; must be home by 22 November.",
+    groupSummary: "Two climbers travelling together (Priya, with Charlotte Martin who has already booked).",
+    experienceSummary: "Scottish II/III leading; one previous 6,000 m peak. Her own account, not assessed.",
+    operatorAssumptions: "Assumes both climbers join the 20 October departure and share the fixed-rope team.",
+    requirementsToConfirm: ["Insurance covering 7,000 m and helicopter evacuation", "Own technical axes or hire", "Passport validity to May 2027"],
+    internalNotes: "Comparing us against one other operator; decision expected mid-September.",
+    createdBy: "cu-marta",
+    createdAt: T("2026-08-25T10:40:00.000Z"),
+    updatedAt: T("2026-08-25T10:40:00.000Z"),
+  },
+];
+
+/*
+ * TWO PROPOSALS. `pr-priya` is SENT, approved by Ravi (the founding admin),
+ * with two versions: v1 as first sent, v2 with a rest day added and the price
+ * unchanged — v1 is superseded BY DERIVATION (lower number), not by any stored
+ * flag. `pr-bruno` is a DRAFT with one version and no approval.
+ *
+ * The money is integer minor units and the split is checked at module load by
+ * `assertSplits()` below — a seed that could not pass its own adapter is a
+ * future bug, not a seed.
+ */
+export const PROPOSALS: Proposal[] = [
+  {
+    id: "pr-priya", companyId: LANTERN, inquiryId: "l-priya", tripBriefId: "tb-priya", status: "sent", currency: "EUR",
+    totalMinor: 1_720_000, depositMinor: 344_000, balanceMinor: 1_376_000,
+    validUntil: "2026-09-19", cancellationPolicyReference: "Lantern Ridge standard terms 2026 §4",
+    createdBy: "cu-marta", approvedBy: "cu-ravi", approvedAt: T("2026-08-25T14:40:00.000Z"),
+    createdAt: T("2026-08-25T11:00:00.000Z"), updatedAt: T("2026-08-26T09:15:00.000Z"),
+  },
+  {
+    id: "pr-bruno", companyId: LANTERN, inquiryId: "l-own-1", tripBriefId: null, status: "draft", currency: "EUR",
+    totalMinor: 17_400_000, depositMinor: 3_480_000, balanceMinor: 13_920_000,
+    validUntil: null, cancellationPolicyReference: "Lantern Ridge standard terms 2026 §4",
+    createdBy: "cu-ravi", approvedBy: null, approvedAt: null,
+    createdAt: T("2026-08-21T09:00:00.000Z"), updatedAt: T("2026-08-21T09:00:00.000Z"),
+  },
+];
+
+export const PROPOSAL_VERSIONS: ProposalVersion[] = [
+  {
+    id: "pv-priya-1", proposalId: "pr-priya", versionNumber: 1,
+    itineraryContent: [
+      { day: 1, title: "Lukla to Phakding", detail: "Fly in; short walk down the valley." },
+      { day: 3, title: "Namche Bazaar", detail: "Acclimatisation." },
+      { day: 7, title: "Ama Dablam base camp", detail: "Establish camp; rest." },
+      { day: 20, title: "Summit window opens", detail: "Two full rotations completed first." },
+    ],
+    inclusions: ["Permits", "Base camp", "Fixed rope on the ridge", "Sherpa support 1:1 above camp 1"],
+    exclusions: ["International flights", "Personal kit", "Insurance", "Lukla flights"],
+    requirements: ["Confident on steep rock and ice", "Comfortable at 6,000 m", "Helicopter-evacuation insurance"],
+    pricingSnapshot: {
+      id: "q-priya-1",
+      lines: [{ label: "Ama Dablam SW Ridge, per climber", amount: 860_000, per: "person" }],
+      exclusions: [{ label: "Lukla flights", approxAmount: 40_000 }, { label: "Personal insurance", approxAmount: null }],
+      cancellation: { tiers: [{ daysBefore: 60, refundPct: 100 }, { daysBefore: 30, refundPct: 50 }, { daysBefore: 0, refundPct: 0 }], conditionsRefundPct: 100 },
+      partySize: 2,
+      departureIso: "2026-10-20",
+      validUntilIso: "2026-09-19",
+    },
+    changeSummary: null,
+    createdBy: "cu-marta", createdAt: T("2026-08-25T11:00:00.000Z"),
+  },
+  {
+    id: "pv-priya-2", proposalId: "pr-priya", versionNumber: 2,
+    itineraryContent: [
+      { day: 1, title: "Lukla to Phakding", detail: "Fly in; short walk down the valley." },
+      { day: 3, title: "Namche Bazaar", detail: "Acclimatisation." },
+      { day: 4, title: "Namche rest day", detail: "Added at the customer's request." },
+      { day: 8, title: "Ama Dablam base camp", detail: "Establish camp; rest." },
+      { day: 21, title: "Summit window opens", detail: "Two full rotations completed first." },
+    ],
+    inclusions: ["Permits", "Base camp", "Fixed rope on the ridge", "Sherpa support 1:1 above camp 1"],
+    exclusions: ["International flights", "Personal kit", "Insurance", "Lukla flights"],
+    requirements: ["Confident on steep rock and ice", "Comfortable at 6,000 m", "Helicopter-evacuation insurance"],
+    pricingSnapshot: {
+      id: "q-priya-2",
+      lines: [{ label: "Ama Dablam SW Ridge, per climber", amount: 860_000, per: "person" }],
+      exclusions: [{ label: "Lukla flights", approxAmount: 40_000 }, { label: "Personal insurance", approxAmount: null }],
+      cancellation: { tiers: [{ daysBefore: 60, refundPct: 100 }, { daysBefore: 30, refundPct: 50 }, { daysBefore: 0, refundPct: 0 }], conditionsRefundPct: 100 },
+      partySize: 2,
+      departureIso: "2026-10-20",
+      validUntilIso: "2026-09-19",
+    },
+    changeSummary: "Added a rest day at Namche at the customer's request. Price unchanged.",
+    createdBy: "cu-marta", createdAt: T("2026-08-26T09:15:00.000Z"),
+  },
+  {
+    id: "pv-bruno-1", proposalId: "pr-bruno", versionNumber: 1,
+    itineraryContent: [],
+    inclusions: ["Permits", "Base camp accommodation", "Group equipment", "Oxygen", "Sherpa support"],
+    exclusions: ["International flights", "Personal climbing kit", "Summit bonus", "Travel insurance"],
+    requirements: ["Previous experience above 7,000 m", "A season of glacier travel with crampons and axe"],
+    pricingSnapshot: {
+      id: "q-bruno-1",
+      lines: [{ label: "Everest — South Col, per climber", amount: 5_800_000, per: "person" }],
+      exclusions: [{ label: "Summit bonus for Sherpa team", approxAmount: 150_000 }],
+      cancellation: { tiers: [{ daysBefore: 90, refundPct: 100 }, { daysBefore: 45, refundPct: 50 }, { daysBefore: 0, refundPct: 0 }], conditionsRefundPct: 100 },
+      partySize: 3,
+      departureIso: "2027-04-04",
+      validUntilIso: "2026-10-31",
+    },
+    changeSummary: null,
+    createdBy: "cu-ravi", createdAt: T("2026-08-21T09:00:00.000Z"),
+  },
+];
+
+/*
+ * FINANCIAL EVENTS ON THE FOUR EXISTING BOOKINGS, matching their statuses.
+ *
+ *   bk-hanne     confirmed — quote and deposit issued; deposit CONFIRMED
+ *                received by Ravi against a bank reference; balance issued and
+ *                not yet due (42 days before 4 April 2027).
+ *   bk-luis      confirmed — quote and invoice issued; deposit REPORTED by
+ *                Marta on the customer's word. Not confirmed: nobody has seen it.
+ *   bk-charlotte pending   — quote and deposit issued. Nothing received.
+ *   bk-benjamin  cancelled — quote and deposit both cancelled with the booking.
+ *
+ * Not one `provider` source. None is connected. Not one `commission_*` row:
+ * commission follows a real event, and ICEFALL has raised none.
+ */
+export const FINANCIAL_EVENTS: FinancialEvent[] = [
+  { id: "fe-hanne-1", companyId: LANTERN, bookingId: "bk-hanne", type: "quote", status: "issued", amountMinor: 1_245_000, currency: "EUR", source: { kind: "manual_entry", enteredBy: "cu-ravi" }, externalReference: "LR-Q-2026-041", effectiveAt: T("2026-08-28T08:45:00.000Z"), createdAt: T("2026-08-28T08:45:00.000Z") },
+  { id: "fe-hanne-2", companyId: LANTERN, bookingId: "bk-hanne", type: "deposit_due", status: "issued", amountMinor: 249_000, currency: "EUR", source: { kind: "manual_entry", enteredBy: "cu-ravi" }, externalReference: "LR-INV-2026-071", effectiveAt: T("2026-09-11T00:00:00.000Z"), createdAt: T("2026-08-28T08:50:00.000Z") },
+  { id: "fe-hanne-3", companyId: LANTERN, bookingId: "bk-hanne", type: "deposit_received", status: "confirmed", amountMinor: 249_000, currency: "EUR", source: { kind: "operator_confirmation", confirmedBy: "cu-ravi" }, externalReference: "Bank ref NOK→EUR 2026-08-28/0412", effectiveAt: T("2026-08-28T08:55:00.000Z"), createdAt: T("2026-08-28T08:56:00.000Z") },
+  { id: "fe-hanne-4", companyId: LANTERN, bookingId: "bk-hanne", type: "balance_due", status: "issued", amountMinor: 996_000, currency: "EUR", source: { kind: "manual_entry", enteredBy: "cu-ravi" }, externalReference: null, effectiveAt: T("2027-02-21T00:00:00.000Z"), createdAt: T("2026-08-28T08:56:00.000Z") },
+
+  { id: "fe-luis-1", companyId: LANTERN, bookingId: "bk-luis", type: "quote", status: "issued", amountMinor: 215_000, currency: "EUR", source: { kind: "manual_entry", enteredBy: "cu-marta" }, externalReference: "LR-Q-2026-039", effectiveAt: T("2026-08-27T12:00:00.000Z"), createdAt: T("2026-08-27T12:00:00.000Z") },
+  { id: "fe-luis-2", companyId: LANTERN, bookingId: "bk-luis", type: "invoice", status: "issued", amountMinor: 215_000, currency: "EUR", source: { kind: "manual_entry", enteredBy: "cu-marta" }, externalReference: "LR-INV-2026-069", effectiveAt: T("2026-08-27T15:00:00.000Z"), createdAt: T("2026-08-27T15:00:00.000Z") },
+  { id: "fe-luis-3", companyId: LANTERN, bookingId: "bk-luis", type: "deposit_due", status: "issued", amountMinor: 43_000, currency: "EUR", source: { kind: "manual_entry", enteredBy: "cu-marta" }, externalReference: "LR-INV-2026-069", effectiveAt: T("2026-09-10T00:00:00.000Z"), createdAt: T("2026-08-27T15:00:00.000Z") },
+  // REPORTED, not confirmed: the customer says the transfer went; nobody here has seen it land.
+  { id: "fe-luis-4", companyId: LANTERN, bookingId: "bk-luis", type: "deposit_received", status: "reported", amountMinor: 43_000, currency: "EUR", source: { kind: "customer_report", reportedBy: "ct-luis" }, externalReference: null, effectiveAt: T("2026-08-28T07:30:00.000Z"), createdAt: T("2026-08-28T07:35:00.000Z") },
+
+  { id: "fe-charlotte-1", companyId: LANTERN, bookingId: "bk-charlotte", type: "quote", status: "issued", amountMinor: 690_000, currency: "EUR", source: { kind: "manual_entry", enteredBy: "cu-marta" }, externalReference: "LR-Q-2026-036", effectiveAt: T("2026-08-22T09:00:00.000Z"), createdAt: T("2026-08-22T09:00:00.000Z") },
+  { id: "fe-charlotte-2", companyId: LANTERN, bookingId: "bk-charlotte", type: "deposit_due", status: "issued", amountMinor: 138_000, currency: "EUR", source: { kind: "manual_entry", enteredBy: "cu-marta" }, externalReference: "LR-INV-2026-066", effectiveAt: T("2026-09-08T00:00:00.000Z"), createdAt: T("2026-08-25T09:05:00.000Z") },
+
+  { id: "fe-benjamin-1", companyId: LANTERN, bookingId: "bk-benjamin", type: "quote", status: "cancelled", amountMinor: 1_245_000, currency: "EUR", source: { kind: "manual_entry", enteredBy: "cu-marta" }, externalReference: "LR-Q-2026-031", effectiveAt: T("2026-08-16T09:00:00.000Z"), createdAt: T("2026-08-16T09:00:00.000Z") },
+  { id: "fe-benjamin-2", companyId: LANTERN, bookingId: "bk-benjamin", type: "deposit_due", status: "cancelled", amountMinor: 249_000, currency: "EUR", source: { kind: "manual_entry", enteredBy: "cu-marta" }, externalReference: "LR-INV-2026-058", effectiveAt: T("2026-09-03T00:00:00.000Z"), createdAt: T("2026-08-20T09:05:00.000Z") },
+];
+
+/**
+ * FOUR PARTICIPANTS, ACROSS THE DERIVED STATES. Each `status` below is what
+ * `deriveParticipantStatus` produces from the eight fields — asserted at
+ * module load by `assertDerived()`, so the seed cannot state a readiness the
+ * rule would not.
+ *
+ *   pa-hanne      all eight REVIEWED            → ready_for_departure
+ *   pa-luis       medical RECEIVED, rest reviewed → ready_for_review
+ *   pa-charlotte  several requested/not requested → information_incomplete
+ *   pa-bruno      nothing requested, a `lead`     → lead (lifecycle, not derived)
+ *
+ * "One with a redacted medical field": redaction is PER VIEWER, not per row —
+ * every one of these reads `forbidden` in the two sensitive fields to Marta
+ * (sales) and reads through to Ravi (admin). pa-luis is the one whose medical
+ * field carries a value worth hiding.
+ */
+export const PARTICIPANTS: Participant[] = [
+  { id: "pa-hanne", companyId: LANTERN, contactId: "ct-hanne", inquiryId: "l-hanne", proposalId: null, status: "ready_for_departure", emergencyContactStatus: "reviewed", insuranceStatus: "reviewed", waiverStatus: "reviewed", identityDocumentStatus: "reviewed", experienceInformationStatus: "reviewed", fitnessInformationStatus: "reviewed", medicalInformationStatus: "reviewed", consentStatus: "reviewed", retentionUntil: "2029-06-04", createdAt: T("2026-08-28T08:56:00.000Z"), updatedAt: T("2026-08-28T09:10:00.000Z") },
+  { id: "pa-luis", companyId: LANTERN, contactId: "ct-luis", inquiryId: "l-luis", proposalId: null, status: "ready_for_review", emergencyContactStatus: "reviewed", insuranceStatus: "reviewed", waiverStatus: "reviewed", identityDocumentStatus: "reviewed", experienceInformationStatus: "reviewed", fitnessInformationStatus: "reviewed", medicalInformationStatus: "received", consentStatus: "reviewed", retentionUntil: "2028-10-23", createdAt: T("2026-08-27T15:05:00.000Z"), updatedAt: T("2026-08-28T07:00:00.000Z") },
+  { id: "pa-charlotte", companyId: LANTERN, contactId: "ct-charlotte", inquiryId: "l-charlotte", proposalId: null, status: "information_incomplete", emergencyContactStatus: "received", insuranceStatus: "requested", waiverStatus: "requested", identityDocumentStatus: "received", experienceInformationStatus: "reviewed", fitnessInformationStatus: "not_requested", medicalInformationStatus: "not_requested", consentStatus: "received", retentionUntil: "2028-11-16", createdAt: T("2026-08-25T09:05:00.000Z"), updatedAt: T("2026-08-25T09:05:00.000Z") },
+  { id: "pa-bruno", companyId: LANTERN, contactId: "ct-bruno", inquiryId: "l-own-1", proposalId: "pr-bruno", status: "lead", emergencyContactStatus: "not_requested", insuranceStatus: "not_requested", waiverStatus: "not_requested", identityDocumentStatus: "not_requested", experienceInformationStatus: "not_requested", fitnessInformationStatus: "not_requested", medicalInformationStatus: "not_requested", consentStatus: "not_requested", retentionUntil: null, createdAt: T("2026-08-21T09:00:00.000Z"), updatedAt: T("2026-08-21T09:00:00.000Z") },
+  { id: "pa-x", companyId: COLDHARBOUR, contactId: "ct-x", inquiryId: "l-x", proposalId: null, status: "lead", emergencyContactStatus: "not_requested", insuranceStatus: "not_requested", waiverStatus: "not_requested", identityDocumentStatus: "not_requested", experienceInformationStatus: "not_requested", fitnessInformationStatus: "not_requested", medicalInformationStatus: "not_requested", consentStatus: "not_requested", retentionUntil: null, createdAt: T("2026-08-26T18:30:00.000Z"), updatedAt: T("2026-08-26T18:30:00.000Z") },
+];
+
+/** Storage references are PATHS IN A PRIVATE STORE, never URLs. */
+export const DOCUMENTS: Document[] = [
+  { id: "doc-hanne-waiver", companyId: LANTERN, participantId: "pa-hanne", type: "waiver", status: "reviewed", expiresAt: null, storageReference: `${LANTERN}/participants/pa-hanne/waiver-2026-08.pdf`, reviewedBy: "cu-ravi", reviewedAt: T("2026-08-28T09:05:00.000Z"), consentReference: "consent/pa-hanne/2026-08-28", createdAt: T("2026-08-28T08:57:00.000Z"), updatedAt: T("2026-08-28T09:05:00.000Z") },
+  { id: "doc-hanne-insurance", companyId: LANTERN, participantId: "pa-hanne", type: "insurance", status: "reviewed", expiresAt: "2027-07-01", storageReference: `${LANTERN}/participants/pa-hanne/insurance-2026.pdf`, reviewedBy: "cu-ravi", reviewedAt: T("2026-08-28T09:06:00.000Z"), consentReference: "consent/pa-hanne/2026-08-28", createdAt: T("2026-08-28T08:57:00.000Z"), updatedAt: T("2026-08-28T09:06:00.000Z") },
+  { id: "doc-hanne-passport", companyId: LANTERN, participantId: "pa-hanne", type: "passport", status: "reviewed", expiresAt: "2031-03-14", storageReference: `${LANTERN}/participants/pa-hanne/passport.pdf`, reviewedBy: "cu-marta", reviewedAt: T("2026-08-28T08:58:00.000Z"), consentReference: "consent/pa-hanne/2026-08-28", createdAt: T("2026-08-28T08:57:00.000Z"), updatedAt: T("2026-08-28T08:58:00.000Z") },
+  { id: "doc-hanne-medical", companyId: LANTERN, participantId: "pa-hanne", type: "medical_information", status: "reviewed", expiresAt: null, storageReference: `${LANTERN}/participants/pa-hanne/medical-2026-08.pdf`, reviewedBy: "cu-ravi", reviewedAt: T("2026-08-28T09:10:00.000Z"), consentReference: "consent/pa-hanne/2026-08-28", createdAt: T("2026-08-28T08:57:00.000Z"), updatedAt: T("2026-08-28T09:10:00.000Z") },
+  { id: "doc-hanne-emergency", companyId: LANTERN, participantId: "pa-hanne", type: "emergency_contact", status: "reviewed", expiresAt: null, storageReference: `${LANTERN}/participants/pa-hanne/emergency-contact.txt`, reviewedBy: "cu-ravi", reviewedAt: T("2026-08-28T09:04:00.000Z"), consentReference: "consent/pa-hanne/2026-08-28", createdAt: T("2026-08-28T08:57:00.000Z"), updatedAt: T("2026-08-28T09:04:00.000Z") },
+  // Luis: the medical form has arrived and nobody has read it yet.
+  { id: "doc-luis-medical", companyId: LANTERN, participantId: "pa-luis", type: "medical_information", status: "received", expiresAt: null, storageReference: `${LANTERN}/participants/pa-luis/medical-2026-08.pdf`, reviewedBy: null, reviewedAt: null, consentReference: "consent/pa-luis/2026-08-27", createdAt: T("2026-08-28T07:00:00.000Z"), updatedAt: T("2026-08-28T07:00:00.000Z") },
+  // Charlotte: requested, not arrived. No storage reference — there is nothing stored.
+  { id: "doc-charlotte-insurance", companyId: LANTERN, participantId: "pa-charlotte", type: "insurance", status: "requested", expiresAt: null, storageReference: null, reviewedBy: null, reviewedAt: null, consentReference: null, createdAt: T("2026-08-20T10:00:00.000Z"), updatedAt: T("2026-08-20T10:00:00.000Z") },
+  { id: "doc-charlotte-waiver", companyId: LANTERN, participantId: "pa-charlotte", type: "waiver", status: "requested", expiresAt: null, storageReference: null, reviewedBy: null, reviewedAt: null, consentReference: null, createdAt: T("2026-08-20T10:00:00.000Z"), updatedAt: T("2026-08-20T10:00:00.000Z") },
+];
+
+/**
+ * THREE INTRODUCTIONS ICEFALL RECORDED. `icefallUserId` is the customer id
+ * the lead already carries — the same climber, seen from ICEFALL's side. NO
+ * BOOKING AND NO COMMISSION ROW FOLLOWS FROM ANY OF THESE: Hanne's booking
+ * exists because Lantern recorded it, not because this row implied it.
+ */
+export const REFERRAL_EVENTS: ReferralEvent[] = [
+  { id: "re-1", icefallUserId: "cust-hanne", operatorCompanyId: LANTERN, inquiryId: "l-hanne", sourceSurface: "app:expedition-detail", attributionToken: "att-8c1f-hanne-2026-08-28", consentStatus: "given", createdAt: T("2026-08-28T08:20:00.000Z") },
+  { id: "re-2", icefallUserId: "cust-tomas", operatorCompanyId: LANTERN, inquiryId: "l-tomas", sourceSurface: "app:mountain-page", attributionToken: "att-3b7a-tomas-2026-08-27", consentStatus: "given", createdAt: T("2026-08-27T16:20:00.000Z") },
+  { id: "re-3", icefallUserId: "cust-priya", operatorCompanyId: LANTERN, inquiryId: "l-priya", sourceSurface: "web:marketplace", attributionToken: "att-51d9-priya-2026-08-24", consentStatus: "not_asked", createdAt: T("2026-08-24T14:00:00.000Z") },
+  { id: "re-x", icefallUserId: "cust-x", operatorCompanyId: COLDHARBOUR, inquiryId: "l-x", sourceSurface: "web:mountain-page", attributionToken: "att-9e2c-x-2026-08-26", consentStatus: "given", createdAt: T("2026-08-26T18:00:00.000Z") },
+];
+
+/* -------------------------------------------------------------------------- */
+/* The audit trail — generated through the same builder the adapter uses      */
+/* -------------------------------------------------------------------------- */
+
+let auditSeq = 0;
+const seeded = (
+  actorId: string,
+  entityType: AuditEvent["entityType"],
+  entity: { id: string; companyId?: string },
+  action: string,
+  before: Record<string, unknown> | null,
+  after: Record<string, unknown> | null,
+  createdAt: string,
+  companyId: string = entity.companyId ?? LANTERN,
+): AuditEvent =>
+  buildAuditEvent({ id: `au-seed-${++auditSeq}`, companyId, actorId, entityType, entityId: entity.id, action, before, after, createdAt });
+
+const asRecord = (x: object): Record<string, unknown> => x as Record<string, unknown>;
+
+export const AUDIT_EVENTS: AuditEvent[] = [
+  ...CONTACTS.map((c) => seeded(c.companyId === COLDHARBOUR ? "cu-jo" : "cu-marta", "contact", c, "created", null, asRecord(c), c.createdAt)),
+  ...CONTACT_GROUPS.map((g) => seeded("cu-marta", "contact_group", g, "created", null, asRecord(g), "2026-08-25T10:45:00.000Z")),
+  ...ACTIVITIES.map((a) => seeded(a.createdBy, "activity", a, "created", null, asRecord(a), a.createdAt)),
+  ...SUPPLIERS.map((s) => seeded(s.companyId === COLDHARBOUR ? "cu-jo" : "cu-ravi", "supplier", s, "created", null, asRecord(s), s.createdAt)),
+  ...GUIDE_RESOURCES.map((g) => seeded("cu-ravi", "guide_resource", g, "created", null, asRecord(g), g.createdAt)),
+  ...TASKS.map((t) => seeded(t.companyId === COLDHARBOUR ? "cu-jo" : "cu-ravi", "task", t, "created", null, asRecord(t), t.createdAt)),
+  seeded("cu-ravi", "task", TASKS.find((t) => t.id === "tk-3")!, "status_changed", { status: "in_progress" }, { status: "blocked" }, "2026-08-19T12:00:00.000Z"),
+  seeded("cu-marta", "task", TASKS.find((t) => t.id === "tk-6")!, "status_changed", { status: "in_progress", completedAt: null }, { status: "completed", completedAt: "2026-08-28T08:58:00.000Z" }, "2026-08-28T08:58:00.000Z"),
+  ...TRIP_BRIEFS.map((b) => seeded(b.createdBy, "trip_brief", b, "created", null, asRecord(b), b.createdAt)),
+  ...PROPOSALS.map((p) => seeded(p.createdBy, "proposal", p, "created", null, { ...asRecord(p), status: "draft", approvedBy: null, approvedAt: null }, p.createdAt)),
+  ...PROPOSAL_VERSIONS.map((v) => seeded(v.createdBy, "proposal_version", { id: v.id, companyId: LANTERN }, "version_created", null, asRecord(v), v.createdAt)),
+  seeded("cu-marta", "proposal", PROPOSALS[0]!, "status_changed", { status: "draft" }, { status: "internal_review" }, "2026-08-25T14:30:00.000Z"),
+  seeded("cu-ravi", "proposal", PROPOSALS[0]!, "approved", { approvedBy: null, approvedAt: null }, { approvedBy: "cu-ravi", approvedAt: "2026-08-25T14:40:00.000Z" }, "2026-08-25T14:40:00.000Z"),
+  seeded("cu-marta", "proposal", PROPOSALS[0]!, "status_changed", { status: "internal_review" }, { status: "sent" }, "2026-08-25T15:00:00.000Z"),
+  ...FINANCIAL_EVENTS.map((f) => seeded(f.source.kind === "operator_confirmation" ? f.source.confirmedBy : f.source.kind === "manual_entry" ? f.source.enteredBy : "cu-marta", "financial_event", f, "created", null, asRecord(f), f.createdAt)),
+  ...PARTICIPANTS.map((p) => seeded(p.companyId === COLDHARBOUR ? "cu-jo" : "cu-marta", "participant", p, "created", null, asRecord(p), p.createdAt)),
+  ...DOCUMENTS.map((d) => seeded("cu-marta", "document", d, "created", null, asRecord(d), d.createdAt)),
+  seeded("cu-ravi", "departure", { id: "d-1", companyId: LANTERN }, "operations_updated", { status: undefined, participantIds: undefined }, { status: "planning", participantIds: ["pa-hanne"] }, "2026-08-28T09:00:00.000Z"),
+  seeded("cu-ravi", "departure", { id: "d-5", companyId: LANTERN }, "operations_updated", { status: undefined, participantIds: undefined }, { status: "confirmed", participantIds: ["pa-charlotte"] }, "2026-08-25T09:10:00.000Z"),
+].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+
+/* -------------------------------------------------------------------------- */
+/* Load-time coherence — a seed that fails its own adapter is a future bug    */
+/* -------------------------------------------------------------------------- */
+
+function assertSplits(): void {
+  for (const p of PROPOSALS) {
+    const problem = moneySplitProblem(p.totalMinor, p.depositMinor, p.balanceMinor);
+    if (problem) throw new Error(`Seed proposal ${p.id}: ${problem}`);
+  }
+}
+
+function assertDerived(): void {
+  for (const p of PARTICIPANTS) {
+    if (p.status === "lead" || p.status === "completed" || p.status === "cancelled") continue;
+    const derived = deriveParticipantStatus(informationOf(p));
+    if (derived !== p.status) {
+      throw new Error(`Seed participant ${p.id} states ${p.status} but its fields derive ${derived}.`);
+    }
+  }
+}
+
+function assertReferences(): void {
+  const contactIds = new Set(CONTACTS.map((c) => c.id));
+  for (const g of CONTACT_GROUPS) {
+    if (!g.memberContactIds.includes(g.leaderContactId)) throw new Error(`Seed group ${g.id}: leader is not a member.`);
+    for (const m of g.memberContactIds) if (!contactIds.has(m)) throw new Error(`Seed group ${g.id}: unknown contact ${m}.`);
+  }
+  for (const l of LEADS) {
+    if (l.contactId && !contactIds.has(l.contactId)) throw new Error(`Seed lead ${l.id}: unknown contact ${l.contactId}.`);
+  }
+  const participantIds = new Set(PARTICIPANTS.map((p) => p.id));
+  for (const d of DEPARTURES) {
+    for (const id of d.participantIds ?? []) if (!participantIds.has(id)) throw new Error(`Seed departure ${d.id}: unknown participant ${id}.`);
+    if (d.capacity != null && (d.participantIds?.length ?? 0) > d.capacity) throw new Error(`Seed departure ${d.id}: roster exceeds capacity.`);
+  }
+  const bookingIds = new Set(BOOKINGS.map((b) => b.id));
+  for (const f of FINANCIAL_EVENTS) {
+    if (!bookingIds.has(f.bookingId)) throw new Error(`Seed financial event ${f.id}: unknown booking ${f.bookingId}.`);
+    if (f.status === "confirmed" && f.source.kind !== "provider" && f.source.kind !== "operator_confirmation") {
+      throw new Error(`Seed financial event ${f.id}: confirmed without a confirming source.`);
+    }
+  }
+  for (const a of ACTIVITIES) if (a.status === "sent") throw new Error(`Seed activity ${a.id}: nothing here can have been sent.`);
+  for (const g of GUIDE_RESOURCES) if (g.verificationStatus === "verified") throw new Error(`Seed guide ${g.id}: no one here verifies a guide.`);
+}
+
+assertSplits();
+assertDerived();
+assertReferences();

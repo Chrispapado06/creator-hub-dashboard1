@@ -16,8 +16,10 @@
  */
 
 import { measured, type Reading } from "@/domain/honesty";
+import { DEMO_FIXTURES } from "@/domain/runtime";
 
-export const DEMO_PROFILE_VIEWS = true;
+/** Gated on the build (see runtime.ts): true under DEMO/OFFLINE and tests, FALSE on the live build. */
+export const DEMO_PROFILE_VIEWS = DEMO_FIXTURES;
 
 const DEMO_VIEWS_FIGURE = 1248; // the mockup's number, verbatim
 const DEMO_VIEWS_DELTA = 56; // "+56% vs 1 – 31 Jul 2026", ditto
@@ -53,7 +55,8 @@ export function demoViewsDelta(): number | null {
  * Not every customer gets a photo, on purpose — real customer lists never
  * have full coverage, and the gap is what makes the demo read honestly.
  */
-export const DEMO_CUSTOMER_PROFILES = true;
+/** Same gate: an invented face never reaches a live company. */
+export const DEMO_CUSTOMER_PROFILES = DEMO_FIXTURES;
 
 const DEMO_PHOTO: Record<string, string> = {
   "Hanne Bakken": "women/44",

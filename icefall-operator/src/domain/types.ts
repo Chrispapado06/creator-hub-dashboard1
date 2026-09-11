@@ -65,10 +65,54 @@ export function chipForProduct(status: ProductStatus): ChipStatus {
 /* ========================================================================== */
 
 /**
- * Two roles. That is the whole permission model (spec §3), and the union cannot
- * express a third, so it cannot grow one by accident.
+ * SIX ROLES — the owner's decision, brief §4.
+ *
+ * The union expresses all six. The LIVE DATABASE STORES TWO. Those are two
+ * different statements and this file makes both of them, because collapsing
+ * them is how a permission model starts lying:
+ *
+ *   `company_users.company_role text not null check (company_role in ('admin', 'sales'))`
+ *   — icefall-supabase/migrations/20260828100000_crm_foundation.sql:333
+ *
+ * That constraint was deliberate ("Two roles, deliberately", line 331) and it
+ * belongs to the schema session, not this one. So until it widens, a member row
+ * can only come back holding `admin` or `sales`, and the four new values below
+ * are a model of what the product means, not a description of what is stored.
+ *
+ * `roleFromStored()` in `authz.ts` is the ONE place that crosses between the
+ * two, and it refuses to guess: nothing may treat an unreadable role as admin.
+ * `icefall-sessions/requests/13-operator-six-roles.md` asks for the widening.
  */
-export type CompanyRole = "admin" | "sales";
+export type CompanyRole =
+  | "owner"
+  | "admin"
+  | "sales"
+  | "operations"
+  | "guide_coordinator"
+  | "finance_read_only";
+
+/**
+ * The subset `company_users.company_role` can hold TODAY.
+ *
+ * Derived from `CompanyRole` with `Extract`, so it cannot drift into naming a
+ * value the wider union does not have. Every write path that ends in a database
+ * row should take THIS type, not `CompanyRole` — a role the schema will reject
+ * should fail to compile rather than fail at 3am against Postgres.
+ */
+export type StoredCompanyRole = Extract<CompanyRole, "admin" | "sales">;
+
+/** All six, in the order the brief lists them. Most powers first. */
+export const COMPANY_ROLES = [
+  "owner",
+  "admin",
+  "sales",
+  "operations",
+  "guide_coordinator",
+  "finance_read_only",
+] as const satisfies readonly CompanyRole[];
+
+/** The two the check constraint permits. Widen the migration before this list. */
+export const STORED_COMPANY_ROLES = ["admin", "sales"] as const satisfies readonly StoredCompanyRole[];
 
 export type CompanyUserStatus = "active" | "invited" | "disabled";
 
@@ -453,10 +497,71 @@ export interface ProductDeparture {
   spotsTotal: number | null;
   spotsLeft: number | null;
   priceCents: Cents | null;
+
+  /*
+   * ---- Brief §4 Departure: the OPERATIONS side --------------------------
+   *
+   * The same row, extended — not a second departure type. The split write path
+   * above is UNCHANGED: `availability` / `spotsTotal` / `spotsLeft` stay the
+   * direct write, `departureDate` / `endDate` / `priceCents` stay staff-only via
+   * a version. The fields below are a THIRD group — the company's own
+   * operational record, which no climber ever sees and which lives on no live
+   * column yet — written through `updateDepartureOperations` /
+   * `setDepartureRoster` and nothing else.
+   *
+   * ALL OPTIONAL because `src/offline/fixtures.ts` and
+   * `src/backend/supabaseBackend.ts` are frozen and build departures without
+   * them; the memory seed fills them on the departures it operates. A departure
+   * with `status === undefined` has NO operational record — screens say "not
+   * set up", never "draft".
+   */
+  status?: DepartureStatus;
+  /** The operator's own name for the trip — "South Col 2027, Team A". */
+  name?: string | null;
+  /**
+   * The operational headcount limit — distinct from `spotsTotal`, which is the
+   * ADVERTISED figure a climber reads. The roster is refused past this.
+   */
+  capacity?: number | null;
+  meetingPoint?: string | null;
+  /** PRIVATE to the company. Never reaches a climber; no contact guard. */
+  internalNotes?: string | null;
+  /** THE ROSTER: `Participant` ids. Guide/staff assignments are `Task`s. */
+  participantIds?: string[];
+  /** The proposal this departure was set up to deliver, when there was one. */
+  proposalId?: string | null;
 }
+
+/** Brief §4 Departure.status. Describes the OPERATION, not the advertisement. */
+export type DepartureStatus =
+  | "draft"
+  | "planning"
+  | "confirmed"
+  | "ready"
+  | "underway"
+  | "completed"
+  | "cancelled";
+
+export const DEPARTURE_STATUSES = [
+  "draft",
+  "planning",
+  "confirmed",
+  "ready",
+  "underway",
+  "completed",
+  "cancelled",
+] as const satisfies readonly DepartureStatus[];
 
 /** The columns `authenticated` actually holds an UPDATE grant on. */
 export const DEPARTURE_DIRECT_FIELDS = ["availability", "spotsTotal", "spotsLeft"] as const;
+
+/**
+ * The operational fields — the third write group described on the interface.
+ * Neither the direct grant nor the version path; a CRM record of the company's
+ * own. `participantIds` is deliberately NOT here: the roster has its own
+ * method, because who is on a trip is checked against capacity and ownership.
+ */
+export const DEPARTURE_OPERATIONS_FIELDS = ["status", "name", "capacity", "meetingPoint", "internalNotes", "proposalId"] as const;
 
 /* ========================================================================== */
 /* Media                                                                      */
@@ -597,7 +702,8 @@ export interface Post {
   authorId: string;
   /**
    * OPERATOR-AUTHORED PUBLIC TEXT, and guarded like every other such field:
-   * `createPost` runs `findContactDetailsIn` over it and refuses, verbatim.
+   * `createPost` runs `guardContactDetails("published", …)` over it and
+   * refuses, verbatim.
    */
   caption: string;
   media: PostMedia | null;
@@ -952,6 +1058,16 @@ export interface Lead {
   companyId: string;
   customerId: string;
   customerName: string;
+  /**
+   * The CRM `Contact` this enquiry belongs to (brief §4 Inquiry.contact_id).
+   *
+   * OPTIONAL only because two frozen implementations of the seam
+   * (`src/offline/fixtures.ts`, `src/backend/supabaseLeads.ts`) build leads
+   * without it and the live `leads` table has no such column yet. The memory
+   * seed sets it on every named lead; `undefined` and `null` both read as
+   * "not linked to a contact record".
+   */
+  contactId?: string | null;
   conversationId: string | null;
   productId: string | null;
   mountainId: string | null;
@@ -987,8 +1103,61 @@ export interface LeadNote {
   createdAt: string;
 }
 
-/** `bookings.status`. What the Bookings screen filters on. */
-export type BookingStatus = "pending" | "confirmed" | "completed" | "cancelled";
+/**
+ * THE FOUR WORDS THE LIVE `bookings.status` COLUMN CAN HOLD TODAY, as this
+ * portal reads them (`supabaseLeads.ts` maps the column's `reported` to
+ * `pending`). Every frozen implementation of the seam writes one of these.
+ */
+export type StoredBookingStatus = "pending" | "confirmed" | "completed" | "cancelled";
+
+/**
+ * The commercial lifecycle, brief §4 Booking / Commercial Record — TEN states,
+ * plus the one legacy word.
+ *
+ * `pending` is NOT in the brief's set. It stays in this union because it is
+ * what the live column and both frozen seams produce, and a type that could
+ * not hold the stored value would make every live booking unreadable. It
+ * means exactly what `deposit_pending` means — a booking recorded, no deposit
+ * seen — and `normaliseBookingStatus()` says so in one place. New code writes
+ * `deposit_pending`; old rows read as `pending`; nothing is invented either
+ * way.
+ *
+ * NONE OF THESE WORDS IS PROOF MONEY MOVED. `paid` in the memory adapter
+ * requires confirmed `FinancialEvent`s that add up to the quoted total, and a
+ * financial event is only `confirmed` when its `source` names who saw the
+ * money. Read the notes on `FinancialEvent` below.
+ */
+export type BookingStatus =
+  | "inquiry"
+  | "provisional"
+  | "deposit_pending"
+  | "confirmed"
+  | "balance_pending"
+  | "paid"
+  | "cancelled"
+  | "completed"
+  | "refunded"
+  | "disputed"
+  | StoredBookingStatus;
+
+/** The brief's ten, in lifecycle order. `pending` is absent: it maps to `deposit_pending`. */
+export const BOOKING_STATUSES = [
+  "inquiry",
+  "provisional",
+  "deposit_pending",
+  "confirmed",
+  "balance_pending",
+  "paid",
+  "cancelled",
+  "completed",
+  "refunded",
+  "disputed",
+] as const satisfies readonly BookingStatus[];
+
+/** The ONE translation between the stored legacy word and the brief's set. */
+export function normaliseBookingStatus(status: BookingStatus): Exclude<BookingStatus, "pending"> {
+  return status === "pending" ? "deposit_pending" : status;
+}
 
 export interface Booking {
   id: string;
@@ -997,6 +1166,37 @@ export interface Booking {
   companyId: string;
   productId: string | null;
   mountainId: string | null;
+  /*
+   * ---- Brief §4 commercial fields --------------------------------------
+   *
+   * ALL OPTIONAL, for one reason and no other: `src/offline/fixtures.ts` and
+   * `src/backend/supabaseLeads.ts` are frozen this wave and build `Booking`
+   * literals without them, and the live `bookings` table does not carry these
+   * columns (asked for in `icefall-sessions/requests/17-operator-crm-operating-system-schema.md`).
+   * The memory seed fills every one. `undefined` reads as "not recorded" —
+   * never as zero, never as "no deposit".
+   */
+  /** The accepted proposal this booking came from, when there was one. */
+  proposalId?: string | null;
+  /** The dated departure the customer is booked onto. */
+  departureId?: string | null;
+  /** The `Contact` who holds the booking. */
+  primaryContactId?: string | null;
+  /** Integer minor units. `null` is "not quoted", never 0. */
+  quotedTotalMinor?: Cents | null;
+  depositDueMinor?: Cents | null;
+  balanceDueMinor?: Cents | null;
+  /** UTC timestamps. */
+  depositDueAt?: string | null;
+  balanceDueAt?: string | null;
+  /** The operator's own reference — their invoice or booking number. */
+  externalReference?: string | null;
+  /**
+   * A payment provider's reference for this booking. NULL UNTIL A PROVIDER IS
+   * CONNECTED — nothing in this app can produce one, and a screen must not
+   * render its absence as "unpaid".
+   */
+  paymentProviderReference?: string | null;
   /**
    * Spec §18: a booking may be recorded without a value.
    *
@@ -1113,4 +1313,740 @@ export interface FunnelCounts {
   enquiries: number;
   qualified: number;
   bookings: number;
+}
+
+/* ========================================================================== */
+/* THE CRM OPERATING SYSTEM — brief §4, camelCased field for field            */
+/* ========================================================================== */
+
+/*
+ * THE COMPANY'S OWN OPERATING SYSTEM. Everything above this line is ICEFALL's
+ * side of the relationship — what a company publishes, what ICEFALL sends it.
+ * Everything below is the company's own record of its own business: its
+ * customers, proposals, participants, departures, suppliers and money. Brief
+ * §1: ICEFALL is one SECTION of that system, not the system.
+ *
+ * FOUR RULES HOLD FOR EVERY TYPE IN THIS BLOCK, stated once:
+ *
+ *   1. FIELD NAMES ARE THE BRIEF'S, camelCased, in the brief's order. The one
+ *      translation: the brief's `organization_id` is `companyId`, because this
+ *      app has called the tenant `companyId` on every row since the schema
+ *      contract. One word for one thing; the translation is written here and
+ *      nowhere else.
+ *   2. NO LIVE TABLE EXISTS FOR ANY OF THEM. They run against the memory
+ *      adapter, in these shapes, so the Supabase implementation is a repoint —
+ *      the route `leads.tags`, treks, posts and channels each took. The schema
+ *      is asked for in `icefall-sessions/requests/17-operator-crm-operating-system-schema.md`.
+ *      Until it lands the live seam simply lacks these methods and a screen
+ *      says "not connected yet", never drawing an empty list as a fact.
+ *   3. PRIVATE SURFACE. A contact's own email and phone, an emergency contact,
+ *      a supplier's details, an internal note — these are the company's own
+ *      data about its own people, and `guardContactDetails("private", …)` is a
+ *      documented no-op. The published rule is enforced where text LEAVES the
+ *      company (a channel message, a reply, an offer), not where it is stored.
+ *      See the header of `contactGuard.ts`.
+ *   4. MONEY IS INTEGER MINOR UNITS (`Cents`), always. A timestamp is UTC ISO.
+ *      A `YYYY-MM-DD` is a LOCAL calendar day — `@/domain/dates`, never
+ *      `new Date("YYYY-MM-DD")`.
+ */
+
+/* ---- Shared vocabularies ------------------------------------------------- */
+
+/**
+ * The completeness of ONE required item — brief §4 Document.status, and the
+ * value of each of a `Participant`'s eight information fields (they share the
+ * seven words exactly).
+ *
+ * THIS DESCRIBES WHETHER INFORMATION HAS ARRIVED AND BEEN LOOKED AT. It is not
+ * a verdict. `reviewed` means a person on the operator's team has read what was
+ * supplied; it does not mean the participant is fit, insured adequately, or
+ * safe to go. No screen may render any of these seven as "cleared", "approved"
+ * or "passed" — brief §3.1 and §4 ("These statuses describe information
+ * completeness, not medical or safety approval").
+ */
+export type RequirementStatus =
+  | "not_requested"
+  | "requested"
+  | "received"
+  | "reviewed"
+  | "expired"
+  | "rejected"
+  | "unavailable";
+
+export const REQUIREMENT_STATUSES = [
+  "not_requested",
+  "requested",
+  "received",
+  "reviewed",
+  "expired",
+  "rejected",
+  "unavailable",
+] as const satisfies readonly RequirementStatus[];
+
+/**
+ * WHAT A VIEWER WITHOUT `viewSensitiveParticipantData` READS IN A SENSITIVE
+ * FIELD. Brief §3.1 names `forbidden` as an explicit state, and it is the
+ * honest one here: the value exists, this person may not see it. It is NEVER
+ * STORED — every write path takes `RequirementStatus`, so it cannot be — and
+ * it is never the same thing as `null` or `unavailable`, which mean the
+ * information itself is missing. The adapter substitutes it at read time;
+ * screens render it as "hidden from your role", never as a blank.
+ */
+export type RedactedFieldStatus = "forbidden";
+export const REDACTED: RedactedFieldStatus = "forbidden";
+
+/** Brief §4 Organization.verification_status — reused wherever verification is a word. */
+export type VerificationStatus = "not_submitted" | "in_review" | "verified" | "expired" | "rejected";
+
+/**
+ * Consent, as the CRM records it for a contact or a referral. Brief §4 names
+ * the field and not its values; these four are the minimum that lets a screen
+ * distinguish "never asked" from "asked and said no", which the honesty rule
+ * requires.
+ */
+export type ConsentStatus = "not_asked" | "given" | "declined" | "withdrawn";
+
+export const CONSENT_STATUSES = ["not_asked", "given", "declined", "withdrawn"] as const satisfies readonly ConsentStatus[];
+
+/* ---- Contact / Customer -------------------------------------------------- */
+
+export type ContactChannel = "email" | "phone" | "message";
+
+/** Brief §4 Contact.communication_preferences — how they asked to be reached. */
+export interface CommunicationPreferences {
+  preferredChannel: ContactChannel | null;
+  /** They asked not to be contacted. Honoured by the operator; this app sends nothing anyway. */
+  doNotContact: boolean;
+}
+
+/**
+ * Brief §4 Contact / Customer. THE COMPANY'S OWN CUSTOMER RECORD.
+ *
+ * `email` and `phone` are PRIVATE SURFACE and stored freely — a CRM that cannot
+ * hold a customer's phone number is not a CRM (see `contactGuard.ts`). Nothing
+ * in this app forwards them to a climber-facing surface.
+ *
+ * Deduplication is a REVIEW, never a merge: `findDuplicateContacts` returns
+ * candidates and `mergeContacts` is an explicit, audited act (brief §4: "Do
+ * not merge contacts automatically based only on a similar name or email").
+ */
+export interface Contact {
+  id: string;
+  /** The brief's `organization_id`. */
+  companyId: string;
+  firstName: string;
+  lastName: string;
+  email: string | null;
+  phone: string | null;
+  country: string | null;
+  /** The language they want to be written to in — "en", "es", "no". */
+  language: string | null;
+  consentStatus: ConsentStatus;
+  /** When marketing consent was GIVEN. Null unless `consentStatus` records it. */
+  marketingConsentAt: string | null;
+  communicationPreferences: CommunicationPreferences;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A party travelling together — one leader, every member a `Contact`. */
+export interface ContactGroup {
+  id: string;
+  companyId: string;
+  name: string;
+  /** Always one of `memberContactIds`; the adapter refuses otherwise. */
+  leaderContactId: string;
+  memberContactIds: string[];
+}
+
+/* ---- Communication / Activity ------------------------------------------ */
+
+export type ActivityType = "email" | "call" | "message" | "note" | "meeting" | "system_event";
+export type ActivityDirection = "inbound" | "outbound" | "internal";
+export type ActivityStatus = "draft" | "scheduled" | "sent" | "received" | "failed" | "cancelled";
+
+export const ACTIVITY_TYPES = ["email", "call", "message", "note", "meeting", "system_event"] as const satisfies readonly ActivityType[];
+export const ACTIVITY_DIRECTIONS = ["inbound", "outbound", "internal"] as const satisfies readonly ActivityDirection[];
+export const ACTIVITY_STATUSES = ["draft", "scheduled", "sent", "received", "failed", "cancelled"] as const satisfies readonly ActivityStatus[];
+
+/**
+ * Brief §4 Communication / Activity — the timeline entry on a contact, an
+ * inquiry or a booking.
+ *
+ * `status` CAN NEVER REACH `sent` FROM THIS APP. External sending requires a
+ * provider connection, consent and a user-controlled send action (brief §4),
+ * and no provider is connected. The memory adapter refuses `sent` on create and
+ * on every status change, with the reason shown. `received` is different: an
+ * inbound email the operator is LOGGING arrived by their own mail — recording
+ * that it arrived is a fact about the past, not a claim about a connection.
+ *
+ * `inquiryId` IS A `Lead` ID. The brief's Inquiry is this app's `Lead`; the
+ * field keeps the brief's name so the two vocabularies meet in one place.
+ */
+export interface Activity {
+  id: string;
+  companyId: string;
+  contactId: string | null;
+  /** A `Lead.id`. */
+  inquiryId: string | null;
+  bookingId: string | null;
+  type: ActivityType;
+  direction: ActivityDirection;
+  status: ActivityStatus;
+  subject: string;
+  /** The text itself, or a reference to where it lives. PRIVATE surface. */
+  bodyOrReference: string | null;
+  scheduledAt: string | null;
+  /** Null in this app, always — nothing here sends. */
+  sentAt: string | null;
+  /** A `CompanyUser.id`. */
+  createdBy: string;
+  createdAt: string;
+}
+
+/* ---- Assignment / Operational Task -------------------------------------- */
+
+export type TaskType = "guide" | "supplier" | "permit" | "transport" | "document" | "participant_follow_up" | "other";
+export type TaskStatus = "open" | "in_progress" | "blocked" | "completed" | "cancelled";
+
+export const TASK_TYPES = ["guide", "supplier", "permit", "transport", "document", "participant_follow_up", "other"] as const satisfies readonly TaskType[];
+export const TASK_STATUSES = ["open", "in_progress", "blocked", "completed", "cancelled"] as const satisfies readonly TaskStatus[];
+
+/**
+ * Brief §4 Assignment / Operational Task. A guide assignment IS a task of type
+ * `guide` on a departure — there is no separate assignment table, per the brief.
+ */
+export interface Task {
+  id: string;
+  companyId: string;
+  /** A `ProductDeparture.id`, or null for a task not tied to one trip. */
+  departureId: string | null;
+  type: TaskType;
+  /** A `CompanyUser.id` on the caller's own team. */
+  assigneeId: string;
+  /** A `Supplier.id`, for supplier / transport / permit work. */
+  supplierId: string | null;
+  title: string;
+  description: string | null;
+  status: TaskStatus;
+  dueAt: string | null;
+  /** Set exactly when `status === "completed"`. */
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/* ---- Trip Brief --------------------------------------------------------- */
+
+/** Brief §4 TripBrief.preferred_dates — LOCAL days, `YYYY-MM-DD`, either end open. */
+export interface PreferredDates {
+  startDay: string | null;
+  endDay: string | null;
+}
+
+/**
+ * Brief §4 Trip Brief — the qualified inquiry restated as what the operator
+ * will actually plan for, without retyping the core fields.
+ *
+ * `objectiveId` IS A `Mountain.id` (the slug — "ama-dablam"). The brief's
+ * Objective / Mountain maps onto this app's `Mountain`, and `Lead.mountainId`
+ * already carries the same id, so a brief is created from an inquiry without a
+ * second lookup. It is NOT a product id: a brief describes what the customer
+ * wants to undertake, and the product is the operator's answer to it.
+ *
+ * `companyId` is not in the brief's field list. It is here because every scoped
+ * read in this adapter goes through one tenant filter and the brief's own rule
+ * — "Every organization-owned query must be tenant-scoped" — is not satisfiable
+ * through a join the memory store does not have.
+ */
+export interface TripBrief {
+  id: string;
+  companyId: string;
+  /** A `Lead.id`. */
+  inquiryId: string;
+  /** A `Mountain.id`. */
+  objectiveId: string | null;
+  preferredDates: PreferredDates;
+  flexibilitySummary: string | null;
+  groupSummary: string | null;
+  experienceSummary: string | null;
+  /** What the operator is ASSUMING and has not confirmed — stated, so it can be checked. */
+  operatorAssumptions: string | null;
+  /** Open questions the customer must answer before a proposal is honest. */
+  requirementsToConfirm: string[];
+  /** PRIVATE surface. */
+  internalNotes: string | null;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/* ---- Proposal + Proposal Version --------------------------------------- */
+
+export type ProposalStatus = "draft" | "internal_review" | "sent" | "accepted" | "declined" | "expired" | "superseded";
+
+export const PROPOSAL_STATUSES = ["draft", "internal_review", "sent", "accepted", "declined", "expired", "superseded"] as const satisfies readonly ProposalStatus[];
+
+/**
+ * Brief §4 Proposal — the commercial offer to one inquiry.
+ *
+ * THREE RULES THE MEMORY ADAPTER ENFORCES, and a schema must too:
+ *
+ *   1. `sent` REQUIRES `approvedBy`. Internal approval (`approveProposals` —
+ *      owner/admin) comes first; `setProposalStatus(…, "sent")` is refused
+ *      without it. A price a company commits to is approved by somebody who
+ *      may commit the company.
+ *   2. A SENT PROPOSAL IS NEVER OVERWRITTEN. `updateProposal` is refused once
+ *      the status is `sent` or later; the only route is `createProposalVersion`,
+ *      which appends a new `ProposalVersion`, applies the header change with
+ *      it, clears the approval (a changed commitment needs approving again) and
+ *      returns the proposal to `draft`. The prior version is untouched — it is
+ *      SUPERSEDED BY DERIVATION (see `ProposalVersion`), never edited.
+ *   3. `depositMinor + balanceMinor === totalMinor`, in integers, on every write.
+ *
+ * `sent` MEANS THE CUSTOMER HAS IT — a fact the operator records about their
+ * own commercial process, sent through their own channels. It is not a claim
+ * that this app delivered anything; nothing here sends (see `Activity`).
+ */
+export interface Proposal {
+  id: string;
+  companyId: string;
+  /** A `Lead.id`. */
+  inquiryId: string;
+  tripBriefId: string | null;
+  status: ProposalStatus;
+  /** ISO 4217 — "EUR". Explicit on every proposal; never assumed. */
+  currency: string;
+  totalMinor: Cents;
+  depositMinor: Cents;
+  balanceMinor: Cents;
+  /** A LOCAL day, `YYYY-MM-DD`. */
+  validUntil: string | null;
+  cancellationPolicyReference: string | null;
+  createdBy: string;
+  /** A `CompanyUser.id` holding `approveProposals`. Required before `sent`. */
+  approvedBy: string | null;
+  approvedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Brief §4 Proposal Version — one immutable statement of what was offered.
+ *
+ * VERSIONS ARE APPEND-ONLY. There is no update method for a version anywhere
+ * in this app, and there must not be one: "Never overwrite a sent proposal
+ * without preserving the previous version" is satisfied by there being nothing
+ * that can overwrite any version at all.
+ *
+ * WHICH VERSION IS CURRENT IS DERIVED, NOT STORED — the highest
+ * `versionNumber` on the proposal. Every lower number is superseded. The brief
+ * gives a version no status field, and this app adds none: `isCurrentVersion()`
+ * in `@/domain/crm` is the one definition, the same way placement expiry and
+ * story expiry are derived rather than written by a timer.
+ *
+ * `pricingSnapshot` IS THE SHARED `Quote` from `src/money/model.ts` — one
+ * money model in the family, not a second one. Null while the version carries
+ * no priced breakdown; the header totals on `Proposal` are still explicit.
+ */
+export interface ProposalVersion {
+  id: string;
+  proposalId: string;
+  /** 1, 2, 3 … — assigned by the adapter, never by the caller. */
+  versionNumber: number;
+  itineraryContent: ItineraryDay[];
+  inclusions: string[];
+  exclusions: string[];
+  /** What the customer must have or do — experience, kit, insurance. Words, not verdicts. */
+  requirements: string[];
+  pricingSnapshot: import("../money/model").Quote | null;
+  /** Why this version exists, in the author's words. Required from version 2. */
+  changeSummary: string | null;
+  createdBy: string;
+  createdAt: string;
+}
+
+/* ---- Financial Event ---------------------------------------------------- */
+
+export type FinancialEventType =
+  | "quote"
+  | "invoice"
+  | "deposit_due"
+  | "deposit_received"
+  | "balance_due"
+  | "balance_received"
+  | "refund_requested"
+  | "refund_issued"
+  | "commission_due"
+  | "commission_received";
+
+export type FinancialEventStatus = "draft" | "issued" | "reported" | "confirmed" | "cancelled" | "unavailable";
+
+export const FINANCIAL_EVENT_TYPES = [
+  "quote",
+  "invoice",
+  "deposit_due",
+  "deposit_received",
+  "balance_due",
+  "balance_received",
+  "refund_requested",
+  "refund_issued",
+  "commission_due",
+  "commission_received",
+] as const satisfies readonly FinancialEventType[];
+
+export const FINANCIAL_EVENT_STATUSES = ["draft", "issued", "reported", "confirmed", "cancelled", "unavailable"] as const satisfies readonly FinancialEventStatus[];
+
+/**
+ * WHO SAYS THIS MONEY MOVED — brief §4 FinancialEvent.source, typed so the
+ * question cannot go unanswered.
+ *
+ *   `provider`               a connected payment provider reported it. NONE IS
+ *                            CONNECTED; the memory adapter accepts the shape so
+ *                            the seam is ready, and the seed never uses it.
+ *   `operator_confirmation`  a named member of the company saw the money — a
+ *                            bank statement, a receipt in hand.
+ *   `manual_entry`           a named member typed it in on somebody's word —
+ *                            "the customer says they paid". Not confirmation.
+ *   `customer_report`        the customer told us. Not confirmation either.
+ *
+ * ONLY THE FIRST TWO CAN CARRY AN EVENT TO `confirmed`. The other two stop at
+ * `reported`, and the adapter refuses otherwise. "A recorded amount is not
+ * proof that money moved. Payment status must identify its source."
+ */
+export type FinancialEventSource =
+  | { kind: "provider"; provider: string }
+  | { kind: "operator_confirmation"; confirmedBy: string }
+  | { kind: "manual_entry"; enteredBy: string }
+  | { kind: "customer_report"; reportedBy: string };
+
+/** Brief §4 Financial Event / Invoice / Payment Status — one auditable line. */
+export interface FinancialEvent {
+  id: string;
+  companyId: string;
+  bookingId: string;
+  type: FinancialEventType;
+  status: FinancialEventStatus;
+  /** Integer minor units; `null` when the amount is genuinely not known. */
+  amountMinor: Cents | null;
+  currency: string;
+  source: FinancialEventSource;
+  /** Invoice number, bank reference, provider id — the operator's or the provider's. */
+  externalReference: string | null;
+  /** When it took / takes effect — a due date, a receipt date. UTC. */
+  effectiveAt: string | null;
+  createdAt: string;
+}
+
+/* ---- Participant + Document / Requirement -------------------------------- */
+
+export type ParticipantStatus =
+  | "lead"
+  | "invited"
+  | "information_incomplete"
+  | "ready_for_review"
+  | "ready_for_departure"
+  | "completed"
+  | "cancelled";
+
+export const PARTICIPANT_STATUSES = [
+  "lead",
+  "invited",
+  "information_incomplete",
+  "ready_for_review",
+  "ready_for_departure",
+  "completed",
+  "cancelled",
+] as const satisfies readonly ParticipantStatus[];
+
+/**
+ * The three statuses NO SCREEN MAY SET. They are derived from the eight
+ * information fields by `deriveParticipantStatus()` in `@/domain/crm`, inside
+ * the adapter, every time a field moves. `setParticipantStatus` refuses them.
+ */
+export const DERIVED_PARTICIPANT_STATUSES = [
+  "information_incomplete",
+  "ready_for_review",
+  "ready_for_departure",
+] as const satisfies readonly ParticipantStatus[];
+
+/** The eight information fields, by their `Participant` key. */
+export type ParticipantInformationField =
+  | "emergencyContactStatus"
+  | "insuranceStatus"
+  | "waiverStatus"
+  | "identityDocumentStatus"
+  | "experienceInformationStatus"
+  | "fitnessInformationStatus"
+  | "medicalInformationStatus"
+  | "consentStatus";
+
+export const PARTICIPANT_INFORMATION_FIELDS = [
+  "emergencyContactStatus",
+  "insuranceStatus",
+  "waiverStatus",
+  "identityDocumentStatus",
+  "experienceInformationStatus",
+  "fitnessInformationStatus",
+  "medicalInformationStatus",
+  "consentStatus",
+] as const satisfies readonly ParticipantInformationField[];
+
+/**
+ * THE SENSITIVE TWO (brief §3.3, and the brief's instruction for this wave).
+ * Read by roles holding `viewSensitiveParticipantData` only; everyone else
+ * receives `REDACTED` in these two fields, substituted by the adapter, not the
+ * screen.
+ */
+export type ParticipantSensitiveField = Extract<
+  ParticipantInformationField,
+  "fitnessInformationStatus" | "medicalInformationStatus"
+>;
+
+export const PARTICIPANT_SENSITIVE_FIELDS = [
+  "fitnessInformationStatus",
+  "medicalInformationStatus",
+] as const satisfies readonly ParticipantSensitiveField[];
+
+/**
+ * Brief §4 Participant — a person going on a trip, and how complete their
+ * paperwork is.
+ *
+ * `status` IS DERIVED between `invited` and `ready_for_departure`. Only `lead`,
+ * `invited`, `completed` and `cancelled` are set by a person; the three in
+ * between are computed from the eight fields (see `deriveParticipantStatus`).
+ * A screen cannot set `ready_for_departure`, and the adapter refuses if asked.
+ *
+ * `ready_for_departure` MEANS EVERY ITEM HAS BEEN REVIEWED. It does not mean
+ * the person is fit, safe, insured enough or approved. No wording anywhere in
+ * this portal may say a participant has been "cleared" — brief §3.2 forbids
+ * the verdict, and §4 says what these fields are: information completeness.
+ *
+ * `fitnessInformationStatus` and `medicalInformationStatus` are typed to admit
+ * `REDACTED` because a read by a role without `viewSensitiveParticipantData`
+ * returns it there. The write path takes `RequirementStatus` only.
+ */
+export interface Participant {
+  id: string;
+  companyId: string;
+  contactId: string;
+  /** A `Lead.id`. */
+  inquiryId: string | null;
+  proposalId: string | null;
+  status: ParticipantStatus;
+  emergencyContactStatus: RequirementStatus;
+  insuranceStatus: RequirementStatus;
+  waiverStatus: RequirementStatus;
+  identityDocumentStatus: RequirementStatus;
+  experienceInformationStatus: RequirementStatus;
+  /** SENSITIVE. `REDACTED` for a viewer without `viewSensitiveParticipantData`. */
+  fitnessInformationStatus: RequirementStatus | RedactedFieldStatus;
+  /** SENSITIVE. `REDACTED` for a viewer without `viewSensitiveParticipantData`. */
+  medicalInformationStatus: RequirementStatus | RedactedFieldStatus;
+  consentStatus: RequirementStatus;
+  /**
+   * A LOCAL day, `YYYY-MM-DD`: the operator's stated retention date for this
+   * person's data. Recorded so the deletion duty is visible; nothing in this
+   * app deletes on it yet, and no screen may imply otherwise.
+   */
+  retentionUntil: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type DocumentType =
+  | "waiver"
+  | "insurance"
+  | "identity"
+  | "passport"
+  | "permit"
+  | "medical_information"
+  | "emergency_contact"
+  | "other";
+
+export const DOCUMENT_TYPES = [
+  "waiver",
+  "insurance",
+  "identity",
+  "passport",
+  "permit",
+  "medical_information",
+  "emergency_contact",
+  "other",
+] as const satisfies readonly DocumentType[];
+
+/** The document types whose CONTENT is read only under `viewSensitiveParticipantData`. */
+export const SENSITIVE_DOCUMENT_TYPES = ["medical_information"] as const satisfies readonly DocumentType[];
+
+/**
+ * Brief §4 Document / Requirement — one required item for one participant.
+ *
+ * `storageReference` IS A REFERENCE, NEVER A URL. A path in a private store,
+ * resolved by a signed read that does not exist yet; nothing here may hold or
+ * build a public link (brief §4: "Do not store sensitive documents in an
+ * unprotected public bucket"). A missing document renders as missing, never as
+ * approved.
+ *
+ * For a `medical_information` document read by a role without
+ * `viewSensitiveParticipantData`, BOTH `status` and `storageReference` come
+ * back `REDACTED` — a medical status is itself information about a person's
+ * health. Every other type keeps its status visible to every role, because
+ * completeness is what the readiness screen exists to show.
+ */
+export interface Document {
+  id: string;
+  companyId: string;
+  participantId: string;
+  type: DocumentType;
+  status: RequirementStatus | RedactedFieldStatus;
+  /** A LOCAL day, `YYYY-MM-DD`. */
+  expiresAt: string | null;
+  storageReference: string | null | RedactedFieldStatus;
+  /** A `CompanyUser.id`. Set exactly when `status === "reviewed"`. */
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  /** The consent record under which this was collected. A reference, never the content. */
+  consentReference: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/* ---- Supplier / Partner and Guide / Staff Resource ---------------------- */
+
+export type SupplierType = "ground_handler" | "transport" | "lodging" | "permit_authority" | "equipment" | "referral_partner" | "other";
+export type SupplierStatus = "prospect" | "active" | "paused" | "archived";
+
+export const SUPPLIER_TYPES = ["ground_handler", "transport", "lodging", "permit_authority", "equipment", "referral_partner", "other"] as const satisfies readonly SupplierType[];
+export const SUPPLIER_STATUSES = ["prospect", "active", "paused", "archived"] as const satisfies readonly SupplierStatus[];
+
+/** Brief §4 Supplier / Partner. `contactDetails` is PRIVATE surface. */
+export interface Supplier {
+  id: string;
+  companyId: string;
+  name: string;
+  type: SupplierType;
+  country: string | null;
+  contactDetails: string | null;
+  contractReference: string | null;
+  status: SupplierStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type AvailabilityStatus = "not_stated" | "available" | "unavailable";
+
+/**
+ * Brief §4 Guide / Staff Resource.
+ *
+ * `verificationStatus` DEFAULTS TO `not_submitted` AND THIS APP CANNOT RAISE IT
+ * TO `verified`. "Do not create or display qualifications that have not been
+ * verified" — and nobody in an operator's portal is the verifying party.
+ * `qualificationsReference` is where the guide's OWN claim is filed, and a
+ * screen labels it as a claim on file until the status says otherwise.
+ *
+ * `insuranceStatus` is a `RequirementStatus` — the same completeness word as
+ * a participant's, for the same reason: it says whether the paper arrived.
+ */
+export interface GuideResource {
+  id: string;
+  companyId: string;
+  /** A profile id when the guide has an ICEFALL account, else an external contact reference. */
+  profileIdOrExternalContactId: string;
+  role: string;
+  qualificationsReference: string | null;
+  verificationStatus: VerificationStatus;
+  insuranceStatus: RequirementStatus;
+  availabilityStatus: AvailabilityStatus;
+  /** PRIVATE surface. */
+  contactPreferences: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/* ---- Referral Event (the ICEFALL section) ------------------------------- */
+
+/**
+ * Brief §4 Referral Event — ICEFALL's record that it introduced a climber to
+ * this company. WRITTEN BY ICEFALL, READ HERE. There is no operator create
+ * method: a company cannot record its own referrals from ICEFALL.
+ *
+ * NO BOOKING AND NO COMMISSION IS RECORDED FROM ONE OF THESE. It is an
+ * introduction. Money follows only when a real `FinancialEvent` of type
+ * `commission_due` is raised against a real booking, with a source.
+ *
+ * `operatorCompanyId` keeps the brief's exact name rather than collapsing to
+ * `companyId`, because it is the one row in this file scoped to a company that
+ * did not author it.
+ */
+export interface ReferralEvent {
+  id: string;
+  icefallUserId: string;
+  /** The brief's `operator_organization_id` — this company. */
+  operatorCompanyId: string;
+  /** A `Lead.id`. */
+  inquiryId: string | null;
+  /** Where on ICEFALL the introduction happened — "app:expedition-detail". */
+  sourceSurface: string;
+  attributionToken: string;
+  consentStatus: ConsentStatus;
+  createdAt: string;
+}
+
+/* ---- Audit Event -------------------------------------------------------- */
+
+export type AuditEntityType =
+  | "contact"
+  | "contact_group"
+  | "activity"
+  | "task"
+  | "trip_brief"
+  | "proposal"
+  | "proposal_version"
+  | "booking"
+  | "financial_event"
+  | "participant"
+  | "document"
+  | "departure"
+  | "supplier"
+  | "guide_resource"
+  /*
+   * The pre-existing records this adapter also mutates. The brief's rule is
+   * "every mutating method", so the trail covers the ICEFALL side too.
+   */
+  | "inquiry"
+  | "company_user"
+  | "product"
+  | "content_version"
+  | "conversation"
+  | "post"
+  | "promo_video"
+  | "channel"
+  | "channel_message";
+
+/**
+ * Brief §4 Audit Event — one row per mutating call, written by the adapter's
+ * `audit()` helper and by the seed through the same builder.
+ *
+ * SNAPSHOTS CARRY NO SENSITIVE CONTENT. `buildAuditEvent` in `@/domain/crm`
+ * strips medical and fitness statuses, storage and consent references, contact
+ * details and free-text bodies, recording `"[redacted]"` where a value changed
+ * — so the fact of a change is kept and its content is not. Ids and ordinary
+ * statuses stay.
+ *
+ * `beforeSnapshotOrDiff` / `afterSnapshotOrDiff` hold ONLY the keys that
+ * changed (a diff) on an update, the full stripped record on a create, and
+ * null where there was nothing before or nothing after.
+ */
+export interface AuditEvent {
+  id: string;
+  companyId: string;
+  /** A `CompanyUser.id`. */
+  actorId: string;
+  entityType: AuditEntityType;
+  entityId: string;
+  /** "created", "updated", "status_changed", "merged", "version_created", … */
+  action: string;
+  beforeSnapshotOrDiff: Record<string, unknown> | null;
+  afterSnapshotOrDiff: Record<string, unknown> | null;
+  createdAt: string;
 }
