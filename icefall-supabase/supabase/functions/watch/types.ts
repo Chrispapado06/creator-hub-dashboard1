@@ -8,7 +8,12 @@
 
 export type WatchProvider = "garmin" | "coros" | "suunto" | "polar";
 
-/** Display and iteration order. COROS first — it is the one that works. */
+/**
+ * Display and iteration order. COROS first — it is the one whose CONNECTION
+ * works self-serve, with no registration and no vendor approval. That is NOT
+ * the same as the one that imports: see `WatchActivityReading` below, which
+ * COROS answers "not-implemented".
+ */
 export const WATCH_PROVIDERS: readonly WatchProvider[] = [
   "coros",
   "polar",
@@ -57,3 +62,21 @@ export type WatchAvailability =
   | "needs-registration" // implemented; ICEFALL holds no credentials yet
   | "vendor-approval-required" // the vendor gates access and has not granted it
   | "not-built"; // ICEFALL has no adapter for this yet
+
+/**
+ * Whether ICEFALL can read a vendor's ACTIVITY responses yet.
+ *
+ * A SEPARATE QUESTION FROM `WatchAvailability`, and the two genuinely
+ * disagree today. COROS is "ready" — its OAuth is self-serve, the consent
+ * screen works, the token is stored, the account shows as connected — and its
+ * `listActivities` returns `[]` on purpose, because COROS publishes no
+ * response schema for `querySportRecords` and nobody has read a real one yet
+ * (coros.ts says so at length). Collapsing the two into one word would have
+ * only two ways to be wrong: call COROS unavailable and hide a connection that
+ * genuinely works, or call it ready and let an athlete connect a watch, press
+ * "check for activities", and be told "nothing new" forever — which blames
+ * their watch for ICEFALL's missing mapper.
+ */
+export type WatchActivityReading =
+  | "implemented" // ICEFALL has a mapper for this vendor's activity response
+  | "not-implemented"; // the connection works; the response shape is not known yet

@@ -16,7 +16,9 @@
 // THE ROUTES, AND THE FLOW THROUGH THEM
 // ============================================================================
 //
-//   GET  /watch/providers                 (public) — what's connectable, per vendor.
+//   GET  /watch/providers                 (public) — what's connectable, per
+//     vendor, AND whether ICEFALL can read that vendor's activity responses.
+//     Two different answers: COROS is connectable and unreadable.
 //
 //   POST /watch/<provider>/begin          (authenticated)
 //     Mints a single-use `state` (and a PKCE verifier/challenge — minted for
@@ -60,7 +62,12 @@
 // vendor: `${WATCH_REDIRECT_BASE}/<provider>/callback`.
 
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
-import { WATCH_PROVIDERS, type WatchAvailability, type WatchProvider } from "./types.ts";
+import {
+  WATCH_PROVIDERS,
+  type WatchActivityReading,
+  type WatchAvailability,
+  type WatchProvider,
+} from "./types.ts";
 import { ADAPTERS, HttpError, type TokenSet, type WatchAdapter } from "./registry.ts";
 
 /** The access token is refreshed this long before it actually expires. */
@@ -232,10 +239,24 @@ function availabilityFor(adapter: WatchAdapter): WatchAvailability {
 /* Routes                                                                      */
 /* -------------------------------------------------------------------------- */
 
+/*
+ * TWO ANSWERS, NOT ONE, BECAUSE THEY DISAGREE.
+ *
+ * `providers` says whether an account can be LINKED. `activityReading` says
+ * whether ICEFALL can read what that vendor sends back when asked for
+ * activities. COROS answers "ready" to the first and "not-implemented" to the
+ * second, and an athlete who links a COROS watch is entitled to be told that
+ * before they wonder why nothing arrives. Older clients that only read
+ * `providers` are unaffected — the field is additive.
+ */
 function providers(): Response {
   const out = {} as Record<WatchProvider, WatchAvailability>;
-  for (const p of WATCH_PROVIDERS) out[p] = availabilityFor(ADAPTERS[p]);
-  return json({ providers: out });
+  const reading = {} as Record<WatchProvider, WatchActivityReading>;
+  for (const p of WATCH_PROVIDERS) {
+    out[p] = availabilityFor(ADAPTERS[p]);
+    reading[p] = ADAPTERS[p].readsActivities ? "implemented" : "not-implemented";
+  }
+  return json({ providers: out, activityReading: reading });
 }
 
 async function begin(req: Request, provider: WatchProvider): Promise<Response> {
@@ -461,6 +482,15 @@ async function activities(req: Request, provider: WatchProvider): Promise<Respon
   if (!uid) return json({ error: "unauthenticated" }, 401);
 
   const adapter = ADAPTERS[provider];
+  /*
+   * REFUSED BEFORE A TOKEN IS SPENT, AND BEFORE AN EMPTY LIST CAN BE
+   * MISREAD. An adapter with no mapper would otherwise return `[]` here, the
+   * client would bank a cursor and report "nothing new since <date>", and the
+   * athlete would read that as a fact about their watch. 501 is the honest
+   * status: the request is fine, this server has not implemented it.
+   */
+  if (!adapter.readsActivities) return json({ error: "reading_not_built" }, 501);
+
   const db = admin();
   const { data: conn } = await db
     .from("watch_connections")

@@ -134,6 +134,10 @@ function toTokenSet(issuer: string, t: CorosTokenResponse): TokenSet {
 export const coros: WatchAdapter = {
   provider: "coros",
   gate: "none",
+  /* FALSE, and this is the field that stops the app lying about it. COROS's
+     OAuth is done and works; its activity response schema is unpublished, so
+     `listActivities` below returns nothing. See that function. */
+  readsActivities: false,
   requiredSecrets: ["COROS_CLIENT_ID_EU", "COROS_CLIENT_ID_US"],
   maxWindowDays: 30,
   regional: true,

@@ -43,6 +43,17 @@ export interface WatchAdapter {
   readonly gate: "none" | "vendor-approval-required" | "not-built";
   /** All must be present in Deno.env for availability to be "ready". */
   readonly requiredSecrets: readonly string[];
+  /**
+   * Whether `listActivities` below can actually read this vendor's response.
+   *
+   * FALSE IS NOT A BUG AND MUST NOT BE FLIPPED TO SHUT THE UI UP. It is the
+   * one honest answer for a vendor whose OAuth works but whose activity
+   * response shape nobody has read yet — COROS today. The route refuses the
+   * call rather than returning `[]`, because an empty list and "we cannot
+   * read this vendor yet" are different facts and the athlete is shown the
+   * difference. Flip it to true in the same change that writes the mapper.
+   */
+  readonly readsActivities: boolean;
   /** Server-side cap on one activities window, in days. */
   readonly maxWindowDays: number;
   /** True only for COROS. Any region on another provider is a 400. */
@@ -102,6 +113,7 @@ const garmin: WatchAdapter = {
   provider: "garmin",
   gate: "not-built",
   requiredSecrets: [],
+  readsActivities: false,
   maxWindowDays: 0,
   regional: false,
   apiBaseFor(): string {

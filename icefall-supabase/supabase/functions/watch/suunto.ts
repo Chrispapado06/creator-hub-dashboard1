@@ -132,6 +132,9 @@ function mapWorkout(w: SuuntoWorkout): WatchActivity | null {
 export const suunto: WatchAdapter = {
   provider: "suunto",
   gate: "vendor-approval-required",
+  // `mapWorkout` above is written against the documented workout fields. The
+  // window parameters are the unknown here, not the response shape.
+  readsActivities: true,
   requiredSecrets: ["SUUNTO_CLIENT_ID", "SUUNTO_CLIENT_SECRET", "SUUNTO_SUBSCRIPTION_KEY"],
   maxWindowDays: 30,
   regional: false,

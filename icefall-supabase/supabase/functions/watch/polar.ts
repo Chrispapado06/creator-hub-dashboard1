@@ -93,6 +93,9 @@ function mapSession(s: PolarSession): WatchActivity | null {
 export const polar: WatchAdapter = {
   provider: "polar",
   gate: "none",
+  // The v4 training-session response shape is published (swagger.yaml) and
+  // `mapSession` above is written against it.
+  readsActivities: true,
   requiredSecrets: ["POLAR_CLIENT_ID", "POLAR_CLIENT_SECRET"],
   maxWindowDays: 90,
   regional: false,
