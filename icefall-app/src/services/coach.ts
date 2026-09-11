@@ -239,6 +239,57 @@ const RULES: Rule[] = [
     disclaimer:
       "General guidance only. For individualised nutrition — particularly with any medical condition — consult a registered dietitian.",
   },
+  /*
+   * BEING ILL, AND ASKING FOR THE DAY BACK.
+   *
+   * Charlie, 11 September 2026, typed "hey, i dont feel good today im sick can
+   * we change my plan" and got the welcome menu — the generic fallback, with a
+   * row of suggestion chips. Nine keyword rules covered training, fuelling,
+   * fatigue, gear, altitude, volume and weather, and NOT ONE of them covered an
+   * athlete saying they are unwell, which is among the most common things
+   * anybody says to a coach.
+   *
+   * IT SITS ABOVE THE FATIGUE RULE DELIBERATELY. "tired" and "exhausted" are in
+   * that rule's pattern and illness is not the same thing: fatigue is a
+   * training response to be read, illness is a reason to stop. Below it, "I
+   * feel rough and I'm ill" would have been answered with a lecture about sleep
+   * duration and energy intake.
+   *
+   * IT DOES NOT DIAGNOSE AND IT DOES NOT REASSURE. `checkSafety` has already
+   * run several hundred lines above and returned for anything with a red flag
+   * in it, so what reaches here is an ordinary "I'm under the weather". The
+   * answer is the same one a guide gives: today is not a training day, and the
+   * week survives losing it.
+   */
+  {
+    /* A STATEMENT ABOUT THEMSELVES, NOW — not the word "sick" anywhere in a
+       sentence. The first draft matched "how do I avoid getting sick at
+       altitude" and answered a general question with "today is not a training
+       day", which is the wrong answer delivered confidently. It now needs a
+       first-person present claim, and refuses anything phrased as advice. */
+    match: {
+      test: (q: string) =>
+        !/\b(?:how (?:do|can|to)|avoid|prevent|stop getting|what if|in case|risk of)\b/i.test(q) &&
+        (/\b(?:i'?m|im|i am|feeling|i feel)\s+(?:really |very |a bit |pretty |quite |so |bit )?(?:sick|unwell|ill|poorly|rough|awful|terrible|rotten|lousy)\b/i.test(q) ||
+          /\b(?:i )?(?:don'?t|do not) feel (?:good|well|great|right|ok|okay)\b/i.test(q) ||
+          /\bi(?:'ve| have)? (?:got|caught|come down with)\b/i.test(q) ||
+          /\bi have a (?:cold|sore throat|fever|temperature|chest infection|bug)\b/i.test(q)),
+    },
+    reply: (c) => {
+      const prescribed = c.today.session;
+      const line = prescribed
+        ? `Today's prescribed session is ${prescribed}. Drop it.`
+        : "Nothing is prescribed today anyway, so there is nothing to drop.";
+
+      return (
+        `Then today is not a training day. ${line}\n\n` +
+        "Training through an illness does not bank the session — it lengthens the illness and costs you the next few days as well. The week is built to survive losing a day; it is not built to survive you turning a three-day cold into a fortnight.\n\n" +
+        "**Rest until you have been clear for a full day, then come back one notch easier than where you stopped.** If it goes to your chest, if you have a fever, or if it has not started lifting after a few days, that is a doctor's call rather than a training one.\n\n" +
+        "Tell me when you are back and I will move the week around what is left."
+      );
+    },
+    disclaimer: MEDICAL_DISCLAIMER,
+  },
   {
     match: /fatigue|tired|exhausted|recover|sleep|heavy legs/i,
     reply: (c) =>

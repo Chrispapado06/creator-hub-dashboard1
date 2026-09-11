@@ -87,6 +87,17 @@ const FULL_SCREEN_ROUTES = [
    */
   "/explore/mountain/:id",
   "/explore/peak/:id",
+  /*
+   * THE COACH CHAT. Charlie, 11 Sep 2026: "if you are on the chat, remove
+   * navigation theres no need just add a back option".
+   *
+   * He is right and it is the same argument as the trek: a conversation is one
+   * thing you are in, and four tabs underneath are four ways to lose your
+   * place in it. The tab bar was also sitting under a text field, which is the
+   * worst place in the app for a row of targets — a thumb reaching for the
+   * send button passes straight over Social.
+   */
+  "/coach/chat",
 ] as const;
 
 /** True on a page that carries no bottom navigation and reserves no room for it. */

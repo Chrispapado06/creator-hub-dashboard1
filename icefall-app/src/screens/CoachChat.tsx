@@ -1,4 +1,4 @@
-import { ArrowUp, Lock, Plus } from "lucide-react";
+import { ArrowUp, ChevronLeft, Lock, Plus } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
@@ -489,6 +489,13 @@ export default function CoachChat() {
         className="no-scrollbar flex-1 overflow-y-auto px-5 pb-4"
         style={{ paddingTop: "calc(var(--screen-safe-top, env(safe-area-inset-top, 0px)) + 24px)" }}
       >
+        {/*
+          * NO BACK BUTTON IS ADDED HERE. `CoachHead` already renders one —
+          * screens/coach/shell.tsx:167, a Link that reads "‹ Coach". I added a
+          * second one when `/coach/chat` left the tab bar, having grepped only
+          * this file and missed the shared shell, and the screen rendered two
+          * identical controls stacked. The shell's one is the survivor.
+          */}
         <CoachHead
           title="Ask Coach"
           subtitle="Get guidance about your objective, plan, or today’s session."
